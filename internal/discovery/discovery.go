@@ -34,7 +34,7 @@
 package discovery
 
 import (
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/dinstein/agent-hub/internal/mcp"
@@ -232,7 +232,7 @@ func New(opts Options) *Surface {
 
 	tools := make([]Tool, len(opts.Tools))
 	copy(tools, opts.Tools)
-	sort.Slice(tools, func(i, j int) bool { return tools[i].Exposed < tools[j].Exposed })
+	slices.SortFunc(tools, func(a, b Tool) int { return strings.Compare(a.Exposed, b.Exposed) })
 
 	s := &Surface{
 		mode:       mode,
@@ -254,10 +254,10 @@ func New(opts Options) *Surface {
 	for id := range s.byServer {
 		s.serverIDs = append(s.serverIDs, id)
 	}
-	sort.Strings(s.serverIDs)
+	slices.Sort(s.serverIDs)
 	for _, id := range s.serverIDs {
 		g := s.byServer[id]
-		sort.Slice(g, func(i, j int) bool { return g[i].RawTool < g[j].RawTool })
+		slices.SortFunc(g, func(a, b Tool) int { return strings.Compare(a.RawTool, b.RawTool) })
 		s.byServer[id] = g
 	}
 	s.assignGroupNames()

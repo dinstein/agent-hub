@@ -1,7 +1,9 @@
 package discovery
 
 import (
-	"sort"
+	"cmp"
+	"slices"
+	"strings"
 
 	"github.com/dinstein/agent-hub/internal/discovery/toolsig"
 )
@@ -61,7 +63,7 @@ func newTokenSet(tokens []string) tokenSet {
 		ts.set[t] = true
 		ts.sorted = append(ts.sorted, t)
 	}
-	sort.Strings(ts.sorted)
+	slices.Sort(ts.sorted)
 	return ts
 }
 
@@ -75,7 +77,7 @@ func (ts tokenSet) hasPrefix(tok string) bool {
 	if len(tok) < minPrefixLen {
 		return false
 	}
-	i := sort.SearchStrings(ts.sorted, tok)
+	i, _ := slices.BinarySearch(ts.sorted, tok)
 	return i < len(ts.sorted) && len(ts.sorted[i]) >= len(tok) && ts.sorted[i][:len(tok)] == tok
 }
 
@@ -152,11 +154,11 @@ func (s *Surface) rank(q Query) []scored {
 			out = append(out, scored{tool: t, score: sc})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].score != out[j].score {
-			return out[i].score > out[j].score
+	slices.SortFunc(out, func(a, b scored) int {
+		if c := cmp.Compare(b.score, a.score); c != 0 {
+			return c // descending by score
 		}
-		return out[i].tool.Exposed < out[j].tool.Exposed
+		return strings.Compare(a.tool.Exposed, b.tool.Exposed)
 	})
 	return out
 }

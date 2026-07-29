@@ -2,7 +2,7 @@ package toolsig
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/dinstein/agent-hub/internal/mcp"
@@ -190,7 +190,7 @@ func paramsOf(root *node) []param {
 			optional = append(optional, name)
 		}
 	}
-	sort.Strings(optional)
+	slices.Sort(optional)
 	for _, name := range optional {
 		out = append(out, param{name: name, schema: root.Properties[name]})
 	}

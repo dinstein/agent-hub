@@ -2,7 +2,7 @@ package discovery
 
 import (
 	"encoding/json"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/dinstein/agent-hub/internal/discovery/toolsig"
@@ -241,6 +241,6 @@ func (s *Surface) DescribeNames() []string {
 	for name := range s.byExposed {
 		out = append(out, name)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }

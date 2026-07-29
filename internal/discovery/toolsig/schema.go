@@ -3,7 +3,7 @@ package toolsig
 import (
 	"bytes"
 	"encoding/json"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -195,7 +195,7 @@ func renderObject(n *node, depth int) (string, bool) {
 	for k := range n.Properties {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	lossy := true // the sub-property TYPES are always dropped
 	if len(keys) > MaxObjectKeys {
 		keys = keys[:MaxObjectKeys]
