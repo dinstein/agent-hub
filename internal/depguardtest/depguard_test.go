@@ -1,6 +1,8 @@
 package depguardtest
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,6 +74,23 @@ func goEnv(t *testing.T, key string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// lintCacheDir is a golangci-lint cache private to one checkout.
+//
+// The default cache is per-user and keyed by module path, which is identical
+// in every worktree of this repository — so a run here can be served results
+// that were computed in a sibling worktree, against files this one never had.
+// When that sibling has since been removed, the cached issues arrive carrying
+// its absolute paths and the control lint of an unmodified package "fails",
+// which reads as the depguard rules being broken and is nothing of the sort.
+//
+// Keyed by root, so a worktree still reuses its own work run to run; two
+// worktrees never share. Under $TMPDIR because it is disposable: losing it
+// costs one slower lint, and the alternative failure costs an afternoon.
+func lintCacheDir(root string) string {
+	sum := sha256.Sum256([]byte(root))
+	return filepath.Join(os.TempDir(), "agenthub-golangci-"+hex.EncodeToString(sum[:8]))
+}
+
 // runLint runs golangci-lint over a single package path relative to the
 // repo root. --allow-parallel-runners avoids lock contention with any
 // other lint instance running concurrently (v2.12.2 flag, verified).
@@ -79,6 +98,7 @@ func runLint(t *testing.T, bin, root, relPkg string) (string, error) {
 	t.Helper()
 	cmd := exec.Command(bin, "run", "--allow-parallel-runners", "./"+relPkg+"/...")
 	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GOLANGCI_LINT_CACHE="+lintCacheDir(root))
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
