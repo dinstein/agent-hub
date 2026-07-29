@@ -110,20 +110,29 @@ func loginWire(s oauthlogin.Session) AuthLoginWire {
 
 // loginHint turns a flow failure into the next thing to try.
 //
-// oauthflow already computes a suggestion per error type and it is the one
-// the CLI prints; carrying it through means the two surfaces answer the same
-// failure with the same sentence instead of drifting into two vocabularies
-// for one problem.
+// oauthflow already computes a suggestion per error type and it is the one the
+// CLI prints; carrying it through means the two surfaces answer the same
+// failure with the same sentence instead of drifting into two vocabularies for
+// one problem.
+//
+// CANCELLATION AND EXPIRY ARE TESTED FIRST, and that order is the whole point
+// of this function rather than an accident of it. A cancelled wait surfaces
+// wrapped in a FlowError of type authorization — the flow cannot tell "the
+// user gave up" from "the consent screen was never completed" — whose stock
+// suggestion is "use --manual on a host without a browser". On this path that
+// is wrong twice: nobody cancelled because they lacked a browser, and manual
+// mode is unreachable here anyway (docs/modules/oauth.md — Paste is nil, so
+// SelectMode can never choose it). The specific fact outranks the generic one.
 func loginHint(err error) string {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "the sign-in was cancelled; nothing was stored"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "the sign-in was not finished in time; nothing was stored, so it can simply be started again"
+	}
 	var fe *oauthflow.FlowError
 	if errors.As(err, &fe) && fe.Suggestion != "" {
 		return fe.Suggestion
-	}
-	if errors.Is(err, context.Canceled) {
-		return "the login was cancelled; nothing was stored"
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return "the login was not finished in time; start it again"
 	}
 	return ""
 }

@@ -414,8 +414,8 @@ func TestCancelStopsTheWait(t *testing.T) {
 	if out.Phase != string(oauthlogin.PhaseFailed) {
 		t.Errorf("phase after cancel = %q", out.Phase)
 	}
-	if out.Hint == "" {
-		t.Error("a cancelled login should say that nothing was stored")
+	if !strings.Contains(out.Hint, "cancelled") || !strings.Contains(out.Hint, "nothing was stored") {
+		t.Errorf("hint = %q; a cancelled sign-in must say so and say nothing was stored", out.Hint)
 	}
 	logins.mu.Lock()
 	defer logins.mu.Unlock()
