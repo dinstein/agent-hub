@@ -138,13 +138,13 @@ func MetaDefsFor(variants bool) []mcp.ToolDef {
 	return out
 }
 
-// MetaNames returns the five meta-tool names in their frozen order.
-func MetaNames() []string {
-	return []string{MetaStatus, MetaSearchTools, MetaDescribeTool, MetaCallTool, MetaFetchResult}
-}
-
 // MetaNamesFor returns the lazy-mode meta-tool names for a variant setting,
 // in the same order MetaDefsFor emits them.
+//
+// It is the only name-list accessor, on purpose. A sibling that spelled the
+// five names out as a literal used to sit above this one, and a hand-written
+// copy of a frozen list goes stale the first time the list moves — silently,
+// because nothing compares the two. Deriving from MetaDefsFor cannot.
 func MetaNamesFor(variants bool) []string {
 	defs := MetaDefsFor(variants)
 	out := make([]string, 0, len(defs))
