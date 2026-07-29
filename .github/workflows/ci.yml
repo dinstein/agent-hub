@@ -32,15 +32,12 @@ jobs:
         run: make build
       - name: Test
         run: make test
+      # The same target `make ci-full` runs, not a copy of its contents. The
+      # copy that used to be here was the reason a change to one of them could
+      # leave the other behind — and this check is the one where that matters
+      # most, since a proof that stopped proving looks exactly like a proof.
       - name: Verify depguard proof was not skipped
-        run: |
-          set -o pipefail
-          go test ./internal/depguardtest/ -run TestDepguardRulesActuallyFire -count=1 -v \
-            | tee /tmp/depguardproof.log
-          if grep -q -- "--- SKIP" /tmp/depguardproof.log; then
-            echo "depguard proof test was skipped; golangci-lint missing on runner" >&2
-            exit 1
-          fi
+        run: make ci-depguard-proof
       - name: Lint
         run: make lint
 
