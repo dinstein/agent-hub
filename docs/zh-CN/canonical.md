@@ -129,8 +129,11 @@ github.com/dinstein/agent-hub
   `server` / `profile` / `client` / `session` / `tool` / `skill` / `secret` / `approval` / `grant`
   （`secrets`、`approvals`、`skills` 等复数写法保留为 alias）
 - **动作/流组保持原样**：`daemon`、`connect`、`auth`、`audit`、`activity`、`events`、`config`、`doctor`
-  （不再有 `scope` 组：client 的 profile 绑定归 `client bind` / `unbind` / `ls`，
-  收窄本身归 `profile`——「收窄」就是 profile 的定义，不该有自己的命令组）
+- **没有 `scope` 组。** 收窄本身就是 profile 的定义，所以它归 `profile`
+  （`profile server` / `profile tools` / `profile discovery`）；把一个面交出去则归 `client`
+  （`client bind <client> <profile>` / `client unbind` / `client ls`）。作废的那个组，命令一一对应：
+  `scope set --client X --profile P` → `client bind X P`，`scope clear --client X` → `client unbind X`，
+  `scope ls` → `client ls`
 - OAuth 组规范名是 **`auth`**，不是 `oauth`
 - session 级 flag 统一：`--enable-server` / `--disable-server` / `--tools s:t1,t2` / `--discovery` / `--reset`
   （没有 `--persist`：session overlay 的修改一律易失，要永久生效只能改 profile）
