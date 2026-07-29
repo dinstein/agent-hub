@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -434,6 +435,64 @@ func TestGenerateContainerNameIsLegalAndPrefixed(t *testing.T) {
 		}
 		if !containerNameRe.MatchString(name) {
 			t.Fatalf("name %q is not a legal docker name", name)
+		}
+	}
+}
+
+// TestMountOrderBreaksTiesOnSource covers the one input shape the golden
+// file cannot reach: two mounts with the SAME effective target.
+//
+// That shape is reachable. validateDockerConfig has no duplicate-target
+// rule, and target()'s fallback to Source means a bare {Source: "/x"}
+// collides with an explicit {Target: "/x"} without either one looking like a
+// duplicate. Once targets are equal, Source is the only thing left deciding
+// the argv.
+//
+// What this catches that the golden does not — established by mutation, not
+// assumed: deleting the Source comparison from the comparator. Every mount
+// in the golden config has a distinct target, so it never reaches the second
+// key and stays green. Colliding mounts then fall back to SortStableFunc's
+// stability, which is authoring order, and the `-v` flags an operator reads
+// in ps(1) stop being a function of the config (ruling #27).
+//
+// The golden already pins which key is PRIMARY: swapping the two comparisons
+// reorders its three distinct mounts and fails it. This test does not claim
+// that job — with every target here identical, it cannot tell the two
+// orderings apart.
+func TestMountOrderBreaksTiesOnSource(t *testing.T) {
+	shuffled := []Mount{
+		{Source: "/z/src", Target: "/same"},
+		{Source: "/same"}, // effective target /same, via the fallback
+		{Source: "/a/src", Target: "/same"},
+	}
+	args, err := BuildDockerRunArgs(DockerConfig{Image: "alpine", Mounts: shuffled}, "", nil)
+	if err != nil {
+		t.Fatalf("BuildDockerRunArgs: %v", err)
+	}
+
+	var got []string
+	for i, a := range args {
+		if a == "-v" && i+1 < len(args) {
+			got = append(got, args[i+1])
+		}
+	}
+	want := []string{"/a/src:/same:ro", "/same:/same:ro", "/z/src:/same:ro"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("mounts sharing a target are not ordered by source\n got: %v\nwant: %v", got, want)
+	}
+
+	// The order is a function of the config, not of the input slice: every
+	// permutation of the same mounts must produce the same argv.
+	for _, perm := range [][]Mount{
+		{shuffled[2], shuffled[1], shuffled[0]},
+		{shuffled[1], shuffled[0], shuffled[2]},
+	} {
+		other, err := BuildDockerRunArgs(DockerConfig{Image: "alpine", Mounts: perm}, "", nil)
+		if err != nil {
+			t.Fatalf("BuildDockerRunArgs: %v", err)
+		}
+		if !slices.Equal(other, args) {
+			t.Fatalf("argv depends on authoring order\n%v\nvs\n%v", other, args)
 		}
 	}
 }
