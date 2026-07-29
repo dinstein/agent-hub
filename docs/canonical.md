@@ -91,6 +91,7 @@ github.com/dinstein/agent-hub
 │   └── testutil/fakemcp/    # programmable fake downstream (the foundation for all tests)
 ├── test/e2e/                # end-to-end regression: real processes, real npx downstreams
 ├── test/concurrency/        # cross-process concurrency invariants
+├── test/buildrules/         # proves the Makefile's own registries match the tree
 └── go.mod
 ```
 

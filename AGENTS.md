@@ -112,6 +112,11 @@ push, and `make ci-full` covers all of them:
   is enough to run it.
   `make ci` runs only their seed corpora (fast); `-fuzz` must be enabled explicitly — keep it out of CI.
 
+  **Adding an eighth means editing three places**, and `test/buildrules` fails until all three agree:
+  the target itself, its entry in `FUZZ_TARGETS`, and its name in the list above. That check exists
+  because the omission is otherwise invisible — a target missing from `FUZZ_TARGETS` still has its
+  seed corpus run by `make ci`, so everything looks covered while `make fuzz` never reaches it.
+
 ## Reference implementations: read, never copy
 
 [mcpproxy-go](https://github.com/smart-mcp-proxy/mcpproxy-go) (Go) and
