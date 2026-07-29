@@ -300,6 +300,69 @@ func TestHTTPRefreshFailureSurfacesOriginal401(t *testing.T) {
 	}
 }
 
+// TestHTTPVaultMissIsNotCached is the regression test for the order the CLI
+// recommends: `server add` (disabled) → `server enable` (connects, 401,
+// enabled anyway) → `auth login` (writes the vault). The connection is built
+// while the vault holds nothing, so caching that miss would pin the empty
+// string for the life of the process and 401 forever — the gateway would
+// list the server and fail every call until it was restarted.
+//
+// The refresher is nil here on purpose: this proves the plain vault re-read
+// recovers on its own, with no OAuth grant available to paper over it.
+func TestHTTPVaultMissIsNotCached(t *testing.T) {
+	t.Parallel()
+	f := newHTTPFake(t)
+	f.wantToken.Store("late-token")
+
+	var mu sync.Mutex
+	stored := "" // the vault is empty when the connection is dialed
+	resolve := func(_ context.Context, ref secrets.Ref) (string, bool, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if ref != secrets.HTTPAuthRef("remote") || stored == "" {
+			return "", false, nil
+		}
+		return stored, true, nil
+	}
+
+	// The server accepts anything until the credential lands, so the
+	// connection survives its dial and stays up — this must be ONE live
+	// connection throughout, because a redial would build a fresh round
+	// tripper and prove nothing.
+	f.wantToken.Store("")
+	srv, err := downstream.Connect(context.Background(), downstream.Spec{
+		ID:         "remote",
+		Kind:       transport.StreamableHTTP,
+		URL:        f.url(),
+		Provenance: downstream.ProvenanceLocal,
+	}, downstream.Deps{
+		Secrets:        resolve,
+		Auth:           downstream.NewVaultTokenSource("remote", resolve, nil),
+		ConnectTimeout: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Connect against an anonymous server: %v", err)
+	}
+	defer srv.Close()
+	if first := f.authSeen(); len(first) == 0 || first[0] != "" {
+		t.Fatalf("first request carried %v, want no Authorization (the vault was empty)", first)
+	}
+
+	// `agenthub auth login` lands in another process, and the server starts
+	// demanding the token it just issued.
+	mu.Lock()
+	stored = "late-token"
+	mu.Unlock()
+	f.wantToken.Store("late-token")
+
+	if err := srv.RefreshTools(context.Background()); err != nil {
+		t.Fatalf("call on the live connection after the credential landed: %v", err)
+	}
+	if last := f.authSeen(); last[len(last)-1] != "Bearer late-token" {
+		t.Fatalf("last request carried %q, want Bearer late-token", last[len(last)-1])
+	}
+}
+
 // TestHTTPExplicitAuthorizationHeaderWins covers the hand-pasted-token
 // configuration: an operator-set Authorization header suppresses the vault
 // injection entirely.

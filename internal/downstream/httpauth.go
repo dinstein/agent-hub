@@ -115,6 +115,23 @@ func (a *authRoundTripper) refresh(ctx context.Context, stale string) (string, e
 	}
 	a.mu.Unlock()
 
+	// Re-read the vault before going to the authorization server. The
+	// rejected credential may be nothing but this connection's stale cache:
+	// another process — `agenthub auth login`, or the daemon's proactive
+	// refresher, neither of which holds a handle on a live round tripper —
+	// may already have written the successor. A read is not an authorization
+	// flow: it burns no refresh token and never prompts anyone.
+	//
+	// The tok != stale guard is what keeps this from swallowing the real
+	// refresh path: re-reading the very credential that was just rejected
+	// proves the vault has nothing newer, so fall through and renew.
+	if tok, ok, err := a.auth.Token(ctx); err == nil && ok && tok != stale {
+		a.mu.Lock()
+		a.tok, a.loaded = tok, true
+		a.mu.Unlock()
+		return tok, nil
+	}
+
 	tok, err := a.auth.Refresh(ctx)
 	if err != nil {
 		return "", err
