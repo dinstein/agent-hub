@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"cmp"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -273,12 +274,11 @@ func prune(st *state, now time.Time) {
 	for k := range st.Buckets {
 		keys = append(keys, k)
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		a, b := st.Buckets[keys[i]], st.Buckets[keys[j]]
-		if a.Updated != b.Updated {
-			return a.Updated < b.Updated
+	slices.SortFunc(keys, func(a, b string) int {
+		if c := cmp.Compare(st.Buckets[a].Updated, st.Buckets[b].Updated); c != 0 {
+			return c
 		}
-		return keys[i] < keys[j]
+		return strings.Compare(a, b)
 	})
 	for _, k := range keys[:len(keys)-maxBuckets] {
 		delete(st.Buckets, k)
