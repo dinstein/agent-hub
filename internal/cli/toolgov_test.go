@@ -216,7 +216,11 @@ func TestToolQuarantine(t *testing.T) {
 
 func TestServerEnableDisableAndInspect(t *testing.T) {
 	dir := setDataDir(t)
-	mustRun(t, "", "server", "add", "github", "--cmd", "gh-mcp", "--env", "TOKEN=${GITHUB_TOKEN}")
+	// Two placeholders, one of each kind: ${SECRET_X} is a vault reference,
+	// ${ROOT} belongs to the derived-instance substitution layer and is not a
+	// credential at all. The inventory below must tell them apart.
+	mustRun(t, "", "server", "add", "github", "--cmd", "gh-mcp",
+		"--env", "TOKEN=${SECRET_GITHUB_TOKEN}", "--env", "WORKSPACE=${ROOT}")
 	// `add` leaves the entry disabled; this test is about the toggle, so put
 	// it into service first and let disable be the state change it asserts.
 	mustRun(t, "", "server", "enable", "github", "--no-probe")
@@ -252,7 +256,8 @@ func TestServerEnableDisableAndInspect(t *testing.T) {
 		t.Errorf("with no daemon the report must say it is cache-only: %+v", insp)
 	}
 	if len(insp.Secrets) != 1 || insp.Secrets[0] != "GITHUB_TOKEN" {
-		t.Errorf("secret refs = %v, want the placeholder NAME only", insp.Secrets)
+		t.Errorf("secret refs = %v, want the vault KEY of the ${SECRET_X} placeholder "+
+			"(prefix stripped) and nothing for ${ROOT}", insp.Secrets)
 	}
 
 	var schema ServerInspect

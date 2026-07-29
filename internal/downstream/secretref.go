@@ -89,6 +89,52 @@ func expandSecrets(ctx context.Context, serverID, scopeName, s string, resolve s
 	}
 }
 
+// SecretKeysIn reports the vault KEYS named by the ${SECRET_<KEY>}
+// placeholders of s, in order of appearance and with the prefix stripped —
+// the read-only half of expandSecrets, for callers that need to know what an
+// entry REQUIRES without resolving anything (the CLI's `server inspect`
+// inventory and the credential column of `server ls`).
+//
+// It exists so that "which secrets does this server need" has ONE answer.
+// Deriving that list from a private ${...} scan somewhere else is how a
+// listing ends up naming ${ROOT} as a missing credential while the real
+// ${SECRET_GITHUB_TOKEN} goes unmentioned: both rules — the SECRET_ prefix
+// and the stripping — belong to this file, and a second implementation of
+// them drifts silently because nothing fails when it does.
+//
+// TestSecretKeysInMatchesExpansion pins the two together.
+func SecretKeysIn(s string) []string {
+	if !strings.Contains(s, "${") {
+		return nil
+	}
+	var out []string
+	rest := s
+	for {
+		i := strings.Index(rest, "${")
+		if i < 0 {
+			return out
+		}
+		end := strings.Index(rest[i:], "}")
+		if end < 0 {
+			// Unterminated: not a placeholder at all (expandSecrets keeps the
+			// tail verbatim and stops here).
+			return out
+		}
+		end += i
+		name := rest[i+2 : end]
+		rest = rest[end+1:]
+		if !strings.HasPrefix(name, secretPrefix) {
+			continue // not ours; another substitution layer owns it
+		}
+		// An empty ${SECRET_} is a configuration error expandSecrets rejects at
+		// dial time. Naming "" as a required key here would be useless, so it
+		// is left to the dial to report.
+		if key := strings.TrimPrefix(name, secretPrefix); strings.TrimSpace(key) != "" {
+			out = append(out, key)
+		}
+	}
+}
+
 // resolveScoped reads one vault entry under the instance's scope, falling
 // back to the "_global" entry when the scope has no value of its own.
 //

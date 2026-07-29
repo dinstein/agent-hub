@@ -453,42 +453,28 @@ func findTool(defs []mcp.ToolDef, name string) (mcp.ToolDef, bool) {
 	return mcp.ToolDef{}, false
 }
 
-// secretRefsOf collects the ${SECRET_X} placeholder NAMES an entry uses.
-// Only names are collected: the registry stores placeholders verbatim and
-// resolution happens at connect time, so no value can pass through here.
+// secretRefsOf collects the vault KEYS an entry needs, in the exact spelling
+// `agenthub secret set` writes and `agenthub secret ls` prints. Only keys are
+// collected: the registry stores placeholders verbatim and resolution happens
+// at connect time, so no value can pass through here.
+//
+// The extraction is downstream.SecretKeysIn rather than a local ${...} scan,
+// because the two rules that turn a placeholder into a CREDENTIAL belong to
+// the resolver: only ${SECRET_<KEY>} is looked up in the vault, and the entry
+// it names is <KEY> WITHOUT the prefix. A scan that ignored both produced a
+// list that failed at exactly the cross-check it exists for — it offered
+// ${ROOT} as a secret to go and store, and asked for "SECRET_GITHUB_TOKEN"
+// when the stored key is "GITHUB_TOKEN".
 func secretRefsOf(e registry.ServerEntry) []string {
 	seen := map[string]bool{}
 	collect := func(m map[string]string) {
 		for _, v := range m {
-			for _, ref := range secretPlaceholders(v) {
-				seen[ref] = true
+			for _, key := range downstream.SecretKeysIn(v) {
+				seen[key] = true
 			}
 		}
 	}
 	collect(e.Env)
 	collect(e.Headers)
 	return sortedKeys(seen)
-}
-
-// secretPlaceholders extracts ${NAME} occurrences from a value.
-func secretPlaceholders(v string) []string {
-	var out []string
-	for i := 0; i+1 < len(v); i++ {
-		if v[i] != '$' || v[i+1] != '{' {
-			continue
-		}
-		end := -1
-		for j := i + 2; j < len(v); j++ {
-			if v[j] == '}' {
-				end = j
-				break
-			}
-		}
-		if end < 0 {
-			break
-		}
-		out = append(out, v[i+2:end])
-		i = end
-	}
-	return out
 }
