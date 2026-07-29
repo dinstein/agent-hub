@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -52,6 +54,17 @@ type ServerRow struct {
 	// --json output of an untraced entry is byte-identical to what it always
 	// was.
 	Trace bool `json:"trace,omitempty"`
+	// Auth is the credential this MACHINE holds for the server, filled in by
+	// `server ls` and `server inspect` alone — `server add` and `catalog add`
+	// leave it nil, both because their --json output stays byte-identical and
+	// because an entry that was written a microsecond ago has no credential
+	// story worth telling.
+	//
+	// It does not contradict the NeedsAuth ban above: this is what is STORED
+	// here, readable offline, while needsAuth would be a claim about what the
+	// SERVER will accept — a claim only a live 401 can make, and the one that
+	// goes stale the moment a token expires.
+	Auth *ServerAuth `json:"auth,omitempty"`
 }
 
 // target is the connection target column: the command line for stdio, the
@@ -80,33 +93,80 @@ func (l ServerList) Human(w io.Writer) error {
 	}
 	// Writes to a tabwriter only fail at Flush, which is where the error is
 	// surfaced.
-	// The TRACE column appears only when something is being traced. A trace
-	// is a temporary debugging state that writes raw payloads to disk, so it
-	// has to be visible in the listing an operator already reads — but a
-	// column that says "off" on every row for the rest of time teaches
-	// readers to stop seeing it, which is the opposite of the point.
-	traced := false
+	//
+	// Both middle columns appear only when they have something to say, for one
+	// reason: a column that reads "off" — or "-" — on every row for the rest
+	// of time teaches readers to stop seeing it, which is the opposite of the
+	// point. TRACE is a temporary debugging state that writes raw payloads to
+	// disk, so it has to be visible in the listing an operator already reads.
+	// AUTH is absent on a machine whose servers are all local subprocesses,
+	// where "no credential" is not news; the moment one server has a
+	// credential, what every OTHER row lacks becomes information too.
+	traced, credentialed := false, false
 	for _, r := range l {
-		if r.Trace {
-			traced = true
-			break
-		}
+		traced = traced || r.Trace
+		credentialed = credentialed || (r.Auth != nil && r.Auth.Kind != authKindNone)
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	head := "ID\tTRANSPORT\tENABLED\tSOURCE\tTARGET"
+	head := []string{"ID", "TRANSPORT", "ENABLED"}
+	if credentialed {
+		head = append(head, "AUTH")
+	}
 	if traced {
-		head = "ID\tTRANSPORT\tENABLED\tTRACE\tSOURCE\tTARGET"
+		head = append(head, "TRACE")
 	}
-	_, _ = fmt.Fprintln(tw, head)
+	head = append(head, "SOURCE", "TARGET")
+	_, _ = fmt.Fprintln(tw, strings.Join(head, "\t"))
 	for _, r := range l {
-		if traced {
-			_, _ = fmt.Fprintf(tw, "%s\t%s\t%t\t%s\t%s\t%s\n",
-				r.ID, r.Transport, r.Enabled, traceMark(r.Trace), r.Source, r.target())
-			continue
+		cells := []string{r.ID, r.Transport, strconv.FormatBool(r.Enabled)}
+		if credentialed {
+			cells = append(cells, r.Auth.cell())
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%t\t%s\t%s\n", r.ID, r.Transport, r.Enabled, r.Source, r.target())
+		if traced {
+			cells = append(cells, traceMark(r.Trace))
+		}
+		cells = append(cells, r.Source, r.target())
+		_, _ = fmt.Fprintln(tw, strings.Join(cells, "\t"))
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	return l.writeAuthHints(w)
+}
+
+// authHintLimit bounds the footer. Past a handful, a list of repairs stops
+// being a prompt to act and becomes a second table to read.
+const authHintLimit = 3
+
+// writeAuthHints prints the repair for every row that needs one: the AUTH
+// cell says WHICH servers are in trouble, and these lines say what to run.
+// Rows that are fine contribute nothing, so a healthy machine prints no
+// footer at all.
+func (l ServerList) writeAuthHints(w io.Writer) error {
+	var hints []string
+	for _, r := range l {
+		if h := r.Auth.hint(r.ID); h != "" {
+			hints = append(hints, h)
+		}
+	}
+	if len(hints) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	for _, h := range hints[:min(len(hints), authHintLimit)] {
+		if _, err := fmt.Fprintln(w, h); err != nil {
+			return err
+		}
+	}
+	if extra := len(hints) - authHintLimit; extra > 0 {
+		// Never silently truncated: the count is the difference between "these
+		// are the problems" and "these are three of the problems".
+		_, err := fmt.Fprintf(w, "(+%d more; 'agenthub auth status' lists them all)\n", extra)
+		return err
+	}
+	return nil
 }
 
 // traceMark renders the TRACE cell. "on" is spelled out and off is a dash,
@@ -476,17 +536,29 @@ func (a *App) newServerLsCmd() *cobra.Command {
 		Use:   "ls",
 		Short: "List every server you have added, and whether it is switched on",
 		Long: "This is what is registered, not what is working: a server listed here can\n" +
-			"still fail to start. 'agenthub server test <id>' answers that.",
+			"still fail to start. 'agenthub server test <id>' answers that.\n\n" +
+			"The AUTH column reports the credential stored on THIS machine — not whether\n" +
+			"the server accepts it, which only a real call can tell you.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, warnings, err := a.openStore()
 			if err != nil {
 				return err
 			}
+			// The credential state is an enrichment, never a precondition: its
+			// failures arrive as warnings and error cells, and the registry
+			// half of the listing is printed either way.
+			probe, probeWarnings := a.newAuthProbe(cmd.Context())
+			warnings = append(warnings, probeWarnings...)
+			now := time.Now()
+
 			snap := store.Snapshot()
 			rows := make(ServerList, 0, len(snap.Servers.V.Servers))
 			for name, doc := range snap.Servers.V.Servers {
-				rows = append(rows, rowFor(name, doc.V))
+				row := rowFor(name, doc.V)
+				auth := probe.classify(cmd.Context(), name, doc.V, now)
+				row.Auth = &auth
+				rows = append(rows, row)
 			}
 			slices.SortFunc(rows, func(x, y ServerRow) int { return strings.Compare(x.ID, y.ID) })
 			return a.printer().Emit(rows, warnings...)

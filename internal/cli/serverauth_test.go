@@ -285,3 +285,81 @@ func TestServerAuthHints(t *testing.T) {
 		})
 	}
 }
+
+// TestServerLsReportsStoredCredentials is the end-to-end half: the ladder
+// above proves the classification, this proves `server ls` actually asks —
+// against a real vault, a real registry, and the real rendering.
+func TestServerLsReportsStoredCredentials(t *testing.T) {
+	secretEnv(t) // the enc-file vault, so no test can reach the OS keychain
+
+	mustRun(t, "", "server", "add", "local", "--cmd", "srv")
+
+	// A machine with nothing to authorize gets no AUTH column at all: "-" on
+	// every row forever is the column nobody reads.
+	_, out, _ := runCLI(t, "", "server", "ls")
+	if strings.Contains(out, "AUTH") {
+		t.Errorf("ls grew an AUTH column with no credentials anywhere:\n%s", out)
+	}
+
+	mustRun(t, "", "server", "add", "api", "--url", "https://mcp.example.com/mcp",
+		"--header", "X-Api-Key=${SECRET_API_KEY}")
+
+	_, out, _ = runCLI(t, "", "server", "ls")
+	if !strings.Contains(out, "AUTH") || !strings.Contains(out, "secret:missing") {
+		t.Errorf("ls did not report the unstored secret:\n%s", out)
+	}
+	if !strings.Contains(out, "agenthub secret set api API_KEY") {
+		t.Errorf("ls did not say what to run:\n%s", out)
+	}
+	// The row that needs nothing still renders as "-", now that the column
+	// carries information.
+	if !strings.Contains(out, "local") || !strings.Contains(out, "-") {
+		t.Errorf("ls dropped the credential-free row:\n%s", out)
+	}
+
+	var rows ServerList
+	decodeInto(t, mustRun(t, "", "server", "ls", "--json"), &rows)
+	byID := map[string]ServerRow{}
+	for _, r := range rows {
+		byID[r.ID] = r
+	}
+	if a := byID["api"].Auth; a == nil || a.Kind != authKindSecret || a.State != authStateMissing ||
+		len(a.MissingSecrets) != 1 || a.MissingSecrets[0] != "API_KEY" || a.Action != api.ActionSetSecret {
+		t.Errorf("api auth = %+v", byID["api"].Auth)
+	}
+	if a := byID["local"].Auth; a == nil || a.Kind != authKindNone {
+		t.Errorf("local auth = %+v, want none", byID["local"].Auth)
+	}
+
+	mustRun(t, "sk-live-not-echoed\n", "secret", "set", "api", "API_KEY", "--stdin")
+
+	_, out, _ = runCLI(t, "", "server", "ls")
+	if strings.Contains(out, "secret:missing") || strings.Contains(out, "agenthub secret set") {
+		t.Errorf("ls still calls the stored secret missing:\n%s", out)
+	}
+	if strings.Contains(out, "sk-live-not-echoed") {
+		t.Fatalf("ls printed the secret VALUE:\n%s", out)
+	}
+	decodeInto(t, mustRun(t, "", "server", "ls", "--json"), &rows)
+	for _, r := range rows {
+		if r.ID == "api" && (r.Auth == nil || r.Auth.State != authStateStored) {
+			t.Errorf("api auth after storing = %+v", r.Auth)
+		}
+	}
+}
+
+// TestServerAddEmitsNoCredentialState pins the compatibility half: `add`
+// writes configuration and knows nothing about credentials, so its --json
+// output must not grow an auth object (nor pay for a vault read to produce
+// one).
+func TestServerAddEmitsNoCredentialState(t *testing.T) {
+	setDataDir(t)
+	var added AddedServers
+	decodeInto(t, mustRun(t, "", "server", "add", "local", "--cmd", "srv", "--json"), &added)
+	if len(added.Added) != 1 {
+		t.Fatalf("added = %+v", added.Added)
+	}
+	if added.Added[0].Auth != nil {
+		t.Errorf("add reported credential state: %+v", added.Added[0].Auth)
+	}
+}
