@@ -363,3 +363,38 @@ func TestServerAddEmitsNoCredentialState(t *testing.T) {
 		t.Errorf("add reported credential state: %+v", added.Added[0].Auth)
 	}
 }
+
+// TestServerInspectReportsStoredCredentials pins the second reader of the
+// classification. It matters that both exist: `ls` compresses the credential
+// into one cell and `inspect` spells it out, and the two must never be able
+// to describe the same vault differently.
+func TestServerInspectReportsStoredCredentials(t *testing.T) {
+	secretEnv(t)
+	mustRun(t, "", "server", "add", "api", "--url", "https://mcp.example.com/mcp",
+		"--header", "X-Api-Key=${SECRET_API_KEY}")
+
+	_, out, _ := runCLI(t, "", "server", "inspect", "api")
+	if !strings.Contains(out, "auth: secret missing") ||
+		!strings.Contains(out, "agenthub secret set api API_KEY") {
+		t.Errorf("inspect did not report the unstored secret:\n%s", out)
+	}
+
+	mustRun(t, "sk-live-not-echoed\n", "secret", "set", "api", "API_KEY", "--stdin")
+	var insp ServerInspect
+	decodeInto(t, mustRun(t, "", "server", "inspect", "api", "--json"), &insp)
+	if insp.Server.Auth == nil || insp.Server.Auth.State != authStateStored {
+		t.Errorf("auth after storing = %+v", insp.Server.Auth)
+	}
+	_, out, _ = runCLI(t, "", "server", "inspect", "api")
+	if strings.Contains(out, "sk-live-not-echoed") {
+		t.Fatalf("inspect printed the secret VALUE:\n%s", out)
+	}
+
+	// A server with nothing to authorize prints no auth line at all, the same
+	// silence `ls` keeps by dropping the column.
+	mustRun(t, "", "server", "add", "local", "--cmd", "srv")
+	_, out, _ = runCLI(t, "", "server", "inspect", "local")
+	if strings.Contains(out, "auth:") {
+		t.Errorf("inspect invented a credential line for a plain subprocess:\n%s", out)
+	}
+}

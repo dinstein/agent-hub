@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -134,6 +135,20 @@ func (i ServerInspect) Human(w io.Writer) error {
 		if _, err := fmt.Fprintf(w, "oauth: issuer=%s scopes=%s resource-metadata=%s\n",
 			dash(oa.Issuer), dash(strings.Join(oa.Scopes, " ")), dash(oa.ResourceMetadataURL)); err != nil {
 			return err
+		}
+	}
+	// The line below the hints is the other half of the same story: what this
+	// machine actually HOLDS, as against what the configuration expects. One
+	// server has the whole width to itself here, so the expiry is spelled out
+	// rather than compressed into the ls cell.
+	if r.Auth != nil && r.Auth.Kind != authKindNone {
+		if _, err := fmt.Fprintf(w, "auth: %s\n", r.Auth.line()); err != nil {
+			return err
+		}
+		if h := r.Auth.hint(r.ID); h != "" {
+			if _, err := fmt.Fprintf(w, "  %s\n", h); err != nil {
+				return err
+			}
 		}
 	}
 	if len(i.Secrets) > 0 {
@@ -373,8 +388,17 @@ func (a *App) newServerInspectCmd() *cobra.Command {
 				return err
 			}
 			defs := cached[id]
+			row := rowFor(id, entry)
+			// One server, so the probe's index-first economy buys nothing here
+			// — but sharing the classification with `server ls` is the point:
+			// two commands describing the same credential must not be able to
+			// describe it differently.
+			probe, probeWarnings := a.newAuthProbe(cmd.Context())
+			warnings = append(warnings, probeWarnings...)
+			auth := probe.classify(cmd.Context(), id, entry, time.Now())
+			row.Auth = &auth
 			out := ServerInspect{
-				Server:    rowFor(id, entry),
+				Server:    row,
 				ToolCount: len(defs),
 				CacheOnly: true,
 				Secrets:   secretRefsOf(entry),
