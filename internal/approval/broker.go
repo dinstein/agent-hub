@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 )
@@ -407,15 +407,18 @@ func (b *MemBroker) Requests() []RequestStatus {
 		out = append(out, st)
 	}
 	b.mu.Unlock()
-	sort.Slice(out, func(i, j int) bool {
-		pi, pj := out[i].Decision == nil, out[j].Decision == nil
-		if pi != pj {
-			return pi // pending before decided
+	slices.SortFunc(out, func(a, b RequestStatus) int {
+		ap, bp := a.Decision == nil, b.Decision == nil
+		if ap != bp {
+			if ap {
+				return -1 // pending before decided
+			}
+			return 1
 		}
-		if pi {
-			return out[i].Request.Deadline.Before(out[j].Request.Deadline)
+		if ap { // both pending: earlier deadline first
+			return a.Request.Deadline.Compare(b.Request.Deadline)
 		}
-		return out[i].DecidedAt.After(out[j].DecidedAt)
+		return b.DecidedAt.Compare(a.DecidedAt) // both decided: more recent first
 	})
 	return out
 }
