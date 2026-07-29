@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -137,7 +136,7 @@ func dedupSorted(in []string) []string {
 			out = append(out, s)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return slices.Compact(out)
 }
 
@@ -149,6 +148,6 @@ func sortedKeys[V any](m map[string]V) []string {
 	for k := range m {
 		out = append(out, k)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }

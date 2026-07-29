@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -216,7 +215,7 @@ func dedupSorted(in []string) []string {
 			out = append(out, s)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return slices.Compact(out)
 }
 
@@ -239,7 +238,7 @@ func sortedKeys[V any](m map[string]V) []string {
 	for k := range m {
 		out = append(out, k)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
