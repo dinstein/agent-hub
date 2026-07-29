@@ -2,6 +2,21 @@ GO ?= go
 GOLANGCI_LINT ?= golangci-lint
 NPM ?= npm
 
+# One lint cache per checkout, not one per user.
+#
+# golangci-lint's default cache is shared across everything the user builds and
+# is keyed by module path — which is the same string in every worktree of this
+# repository. Lint run here then gets served results computed in a sibling
+# worktree, against files this checkout never had; when that sibling has been
+# removed, the issues arrive carrying its absolute paths and `make lint` fails
+# on code that does not exist. The rule is fine, the tree is fine, the cache is
+# lying. Keeping it inside the checkout makes "per worktree" structural rather
+# than something to remember.
+#
+# internal/depguardtest sets the same variable for the golangci-lint it spawns
+# itself, for the same reason — it does not inherit this one.
+export GOLANGCI_LINT_CACHE ?= $(CURDIR)/.lintcache
+
 GUI_DIR := cmd/agenthub-gui
 GUI_FRONTEND := $(GUI_DIR)/frontend
 GUI_BIN ?= bin/agenthub-gui

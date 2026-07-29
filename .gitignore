@@ -29,6 +29,9 @@ node_modules/
 # Task runner checksum cache (Taskfile.yml sources/generates tracking)
 .task/
 
+# Per-checkout golangci-lint cache (the Makefile says why it must not be shared)
+/.lintcache/
+
 
 # Local dev data (agenthub writes to the platform data dir, but keep this for -data-dir overrides)
 /.agenthub/
