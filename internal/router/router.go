@@ -26,10 +26,11 @@
 package router
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/dinstein/agent-hub/internal/downstream"
@@ -182,7 +183,7 @@ func BuildFromCacheWith(cached map[string][]mcp.ToolDef, providers []Provider, p
 	for id := range cached {
 		ids = append(ids, id)
 	}
-	sort.Strings(ids)
+	slices.Sort(ids)
 	sources := make([]source, 0, len(ids))
 	for _, id := range ids {
 		sources = append(sources, source{id: id, tools: cached[id]})
@@ -234,17 +235,14 @@ func build(sources []source, pol Policy) (*Router, error) {
 	for b := range groups {
 		bases = append(bases, b)
 	}
-	sort.Strings(bases)
+	slices.Sort(bases)
 
 	taken := make(map[string]bool)
 	byExposed := make(map[string]entry)
 	for _, base := range bases {
 		g := groups[base]
-		sort.Slice(g, func(i, j int) bool {
-			if g[i].route.RawTool != g[j].route.RawTool {
-				return g[i].route.RawTool < g[j].route.RawTool
-			}
-			return g[i].route.ServerID < g[j].route.ServerID
+		slices.SortFunc(g, func(a, b cand) int {
+			return cmp.Or(cmp.Compare(a.route.RawTool, b.route.RawTool), cmp.Compare(a.route.ServerID, b.route.ServerID))
 		})
 		for i, c := range g {
 			name := ""
@@ -275,7 +273,7 @@ func build(sources []source, pol Policy) (*Router, error) {
 	for name := range byExposed {
 		ordered = append(ordered, name)
 	}
-	sort.Strings(ordered)
+	slices.Sort(ordered)
 	return &Router{byExposed: byExposed, ordered: ordered}, nil
 }
 

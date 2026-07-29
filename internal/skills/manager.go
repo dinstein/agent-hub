@@ -1,12 +1,13 @@
 package skills
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -533,7 +534,7 @@ func (m *Manager) Sync(ctx context.Context, req SyncRequest) (*SyncResult, error
 	if err != nil {
 		return nil, err
 	}
-	sort.SliceStable(res.Items, func(i, j int) bool { return res.Items[i].SkillID < res.Items[j].SkillID })
+	slices.SortStableFunc(res.Items, func(a, b SyncItem) int { return cmp.Compare(a.SkillID, b.SkillID) })
 	for _, it := range res.Items {
 		if it.Action != ActionUnchanged {
 			res.Changed = true
@@ -853,7 +854,7 @@ func (m *Manager) Verify(ctx context.Context, req VerifyRequest) (*VerifyReport,
 				Installs: []InstallView{m.verifyReceipt(st, rec, nil)},
 			})
 		}
-		sort.SliceStable(rep.Skills, func(i, j int) bool { return rep.Skills[i].SkillID < rep.Skills[j].SkillID })
+		slices.SortStableFunc(rep.Skills, func(a, b SkillVerification) int { return cmp.Compare(a.SkillID, b.SkillID) })
 		return nil
 	})
 	if err != nil {
@@ -935,11 +936,8 @@ func (m *Manager) pruneVersions(id, keep string) error {
 		}
 		versions = append(versions, versionDir{name: e.Name(), mod: info.ModTime().UnixNano()})
 	}
-	sort.Slice(versions, func(i, j int) bool {
-		if versions[i].mod != versions[j].mod {
-			return versions[i].mod > versions[j].mod
-		}
-		return versions[i].name < versions[j].name
+	slices.SortFunc(versions, func(a, b versionDir) int {
+		return cmp.Or(cmp.Compare(b.mod, a.mod), cmp.Compare(a.name, b.name))
 	})
 	for i, v := range versions {
 		if i < keptVersions-1 {

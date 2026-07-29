@@ -1,9 +1,10 @@
 package catalog
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/dinstein/agent-hub/internal/clients"
@@ -179,7 +180,7 @@ func ParseClientConfig(text string) (ParseResult, error) {
 	for name := range raws {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	for _, name := range names {
 		entry, warnings, err := entryFrom(raws[name])
 		if err != nil {
@@ -230,11 +231,11 @@ func sectionCandidates() [][]string {
 			out = append(out, loc.Section)
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if len(out[i]) != len(out[j]) {
-			return len(out[i]) > len(out[j])
+	slices.SortStableFunc(out, func(a, b []string) int {
+		if c := cmp.Compare(len(b), len(a)); c != 0 { // longer first (descending)
+			return c
 		}
-		return strings.Join(out[i], ".") < strings.Join(out[j], ".")
+		return strings.Compare(strings.Join(a, "."), strings.Join(b, "."))
 	})
 	return out
 }
@@ -414,7 +415,7 @@ func literalCredentials(e registry.ServerEntry) []string {
 			}
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -633,6 +634,6 @@ func (f fields) unknownKeys() []string {
 			out = append(out, k)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }

@@ -2,6 +2,7 @@ package skills
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,7 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"syscall"
 	"time"
 
@@ -172,7 +173,7 @@ func (st *state) sortedSkills() []Skill {
 	for _, s := range st.skills.Skills {
 		out = append(out, s)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	slices.SortFunc(out, func(a, b Skill) int { return cmp.Compare(a.ID, b.ID) })
 	return out
 }
 
@@ -301,18 +302,9 @@ func (m *Manager) loadState() (*state, error) {
 }
 
 func (m *Manager) saveState(st *state) error {
-	sort.Slice(st.installs.Installs, func(i, j int) bool {
-		a, b := st.installs.Installs[i], st.installs.Installs[j]
-		if a.ClientID != b.ClientID {
-			return a.ClientID < b.ClientID
-		}
-		if a.Scope != b.Scope {
-			return a.Scope < b.Scope
-		}
-		if a.Container != b.Container {
-			return a.Container < b.Container
-		}
-		return a.SkillID < b.SkillID
+	slices.SortFunc(st.installs.Installs, func(a, b InstallState) int {
+		return cmp.Or(cmp.Compare(a.ClientID, b.ClientID), cmp.Compare(a.Scope, b.Scope),
+			cmp.Compare(a.Container, b.Container), cmp.Compare(a.SkillID, b.SkillID))
 	})
 	st.skills.Version = storeVersion
 	st.installs.Version = storeVersion

@@ -33,10 +33,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"cmp"
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -377,11 +378,8 @@ func isAbsMountPath(p string) bool {
 // of the config and not of map/slice authoring order.
 func sortedMounts(in []Mount) []Mount {
 	out := append([]Mount(nil), in...)
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].target() != out[j].target() {
-			return out[i].target() < out[j].target()
-		}
-		return out[i].Source < out[j].Source
+	slices.SortStableFunc(out, func(a, b Mount) int {
+		return cmp.Or(cmp.Compare(a.target(), b.target()), cmp.Compare(a.Source, b.Source))
 	})
 	return out
 }
@@ -391,7 +389,7 @@ func sortedKeys(m map[string]string) []string {
 	for k := range m {
 		out = append(out, k)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

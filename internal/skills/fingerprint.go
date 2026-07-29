@@ -1,11 +1,12 @@
 package skills
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 )
 
 // HashSchemaVersion prefixes every skill fingerprint ("v1:<hex>") and is
@@ -59,7 +60,7 @@ func SnapshotOf(s *Skill) Snapshot {
 func Fingerprint(s Snapshot) (string, error) {
 	files := make([]FileEntry, len(s.Files))
 	copy(files, s.Files)
-	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	slices.SortFunc(files, func(a, b FileEntry) int { return cmp.Compare(a.Path, b.Path) })
 	s.Files = files
 	payload, err := json.Marshal(s)
 	if err != nil {
@@ -77,7 +78,7 @@ func Fingerprint(s Snapshot) (string, error) {
 func ContentHash(files []FileEntry) string {
 	sorted := make([]FileEntry, len(files))
 	copy(sorted, files)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Path < sorted[j].Path })
+	slices.SortFunc(sorted, func(a, b FileEntry) int { return cmp.Compare(a.Path, b.Path) })
 	h := sha256.New()
 	for _, f := range sorted {
 		// hash.Hash writes never fail; the error is discarded deliberately.

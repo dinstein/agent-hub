@@ -8,8 +8,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"cmp"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -118,7 +119,7 @@ func (m *Manager) scanTree(src string) (*scanned, error) {
 	if len(out.files) == 0 {
 		return nil, &ImportError{Path: root, Reason: "package is empty"}
 	}
-	sort.Slice(out.files, func(i, j int) bool { return out.files[i].Path < out.files[j].Path })
+	slices.SortFunc(out.files, func(a, b FileEntry) int { return cmp.Compare(a.Path, b.Path) })
 
 	raw, err := os.ReadFile(filepath.Join(root, SkillFileName))
 	switch {
@@ -243,7 +244,7 @@ func hashDir(root string) (string, []FileEntry, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	slices.SortFunc(files, func(a, b FileEntry) int { return cmp.Compare(a.Path, b.Path) })
 	return ContentHash(files), files, nil
 }
 

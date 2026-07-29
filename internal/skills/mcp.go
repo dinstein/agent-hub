@@ -6,8 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"cmp"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -126,7 +127,7 @@ func (p *Provider) Refresh(ctx context.Context) error {
 			Annotations: Annotations(),
 		})
 	}
-	sort.Slice(snap.tools, func(i, j int) bool { return snap.tools[i].Name < snap.tools[j].Name })
+	slices.SortFunc(snap.tools, func(a, b mcp.ToolDef) int { return cmp.Compare(a.Name, b.Name) })
 	p.snap.Store(snap)
 	return nil
 }
@@ -305,7 +306,7 @@ func renderSkillDocument(sk *Skill, body string) (string, bool) {
 			attach = append(attach, f.Path)
 		}
 	}
-	sort.Strings(attach)
+	slices.Sort(attach)
 	if len(attach) > 0 {
 		fmt.Fprintf(&b, "\n_Bundled files kept in the agenthub library, not delivered over MCP: %s_\n",
 			strings.Join(attach, ", "))

@@ -1,7 +1,7 @@
 package router
 
 import (
-	"sort"
+	"slices"
 
 	"github.com/dinstein/agent-hub/internal/downstream"
 )
@@ -27,7 +27,7 @@ func NewCatalog(servers map[string][]string) Catalog {
 	for id, tools := range servers {
 		cp := make([]string, len(tools))
 		copy(cp, tools)
-		sort.Strings(cp)
+		slices.Sort(cp)
 		dedup := cp[:0]
 		for i, t := range cp {
 			if i == 0 || t != cp[i-1] {
