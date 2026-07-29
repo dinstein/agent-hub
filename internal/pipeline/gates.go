@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -77,8 +77,8 @@ func ScopeAllows(es *scope.EffectiveScope, serverID, rawTool string) bool {
 		return false
 	}
 	// ToolView.Tools is sorted by scope.Merge (invariant).
-	i := sort.SearchStrings(view.Tools, rawTool)
-	return i < len(view.Tools) && view.Tools[i] == rawTool
+	_, found := slices.BinarySearch(view.Tools, rawTool)
+	return found
 }
 
 // scopeGate is the visibility gate: is the routed (server, tool) visible to
@@ -253,7 +253,7 @@ func precheckViolation(req *CallRequest) *BlockedError {
 	for name := range args {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	for _, name := range names {
 		prop, declared := schema.Properties[name]
 		if !declared {

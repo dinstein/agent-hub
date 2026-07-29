@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -237,7 +237,7 @@ func healArgs(args, schema json.RawMessage) (json.RawMessage, []fix, bool) {
 	for name := range obj {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	for _, name := range names {
 		prop, declared := full.Properties[name]
 		if !declared {
