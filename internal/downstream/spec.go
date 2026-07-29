@@ -244,9 +244,29 @@ type Deps struct {
 	// such as connection refused — flip Server.Health() to ConnError.
 	PingInterval time.Duration
 
-	// Trace is the per-server JSON-RPC frame log (OpenServerLog). nil = no
-	// tracing; a non-nil log still records nothing until SetEnabled(true).
-	Trace *ServerLog
+	// TraceFor returns the JSON-RPC frame log of ONE server (OpenServerLog).
+	// nil, or a nil return, means no tracing; a non-nil log still records
+	// nothing until SetEnabled(true).
+	//
+	// A function rather than a *ServerLog for the same reason AuthFor is a
+	// function rather than Auth: Deps is shared by every server and every
+	// derived instance of one gateway, while a ServerLog carries the server
+	// id it was opened with — into its file name AND into every frame's
+	// `server` field. One shared log would therefore file every server's
+	// frames under whichever server happened to open it, and label them as
+	// that server. There is no assembly for which that is correct, so the
+	// plain field is not kept as a fallback: keeping it would preserve the
+	// ability to express the bug.
+	TraceFor func(spec Spec) *ServerLog
+}
+
+// traceFor returns the frame log of one instance, or nil when the assembly
+// wired none.
+func (d Deps) traceFor(spec Spec) *ServerLog {
+	if d.TraceFor == nil {
+		return nil
+	}
+	return d.TraceFor(spec)
 }
 
 // authFor returns the TokenSource of one instance: the per-instance source

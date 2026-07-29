@@ -48,7 +48,7 @@ func TestServerLogOffByDefaultRecordsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenServerLog: %v", err)
 	}
-	s := startServer(t, downstream.Deps{Trace: log}, fakemcp.Minimal("echo"))
+	s := startServer(t, downstream.Deps{TraceFor: func(downstream.Spec) *downstream.ServerLog { return log }}, fakemcp.Minimal("echo"))
 	if _, err := s.Call(context.Background(), "echo", json.RawMessage(`"x"`)); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestServerLogRecordsFramePairs(t *testing.T) {
 	if want := downstream.ServerLogPath(dir, "fake"); log.Path() != want {
 		t.Fatalf("log path = %q, want %q (writer and CLI reader must agree)", log.Path(), want)
 	}
-	s := startServer(t, downstream.Deps{Trace: log}, fakemcp.Minimal("echo"))
+	s := startServer(t, downstream.Deps{TraceFor: func(downstream.Spec) *downstream.ServerLog { return log }}, fakemcp.Minimal("echo"))
 	if _, err := s.Call(context.Background(), "echo", json.RawMessage(`"payload-marker"`)); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestServerLogToggle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenServerLog: %v", err)
 	}
-	s := startServer(t, downstream.Deps{Trace: log}, fakemcp.Minimal("echo"))
+	s := startServer(t, downstream.Deps{TraceFor: func(downstream.Spec) *downstream.ServerLog { return log }}, fakemcp.Minimal("echo"))
 	if _, err := s.Call(context.Background(), "echo", json.RawMessage(`"before"`)); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
@@ -154,6 +154,103 @@ func TestServerLogNameSanitizesID(t *testing.T) {
 		if filepath.Dir(full) != "/logs" {
 			t.Errorf("ServerLogPath(%q) = %q escaped the logs directory", id, full)
 		}
+	}
+}
+
+// TraceFor is asked per spec, so two servers sharing one Deps write to their
+// OWN files. This is the whole reason the field is a function: a plain
+// *ServerLog on the shared Deps filed every server's frames under whichever
+// server opened it, and stamped them with that server's id.
+func TestServerLogTraceForKeepsServersApart(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	logs := map[string]*downstream.ServerLog{}
+	for _, id := range []string{"alpha", "beta"} {
+		l, err := downstream.OpenServerLog(dir, id, true)
+		if err != nil {
+			t.Fatalf("OpenServerLog(%s): %v", id, err)
+		}
+		logs[id] = l
+	}
+	dial, _ := inProcessDial(fakemcp.Minimal("echo"))
+	deps := downstream.Deps{
+		Dial:     dial,
+		TraceFor: func(spec downstream.Spec) *downstream.ServerLog { return logs[spec.ID] },
+	}
+	for _, id := range []string{"alpha", "beta"} {
+		s, err := downstream.Connect(context.Background(), downstream.Spec{ID: id}, deps)
+		if err != nil {
+			t.Fatalf("Connect(%s): %v", id, err)
+		}
+		if _, err := s.Call(context.Background(), "echo", json.RawMessage(`"`+id+`-marker"`)); err != nil {
+			t.Fatalf("Call(%s): %v", id, err)
+		}
+		s.Close()
+		if err := logs[id].Close(); err != nil {
+			t.Fatalf("Close(%s): %v", id, err)
+		}
+	}
+	for _, id := range []string{"alpha", "beta"} {
+		other := "beta-marker"
+		if id == "beta" {
+			other = "alpha-marker"
+		}
+		blob := readAll(t, downstream.ServerLogPath(dir, id))
+		if !strings.Contains(blob, id+"-marker") {
+			t.Errorf("%s's log is missing its own frame", id)
+		}
+		if strings.Contains(blob, other) {
+			t.Errorf("%s's log holds %s — the two servers share one sink", id, other)
+		}
+		for _, f := range readFrames(t, downstream.ServerLogPath(dir, id)) {
+			if f.Server != id {
+				t.Errorf("%s's log carries a frame labelled %q", id, f.Server)
+			}
+		}
+	}
+}
+
+// Derived instances of ONE server share that server's single log file, so
+// each frame has to say which instance it came from; the base connection
+// leaves the field off entirely.
+func TestServerLogStampsDeriveKey(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	log, err := downstream.OpenServerLog(dir, "fake", true)
+	if err != nil {
+		t.Fatalf("OpenServerLog: %v", err)
+	}
+	dial, _ := inProcessDial(fakemcp.Minimal("echo"))
+	deps := downstream.Deps{
+		Dial:     dial,
+		TraceFor: func(downstream.Spec) *downstream.ServerLog { return log },
+	}
+	specs := []downstream.Spec{
+		{ID: "fake"},
+		{ID: "fake", DeriveKey: downstream.DeriveKey("root:/w")},
+	}
+	for _, spec := range specs {
+		s, err := downstream.Connect(context.Background(), spec, deps)
+		if err != nil {
+			t.Fatalf("Connect(%q): %v", spec.DeriveKey, err)
+		}
+		if _, err := s.Call(context.Background(), "echo", json.RawMessage(`"x"`)); err != nil {
+			t.Fatalf("Call(%q): %v", spec.DeriveKey, err)
+		}
+		s.Close()
+	}
+	if err := log.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, f := range readFrames(t, log.Path()) {
+		seen[f.Inst] = true
+	}
+	if !seen[""] {
+		t.Error("no frame from the base connection (inst must be omitted there)")
+	}
+	if !seen["root:/w"] {
+		t.Errorf("no frame stamped with the derived instance; saw %v", seen)
 	}
 }
 

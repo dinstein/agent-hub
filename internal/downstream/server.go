@@ -71,6 +71,11 @@ type Server struct {
 	// trace is the per-server JSON-RPC frame log; nil = not wired (the
 	// nil *ServerLog methods are no-ops, so there is no nil check below).
 	trace *ServerLog
+	// traceInst is this instance's DeriveKey, stamped on every frame it
+	// writes. Derived instances of one server share one log file, so without
+	// it their frames interleave into what reads like a single conversation.
+	// "" is the base connection.
+	traceInst string
 
 	// reconnects counts AUTOMATIC reconnects and is deliberately NEVER
 	// reset by a successful reconnect: a server that dies right after every
@@ -131,7 +136,8 @@ func Connect(ctx context.Context, spec Spec, deps Deps) (*Server, error) {
 		calls:          make(chan callReq, 1),
 		refreshCh:      make(chan struct{}, 1),
 		health:         newHealthTracker(time.Now()),
-		trace:          deps.Trace,
+		trace:          deps.traceFor(spec),
+		traceInst:      string(spec.DeriveKey),
 		ownerDone:      make(chan struct{}),
 	}
 
@@ -436,10 +442,10 @@ func (s *Server) callTransport(ctx context.Context, tr transport.Transport, meth
 	if !s.trace.Enabled() {
 		return tr.Call(ctx, method, params)
 	}
-	s.trace.out(method, params)
+	s.trace.out(s.traceInst, method, params)
 	start := time.Now()
 	raw, err := tr.Call(ctx, method, params)
-	s.trace.in(method, raw, err, time.Since(start))
+	s.trace.in(s.traceInst, method, raw, err, time.Since(start))
 	return raw, err
 }
 

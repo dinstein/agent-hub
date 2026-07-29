@@ -33,7 +33,14 @@ const (
 	// oversized LINE with a marker, which would lose the frame entirely —
 	// truncating the payload here keeps the method, direction and timing,
 	// which is what a trace is for.
-	tracePayloadCap = 1024
+	//
+	// It matches audit.InspectMaxBody deliberately. Both are the same
+	// decision — how much of a captured body is worth keeping — and two
+	// different answers to it would only mean that whichever stream you
+	// happened to read told you a different story about the same frame. The
+	// previous 1 KiB cut a typical tools/call result mid-object, which is
+	// the case a trace is opened for in the first place.
+	tracePayloadCap = audit.InspectMaxBody
 )
 
 // TraceDir names the direction of a logged frame.
@@ -60,6 +67,16 @@ type TraceFrame struct {
 	Error string `json:"error,omitempty"`
 	// DurMs is the round-trip duration; set on inbound frames only.
 	DurMs int64 `json:"durMs,omitempty"`
+	// Inst names the derived instance a frame belongs to (Spec.DeriveKey),
+	// and is empty for the base connection. One server's derived instances
+	// share one log file — the file is named for the server, not for a
+	// connection — so without this field the frames of two instances
+	// interleave into something that reads like one conversation.
+	//
+	// It is last and omitempty so the frozen field order above is untouched
+	// and a line from a base connection is byte-identical to one written
+	// before this field existed.
+	Inst string `json:"inst,omitempty"`
 }
 
 // ServerLog is the per-server trace sink. The zero value is not usable; a
@@ -159,20 +176,21 @@ func (l *ServerLog) Close() error {
 	return l.w.Close()
 }
 
-// out records an outbound request frame.
-func (l *ServerLog) out(method string, params json.RawMessage) {
+// out records an outbound request frame. inst is the caller's DeriveKey, or
+// "" for the base connection.
+func (l *ServerLog) out(inst, method string, params json.RawMessage) {
 	if !l.Enabled() {
 		return
 	}
-	l.append(TraceFrame{Dir: TraceOut, Method: method}, params)
+	l.append(TraceFrame{Dir: TraceOut, Method: method, Inst: inst}, params)
 }
 
 // in records an inbound response frame (or the failure that replaced it).
-func (l *ServerLog) in(method string, raw json.RawMessage, err error, dur time.Duration) {
+func (l *ServerLog) in(inst, method string, raw json.RawMessage, err error, dur time.Duration) {
 	if !l.Enabled() {
 		return
 	}
-	f := TraceFrame{Dir: TraceIn, Method: method, DurMs: dur.Milliseconds()}
+	f := TraceFrame{Dir: TraceIn, Method: method, DurMs: dur.Milliseconds(), Inst: inst}
 	if err != nil {
 		f.Error = err.Error()
 	}
