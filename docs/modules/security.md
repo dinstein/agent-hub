@@ -534,9 +534,26 @@ deny set is retained — never relaxed because a read failed. The gateway also u
 into the data plane would make every unapproved tool vanish from the catalog under ModeManual, which
 is a change to default product behavior, not a storage detail.
 
-Still without a non-test caller: `CheckServer`, `IsQuarantined`, `BaselineTrust`, and
-`QuarantineStore.Add`. `internal/cli/toolgov.go` drives
-`Observe`/`Approve`/`Block`/`Rebaseline`/`Pins`/`quarantine ls|release`, and the drift column of
+Still without a non-test caller: `CheckServer`, `IsQuarantined`, `BaselineTrust`,
+`QuarantineStore.Add`, `Block`, and `DefaultModeFor`. An inventory of what is NOT wired is exactly
+the kind nothing forces anyone to revisit, and the last two entries were missing from it while this
+paragraph described both as though they were in service — so `test/buildrules` now fails if any
+listed symbol acquires a caller. It checks five of the six: `QuarantineStore.Add` shares a method
+name with `sync.WaitGroup`, `time.Time` and the fsnotify watcher, and attributing it by name alone
+reports unrelated calls as evidence. The reverse direction — that a newly-unwired export gets added
+here — needs call-graph analysis and remains a review question, not a guarantee.
+
+- **`Block` has no command.** There is no `agenthub tool block`. The atomic approve-and-disable
+  write described above exists at the storage layer and nothing reaches it; blocking a tool today
+  means `agenthub tool disable`, which sets `Disabled` without pinning the hash.
+- **`DefaultModeFor` decides nothing.** The one non-test `Observe` call
+  (`internal/confops/toolgov.go`) passes `ModeManual` outright, so provenance selects an approval
+  mode nowhere and no tool ever self-approves. The `[*] --> Approved: auto_approve
+  (provenance=local)` edge in the diagram above is a property of the state machine, not a path the
+  assembled product can take.
+
+`internal/cli/toolgov.go` drives `Approve`/`Rebaseline`/`Pins`/`quarantine ls|release`, and
+`Observe` reaches the store through `internal/confops`. The drift column of
 `agenthub tool pins` is computed by the CLI itself comparing `Fingerprint` against pins entry by
 entry, without going through `CheckServer`. In other words, the **automatic** drift-grading and
 auto-quarantine chain is fully implemented at the storage layer with cross-process tests, but is not

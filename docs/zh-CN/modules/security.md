@@ -427,11 +427,28 @@ gateway 通过 `internal/gateway/toolpolicy.go` 消费两个 store：`ApprovalSt
 `DisabledTools` **只投影 `Disabled` 标志，不投影 `Status`**——把 `CallAllowed()` 整体搬进数据面会让
 ModeManual 下所有未审批工具从目录里消失，那是产品默认行为的变更，不是存储细节。
 
-仍然没有非测试调用方的是：`CheckServer`、`IsQuarantined`、`BaselineTrust`、`QuarantineStore.Add`。
-`internal/cli/toolgov.go` 驱动 `Observe`/`Approve`/`Block`/`Rebaseline`/`Pins`/`quarantine ls|release`，
-而 `agenthub tool pins` 的 drift 列是 CLI 自己用 `Fingerprint` 与 pin 逐条比对算出来的，没有走
-`CheckServer`。也就是说**自动**漂移分级与自动隔离这条链路在存储层已完整实现并有跨进程测试，但尚未接入
-网关的目录刷新路径；隔离集当前只能由 CLI/daemon 写入，写入后网关会立即兑现。
+仍然没有非测试调用方的是：`CheckServer`、`IsQuarantined`、`BaselineTrust`、`QuarantineStore.Add`、
+`Block`、`DefaultModeFor`。一份记录「什么**没有**接线」的清单，恰恰是没有任何东西会逼人回头再看一眼
+的那种；后两项曾经不在清单上，而这同一段却把它们当成在服役的能力来写——所以 `test/buildrules` 现在会
+在清单里任何一个符号长出调用方时失败。它检查六个里的五个：`QuarantineStore.Add` 的方法名和
+`sync.WaitGroup`、`time.Time`、fsnotify 的 watcher 撞车，只按名字去认会把无关的调用当成证据。反方向
+——新变成未接线的导出要被加进这份清单——需要调用图分析，仍然只是一个 review 问题，不是一份保证。
+
+这两项值得单独点名，因为它们此前都被写得像是在服役：
+
+- **`Block` 没有对应的命令。** 不存在 `agenthub tool block`。上面描述的那次「审批并禁用」的原子写入
+  只存在于存储层，没有任何东西够得到它；今天要封掉一个工具用的是 `agenthub tool disable`，它只置
+  `Disabled`，不钉住哈希。
+- **`DefaultModeFor` 不决定任何事。** 唯一那处非测试的 `Observe` 调用
+  （`internal/confops/toolgov.go`）直接传的是 `ModeManual`，所以 provenance 在任何地方都没有去选审批
+  模式，也没有任何工具会自审批。上面状态图里那条 `[*] --> Approved: auto_approve
+  (provenance=local)` 是状态机自身的性质，不是装配好的产品走得到的路径。
+
+`internal/cli/toolgov.go` 驱动 `Approve`/`Rebaseline`/`Pins`/`quarantine ls|release`，而 `Observe`
+是经 `internal/confops` 到达存储的。`agenthub tool pins` 的 drift 列是 CLI 自己用 `Fingerprint` 与
+pin 逐条比对算出来的，没有走 `CheckServer`。也就是说**自动**漂移分级与自动隔离这条链路在存储层已完整
+实现并有跨进程测试，但尚未接入网关的目录刷新路径；隔离集当前只能由 CLI/daemon 写入，写入后网关会立即
+兑现。
 
 ---
 
