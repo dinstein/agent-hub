@@ -605,8 +605,10 @@ auth、audit、activity、events、config、doctor、connect）保持原名，�
 不再有 `scope` 组：绑定归 `client bind` / `unbind` / `ls`，收窄归 `profile`。
 同一份测试还钉住了帮助分组的成员——Setup 是 `server, auth, catalog`（`catalog` 只有一小撮策展条目，
 让它打头会教出一条对多数 server 以「没收录」结尾的路；`server add --url ...` 才是通用答案），
-Wire up 是 `profile, client, skill`（一份面**装了什么**和**给谁**是同一个问题的两半），
-Govern 收下了 `secret`、`tool`、`token`，Operate 不变。
+Wire up 是 `profile, client`（一份面**装了什么**和**给谁**是同一个问题的两半），
+Govern 收下了 `secret`、`tool`、`token`，Operate 收下了 `skill`。
+`skill` 不在 Wire up：把技能包物化出来和「给 client 发 MCP 工具」是两件事，
+而 shipped build 的帮助页是一条路线推荐——`profile` 和 `client` 旁边多一项会被读成第三个必做步骤。
 每个 group 裸调用打印 help 且退出 0，未知子命令退出 2。
 
 **错误文案是 golden 测试冻结的**（`errorgolden_test.go`）。canonical.md §6 要求三族 golden

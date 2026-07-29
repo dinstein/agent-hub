@@ -46,7 +46,7 @@ var withheldGroups = []*cobra.Group{groupGovern, groupOperate}
 // model. Setup -> profile -> client bind is the whole everyday path.
 var withheldCommands = []string{
 	"approval", "grant", "config", "audit", "secret", "tool", "token",
-	"daemon", "session", "events", "activity", "doctor",
+	"daemon", "session", "events", "activity", "skill", "doctor",
 }
 
 // walk visits every command in the tree, root included.
@@ -238,9 +238,9 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		// normally handled by `server add` and `auth login`, and a manual
 		// command up front implies a step the everyday path does not have.
 		{"setup", []string{"server", "auth", "catalog"}},
-		{"wire", []string{"profile", "client", "skill"}},
+		{"wire", []string{"profile", "client"}},
 		{"govern", []string{"approval", "grant", "config", "audit", "secret", "tool", "token"}},
-		{"operate", []string{"daemon", "session", "events", "activity", "doctor"}},
+		{"operate", []string{"daemon", "session", "events", "activity", "skill", "doctor"}},
 		{"entry", []string{"connect"}},
 	}
 	root := newTestRoot(t)
@@ -402,7 +402,7 @@ func TestReleaseHidesExactlyTheWithheldCommands(t *testing.T) {
 			t.Errorf("release --help dropped the %q heading, which stays visible:\n%s", g.ID, out)
 		}
 	}
-	for _, other := range []string{"catalog", "server", "auth", "profile", "client", "skill", "connect"} {
+	for _, other := range []string{"catalog", "server", "auth", "profile", "client", "connect"} {
 		if !strings.Contains(out, "  "+other+" ") {
 			t.Errorf("release --help dropped %q, which is not withheld:\n%s", other, out)
 		}

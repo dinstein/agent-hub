@@ -793,9 +793,12 @@ SIGTTIN/SIGTTOU.
 **The help page is grouped by task phase, and a release build shows a subset.** The groups are Setup
 (`server`, `auth`, `catalog` — `server add --url ...` is the general answer, so it leads, and the curated
 catalog trails because leading with it teaches a path that ends in "not listed" for most servers), Wire up
-(`profile`, `client`, `skill` — a profile says what a surface *contains*, `client bind` says who gets it,
+(`profile`, `client` — a profile says what a surface *contains*, `client bind` says who gets it,
 so the two halves of one question sit together), Govern (`approval`, `grant`, `config`, `audit`, `secret`,
-`tool`, `token`), Operate, and the machine entry point `connect`. `secret` is deliberately **not** in
+`tool`, `token`), Operate (which also holds `skill`), and the machine entry point `connect`.
+`skill` is deliberately not in Wire up: materializing skill packages is a separate job from giving a
+client MCP tools, and a shipped build's help page is a route recommendation — a third entry beside
+`profile` and `client` reads as a third required step. `secret` is deliberately **not** in
 Setup: credentials are normally handled for the operator (`server add` prompts, `auth login` stores its
 own), so a manual secret command in the first section would imply a step the everyday path does not have.
 `Options.ReducedHelp` (set for release builds only) withholds **Govern and Operate**. Every withheld

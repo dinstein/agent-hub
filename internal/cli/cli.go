@@ -175,7 +175,12 @@ func (a *App) newRoot() *cobra.Command {
 	// bind` says who gets it. Splitting them across a visible and a withheld
 	// group left a shipped build able to connect a client but not to say what
 	// that client would see.
-	addGrouped(root, groupWire, a.newProfileCmd(), a.newClientCmd(), a.newSkillCmd())
+	//
+	// `skill` is deliberately NOT here. Materializing skill packages is a
+	// separate job from giving a client MCP tools, and a shipped build's help
+	// page is a recommendation of the everyday path — a third entry beside
+	// `profile` and `client` reads as a third required step.
+	addGrouped(root, groupWire, a.newProfileCmd(), a.newClientCmd())
 	// Hidden takes these two groups off the help page only: cobra still
 	// resolves and runs them, so `agenthub tool ls` or `agenthub audit tail`
 	// behaves identically in a release build. Routing them through the same
@@ -185,7 +190,8 @@ func (a *App) newRoot() *cobra.Command {
 		a.newApprovalCmd(), a.newGrantCmd(), a.newConfigCmd(), a.newAuditCmd(),
 		a.newSecretCmd(), a.newToolCmd(), a.newTokenCmd())
 	addGroupedHidden(root, a.reducedHelp, groupOperate,
-		a.newDaemonCmd(), a.newSessionCmd(), a.newEventsCmd(), a.newActivityCmd(), a.newDoctorCmd())
+		a.newDaemonCmd(), a.newSessionCmd(), a.newEventsCmd(), a.newActivityCmd(),
+		a.newSkillCmd(), a.newDoctorCmd())
 	addGrouped(root, groupEntry, a.newConnectCmd())
 	return root
 }
