@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/downstream"
 )
 
@@ -255,6 +256,14 @@ func readTraceFrom(path string, offset int64) ([]downstream.TraceFrame, int, err
 		if line == "" {
 			continue
 		}
+		// The oversize marker FIRST: it shares the "ts" field with a frame,
+		// so it unmarshals into TraceFrame without error and yields a zero
+		// value — a blank row claiming nothing happened, in place of the one
+		// frame big enough to be worth reading.
+		if m, ok := audit.DecodeOversize([]byte(line)); ok {
+			frames = append(frames, oversizeFrame(m))
+			continue
+		}
 		var f downstream.TraceFrame
 		if json.Unmarshal([]byte(line), &f) != nil {
 			skipped++
@@ -276,4 +285,48 @@ func dashInt(n int) string {
 		return "-"
 	}
 	return strconv.Itoa(n)
+}
+
+// oversizeFrame renders an audit oversize marker as a frame, so a reader
+// sees WHAT was lost and how big it was instead of an empty row.
+//
+// Dir/Method come out of the marker's prefix when they are still in it: the
+// prefix is the head of the original line, which is where those fields sit.
+// Recovering them by parsing text is ugly, and it is worth it — "the 64 KB
+// tools/list response was dropped" is a different diagnosis from "something
+// was dropped", and the trace was opened to make exactly that distinction.
+func oversizeFrame(m audit.OversizeMarker) downstream.TraceFrame {
+	f := downstream.TraceFrame{
+		Bytes: m.OrigBytes,
+		Error: fmt.Sprintf("frame dropped: its line exceeded the %d-byte bound (%d bytes)",
+			audit.DefaultMaxLineBytes, m.OrigBytes),
+		Truncated: true,
+	}
+	if ts, err := time.Parse(time.RFC3339Nano, m.TS); err == nil {
+		f.TS = ts
+	}
+	f.Dir = fieldFromPrefix(m.Prefix, "dir")
+	f.Method = fieldFromPrefix(m.Prefix, "method")
+	if v := fieldFromPrefix(m.Prefix, "server"); v != "" {
+		f.Server = v
+	}
+	return f
+}
+
+// fieldFromPrefix pulls one string field out of the truncated JSON head a
+// marker carries. It is deliberately literal — the prefix is a fragment, so
+// it cannot be unmarshaled — and returns "" for anything it cannot find
+// rather than guessing.
+func fieldFromPrefix(prefix, key string) string {
+	needle := `"` + key + `":"`
+	i := strings.Index(prefix, needle)
+	if i < 0 {
+		return ""
+	}
+	rest := prefix[i+len(needle):]
+	j := strings.IndexByte(rest, '"')
+	if j < 0 {
+		return ""
+	}
+	return rest[:j]
 }

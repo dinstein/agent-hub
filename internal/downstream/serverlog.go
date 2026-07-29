@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dinstein/agent-hub/internal/audit"
 )
@@ -30,18 +31,38 @@ const (
 	serverLogPrefix = "server-"
 	// serverLogExt is the frozen file-name extension.
 	serverLogExt = ".log"
-	// tracePayloadCap bounds one recorded payload. audit.Writer replaces an
-	// oversized LINE with a marker, which would lose the frame entirely —
-	// truncating the payload here keeps the method, direction and timing,
-	// which is what a trace is for.
+	// tracePayloadCap is the FIRST, cheap cut of a recorded payload: it caps
+	// how much of a body is worth keeping at all. It matches
+	// audit.InspectMaxBody deliberately — both answer the same question, and
+	// two different answers would mean whichever stream you happened to read
+	// told you a different story about the same frame.
 	//
-	// It matches audit.InspectMaxBody deliberately. Both are the same
-	// decision — how much of a captured body is worth keeping — and two
-	// different answers to it would only mean that whichever stream you
-	// happened to read told you a different story about the same frame. The
-	// previous 1 KiB cut a typical tools/call result mid-object, which is
-	// the case a trace is opened for in the first place.
+	// It is NOT what keeps the line writable. See traceLineBudget.
 	tracePayloadCap = audit.InspectMaxBody
+
+	// traceLineBudget bounds the SERIALIZED line, which is the bound that
+	// actually exists: audit.Writer replaces an over-long line with a marker
+	// and drops the record.
+	//
+	// Capping the raw payload cannot honour it, and quietly did not. A
+	// payload cut to tracePayloadCap goes into a JSON string, where every
+	// quote and backslash doubles and every control byte becomes six
+	// characters — so 4 KiB of JSON body serializes to well over 4 KiB, plus
+	// the envelope. With both numbers set to 4096 the arithmetic could not
+	// work out, and the frames it failed on were exactly the ones a trace is
+	// opened for: a 64 KB tools/list, a large tools/call result. They were
+	// replaced by markers, and `server logs` rendered those as blank rows.
+	//
+	// The bound cannot simply be raised, either. audit's 4096 is PIPE_BUF:
+	// it is what makes a line from one of N gateway processes appending to
+	// the same file atomic. Trading it for a bigger payload would trade
+	// "some frames are dropped" for "frames from two processes tear into
+	// each other", which is worse and much harder to recognise.
+	//
+	// So the payload is fitted to the serialized size instead (see append),
+	// which yields the largest body that can actually be written and never
+	// produces a marker. -1 leaves room for the newline audit.Writer adds.
+	traceLineBudget = audit.DefaultMaxLineBytes - 1
 )
 
 // TraceDir names the direction of a logged frame.
@@ -219,8 +240,7 @@ func (l *ServerLog) append(f TraceFrame, payload json.RawMessage) {
 	f.PID = os.Getpid()
 	f.Bytes = len(payload)
 	if len(payload) > tracePayloadCap {
-		f.Payload = string(payload[:tracePayloadCap])
-		f.Truncated = true
+		f.Payload, f.Truncated = trimValidUTF8(string(payload), tracePayloadCap), true
 	} else if len(payload) > 0 {
 		f.Payload = string(payload)
 	}
@@ -228,5 +248,41 @@ func (l *ServerLog) append(f TraceFrame, payload json.RawMessage) {
 	if err != nil {
 		return
 	}
+	// Fit the SERIALIZED line, not the raw payload (traceLineBudget). Each
+	// pass cuts by the overflow measured in serialized bytes, so it converges
+	// in a couple of rounds even though escaping makes the relationship
+	// between the two sizes non-linear. The loop is bounded regardless:
+	// every pass removes at least one byte of payload, and it stops when the
+	// payload is empty rather than spinning on an envelope that cannot fit.
+	for len(line) > traceLineBudget && f.Payload != "" {
+		keep := len(f.Payload) - (len(line) - traceLineBudget)
+		if keep >= len(f.Payload) {
+			keep = len(f.Payload) - 1 // guarantee progress
+		}
+		if keep < 0 {
+			keep = 0
+		}
+		f.Payload, f.Truncated = trimValidUTF8(f.Payload, keep), true
+		if line, err = json.Marshal(f); err != nil {
+			return
+		}
+	}
 	l.w.AppendLine(line)
+}
+
+// trimValidUTF8 cuts s to at most n bytes without leaving a partial rune.
+// A half rune would be re-encoded by json.Marshal as U+FFFD — three bytes
+// where one was cut — which is the wrong direction for a function whose job
+// is to make the line smaller.
+func trimValidUTF8(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if n >= len(s) {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }

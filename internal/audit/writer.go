@@ -326,6 +326,35 @@ func (w *Writer) boundLine(record []byte) []byte {
 	return line
 }
 
+// OversizeMarker is the substitute line written in place of a record that
+// would exceed MaxLineBytes. It is EXPORTED because it is part of the file
+// format, not an implementation detail: every reader of a stream this
+// package writes will meet one, and a reader that does not recognise it
+// decodes the marker as its own record type and gets a zero value — which
+// renders as a blank row that says nothing happened, when in fact the one
+// frame worth reading is the frame that was dropped.
+type OversizeMarker struct {
+	TS       string `json:"ts"`
+	Oversize bool   `json:"oversize"`
+	// OrigBytes is the size of the record that did not fit.
+	OrigBytes int `json:"origBytes"`
+	// Prefix is the head of that record, kept so a reader can still tell
+	// what it was.
+	Prefix string `json:"prefix"`
+}
+
+// DecodeOversize reports whether line is an oversize marker, and decodes it.
+// A reader should try this BEFORE its own record type: the two shapes share
+// the "ts" field, so a marker unmarshals into most record types without
+// error and produces an empty-looking record.
+func DecodeOversize(line []byte) (OversizeMarker, bool) {
+	var m OversizeMarker
+	if err := json.Unmarshal(line, &m); err != nil || !m.Oversize {
+		return OversizeMarker{}, false
+	}
+	return m, true
+}
+
 // oversizeMarker builds the bounded substitute for an oversize record.
 // The prefix budget is maxLine/8 raw bytes: JSON escaping expands at most
 // 6x (\u00XX), keeping the marker safely under the line bound.
@@ -335,12 +364,12 @@ func (w *Writer) oversizeMarker(orig []byte) []byte {
 		budget = len(orig)
 	}
 	prefix := strings.ToValidUTF8(string(orig[:budget]), "")
-	m := struct {
-		TS        string `json:"ts"`
-		Oversize  bool   `json:"oversize"`
-		OrigBytes int    `json:"origBytes"`
-		Prefix    string `json:"prefix"`
-	}{w.clock().UTC().Format(time.RFC3339Nano), true, len(orig), prefix}
+	m := OversizeMarker{
+		TS:        w.clock().UTC().Format(time.RFC3339Nano),
+		Oversize:  true,
+		OrigBytes: len(orig),
+		Prefix:    prefix,
+	}
 	b, err := json.Marshal(m)
 	if err != nil || len(b)+1 > w.maxLine {
 		// Unreachable by construction; keep the bound guaranteed anyway.

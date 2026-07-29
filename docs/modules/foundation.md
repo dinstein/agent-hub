@@ -167,6 +167,24 @@ two gateways read as one gateway doing impossible things — a server that conne
 same instant, a backoff ladder that appears to skip rungs. The value is what `ps` prints, so a line
 joins directly to a process on the machine.
 
+**A record that does not fit its line bound becomes an `OversizeMarker`, and every reader must know
+that shape.** The bound is 4096 = PIPE_BUF, which is what makes one appender's line atomic against
+the other N; a record over it is replaced rather than written, because a bounded marker beats a torn
+line that corrupts the stream for every consumer. The marker shares its `ts` field with a real
+record, so a reader that does not check `oversize` first unmarshals it into its own type without
+error and gets a zero value — a blank row asserting nothing happened, in place of the one record big
+enough to have been dropped. `audit.DecodeOversize` is the check; `server logs` runs it before
+decoding a frame and renders "frame dropped", the size, and the method recovered from the prefix.
+
+**A writer must fit the SERIALIZED line, not its raw payload.** Truncating a body to N raw bytes says
+nothing about the line: the body goes into a JSON string where quotes and backslashes double and
+control bytes sextuple. `internal/downstream`'s trace log had both numbers set to 4096 and therefore
+dropped every frame with a payload over roughly 2 KB of quote-heavy JSON — a large `tools/list`, a
+big `tools/call` result, which is to say precisely what a trace is opened to see. It now marshals,
+measures, and re-cuts until the line fits, which yields the largest body that can actually be written
+and produces no marker at all. Raising the bound instead would have traded dropped frames for torn
+ones.
+
 The per-server trace log (`internal/downstream`, `TraceFrame`) carries the same field for the same
 reason one level down, alongside `inst`: that file is named after the SERVER, so every gateway
 process tracing it writes there, and inside one process every derived instance does too. `server
