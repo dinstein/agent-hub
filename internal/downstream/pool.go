@@ -469,9 +469,23 @@ func (p *Pool) runSweeper(interval time.Duration) {
 	}
 }
 
-// InstanceInfo is the observability projection of one derived instance
-// (`server ls` annotation, GUI, doctor). docs/modules/dataplane.md: variants are
-// attributed, never anonymous.
+// InstanceInfo is the observability projection of one derived instance: which
+// server it belongs to, which derive key produced it, and whether anything
+// still holds it.
+//
+// It has no non-test caller today. `server ls`, the GUI and doctor are where
+// it was meant to surface and none of them reach it, so this type describes a
+// capability that exists at the pool layer and is not switched on in the
+// assembled product — the same distinction docs/modules/security.md draws for
+// the integrity store, and the reason that list is written down rather than
+// assumed. Say so here rather than naming consumers as though they were
+// wired: a comment that overstates what is switched on is how the pool's
+// ordering guarantee came to be described as CLI contract with no CLI on the
+// other end of it.
+//
+// What does exercise it: internal/downstream and internal/gateway tests, as
+// the probe for "which instances are live", which is why the projection is
+// worth keeping rather than deleting.
 type InstanceInfo struct {
 	ServerID  string
 	Key       DeriveKey
@@ -483,8 +497,12 @@ type InstanceInfo struct {
 	Connecting bool
 }
 
-// Instances snapshots the live derived instances, sorted by (server, key)
-// — deterministic output is contract for the CLI and its golden tests.
+// Instances snapshots the live derived instances, sorted by (server, key).
+//
+// The ordering is deterministic so that whatever eventually renders this can
+// be golden-tested; no such consumer exists yet (see InstanceInfo). It is
+// pinned by TestInstancesOrderIsDeterministic, because an ordering nothing
+// reads is exactly the kind that rots unnoticed.
 func (p *Pool) Instances() []InstanceInfo {
 	p.mu.Lock()
 	out := make([]InstanceInfo, 0, len(p.inst))
