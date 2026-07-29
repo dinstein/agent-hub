@@ -90,6 +90,39 @@ func LoadToolCache(resolver *platform.Resolver, log *slog.Logger) (map[string][]
 	return newToolCache(filepath.Join(dir, toolCacheSubdir), log).load(), nil
 }
 
+// ToolCacheEntry is one server's cached catalog together with the moment it
+// was written.
+//
+// SavedAt is what separates "this server offers no tools" from "nothing has
+// ever connected to it", and an hours-old catalog from one written a minute
+// ago. It is carried out of this package rather than derived from the file's
+// mtime by the reader: the file name is a lossy projection of the server id
+// (fsSafe), so a reader that went looking for it by name would sometimes
+// stat another server's entry.
+type ToolCacheEntry struct {
+	Tools   []mcp.ToolDef `json:"tools"`
+	SavedAt time.Time     `json:"savedAt"`
+}
+
+// LoadToolCacheEntries is LoadToolCache for a reader that also needs to say
+// HOW OLD the answer is — `agenthub server inspect`, which reports a cached
+// catalog next to a live one and must not let the two be mistaken for each
+// other. Same offline contract: a missing cache is an empty map, not an
+// error, and log may be nil.
+func LoadToolCacheEntries(resolver *platform.Resolver, log *slog.Logger) (map[string]ToolCacheEntry, error) {
+	if resolver == nil {
+		resolver = platform.Default()
+	}
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	dir, err := resolver.CacheDir()
+	if err != nil {
+		return nil, err
+	}
+	return newToolCache(filepath.Join(dir, toolCacheSubdir), log).loadEntries(), nil
+}
+
 // ForgetToolCache deletes the persisted tool list of one server — the
 // cleanup half of `agenthub server rm`. Without it `agenthub tool ls`, which
 // reads this cache offline by design, keeps listing a removed server's tools
@@ -163,14 +196,24 @@ func newToolCache(dir string, log *slog.Logger) *toolCache {
 
 // load reads every cache entry. Missing directory means empty cache.
 func (c *toolCache) load() map[string][]mcp.ToolDef {
+	out := make(map[string][]mcp.ToolDef)
+	for id, entry := range c.loadEntries() {
+		out[id] = entry.Tools
+	}
+	return out
+}
+
+// loadEntries reads every cache entry WITH its write time. Missing directory
+// means empty cache.
+func (c *toolCache) loadEntries() map[string]ToolCacheEntry {
 	entries, err := os.ReadDir(c.dir)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			c.log.Warn("tool cache unreadable", "error", err)
 		}
-		return map[string][]mcp.ToolDef{}
+		return map[string]ToolCacheEntry{}
 	}
-	out := make(map[string][]mcp.ToolDef, len(entries))
+	out := make(map[string]ToolCacheEntry, len(entries))
 	for _, e := range entries {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 			continue
@@ -186,7 +229,7 @@ func (c *toolCache) load() map[string][]mcp.ToolDef {
 			c.log.Warn("tool cache entry malformed; ignoring", "path", path, "error", err)
 			continue
 		}
-		out[cf.Server] = cf.Tools
+		out[cf.Server] = ToolCacheEntry{Tools: cf.Tools, SavedAt: cf.SavedAt}
 	}
 	return out
 }
