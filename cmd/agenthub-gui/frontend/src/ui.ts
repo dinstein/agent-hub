@@ -81,6 +81,52 @@ export function button(label: string, cls: string, onClick: () => void): HTMLBut
   return b;
 }
 
+/**
+ * A switch, for a setting that takes effect the moment it is flipped.
+ *
+ * THE POSITION IS NEVER SET BY THE CLICK. `onChange` performs the write and
+ * the page repaints from what came back, so a write that was refused, lost
+ * its precondition or never reached the daemon leaves the switch showing what
+ * is actually stored rather than what the user hoped. An optimistic flip that
+ * has to be walked back is the failure the approval rows already avoid by
+ * greying out instead of vanishing (docs/modules/gui.md §5): for one moment
+ * the interface states something untrue, and that is exactly the moment the
+ * user looks away satisfied.
+ *
+ * `label` names the THING, not the action — "clerk enabled", never "Enable
+ * clerk". role="switch" carries on/off in aria-checked already, so a label
+ * with a verb in it is announced as "Enable clerk, switch, on".
+ */
+export function toggleSwitch(opts: {
+  checked: boolean;
+  label: string;
+  onChange: () => void | Promise<void>;
+}): HTMLButtonElement {
+  const b = el("button", {
+    class: "switch",
+    type: "button",
+    role: "switch",
+    "aria-checked": String(opts.checked),
+    "aria-label": opts.label,
+  }) as HTMLButtonElement;
+  b.append(el("span", { class: "switch-thumb" }));
+  b.addEventListener("click", () => {
+    if (b.disabled) return;
+    // Held down for the whole round trip, so a second click cannot queue a
+    // second write against a generation the first one is about to move.
+    b.disabled = true;
+    b.setAttribute("aria-busy", "true");
+    void Promise.resolve(opts.onChange()).finally(() => {
+      // Usually the page has redrawn by now and this node is detached. When
+      // it has not — the write failed and the row survived — the control has
+      // to come back, or the row is stuck at one attempt.
+      b.disabled = false;
+      b.removeAttribute("aria-busy");
+    });
+  });
+  return b;
+}
+
 /** A group of controls laid out in a row. */
 export function controls(...children: (Node | null)[]): HTMLElement {
   return el("div", { class: "controls" }, children.filter((c): c is Node => c !== null));

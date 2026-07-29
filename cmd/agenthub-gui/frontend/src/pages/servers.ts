@@ -52,6 +52,7 @@ import {
   selectInput,
   shellArg,
   textInput,
+  toggleSwitch,
 } from "../ui";
 import type {
   DockerMount,
@@ -1338,8 +1339,21 @@ export function serversPage(): Page {
     // over the network rather than run here. Same convention as the Catalog
     // ledger, because it is the same distinction.
     const remote = s.transport === Transport.HTTP || s.transport === Transport.SSE;
-    return el("div", { class: "rec" }, [
+    return el("div", { class: "rec has-lead" }, [
       el("div", { class: `spine ${spineTone(s)}${remote ? " remote" : ""}` }),
+      // The global switch, in the leading position: enabling and disabling is
+      // the setting this page exists to change, and it was previously a word
+      // in a row of four identical-looking buttons at the far end of the row.
+      // A switch also states the CURRENT value, which the word "Disable"
+      // could only imply — and implied it backwards for anyone who reads a
+      // button as a label rather than as a verb.
+      el("div", { class: "rec-lead" }, [
+        toggleSwitch({
+          checked: s.enabled,
+          label: `${s.id} enabled`,
+          onChange: () => toggle(s),
+        }),
+      ]),
       el("div", { class: "rec-body" }, [
         el("div", { class: "rec-title" }, [
           el("span", { class: "rec-name", text: s.id }),
@@ -1368,7 +1382,6 @@ export function serversPage(): Page {
         statusCell(s),
         controls(
           button("Edit", "btn", () => void openEditor(s.id)),
-          button(toggleLabel, "btn", () => void toggle(s)),
           button("Test", "btn", () => void test(s)),
           button("Remove", "btn btn-deny", () => void remove(s)),
         ),

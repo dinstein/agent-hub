@@ -647,6 +647,63 @@ tbody tr:hover {
   color: var(--bg);
 }
 
+/* --- the switch ------------------------------------------------------------
+ *
+ * A switch is a CONTROL, so its "on" colour is the ink accent and NOT
+ * --success. A green track would put a second green on a row that already
+ * carries a green health dot, and the two would mean unrelated things: one
+ * "you switched this on", the other "it is actually working". The moment a
+ * colour means two things it means neither, which is the discipline stated at
+ * the top of this file — and the reason this rule is written down here is that
+ * every switch in every other product is green, so "fixing" this one is a very
+ * natural thing for someone to do later.
+ *
+ * The state's second channel is the thumb's position, which a switch has by
+ * construction: it survives greyscale and colour blindness without a word.
+ *
+ * The geometry: 34 wide, 1px border and 2px padding on each side, so the
+ * travel is 34 - 2(border) - 4(padding) - 14(thumb) = 14px.
+ */
+.switch {
+  flex: none;
+  width: 34px;
+  height: 20px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--faint);
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.switch-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--bg);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.switch[aria-checked="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch[aria-checked="true"] .switch-thumb {
+  transform: translateX(14px);
+}
+
+/* Held down for the round trip. `progress` rather than `not-allowed`: the
+ * click was accepted and is in flight, which is the opposite of refused. */
+.switch[disabled] {
+  cursor: progress;
+  opacity: 0.55;
+}
+
 .btn-secondary {
   color: var(--muted);
   background: transparent;
@@ -1658,6 +1715,27 @@ details.adv[open] > summary {
 
 .rec:first-child {
   border-top: none;
+}
+
+/* The lead column: a control that acts on the whole row, in the first place
+ * the eye lands before it has read anything.
+ *
+ * It is a modifier and not part of .rec because the catalog ledger shares
+ * these records and has no per-row setting to flip — an always-present track
+ * would indent every catalog row past an empty column. */
+.rec.has-lead {
+  grid-template-columns: 3px auto minmax(0, 1fr) auto;
+}
+
+.rec-lead {
+  display: flex;
+  align-items: center;
+  padding-left: var(--space-6);
+}
+
+/* The lead column supplies the indent, so the body stops adding its own. */
+.rec.has-lead > .rec-body {
+  padding-left: 0;
 }
 
 .rec:hover {
