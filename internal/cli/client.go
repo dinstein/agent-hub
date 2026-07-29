@@ -121,7 +121,7 @@ func (a *App) newClientCmd() *cobra.Command {
 	}
 	// Read before write (canonical.md §3), so `ls` leads.
 	cmd.AddCommand(
-		a.newClientLsCmd(), a.newClientDetectCmd(),
+		a.newClientLsCmd(), a.newClientDetectCmd(), a.newClientInspectCmd(),
 		a.newClientConnectCmd(), a.newClientDisconnectCmd(),
 		a.newClientBindCmd(), a.newClientUnbindCmd(),
 		a.newClientImportCmd(),

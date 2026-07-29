@@ -183,3 +183,48 @@ func TestClientListRendersRowsItWasNotGiven(t *testing.T) {
 		t.Errorf("empty row rendered as %q, want an admitted unknown", out)
 	}
 }
+
+// TestClientInspectExplainsTheRow: inspect opens the files ls only
+// summarises — which location holds agenthub's entry, what else is in that
+// file, and the entry that points at a binary which is no longer there.
+func TestClientInspectExplainsTheRow(t *testing.T) {
+	setDataDir(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	mustRun(t, "", "client", "connect", "cursor", "--bin", filepath.Join(home, "gone", "agenthub"))
+	write(t, filepath.Join(home, ".cursor", "extra.json"), `{}`) // not a config location
+
+	var view ClientInspectView
+	decodeInto(t, mustRun(t, "", "client", "inspect", "cursor", "--json"), &view)
+	if view.State != "connected" || !view.Connected {
+		t.Fatalf("inspect = %+v, want connected", view)
+	}
+	if len(view.Placements) != 1 || view.Placements[0] != "user" {
+		t.Errorf("placements = %v, want user", view.Placements)
+	}
+	var owned *ClientInspectServer
+	for _, f := range view.Files {
+		for i, s := range f.Servers {
+			if s.Owned {
+				owned = &f.Servers[i]
+			}
+		}
+	}
+	if owned == nil {
+		t.Fatalf("no owned entry reported: %+v", view.Files)
+	}
+	if !owned.Stale {
+		t.Errorf("entry = %+v, want it flagged: connect wrote a binary that is not there", owned)
+	}
+
+	// Every location is reported, present or not — "we looked here too" is
+	// half the answer to "why does it say no".
+	if len(view.Files) < 2 {
+		t.Errorf("files = %+v, want both of cursor's locations", view.Files)
+	}
+
+	// An id nobody supports is a not-found, not a crash or an empty answer.
+	if code, _, _ := runCLI(t, "", "client", "inspect", "nope"); code != ExitNotFound {
+		t.Errorf("unknown client exit = %d, want %d", code, ExitNotFound)
+	}
+}
