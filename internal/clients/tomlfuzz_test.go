@@ -28,6 +28,11 @@ func FuzzScanTOMLServers(f *testing.F) {
 	f.Add([]byte("mcp_servers = { x = { command = \"y\" } }\n"))
 	f.Add([]byte("[[mcp_servers.x]]\ncommand = \"y\"\n"))
 	f.Add([]byte("desc = \"\"\"\n[mcp_servers.ghost]\ncommand = \"no\"\n\"\"\"\n"))
+	// The same hiding place, reached through the line-continuation form: a
+	// backslash at end of line escapes the newline and the indentation after
+	// it, which is the one way into the multi-line scanner the other seeds
+	// never take.
+	f.Add([]byte("desc = \"\"\"\nwrapped \\\n   [mcp_servers.ghost]\n\"\"\"\n[mcp_servers.real]\ncommand = \"y\"\n"))
 	f.Add([]byte("[mcp_servers.\"quoted name\"]\nurl = \"https://x\"\n"))
 	f.Add([]byte("# comment [mcp_servers.nope]\n[other]\nk = 1\n"))
 	f.Add([]byte("[mcp_servers.x]\ncommand = \"unterminated\n"))
