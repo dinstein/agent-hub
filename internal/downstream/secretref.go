@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -167,11 +168,7 @@ func expandSecretMap(ctx context.Context, serverID, scopeName string, m map[stri
 	if len(m) == 0 {
 		return nil, nil
 	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
+	keys := slices.Sorted(maps.Keys(m))
 	out := make(map[string]string, len(m))
 	for _, k := range keys {
 		v, err := expandSecrets(ctx, serverID, scopeName, m[k], resolve)

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 )
 
@@ -91,11 +92,7 @@ func writeCanonical(buf *bytes.Buffer, v any) error {
 		}
 		buf.WriteByte(']')
 	case map[string]any:
-		keys := make([]string, 0, len(t))
-		for k := range t {
-			keys = append(keys, k)
-		}
-		slices.Sort(keys)
+		keys := slices.Sorted(maps.Keys(t))
 		buf.WriteByte('{')
 		for i, k := range keys {
 			if i > 0 {

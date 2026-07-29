@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -343,11 +344,7 @@ func buildEnv(extra map[string]string) []string {
 		}
 		out = append(out, kv)
 	}
-	keys := make([]string, 0, len(extra))
-	for k := range extra {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
+	keys := slices.Sorted(maps.Keys(extra))
 	for _, k := range keys {
 		out = append(out, k+"="+extra[k])
 	}

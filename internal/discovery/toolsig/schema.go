@@ -3,6 +3,7 @@ package toolsig
 import (
 	"bytes"
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -191,11 +192,7 @@ func renderObject(n *node, depth int) (string, bool) {
 	if depth > 0 {
 		return TypeObject, true // deeper than one level: fold
 	}
-	keys := make([]string, 0, len(n.Properties))
-	for k := range n.Properties {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
+	keys := slices.Sorted(maps.Keys(n.Properties))
 	lossy := true // the sub-property TYPES are always dropped
 	if len(keys) > MaxObjectKeys {
 		keys = keys[:MaxObjectKeys]
