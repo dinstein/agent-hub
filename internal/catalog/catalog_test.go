@@ -325,8 +325,13 @@ func TestSearchOrderingIsDeterministic(t *testing.T) {
 		{query: "git", first: "git", contains: []string{"git", "github"}},
 		{query: "github", first: "github"},
 		{query: "FILE", first: "filesystem"},
-		{query: "database", contains: []string{"postgres", "sqlite"}, excludes: []string{"memory"}},
-		{query: "sql", first: "sqlite", contains: []string{"postgres"}},
+		// A shared topic tag gathers every entry carrying it, and an entry
+		// that merely sounds adjacent is not swept in: fetch retrieves a page
+		// over HTTP, it does not drive a browser.
+		{query: "browser", contains: []string{"chrome-devtools", "playwright"}, excludes: []string{"fetch"}},
+		// A term in the id outranks the same term as a tag, so the entry whose
+		// name IS the query comes first.
+		{query: "search", first: "brave-search", contains: []string{"cloudflare-docs"}},
 		{query: "no-such-thing-at-all", excludes: []string{"git"}},
 	}
 	for _, tc := range cases {

@@ -143,30 +143,45 @@ func TestCatalogAddOneClick(t *testing.T) {
 func TestCatalogAddWithParamsAndRename(t *testing.T) {
 	env, _, _ := adminServer(t, nil)
 
-	res := doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/slack/add", map[string]any{
-		"name":   "work-slack",
-		"params": map[string]string{"team_id": "T0123"},
+	res := doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/filesystem/add", map[string]any{
+		"name":   "work-files",
+		"params": map[string]string{"directory": "/tmp/work"},
 	})
 	if res.status != http.StatusOK {
 		t.Fatalf("add: %d %s", res.status, res.raw)
 	}
 	var added catalogAddBody
 	res.decode(t, &added)
-	if added.ID != "work-slack" || added.CatalogID != "slack" {
+	if added.ID != "work-files" || added.CatalogID != "filesystem" {
 		t.Fatalf("add result = %+v", added)
 	}
-	stored := env.reg.Snapshot().Servers.V.Servers["work-slack"].V
-	if stored.Env["SLACK_TEAM_ID"] != "T0123" {
-		t.Errorf("parameter not substituted: %+v", stored.Env)
+	stored := env.reg.Snapshot().Servers.V.Servers["work-files"].V
+	if !slices.Contains(stored.Args, "/tmp/work") {
+		t.Errorf("parameter not substituted: %+v", stored.Args)
 	}
+
+	// The credential half, on a different entry: no curated entry declares a
+	// parameter and a credential together any more, so the secret reference
+	// and the next step it produces are checked where one exists. That a
+	// substitution and a secret reference coexist safely in one definition is
+	// catalog.TestRenderSubstitutesAndRefuses.
+	res = doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/brave-search/add", map[string]any{
+		"name": "web-search",
+	})
+	if res.status != http.StatusOK {
+		t.Fatalf("add: %d %s", res.status, res.raw)
+	}
+	var keyed catalogAddBody
+	res.decode(t, &keyed)
+	keptSecret := env.reg.Snapshot().Servers.V.Servers["web-search"].V
 	// A secret reference must reach the registry VERBATIM: resolving it
 	// here would put a credential into a registry document.
-	if stored.Env["SLACK_BOT_TOKEN"] != "${SECRET_SLACK_BOT_TOKEN}" {
-		t.Errorf("secret placeholder mangled: %q", stored.Env["SLACK_BOT_TOKEN"])
+	if keptSecret.Env["BRAVE_API_KEY"] != "${SECRET_BRAVE_API_KEY}" {
+		t.Errorf("secret placeholder mangled: %q", keptSecret.Env["BRAVE_API_KEY"])
 	}
-	want := "agenthub secret set work-slack SLACK_BOT_TOKEN"
-	if !slices.Contains(added.NextSteps, want) {
-		t.Errorf("next steps = %v, want %q", added.NextSteps, want)
+	want := "agenthub secret set web-search BRAVE_API_KEY"
+	if !slices.Contains(keyed.NextSteps, want) {
+		t.Errorf("next steps = %v, want %q", keyed.NextSteps, want)
 	}
 }
 

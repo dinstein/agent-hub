@@ -100,92 +100,6 @@
       "tags": ["time", "timezone", "reference"]
     },
     {
-      "id": "sqlite",
-      "name": "SQLite",
-      "description": "Archived reference server, no longer maintained upstream. Query and modify a local SQLite database file.",
-      "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/sqlite",
-      "provenance": "curated",
-      "transport": "stdio",
-      "command": "uvx",
-      "args": ["mcp-server-sqlite", "--db-path", "{{db_path}}"],
-      "params": [
-        {
-          "name": "db_path",
-          "description": "Absolute path of the SQLite database file.",
-          "example": "/Users/me/data/app.db"
-        }
-      ],
-      "tags": ["database", "sql", "local", "reference"]
-    },
-    {
-      "id": "postgres",
-      "name": "PostgreSQL",
-      "description": "Archived reference server, no longer maintained upstream. Read-only SQL access to a PostgreSQL database, with schema inspection.",
-      "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/postgres",
-      "provenance": "curated",
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-postgres", "{{connection_url}}"],
-      "params": [
-        {
-          "name": "connection_url",
-          "description": "Connection string. It is stored in the registry as written, so prefer a URL whose password comes from your environment or a .pgpass file rather than pasting one here.",
-          "example": "postgresql://localhost/mydb"
-        }
-      ],
-      "tags": ["database", "sql", "postgres"]
-    },
-    {
-      "id": "redis",
-      "name": "Redis",
-      "description": "Archived reference server, no longer maintained upstream. Read and write keys on a Redis instance.",
-      "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/redis",
-      "provenance": "curated",
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-redis", "{{redis_url}}"],
-      "params": [
-        {
-          "name": "redis_url",
-          "description": "Redis connection URL.",
-          "example": "redis://localhost:6379"
-        }
-      ],
-      "tags": ["database", "cache", "redis"]
-    },
-    {
-      "id": "slack",
-      "name": "Slack",
-      "description": "Archived reference server, no longer maintained upstream. Read channels and post messages as a Slack bot user.",
-      "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/slack",
-      "provenance": "curated",
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-slack"],
-      "env": {
-        "SLACK_BOT_TOKEN": "${SECRET_SLACK_BOT_TOKEN}",
-        "SLACK_TEAM_ID": "{{team_id}}"
-      },
-      "keys": [
-        {
-          "key": "SLACK_BOT_TOKEN",
-          "description": "Slack bot user OAuth token (starts with xoxb-)."
-        }
-      ],
-      "params": [
-        {
-          "name": "team_id",
-          "description": "Slack workspace (team) id.",
-          "example": "T01234567"
-        }
-      ],
-      "tags": ["chat", "slack", "team"]
-    },
-    {
       "id": "brave-search",
       "name": "Brave Search",
       "description": "Web, news, image and local search through the Brave Search API.",
@@ -205,27 +119,6 @@
         }
       ],
       "tags": ["search", "web"]
-    },
-    {
-      "id": "google-maps",
-      "name": "Google Maps",
-      "description": "Archived reference server, no longer maintained upstream. Geocoding, directions and place details through the Google Maps API.",
-      "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/google-maps",
-      "provenance": "curated",
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-google-maps"],
-      "env": {
-        "GOOGLE_MAPS_API_KEY": "${SECRET_GOOGLE_MAPS_API_KEY}"
-      },
-      "keys": [
-        {
-          "key": "GOOGLE_MAPS_API_KEY",
-          "description": "Google Maps Platform API key."
-        }
-      ],
-      "tags": ["maps", "geo", "search"]
     },
     {
       "id": "playwright",

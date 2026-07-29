@@ -25,47 +25,66 @@ func TestCatalogRoundTrip(t *testing.T) {
 		t.Fatalf("search github = %+v", found)
 	}
 
+	// The parameter path, on an entry that declares one.
 	var view CatalogEntryView
-	decodeInto(t, mustRun(t, "", "catalog", "show", "slack", "--json"), &view)
-	if view.ID != "slack" || !view.NeedsConfig {
+	decodeInto(t, mustRun(t, "", "catalog", "show", "filesystem", "--json"), &view)
+	if view.ID != "filesystem" || !view.NeedsConfig {
 		t.Fatalf("show = %+v", view)
-	}
-	if !slices.Contains(view.RequiredKeys, "SLACK_BOT_TOKEN") {
-		t.Errorf("required keys = %v", view.RequiredKeys)
 	}
 	// The add command is shown with placeholders, not with the example
 	// value: a line that runs unchanged with someone else's data in it is
 	// worse than one the user must obviously fill in.
-	if !strings.Contains(view.AddCommand, "--param team_id=<team_id>") {
+	if !strings.Contains(view.AddCommand, "--param directory=<directory>") {
 		t.Errorf("add command = %q", view.AddCommand)
 	}
 
 	var added CatalogAdded
-	decodeInto(t, mustRun(t, "", "catalog", "add", "slack",
-		"--name", "work-slack", "--param", "team_id=T0123", "--json"), &added)
-	if added.Added.ID != "work-slack" || added.CatalogID != "slack" {
+	decodeInto(t, mustRun(t, "", "catalog", "add", "filesystem",
+		"--name", "work-files", "--param", "directory=/tmp/work", "--json"), &added)
+	if added.Added.ID != "work-files" || added.CatalogID != "filesystem" {
 		t.Fatalf("added = %+v", added)
 	}
-	if added.Added.Source != "catalog:slack" {
+	if added.Added.Source != "catalog:filesystem" {
 		t.Errorf("source = %q", added.Added.Source)
 	}
-	if added.Added.Env["SLACK_TEAM_ID"] != "T0123" {
-		t.Errorf("parameter not substituted: %v", added.Added.Env)
+	if !slices.Contains(added.Added.Args, "/tmp/work") {
+		t.Errorf("parameter not substituted: %v", added.Added.Args)
 	}
-	// A secret reference reaches the registry VERBATIM; resolving it here
-	// would put a credential into a registry document.
-	if added.Added.Env["SLACK_BOT_TOKEN"] != "${SECRET_SLACK_BOT_TOKEN}" {
-		t.Errorf("secret placeholder mangled: %q", added.Added.Env["SLACK_BOT_TOKEN"])
-	}
-	if !slices.Contains(added.NextSteps, "agenthub secret set work-slack SLACK_BOT_TOKEN") {
-		t.Errorf("next steps = %v", added.NextSteps)
+	if len(added.NextSteps) != 0 {
+		t.Errorf("next steps = %v, want none for a credential-free entry", added.NextSteps)
 	}
 
-	// It really landed in the registry, under the name that was asked for.
+	// The credential path, on an entry that declares one. The two are separate
+	// entries because no curated entry carries both any more; Render's own
+	// test covers a parameter and a secret in the same definition.
+	var keyed CatalogEntryView
+	decodeInto(t, mustRun(t, "", "catalog", "show", "brave-search", "--json"), &keyed)
+	if !slices.Contains(keyed.RequiredKeys, "BRAVE_API_KEY") {
+		t.Errorf("required keys = %v", keyed.RequiredKeys)
+	}
+
+	var withKey CatalogAdded
+	decodeInto(t, mustRun(t, "", "catalog", "add", "brave-search",
+		"--name", "web-search", "--json"), &withKey)
+	// A secret reference reaches the registry VERBATIM; resolving it here
+	// would put a credential into a registry document.
+	if withKey.Added.Env["BRAVE_API_KEY"] != "${SECRET_BRAVE_API_KEY}" {
+		t.Errorf("secret placeholder mangled: %q", withKey.Added.Env["BRAVE_API_KEY"])
+	}
+	if !slices.Contains(withKey.NextSteps, "agenthub secret set web-search BRAVE_API_KEY") {
+		t.Errorf("next steps = %v", withKey.NextSteps)
+	}
+
+	// They really landed in the registry, under the names that were asked for.
 	var servers ServerList
 	decodeInto(t, mustRun(t, "", "server", "ls", "--json"), &servers)
-	if len(servers) != 1 || servers[0].ID != "work-slack" {
+	if len(servers) != 2 {
 		t.Fatalf("server ls = %+v", servers)
+	}
+	for _, want := range []string{"web-search", "work-files"} {
+		if !slices.ContainsFunc(servers, func(s ServerRow) bool { return s.ID == want }) {
+			t.Errorf("server ls = %+v, missing %q", servers, want)
+		}
 	}
 }
 
