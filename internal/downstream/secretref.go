@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/dinstein/agent-hub/internal/secrets"
@@ -171,7 +171,7 @@ func expandSecretMap(ctx context.Context, serverID, scopeName string, m map[stri
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	out := make(map[string]string, len(m))
 	for _, k := range keys {
 		v, err := expandSecrets(ctx, serverID, scopeName, m[k], resolve)

@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 )
 
 // ArgsHash returns the SHA-256 (lowercase hex) of the canonical-JSON
@@ -95,7 +95,7 @@ func writeCanonical(buf *bytes.Buffer, v any) error {
 		for k := range t {
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		buf.WriteByte('{')
 		for i, k := range keys {
 			if i > 0 {
