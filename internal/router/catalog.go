@@ -28,13 +28,7 @@ func NewCatalog(servers map[string][]string) Catalog {
 		cp := make([]string, len(tools))
 		copy(cp, tools)
 		slices.Sort(cp)
-		dedup := cp[:0]
-		for i, t := range cp {
-			if i == 0 || t != cp[i-1] {
-				dedup = append(dedup, t)
-			}
-		}
-		out[id] = dedup
+		out[id] = slices.Compact(cp)
 	}
 	return Catalog{Servers: out}
 }
