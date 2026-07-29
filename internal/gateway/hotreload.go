@@ -3,6 +3,7 @@ package gateway
 import (
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 
@@ -154,16 +155,30 @@ func (g *gateway) syncServers(snap *registry.Snapshot) {
 		}
 	}
 	g.specs = newSpecs
-	g.pending += len(toConnect) // busy-not-unknown while they connect
 	// A server about to be redialled starts from a clean slate: keeping the
 	// previous failure would report the OLD definition's error against the
-	// NEW one. Servers no longer in the spec set leave the map entirely.
+	// NEW one, and keeping its backoff would make the operator's fix wait out
+	// a rung the PREVIOUS definition earned. Servers no longer in the spec
+	// set leave the maps entirely.
+	dialNow := toConnect[:0]
 	for _, sp := range toConnect {
 		delete(g.connErr, sp.ID)
+		g.resetLadderLocked(sp.ID)
+		if g.beginDialLocked(sp.ID) { // also accounts it as pending
+			dialNow = append(dialNow, sp)
+			continue
+		}
+		// A dial of the PREVIOUS definition is still in flight. It drops
+		// itself as stale when it lands (connectOne), which would leave the
+		// new definition dialed by nobody — so hand it to the ladder instead,
+		// due at the next tick.
+		g.redialAt[sp.ID] = time.Time{}
 	}
+	toConnect = dialNow
 	for id := range g.connErr {
 		if _, ok := newByID[id]; !ok {
 			delete(g.connErr, id)
+			g.resetLadderLocked(id)
 		}
 	}
 	g.mu.Unlock()

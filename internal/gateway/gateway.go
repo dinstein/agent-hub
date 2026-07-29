@@ -127,6 +127,9 @@ type Config struct {
 	// LinkRetry is the daemon control-link re-register interval
 	// (0 = 30s, docs/architecture.md §2). Tests shrink it.
 	LinkRetry time.Duration
+	// RedialBase is the first rung of the re-dial ladder (redial.go); the
+	// consult tick and the ceiling derive from it. 0 = 5s. Tests shrink it.
+	RedialBase time.Duration
 	// DerivedPool tunes the derived-instance pool (docs/modules/dataplane.md). Deps,
 	// Connect, Log and Now are overwritten by the gateway; the caps and
 	// timers are honoured. Tests use it to drive reclaim deterministically.
@@ -254,6 +257,8 @@ type gateway struct {
 	scopeRes *scope.CachedResolver
 	watcher  *registry.Watcher
 	watchWG  sync.WaitGroup
+	redialWG sync.WaitGroup // the re-dial loop (redial.go)
+	redial   redialParams   // its resolved ladder
 	// reloadMu serializes onRegistryChange (watcher + daemon link may fire
 	// concurrently; reload/diff/apply must not interleave).
 	reloadMu sync.Mutex
@@ -284,6 +289,9 @@ type gateway struct {
 	pending     int                           // downstreams still connecting
 	servers     map[string]*downstream.Server // connected downstreams
 	connErr     map[string]string             // last connect failure per server id
+	dialing     map[string]struct{}           // servers with a dial in flight (redial.go)
+	redialAt    map[string]time.Time          // when each failed server may be dialed again
+	redialTries map[string]int                // rungs climbed, per failed server
 	inflight    map[string]context.CancelFunc // upstream request id → cancel
 	pendingRPC  map[string]chan *mcp.Response // reverse RPC id → reply channel
 	clientCaps  mcp.ClientCapabilities
@@ -335,21 +343,25 @@ func newGateway(cfg Config) (*gateway, error) {
 
 	lifeCtx, stop := context.WithCancel(context.Background())
 	g := &gateway{
-		cfg:        cfg,
-		resolver:   resolver,
-		log:        log,
-		logClose:   logClose,
-		fw:         mcp.NewFrameWriter(cfg.Out),
-		guard:      discovery.NewSearchGuard(),
-		cursors:    shaping.NewMemStore(0),
-		owner:      shaping.Owner("stdio:" + cfg.ClientID),
-		catGen:     1,
-		lifeCtx:    lifeCtx,
-		stop:       stop,
-		servers:    make(map[string]*downstream.Server),
-		connErr:    make(map[string]string),
-		inflight:   make(map[string]context.CancelFunc),
-		pendingRPC: make(map[string]chan *mcp.Response),
+		cfg:         cfg,
+		resolver:    resolver,
+		log:         log,
+		logClose:    logClose,
+		fw:          mcp.NewFrameWriter(cfg.Out),
+		guard:       discovery.NewSearchGuard(),
+		cursors:     shaping.NewMemStore(0),
+		owner:       shaping.Owner("stdio:" + cfg.ClientID),
+		catGen:      1,
+		redial:      newRedialParams(cfg.RedialBase),
+		lifeCtx:     lifeCtx,
+		stop:        stop,
+		servers:     make(map[string]*downstream.Server),
+		connErr:     make(map[string]string),
+		dialing:     make(map[string]struct{}),
+		redialAt:    make(map[string]time.Time),
+		redialTries: make(map[string]int),
+		inflight:    make(map[string]context.CancelFunc),
+		pendingRPC:  make(map[string]chan *mcp.Response),
 	}
 	g.roots = &clientRoots{g: g}
 	g.savings = openSavings(resolver, log)
@@ -462,6 +474,13 @@ func newGateway(cfg Config) (*gateway, error) {
 	g.rt = rt
 	g.cat = catalogFromRouter(rt)
 	g.pending = len(specs)
+	// Claim every startup dial up front rather than inside connectAll: the
+	// connect goroutines are spawned from run(), so between here and there
+	// the re-dial loop must already see these servers as busy, not as
+	// untouched entries it may dial itself.
+	for _, spec := range specs {
+		g.dialing[spec.ID] = struct{}{}
+	}
 	if g.scopeRes != nil {
 		// Seed the hash-diff baseline so the first overlay/registry event
 		// does not push a spurious tools/list_changed when nothing visible
@@ -566,6 +585,7 @@ func (g *gateway) run(ctx context.Context) error {
 	go g.connectAll()
 	g.startWatch()
 	g.startPolicyWatch()
+	g.startRedial()
 	if g.ctl != nil {
 		g.linkDone = make(chan struct{})
 		go func() {
@@ -627,6 +647,7 @@ func (g *gateway) shutdown() {
 		g.watchWG.Wait()
 	}
 	g.policyWG.Wait() // ends on lifeCtx cancellation (g.stop above)
+	g.redialWG.Wait() // same
 	if g.linkDone != nil {
 		<-g.linkDone
 	}

@@ -33,15 +33,17 @@ func (g *gateway) connectAll() {
 	}
 }
 
-// connectOne dials one downstream and wires it in. A failure only logs:
-// the gateway keeps serving whatever else it has (cache and/or other
-// servers).
+// connectOne dials one downstream and wires it in. A failure only logs and
+// records the reason: the gateway keeps serving whatever else it has (cache
+// and/or other servers), and the re-dial ladder (redial.go) brings this one
+// back on its own.
+//
+// The caller MUST have claimed the dial slot (beginDialLocked, or the startup
+// pre-claim in newGateway); finishDial releases it on every exit path.
 func (g *gateway) connectOne(spec downstream.Spec) {
-	srv, err := downstream.Connect(g.lifeCtx, spec, g.downstreamDeps())
+	defer g.finishDial(spec.ID)
 
-	g.mu.Lock()
-	g.pending--
-	g.mu.Unlock()
+	srv, err := downstream.Connect(g.lifeCtx, spec, g.downstreamDeps())
 
 	if err != nil {
 		g.log.Warn("downstream connect failed", logx.Server(spec.ID), "error", err)
@@ -73,7 +75,13 @@ func (g *gateway) connectOne(spec downstream.Spec) {
 	if !still || !specEqual(cur, spec) {
 		// The registry moved while we were connecting: this spec was
 		// removed or redefined. Never wire a stale definition into the
-		// catalog (the reload path already handles the current one).
+		// catalog. If the entry still exists it is the CURRENT definition
+		// that now has no connection and no dial, so arm the ladder — the
+		// reload that redefined it could not claim a slot while this dial
+		// held one.
+		if still {
+			g.redialAt[spec.ID] = time.Time{}
+		}
 		g.mu.Unlock()
 		srv.Close()
 		g.log.Info("dropping connection of a stale server definition", logx.Server(spec.ID))

@@ -136,15 +136,22 @@ func (g *gateway) connDiagnosis() string {
 // server so a spec that never produced a *downstream.Server can still be
 // reported as an error with its reason, instead of hiding behind a
 // perpetual "connecting".
+//
+// It is also the single place the re-dial ladder (redial.go) is armed and
+// disarmed, so the two can never disagree about whether a server is broken:
+// a recorded failure always has a rung waiting, and a success always clears
+// one.
 func (g *gateway) noteConnectResult(id, failure string) {
 	g.mu.Lock()
 	if failure == "" {
 		delete(g.connErr, id)
+		g.resetLadderLocked(id)
 	} else {
 		if g.connErr == nil {
 			g.connErr = make(map[string]string)
 		}
 		g.connErr[id] = failure
+		g.armLocked(id, time.Now())
 	}
 	g.mu.Unlock()
 }
