@@ -264,6 +264,10 @@ client 绑定（收窄搬到了 profile 上），但 `scopeBindingWire` 依旧�
 对 docker runtime 条目 **按容器探测**——dial 把 `Spec.Docker` 带进 spawner，不会在宿主机上跑那条命令
 （早期 dial 还做不到，这里曾是 fail-closed 拒绝）；客户端接线的写入目标按
 `path` > `placement` > 默认用户级文件解析，客户端没有该 placement 时 400 拒绝而不是改写另一个位置；
+**`GET /v1/clients` 只 stat，绝不打开文件**（每次打开页面就按客户端数弹一轮 macOS 隐私窗，比没有列表更糟），
+所以「agenthub 到底接进这个客户端没有」在 `GET /v1/clients/{id}/inspect`——一次一个、由调用方点名，
+弹窗因此属于一次点击而不是属于打开页面。那里某个位置读不了不会让整个请求失败：它带着自己的错误和读得
+好的位置一起返回，并把状态压成 `denied` 而不是 `not_connected`；
 `PATCH /v1/skills/{id}` **只有**库级粗开关。`GET /v1/audit` 与 `GET /v1/security` 的存在是为了让前端
 回填两条治理流——GUI 不许自己碰数据目录。`POST /v1/parse/client-config` 只读不写（产出条目**预览**），
 因此不入审计。

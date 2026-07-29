@@ -151,6 +151,10 @@ the implementation, the change is sealed inside one package, rather than borrowi
 - Session-level flags are uniform: `--enable-server` / `--disable-server` / `--tools s:t1,t2` / `--discovery` / `--reset`.
   There is no `--persist`: a session overlay is volatile by construction, and the way to make a surface
   permanent is to edit the profile
+- The `client` group: `ls | detect | inspect | connect | disconnect | bind | unbind`. `detect` stats and
+  `inspect` reads, which is the whole distinction (macOS TCC — see internal/clients); `ls` gives the
+  connect and the bind answers per client. There is no `import`: it was removed, and a client's existing
+  servers are brought over by pasting the configuration instead
 - The `skill` group: `add | ls | inspect | rm | enable | disable | install-to | sync | update | verify`
   (`install-to` = materialize one entry, `sync` = materialize in bulk by scope; both coexist)
 - List subcommands are always `ls`

@@ -133,6 +133,9 @@ github.com/dinstein/agent-hub
 - OAuth 组规范名是 **`auth`**，不是 `oauth`
 - session 级 flag 统一：`--enable-server` / `--disable-server` / `--tools s:t1,t2` / `--discovery` / `--reset`
   （没有 `--persist`：session overlay 的修改一律易失，要永久生效只能改 profile）
+- `client` 组：`ls | detect | inspect | connect | disconnect | bind | unbind`。`detect` 只 stat、
+  `inspect` 才读文件，这条区分是全部要点（macOS TCC，见 internal/clients）；`ls` 每个客户端同时
+  给出 connect 与 bind 两个答案。没有 `import`：它已被删除，客户端已有的 server 改用粘贴配置的方式接管
 - `skill` 组：`add | ls | inspect | rm | enable | disable | install-to | sync | update | verify`
   （`install-to` = 单条物化，`sync` = 按 scope 批量物化，两者并存）
 - 列表子命令一律 `ls`
