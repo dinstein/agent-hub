@@ -112,13 +112,33 @@ what the failures look like, and what the correct behavior is.
 ## Collaboration conventions
 
 - **Do every feature in its own worktree; never edit code directly in the main repository work tree**:
-  `git worktree add ../agent-hub-<topic> -b <topic>`, then merge back from the main repo when done.
-  The main work tree stays clean and is used only for merging and pushing.
+  `git worktree add ../agent-hub-<topic> -b <topic>`. The main work tree stays clean and is used only
+  for landing branches and pushing.
 - Inside the worktree, make **one commit per subtask** (every commit must compile and pass tests)
 - Write commit messages in English
-- Only merge a branch back into `main` and push to the remote once the feature is complete and
-  `make ci-full` passes; clean up afterwards with `git worktree remove ../agent-hub-<topic>` and delete
-  the temporary branch
+- **`main` is linear: rebase, never merge.** Several worktrees are normally in flight at once, and a
+  merge commit per branch braids the history into something where "what landed, when, and on top of
+  what" can no longer be read off `git log`. Land a finished branch like this:
+
+  ```bash
+  # in the worktree
+  git fetch origin && git rebase origin/main
+  XDG_RUNTIME_DIR=/tmp/fake-xdg-e2e make ci-full
+
+  # in the main work tree
+  git merge --ff-only <topic> && git push origin main
+  git worktree remove ../agent-hub-<topic> && git branch -d <topic>
+  ```
+
+- **`make ci-full` runs after the rebase, not before it.** A rebase replays your commits onto code you
+  have never tested against, so a green run on the old base says nothing about the tree that is about
+  to land. This is the whole cost of the rebase rule, and skipping it is how `main` goes red.
+- **`--ff-only` is the enforcement, not a formality.** If it refuses, either the rebase did not happen
+  or `origin/main` moved again — rebase again. Never reach for a plain `git merge` to get past it.
+- Pull with `git pull --rebase` so an out-of-date `main` does not grow a merge commit of its own.
+- Rebase only branches that are yours alone. These topic branches are local and short-lived, which is
+  exactly what makes rewriting them safe; once a branch has been pushed and someone may have built on
+  it, it is history other people hold, and it is left alone.
 
 ## Toolchain
 
