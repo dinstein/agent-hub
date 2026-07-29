@@ -73,7 +73,11 @@ push, and `make ci-full` covers all of them:
 1. **The depguard proof can "skip" instead of fail.** When golangci-lint is absent,
    `internal/depguardtest` calls `t.Skip` on itself, and `make test` reports that skip as success;
    CI greps the verbose output for `--- SKIP` and fails — **a skipped proof is not a proof**
-   (CANONICAL §6).
+   (CANONICAL §6). It cannot *fail* silently any more either: that target and `ci-landing` grade
+   themselves from text piped through `tee`, and a pipeline's status is its last command, so both
+   arm `set -o pipefail` in the recipe itself rather than trusting `.SHELLFLAGS` — which GNU Make
+   3.81, the `/usr/bin/make` on macOS, ignores without a word. `test/buildrules` runs both targets
+   against a failing toolchain and requires them to go red.
 2. **The entire `gui` job.** `make ci` deliberately leaves it alone ("the GUI is optional" is a
    compile-time property and must not become a prerequisite of the default build), so it is wired in
    explicitly only in `ci-full`.

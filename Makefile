@@ -7,14 +7,22 @@
 # existing. `make bin` must keep working if Taskfile.yml is deleted — "the GUI
 # is optional" is a compile-time constraint (AGENTS.md), not a preference.
 
-# Recipes run under bash, not /bin/sh. `set -o pipefail` is load-bearing in
-# every target that decides pass/fail from text it piped through tee — the
-# depguard proof and the landing check — and dash, which is /bin/sh on Linux
-# runners and on most Linux developer machines, does not have it. Without this
-# those targets do not fail on Linux, they fail to RUN, and that is the worse
-# outcome: a developer who cannot execute the check reads the error as "the
-# Makefile is broken here" and moves on without it. Declared once, so a recipe
-# added later cannot quietly get the weaker shell.
+# Recipes run under bash, not /bin/sh. dash is /bin/sh on Linux runners and on
+# most Linux developer machines, and it has no `pipefail`.
+#
+# .SHELLFLAGS IS NOT ENOUGH ON ITS OWN, and believing it was is how the two
+# targets that need pipefail ran for a while without it. The directive arrived
+# in GNU Make 3.82; macOS ships 3.81 as /usr/bin/make, and 3.81 does not warn
+# about a variable it has never heard of — it just runs `$(SHELL) -c` with the
+# flags it always used. So on the platform this is developed on, `set -o
+# pipefail` was declared here, described as load-bearing, and silently absent,
+# which is the shape AGENTS.md calls worse than having no rule at all.
+#
+# Hence the belt AND the braces: this line for make >= 3.82, and an explicit
+# `set -o pipefail;` at the head of every recipe that decides pass/fail from
+# text it piped through tee. The second one works on both, and test/buildrules
+# proves it does rather than assuming — the whole reason this was missed is
+# that nothing ever checked.
 SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
 
@@ -105,10 +113,13 @@ E2E_XDG ?= /tmp/fake-xdg-e2e
 #
 #   FuzzParseMessage      downstream JSON-RPC frames
 #   FuzzSSEScanner        remote SSE streams — a hand-written line scanner,
-#                         the least trustworthy of the five
+#                         the least trustworthy of the seven
 #   FuzzScanAuthParam     remote WWW-Authenticate, hand-written index scanning
 #   FuzzEncodeJSON        downstream tool results, on the response path
 #   FuzzScanTOMLServers   another application's config file, hand-written
+#   FuzzBlankJSONC        the JSONC comment-blanking pass
+#   FuzzSpliceEntryKeepsEverythingElse
+#                         the splice that edits a settings.json in place
 #
 # Touching one of those parsers means running its target — `make fuzz
 # FUZZ=FuzzSSEScanner` — not necessarily the whole set.
@@ -215,7 +226,7 @@ ci-full: ci ci-depguard-proof gui-frontend-ci gui-go gui-vet ## Everything the C
 ci-landing: | $(LOGDIR) ## ci-full with the cache dropped and CI's env; run it after the rebase
 	$(GO) clean -testcache
 	@mkdir -p $(E2E_XDG)
-	@XDG_RUNTIME_DIR=$(E2E_XDG) $(MAKE) --no-print-directory ci-full 2>&1 | tee $(LOGDIR)/ci.log
+	@set -o pipefail; XDG_RUNTIME_DIR=$(E2E_XDG) $(MAKE) --no-print-directory ci-full 2>&1 | tee $(LOGDIR)/ci.log
 	@cached="$$(grep -c '(cached)' $(LOGDIR)/ci.log || true)"; \
 	if [ "$$cached" != 0 ]; then \
 		echo "landing check: $$cached cached result(s) in $(LOGDIR)/ci.log — the tree about to land was not actually tested" >&2; \
@@ -225,7 +236,7 @@ ci-landing: | $(LOGDIR) ## ci-full with the cache dropped and CI's env; run it a
 
 # The proof must RUN, not skip. Mirrors the workflow step exactly.
 ci-depguard-proof: | $(LOGDIR) ## Prove the depguard rules fire; fail if the proof skipped
-	@$(GO) test ./internal/depguardtest/ -run TestDepguardRulesActuallyFire -count=1 -v \
+	@set -o pipefail; $(GO) test ./internal/depguardtest/ -run TestDepguardRulesActuallyFire -count=1 -v \
 		| tee $(LOGDIR)/depguard-proof.log
 	@if grep -q -- "--- SKIP" $(LOGDIR)/depguard-proof.log; then \
 		echo "depguard proof was SKIPPED: install golangci-lint v2.12.2, a skipped proof is no proof" >&2; \
