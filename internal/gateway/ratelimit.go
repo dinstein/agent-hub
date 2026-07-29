@@ -29,7 +29,7 @@ import (
 //
 // Configuration lives at the GLOBAL layer only, governance.json
 // `rateLimits` — see registry.GovernanceDoc.RateLimits for why it is not a
-// five-layer scope field.
+// four-layer scope field.
 
 // initRateLimits builds this process's limiter from the governance document
 // the registry load just applied.

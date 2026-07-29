@@ -72,17 +72,6 @@ func TestRenameProfileRepointsEveryReference(t *testing.T) {
 	}
 	bindClient(t, st, "claude-code", "work")
 
-	// A project override inside the client, in the shorthand spelling.
-	if err := st.Update(ctx, func(tx *registry.Tx) error {
-		doc := tx.Clients.V.Clients["claude-code"]
-		doc.V.Projects = map[string]registry.Doc[registry.ProjectBinding]{
-			"/srv/x": {V: registry.ProjectBinding{Profile: "work"}},
-		}
-		tx.Clients.V.Clients["claude-code"] = doc
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := SetActiveProfile(ctx, st, "work", Precondition{}); err != nil {
 		t.Fatal(err)
 	}
@@ -97,9 +86,6 @@ func TestRenameProfileRepointsEveryReference(t *testing.T) {
 	entry := st.Snapshot().Clients.V.Clients["claude-code"].V
 	if got := entry.Binding(); got.Kind != registry.BindingNamed || got.Name != "work2" {
 		t.Errorf("client binding = %+v, want named:work2", got)
-	}
-	if got := entry.Projects["/srv/x"].V.Profile; got != "work2" {
-		t.Errorf("project binding = %q, want work2", got)
 	}
 	if active, _ := ActiveProfile(st); active != "work2" {
 		t.Errorf("active profile = %q, want work2 (the marker must follow the rename)", active)

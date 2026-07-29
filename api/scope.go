@@ -14,9 +14,6 @@ const (
 	BindingNamed = "named"
 	// BindingFollowActive follows the global active profile.
 	BindingFollowActive = "followActive"
-	// BindingInherit inherits the enclosing layer's binding (a project
-	// inherits its client's binding; a client inherits followActive).
-	BindingInherit = "inherit"
 )
 
 // ProfileBinding is the explicit profile reference of a client binding.
@@ -28,7 +25,7 @@ type ProfileBinding struct {
 }
 
 // ClientEntry is one client's STORED binding — the CLIENT layer of the
-// five-layer scope chain, in the registry document's own shape.
+// four-layer scope chain, in the registry document's own shape.
 //
 // CONTRACT: field names mirror internal/registry.ClientEntry (camelCase).
 // Profile is the shorthand for {kind:"named"}; an explicit ProfileRef wins

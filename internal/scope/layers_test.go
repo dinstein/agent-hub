@@ -211,64 +211,6 @@ func TestFromRegistryDanglingProfileFailClosed(t *testing.T) {
 	}
 }
 
-func TestFromRegistryProjectLongestPrefix(t *testing.T) {
-	snap := emptySnap()
-	snap.Profiles.V.Profiles["broad"] = doc(registry.Profile{Servers: []string{"fs", "git", "web"}})
-	snap.Profiles.V.Profiles["narrow"] = doc(registry.Profile{Servers: []string{"fs"}})
-	snap.Clients.V.Clients["c"] = doc(registry.ClientEntry{
-		Profile: "broad",
-		Projects: map[string]registry.Doc[registry.ProjectBinding]{
-			"/a":      doc(registry.ProjectBinding{Discovery: "full"}),
-			"/a/proj": doc(registry.ProjectBinding{Profile: "narrow", Discovery: "lazy"}),
-		},
-	})
-
-	// Root inside the deeper project: its binding and discovery win.
-	layers, diags := FromRegistry(snap, SessionKey{ClientID: "c", Root: "/a/proj/sub"})
-	if len(diags) != 0 {
-		t.Fatalf("diags: %v", diags)
-	}
-	pl := layerOfKind(t, layers, LayerProfile)
-	if pl == nil || pl.Origin != "profiles.json#narrow" {
-		t.Fatalf("project binding must override client profile, got %+v", pl)
-	}
-	pj := layerOfKind(t, layers, LayerProject)
-	if pj == nil || pj.Discovery == nil || *pj.Discovery != DiscoveryLazy {
-		t.Fatalf("project layer wrong: %+v", pj)
-	}
-
-	// Boundary: /a/project is NOT within /a/proj; it falls back to /a.
-	layers, _ = FromRegistry(snap, SessionKey{ClientID: "c", Root: "/a/project"})
-	pj = layerOfKind(t, layers, LayerProject)
-	if pj == nil || pj.Discovery == nil || *pj.Discovery != DiscoveryFull {
-		t.Fatalf("boundary violated: expected /a project layer, got %+v", pj)
-	}
-	if pl := layerOfKind(t, layers, LayerProfile); pl == nil || pl.Origin != "profiles.json#broad" {
-		t.Fatalf("inherit binding must fall back to client profile, got %+v", pl)
-	}
-
-	// No root: no project layer.
-	layers, _ = FromRegistry(snap, SessionKey{ClientID: "c"})
-	if layerOfKind(t, layers, LayerProject) != nil {
-		t.Error("rootless session must not get a project layer")
-	}
-}
-
-func TestFromRegistryProjectWindowsRoot(t *testing.T) {
-	snap := emptySnap()
-	snap.Clients.V.Clients["c"] = doc(registry.ClientEntry{
-		Projects: map[string]registry.Doc[registry.ProjectBinding]{
-			`C:\Users\Dev\Proj`: doc(registry.ProjectBinding{Discovery: "lazy"}),
-		},
-	})
-	// Client reports a differently-cased, forward-slash form of the same root.
-	layers, _ := FromRegistry(snap, SessionKey{ClientID: "c", Root: `c:/users/dev/proj/src`})
-	pj := layerOfKind(t, layers, LayerProject)
-	if pj == nil || pj.Discovery == nil || *pj.Discovery != DiscoveryLazy {
-		t.Fatalf("windows-form project root did not match: %+v", pj)
-	}
-}
-
 func TestFromRegistryExplicitProfileRef(t *testing.T) {
 	snap := emptySnap()
 	snap.Profiles.V.Profiles["dev"] = doc(registry.Profile{Servers: []string{"fs"}})

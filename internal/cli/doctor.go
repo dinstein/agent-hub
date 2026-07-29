@@ -389,7 +389,42 @@ func (d *doctorRun) checkRegistry(regDir string) {
 	d.checkBackups(regDir)
 	d.checkPreviousShutdown(regDir)
 	d.checkActiveProfile()
-	d.checkProjectBindings()
+	d.checkRetiredProjectBindings()
+}
+
+// checkRetiredProjectBindings reports `projects` blocks left in clients.json
+// after the per-project scope layer was retired.
+//
+// The registry preserves unknown fields verbatim (registry/envelope.go), which
+// is normally the right call — it is what lets a newer agenthub's config
+// survive an older binary. Here it is precisely the hazard: `projects` is no
+// longer modelled, so a legacy block sits on disk looking exactly as
+// authoritative as it did while it worked, and nothing about reading the file
+// reveals that it stopped applying.
+//
+// Warn rather than info, and the direction is why: the reason to write a
+// project binding was to NARROW one checkout, so its retirement widens what
+// that client sees. An operator who is not told inherits a widening they never
+// asked for. Deleting the block for them would be the other kind of mistake —
+// doctor reports, the operator decides.
+func (d *doctorRun) checkRetiredProjectBindings() {
+	var stale []string
+	for clientID, doc := range d.cfg.clients {
+		if doc.HasUnknownField("projects") {
+			stale = append(stale, clientID)
+		}
+	}
+	if len(stale) == 0 {
+		return // nothing configured: no finding, and no noise either
+	}
+	sort.Strings(stale)
+	d.add("scope:projects", StatusWarn, fmt.Sprintf(
+		"clients.json still carries per-project bindings (%s); that layer was retired and the "+
+			"block no longer applies, so a rule written to narrow one checkout is now inert "+
+			"and the client sees its full profile",
+		strings.Join(stale, ", "))).Fix =
+		"bind the client to a narrower profile instead: agenthub client bind <client> <profile>, " +
+			"then delete the 'projects' block from clients.json"
 }
 
 // checkPreviousShutdown reports the crash marker: a
@@ -515,43 +550,6 @@ func (d *doctorRun) checkActiveProfile() {
 		return
 	}
 	d.add("active-profile", StatusOK, active)
-}
-
-// checkProjectBindings reports per-project scope bindings whose match depends
-// on something doctor cannot verify from the registry alone: whether the
-// client actually reports a root.
-//
-// A project binding is selected by matching the SESSION's root against the
-// roots under clients.json#<client>/projects (scope/layers.go). The stdio
-// gateway now reports one — the client's first MCP root, read from the roots
-// cache (gateway/scope.go) — so these bindings DO apply, but only for a
-// client that implements the roots capability and reports a root under one of
-// the configured prefixes. A client that reports none matches nothing, and
-// the direction of that miss is what keeps this check alive: project bindings
-// sit ABOVE the client binding, so the usual reason to write one is to narrow
-// a particular checkout, and a miss leaves the WIDER client-level binding in
-// force. `agenthub scope ls` lists the project keys either way.
-//
-// Info rather than warn: with roots wired, a configured binding is no longer
-// known-inert — it is conditional, and reporting a working configuration as a
-// warning is how a diagnostic teaches operators to ignore it.
-func (d *doctorRun) checkProjectBindings() {
-	var withProjects []string
-	for clientID, doc := range d.cfg.clients {
-		if len(doc.V.Projects) > 0 {
-			withProjects = append(withProjects, clientID)
-		}
-	}
-	if len(withProjects) == 0 {
-		return // nothing configured: no finding, and no noise either
-	}
-	sort.Strings(withProjects)
-	d.add("scope:projects", StatusOK, fmt.Sprintf(
-		"per-project scope bindings are configured (%s); they apply to sessions whose client "+
-			"reports a matching MCP root, and a client reporting no root falls back to the "+
-			"client-level binding",
-		strings.Join(withProjects, ", "))).Fix =
-		"confirm what a live session actually resolved to: agenthub session ls"
 }
 
 // checkServers times a handshake against every ENABLED server.

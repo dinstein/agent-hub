@@ -27,7 +27,7 @@ func toolsOf(t *testing.T, es *EffectiveScope, server string) []string {
 }
 
 // TestMergeMatrix drives the full 4.1 merge table: three-state selectors,
-// five layers, intersection / union / OR / most-specific-wins.
+// four layers, intersection / union / OR / most-specific-wins.
 func TestMergeMatrix(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -50,7 +50,7 @@ func TestMergeMatrix(t *testing.T) {
 			name: "nil servers on every layer = no intervention",
 			layers: []ScopeLayer{
 				{Kind: LayerGlobal}, {Kind: LayerProfile}, {Kind: LayerClient},
-				{Kind: LayerProject}, {Kind: LayerSession},
+				{Kind: LayerSession},
 			},
 			cat: testCatalog(),
 			servers: map[string][]string{
@@ -182,7 +182,7 @@ func TestMergeMatrix(t *testing.T) {
 			name: "forced tighter than specific wins the min",
 			layers: []ScopeLayer{
 				{Kind: LayerGlobal, ResultBudget: map[string]*Budget{"git": {Bytes: 100, Forced: true}}},
-				{Kind: LayerProject, ResultBudget: map[string]*Budget{"git": {Bytes: 50}}},
+				{Kind: LayerClient, ResultBudget: map[string]*Budget{"git": {Bytes: 50}}},
 			},
 			cat: testCatalog(),
 			servers: map[string][]string{
@@ -207,15 +207,14 @@ func TestMergeMatrix(t *testing.T) {
 			appr: EffectiveApproval{HumanApproval: true, ConfirmDestructive: false, DenyDestructive: true},
 		},
 		{
-			name: "all five layers combined",
+			name: "all four layers combined",
 			layers: []ScopeLayer{
 				{Kind: LayerGlobal, Discovery: discPtr(DiscoveryFull),
 					Approval: ApprovalPolicy{DenyDestructive: boolPtr(true)}},
 				{Kind: LayerProfile, Servers: []string{"fs", "git"},
 					Tools: map[string]*ToolSelector{"fs": {Allow: []string{"read", "write", "delete"}}}},
-				{Kind: LayerClient, Discovery: discPtr(DiscoveryGrouped),
+				{Kind: LayerClient, Discovery: discPtr(DiscoveryGrouped), Servers: []string{"fs"},
 					Tools: map[string]*ToolSelector{"fs": {Deny: []string{"delete"}}}},
-				{Kind: LayerProject, Servers: []string{"fs"}},
 				{Kind: LayerSession,
 					Tools: map[string]*ToolSelector{"fs": {Allow: []string{"read", "delete"}}}},
 			},

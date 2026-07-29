@@ -401,23 +401,20 @@ func TestDoctorPreviousShutdown(t *testing.T) {
 	})
 }
 
-// TestDoctorNamesProjectBindings pins that the check reports CONDITIONAL, not
-// broken. Per-project bindings are selected by matching a session's root
-// against the roots under clients.json#<client>/projects, and the stdio
-// gateway now reports one (the client's first MCP root), so a binding whose
-// prefix matches does apply.
+// TestDoctorWarnsAboutRetiredProjectBindings pins the ONE direction that made
+// retiring the per-project layer dangerous: `projects` is no longer a modelled
+// field, and the registry preserves unknown fields verbatim, so a legacy block
+// survives on disk looking exactly as authoritative as it did while it worked
+// — but it no longer narrows anything.
 //
-// What doctor still cannot verify from the registry alone is whether the
-// client reports a root at all. That is why the check survives rather than
-// being deleted: a client reporting none matches nothing, and because project
-// bindings sit ABOVE the client binding in precedence, the miss leaves the
-// WIDER client-level binding in force.
-func TestDoctorNamesProjectBindings(t *testing.T) {
+// The usual reason to have written one was to narrow a particular checkout, so
+// its silent retirement WIDENS what that client sees. Doctor is the only thing
+// standing between the operator and a widening they never asked for, which is
+// why this is a warn rather than an info.
+func TestDoctorWarnsAboutRetiredProjectBindings(t *testing.T) {
 	dir := setDataDir(t)
 	isolateHome(t)
 
-	// A project binding can only be written by hand: no CLI command and no
-	// control-plane route creates one.
 	regDir := filepath.Join(dir, "registry")
 	if err := os.MkdirAll(regDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -432,18 +429,20 @@ func TestDoctorNamesProjectBindings(t *testing.T) {
 	// test owns is the status of its own check.
 	_, out, _ := runCLI(t, "", "doctor", "--json")
 	check := findCheck(t, decodeDoctor(t, decodeEnvelope(t, out)), "scope:projects")
-	if check.Status != StatusOK {
-		t.Fatalf("status = %q, want ok — the binding is live for a client that reports a "+
-			"matching root, and reporting a working configuration as a warning is how a "+
-			"diagnostic teaches operators to ignore it: %+v", check.Status, check)
+	if check.Status != StatusWarn {
+		t.Fatalf("status = %q, want warn — a retired rule that still LOOKS applied is a "+
+			"silent widening, and reporting it as ok is how an operator never learns: %+v",
+			check.Status, check)
 	}
 	if !strings.Contains(check.Detail, "claude-code") {
 		t.Errorf("detail does not name the client: %q", check.Detail)
 	}
-	// The operator must learn what the binding DEPENDS ON, since that is the
-	// part doctor cannot check for them.
-	if !strings.Contains(check.Detail, "root") {
-		t.Errorf("detail does not say the match depends on the reported root: %q", check.Detail)
+	// The operator must learn the rule is INERT, not merely present.
+	if !strings.Contains(check.Detail, "no longer") {
+		t.Errorf("detail does not say the block no longer applies: %q", check.Detail)
+	}
+	if check.Fix == "" {
+		t.Error("a warning the operator cannot act on is noise: want a fix hint")
 	}
 }
 

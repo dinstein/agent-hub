@@ -9,7 +9,7 @@ import (
 )
 
 // ClientBinding is a PATCH of one client's persistent scope binding (the
-// CLIENT layer of the five-layer chain): every field is optional, and a nil
+// CLIENT layer of the four-layer chain): every field is optional, and a nil
 // field is left untouched.
 //
 // Optional-by-pointer rather than "zero means unset" because the zero values
@@ -43,10 +43,10 @@ func (s ProfileBindingSpec) validate() error {
 			return usagef("a named profile binding needs a profile name")
 		}
 		return nil
-	case registry.BindingFollowActive, registry.BindingInherit:
+	case registry.BindingFollowActive:
 		return nil
 	default:
-		return usagef("unknown profile binding kind %q (want named, followActive or inherit)", s.Kind)
+		return usagef("unknown profile binding kind %q (want named or followActive)", s.Kind)
 	}
 }
 

@@ -10,9 +10,8 @@ import (
 // for one session key, in ascending specificity order:
 //
 //	global (governance.json + active profile selection)
-//	→ profile (chosen by: project binding > client binding > followActive)
+//	→ profile (chosen by: client binding > followActive)
 //	→ client (clients.json entry for key.ClientID)
-//	→ project (longest normalized-root prefix match inside the client entry)
 //
 // The session layer is NOT produced here — the Resolver appends the live
 // Overlay. Returned layers never alias snapshot-owned maps or slices
@@ -52,46 +51,13 @@ func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diag
 		ce = &c
 	}
 
-	// Project match: longest normalized-root prefix within the client entry.
-	root := NormalizePath(key.Root)
-	var pb *registry.ProjectBinding
-	var projOrigin string
-	if ce != nil && root != "" {
-		bestLen := -1
-		bestKey := ""
-		for rawRoot, pdoc := range ce.Projects {
-			nr := NormalizePath(rawRoot)
-			if !PathIsWithin(nr, root) {
-				continue
-			}
-			// Longest prefix wins; among raw keys normalizing to the same
-			// root, the lexicographically smallest raw key wins (determinism).
-			if len(nr) > bestLen || (len(nr) == bestLen && rawRoot < bestKey) {
-				bestLen = len(nr)
-				bestKey = rawRoot
-				v := pdoc.V
-				pb = &v
-			}
-		}
-		if pb != nil {
-			projOrigin = fmt.Sprintf("clients.json#%s/projects#%s", key.ClientID, bestKey)
-		}
-	}
-
-	// Profile selection chain: project binding > client binding > default
-	// followActive (docs/architecture.md §7). BindingInherit falls through to the
-	// enclosing layer's binding.
+	// Profile selection chain: client binding > default followActive
+	// (docs/architecture.md §7).
 	binding := registry.ProfileBinding{Kind: registry.BindingFollowActive}
 	bindingOrigin := "governance.json#activeProfile"
 	if ce != nil {
 		binding = ce.Binding()
 		bindingOrigin = "clients.json#" + key.ClientID
-	}
-	if pb != nil {
-		if b := pb.Binding(); b.Kind != registry.BindingInherit {
-			binding = b
-			bindingOrigin = projOrigin
-		}
 	}
 
 	profileName := ""
@@ -100,9 +66,7 @@ func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diag
 	case registry.BindingNamed:
 		profileName = binding.Name
 		dangling = profileName == "" // named binding without a name is dangling
-	case registry.BindingFollowActive, registry.BindingInherit:
-		// BindingInherit cannot surface from Binding() at the client level;
-		// treat defensively as followActive.
+	case registry.BindingFollowActive:
 		profileName = activeProfileName(snap)
 	}
 
@@ -151,21 +115,6 @@ func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diag
 		cl.Approval.HumanApproval = cloneBool(ce.Approval.HumanApproval)
 		cl.Approval.ConfirmDestructive = cloneBool(ce.Approval.ConfirmDestructive)
 		layers = append(layers, cl)
-	}
-
-	// Project layer.
-	if pb != nil {
-		pl := ScopeLayer{
-			Kind:    LayerProject,
-			Origin:  projOrigin,
-			Servers: cloneStrings(pb.Servers),
-			Tools:   selectorsFromDocs(pb.Tools),
-		}
-		if pb.Discovery != "" {
-			d := DiscoveryMode(pb.Discovery)
-			pl.Discovery = &d
-		}
-		layers = append(layers, pl)
 	}
 
 	return layers, diags

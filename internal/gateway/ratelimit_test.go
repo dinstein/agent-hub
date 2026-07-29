@@ -18,7 +18,7 @@ import (
 
 // seedRateLimits writes the quota rule set into governance.json — the GLOBAL
 // layer, the only layer quotas live at (registry.GovernanceDoc.RateLimits
-// explains why they are not a five-layer scope field).
+// explains why they are not a four-layer scope field).
 func seedRateLimits(t *testing.T, resolver *platform.Resolver, rules ...registry.RateLimitRule) {
 	t.Helper()
 	docs := make([]registry.Doc[registry.RateLimitRule], 0, len(rules))

@@ -435,7 +435,7 @@ func (s *Server) expireGrant(id string) {
 
 // applyGrantWiden widens ov for (server, tools) and reports exactly what it
 // added. It only ever RELAXES narrowing recorded in the overlay itself —
-// the static five-layer waterline still applies at merge time, so a grant
+// the static four-layer waterline still applies at merge time, so a grant
 // can never expose more than the operator's persisted configuration.
 func applyGrantWiden(ov *scope.Overlay, server string, tools []string) grantUndo {
 	undo := grantUndo{server: server}

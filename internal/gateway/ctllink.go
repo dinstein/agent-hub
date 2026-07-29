@@ -39,7 +39,7 @@ const linkDialTimeout = 5 * time.Second
 // the daemon-assigned SessionID and apply the initial overlay → consume the
 // SSE link (overlay pushes acked via POST .../ack, registry change
 // notifications) → on ANY disconnect: discard the overlay (the authority
-// died with the daemon-side session — fall back to the static five-layer
+// died with the daemon-side session — fall back to the static four-layer
 // scope), back off, re-register for a NEW identity.
 type ctlLink struct {
 	g      *gateway
@@ -140,7 +140,7 @@ func (l *ctlLink) Session() string {
 }
 
 // Overlay returns the current daemon-pushed overlay (nil = none: static
-// five-layer scope applies). The value is immutable.
+// four-layer scope applies). The value is immutable.
 func (l *ctlLink) Overlay() *scope.Overlay {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -331,7 +331,7 @@ func (l *ctlLink) clear(reason string) {
 		l.g.log.Info("daemon session ended", "reason", reason)
 	}
 	if hadSession || hadOverlay {
-		// Fall back to the static five-layer scope (and, on the widowed-
+		// Fall back to the static four-layer scope (and, on the widowed-
 		// overlay path, WIDEN back from the discarded overlay — a session
 		// grant dies with its session by design, docs/architecture.md §2).
 		l.g.onOverlayChanged()

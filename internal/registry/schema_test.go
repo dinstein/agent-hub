@@ -78,14 +78,6 @@ func TestClientsRoundTripGolden(t *testing.T) {
       },
       "resultBudget": {"*": {"bytes": 49152, "future_budget": "x"}},
       "approval": {"confirmDestructive": true},
-      "projects": {
-        "~/work/payments": {
-          "profileRef": {"kind": "named", "name": "payments", "future_ref": 9},
-          "servers": ["stripe"],
-          "tools": {"stripe": {"allow": ["list_charges"]}},
-          "future_project": {"n": true}
-        }
-      },
       "future_client": "keep-me"
     },
     "openwebui": {"profileRef": {"kind": "followActive"}, "discovery": "full"}
@@ -163,7 +155,6 @@ func TestProfileBindingResolution(t *testing.T) {
 		want ProfileBinding
 	}{
 		{"client default is followActive", ClientEntry{}.Binding(), named(BindingFollowActive, "")},
-		{"project default is inherit", ProjectBinding{}.Binding(), named(BindingInherit, "")},
 		{"profile shorthand means named", ClientEntry{Profile: "dev"}.Binding(), named(BindingNamed, "dev")},
 		{
 			"explicit ref wins over shorthand",

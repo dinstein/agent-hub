@@ -122,8 +122,8 @@ func RenameProfile(
 	}, nil
 }
 
-// repointProfileRefs rewrites every client and project binding that names
-// oldName and returns the client ids it touched, in ascending id order.
+// repointProfileRefs rewrites every client binding that names oldName and
+// returns the client ids it touched, in ascending id order.
 func repointProfileRefs(tx *registry.Tx, oldName, newName string) []string {
 	var touched []string
 	for _, id := range sortedKeys(tx.Clients.V.Clients) {
@@ -140,27 +140,6 @@ func repointProfileRefs(tx *registry.Tx, oldName, newName string) []string {
 			ref.V.Name = newName
 			entry.ProfileRef = &ref
 			changed = true
-		}
-		for _, root := range sortedKeys(entry.Projects) {
-			pdoc := entry.Projects[root]
-			proj := pdoc.V
-			pchanged := false
-			if proj.Profile == oldName {
-				proj.Profile = newName
-				pchanged = true
-			}
-			if proj.ProfileRef != nil && proj.ProfileRef.V.Kind == registry.BindingNamed &&
-				proj.ProfileRef.V.Name == oldName {
-				ref := *proj.ProfileRef
-				ref.V.Name = newName
-				proj.ProfileRef = &ref
-				pchanged = true
-			}
-			if pchanged {
-				pdoc.V = proj
-				entry.Projects[root] = pdoc
-				changed = true
-			}
 		}
 		if changed {
 			doc.V = entry

@@ -1,5 +1,5 @@
-// Package scope implements the five-layer scope resolution chain
-// : Global > Profile > Client > Project > Session, merged
+// Package scope implements the four-layer scope resolution chain
+// : Global > Profile > Client > Session, merged
 // by Merge into a content-addressed EffectiveScope.
 //
 // Merge is a pure function: same inputs always produce the same output and
@@ -13,7 +13,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// LayerKind identifies one of the five scope layers, ordered from least to
+// LayerKind identifies one of the four scope layers, ordered from least to
 // most specific. The numeric order IS the specificity order used by
 // most-specific-wins merging; do not reorder.
 type LayerKind uint8
@@ -22,7 +22,6 @@ const (
 	LayerGlobal LayerKind = iota
 	LayerProfile
 	LayerClient
-	LayerProject
 	LayerSession
 )
 
@@ -35,8 +34,6 @@ func (k LayerKind) String() string {
 		return "profile"
 	case LayerClient:
 		return "client"
-	case LayerProject:
-		return "project"
 	case LayerSession:
 		return "session"
 	default:

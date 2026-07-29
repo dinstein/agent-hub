@@ -287,13 +287,10 @@ const (
 	BindingNamed ProfileBindingKind = "named"
 	// BindingFollowActive follows the global active profile.
 	BindingFollowActive ProfileBindingKind = "followActive"
-	// BindingInherit inherits the binding of the enclosing layer (a project
-	// inherits its client's binding; a client inherits followActive).
-	BindingInherit ProfileBindingKind = "inherit"
 )
 
 // ProfileBinding is the explicit form of a profile reference. The plain
-// `profile` string field on ClientEntry/ProjectBinding is shorthand for
+// `profile` string field on ClientEntry is shorthand for
 // {Kind: named, Name: <value>}; an explicit ProfileRef wins over the
 // shorthand when both are present.
 type ProfileBinding struct {
@@ -317,8 +314,8 @@ type ProfilesDoc struct {
 	Profiles map[string]Doc[Profile] `json:"profiles"`
 }
 
-// ApprovalPolicy carries the layered approval switches a client or project
-// may set. Pointer three-state: nil = no intervention. Merge direction is
+// ApprovalPolicy carries the layered approval switches a client may set.
+// Pointer three-state: nil = no intervention. Merge direction is
 // boolean OR across layers — any layer requiring approval wins (tighten-only,
 // fail-closed). DenyDestructive lives only in governance.json: it is global
 // and never agent-writable.
@@ -367,36 +364,16 @@ type RateLimitRule struct {
 	Scope string `json:"scope,omitempty"`
 }
 
-// ProjectBinding is a per-project (root path) override inside a client entry.
-// Roots are the map keys of ClientEntry.Projects, matched by longest normal-
-// ized prefix at resolve time (normalization is internal/scope's job; the
-// registry stores keys verbatim).
-type ProjectBinding struct {
-	Profile    string                       `json:"profile,omitempty"`    // shorthand for ProfileRef named
-	ProfileRef *Doc[ProfileBinding]         `json:"profileRef,omitempty"` // explicit form, wins over Profile
-	Discovery  string                       `json:"discovery,omitempty"`
-	Servers    []string                     `json:"servers,omitzero"` // narrowing; nil = none, [] = block-all
-	Tools      map[string]Doc[ToolSelector] `json:"tools,omitempty"`  // serverID -> selector
-}
-
-// Binding resolves the effective profile reference of a project override.
-// Default (nothing set) is inherit: the project falls back to its client's
-// binding.
-func (p ProjectBinding) Binding() ProfileBinding {
-	return resolveBinding(p.ProfileRef, p.Profile, BindingInherit)
-}
-
-// ClientEntry binds one AI client to its profile, discovery mode, narrowing
-// rules and per-project overrides (docs/architecture.md §7).
+// ClientEntry binds one AI client to its profile, discovery mode and
+// narrowing rules (docs/architecture.md §7).
 type ClientEntry struct {
-	Profile      string                         `json:"profile,omitempty"`    // shorthand for ProfileRef named
-	ProfileRef   *Doc[ProfileBinding]           `json:"profileRef,omitempty"` // explicit form, wins over Profile
-	Discovery    string                         `json:"discovery,omitempty"`
-	Servers      []string                       `json:"servers,omitzero"`       // narrowing; nil = none, [] = block-all
-	Tools        map[string]Doc[ToolSelector]   `json:"tools,omitempty"`        // serverID -> selector
-	ResultBudget map[string]Doc[Budget]         `json:"resultBudget,omitempty"` // serverID or "*"
-	Approval     ApprovalPolicy                 `json:"approval,omitzero"`
-	Projects     map[string]Doc[ProjectBinding] `json:"projects,omitempty"` // root path -> override
+	Profile      string                       `json:"profile,omitempty"`    // shorthand for ProfileRef named
+	ProfileRef   *Doc[ProfileBinding]         `json:"profileRef,omitempty"` // explicit form, wins over Profile
+	Discovery    string                       `json:"discovery,omitempty"`
+	Servers      []string                     `json:"servers,omitzero"`       // narrowing; nil = none, [] = block-all
+	Tools        map[string]Doc[ToolSelector] `json:"tools,omitempty"`        // serverID -> selector
+	ResultBudget map[string]Doc[Budget]       `json:"resultBudget,omitempty"` // serverID or "*"
+	Approval     ApprovalPolicy               `json:"approval,omitzero"`
 }
 
 // Binding resolves the effective profile reference of a client entry.
@@ -459,7 +436,7 @@ type GovernanceDoc struct {
 	// switch.
 	//
 	// It sits at the GLOBAL layer only — it is deliberately NOT one of the
-	// five-layer scope-chain fields — for three reasons:
+	// four-layer scope-chain fields — for three reasons:
 	//
 	//  1. The rule pattern already carries the (client, server, tool)
 	//     dimension a per-client or per-project layer would add. A client
@@ -467,7 +444,7 @@ type GovernanceDoc struct {
 	//     same fact twice, in two places that can disagree.
 	//  2. The counters are SHARED ACROSS PROCESSES and keyed by the rule
 	//     pattern. The same pattern defined at several layers would either
-	//     split one quota into one bucket per layer (five layers = five
+	//     split one quota into one bucket per layer (four layers = five
 	//     times the limit — the opposite of the tighten-only merge every
 	//     other governance field obeys) or need a per-pattern min-merge that
 	//     exists nowhere else in this codebase.

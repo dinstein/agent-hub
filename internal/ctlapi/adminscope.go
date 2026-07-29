@@ -8,7 +8,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// The CLIENT layer of the five-layer scope chain (docs/modules/controlplane.md
+// The CLIENT layer of the four-layer scope chain (docs/modules/controlplane.md
 // §5): which profile a client follows, plus its own narrowing.
 //
 // Not to be confused with POST /v1/sessions/{id}/scope, which mutates one

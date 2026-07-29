@@ -23,6 +23,21 @@ type Doc[T any] struct {
 	extra map[string]json.RawMessage
 }
 
+// HasUnknownField reports whether the document carried a top-level field that
+// T does not model. It exists for exactly one job: letting a diagnostic notice
+// a RETIRED field that is still on disk.
+//
+// Passthrough is what makes retirement dangerous. A field the type system
+// dropped keeps round-tripping verbatim, so a rule an operator wrote while it
+// worked still LOOKS applied long after it stopped narrowing anything — and
+// for a narrowing rule, stopping means widening. Reading the key is therefore
+// deliberately all this exposes: callers may ask whether a name survived, not
+// reach into the passthrough and act on it.
+func (d Doc[T]) HasUnknownField(name string) bool {
+	_, ok := d.extra[name]
+	return ok
+}
+
 // UnmarshalJSON captures every top-level field, decodes the typed view, then
 // removes the known fields so extra holds only what T does not model.
 func (d *Doc[T]) UnmarshalJSON(b []byte) error {

@@ -92,7 +92,7 @@ type SessionDetail struct {
 	Note string `json:"note,omitempty"`
 }
 
-// Human renders the five-layer view.
+// Human renders the four-layer view.
 func (d SessionDetail) Human(w io.Writer) error {
 	if err := (SessionList{Sessions: []SessionRow{d.Session}}).Human(w); err != nil {
 		return err
@@ -295,7 +295,7 @@ func (a *App) followSessions(ctx context.Context, ctl *ctlClient, client string)
 func (a *App) newSessionShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <sid>",
-		Short: "Show a session's five-layer scope resolution, effective surface and diagnostics",
+		Short: "Show a session's four-layer scope resolution, effective surface and diagnostics",
 		Args:  exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sid := args[0]

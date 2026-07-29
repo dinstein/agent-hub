@@ -12,7 +12,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// The `scope` group edits the CLIENT layer of the five-layer chain
+// The `scope` group edits the CLIENT layer of the four-layer chain
 //: clients.json maps an agent application id to a profile
 // binding plus its own narrowing rules. These are PERSISTENT bindings —
 // the volatile per-connection layer is `session scope`.
@@ -23,8 +23,8 @@ import (
 // ScopeBinding is one client's persisted scope binding.
 type ScopeBinding struct {
 	Client string `json:"client"`
-	// Binding is the explicit profile reference: named / followActive /
-	// inherit. It replaces toolport's `"profile": ""` magic value.
+	// Binding is the explicit profile reference: named / followActive.
+	// It replaces toolport's `"profile": ""` magic value.
 	Binding string `json:"binding"`
 	Profile string `json:"profile,omitempty"`
 	// Servers is the three-state narrowing set: null = no narrowing,
@@ -32,8 +32,6 @@ type ScopeBinding struct {
 	Servers   []string                         `json:"servers"`
 	Tools     map[string]registry.ToolSelector `json:"tools,omitempty"`
 	Discovery string                           `json:"discovery,omitempty"`
-	// Projects lists the per-root override keys, if any.
-	Projects []string `json:"projects,omitempty"`
 	// Dangling is set when Binding names a profile that does not exist:
 	// the resolver fail-closes it to an EMPTY scope, and doctor/`scope ls`
 	// must say so out loud rather than show a silent empty set
@@ -126,7 +124,6 @@ func scopeBindingOf(id string, e registry.ClientEntry, profiles map[string]regis
 			out.Tools[sid] = doc.V
 		}
 	}
-	out.Projects = sortedKeys(e.Projects)
 	if b.Kind == registry.BindingNamed {
 		if _, ok := profiles[b.Name]; !ok {
 			out.Dangling = true

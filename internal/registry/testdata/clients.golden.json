@@ -7,28 +7,6 @@
       "discovery": "grouped",
       "future_client": "keep-me",
       "profile": "dev",
-      "projects": {
-        "~/work/payments": {
-          "future_project": {
-            "n": true
-          },
-          "profileRef": {
-            "future_ref": 9,
-            "kind": "named",
-            "name": "payments"
-          },
-          "servers": [
-            "stripe"
-          ],
-          "tools": {
-            "stripe": {
-              "allow": [
-                "list_charges"
-              ]
-            }
-          }
-        }
-      },
       "resultBudget": {
         "*": {
           "bytes": 49152,

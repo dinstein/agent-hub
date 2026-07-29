@@ -144,7 +144,7 @@ type Config struct {
 
 	// ScopeLayers supplies extra narrowing layers for the session's effective
 	// scope (scope.Sources.Extra) — how a credential's server allowlist and
-	// profile pin join the SAME five-layer intersection the persisted config
+	// profile pin join the SAME four-layer intersection the persisted config
 	// uses instead of growing a second visibility rule. nil = no extra layers.
 	//
 	// Failure direction: layers can only tighten (Merge intersects security
