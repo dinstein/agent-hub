@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"sync/atomic"
 
@@ -229,7 +228,7 @@ func injectionRuleIDs(findings []injection.Finding) []string {
 // findings happened to arrive in.
 func ruleList(ids []string) string {
 	ids = slices.Clone(ids)
-	sort.Strings(ids)
+	slices.Sort(ids)
 	if len(ids) > maxRulesInNotice {
 		ids = append(ids[:maxRulesInNotice], "…")
 	}

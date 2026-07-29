@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -67,7 +66,7 @@ func (s *Server) serverList() []api.Server {
 			}),
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	slices.SortFunc(out, func(a, b api.Server) int { return strings.Compare(a.ID, b.ID) })
 	return out
 }
 

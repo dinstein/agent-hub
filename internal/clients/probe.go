@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
-	"sort"
 )
 
 // probeFormat implements Format for the shapes agenthub deliberately does
@@ -172,7 +171,7 @@ func (f *probeFormat) ownedEntry(path string) (name string, entry *tomlEntry, ok
 	for n := range entries {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	for _, n := range names {
 		e := entries[n]
 		raw, err := json.Marshal(struct {

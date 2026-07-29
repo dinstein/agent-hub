@@ -1,12 +1,12 @@
 package catalog
 
 import (
+	"cmp"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -166,7 +166,7 @@ func (e Entry) Placeholders() []string {
 	for name := range seen {
 		out = append(out, name)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -183,7 +183,7 @@ func (e Entry) SecretRefs() []string {
 	for key := range seen {
 		out = append(out, key)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -270,8 +270,8 @@ func (e Entry) Render(params map[string]string) (registry.ServerEntry, error) {
 			}
 		}
 	}
-	sort.Strings(perr.Missing)
-	sort.Strings(perr.Unknown)
+	slices.Sort(perr.Missing)
+	slices.Sort(perr.Unknown)
 	if len(perr.Missing) > 0 || len(perr.Unknown) > 0 || len(perr.Invalid) > 0 {
 		return registry.ServerEntry{}, perr
 	}
@@ -394,7 +394,7 @@ func parseSeed(data []byte) ([]Entry, error) {
 		seen[e.ID] = struct{}{}
 	}
 	out := slices.Clone(file.Entries)
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	slices.SortFunc(out, func(a, b Entry) int { return strings.Compare(a.ID, b.ID) })
 	return out, nil
 }
 
@@ -542,11 +542,11 @@ func Search(query string) []Entry {
 			hits = append(hits, scored{entry: e.clone(), score: total})
 		}
 	}
-	sort.SliceStable(hits, func(i, j int) bool {
-		if hits[i].score != hits[j].score {
-			return hits[i].score > hits[j].score
+	slices.SortStableFunc(hits, func(a, b scored) int {
+		if c := cmp.Compare(b.score, a.score); c != 0 {
+			return c // descending by score
 		}
-		return hits[i].entry.ID < hits[j].entry.ID
+		return strings.Compare(a.entry.ID, b.entry.ID)
 	})
 	out := make([]Entry, 0, len(hits))
 	for _, h := range hits {
