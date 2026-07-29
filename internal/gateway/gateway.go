@@ -41,6 +41,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -324,7 +325,13 @@ func newGateway(cfg Config) (*gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	log = log.With(logx.FieldClient, cfg.ClientID)
+	// The pid is attached once, for the whole process: the log FILE is named
+	// after the client, so every `agenthub connect --client <id>` of the same
+	// client appends to the same file and a user normally has several running
+	// at once (one per editor window). Without it two gateways' lines read as
+	// one gateway doing impossible things — a server connecting and failing
+	// at the same instant, a backoff ladder that appears to skip rungs.
+	log = log.With(logx.FieldClient, cfg.ClientID, logx.FieldPID, os.Getpid())
 
 	// The vault chain backs BOTH credential faces — ${SECRET_X} resolution
 	// and the OAuth bearer — so it is built once and shared. An injected

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -55,6 +56,14 @@ type ServerLogRow struct {
 	Truncated bool   `json:"truncated,omitempty"`
 	Error     string `json:"error,omitempty"`
 	DurMs     int64  `json:"durMs,omitempty"`
+	// PID and Inst answer "who wrote this line", the question a shared file
+	// forces. One server's log is written by every gateway process holding it
+	// open (PID) and, inside one process, by every derived instance of that
+	// server (Inst). Both were already recorded in the file and neither
+	// reached the reader, which is what made two writers interleaving look
+	// like one writer contradicting itself.
+	PID  int    `json:"pid,omitempty"`
+	Inst string `json:"inst,omitempty"`
 }
 
 // ServerLogs is the `server logs` result.
@@ -81,7 +90,7 @@ func (l ServerLogs) Human(w io.Writer) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "TIME\tDIR\tMETHOD\tBYTES\tMS\tDETAIL")
+	_, _ = fmt.Fprintln(tw, "TIME\tPID\tDIR\tMETHOD\tBYTES\tMS\tDETAIL")
 	for _, f := range l.Frames {
 		detail := f.Error
 		if detail == "" {
@@ -90,8 +99,9 @@ func (l ServerLogs) Human(w io.Writer) error {
 		if f.Truncated {
 			detail += "…"
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%s\n",
-			f.TS, f.Dir, dash(f.Method), f.Bytes, f.DurMs, oneLine(detail, serverLogsDetailWidth))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%d\t%s\n",
+			f.TS, dashInt(f.PID), f.Dir, dash(f.Method), f.Bytes, f.DurMs,
+			oneLine(detail, serverLogsDetailWidth))
 	}
 	if err := tw.Flush(); err != nil {
 		return err
@@ -211,6 +221,7 @@ func rowsOf(frames []downstream.TraceFrame) []ServerLogRow {
 			TS:     f.TS.UTC().Format(time.RFC3339Nano),
 			Server: f.Server, Dir: f.Dir, Method: f.Method, Bytes: f.Bytes,
 			Payload: f.Payload, Truncated: f.Truncated, Error: f.Error, DurMs: f.DurMs,
+			PID: f.PID, Inst: f.Inst,
 		})
 	}
 	return out
@@ -255,4 +266,14 @@ func readTraceFrom(path string, offset int64) ([]downstream.TraceFrame, int, err
 		return nil, skipped, fmt.Errorf("read %s: %w", path, err)
 	}
 	return frames, skipped, nil
+}
+
+// dashInt renders a pid, or "-" for a frame written before the field
+// existed. An old trace file stays readable rather than growing a column of
+// zeros that look like a process id.
+func dashInt(n int) string {
+	if n == 0 {
+		return "-"
+	}
+	return strconv.Itoa(n)
 }

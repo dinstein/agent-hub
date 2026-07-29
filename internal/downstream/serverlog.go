@@ -3,6 +3,7 @@ package downstream
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -77,6 +78,18 @@ type TraceFrame struct {
 	// and a line from a base connection is byte-identical to one written
 	// before this field existed.
 	Inst string `json:"inst,omitempty"`
+	// PID is the process that wrote the frame. It is Inst's argument one
+	// level up: a server's log file is named for the SERVER, so every
+	// gateway process tracing it appends to the same file, and a user
+	// normally has several running at once. Without it the frames of two
+	// clients interleave into what reads like one conversation contradicting
+	// itself — the same request issued twice, a response arriving before its
+	// request.
+	//
+	// Unlike Inst it is never empty, so it carries no omitempty: a frame with
+	// no pid would mean "written by no process", which is not a state that
+	// exists.
+	PID int `json:"pid"`
 }
 
 // ServerLog is the per-server trace sink. The zero value is not usable; a
@@ -203,6 +216,7 @@ func (l *ServerLog) in(inst, method string, raw json.RawMessage, err error, dur 
 func (l *ServerLog) append(f TraceFrame, payload json.RawMessage) {
 	f.TS = time.Now().UTC()
 	f.Server = l.serverID
+	f.PID = os.Getpid()
 	f.Bytes = len(payload)
 	if len(payload) > tracePayloadCap {
 		f.Payload = string(payload[:tracePayloadCap])

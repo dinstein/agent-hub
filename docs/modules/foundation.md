@@ -158,6 +158,21 @@ Any log touching a downstream server, a tool call, a client, or a session must u
 constants in `fields.go`, because that's what lets the gateway's, daemon's, and CLI's log streams be
 joined together. **Don't invent synonyms** (`srv`, `toolName`, …).
 
+**`pid` is mandatory on every gateway record, and is attached once at logger construction** rather
+than per call site — every line of a process carries the same value, and stamping it at each call is
+how one line ends up without it. It exists because the log FILE is named after the CLIENT, not the
+process: every `agenthub connect --client claude-code` appends to `gateway-claude-code.log`, and a
+user normally has several running at once, one per editor window. Without it the interleaved lines of
+two gateways read as one gateway doing impossible things — a server that connects and fails in the
+same instant, a backoff ladder that appears to skip rungs. The value is what `ps` prints, so a line
+joins directly to a process on the machine.
+
+The per-server trace log (`internal/downstream`, `TraceFrame`) carries the same field for the same
+reason one level down, alongside `inst`: that file is named after the SERVER, so every gateway
+process tracing it writes there, and inside one process every derived instance does too. `server
+logs` renders `pid` as a column and carries both in `--json`; a frame written before the field
+existed shows `-` rather than a zero that would read like a process id.
+
 ### Invariants and failure directions
 
 **Redaction cannot be turned off.** This is the hardest rule in the package: there is no
