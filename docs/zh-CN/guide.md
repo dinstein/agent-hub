@@ -147,6 +147,29 @@ agenthub client ls                  # 谁绑在哪个 profile 上，也就是各
 
 写好的配置文件说明的只是意图。真正的确认是客户端自己：重启它，让它用一次某个 tool。
 
+## 当你需要看到线上的原始流量
+
+一台 server 过得了 `server test`、在客户端里却表现不对时，问题就不再是「连不连得上」，而是
+「它到底回了什么」。把流量录下来能回答这个：
+
+```bash
+agenthub server trace linear on
+# 在你的客户端里复现问题
+agenthub server logs linear
+agenthub server trace linear off
+```
+
+打开之前有三件事值得知道：
+
+**立刻生效。** 已经在跑的客户端不用重启就开始记录，而且它连的那台 server 不会被重连——正在被
+调查的那条连接不受打扰。
+
+**文件里是原始响应。** 帧是在连接处捕获的，早于任何过滤，所以 server 实际返回了什么，就原样
+躺在 `logs/server-<id>.log` 里。这正是它的用处，也是拿到答案后就该关掉它的理由。
+
+**按 server 生效，而且会持久。** 没有任何机制让 trace 过期，开着不管就会跨重启一直录。只要还有
+东西在被 trace，`server ls` 就会多出一列 `TRACE`——想不起来开过哪台时就去那里看。
+
 ## 常见的意外
 
 | 症状 | 多半是因为 |

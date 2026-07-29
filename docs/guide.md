@@ -162,6 +162,34 @@ may see, not whether it is wired up, and `client detect` answers that.
 A written config file only shows intent. The confirmation is the client
 itself: restart it and ask it to use a tool.
 
+## When you need to see the wire
+
+Once a server passes `server test` but still behaves wrongly in the client,
+the question stops being "is it reachable" and becomes "what exactly did it
+say". Recording the traffic answers that:
+
+```bash
+agenthub server trace linear on
+# reproduce the problem in your client
+agenthub server logs linear
+agenthub server trace linear off
+```
+
+Three things are worth knowing before turning it on:
+
+**It takes effect immediately.** A client that is already running starts
+recording without being restarted, and the server it talks to is not
+reconnected — the connection under investigation is left alone.
+
+**The file holds raw responses.** Frames are captured at the connection,
+before anything filters them, so whatever the server actually returned sits
+in `logs/server-<id>.log`. That is the point of it, and the reason to turn it
+off once you have your answer.
+
+**It is per server, and it persists.** Nothing expires a trace, so one left
+on keeps recording across restarts. `server ls` grows a `TRACE` column while
+anything is being traced — that is where to look when you cannot remember.
+
 ## Common surprises
 
 | symptom | likely cause |

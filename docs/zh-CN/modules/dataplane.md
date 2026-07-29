@@ -154,6 +154,25 @@ root 之间来回切的 agent 不该每次切换都重启进程）、**封顶**�
 是帧跨越下游边界的**唯一**位置，所以也是唯一喂 trace 日志的位置。日志写入用 `audit.Writer`，背压时丢弃而
 非阻塞——trace 日志不能拖慢一次工具调用。nil `*ServerLog` 的方法都是空操作，调用方不需要判空。
 
+**日志由谁提供，以及为什么是个函数。** `Deps.TraceFor func(Spec) *ServerLog`，不是 `*ServerLog` 字段——和
+`Auth` 旁边的 `AuthFor` 同一个形状、同一个理由。一份 `Deps` 被一个网关的所有 server 和所有派生实例共享，
+而 `ServerLog` 绑定着它打开时的那个 server id：既在文件名里，也在每一帧的 `server` 字段里。所以单个共享的
+log 会把所有 server 的帧都归档到「碰巧打开它的那台」名下。没有任何一种装配下这是对的，因此不保留普通字段
+作为回退。这个映射的持有者是 `internal/gateway` 的 `traceLogs`（`trace.go`）。
+
+**一台 server 一个文件，多个实例写在同一个文件里。** 一台 server 的派生实例共享它那一个日志，因为文件是按
+server 命名的、不是按连接。所以每一帧带上实例的 `DeriveKey` 作为 `inst`，放在结构末尾且 `omitempty`——基础
+连接写出的行与这个字段存在之前逐字节相同。
+
+**开关是 `ServerEntry.Trace`，作为日志的 enabled 状态生效**，并且**每一台** server 都会打开日志，而不是只给
+被 trace 的那些开。这一点是承重的：`Server.trace` 在 `Connect` 时只取一次，所以那时给出 nil 就再也补不回来，
+而一个禁用的日志可以原地启用。这正是 `agenthub server trace <id> on` 能作用到**已经在跑**的客户端、而不必
+重启正在被调试的那台 server 的原因（`TestHotReloadServerTraceFlip` 把两半都钉住了：帧出现，且 dial 次数仍是 1）。
+
+**失败方向：刻意 fail-open。** 这里的每一种失败——logs 目录解析不出、路径不可写、背压丢行——都退化成「少记
+一点」，绝不退化成「调用失败」。trace 是调试辅助，它唯一不能做的事就是把数据面一起拖下水。开关本身则是相反
+方向：registry 不说开就是关，因为帧是在连接处捕获的，**早于** leakguard 的脱敏，文件里是下游返回的原始内容。
+
 **HTTP 侧三件事在这一层。** 因为传输门面是纯标准库、不许知道这些：SSRF 屏蔽（`netguard.DialControl` 作
 用在**解析后的地址**上，只对 `ProvenanceLocal` + **字面量** loopback 开一个口子——RFC1918/CGNAT/link-local
 即使对 local server 也照堵，因为云元数据服务和内网主机就住在那些段里；主机名从不解析，DNS 答案可以否

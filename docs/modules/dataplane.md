@@ -200,6 +200,30 @@ feeding the trace log. Log writes go through `audit.Writer`, dropping rather tha
 a trace log must not slow down a tool call. Methods on a nil `*ServerLog` are no-ops, so callers need no nil
 checks.
 
+**Who supplies the log, and why it is a function.** `Deps.TraceFor func(Spec) *ServerLog`, not a `*ServerLog`
+field — the same shape as `AuthFor` beside `Auth`, for the same reason. One `Deps` is shared by every server and
+every derived instance of a gateway, while a `ServerLog` is bound to the server id it was opened with, both in
+its file name and in every frame's `server` field. A single shared log would therefore file every server's
+frames under whichever server opened it. There is no assembly for which that is correct, so no plain field is
+kept as a fallback. `internal/gateway`'s `traceLogs` is the mapping's owner (`trace.go`).
+
+**One file per server, several instances inside it.** Derived instances of one server share that server's single
+log, because the file is named for the server rather than for a connection. Each frame therefore carries the
+instance's `DeriveKey` as `inst`, last in the struct and `omitempty`, so a base connection's line stays
+byte-identical to one written before the field existed.
+
+**The switch is `ServerEntry.Trace`, applied as the log's enabled state**, and a log is opened for **every**
+server rather than only for traced ones. That is load-bearing: `Server.trace` is captured once at `Connect`, so
+a nil handed out there could never be filled in later, whereas a disabled log can be enabled in place. It is
+what lets `agenthub server trace <id> on` reach a client that is already running without reconnecting the very
+server being debugged (`TestHotReloadServerTraceFlip` pins both halves: frames appear, dial count stays at one).
+
+**Failure direction: fail-open, deliberately.** Every failure here — unresolvable logs directory, unwritable
+path, a dropped line under backpressure — degrades to less tracing and never to a failed call. A trace is a
+debugging aid; the one thing it must not do is take the data plane down with it. The opposite direction applies
+to the switch itself: it is off unless the registry says otherwise, because frames are captured at the
+connection, **before** leakguard redacts anything, so the file holds raw downstream results.
+
 **Three HTTP-side concerns live in this layer**, because the transport facade is pure standard library and is
 not allowed to know about them: SSRF blocking (`netguard.DialControl` acts on the **resolved address** and opens
 a hole only for `ProvenanceLocal` plus a **literal** loopback — RFC1918/CGNAT/link-local are blocked even for
