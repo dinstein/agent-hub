@@ -145,9 +145,12 @@ func (l ClientList) Human(w io.Writer) error {
 			c.Client,
 			connectedText(c.State),
 			joinOrDash(c.Placements),
+			// "(active)" rather than the profile's name and the whole
+			// fallback sentence: the footer states it once, and repeating
+			// it per row buries the column that actually varies.
 			profileText(ClientBindingView{
 				Binding: c.Binding, Profile: c.Profile, Dangling: c.Dangling,
-			}, active),
+			}, ""),
 		}, "\t")
 		if notes {
 			row += "\t" + c.Note
@@ -182,8 +185,13 @@ func connectedText(state string) string {
 
 // profileText renders what a client may see: its own profile, or the active
 // one it follows, or the loud marker for a reference that resolves nowhere.
+// An empty active names it "(active)" without spelling it out, for callers
+// that state it elsewhere.
 func profileText(b ClientBindingView, active string) string {
 	if b.Binding != string(registry.BindingNamed) {
+		if active == "" {
+			return "(active)"
+		}
 		return "(active: " + active + ")"
 	}
 	if b.Dangling {
