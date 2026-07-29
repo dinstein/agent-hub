@@ -54,7 +54,8 @@ func OpenPinStore(stateDir string, opts Options) (*PinStore, error) {
 //   - New tools are pinned immediately (baseline) — and never quarantined.
 //   - Changed tools keep their old pin: re-baselining happens only through
 //     Rebaseline after an explicit user release/approve.
-//   - Removed tools keep their pin: merge never deletes.
+//   - Removed tools keep their pin: merge never deletes. A pin is discarded
+//     only by ForgetServer, i.e. when the server itself is removed.
 //   - A pin recorded under an older hash formula whose content is unchanged
 //     is migrated in place and reported Unchanged.
 //
@@ -167,6 +168,41 @@ func changedDrift(server string, cur ToolSnapshot, pin Pin, fp string) Drift {
 		Pinned:        pin.Snapshot, Current: cur,
 	}
 }
+
+// ForgetServer deletes every pin of one server — the cleanup half of
+// `agenthub server rm`.
+//
+// This is the one exception to "merge never deletes" in CheckServer, and the
+// distinction is what makes both rules safe: merge must not delete because a
+// tool vanishing from a catalog is exactly how a rug-pull hides, whereas here
+// the SERVER is gone, so there is no catalog left to compare against. Keeping
+// the pins would mean a different server re-added under the same id matches
+// old baselines and is classified Unchanged — drift detection silently
+// disarmed for tools it never presented before.
+//
+// A server with no pins is a no-op (StateForgetter contract). Fail direction
+// follows the rest of the store: a corrupt file aborts and is never
+// overwritten.
+func (s *PinStore) ForgetServer(ctx context.Context, server string) error {
+	return s.f.withLock(ctx, func() error {
+		file, found, err := loadStore[pinsFile](s.f.path, func(v *pinsFile) int { return v.Version })
+		if err != nil {
+			return err
+		}
+		if !found {
+			return nil
+		}
+		if _, ok := file.Pins[server]; !ok {
+			return nil
+		}
+		delete(file.Pins, server)
+		file.Version = storeVersion
+		return s.f.save(file)
+	})
+}
+
+// StateName implements confops.StateForgetter.
+func (s *PinStore) StateName() string { return "tool pins" }
 
 // Rebaseline moves one tool's pin forward to snap — the re-approve step
 // after a user reviewed a drift (quarantine release, docs/flows.md). Merge

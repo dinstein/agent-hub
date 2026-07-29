@@ -90,6 +90,65 @@ func LoadToolCache(resolver *platform.Resolver, log *slog.Logger) (map[string][]
 	return newToolCache(filepath.Join(dir, toolCacheSubdir), log).load(), nil
 }
 
+// ForgetToolCache deletes the persisted tool list of one server — the
+// cleanup half of `agenthub server rm`. Without it `agenthub tool ls`, which
+// reads this cache offline by design, keeps listing a removed server's tools
+// forever, and a server re-added under the same id starts life showing
+// another server's catalog.
+//
+// It matches on the Server FIELD rather than deriving a file name from the
+// id: fsSafe is a lossy projection (two ids can share one file name), so
+// unlinking a derived path could delete a different server's entry. Reading
+// each file to confirm ownership is the same discipline load uses.
+//
+// A missing cache directory or no matching entry is a no-op, not an error
+// (the confops.StateForgetter contract): no gateway has ever run, or this
+// server never connected.
+func ForgetToolCache(resolver *platform.Resolver, serverID string) error {
+	if serverID == "" {
+		return errors.New("gateway: tool cache: server id must not be empty")
+	}
+	if resolver == nil {
+		resolver = platform.Default()
+	}
+	dir, err := resolver.CacheDir()
+	if err != nil {
+		return err
+	}
+	toolsDir := filepath.Join(dir, toolCacheSubdir)
+	entries, err := os.ReadDir(toolsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var firstErr error
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(toolsDir, e.Name())
+		data, rerr := os.ReadFile(path)
+		if rerr != nil {
+			// An unreadable entry may be this server's. Report it rather than
+			// claim a clean sweep.
+			if firstErr == nil {
+				firstErr = rerr
+			}
+			continue
+		}
+		var cf cacheFile
+		if json.Unmarshal(data, &cf) != nil || cf.Server != serverID {
+			continue
+		}
+		if rmErr := os.Remove(path); rmErr != nil && !os.IsNotExist(rmErr) && firstErr == nil {
+			firstErr = rmErr
+		}
+	}
+	return firstErr
+}
+
 // cacheFile is the on-disk format of one entry. Server carries the real
 // server ID (the file name is only its filesystem-safe projection).
 type cacheFile struct {

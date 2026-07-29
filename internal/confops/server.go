@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/netip"
 	neturl "net/url"
+	"slices"
 	"strings"
 
 	"github.com/dinstein/agent-hub/internal/guard/netguard"
@@ -361,29 +362,42 @@ func UpdateServer(ctx context.Context, st *registry.Store, spec ServerSpec, pre 
 	return ServerResult{Result: res, Servers: []ServerSpec{spec}}, nil
 }
 
-// RemoveServer deletes a server entry and, by default, its stored
-// credentials.
+// RemoveServer deletes a server and everything the hub knows about it: the
+// registry entry, every reference to it in the surviving registry documents,
+// its stored credentials, and its out-of-registry state (fingerprint pins,
+// approval records, tool cache).
 //
-// Profile and client references to it are deliberately NOT rewritten: a
-// selector naming a server that no longer exists resolves to nothing, which
-// is the fail-closed direction. Rewriting them would widen the surviving
-// layers' effective sets as a side effect of a delete.
+// "Everything" is the point. An earlier version deleted the entry alone and
+// left the rest, on the reasoning that a dangling reference resolves to
+// nothing and is therefore fail-closed. That is true of the REFERENCES and
+// false of the STATE: because the vault, the pins and the approval records
+// are all keyed by server id, re-adding that id later silently revived
+// credentials, integrity baselines and remember-forever grants earned by a
+// different server. A stale reference is inert; a stale grant is a live
+// entitlement. References are now rewritten too — not because they were
+// dangerous, but because leaving them made "removed" mean two different
+// things depending on where you looked.
 //
-// Credentials ARE part of the operation (see the package doc: consequences
-// belong to the operation, not the caller). Removing the entry alone left a
-// refresh token — typically longer-lived than the access token — in the
-// keychain with nothing in the registry to hint at it, and worse: because
-// the vault is keyed by server id, re-adding the same id later silently
-// revived those credentials against what may be an entirely different
-// provider. Purging closes both.
+// Rewriting references is safe in one direction only, and every rewrite is
+// checked against it: Profile.Servers is a three-state ALLOW list (nil = all,
+// [] = none, [...] = that set — see registry.Profile), so dropping an id can
+// only narrow the effective set. An emptied list stays [] and is never
+// collapsed to nil, which would flip "none" into "all". No registry field
+// carries exclusion semantics today; if one is ever added it must NOT be
+// rewritten here.
 //
-// Failure direction: the registry delete is committed FIRST and a purge
-// failure is reported as a WARNING, never as an error. The alternatives are
-// both worse — purging first would destroy credentials for a delete that
-// then fails its precondition, and failing the whole operation on a keychain
-// error would leave an operator unable to remove a server because the OS
-// keychain was locked. The server is gone either way; the warning names what
-// survived so the operator can finish with `auth logout`.
+// Deliberately kept: the audit, security and per-server trace logs. A log
+// that forgot deleted servers would be worthless as evidence, and the removal
+// itself is recorded in it.
+//
+// Failure direction: the registry transaction is committed FIRST, then the
+// out-of-registry cleanups run and report failures as WARNINGS, never as
+// errors. The alternatives are both worse — purging first would destroy
+// credentials for a delete that then fails its precondition, and failing the
+// whole operation on a keychain error would leave an operator unable to
+// remove a server because the OS keychain was locked. The server is gone
+// either way; each warning names exactly what survived and how to finish it
+// by hand.
 func RemoveServer(
 	ctx context.Context, st *registry.Store, id string, pre Precondition, opts RemoveOptions,
 ) (ServerResult, error) {
@@ -392,17 +406,65 @@ func RemoveServer(
 			return serverNotFound(id)
 		}
 		delete(tx.Servers.V.Servers, id)
+		forgetServerReferences(tx, id)
 		return nil
 	})
 	if err != nil {
 		return ServerResult{Result: res}, err
 	}
 	out := ServerResult{Result: res}
-	if opts.Credentials == nil || opts.KeepCredentials {
-		return out, nil
+	if opts.Credentials != nil {
+		out.Warnings = append(out.Warnings, purgeCredentials(ctx, opts.Credentials, id)...)
 	}
-	out.Warnings = append(out.Warnings, purgeCredentials(ctx, opts.Credentials, id)...)
+	for _, f := range opts.State {
+		if f == nil {
+			continue
+		}
+		if err := f.ForgetServer(ctx, id); err != nil {
+			out.Warnings = append(out.Warnings, fmt.Sprintf(
+				"could not clear %s of %q (%v); it would apply again to a server re-added under this id",
+				f.StateName(), id, err))
+		}
+	}
 	return out, nil
+}
+
+// forgetServerReferences drops every mention of id from the registry
+// documents other than servers.json. It runs INSIDE the delete transaction,
+// so a server and its references can never be observed half-removed.
+//
+// Every rewrite here is narrowing-only; see RemoveServer's doc for why that
+// property is what makes rewriting legitimate at all.
+func forgetServerReferences(tx *registry.Tx, id string) {
+	for name, doc := range tx.Profiles.V.Profiles {
+		changed := false
+		if i := slices.Index(doc.V.Servers, id); i >= 0 {
+			// Allow list: deleting a member narrows. The result may be an
+			// EMPTY non-nil slice, meaning "no servers" — exactly right, and
+			// precisely why it must not be allowed to become nil.
+			doc.V.Servers = slices.Delete(slices.Clone(doc.V.Servers), i, i+1)
+			if doc.V.Servers == nil {
+				doc.V.Servers = []string{}
+			}
+			changed = true
+		}
+		if _, ok := doc.V.Tools[id]; ok {
+			delete(doc.V.Tools, id)
+			changed = true
+		}
+		if changed {
+			tx.Profiles.V.Profiles[name] = doc
+		}
+	}
+	gov := &tx.Governance.V
+	delete(gov.ResultBudget, id)
+	// A rate-limit rule naming this server could only ever have restricted
+	// it, so dropping the rule removes a quota that now matches nothing.
+	// Rules with an empty or "*" server dimension are machine-wide and are
+	// left alone.
+	gov.RateLimits = slices.DeleteFunc(gov.RateLimits, func(r registry.Doc[registry.RateLimitRule]) bool {
+		return r.V.Server == id
+	})
 }
 
 // CredentialPurger deletes vault entries. It is the narrow face RemoveServer
@@ -418,30 +480,79 @@ type CredentialPurger interface {
 	Delete(ctx context.Context, ref secrets.Ref) error
 }
 
+// StateForgetter drops one out-of-registry store's records for a server.
+// Implemented by the integrity pin/approval stores, the approval allowlist
+// and the gateway tool cache — each of which is keyed by server id and would
+// otherwise pre-trust or pre-populate a server re-added under that id.
+//
+// StateName names the store in operator-facing warnings ("tool pins"), so a
+// failed cleanup says what survived rather than leaking a file path.
+//
+// Contract: forgetting a server with no records is a no-op, never an error.
+type StateForgetter interface {
+	ForgetServer(ctx context.Context, serverID string) error
+	StateName() string
+}
+
+// StateFunc adapts a plain cleanup function to StateForgetter, for stores
+// exposed as a function rather than a handle (the gateway tool cache, the
+// override store). name is what a warning calls it.
+type StateFunc struct {
+	Name   string
+	Forget func(ctx context.Context, serverID string) error
+}
+
+// ForgetServer implements StateForgetter.
+func (f StateFunc) ForgetServer(ctx context.Context, serverID string) error {
+	if f.Forget == nil {
+		return nil
+	}
+	return f.Forget(ctx, serverID)
+}
+
+// StateName implements StateForgetter.
+func (f StateFunc) StateName() string { return f.Name }
+
 // RemoveOptions tunes RemoveServer.
+//
+// There is deliberately no "keep credentials" switch. Removing a server means
+// removing what it was entitled to; an operator who wants the definition gone
+// but the tokens kept is describing `agenthub server disable`, which keeps
+// both. The only reason a purge is skipped is a caller with no vault at all.
 type RemoveOptions struct {
-	// Credentials purges the removed server's vault entries. nil disables
-	// the purge entirely (the caller has no vault), which is NOT the same as
-	// KeepCredentials — see the field below.
+	// Credentials purges the removed server's vault entries. nil means the
+	// caller has no vault wired — the purge is skipped and nothing is
+	// reported, because there is no store to have missed anything in.
 	Credentials CredentialPurger
-	// KeepCredentials leaves the vault untouched even when Credentials is
-	// set. This is the operator's explicit `--keep-credentials`, kept
-	// separate from a nil Credentials so "we chose not to purge" and "we
-	// could not purge" stay distinguishable.
-	KeepCredentials bool
+	// State clears out-of-registry stores keyed by server id. Each entry is
+	// independent: one failing store warns and the rest still run. nil
+	// entries are skipped so callers can build the slice conditionally.
+	State []StateForgetter
 }
 
 // purgeCredentials deletes every vault entry belonging to serverID, across
 // all scopes and keys. It returns warnings rather than errors: see
 // RemoveServer's failure direction.
+//
+// The unreadable-enc check is not an edge case: Set writes to secrets.enc
+// whenever AGENTHUB_SECRET_KEY is set, while List can only see that file when
+// the SAME key is present. Deleting from a shell without it would otherwise
+// enumerate nothing, delete nothing, and report a clean purge over a
+// surviving refresh token.
 func purgeCredentials(ctx context.Context, v CredentialPurger, serverID string) []string {
+	var warns []string
+	if u, ok := v.(interface{ HasUnreadableEnc() bool }); ok && u.HasUnreadableEnc() {
+		warns = append(warns, fmt.Sprintf(
+			"credentials of %q in secrets.enc could not be read and may survive; "+
+				"re-run with AGENTHUB_SECRET_KEY set, or 'agenthub auth logout %s'",
+			serverID, serverID))
+	}
 	refs, err := v.List(ctx)
 	if err != nil {
-		return []string{fmt.Sprintf(
+		return append(warns, fmt.Sprintf(
 			"could not list credentials of %q (%v); run 'agenthub auth logout %s' to remove them",
-			serverID, err, serverID)}
+			serverID, err, serverID))
 	}
-	var warns []string
 	for _, ref := range refs {
 		if ref.ServerID != serverID {
 			continue

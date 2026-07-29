@@ -168,23 +168,33 @@ func TestServerRmPurgesCredentials(t *testing.T) {
 	}
 }
 
-// TestServerRmKeepCredentials pins the escape hatch end to end.
-func TestServerRmKeepCredentials(t *testing.T) {
+// TestServerRmWarnsWhenTheVaultIsUnreadable pins the loud failure of the one
+// case where a purge CANNOT be complete.
+//
+// The setup is not exotic, which is the point: `secret set` writes to
+// secrets.enc whenever AGENTHUB_SECRET_KEY is set, but the vault listing can
+// only see that file when the same key is present. Removing the server from a
+// shell without the key therefore enumerates nothing and deletes nothing.
+// Before this warning existed that path reported a clean removal over a
+// surviving refresh token — and because the vault is keyed by server id,
+// re-adding the id later revived it against a possibly different provider.
+//
+// The credential still surviving is expected here (nothing can decrypt it);
+// what is asserted is that the operator is TOLD, and told how to finish.
+func TestServerRmWarnsWhenTheVaultIsUnreadable(t *testing.T) {
 	secretEnv(t)
 	mustRun(t, "", "server", "add", "gone", "--cmd", "gone-mcp")
 	mustRun(t, theSecret+"\n", "secret", "set", "gone", "TOKEN", "--stdin")
 
-	mustRun(t, "", "server", "rm", "gone", "--keep-credentials")
+	// The same operator, a shell without the passphrase.
+	t.Setenv(secrets.EnvEncKey, "")
 
-	var list SecretList
-	decodeInto(t, mustRun(t, "", "secret", "ls", "--json"), &list)
-	var found bool
-	for _, row := range list.Secrets {
-		if row.Server == "gone" && row.Key == "TOKEN" {
-			found = true
-		}
+	_, stdout, stderr := runCLI(t, "", "server", "rm", "gone")
+	out := stdout + stderr
+	if !strings.Contains(out, "secrets.enc") {
+		t.Errorf("a purge that could not read the vault stayed silent: %q", out)
 	}
-	if !found {
-		t.Errorf("--keep-credentials removed the credential anyway: %+v", list.Secrets)
+	if !strings.Contains(out, secrets.EnvEncKey) && !strings.Contains(out, "auth logout") {
+		t.Errorf("the warning does not say how to finish the cleanup: %q", out)
 	}
 }

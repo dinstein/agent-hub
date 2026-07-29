@@ -211,10 +211,53 @@ func (c *Chain) Delete(ctx context.Context, ref Ref) error {
 	return nil
 }
 
+// ErrEncUnreadable reports that secrets.enc exists but no key of this
+// process can open it. It is NOT returned by the resolution path (a miss
+// there is already fail-closed); it exists for callers that must know the
+// difference between "there is nothing stored" and "there may be something
+// stored that I cannot see" — deletion, above all.
+var ErrEncUnreadable = errors.New("secrets: secrets.enc exists but no key is available to read it")
+
+// HasUnreadableEnc reports whether an enc file is present on disk while
+// encForRead has no key for it — i.e. Set was once run with
+// AGENTHUB_SECRET_KEY (or a dev key that has since gone) and this process
+// was not.
+//
+// Why this exists: List silently returns only the keyring half in that
+// state, so a caller enumerating "everything stored for server X" gets an
+// empty answer that is indistinguishable from a genuinely empty vault. A
+// purge built on that answer reports success while a refresh token survives
+// in secrets.enc — and re-adding the same server id later revives it. This
+// predicate lets the purge fail LOUD instead.
+//
+// Failure direction: any doubt answers TRUE (something may be hidden). A
+// stat error is treated as "possibly present" for the same reason — the
+// caller's job is to warn, and a spurious warning costs nothing next to a
+// silently retained credential.
+func (c *Chain) HasUnreadableEnc() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, active, err := c.encForRead(); err != nil {
+		return true
+	} else if active {
+		return false
+	}
+	dir, err := c.baseDir()
+	if err != nil {
+		return true
+	}
+	_, err = os.Stat(filepath.Join(dir, encFileName))
+	return err == nil || !errors.Is(err, os.ErrNotExist)
+}
+
 // List enumerates every stored ref: the union of the enc-file map and the
 // self-managed keyring key registry (environment levels are per-process
 // input, not storage, and are not listed). Undecodable keys are errors,
 // not silently dropped.
+//
+// Callers that must be exhaustive (credential purge) have to pair this with
+// HasUnreadableEnc: an inaccessible enc file is invisible here by
+// construction.
 func (c *Chain) List(_ context.Context) ([]Ref, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

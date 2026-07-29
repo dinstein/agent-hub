@@ -277,6 +277,9 @@ func Run(ctx context.Context, cfg Config) error {
 		// feature to whoever is looking at the GUI.
 		StateDir: stateDir,
 		LogsDir:  logsDir,
+		// Deleting a server must strip its whole footprint here exactly as it
+		// does from the CLI; these are the stores that outlive the registry.
+		ServerStateForgetters: serverStateForgetters(stateDir, allowlist, resolver),
 	})
 	if err != nil {
 		return fmt.Errorf("daemon: %w", err)

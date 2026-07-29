@@ -213,6 +213,32 @@ func (s *ApprovalStore) mutate(ctx context.Context, fn func(file *approvalsFile)
 	})
 }
 
+// ForgetServer deletes every approval record of one server — the cleanup
+// half of `agenthub server rm`.
+//
+// This is the ONLY path that discards approval state without a per-tool
+// transition, and it is exempt from assertTransition by construction: the
+// records are not moving to another state, they cease to exist along with
+// the server that earned them. Keeping them would mean a server re-added
+// under the same id inherits Approved records for tools it never presented
+// — a rug-pull with the drift check disarmed.
+//
+// A server with no records is a no-op (StateForgetter contract). Fail
+// direction is inherited from mutate: a corrupt store aborts and is never
+// overwritten.
+func (s *ApprovalStore) ForgetServer(ctx context.Context, server string) error {
+	return s.mutate(ctx, func(file *approvalsFile) (bool, error) {
+		if _, ok := file.Servers[server]; !ok {
+			return false, nil
+		}
+		delete(file.Servers, server)
+		return true, nil
+	})
+}
+
+// StateName implements confops.StateForgetter.
+func (s *ApprovalStore) StateName() string { return "tool approvals" }
+
 // Observe records the latest snapshot of one tool and advances its state:
 //
 //   - unknown tool: Pending (manual mode) or Approved (auto mode).

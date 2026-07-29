@@ -3,6 +3,7 @@ package confops
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -286,25 +287,159 @@ func TestRemoveServerPurgesCredentials(t *testing.T) {
 	}
 }
 
-// TestRemoveServerKeepCredentials pins the escape hatch: --keep-credentials
-// must not touch the vault at all, while still removing the entry.
-func TestRemoveServerKeepCredentials(t *testing.T) {
+// fakeForgetter is an in-memory StateForgetter with fault injection.
+type fakeForgetter struct {
+	name   string
+	forgot []string
+	err    error
+}
+
+func (f *fakeForgetter) ForgetServer(_ context.Context, id string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.forgot = append(f.forgot, id)
+	return nil
+}
+
+func (f *fakeForgetter) StateName() string { return f.name }
+
+// TestRemoveServerClearsState pins that out-of-registry state goes with the
+// server. Each of these stores is keyed by server id, so anything left here
+// is inherited by whatever is re-added under that id later — a credential,
+// an integrity baseline or a standing approval earned by a different server.
+func TestRemoveServerClearsState(t *testing.T) {
 	ctx := context.Background()
 	st := newStore(t)
 	seedServers(t, st, "a")
 
-	p := &fakePurger{refs: []secrets.Ref{
-		{ServerID: "a", Scope: secrets.DefaultScope, Key: secrets.KeyOAuthState},
-	}}
-	if _, err := RemoveServer(ctx, st, "a", Precondition{},
-		RemoveOptions{Credentials: p, KeepCredentials: true}); err != nil {
+	pins := &fakeForgetter{name: "tool pins"}
+	grants := &fakeForgetter{name: "approval grants"}
+	res, err := RemoveServer(ctx, st, "a", Precondition{}, RemoveOptions{
+		State: []StateForgetter{pins, nil, grants}, // nil entries are skipped
+	})
+	if err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	if len(p.deleted) != 0 {
-		t.Errorf("--keep-credentials deleted %+v", p.deleted)
+	if len(res.Warnings) != 0 {
+		t.Errorf("a clean removal warned: %q", res.Warnings)
 	}
-	if _, ok := st.Snapshot().Servers.V.Servers["a"]; ok {
+	for _, f := range []*fakeForgetter{pins, grants} {
+		if len(f.forgot) != 1 || f.forgot[0] != "a" {
+			t.Errorf("%s cleared %v, want [a]", f.name, f.forgot)
+		}
+	}
+}
+
+// TestRemoveServerStateFailureIsAWarning pins the failure direction for the
+// state cleanups: the server is already gone from the registry, so a store
+// that will not open or write must warn rather than fail — and the warning
+// has to NAME the store, because the operator's next move differs per store.
+// One failing store must not stop the others.
+func TestRemoveServerStateFailureIsAWarning(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	seedServers(t, st, "a")
+
+	broken := &fakeForgetter{name: "tool pins", err: fmt.Errorf("state file is locked")}
+	ok := &fakeForgetter{name: "approval grants"}
+	res, err := RemoveServer(ctx, st, "a", Precondition{},
+		RemoveOptions{State: []StateForgetter{broken, ok}})
+	if err != nil {
+		t.Fatalf("a state-store failure broke the removal: %v", err)
+	}
+	if _, exists := st.Snapshot().Servers.V.Servers["a"]; exists {
 		t.Error("the entry survived removal")
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "tool pins") {
+		t.Errorf("warnings = %q, want one naming the store that survived", res.Warnings)
+	}
+	if len(ok.forgot) != 1 {
+		t.Error("one failing store stopped the others")
+	}
+}
+
+// TestRemoveServerForgetsReferences pins the reference rewrite and, more
+// importantly, its DIRECTION. Profile.Servers is an allow list whose empty
+// value means "no servers", so an emptied list must stay [] and never
+// collapse to nil — nil means "every server", which would turn deleting a
+// server into a silent widening of that profile.
+func TestRemoveServerForgetsReferences(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	seedServers(t, st, "a", "b")
+
+	if err := st.Update(ctx, func(tx *registry.Tx) error {
+		tx.Profiles.V.Profiles = map[string]registry.Doc[registry.Profile]{
+			"mixed": {V: registry.Profile{
+				Servers: []string{"a", "b"},
+				Tools: map[string]registry.Doc[registry.ToolSelector]{
+					"a": {V: registry.ToolSelector{Allow: []string{"x"}}},
+					"b": {V: registry.ToolSelector{Allow: []string{"y"}}},
+				},
+			}},
+			"only-a": {V: registry.Profile{Servers: []string{"a"}}},
+			"untouched": {V: registry.Profile{
+				Tools: map[string]registry.Doc[registry.ToolSelector]{
+					"b": {V: registry.ToolSelector{Allow: []string{"y"}}},
+				},
+			}},
+		}
+		tx.Governance.V.ResultBudget = map[string]registry.Doc[registry.Budget]{
+			"a": {V: registry.Budget{Bytes: 1}},
+			"*": {V: registry.Budget{Bytes: 2}},
+		}
+		tx.Governance.V.RateLimits = []registry.Doc[registry.RateLimitRule]{
+			{V: registry.RateLimitRule{Server: "a", Limit: 1, Window: "1m"}},
+			{V: registry.RateLimitRule{Server: "*", Limit: 2, Window: "1m"}},
+			{V: registry.RateLimitRule{Limit: 3, Window: "1m"}},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if _, err := RemoveServer(ctx, st, "a", Precondition{}, RemoveOptions{}); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	snap := st.Snapshot()
+	profiles := snap.Profiles.V.Profiles
+	if got := profiles["mixed"].V.Servers; !slices.Equal(got, []string{"b"}) {
+		t.Errorf("mixed.Servers = %v, want [b]", got)
+	}
+	if _, ok := profiles["mixed"].V.Tools["a"]; ok {
+		t.Error("mixed kept a tool selector for the removed server")
+	}
+	if _, ok := profiles["mixed"].V.Tools["b"]; !ok {
+		t.Error("mixed lost the surviving server's selector")
+	}
+	// The whole point: emptied, not widened.
+	onlyA := profiles["only-a"].V.Servers
+	if onlyA == nil {
+		t.Fatal("an emptied allow list collapsed to nil, which means 'all servers'")
+	}
+	if len(onlyA) != 0 {
+		t.Errorf("only-a.Servers = %v, want empty", onlyA)
+	}
+	if _, ok := profiles["untouched"].V.Tools["b"]; !ok {
+		t.Error("an unrelated profile was rewritten")
+	}
+
+	gov := snap.Governance.V
+	if _, ok := gov.ResultBudget["a"]; ok {
+		t.Error("the removed server kept its result budget")
+	}
+	if _, ok := gov.ResultBudget["*"]; !ok {
+		t.Error("the machine-wide result budget was dropped")
+	}
+	if len(gov.RateLimits) != 2 {
+		t.Fatalf("rate limits = %+v, want the two non-specific rules", gov.RateLimits)
+	}
+	for _, r := range gov.RateLimits {
+		if r.V.Server == "a" {
+			t.Errorf("a rule naming the removed server survived: %+v", r.V)
+		}
 	}
 }
 

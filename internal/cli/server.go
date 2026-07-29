@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,7 +12,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dinstein/agent-hub/internal/approval"
 	"github.com/dinstein/agent-hub/internal/confops"
+	"github.com/dinstein/agent-hub/internal/gateway"
+	"github.com/dinstein/agent-hub/internal/integrity"
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
@@ -457,11 +461,13 @@ func (a *App) newServerLsCmd() *cobra.Command {
 }
 
 func (a *App) newServerRmCmd() *cobra.Command {
-	var keepCreds bool
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "rm <id>",
-		Short: "Delete a server and the credentials stored for it",
-		Long: "Permanent. To stop a server being used without losing it, use\n" +
+		Short: "Delete a server and everything stored for it",
+		Long: "Permanent, and it takes the whole footprint with it: credentials,\n" +
+			"profile membership, governance rules naming it, integrity baselines,\n" +
+			"approval grants and the cached tool list. Audit logs are kept.\n\n" +
+			"To stop a server being used without losing any of that, use\n" +
 			"'agenthub server disable' instead.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -470,16 +476,22 @@ func (a *App) newServerRmCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := confops.RemoveOptions{KeepCredentials: keepCreds}
-			// The vault is opened only when it will be used: building it
-			// resolves the secrets dir, and a --keep-credentials run has no
-			// business failing on that.
-			if !keepCreds {
-				deps, derr := a.newOAuthDeps(false)
-				if derr != nil {
-					return derr
-				}
-				opts.Credentials = deps.chain
+			deps, derr := a.newOAuthDeps(false)
+			if derr != nil {
+				return derr
+			}
+			opts := confops.RemoveOptions{Credentials: deps.chain}
+			// State cleanups are best-effort by construction: each missing
+			// store simply contributes nothing. A state dir that will not
+			// resolve is reported once, as a warning, rather than blocking a
+			// delete the registry has already accepted.
+			stateDir, serr := a.stateDir()
+			if serr != nil {
+				warnings = append(warnings, fmt.Sprintf(
+					"could not resolve the state directory (%v); integrity baselines and "+
+						"approval grants of %q may survive", serr, id))
+			} else {
+				opts.State = a.serverStateForgetters(stateDir)
 			}
 			res, err := confops.RemoveServer(cmd.Context(), store, id, noPrecondition, opts)
 			warnings = append(warnings, res.Warnings...)
@@ -489,9 +501,42 @@ func (a *App) newServerRmCmd() *cobra.Command {
 			return a.printer().Emit(RemovedServer{Removed: id}, warnings...)
 		},
 	}
-	cmd.Flags().BoolVar(&keepCreds, "keep-credentials", false,
-		"keep the server's stored credentials; by default they are deleted with it")
-	return cmd
+}
+
+// serverStateForgetters builds the out-of-registry cleanups `server rm`
+// runs. A store that cannot even be OPENED is skipped rather than failing the
+// command: the registry entry is already gone by the time these run, and
+// RemoveServer reports whatever fails as a warning naming what survived.
+func (a *App) serverStateForgetters(stateDir string) []confops.StateForgetter {
+	opts := integrity.Options{LockTimeout: a.lockTimeout}
+	var out []confops.StateForgetter
+	if pins, err := integrity.OpenPinStore(stateDir, opts); err == nil {
+		out = append(out, pins)
+	}
+	if ap, err := integrity.OpenApprovalStore(stateDir, opts); err == nil {
+		out = append(out, ap)
+	}
+	if q, err := integrity.OpenQuarantineStore(stateDir, opts); err == nil {
+		out = append(out, q)
+	}
+	if al, err := approval.OpenAllowlist(stateDir); err == nil {
+		out = append(out, al)
+	}
+	out = append(out,
+		confops.StateFunc{
+			Name: "tool overrides",
+			Forget: func(_ context.Context, id string) error {
+				return confops.ForgetServerOverrides(stateDir, id)
+			},
+		},
+		confops.StateFunc{
+			Name: "the cached tool list",
+			Forget: func(_ context.Context, id string) error {
+				return gateway.ForgetToolCache(a.resolver, id)
+			},
+		},
+	)
+	return out
 }
 
 func rowFor(name string, e registry.ServerEntry) ServerRow {

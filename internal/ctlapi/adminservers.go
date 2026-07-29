@@ -195,14 +195,13 @@ func mergeServerEntry(cur registry.ServerEntry, patch json.RawMessage) (registry
 
 // handleServerDelete implements DELETE /v1/servers/{id}.
 //
-// Profile and client references to the id are deliberately NOT rewritten by
-// confops: a selector naming a server that no longer exists resolves to
-// nothing, which is the fail-closed direction.
-//
-// The server's credentials ARE removed, matching `agenthub server rm`. When
-// no vault is wired the purge is skipped and confops reports nothing — the
-// two front ends must not disagree about what deleting a server means, so
-// the decision lives in confops and this handler only supplies the vault.
+// Deleting a server removes its whole footprint — registry entry, references
+// to it in the other registry documents, credentials, and the out-of-registry
+// state keyed by its id. What that means is decided ONCE, in
+// confops.RemoveServer; this handler only supplies the collaborators, because
+// the daemon and `agenthub server rm` must not disagree about what a delete
+// leaves behind. A collaborator this daemon was assembled without is skipped
+// there, and whatever survives comes back as a warning in the response.
 func (s *Server) handleServerDelete(w http.ResponseWriter, r *http.Request, id string) {
 	body, ok := readAdminBody(w, r)
 	if !ok {
@@ -212,7 +211,7 @@ func (s *Server) handleServerDelete(w http.ResponseWriter, r *http.Request, id s
 	if !ok {
 		return
 	}
-	opts := confops.RemoveOptions{}
+	opts := confops.RemoveOptions{State: s.opts.ServerStateForgetters}
 	if s.opts.NonRegistry.Secrets != nil {
 		opts.Credentials = s.opts.NonRegistry.Secrets
 	}

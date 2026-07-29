@@ -2,6 +2,7 @@ package approval
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -171,6 +172,48 @@ func (a *Allowlist) Remove(fingerprint string) (bool, error) {
 	}
 	return true, nil
 }
+
+// ForgetServer removes every remember-forever grant bound to serverID — the
+// cleanup half of `agenthub server rm`. Returns how many were dropped.
+//
+// Scope, precisely: only entries whose Server field NAMES this server are
+// removed. An entry with an empty Server is bound by fingerprint alone and
+// deliberately spans servers (see Entry), so deleting it here would revoke a
+// grant that has nothing to do with the server being removed — this cleanup
+// may narrow the allowlist, never reinterpret it. Such an entry can still
+// match a future server presenting a byte-identical tool, which is the
+// fingerprint binding working as designed, not a leftover.
+//
+// Fail direction: memory and disk stay consistent — a save failure restores
+// every removed entry, so a caller told the cleanup failed can never find the
+// grants silently gone on the next load.
+func (a *Allowlist) ForgetServer(_ context.Context, serverID string) error {
+	if serverID == "" {
+		return errors.New("approval: allowlist: server id must not be empty")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	removed := map[string]Entry{}
+	for fp, e := range a.entries {
+		if e.Server == serverID {
+			removed[fp] = e
+			delete(a.entries, fp)
+		}
+	}
+	if len(removed) == 0 {
+		return nil
+	}
+	if err := a.save(); err != nil {
+		for fp, e := range removed {
+			a.entries[fp] = e
+		}
+		return err
+	}
+	return nil
+}
+
+// StateName implements confops.StateForgetter.
+func (a *Allowlist) StateName() string { return "approval grants" }
 
 // Entries returns a snapshot copy (for `agenthub approval ls`).
 func (a *Allowlist) Entries() []Entry {

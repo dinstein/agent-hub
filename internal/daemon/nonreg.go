@@ -7,11 +7,16 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/dinstein/agent-hub/internal/approval"
 	"github.com/dinstein/agent-hub/internal/clients"
+	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/downstream"
+	"github.com/dinstein/agent-hub/internal/gateway"
 	"github.com/dinstein/agent-hub/internal/httpbridge"
+	"github.com/dinstein/agent-hub/internal/integrity"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
+	"github.com/dinstein/agent-hub/internal/platform"
 	"github.com/dinstein/agent-hub/internal/secrets"
 	"github.com/dinstein/agent-hub/internal/skills"
 )
@@ -28,6 +33,51 @@ import (
 // costs the secrets endpoints and nothing else. The daemon must keep
 // coordinating everything it still can, so each failure logs and continues
 // rather than refusing to start.
+
+// serverStateForgetters builds the out-of-registry cleanups that
+// DELETE /v1/servers/{id} runs, so the daemon strips exactly the footprint
+// `agenthub server rm` does. Removing a server must not leave integrity
+// baselines, approval grants or a cached catalog behind for whatever is
+// re-added under that id to inherit.
+//
+// Same optional-dependency discipline as the rest of this file: a store that
+// will not open is omitted rather than failing the daemon, and confops turns
+// whatever is missing into a warning on the response. The allowlist is passed
+// in rather than reopened — the broker already holds that handle, and two
+// handles over one file would be two caches of the same grants.
+func serverStateForgetters(
+	stateDir string, allowlist *approval.Allowlist, resolver *platform.Resolver,
+) []confops.StateForgetter {
+	var out []confops.StateForgetter
+	if stateDir != "" {
+		opts := integrity.Options{}
+		if pins, err := integrity.OpenPinStore(stateDir, opts); err == nil {
+			out = append(out, pins)
+		}
+		if ap, err := integrity.OpenApprovalStore(stateDir, opts); err == nil {
+			out = append(out, ap)
+		}
+		if q, err := integrity.OpenQuarantineStore(stateDir, opts); err == nil {
+			out = append(out, q)
+		}
+		out = append(out, confops.StateFunc{
+			Name: "tool overrides",
+			Forget: func(_ context.Context, id string) error {
+				return confops.ForgetServerOverrides(stateDir, id)
+			},
+		})
+	}
+	if allowlist != nil {
+		out = append(out, allowlist)
+	}
+	out = append(out, confops.StateFunc{
+		Name: "the cached tool list",
+		Forget: func(_ context.Context, id string) error {
+			return gateway.ForgetToolCache(resolver, id)
+		},
+	})
+	return out
+}
 
 // nonRegistryDeps builds what the non-registry endpoints need. vault may be
 // nil, in which case the production chain over <data>/secrets is used —

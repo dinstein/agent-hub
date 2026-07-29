@@ -161,6 +161,16 @@ type Options struct {
 	// server. nil means "no cache": disabling an unobserved tool answers the
 	// uniform 404 instead.
 	ToolLookup confops.ToolSnapshotFunc
+	// ServerStateForgetters clear the out-of-registry stores keyed by server
+	// id when DELETE /v1/servers/{id} removes one — integrity baselines,
+	// approval grants, quarantine entries, the cached tool list.
+	//
+	// They are INJECTED rather than opened here so this package keeps its
+	// distance from the concrete stores; the daemon assembles them next to
+	// the ones it already owns. An empty slice leaves that state behind and
+	// is a half-wired daemon, not a supported mode: the two front ends must
+	// agree on what deleting a server means (see handleServerDelete).
+	ServerStateForgetters []confops.StateForgetter
 	// NonRegistry carries the collaborators of the non-registry endpoints
 	// (secrets / skills / tokens / clients / auth). Each of its fields is
 	// independently optional; an absent one disables its endpoints, which

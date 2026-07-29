@@ -105,6 +105,47 @@ func (s *QuarantineStore) Release(ctx context.Context, exposed string) (Quaranti
 	return out, found, nil
 }
 
+// ForgetServer removes every quarantine entry belonging to one server — the
+// cleanup half of `agenthub server rm`.
+//
+// Note the asymmetry with Release: entries are KEYED by exposed name, so this
+// scans Entry.Server (the raw route) instead of indexing. That is the whole
+// reason the raw route is stored alongside the key — an exposed name may have
+// been renamed by an override and cannot be reconstructed from a server id.
+//
+// Dropping these is not a relaxation: quarantine hides tools of a server that
+// no longer exists, so the entries can only ever match nothing. Leaving them
+// would keep `agenthub quarantine ls` reporting tools nobody can call, and
+// a re-added id would inherit blocks earned by a different server.
+//
+// A server with no entries is a no-op (StateForgetter contract).
+func (s *QuarantineStore) ForgetServer(ctx context.Context, server string) error {
+	return s.f.withLock(ctx, func() error {
+		file, found, err := loadStore[quarantineFile](s.f.path, func(v *quarantineFile) int { return v.Version })
+		if err != nil {
+			return err
+		}
+		if !found {
+			return nil
+		}
+		dirty := false
+		for exposed, e := range file.Entries {
+			if e.Server == server {
+				delete(file.Entries, exposed)
+				dirty = true
+			}
+		}
+		if !dirty {
+			return nil
+		}
+		file.Version = storeVersion
+		return s.f.save(file)
+	})
+}
+
+// StateName implements confops.StateForgetter.
+func (s *QuarantineStore) StateName() string { return "quarantine entries" }
+
 // Snapshot returns the full quarantine set (exposed name -> entry).
 func (s *QuarantineStore) Snapshot(ctx context.Context) (map[string]QuarantineEntry, error) {
 	var out map[string]QuarantineEntry

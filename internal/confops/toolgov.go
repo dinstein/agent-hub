@@ -184,6 +184,30 @@ func SaveToolOverrides(stateDir string, doc ToolOverrides) error {
 	return atomicWriteJSON(ToolOverridesPath(stateDir), doc)
 }
 
+// ForgetServerOverrides drops every tool override of one server — the
+// cleanup half of RemoveServer. stateDir may be empty (no state directory
+// resolved), which is a no-op: there is no store to clean.
+//
+// Failure direction differs from the other cleanups on purpose: a corrupt
+// store propagates the error from LoadToolOverrides rather than being
+// rewritten, because overriding is how a poisoned description is
+// neutralized and blindly rewriting that file could restore one.
+// RemoveServer turns the error into a warning; the server is already gone.
+func ForgetServerOverrides(stateDir, serverID string) error {
+	if stateDir == "" {
+		return nil
+	}
+	doc, err := LoadToolOverrides(stateDir)
+	if err != nil {
+		return err
+	}
+	if _, ok := doc.Overrides[serverID]; !ok {
+		return nil
+	}
+	delete(doc.Overrides, serverID)
+	return SaveToolOverrides(stateDir, doc)
+}
+
 // ToolOverrideEdit is one override edit. A nil field is left untouched, so
 // blanking a description cannot silently drop a rename.
 type ToolOverrideEdit struct {
