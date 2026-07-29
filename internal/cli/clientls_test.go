@@ -188,6 +188,9 @@ func TestClientLsReadsCodexTOML(t *testing.T) {
 	if !strings.Contains(errOut, "codex mcp add") {
 		t.Errorf("the refusal must name the command that works: %q", errOut)
 	}
+	if strings.Count(errOut, "does not rewrite it") != 1 {
+		t.Errorf("the refusal is printed more than once: %q", errOut)
+	}
 }
 
 // write creates a file and its parents.

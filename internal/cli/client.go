@@ -315,11 +315,12 @@ func classifyClientsError(err error) error {
 	// supported" and nowhere to go but --dry-run.
 	var unsupported *clients.UnsupportedError
 	if errors.As(err, &unsupported) {
+		// No Err: Error.Error() appends it to Message, and here the two
+		// would be the same sentence printed twice.
 		return &Error{
 			Code: CodeClientUnsupported, ExitCode: ExitGeneral,
 			Message: unsupported.Error(),
 			Hint:    unsupported.Snippet,
-			Err:     err,
 		}
 	}
 	return err
