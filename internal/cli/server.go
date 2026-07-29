@@ -48,8 +48,12 @@ type ServerRow struct {
 	// pre-M2 entry is byte-identical to what it always was.
 	Runtime string                  `json:"runtime,omitempty"`
 	Docker  *registry.DockerRuntime `json:"docker,omitempty"`
-	Enabled bool                    `json:"enabled"`
-	Source  string                  `json:"source,omitempty"`
+	// Derive is the derived-instance policy. Omitted for the shared default,
+	// which is also what an entry written before the field existed means —
+	// same byte-identical grounds as Runtime.
+	Derive  string `json:"derive,omitempty"`
+	Enabled bool   `json:"enabled"`
+	Source  string `json:"source,omitempty"`
 	// Trace mirrors the entry's frame-log switch, omitted when off so the
 	// --json output of an untraced entry is byte-identical to what it always
 	// was.
@@ -659,6 +663,7 @@ func rowFor(name string, e registry.ServerEntry) ServerRow {
 		Provenance: e.Provenance,
 		Runtime:    e.Runtime,
 		Docker:     e.Docker,
+		Derive:     e.Derive,
 		Enabled:    e.Enabled,
 		Source:     e.Source,
 		Trace:      e.Trace,

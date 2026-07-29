@@ -374,7 +374,7 @@ func TestServerInspectReportsStoredCredentials(t *testing.T) {
 		"--header", "X-Api-Key=${SECRET_API_KEY}")
 
 	_, out, _ := runCLI(t, "", "server", "inspect", "api")
-	if !strings.Contains(out, "auth: secret missing") ||
+	if !strings.Contains(out, "secret missing") ||
 		!strings.Contains(out, "agenthub secret set api API_KEY") {
 		t.Errorf("inspect did not report the unstored secret:\n%s", out)
 	}
@@ -390,11 +390,11 @@ func TestServerInspectReportsStoredCredentials(t *testing.T) {
 		t.Fatalf("inspect printed the secret VALUE:\n%s", out)
 	}
 
-	// A server with nothing to authorize prints no auth line at all, the same
-	// silence `ls` keeps by dropping the column.
+	// A server with nothing to authorize prints no credentials section at
+	// all, the same silence `ls` keeps by dropping the column.
 	mustRun(t, "", "server", "add", "local", "--cmd", "srv")
 	_, out, _ = runCLI(t, "", "server", "inspect", "local")
-	if strings.Contains(out, "auth:") {
+	if strings.Contains(out, "credentials") {
 		t.Errorf("inspect invented a credential line for a plain subprocess:\n%s", out)
 	}
 }

@@ -83,6 +83,13 @@ func (t ServerToggle) Human(w io.Writer) error {
 }
 
 // ServerInspect is the `server inspect` result.
+//
+// It is the only command that describes ONE server completely, so it is
+// where facts otherwise spread across a dozen listings are joined up: what
+// the entry says, what this machine holds for it, and what a running gateway
+// currently makes of it. Everything but the live block is readable with the
+// daemon down, and the live block's absence is stated rather than papered
+// over with cache figures presented as runtime.
 type ServerInspect struct {
 	Server ServerRow `json:"server"`
 	// Live carries daemon-observed runtime state; nil when the daemon is
@@ -97,10 +104,25 @@ type ServerInspect struct {
 	// CacheOnly marks that Tools/ToolCount came from the persisted cache
 	// rather than a live handshake.
 	CacheOnly bool `json:"cache_only"`
+	// CachedAt is when that cache was written. Zero means no gateway has
+	// ever connected to this server — the distinction a bare "0 tools"
+	// cannot draw, and the one that decides whether the answer is "this
+	// server offers nothing" or "nobody has ever asked it".
+	CachedAt time.Time `json:"cached_at,omitzero"`
 	// Secrets lists the ${SECRET_X} placeholders this entry needs, so the
 	// operator can cross-check them against `agenthub secret ls`. Values
 	// are never resolved here.
 	Secrets []string `json:"secret_refs,omitempty"`
+	// TraceLog is where the recorded frames land, present only while
+	// tracing is on. It is printed because a trace nobody can find is a
+	// trace nobody reads — and because that file holds UNREDACTED payloads,
+	// which deserves to be named on the same line that says the switch is
+	// on.
+	TraceLog string `json:"trace_log,omitempty"`
+	// DockerRun is the exact command line the spawner would run for a
+	// containerized entry. "Isolation a config claims must be delivered" is
+	// verified by reading it, and no other command prints it.
+	DockerRun []string `json:"docker_run,omitempty"`
 }
 
 // ServerLive is the daemon's view of one server.
@@ -113,75 +135,259 @@ type ServerLive struct {
 	Action     string `json:"action,omitempty"`
 }
 
-// Human renders the detail view.
+// Human renders the detail view as titled sections of label/value pairs.
+//
+// THE SHAPE IS THE POINT. A server is described by four independent things,
+// and a flat list of lines makes a reader classify each one for themselves:
+// how it is CONFIGURED, what credential this machine HOLDS, who may SEE it,
+// and what is true of it right now. Those are the sections, in that order —
+// static to live, and cheapest-to-answer first — and a section prints only
+// when it has something to say, so a plain local subprocess still fits in a
+// few lines rather than growing four headings of dashes.
 func (i ServerInspect) Human(w io.Writer) error {
 	r := i.Server
-	if _, err := fmt.Fprintf(w, "%s (%s, source=%s, enabled=%s)\n",
-		r.ID, r.Transport, dash(r.Source), boolText(r.Enabled)); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(w, "target: %s\n", r.target()); err != nil {
-		return err
-	}
+	d := &detailWriter{w: w}
+	d.line("%s (%s, source=%s, enabled=%s)", r.ID, r.Transport, dash(r.Source), boolText(r.Enabled))
+
+	d.section("configuration")
+	d.field("target", "%s", r.target())
 	if r.Cwd != "" {
-		if _, err := fmt.Fprintf(w, "cwd: %s\n", r.Cwd); err != nil {
-			return err
+		d.field("cwd", "%s", r.Cwd)
+	}
+	i.writeRuntime(d)
+	// Provenance is reported only when it is the exception, because that is
+	// the only state worth a line: ProvenanceLocal is an operator-declared
+	// exemption from SSRF screening, and an entry carrying one should not
+	// have to be read out of the JSON envelope to find that out.
+	if r.Provenance == registry.ProvenanceLocal {
+		d.field("endpoint", "declared local — a loopback address is allowed for this entry")
+	}
+	if mode := downstream.DeriveMode(r.Derive); mode != "" && mode != downstream.DeriveNone {
+		d.field("derive", "%s (%s)", r.Derive, deriveText(mode))
+	}
+	if r.Trace {
+		d.field("trace", "on -> %s", dash(i.TraceLog))
+		d.cont("frames are recorded BEFORE redaction; 'agenthub server logs %s' reads them", r.ID)
+	}
+	i.writeEnvAndHeaders(d)
+
+	i.writeCredentials(d)
+	i.writeStatus(d)
+	i.writeCatalog(d)
+	return d.err
+}
+
+// writeRuntime renders where the server actually runs. For a containerized
+// entry that is not a detail: the run line IS the isolation, and it is
+// rendered by the same translator the spawn guard screens, so what is
+// printed here is what would be executed.
+func (i ServerInspect) writeRuntime(d *detailWriter) {
+	docker := i.Server.Docker
+	if i.Server.Runtime != registry.RuntimeDocker || docker == nil {
+		return
+	}
+	limits := []string{"image=" + dash(docker.Image), "network=" + dashOr(docker.Network, "none")}
+	for _, kv := range [][2]string{
+		{"memory", docker.Memory}, {"cpus", docker.CPUs},
+		{"user", docker.User}, {"workdir", docker.Workdir},
+	} {
+		if kv[1] != "" {
+			limits = append(limits, kv[0]+"="+kv[1])
+		}
+	}
+	d.field("runtime", "docker  %s", strings.Join(limits, "  "))
+	for n, m := range docker.Mounts {
+		access := "ro"
+		if m.Write {
+			access = "rw"
+		}
+		d.at(n, "mounts", "%s -> %s (%s)", m.Source, dashOr(m.Target, m.Source), access)
+	}
+	if len(docker.Mounts) == 0 {
+		d.field("mounts", "none — the container sees no host path")
+	}
+	if len(i.DockerRun) > 0 {
+		// The argv carries no binary name — the spawn guard screens the shape
+		// with the literal command "docker" beside it — so the human line
+		// puts it back. What is printed has to be pasteable, or an operator
+		// checking the isolation by running it themselves is debugging the
+		// rendering instead.
+		d.field("spawns", "docker %s", strings.Join(i.DockerRun, " "))
+	}
+}
+
+// writeEnvAndHeaders renders the values that reach the downstream. They are
+// part of the configuration, not of the credential state: what a placeholder
+// RESOLVES to is the credentials section's business, and this one only shows
+// that the flag landed where the operator put it.
+func (i ServerInspect) writeEnvAndHeaders(d *detailWriter) {
+	for n, k := range sortedKeys(i.Server.Env) {
+		d.at(n, "env", "%s=%s", k, i.Server.Env[k])
+	}
+	for n, k := range sortedKeys(i.Server.Headers) {
+		d.at(n, "headers", "%s: %s", k, headerValueText(k, i.Server.Headers[k]))
+	}
+}
+
+// writeCredentials renders what the configuration EXPECTS (the login hints,
+// the placeholders) beside what this machine actually HOLDS. The two are
+// deliberately adjacent: nearly every "it worked yesterday" report is one of
+// them having moved without the other.
+func (i ServerInspect) writeCredentials(d *detailWriter) {
+	r := i.Server
+	auth := r.Auth != nil && r.Auth.Kind != authKindNone
+	if !auth && r.OAuth == nil && len(i.Secrets) == 0 {
+		return
+	}
+	d.section("credentials")
+	if auth {
+		d.field("auth", "%s", r.Auth.line())
+		if h := r.Auth.hint(r.ID); h != "" {
+			d.cont("%s", h)
 		}
 	}
 	// The login hints are configuration, not a credential: rendering them is
 	// how an operator confirms `server add --oauth-issuer` landed without
 	// having to read the JSON envelope.
 	if oa := r.OAuth; oa != nil {
-		if _, err := fmt.Fprintf(w, "oauth: issuer=%s scopes=%s resource-metadata=%s\n",
-			dash(oa.Issuer), dash(strings.Join(oa.Scopes, " ")), dash(oa.ResourceMetadataURL)); err != nil {
-			return err
+		d.field("oauth", "issuer=%s  scopes=%s  resource-metadata=%s",
+			dash(oa.Issuer), dash(strings.Join(oa.Scopes, " ")), dash(oa.ResourceMetadataURL))
+	}
+	if len(i.Secrets) > 0 && !i.authLineCoversSecrets() {
+		d.field("secrets", "%s", strings.Join(i.secretStates(), ", "))
+		d.cont("values are never shown; 'agenthub secret set %s <KEY>' stores one", r.ID)
+	}
+}
+
+// authLineCoversSecrets reports that the credential line above has already
+// named every required key and what is wrong with it. The per-key line earns
+// its space when the two answers differ — three keys of which one is missing
+// — and merely repeats the sentence above it when they do not.
+func (i ServerInspect) authLineCoversSecrets() bool {
+	a := i.Server.Auth
+	if a == nil || a.Kind != authKindSecret || a.State != authStateMissing {
+		return false
+	}
+	return len(a.MissingSecrets) == len(i.Secrets)
+}
+
+// secretStates marks each required vault key stored or missing. The state
+// comes from the SAME classification the auth line above it renders — the
+// ladder's first rung reports every missing key — so the two cannot end up
+// disagreeing about the same server. A vault that could not be read yields
+// neither answer, and says so instead of guessing "stored".
+func (i ServerInspect) secretStates() []string {
+	unknown := i.Server.Auth == nil || i.Server.Auth.Kind == authKindUnknown
+	missing := map[string]bool{}
+	if i.Server.Auth != nil {
+		for _, k := range i.Server.Auth.MissingSecrets {
+			missing[k] = true
 		}
 	}
-	// The line below the hints is the other half of the same story: what this
-	// machine actually HOLDS, as against what the configuration expects. One
-	// server has the whole width to itself here, so the expiry is spelled out
-	// rather than compressed into the ls cell.
-	if r.Auth != nil && r.Auth.Kind != authKindNone {
-		if _, err := fmt.Fprintf(w, "auth: %s\n", r.Auth.line()); err != nil {
-			return err
-		}
-		if h := r.Auth.hint(r.ID); h != "" {
-			if _, err := fmt.Fprintf(w, "  %s\n", h); err != nil {
-				return err
-			}
+	out := make([]string, 0, len(i.Secrets))
+	for _, key := range i.Secrets {
+		switch {
+		case unknown:
+			out = append(out, key+" (unreadable vault)")
+		case missing[key]:
+			out = append(out, key+" (MISSING)")
+		default:
+			out = append(out, key+" (stored)")
 		}
 	}
-	if len(i.Secrets) > 0 {
-		if _, err := fmt.Fprintf(w, "secret refs: %v (values are never shown)\n", i.Secrets); err != nil {
-			return err
-		}
-	}
+	return out
+}
+
+// writeStatus renders the two answers about NOW, and keeps them apart. The
+// live line is a daemon's observation; the cached line is a file on this
+// disk. Presenting a cache figure where a reader expects runtime is how a
+// server that has been down for a week looks like one with twelve tools.
+func (i ServerInspect) writeStatus(d *detailWriter) {
+	d.section("status")
 	if i.Live != nil {
-		if _, err := fmt.Fprintf(w, "live: state=%s health=%s/%s tools=%d %s\n",
-			i.Live.State, i.Live.Health, i.Live.AdminState, i.Live.Tools, i.Live.Summary); err != nil {
-			return err
+		d.field("live", "%s, health %s/%s, %d tool(s)",
+			i.Live.State, i.Live.Health, i.Live.AdminState, i.Live.Tools)
+		if i.Live.Summary != "" {
+			d.cont("%s", i.Live.Summary)
+		}
+		// The daemon's suggested repair was carried in the struct but never
+		// printed: the one field of a health report that says what to DO.
+		if i.Live.Action != "" {
+			d.cont("next: %s", i.Live.Action)
 		}
 	} else {
-		if _, err := fmt.Fprintln(w, "live: daemon offline (report is registry + tool cache only)"); err != nil {
-			return err
-		}
+		d.field("live", "daemon offline — everything above is registry and cache only")
 	}
-	if _, err := fmt.Fprintf(w, "cached tools: %d\n", i.ToolCount); err != nil {
-		return err
+	d.field("cached", "%s", i.cachedText())
+}
+
+// cachedText describes the persisted catalog, never as a live figure.
+func (i ServerInspect) cachedText() string {
+	if i.CachedAt.IsZero() {
+		return "no catalog stored — no gateway has connected to this server yet"
 	}
+	return fmt.Sprintf("%d tool(s), recorded %s (%s)",
+		i.ToolCount, humanAge(time.Since(i.CachedAt)), i.CachedAt.Local().Format(time.RFC3339))
+}
+
+// writeCatalog renders what --schema and --tools asked for.
+func (i ServerInspect) writeCatalog(d *detailWriter) {
 	if len(i.Schema) > 0 {
-		_, err := fmt.Fprintf(w, "%s\n", i.Schema)
-		return err
+		d.section("schema")
+		d.raw(indentJSON(i.Schema) + "\n")
 	}
 	if len(i.Tools) == 0 {
-		return nil
+		return
 	}
-	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "TOOL\tDESCRIPTION")
+	d.section("cached tools")
+	var sb strings.Builder
+	tw := tabwriter.NewWriter(&sb, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "  TOOL\tDESCRIPTION")
 	for _, t := range i.Tools {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\n", t.RawName, oneLine(t.Description, descriptionColumnBytes))
+		_, _ = fmt.Fprintf(tw, "  %s\t%s\n", t.RawName, oneLine(t.Description, descriptionColumnBytes))
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		d.fail(err)
+		return
+	}
+	d.raw(sb.String())
+}
+
+// deriveText spells out what a derivation mode costs, because the word alone
+// ("session") does not say that it multiplies processes.
+func deriveText(mode downstream.DeriveMode) string {
+	switch mode {
+	case downstream.DeriveRoot:
+		return "one instance per project root"
+	case downstream.DeriveSession:
+		return "one instance per session"
+	default:
+		// Not a mode this build knows: the connection will REFUSE it rather
+		// than fall back to shared state, so it is reported as the error it
+		// will become instead of being quietly normalized here.
+		return "unknown mode — the connection will be refused"
+	}
+}
+
+// headerValueText renders a header value for the HUMAN view.
+//
+// Header values are printed verbatim because a registry entry is supposed to
+// hold `${SECRET_X}` placeholders rather than credentials, and seeing which
+// placeholder landed in which header is the whole point of the line. The one
+// exception is the case where that assumption is already broken: a LITERAL
+// Authorization value is a pasted token, and inspect will not read it back
+// out to a terminal. The test is the same narrow one `hasLiteralAuthorization`
+// makes — any other header may or may not authenticate anything, and guessing
+// would start hiding ordinary configuration.
+//
+// The --json envelope is deliberately unchanged: it carries the entry as
+// stored, for programs that already have the file it came from.
+func headerValueText(name, value string) string {
+	if strings.EqualFold(name, "authorization") && strings.TrimSpace(value) != "" &&
+		len(downstream.SecretKeysIn(value)) == 0 {
+		return "<literal value, not shown — store it as a secret and use ${SECRET_X}>"
+	}
+	return value
 }
 
 // newServerToggleCmd builds `server enable` / `server disable`.
@@ -383,11 +589,11 @@ func (a *App) newServerInspectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cached, err := gateway.LoadToolCache(a.resolver, nil)
+			cached, err := gateway.LoadToolCacheEntries(a.resolver, nil)
 			if err != nil {
 				return err
 			}
-			defs := cached[id]
+			defs := cached[id].Tools
 			row := rowFor(id, entry)
 			// One server, so the probe's index-first economy buys nothing here
 			// — but sharing the classification with `server ls` is the point:
@@ -401,7 +607,30 @@ func (a *App) newServerInspectCmd() *cobra.Command {
 				Server:    row,
 				ToolCount: len(defs),
 				CacheOnly: true,
+				CachedAt:  cached[id].SavedAt,
 				Secrets:   secretRefsOf(entry),
+			}
+			// The two facts that live outside the registry document but
+			// describe THIS entry. Neither may take the report down: a
+			// missing logs directory or a container config that no longer
+			// renders is worth a warning, and every other line is still
+			// true (the same fail-open direction the credential probe takes).
+			if entry.Trace {
+				logsDir, lerr := a.resolver.LogsDir()
+				if lerr != nil {
+					warnings = append(warnings, "could not resolve the log directory: "+lerr.Error())
+				} else {
+					out.TraceLog = downstream.ServerLogPath(logsDir, id)
+				}
+			}
+			if entry.Runtime == registry.RuntimeDocker {
+				line, derr := dockerRunLine(id, entry)
+				if derr != nil {
+					warnings = append(warnings, fmt.Sprintf(
+						"the container configuration does not render into a 'docker run' line (%v); "+
+							"connecting to %s will fail for the same reason", derr, id))
+				}
+				out.DockerRun = line
 			}
 			if schema != "" {
 				def, ok := findTool(defs, schema)
