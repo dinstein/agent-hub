@@ -60,7 +60,7 @@ flowchart LR
 控制面（CLI 与 GUI 的管理 API）、协调面（会话注册表、审批 broker、overlay 分发、OAuth 刷新单飞）。
 网关**永不自动拉起 daemon**——stdio 数据面对 daemon 零依赖是这个模型的核心卖点，
 自动拉起会把「可选」变成事实上的必选。daemon 不在时的降级是明确的：需要人审批的调用直接拒绝
-（fail-closed），会话级动态作用域不可用（静态五层照常），OAuth 刷新退回文件锁。
+（fail-closed），会话级动态作用域不可用（静态三层照常），OAuth 刷新退回文件锁。
 
 代价是多进程共写磁盘的纪律必须做对：日志每行一次 `O_APPEND` 写、指纹与隔离集用跨进程文件锁、
 安全事件跨进程去重。这些不是保险，是并发正确性依赖。
@@ -76,7 +76,7 @@ flowchart LR
 请求写进的是同一个 frame reader，因而穿过同一个 discovery surface、同一个 router、同一个
 `pipeline.Execute` 调用点。凭据只从两个既有入口进入治理链：`Caller.Tier` →
 `pipeline.CallRequest.CallerTier`（token 层级门），`Caller.Servers` / `Caller.Profile` →
-`scope.Sources.Extra` 的额外层（与持久化五层同一个 `Merge` 取交集，只能收窄）。
+`scope.Sources.Extra` 的额外层（与持久化三层同一个 `Merge` 取交集，只能收窄）。
 连接按**凭据**复用并在空闲后回收，所以下游连接是按凭据共享的，而不是按 HTTP session 复制的。
 
 **「服务器现在什么状态」这个问题也顺着同一条线走。** daemon 在数据面关闭时不连下游，所以它也不该为了
@@ -117,7 +117,7 @@ flowchart TD
         RL["internal/ratelimit<br/>cooperative 配额"]
     end
     subgraph L2["治理与配置"]
-        SCOPE["internal/scope<br/>五层解析 + Merge"]
+        SCOPE["internal/scope<br/>三层解析 + Merge"]
         SESS["internal/session<br/>会话身份 + overlay"]
         APPR["internal/approval<br/>HITL broker"]
         INTG["internal/integrity<br/>指纹/drift/quarantine"]
@@ -151,7 +151,7 @@ flowchart TD
 | `internal/mcp` | MCP 协议唯一门面，只依赖标准库 | 全仓唯一允许触碰协议实现的地方；有界读、取消转发、反向 RPC 都在这里 |
 | `internal/registry` | 配置真源：多文档 + 原子写 + generation + watch | 「配置真源是文件而不是 daemon 内存」由它兑现 |
 | `internal/confops` | **唯一**的语义写实现（加 server、改 profile、翻治理开关） | CLI 与控制面是同一套规则的两个前端，规则只有一份 |
-| `internal/scope` | 五层解析链 + `Merge` 纯函数 + 内容寻址 `EffectiveScope` | 「谁能看见什么」的全部判定；安全字段只能越收越紧 |
+| `internal/scope` | 三层解析链 + `Merge` 纯函数 + 内容寻址 `EffectiveScope` | 「谁能看见什么」的全部判定；安全字段只能越收越紧 |
 | `internal/router` | 命名空间聚合与 `RouteOf` 唯一溯源 | 暴露名 → `(server, tool)` 的唯一合法还原方式 |
 | `internal/pipeline` | ★ 唯一执行管线：四道门 + defend_and_shape | 所有调用路径都在这里汇合，门禁不可能分叉 |
 | `internal/downstream` | 下游连接生命周期、串行队列、断路器、派生实例池 | 下游的不稳定被挡在这一层，不外溢到调用方 |
@@ -265,26 +265,37 @@ flowchart LR
 
 ## 7. 作用域：可见性与连接是两个平面
 
-五层解析链（最具体的胜出）：
+三层解析链（最具体的胜出）：
 
 ```mermaid
 flowchart TD
     G["Global：governance.json<br/>denyDestructive / blockOnInjection / 默认 discovery 与预算"] --> P
-    P["Profile：profiles.json<br/>enabled servers + tool allow"] --> C
-    C["Client：clients.json<br/>绑 profile、覆盖 discovery、追加收窄"] --> PR
-    PR["Project：按 root 最长前缀<br/>可换 profile、可再收窄"] --> S
+    P["Profile：profiles.json<br/>enabled servers + tool allow + discovery"] --> S
     S["Session：内存 overlay，不落盘<br/>只紧不松；放宽须人工 grant"] --> M
     M{{"Merge：安全字段交集 / OR<br/>体验字段就近覆盖"}} --> E["EffectiveScope（内容寻址，带 Hash）"]
+    CL["clients.json：client 绑定<br/>只选 profile，不叠加收窄"] -. "选哪一个 profile" .-> P
 ```
+
+**client 不是一层。** `clients.json` 只回答「这个客户端跟哪个 profile」，绝不在 profile 之上再叠一层
+收窄。它曾经有自己的 servers / tools / discovery / 审批 / 预算字段，结果是「这个 client 绑了哪个
+profile」不再是「这个 client 能看见什么」的完整答案——而后者正是整个模型存在的理由：操作者得翻两处
+再自己手算交集。收窄现在只有一个家（profile），需要不同面的 client 就绑到不同的 profile 上。
+
+**per-project 层已经退役。** 它按客户端上报的 MCP root 做最长前缀匹配，可以换 profile、可以再收窄。
+它的代价是同一个问题有了第二个答案，而这个答案还取决于客户端到底实现不实现 roots 能力——一个不报
+root 的客户端静默落回更宽的那一层。`clients.json` 里遗留的 `projects` 块会被 registry 的未知字段
+透传原样保留（看起来仍然权威），所以 `agenthub doctor` 的 `scope:projects` 会**告警**：那个块原本是
+用来收窄的，失效的方向是**放宽**。
 
 合并规则由字段性质决定，不是逐字段拍脑袋：**安全字段**（server 可见性、tool allow）逐层取交集，
 deny 取并集，审批开关取布尔或——只能越来越紧；**体验字段**（discovery 模式、结果预算）最具体层胜出。
 两条不变量：交集永远以**原始工具名**为键（否则改名或后缀消歧就能绕过收窄），
 悬垂的 profile 引用解析为**空集**而不是全放行，并且 doctor 会显式告警而不是静默。
 
-**可见性平面与连接平面是分开的。** 网关连接的是本 client 的静态水位（client/project 层），
+**可见性平面与连接平面是分开的。** 网关连接的是本 client 的静态水位（它绑定的 profile），
 而每个会话看见什么是查询期投影。所以收窄一个会话的作用域不会重建 router、不会重启下游进程——
-这正是 per-session 粒度可行的原因。overlay 永不落盘：复活的运行时放宽是安全事故。
+这正是 per-session 粒度可行的原因。overlay 永不落盘：复活的运行时放宽是安全事故；
+`session scope` 的每一次修改都只活在 overlay 上，要让一份面永久生效只能改 profile。
 
 ---
 
@@ -317,7 +328,7 @@ flowchart LR
 
 | 防线 | 粒度 | 判定者 | 挡什么 |
 |---|---|---|---|
-| scope | server / 工具可见性 | 机器（五层交集） | 不该看见的能力 |
+| scope | server / 工具可见性 | 机器（三层交集） | 不该看见的能力 |
 | agent token 层级 + 意图变体 | 操作等级 | 机器（token × annotations） | 只读凭据发起写/毁灭操作 |
 | HITL | 单次调用 | 人（args_hash 绑定） | 等级内仍需人审的具体动作 |
 

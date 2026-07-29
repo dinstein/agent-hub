@@ -331,7 +331,8 @@ MCP 协议、拉起下游、维护目录与可见性，但**不实现任何治�
 `Run(ctx, Config) error` 是唯一导出的运行入口；`Config` 要求 `ClientID` / `In` / `Out`，其余都有生产默认值。
 `LoadToolCache` 额外导出，给离线的 `agenthub tool ls` 读同一份缓存格式（一个写者、一个读者、一个结构
 体）。`RootSource` 是 A.5 #30 冻结的迁移接缝：M0 装的是 roots 协议实现 `clientRoots`，将来 clients.json 的显式
-roots 实现直接顶上，scope 解析消费接口本身。
+roots 实现直接顶上，调用方消费接口本身。per-project scope 层退役后 root 只喂**连接面**（`${ROOT}` 展开与
+派生实例键），不再进任何可见性判定。
 
 内部核心是 `gateway` 结构：`rt`（当前目录）、`cat`（原始名投影）、`catGen`（每次换 router 自增，是 surface 缓
 存的键）、`surface`、`lastScope`、`servers`、`pool`、`pipe`、`cursors`、`guard`、`ctl`。
@@ -432,7 +433,7 @@ id 只是在一个本来就可猜的序列里留个洞，不花钱。remainder �
 agent token 铸出，stdio 恒为空——终端管道上没有凭据，所以没有 tier 可执行）；它原样进入
 `pipeline.CallRequest.CallerTier`，由 token 层级门比对，本包不重新实现判定。
 `Config.ScopeLayers` 是凭据的 server allowlist 与 profile pin 的入口，接到
-`scope.Sources.Extra` 上——与持久化五层同一个 `Merge`，安全字段取交集，**只能收窄**。
+`scope.Sources.Extra` 上——与持久化三层同一个 `Merge`，安全字段取交集，**只能收窄**。
 两者都是 `agenthub connect` 用不到的字段，其零值就是 stdio 的行为。
 
 ### 当前装配现状
@@ -819,7 +820,7 @@ warn、发 `Event`、（损坏时）把坏文件隔离一次。理由：限流�
 `Event`）。运行期的治理编辑出错则保留上一份可用规则集：拒绝服务会让一次无关的配置手误变成在跑的 agent
 的停机，而降级成「无配额」正是本包拒绝的静默放宽。
 
-规则集只放在 **global 一层**，不进五层 scope 链——理由见 `registry.GovernanceDoc.RateLimits` 的注释（规则模式
+规则集只放在 **global 一层**，不进三层 scope 链——理由见 `registry.GovernanceDoc.RateLimits` 的注释（规则模式
 本身已经带 client/server/tool 维度；计数桶按规则模式键控，同一模式出现在多层会把一份配额裂成每层一份）。
 
 ---

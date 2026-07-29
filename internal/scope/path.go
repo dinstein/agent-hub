@@ -59,28 +59,6 @@ func NormalizePath(p string) string {
 	return s
 }
 
-// PathIsWithin reports whether p is root itself or lives underneath it,
-// matching on PATH BOUNDARIES: "/a/proj" does not swallow "/a/project"
-// (docs/architecture.md §7). Both arguments must already be NormalizePath'd.
-//
-// Failure direction: on any ambiguity (empty inputs, mismatched forms) it
-// returns false — the project override (and any profile switch or grant it
-// carries) is simply withheld and the session stays on its client/global
-// scope; a wrong-positive would apply another project's configuration to a
-// path outside it.
-func PathIsWithin(root, p string) bool {
-	if root == "" || p == "" {
-		return false
-	}
-	if root == p {
-		return true
-	}
-	if root == "/" {
-		return strings.HasPrefix(p, "/")
-	}
-	return strings.HasPrefix(p, root+"/")
-}
-
 func isASCIIAlpha(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }

@@ -101,9 +101,13 @@ make release-run ARGS="--help"   # release 版的 make dev
 ```
 
 两个 flavour 落在**不同路径**，所以可以同时留着对照跑。它们的差别不止数据目录：
-release 版 `--version` 不带 `(dev)`，`--help` 也不列治理命令组
-（approval / grant / config / audit）。「手上这个到底是哪一个」因此不再需要靠
-跑一次去猜。
+release 版 `--version` 不带 `(dev)`，`--help` 也不列 Govern 组
+（approval / grant / config / audit / secret / tool / token）与 Operate 组。
+留下的恰好是日常那条完整路径、不多不少：注册并授权一台 server、搭一个 profile、
+把 client 绑上去——`profile` 因此**必须**留在页面上，一个能接客户端却说不出这个客户端
+将会看见什么的构建只教了半个模型。这些命令全部照常注册、照常可运行：
+收窄的是这个二进制**教什么**，不是它能做什么。
+「手上这个到底是哪一个」因此不再需要靠跑一次去猜。
 
 **默认是 dev 而不是 release，因为两个方向的失败代价不对称。** release 被误标成
 dev，代价是一个空沙箱，用户看得见也修得掉；dev 被误标成 release，会写进装好那份

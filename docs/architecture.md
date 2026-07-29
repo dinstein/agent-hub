@@ -68,7 +68,7 @@ singleflight). The gateway **never auto-starts the daemon** — the stdio data p
 dependency on the daemon is the core selling point of this model, and auto-starting would turn
 "optional" into de facto mandatory. Degradation when the daemon is absent is explicit: calls that need
 human approval are rejected outright (fail-closed), session-level dynamic scope is unavailable (the
-static five layers work as usual), and OAuth refresh falls back to file locks.
+static three layers work as usual), and OAuth refresh falls back to file locks.
 
 The price is that the discipline of multiple processes writing the same disk has to be right: one
 `O_APPEND` write per log line, cross-process file locks for fingerprints and the quarantine set,
@@ -89,7 +89,7 @@ attached to an in-memory pipe instead of stdin/stdout. Requests are written into
 so they pass through the same discovery surface, the same router, and the same `pipeline.Execute` call
 site. The credential enters the governance chain through only two existing entry points: `Caller.Tier`
 → `pipeline.CallRequest.CallerTier` (the token tier gate), and `Caller.Servers` / `Caller.Profile` →
-an extra layer in `scope.Sources.Extra` (intersected by the same `Merge` used for the five persisted
+an extra layer in `scope.Sources.Extra` (intersected by the same `Merge` used for the persisted
 layers, so it can only narrow). Connections are reused **per credential** and reclaimed once idle, so
 downstream connections are shared by credential rather than duplicated per HTTP session.
 
@@ -134,7 +134,7 @@ flowchart TD
         RL["internal/ratelimit<br/>cooperative quotas"]
     end
     subgraph L2["governance and configuration"]
-        SCOPE["internal/scope<br/>five-layer resolution + Merge"]
+        SCOPE["internal/scope<br/>three-layer resolution + Merge"]
         SESS["internal/session<br/>session identity + overlay"]
         APPR["internal/approval<br/>HITL broker"]
         INTG["internal/integrity<br/>fingerprints/drift/quarantine"]
@@ -168,7 +168,7 @@ The nine packages worth knowing first:
 | `internal/mcp` | The one MCP protocol facade, stdlib only | The only place in the repo allowed to touch protocol implementation; bounded reads, cancellation forwarding, and reverse RPC all live here |
 | `internal/registry` | Config source of truth: multi-document + atomic writes + generation + watch | This is what makes "the source of truth is the files, not the daemon's memory" real |
 | `internal/confops` | The **one** semantic-write implementation (add a server, edit a profile, flip a governance switch) | CLI and control plane are two frontends over one rule set; the rules exist once |
-| `internal/scope` | Five-layer resolution chain + pure `Merge` + content-addressed `EffectiveScope` | Every "who can see what" decision; security fields can only get tighter |
+| `internal/scope` | Three-layer resolution chain + pure `Merge` + content-addressed `EffectiveScope` | Every "who can see what" decision; security fields can only get tighter |
 | `internal/router` | Namespace aggregation and `RouteOf` as sole provenance | The only legal way to recover `(server, tool)` from an exposed name |
 | `internal/pipeline` | ★ The one execution pipeline: four gates + defend_and_shape | Every call path converges here, so the gates cannot fork |
 | `internal/downstream` | Downstream connection lifecycle, serial queue, circuit breaker, derived instance pool | Downstream instability stops at this layer instead of leaking to callers |
@@ -291,17 +291,32 @@ Each flow has one property you must not forget:
 
 ## 7. Scope: visibility and connection are two separate planes
 
-The five-layer resolution chain (most specific wins):
+The three-layer resolution chain (most specific wins):
 
 ```mermaid
 flowchart TD
     G["Global: governance.json<br/>denyDestructive / blockOnInjection / default discovery and budgets"] --> P
-    P["Profile: profiles.json<br/>enabled servers + tool allow"] --> C
-    C["Client: clients.json<br/>binds a profile, overrides discovery, narrows further"] --> PR
-    PR["Project: longest-prefix match by root<br/>can swap profile, can narrow further"] --> S
+    P["Profile: profiles.json<br/>enabled servers + tool allow + discovery"] --> S
     S["Session: in-memory overlay, never persisted<br/>tighten-only; loosening needs a manual grant"] --> M
     M{{"Merge: security fields intersect / OR<br/>experience fields overridden by the nearest layer"}} --> E["EffectiveScope (content-addressed, carries a Hash)"]
 ```
+
+**`clients.json` is not a layer.** It answers exactly one question — *which* profile this client is on
+(`agenthub client bind <client> <profile>`, or nothing, meaning "follow the globally active profile").
+It contributes no servers, no tool selectors, no discovery mode of its own. The chain used to have two
+more layers here: a client layer that narrowed on top of its profile, and a project layer keyed by
+longest-prefix match on the client's reported MCP root. Both are retired, for the same reason — they
+made "which profile is this client on" an *incomplete* answer to "what can this client see". An
+operator had to read two or three places and intersect them by hand, which is precisely the arithmetic
+this model exists to do for them. Narrowing now has one home, the profile; a client that needs a
+different surface gets bound to a different profile.
+
+The retirement has a direction, and it is the open one: both retired layers existed to **narrow**, so a
+configuration that still carries them now shows that client *more* than it used to. The registry
+preserves unknown JSON verbatim, so a legacy `projects` block survives on disk looking exactly as
+authoritative as it did while it worked. `agenthub doctor` therefore **warns** (not informs) on
+`scope:projects`, naming the clients and saying the block no longer applies — but never deletes it:
+doctor reports, the operator decides.
 
 The merge rules follow from the nature of each field, not from case-by-case judgment: **security
 fields** (server visibility, tool allow) intersect layer by layer, denies union, approval switches OR
@@ -312,10 +327,18 @@ dangling profile reference resolves to the **empty set** rather than allow-all, 
 explicit warning rather than staying silent.
 
 **The visibility plane and the connection plane are separate.** The gateway connects at this client's
-static high-water mark (the client/project layers), while what each session sees is a query-time
-projection. So narrowing a session's scope doesn't rebuild the router and doesn't restart downstream
-processes — which is exactly why per-session granularity is feasible. Overlays are never persisted: a
-runtime loosening that comes back from the dead is a security incident.
+static high-water mark (global ∩ profile), while what each session sees is a query-time projection. So
+narrowing a session's scope doesn't rebuild the router and doesn't restart downstream processes — which
+is exactly why per-session granularity is feasible. Overlays are never persisted: a runtime loosening
+that comes back from the dead is a security incident. That is also why `session scope` has no way to
+write its edits back into configuration; the way to change what a client sees permanently is to edit
+its profile or bind it to another one.
+
+The session's root no longer enters resolution at all — with the project layer gone, no persisted layer
+reads it — so it is not part of the resolver's cache key either, which is now `(clientID, registry
+generation, overlayVersion)`. Keeping the root in the key would have split one client's cache across
+every directory it happens to report from, for a value that cannot change the answer. The root still
+reaches `internal/downstream`, which derives per-root server instances from it.
 
 ---
 
@@ -351,7 +374,7 @@ flowchart LR
 
 | Line | Granularity | Decided by | Blocks |
 |---|---|---|---|
-| scope | server / tool visibility | Machine (five-layer intersection) | Capabilities that shouldn't be visible |
+| scope | server / tool visibility | Machine (three-layer intersection) | Capabilities that shouldn't be visible |
 | agent token tier + intent variants | Operation tier | Machine (token × annotations) | A read-only credential initiating a write/destructive operation |
 | HITL | A single call | Human (bound by args_hash) | Specific actions that still need a human within their tier |
 

@@ -26,15 +26,15 @@ func (g *gateway) scopeKey() scope.SessionKey {
 		ClientID:  g.cfg.ClientID,
 		SessionID: scope.SessionID(sid),
 		// Root is the client's first reported root, read from the cache only
-		// (cachedPrimaryRoot explains why this must not block). It selects the
-		// per-project layer in scope/layers.go, which outranks the
-		// client-level binding.
+		// (cachedPrimaryRoot explains why this must not block).
 		//
-		// An empty root — client declares no roots capability, reports none,
-		// or the prefetch has not landed yet — consults no project binding at
-		// all, so the client-level binding applies. That is the behavior every
-		// session had before this was wired, which is what makes an
-		// unpopulated cache safe rather than merely tolerable.
+		// It no longer decides anything about visibility: no persisted layer
+		// reads it since the per-project layer was retired, and it is not in
+		// the resolver's cache key. An empty root — client declares no roots
+		// capability, reports none, or the prefetch has not landed yet —
+		// therefore cannot change what this session resolves to. It is
+		// carried because the key is also the identity handed to derivation
+		// (downstream derives per-root server instances from it).
 		Root: g.cachedPrimaryRoot(),
 	}
 }

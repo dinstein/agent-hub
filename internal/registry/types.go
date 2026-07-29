@@ -454,7 +454,7 @@ type GovernanceDoc struct {
 	//     same fact twice, in two places that can disagree.
 	//  2. The counters are SHARED ACROSS PROCESSES and keyed by the rule
 	//     pattern. The same pattern defined at several layers would either
-	//     split one quota into one bucket per layer (three layers = five
+	//     split one quota into one bucket per layer (three layers = three
 	//     times the limit — the opposite of the tighten-only merge every
 	//     other governance field obeys) or need a per-pattern min-merge that
 	//     exists nowhere else in this codebase.

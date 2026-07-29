@@ -568,8 +568,8 @@ generation, change awareness, and self-write suppression.
 ```
 meta.json          monotonic generation (incremented only under the lock, and only when something was actually written)
 servers.json       downstream MCP servers
-profiles.json      profiles (layers)
-clients.json       client bindings and per-project overrides
+profiles.json      profiles: the enabled-server set, per-server tool selectors, and discovery mode
+clients.json       which profile each client is bound to (and nothing else)
 governance.json    global governance policy
 .lock              sibling lock file, flock, protecting all of the above
 .runstate.json     crash marker (not a document; the dot prefix deliberately keeps it out of the <kind>.json namespace)
@@ -586,6 +586,14 @@ by a newer agenthub (or by hand) survive an older version's load-modify-save. Th
 **per level** — `ServersDoc.Servers`'s value type is `Doc[ServerEntry]` rather than `ServerEntry`, so
 unknown fields inside an individual server entry survive too. The set of known field names is cached
 by `reflect.Type`, and correctly handles json tags and field promotion from anonymous embedding.
+
+**Passthrough is exactly what makes a RETIRED field dangerous, which is why `HasUnknownField(name)`
+exists.** A field the type system dropped keeps round-tripping verbatim, so a rule an operator wrote
+while it worked still *looks* applied long after it stopped applying — and when the retired rule was a
+narrowing one, "stopped applying" means widening. `HasUnknownField` lets a diagnostic notice that a
+name survived on disk (`agenthub doctor`'s `scope:projects` check uses it for the retired `projects`
+block in `clients.json`). Reading the key is deliberately **all** it exposes: a caller may ask whether
+a name is present, never reach into the passthrough and act on its contents.
 
 **`Store`** is a handle on one registry directory. Three entry points:
 
@@ -626,15 +634,22 @@ which is the one reason the feature exists at all.
 
 The domain types live in `types.go`: `ServerEntry` (with fields like
 `Transport`/`Runtime`/`Docker`/`Provenance`/`Derive` and `ValidateRuntime`), `Profile`,
-`ToolSelector`, `ClientEntry`/`ProjectBinding`, `GovernanceDoc` (including the `RateLimitRule` rule
+`ToolSelector`, `ClientEntry`, `GovernanceDoc` (including the `RateLimitRule` rule
 set), and the `Binding()` method that hardcodes the priority "explicit `ProfileRef` > the `profile`
 shorthand > the layer default".
 
+`ClientEntry` holds `{Profile, ProfileRef}` and **nothing else**: a client selects a profile and never
+narrows on top of one. It used to also carry `Discovery`, `Servers`, `Tools`, `ResultBudget`,
+`Approval` and a `Projects` map of per-root `ProjectBinding` overrides; all of those are gone, along
+with the `BindingInherit` kind that only existed so a project could inherit its client's binding. The
+kinds a `ProfileBinding` can take are now exactly `named` and `followActive`. `Profile` gained the
+`Discovery` field the client entry lost, because discovery describes the tool set it is attached to.
+
 `GovernanceDoc.RateLimits` (`rateLimits`) is the call-quota rule set, existing **only at the global
-layer** and never entering the five-layer scope chain: the rule patterns already carry the (client,
+layer** and never entering the three-layer scope chain: the rule patterns already carry the (client,
 server, tool) dimensions, and cross-process counting buckets are keyed by rule pattern — so the same
-pattern appearing at several layers would either split one quota into one per layer (five layers =
-five times the limit, the opposite of "only tighten, never loosen") or require a per-pattern min-merge
+pattern appearing at several layers would either split one quota into one bucket per layer (a
+multiplied limit, the opposite of "only tighten, never loosen") or require a per-pattern min-merge
 semantics that exists nowhere else in this repo. The registry only stores it **verbatim** (`window` is
 a duration string and isn't parsed); parsing, validation, and enforcement live in
 `internal/ratelimit`, which would rather error on the whole rule set than silently drop one rule it
@@ -790,8 +805,8 @@ meaningless across machines or after a reboot).
 | File | Contents |
 |---|---|
 | `store.go` | Package docs, `Store`/`Tx`, `Open`/`OpenOptions`/`Reload`/`Update`, `loadAll`/`loadDocFile` (retry + quarantine), `commitDoc` (the no-op guard), `registeredWrite`, snapshot deep copying |
-| `envelope.go` | `Doc[T]` with its Marshal/Unmarshal, known-field-name reflection and caching |
-| `types.go` | The five `DocKind` documents, `MetaDoc`, `ServerEntry` (transport/runtime/docker/provenance/derive), `DockerRuntime`/`DockerMount`, `OAuthHint`, `ToolSelector`, `Profile`, `ClientEntry`/`ProjectBinding`/`ProfileBinding`, `GovernanceDoc`, `Snapshot`, the default documents |
+| `envelope.go` | `Doc[T]` with its Marshal/Unmarshal, known-field-name reflection and caching, and `HasUnknownField` (retired-field detection for diagnostics) |
+| `types.go` | The five `DocKind` documents, `MetaDoc`, `ServerEntry` (transport/runtime/docker/provenance/derive), `DockerRuntime`/`DockerMount`, `OAuthHint`, `ToolSelector`, `Profile`, `ClientEntry`/`ProfileBinding`, `GovernanceDoc`, `Snapshot`, the default documents |
 | `fileio.go` | The `atomicWrite` ladder, `syncDir`, `rotateBackups`, `quarantine`, `canonicalize`/`canonicallyEqual`, `encodeDoc` |
 | `lock.go` | The sibling lock file path, `acquireLock` polling and timeout, `release` |
 | `flock_unix.go` / `flock_stub.go` | `syscall.Flock` on darwin/linux; a compile-time placeholder returning `errors.ErrUnsupported` elsewhere |

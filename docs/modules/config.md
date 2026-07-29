@@ -4,7 +4,7 @@ This layer answers two questions: **what can this session see right now**, and *
 configs, credentials, and files come from, and who is responsible for changing them**. Seven packages
 divide the work as follows.
 
-`internal/scope` holds this layer's core computation: it takes the four persisted configuration layers
+`internal/scope` holds this layer's core computation: it takes the two persisted configuration layers
 from the registry, adds the session's in-memory overlay, and folds them into a single
 content-addressed `EffectiveScope`. `internal/session` owns the overlay — session identity, lifecycle,
 and the "may only tighten" mutation check; the overlay lives only in memory and is gone the moment the
@@ -32,9 +32,9 @@ a change turns fail-closed into fail-open.
 
 ### Responsibility in one sentence
 
-Fold five configuration layers (Global, Profile, Client, Project, Session) into one deterministic,
-content-addressed `EffectiveScope` that answers "which servers and which tools can this session see
-right now, does it need human approval, and how big is the result budget".
+Fold three configuration layers (Global, Profile, Session) into one deterministic, content-addressed
+`EffectiveScope` that answers "which servers and which tools can this session see right now, does it
+need human approval, and how big is the result budget".
 
 ### Key types and entry points
 
@@ -44,8 +44,15 @@ the design goal "both modes behave identically" lands in code. `MergeWithDiagnos
 pre-collected `[]Diagnostic` into the result **before hashing**, so diagnostics participate in content
 addressing too.
 
-`CachedResolver`'s cache key is the triple `(registryGeneration, overlayVersion, normalizedRoot)`,
-invalidated event-driven through `Invalidate(Event)`, never by polling.
+`CachedResolver`'s cache key is the triple `(clientID, registryGeneration, overlayVersion)`,
+invalidated event-driven through `Invalidate(Event)`, never by polling. The session's **root is
+deliberately absent** from it: it was in the key while the project layer matched on it, but with that
+layer retired no persisted layer reads the root, so keeping it would have split one client's cache
+across every directory it happens to report from — more misses for a value that cannot change the
+answer. `EvRootChanged` still drops that one session's entry, not because a root can change a
+resolution today but because dropping one entry is cheap and the alternative (letting each caller
+decide which notices matter) is how a stale scope gets served the next time something does depend on
+the root.
 
 `Sources.Extra` holds extra layers appended after the overlay, so that **credentials with no registry
 entry** can participate in the same intersection (the daemon's HTTP data plane folds an agent token's
@@ -56,33 +63,31 @@ intersect, deny unions, approval switches OR — so Extra **has no shape that ca
 Constraint: its return value must be a pure function of "session id + registry generation", because it
 does not enter the cache key.
 
-`NormalizePath` and `PathIsWithin` are pure string path utilities used by project layer matching.
+**`clients.json` contributes no layer.** `FromRegistry` reads a client entry for exactly one purpose:
+to learn which profile that client is on (`ClientEntry.Binding()` — named, or followActive when there
+is no entry at all). A client **selects** a profile; it never narrows on top of one. The entry type
+`registry.ClientEntry` holds `{Profile, ProfileRef}` and nothing else, so "which profile is this client
+bound to" is a *complete* answer to "what can it see" — an operator does not have to read a second
+place and intersect by hand. `discovery` moved onto `registry.Profile` for the same reason: it
+describes *that* tool set, so binding a client settles presentation and content in one act rather than
+leaving presentation to be configured a second time.
 
-**Where the project layer's root comes from.** `SessionKey.Root` is filled in by the stdio gateway from
-the first MCP root the client reports (`cachedPrimaryRoot` in `gateway/derive.go`). It **only reads the
-roots cache and never blocks** — scope resolution runs on tools/list, on the execution path, and inside
-`newGateway` (at which point the client has not yet initialized, so a reverse RPC could not be answered
-at all). The cache is filled by a prefetch after `notifications/initialized`, so any resolution before
-that sees an empty root.
+`SessionKey.Root` survives as a field, but **no persisted layer reads it**. It is still filled in by the
+stdio gateway from the first MCP root the client reports (`cachedPrimaryRoot` in `gateway/derive.go`)
+because `internal/downstream` derives per-root server instances from it; it no longer selects anything
+in the scope chain.
 
-An empty root matches no project binding, so the client layer takes effect — which is exactly how every
-session behaved before wiring, and why "cache not yet filled" is safe. A late-arriving root needs no
-explicit invalidation: `CachedResolver`'s cache key **includes the root**, so the next resolution
-naturally recomputes. After the prefetch the gateway additionally calls `refreshScopeAndNotify` once,
-which pushes `tools/list_changed` only if the content hash actually changed. `roots/list_changed`
-travels the same path.
-
-The direction is fail-**open**, and deliberately so: project bindings outrank client bindings, so a miss
-means the **wider** client layer applies. `agenthub doctor`'s `scope:projects` spells this dependency out
-(it cannot confirm on the operator's behalf whether the client actually reports a root).
+`NormalizePath` is the pure string normalizer that root travels through on its way there.
+`PathIsWithin`, the boundary matcher the project layer used to select a binding by longest prefix, was
+**deleted with that layer**: an exported, tested helper nothing calls reads as a supported entry point,
+and the next caller would inherit a failure direction chosen for a job that no longer exists.
 
 ```mermaid
 flowchart LR
   G["governance.json<br/>LayerGlobal"] --> M
-  P["profiles.json<br/>LayerProfile"] --> M
-  C["clients.json#client<br/>LayerClient"] --> M
-  J["clients.json#projects<br/>LayerProject"] --> M
+  P["profiles.json<br/>LayerProfile<br/>(selected via clients.json binding)"] --> M
   O["Overlay (in memory, never persisted)<br/>LayerSession"] --> M
+  X["Sources.Extra<br/>credential-supplied, tighten-only"] --> M
   CAT["router.Catalog<br/>seed set for visibility"] --> M
   M["Merge<br/>pure function"] --> ES["EffectiveScope<br/>Hash = SHA-256(every field except Generation)"]
 ```
@@ -108,8 +113,8 @@ direction: if any layer demands approval, approval is required.
 **`DenyDestructive` can only be set by governance.json.** The code enforces this with two mechanisms
 rather than validation: `Overlay` (the input type for the session layer) **has no such field at all**,
 so no overlay can possibly carry it; and `FromRegistry` populates it only on `LayerGlobal`, while
-`registry.ApprovalPolicy` (the persisted type for client/project) does not model this field either. In
-other words the constraint is "inexpressible", not "rejected".
+`registry.ApprovalPolicy` (the persisted per-client type) does not model this field either. In other
+words the constraint is "inexpressible", not "rejected".
 
 **The keys of a tool selector are always raw tool names, never exposed names.** `ToolSelector` is a type
 alias for `registry.ToolSelector`, and the persisted semantics have exactly one source of truth: an
@@ -131,12 +136,6 @@ paths may not exist on this machine at all, so symlink resolution or existence p
 and introduce TOCTOU. This function must be idempotent, because it gets applied repeatedly to output it
 has already normalized.
 
-**`PathIsWithin` matches on path boundaries, and any ambiguity returns false.** `/a/proj` does not swallow
-`/a/project`. Empty input and shape mismatches return false, the effect being that the project layer's
-overrides (and the profile switch they carry) simply don't apply and the session falls back to the
-client/global scope; the opposite misjudgment would apply another project's configuration to an unrelated
-path, and that is what would be unacceptable.
-
 **`EffectiveScope.Hash` covers every field except `Generation` and `Hash` itself.** `Generation` records
 "which registry state this value was computed from"; it is not part of content identity and is stamped by
 `Resolver` after the merge. The hash uses a length-prefixed canonical encoding with map keys visited in
@@ -147,7 +146,7 @@ storm.
 
 **Better to over-invalidate the cache than to under-invalidate.** `EvOverlayChanged` and `EvRootChanged`
 clear only the corresponding session; `EvRegistryChanged` and `EvCatalogChanged` clear everything, and
-**an unknown event type also clears everything**. The catalog is not in the cache key triple, so
+**an unknown event type also clears everything**. The catalog is not in the cache key, so
 `EvCatalogChanged` is the only channel through which a change in the downstream tool set becomes visible;
 lose it and stale scopes get served forever. Over-invalidating costs one recomputation;
 under-invalidating costs emitting the wrong visibility.
@@ -213,7 +212,7 @@ caller one extra human authorization; being too lax hands a loosening to the ver
 model (the agent itself).
 
 Note **which direction** this check guards. The merge itself already guarantees an overlay can never breach
-the watermark set by the four static layers (the session layer only intersects); `loosenings` guards the
+the watermark set by the static layers (the session layer only intersects); `loosenings` guards the
 other end: the agent revoking a runtime tightening that it (or the operator) just made.
 
 **A rejection rejects the entire mutation; there is no partial application.** The moment a loosening is

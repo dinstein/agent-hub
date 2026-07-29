@@ -966,7 +966,7 @@ file breaks at runtime → allow + `Degraded` + log + `Event`). A governance edi
 refusing service would turn an unrelated config typo into an outage for running agents, while degrading to "no quota" is precisely the
 silent widening this package refuses.
 
-Rule sets live at the **global layer only** and do not enter the five-layer scope chain — the reasoning is in the comment on
+Rule sets live at the **global layer only** and do not enter the three-layer scope chain — the reasoning is in the comment on
 `registry.GovernanceDoc.RateLimits` (the rule patterns already carry client/server/tool dimensions; counter buckets are keyed by rule
 pattern, and the same pattern appearing at multiple layers would split one quota into one per layer).
 

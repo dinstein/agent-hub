@@ -55,7 +55,7 @@ github.com/dinstein/agent-hub
 │   ├── tier/                # read|write|destructive vocabulary (leaf package, stdlib only)
 │   ├── logx/                # slog initialization, field conventions, unbypassable scrubbing
 │   ├── registry/            # multi-document Doc[T], atomic writes, generation, watch, self-write suppression, run markers
-│   ├── scope/               # five-layer resolution chain, pure Merge, EffectiveScope (content-addressed)
+│   ├── scope/               # three-layer resolution chain, pure Merge, EffectiveScope (content-addressed)
 │   ├── session/             # session identity, Overlay, tighten-only validation, TTL, SessionManager
 │   ├── event/               # in-process event bus: coalescer and settled debounce
 │   ├── router/              # namespace aggregation, RouteOf as sole provenance, Provider, Catalog
@@ -141,9 +141,16 @@ the implementation, the change is sealed inside one package, rather than borrowi
 - **Resource groups are always singular as the canonical name, with the plural as a cobra alias**:
   `server` / `profile` / `client` / `session` / `tool` / `skill` / `secret` / `approval` / `grant`
   (`secrets`, `approvals`, `skills`, and so on remain as aliases)
-- **Action/flow groups stay as they are**: `daemon`, `connect`, `scope`, `auth`, `audit`, `activity`, `events`, `config`, `doctor`
+- **Action/flow groups stay as they are**: `daemon`, `connect`, `auth`, `audit`, `activity`, `events`, `config`, `doctor`
+- **There is no `scope` group.** Narrowing is what a profile *is*, so it lives on `profile`
+  (`profile server` / `profile tools` / `profile discovery`), and handing a surface out lives on
+  `client` (`client bind <client> <profile>` / `client unbind` / `client ls`). The retired group's
+  commands map one-to-one: `scope set --client X --profile P` → `client bind X P`,
+  `scope clear --client X` → `client unbind X`, `scope ls` → `client ls`
 - The canonical name for the OAuth group is **`auth`**, not `oauth`
-- Session-level flags are uniform: `--enable-server` / `--disable-server` / `--tools s:t1,t2` / `--discovery` / `--reset` / `--persist`
+- Session-level flags are uniform: `--enable-server` / `--disable-server` / `--tools s:t1,t2` / `--discovery` / `--reset`.
+  There is no `--persist`: a session overlay is volatile by construction, and the way to make a surface
+  permanent is to edit the profile
 - The `skill` group: `add | ls | inspect | rm | enable | disable | install-to | sync | update | verify`
   (`install-to` = materialize one entry, `sync` = materialize in bulk by scope; both coexist)
 - List subcommands are always `ls`
@@ -219,7 +226,7 @@ later.
 
 | Feature | Deprecated in | Dependency point | Migration seam |
 |---|---|---|---|
-| Roots | `2026-07-28` | Longest-prefix root matching at the project layer, `${ROOT}`, `roots/list_changed` triggering scope recomputation, derived-instance keying | **In place since M0**: the `RootSource` interface, with one implementation for the roots protocol and one for an explicit root in `clients.json` |
+| Roots | `2026-07-28` | `${ROOT}` and derived-instance keying (`internal/downstream`). The dependency **shrank** when the per-project scope layer was retired: longest-prefix root matching no longer selects anything, and the root has left the resolver's cache key | **In place since M0**: the `RootSource` interface, with one implementation for the roots protocol and one for an explicit root in `clients.json` |
 | Sampling | `2026-07-28` | One of the isolation arguments in 1.1 | No seam needed (the conclusion is independently supported by credentials, connection parameters, and fault isolation) |
 | DCR | `2026-07-28` | The OAuth discovery chain; DCR credentials persisted alongside tokens | **In place since M1**: the `ClientRegistrar` interface, with one implementation for DCR and one for Client ID Metadata Documents |
 | Logging | `2026-07-28` | Downstream log forwarding | No seam needed (the logging surface is first-party anyway) |

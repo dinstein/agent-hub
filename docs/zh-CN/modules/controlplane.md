@@ -128,7 +128,7 @@ Activity 视图的实时数据走 `activity` SSE 主题，tail 只是回填。
 
 **agent token 原文只出现一次**（创建响应里），之后所有读取只给前缀与元数据。
 
-**危险操作要有区分度。** 删 server、清 scope 绑定是可恢复的常规操作，二次确认即可；
+**危险操作要有区分度。** 删 server、清 client 绑定是可恢复的常规操作，二次确认即可；
 而**把治理开关往松了调**（`denyDestructive` 从 true 改 false、`blockOnInjection` 关掉）
 要单独标出并说明后果——这类开关的合并语义是「只紧不松」，唯一能放松它们的地方就是这里。
 
@@ -249,7 +249,14 @@ ask/decide、grants request/decide/expire 各有一条记录，都带 `RequestID
 
 **配置面（`admin*.go`）**——「一层语义、两个前端」里控制面的那一半：CLI 在进程内直调
 `internal/confops`，GUI 走这些路由，两者落到同一份实现上。`GET|PUT /v1/scope/{client}` 管的是
-client 层的静态绑定，**别和 `POST /v1/sessions/{id}/scope` 搞混**，后者改的是一次会话的易失 overlay。
+client 的持久绑定——**只有一个字段 `profile`**，**别和 `POST /v1/sessions/{id}/scope` 搞混**，
+后者改的是一次会话的易失 overlay。
+
+**退役的收窄字段仍然被声明，而且刻意返回 400。** `servers` / `tools` / `discovery` 已经不属于
+client 绑定（收窄搬到了 profile 上），但 `scopeBindingWire` 依旧保留这三个字段，只为了在
+`retiredField()` 里点名报错。理由是失败方向：一个还在发 `servers` 的老调用方是想**收窄**，
+如果服务端接下这个请求、绑好 profile、把另一半悄悄丢掉，它会拿到一个**比它请求的更宽**的面，
+而且还收到 200。错误信息里带上具体字段名和「把规则写进 profile，再把这个 client 绑上去」的提示。
 
 **非 registry 面（`nonreg*.go`）**——控制面里**不落在配置 registry 上**的那一半：
 凭据、技能、agent token、客户端适配、OAuth 生命周期，以及活连接自检。几条只在这里能看到的规矩：
@@ -279,8 +286,8 @@ CLI 与控制面是同一份配置的两个前端。如果各自拼出「重命�
 
 ### 操作，而不是 setter
 
-API 的形状是**操作，不是字段 setter**。`RenameProfile` 顺带重指每一个引用它的 client 与
-project——把引用留在原地会让那些客户端 **fail-close 成空作用域**，那个后果属于这个操作本身，
+API 的形状是**操作，不是字段 setter**。`RenameProfile` 顺带重指每一个引用它的 client 绑定——
+把引用留在原地会让那些客户端 **fail-close 成空作用域**，那个后果属于这个操作本身，
 不属于调用方。这就是「操作而非 setter」的意思。治理键表（`GovernanceKey` / `GovernanceKeys()`）
 同理只住在这里：get/set/ls 的语义只有这一处。
 
@@ -531,7 +538,7 @@ tier 或 allowlist 的 token，不能继续骑着旧 session 用旧权限。查�
 因此也没有第二条执行路径**：HTTP 请求穿过的是同一个 discovery surface、同一个 router、同一个
 `pipeline.Execute` 调用点。凭据只从两个既有入口进入治理链：`Caller.Tier` 变成
 `gateway.Config.CallerTier` → `pipeline.CallRequest.CallerTier`；`Caller.Servers` 与
-`Caller.Profile` 变成 `scope.Sources.Extra` 的额外层，由与持久化五层同一个 `Merge` 取交集
+`Caller.Profile` 变成 `scope.Sources.Extra` 的额外层，由与持久化三层同一个 `Merge` 取交集
 （都是安全字段，只能收窄）。连接按**整份凭据**（kind/名字/tier/allowlist/profile）键控并复用，
 所以一个发出后被收窄的 token 拿到的是新网关而不是旧权限——与 session 的
 `Caller.identity()` 同一条规则；空闲 30 分钟后回收。
@@ -593,8 +600,13 @@ Main 再打印第二遍错误。
 profile/profiles、client/clients、session/sessions、tool/tools、skill/skills、secret/secrets、
 approval/approvals、grant/grants），而且 alias 必须真的能解析出来；列表子命令一律叫 `ls`
 （`list`/`dump`/`ls-all` 全是违规）；**每条命令都必须能拿到 `--json`**（它是 root 上的
-persistent flag，这条测试实际断言的是没有命令遮蔽或摘掉它）。动作/流式组（daemon、scope、
+persistent flag，这条测试实际断言的是没有命令遮蔽或摘掉它）。动作/流式组（daemon、
 auth、audit、activity、events、config、doctor、connect）保持原名，不加复数 alias。
+不再有 `scope` 组：绑定归 `client bind` / `unbind` / `ls`，收窄归 `profile`。
+同一份测试还钉住了帮助分组的成员——Setup 是 `server, auth, catalog`（`catalog` 只有一小撮策展条目，
+让它打头会教出一条对多数 server 以「没收录」结尾的路；`server add --url ...` 才是通用答案），
+Wire up 是 `profile, client, skill`（一份面**装了什么**和**给谁**是同一个问题的两半），
+Govern 收下了 `secret`、`tool`、`token`，Operate 不变。
 每个 group 裸调用打印 help 且退出 0，未知子命令退出 2。
 
 **错误文案是 golden 测试冻结的**（`errorgolden_test.go`）。canonical.md §6 要求三族 golden
@@ -683,7 +695,10 @@ SSE 重连会重放 backlog，`watchState.add` 靠 token 去重以保持编号�
 flag 解析、渲染与退出码，不拥有任何规则。
 
 **`ConnectSnippet` 是 `client` 组里预览与写入的唯一接缝**，所以 `client connect` 不可能给用户看一份、
-往盘上写另一份。`setsid_unix.go` 让网关脱离调用方进程组，正是为了防 SIGTTIN/SIGTTOU。
+往盘上写另一份。它产出的 entry 只有 `connect --client <id>`，**没有 `--profile`**：profile 绑定住在
+`clients.json` 里，绝不写进客户端自己的配置文件。写进去就是造出第二个 agenthub 改不动的真源，
+而换 profile 会变成「改一份客户端拥有的文件，然后让它重启」——恰恰是这套设计不肯放弃的热更新。
+`setsid_unix.go` 让网关脱离调用方进程组，正是为了防 SIGTTIN/SIGTTOU。
 
 ---
 

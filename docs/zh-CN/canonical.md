@@ -48,7 +48,7 @@ github.com/dinstein/agent-hub
 │   ├── tier/                # read|write|destructive 词汇表（叶子包，只依赖标准库）
 │   ├── logx/                # slog 初始化、字段规约、不可绕过的 scrubbing
 │   ├── registry/            # 多文档 Doc[T]、原子写、generation、watch、自写抑制、运行标记
-│   ├── scope/               # 五层解析链、Merge 纯函数、EffectiveScope（内容寻址）
+│   ├── scope/               # 三层解析链、Merge 纯函数、EffectiveScope（内容寻址）
 │   ├── session/             # 会话身份、Overlay、只紧不松校验、TTL、SessionManager
 │   ├── event/               # 进程内事件总线：合并器与 settled 去抖
 │   ├── router/              # 命名空间聚合、RouteOf 唯一溯源、Provider、Catalog
@@ -127,9 +127,12 @@ github.com/dinstein/agent-hub
 - **资源组一律单数为规范名，复数为 cobra alias**：
   `server` / `profile` / `client` / `session` / `tool` / `skill` / `secret` / `approval` / `grant`
   （`secrets`、`approvals`、`skills` 等复数写法保留为 alias）
-- **动作/流组保持原样**：`daemon`、`connect`、`scope`、`auth`、`audit`、`activity`、`events`、`config`、`doctor`
+- **动作/流组保持原样**：`daemon`、`connect`、`auth`、`audit`、`activity`、`events`、`config`、`doctor`
+  （不再有 `scope` 组：client 的 profile 绑定归 `client bind` / `unbind` / `ls`，
+  收窄本身归 `profile`——「收窄」就是 profile 的定义，不该有自己的命令组）
 - OAuth 组规范名是 **`auth`**，不是 `oauth`
-- session 级 flag 统一：`--enable-server` / `--disable-server` / `--tools s:t1,t2` / `--discovery` / `--reset` / `--persist`
+- session 级 flag 统一：`--enable-server` / `--disable-server` / `--tools s:t1,t2` / `--discovery` / `--reset`
+  （没有 `--persist`：session overlay 的修改一律易失，要永久生效只能改 profile）
 - `skill` 组：`add | ls | inspect | rm | enable | disable | install-to | sync | update | verify`
   （`install-to` = 单条物化，`sync` = 按 scope 批量物化，两者并存）
 - 列表子命令一律 `ls`
@@ -195,7 +198,7 @@ goroutine + `calls chan` 串行化、`EffectiveScope` 内容寻址、失败方�
 
 | 特性 | Deprecated in | 依赖点 | 迁移接缝 |
 |---|---|---|---|
-| Roots | `2026-07-28` | project 层 root 最长前缀、`${ROOT}`、`roots/list_changed` 触发 scope 重算、派生实例键控 | **M0 就位**：`RootSource` 接口，roots 协议与 `clients.json` 显式 root 各一实现 |
+| Roots | `2026-07-28` | `${ROOT}`、派生实例键控（per-project 层退役后，root 已不进 scope 解析，也不再进解析器缓存键） | **M0 就位**：`RootSource` 接口，roots 协议与 `clients.json` 显式 root 各一实现 |
 | Sampling | `2026-07-28` | 1.1 隔离论据之一 | 无需接缝（结论由凭据/连接参数/故障三条独立支撑） |
 | DCR | `2026-07-28` | OAuth 发现链、DCR 凭据随 token 持久化 | **M1 就位**：`ClientRegistrar` 接口，DCR 与 Client ID Metadata Documents 各一实现 |
 | Logging | `2026-07-28` | 下游日志转发 | 无需接缝（日志面本就自建） |

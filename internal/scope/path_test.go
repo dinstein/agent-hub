@@ -44,36 +44,3 @@ func TestNormalizePathIdempotent(t *testing.T) {
 		}
 	}
 }
-
-func TestPathIsWithin(t *testing.T) {
-	cases := []struct {
-		root, p string
-		want    bool
-	}{
-		{"/a/proj", "/a/proj", true},
-		{"/a/proj", "/a/proj/sub", true},
-		{"/a/proj", "/a/proj/sub/deep", true},
-		// The classic boundary case: /a/proj must not swallow /a/project.
-		{"/a/proj", "/a/project", false},
-		{"/a/proj", "/a/proj2", false},
-		{"/a/proj", "/a", false},
-		{"/a/proj", "/b/proj/x", false},
-		{"/", "/anything", true},
-		{"/", "/", true},
-		// Windows form (both already normalized).
-		{"c:/users/dev", "c:/users/dev/proj", true},
-		{"c:/users/dev", "c:/users/developer", false},
-		{"c:", "c:/users", true},
-		{"//host/share", "//host/share/dir", true},
-		{"//host/share", "//host/share2", false},
-		// Ambiguity → false (fail direction: withhold the project override).
-		{"", "/a", false},
-		{"/a", "", false},
-		{"", "", false},
-	}
-	for _, tc := range cases {
-		if got := PathIsWithin(tc.root, tc.p); got != tc.want {
-			t.Errorf("PathIsWithin(%q, %q) = %v, want %v", tc.root, tc.p, got, tc.want)
-		}
-	}
-}

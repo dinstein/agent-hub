@@ -215,9 +215,15 @@ Default is every enabled server. Narrow with a profile, then bind clients:
 agenthub profile create research
 agenthub profile server research add brave
 agenthub profile tools research brave --only search       # or --all / --none
-agenthub scope set --client cursor --profile research
-agenthub scope ls
+agenthub profile discovery research lazy                  # or grouped / full / -
+agenthub client bind cursor research
+agenthub client ls                                        # who is on which profile
+agenthub client unbind cursor                             # back to the active profile
 ```
+
+All narrowing lives on the **profile**; a client only selects one. There is no
+`agenthub scope` group, and a client binding never carries servers or tools of
+its own.
 
 Layers **intersect** for security fields: a narrower layer can only take
 capability away, never add it. If a tool is unexpectedly missing, look for a

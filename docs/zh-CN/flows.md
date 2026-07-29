@@ -194,7 +194,7 @@ sequenceDiagram
 ```
 
 **语义写只有一处实现。** `internal/confops` 提供的是**操作**而不是字段 setter：
-`RenameProfile` 会顺带重指每一个引用它的 client 与 project，因为把引用留在原地会让那些客户端
+`RenameProfile` 会顺带重指每一个引用它的 client 绑定，因为把引用留在原地会让那些客户端
 fail-close 成空作用域——那个后果属于这个操作本身，不属于调用方。如果控制面自己再写一遍
 「怎么改一个 profile」，CLI 与 GUI 就会各有一套校验与副作用，两边迟早对同一个操作给出不同结果。
 这类事故有过先例：`SpecFromEntry` 的注释声称自己是唯一翻译点，而网关另外手搓了一份 Spec，

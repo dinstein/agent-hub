@@ -19,7 +19,7 @@ Platforms: macOS and Linux are verified; Windows is **not yet usable** (see belo
 |---|---|
 | Gateway | stdio (one process per client) + streamable-http (shared daemon pool); three downstream transports: stdio / streamable-http / legacy HTTP+SSE, targeting protocol version `2025-11-25` with backward negotiation and downgrade |
 | Discovery | Three modes — `full` / `grouped` / `lazy`; lazy mode ships five meta-tools (`status`, `search_tools`, `describe_tool`, `call_tool`, `fetch_result`) plus intent variants; compact signature grammar + two-stage describe |
-| Governance | Five-layer scope resolution chain (global / profile / client / project / session), tri-state per-server tool selector semantics, dangling profiles fail closed to an empty set |
+| Governance | Three-layer scope resolution chain (global / profile / session; a client entry only selects which profile applies), tri-state per-server tool selector semantics, dangling profiles fail closed to an empty set |
 | Security | Injection scanning (normalization + phrase/regex/base64/head-tail dual window), spawn guard (anti-smuggling), bidirectional SSRF predicates with in-DialContext screening, leakguard, integrity fingerprint pinning + drift grading + quarantine, HITL approval state machine (fail-closed throughout) |
 | Isolation | **Docker isolation spawner**: `runtime: host\|docker`, no network by default, mounts only explicitly declared directories (read-only by default), resource limits, secrets never enter argv |
 | Result shaping | Pagination / budgets / `fetch_result` caching / TOON one-way projection encoding (with two constructive guarantees: never-larger and numeric fidelity) |

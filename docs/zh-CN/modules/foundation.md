@@ -484,8 +484,8 @@ CLI、各网关进程与 daemon 共享的**磁盘配置真源**：多文档、�
 ```
 meta.json          单调 generation（只在锁内、且确有写入时 +1）
 servers.json       下游 MCP server
-profiles.json      profile（层）
-clients.json       客户端绑定与 per-project 覆盖
+profiles.json      profile（层）：servers + tools + discovery
+clients.json       客户端绑定：这个 client 跟哪个 profile，仅此而已
 governance.json    全局治理策略
 .lock              兄弟锁文件，flock，保护以上全部
 .runstate.json     crash 标记（不是文档，故意用点前缀避开 <kind>.json 命名空间）
@@ -501,6 +501,12 @@ backups/           每文档 5 代滚动备份 <name>.json.1 .. .5
 `ServersDoc.Servers` 的值类型是 `Doc[ServerEntry]` 而不是 `ServerEntry`，
 所以单个 server 条目内部的未知字段同样活得下来。
 已知字段名集合按 `reflect.Type` 缓存，且正确处理 json tag 与匿名嵌入的字段提升。
+
+**`HasUnknownField(name)` 是这份透传的解毒剂，只为一件事存在：让诊断能发现一个已经退役、
+却还留在磁盘上的字段。** 透传本身正是退役危险的原因——被类型系统删掉的字段照样逐字 round-trip，
+于是操作者当年写下的规则**看起来**依旧生效，而对一条收窄规则来说，「不再生效」就等于「放宽」。
+所以这个方法刻意**只暴露读键名**：调用方可以问某个名字是否还在，不能伸进 `extra` 里按它行事。
+现役用户只有 `agenthub doctor` 的 `scope:projects`（per-project 层退役后遗留的 `projects` 块）。
 
 **`Store`** 是对一个 registry 目录的句柄。三个入口：
 
@@ -535,13 +541,21 @@ backups/           每文档 5 代滚动备份 <name>.json.1 .. .5
 而那正是这个功能唯一存在的理由。
 
 领域类型在 `types.go`：`ServerEntry`（含 `Transport`/`Runtime`/`Docker`/`Provenance`/`Derive`
-等字段与 `ValidateRuntime`）、`Profile`、`ToolSelector`、`ClientEntry`/`ProjectBinding`、
-`GovernanceDoc`（含 `RateLimitRule` 规则集），以及把「显式 `ProfileRef` > `profile` 简写 > 层默认值」
-这条优先级固化下来的 `Binding()` 方法。
+等字段与 `ValidateRuntime`）、`Profile`（`servers` + `tools` + `discovery`）、`ToolSelector`、
+`ClientEntry`、`ProfileBinding`、`GovernanceDoc`（含 `RateLimitRule` 规则集），
+以及把「显式 `ProfileRef` > `profile` 简写 > 层默认值」这条优先级固化下来的 `Binding()` 方法。
 
-`GovernanceDoc.RateLimits`（`rateLimits`）是调用配额规则集，**只在 global 一层**，不进五层 scope 链：
+**`ClientEntry` 只剩 `{Profile, ProfileRef}` 两个字段。** 它曾经还带自己的 servers / tools /
+discovery / approval / resultBudget，叠在 profile 之上再收一道；那让「这个 client 绑了哪个 profile」
+只是「这个 client 能看见什么」的一半答案。收窄现在只有 profile 一个家。同一次收敛里
+`ProjectBinding`、`ClientEntry.Projects` 与 `BindingInherit`（per-project 层）一起删除；
+`Profile` 则新增 `discovery`，因为呈现方式描述的是**那一份工具集**——绑一次 profile 就该同时定下
+「看得见什么」与「怎么看见」。遗留在 `clients.json` 里的 `projects` 块会被 `Doc[T]` 原样透传，
+`Doc[T].HasUnknownField` 就是为这一种情况存在的（见下）。
+
+`GovernanceDoc.RateLimits`（`rateLimits`）是调用配额规则集，**只在 global 一层**，不进三层 scope 链：
 规则模式自己就带 (client, server, tool) 维度，而跨进程计数桶按规则模式键控——同一模式出现在多层，
-要么把一份配额裂成每层一份（五层 = 五倍限额，与「只紧不松」反向），要么需要一套本仓库别处都没有的
+要么把一份配额裂成每层一份（层数 = 倍数限额，与「只紧不松」反向），要么需要一套本仓库别处都没有的
 按模式取 min 的合并语义。registry 只**逐字存储**（`window` 是时长字符串，不解析）；解析、校验与执行
 在 `internal/ratelimit`，它宁可整份规则集报错也不静默丢掉一条读不懂的规则。
 
@@ -671,8 +685,8 @@ Watcher 创建时会用 Store 当前快照**播种基线**，所以本进程已�
 | 文件 | 内容 |
 |---|---|
 | `store.go` | 包文档、`Store`/`Tx`、`Open`/`OpenOptions`/`Reload`/`Update`、`loadAll`/`loadDocFile`（重试+隔离）、`commitDoc`（no-op 守卫）、`registeredWrite`、快照深拷贝 |
-| `envelope.go` | `Doc[T]` 与它的 Marshal/Unmarshal、已知字段名反射与缓存 |
-| `types.go` | `DocKind` 五个文档、`MetaDoc`、`ServerEntry`（transport/runtime/docker/provenance/derive）、`DockerRuntime`/`DockerMount`、`OAuthHint`、`ToolSelector`、`Profile`、`ClientEntry`/`ProjectBinding`/`ProfileBinding`、`GovernanceDoc`、`Snapshot`、各默认文档 |
+| `envelope.go` | `Doc[T]` 与它的 Marshal/Unmarshal、已知字段名反射与缓存、`HasUnknownField`（只读退役字段名） |
+| `types.go` | `DocKind` 五个文档、`MetaDoc`、`ServerEntry`（transport/runtime/docker/provenance/derive）、`DockerRuntime`/`DockerMount`、`OAuthHint`、`ToolSelector`、`Profile`（servers/tools/discovery）、`ClientEntry`（只有 profile 绑定）/`ProfileBinding`、`GovernanceDoc`、`Snapshot`、各默认文档 |
 | `fileio.go` | `atomicWrite` 梯子、`syncDir`、`rotateBackups`、`quarantine`、`canonicalize`/`canonicallyEqual`、`encodeDoc` |
 | `lock.go` | 兄弟锁文件路径、`acquireLock` 轮询与超时、`release` |
 | `flock_unix.go` / `flock_stub.go` | darwin/linux 用 `syscall.Flock`；其它平台返回 `errors.ErrUnsupported` 的编译占位 |

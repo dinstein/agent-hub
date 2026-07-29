@@ -19,7 +19,7 @@
 |---|---|
 | 网关 | stdio（每 client 一进程）+ streamable-http（daemon 共享池）；下游 transport 三种：stdio / streamable-http / legacy HTTP+SSE，协议目标版本 `2025-11-25` 带向下协商降级 |
 | 发现 | `full` / `grouped` / `lazy` 三模式；lazy 模式五件套 meta-tool（`status`、`search_tools`、`describe_tool`、`call_tool`、`fetch_result`）+ 意图变体；紧凑签名文法 + 二段 describe |
-| 治理 | 五层 scope 解析链（global / profile / client / project / session）、per-server 工具选择器三态语义、悬垂 profile fail-closed 空集 |
+| 治理 | 三层 scope 解析链（global / profile / session；client 只选一个 profile，收窄只住在 profile 上）、per-server 工具选择器三态语义、悬垂 profile fail-closed 空集 |
 | 安全 | 注入扫描（归一化 + 短语/正则/base64/头尾双窗）、spawn guard（反走私）、SSRF 双向谓词 + DialContext 内筛查、leakguard、integrity 指纹 pin + drift 分级 + quarantine、HITL 审批状态机（fail-closed 全家桶） |
 | 隔离 | **Docker 隔离 Spawner**：`runtime: host\|docker`，默认无网络、只挂载显式声明的目录（默认只读）、资源限额、密钥不进 argv（无网络、只读挂载、资源限额） |
 | 结果整形 | 分页 / 预算 / `fetch_result` 缓存 / TOON 单向投影编码（never-larger + 数字保真两条构造性保证） |

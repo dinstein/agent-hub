@@ -322,13 +322,13 @@ func (a *App) newSessionShowCmd() *cobra.Command {
 	}
 }
 
-// resolveSessionScope resolves the PERSISTED three layers for one live
-// session and merges them against the cached catalog.
+// resolveSessionScope resolves the PERSISTED layers (global and profile) for
+// one live session and merges them against the cached catalog.
 //
-// The session (fifth) layer is deliberately absent: the volatile overlay
-// lives in the daemon's memory and is summarized by OverlaySummary. Saying
-// so in Note is the point — a view that silently omitted it would read as
-// "no overlay" and mislead exactly when it matters.
+// The session layer — the third and most specific — is deliberately absent:
+// the volatile overlay lives in the daemon's memory and is summarized by
+// OverlaySummary. Saying so in Note is the point — a view that silently
+// omitted it would read as "no overlay" and mislead exactly when it matters.
 func (a *App) resolveSessionScope(row SessionRow) (SessionDetail, []string, error) {
 	store, warnings, err := a.openStore()
 	if err != nil {

@@ -208,7 +208,7 @@ sequenceDiagram
 ```
 
 **Semantic writes have exactly one implementation.** `internal/confops` offers **operations**, not field
-setters: `RenameProfile` also repoints every client and project that references it, because leaving those
+setters: `RenameProfile` also repoints every client binding that references it, because leaving those
 references dangling would fail-close those clients into an empty scope — that consequence belongs to the
 operation itself, not to the caller. If the control plane wrote its own version of "how to edit a
 profile," the CLI and GUI would each have their own validation and side effects, and sooner or later the

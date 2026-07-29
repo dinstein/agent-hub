@@ -297,8 +297,17 @@ audit line.
 
 **The configuration face (`admin*.go`)** — the control plane's half of "one layer of semantics, two frontends":
 the CLI calls `internal/confops` in-process, the GUI goes through these routes, and both land on the same
-implementation. `GET|PUT /v1/scope/{client}` handles static bindings at the client layer, and **must not be
-confused with `POST /v1/sessions/{id}/scope`**, which changes one session's volatile overlay.
+implementation. `GET|PUT /v1/scope/{client}` handles a client's static binding — *which profile it is on*,
+the only thing a client entry holds — and **must not be confused with `POST /v1/sessions/{id}/scope`**,
+which changes one session's volatile overlay.
+
+`PUT /v1/scope/{client}` accepts a `profile` and nothing else, but the retired `servers` / `tools` /
+`discovery` fields are still **declared** on the wire type so that a request carrying one gets a **400
+naming the offending field** instead of a 200. That choice has a direction: a caller sending `servers`
+was asking to *narrow*, so accepting the request while silently dropping that half would report success
+for a **wider** surface than it requested. The error names the field and points at the replacement
+(`agenthub profile server` / `profile tools` / `profile discovery`, then bind the client to that
+profile).
 
 **The non-registry face (`nonreg*.go`)** — the half of the control plane that **doesn't land on the config
 registry**: credentials, skills, agent tokens, client adapters, the OAuth lifecycle, and live connection
@@ -331,7 +340,7 @@ operation — they cannot drift, because they are the same code.
 
 ### Operations, not setters
 
-The API's shape is **operations, not field setters**. `RenameProfile` also repoints every client and project
+The API's shape is **operations, not field setters**. `RenameProfile` also repoints every client binding
 referencing it — leaving the references in place would **fail-close those clients into an empty scope**, and that
 consequence belongs to this operation, not to its caller. That is what "operations, not setters" means. The
 governance key table (`GovernanceKey` / `GovernanceKeys()`) likewise lives only here: get/set/ls semantics have
@@ -676,8 +685,10 @@ and be spelled consistently; resource groups must be **singular canonical name +
 profile/profiles, client/clients, session/sessions, tool/tools, skill/skills, secret/secrets, approval/approvals,
 grant/grants) and the alias must actually resolve; list subcommands are always called `ls` (`list`/`dump`/`ls-all` are all
 violations); and **every command must be able to take `--json`** (it is a persistent flag on the root, and what this test
-really asserts is that no command shadows or removes it). Action/streaming groups (daemon, scope, auth, audit, activity,
-events, config, doctor, connect) keep their names and get no plural alias. Every group invoked bare prints help and exits 0,
+really asserts is that no command shadows or removes it). Action/streaming groups (daemon, auth, audit, activity,
+events, config, doctor, connect) keep their names and get no plural alias. There is no `scope` group: binding a
+client to a profile is `client bind` / `client unbind` / `client ls`, and the narrowing itself is `profile server`
+/ `profile tools` / `profile discovery`. Every group invoked bare prints help and exits 0,
 and an unknown subcommand exits 2.
 
 **Error text is frozen by golden tests** (`errorgolden_test.go`). canonical.md §6 requires three families of golden test to
@@ -771,8 +782,26 @@ identical** after the rules moved out of this package. The CLI handles only flag
 codes, and owns no rules.
 
 **`ConnectSnippet` is the single seam between preview and write** in the `client` group, so `client connect`
-cannot show the user one thing and write another. `setsid_unix.go` detaches the gateway from the caller's
-process group specifically to prevent SIGTTIN/SIGTTOU.
+cannot show the user one thing and write another. The entry it produces carries the client identity and
+nothing else — `connect --client <id>`. A profile is **never** written into the client's own MCP config
+file: that would be a second source of truth agenthub cannot edit, and switching profiles would then mean
+rewriting a file the client owns and restarting it, which is exactly the hot reload this design refuses to
+give up. The binding lives in `clients.json`, so `client bind` takes effect on sessions that are already
+running. `setsid_unix.go` detaches the gateway from the caller's process group specifically to prevent
+SIGTTIN/SIGTTOU.
+
+**The help page is grouped by task phase, and a release build shows a subset.** The groups are Setup
+(`server`, `auth`, `catalog` — `server add --url ...` is the general answer, so it leads, and the curated
+catalog trails because leading with it teaches a path that ends in "not listed" for most servers), Wire up
+(`profile`, `client`, `skill` — a profile says what a surface *contains*, `client bind` says who gets it,
+so the two halves of one question sit together), Govern (`approval`, `grant`, `config`, `audit`, `secret`,
+`tool`, `token`), Operate, and the machine entry point `connect`. `secret` is deliberately **not** in
+Setup: credentials are normally handled for the operator (`server add` prompts, `auth login` stores its
+own), so a manual secret command in the first section would imply a step the everyday path does not have.
+`Options.ReducedHelp` (set for release builds only) withholds **Govern and Operate**. Every withheld
+command stays registered and stays runnable: this narrows what the binary *teaches*, never what it can do.
+Withholding `profile` — which the retired Scope group used to do — left a shipped build able to connect a
+client while giving it no vocabulary for what that client would then see.
 
 ---
 

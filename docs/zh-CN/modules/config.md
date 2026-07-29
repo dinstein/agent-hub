@@ -3,7 +3,7 @@
 这一层回答两个问题：**这个 session 现在能看见什么**，以及**这些配置、凭据和文件从哪来、由谁负责改**。
 七个包分工如下。
 
-`internal/scope` 是这一层的核心计算：它把 registry 里持久化的四层配置加上 session 的内存 overlay，
+`internal/scope` 是这一层的核心计算：它把 registry 里持久化的两层配置（global、profile）加上 session 的内存 overlay，
 折叠成一份内容寻址的 `EffectiveScope`。`internal/session` 提供 overlay 的所有者——session 身份、
 生命周期、以及「只能收紧」的变更校验；overlay 只活在内存里，daemon 一重启就没了，这是刻意的。
 `internal/event` 是这两者之间（以及整个 daemon 内部）的通知通道：session 改了 overlay 就发一条事件，
@@ -24,7 +24,7 @@ OS keyring 串起来，`internal/secrets/secureenv` 则负责给下游进程构�
 
 ### 一句话职责
 
-把五层配置（Global、Profile、Client、Project、Session）折叠成一份确定性的、内容寻址的
+把三层配置（Global、Profile、Session）折叠成一份确定性的、内容寻址的
 `EffectiveScope`，回答「这个 session 现在能看见哪些 server、哪些 tool，要不要人工审批，结果预算多大」。
 
 ### 关键类型与入口
@@ -34,7 +34,7 @@ daemon 调用的是同一份实现，这是「两种模式行为一致」这条�
 `MergeWithDiagnostics` 把预先收集好的 `[]Diagnostic` 在**哈希之前**折进结果值里，因此诊断信息也
 参与内容寻址。
 
-`CachedResolver` 的缓存键是三元组 `(registryGeneration, overlayVersion, normalizedRoot)`，通过
+`CachedResolver` 的缓存键是三元组 `(clientID, registryGeneration, overlayVersion)`，通过
 `Invalidate(Event)` 事件驱动地失效，从不轮询。
 
 `Sources.Extra` 是 overlay 之后追加的额外层，供**没有 registry 条目的凭据**参与同一次交集
@@ -44,32 +44,53 @@ daemon 调用的是同一份实现，这是「两种模式行为一致」这条�
 所以 Extra **不存在能放宽可见性的形状**。约束：返回值必须是「session id + registry generation」
 的纯函数，因为它不进缓存键。
 
-`NormalizePath` 与 `PathIsWithin` 是纯字符串的路径工具，供 project 层匹配使用。
+**client 只选 profile，它自己不是一层。** `FromRegistry` 读 `clients.json` 只为了回答一件事：
+这个 client 跟哪个 profile（显式 `ProfileRef` > `profile` 简写 > `followActive`）。
+`registry.ClientEntry` 现在只剩 `{Profile, ProfileRef}` 两个字段。它曾经还带自己的
+servers / tools / discovery / approval / resultBudget，叠在 profile 之上再收一道；那样一来
+「这个 client 绑了哪个 profile」就只是「这个 client 能看见什么」的一半答案，操作者必须翻两处
+再手算交集——而这恰恰是这套模型想要回答的那个问题。收窄现在只有一个家（profile），
+需要另一张面的 client 就绑到另一个 profile 上。
 
-**project 层的 root 从哪来。** `SessionKey.Root` 由 stdio 网关填，取客户端上报的第一个 MCP root
-（`gateway/derive.go` 的 `cachedPrimaryRoot`）。它**只读 roots 缓存、绝不阻塞**——scope 解析跑在
-tools/list、执行路径、以及 `newGateway` 里（那时客户端还没 initialize，反向 RPC 根本答不了）。
-缓存由 `notifications/initialized` 之后的 prefetch 填，所以早于它的解析看到的是空 root。
+**`discovery` 住在 profile 上。** 它描述的是**那一份工具集**该怎么呈现：收到两台 server 的
+profile 与握着四十台的 profile 想要的呈现方式本来就不同，把 client 绑到一个 profile 上就该同时
+定下「看得见什么」和「怎么看见」，而不是留下第二处配置。命令是
+`agenthub profile discovery <profile> <lazy|grouped|full|->`（`-` 清除覆盖、回到 governance 的
+全局默认）。未知模式在 `confops.SetProfileDiscovery` 里**当场拒绝**，而不是留给解析器静默退回
+一个操作者没选过的默认值。
 
-空 root 不匹配任何 project 绑定，于是 client 层生效——这正是接线之前所有 session 的行为，
-也是「缓存还没填」安全的原因。root 迟到不需要显式失效：`CachedResolver` 的缓存键**包含 root**，
-下一次解析自然重算；prefetch 之后网关额外调一次 `refreshScopeAndNotify`，只有内容哈希真的变了
-才推 `tools/list_changed`。`roots/list_changed` 走同一条路。
+**per-project 层已退役。** 它曾按客户端上报的 MCP root 做最长前缀匹配，可以换 profile、可以再收窄，
+`registry.ProjectBinding` / `ClientEntry.Projects` / `scope.LayerProject` / `registry.BindingInherit`
+连同它一起删掉了。退役的理由是它给同一个问题造了第二个答案，而这个答案还取决于客户端到底实不实现
+roots 能力——不报 root 的客户端静默落回更宽的那一层。
 
-方向是 fail-**open** 且是刻意的：project 绑定优先级高于 client 绑定，miss 的后果是**更宽**的
-client 层生效。`agenthub doctor` 的 `scope:projects` 会把这个依赖讲出来（它无法替操作者确认
-客户端到底报不报 root）。
+退役本身有一个**必须说出口**的失败方向：registry 的 `Doc[T]` 信封会把未知字段原样透传，所以
+`clients.json` 里遗留的 `projects` 块留在磁盘上，看起来跟它还生效时一模一样，光读文件看不出它已经
+不再被应用。而它写下来的目的是**收窄**一个 checkout，失效的方向因此是**放宽**。`agenthub doctor`
+的 `scope:projects` 为此从 OK 改成 **WARN**（经 `Doc[T].HasUnknownField("projects")` 判定），
+并给出「改绑一个更窄的 profile，然后把 `projects` 块删掉」的建议——doctor 报告、操作者决定，
+它不替操作者删这个块。
+
+`NormalizePath` 仍在用，但用途已经换了平面：它规范的是**派生实例键**
+（`internal/downstream` / `internal/session` 的 `DeriveRoot`）与 `session show` 里显示的 root，
+不再参与任何可见性判定。`PathIsWithin`——project 层用来做最长前缀匹配的边界比较函数——**随那一层
+一起删除**：一个导出、有测试、却没有任何调用方的函数看起来仍像是受支持的入口，而下一个调用它的人
+会继承一套为已经不存在的场景选定的失败方向。
 
 ```mermaid
 flowchart LR
   G["governance.json<br/>LayerGlobal"] --> M
   P["profiles.json<br/>LayerProfile"] --> M
-  C["clients.json#client<br/>LayerClient"] --> M
-  J["clients.json#projects<br/>LayerProject"] --> M
   O["Overlay（内存，不落盘）<br/>LayerSession"] --> M
   CAT["router.Catalog<br/>可见性的种子集合"] --> M
   M["Merge<br/>纯函数"] --> ES["EffectiveScope<br/>Hash = SHA-256(除 Generation 外全部字段)"]
+  C["clients.json#client<br/>只选 profile，不贡献层"] -. "选哪一个" .-> P
 ```
+
+**为什么 root 退出了缓存键。** 它曾经在里面，因为 project 层按它匹配；那一层退役后没有任何持久层
+再读 root，留着它只会把同一个 client 的缓存按它恰好报出的每个目录切成一份份——为一个改变不了答案
+的值多付缓存 miss。`EvRootChanged` 事件**保留**：清掉一个 session 的条目很便宜，而把「哪些通知值得
+在意」交给调用方判断，正是将来某个东西真的依赖 root 时陈旧作用域被端上桌的方式。
 
 ### 不变量与失败方向
 
@@ -86,7 +107,7 @@ server 集合），tool 的 `Allow` 按层取交集、`Deny` 按层取并集，�
 
 **`DenyDestructive` 只能由 governance.json 设置。** 代码用两个机制保证这一点，而不是靠校验：
 `Overlay`（session 层的输入类型）**根本没有这个字段**，所以任何 overlay 都不可能携带它；`FromRegistry`
-只在 `LayerGlobal` 上填充它，而 `registry.ApprovalPolicy`（client/project 的落盘类型）也没有建模这个字段。
+只在 `LayerGlobal` 上填充它，而 `registry.ApprovalPolicy`（非全局层的落盘类型）也没有建模这个字段。
 换句话说这条约束是「不可表达」，而不是「被拒绝」。
 
 **tool 选择器的键永远是原始 tool 名，绝不是暴露名。** `ToolSelector` 是 `registry.ToolSelector` 的类型
@@ -103,10 +124,6 @@ server 集合），tool 的 `Allow` 按层取交集、`Deny` 按层取并集，�
 斜杠（UNC 的前导 `//` 保留）、去掉尾部斜杠（裸 `/` 保留）、Windows 形态的路径整体小写。客户端上报的
 路径在本机可能根本不存在，做符号链接解析或存在性探测既会失败也会引入 TOCTOU。这个函数必须幂等，
 因为它会被反复施加到已经规范化过的输出上。
-
-**`PathIsWithin` 按路径边界匹配，且任何歧义一律返回 false。** `/a/proj` 不吞 `/a/project`。空输入、
-形态不匹配都返回 false，效果是 project 层的覆盖（以及它带的 profile 切换）干脆不生效，session 退回到
-client/global 的作用域；反过来的误判会把另一个项目的配置套到不相干的路径上，那才是不可接受的。
 
 **`EffectiveScope.Hash` 覆盖除 `Generation` 与 `Hash` 自身以外的全部字段。** `Generation` 是「这份值
 从哪个 registry 状态算出来的」，不参与内容身份，由 `Resolver` 在 merge 之后盖章。哈希用长度前缀的
@@ -170,7 +187,7 @@ session。
 `ResultBudget`）自由变动。`prev == nil` 是「无 overlay」基线，此时任何新建 overlay 都算收窄。
 过严的代价是调用方多要一次人工授权，过松的代价是把一次放宽交给了威胁模型的主体（agent 自己）。
 
-需要注意这个校验守的是**哪一个方向**。merge 本身已经保证 overlay 永远不能突破静态四层的水位线
+需要注意这个校验守的是**哪一个方向**。merge 本身已经保证 overlay 永远不能突破静态三层的水位线
 （session 层只做交集）；`loosenings` 守的是另一头：agent 撤销它自己（或操作者）刚做的运行期收窄。
 
 **拒绝时拒绝整次变更，不做部分应用。** 一旦发现放宽项，`Mutate` 返回 `ErrLoosening` 并列出全部违规项，
@@ -190,8 +207,8 @@ per-session 锁让并发 `Mutate` 完全串行化，不会丢更新。
 **只有 HTTP session 会被 TTL 回收。** stdio session 的生命周期就是网关进程的生命周期，由链路断开时
 daemon 调 `Close` 清理，reaper 显式跳过它们。默认 TTL 24 小时、扫描间隔 5 分钟。
 
-**root 是可变属性，不是身份的一部分。** `SetRoots` 随 `roots/list_changed` 更新它；它参与 scope 解析的
-缓存键，但不参与 session ID。
+**root 是可变属性，不是身份的一部分。** `SetRoots` 随 `roots/list_changed` 更新它，但它既不参与
+session ID，也（自 per-project 层退役起）不再参与 scope 解析的缓存键——它只喂派生实例键。
 
 **派生键与 scope 分属两个平面。** `derive.go` 里不碰任何 scope 类型，`DeriveKey` 也不进入任何 scope
 哈希：收窄一个 session 不该重启进程，切换到另一个实例也不该改变任何一个可见的 tool 名。
