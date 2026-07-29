@@ -509,7 +509,7 @@ fail-open。`MaxTokens = 64` 不是资源保护而是治理保护——没有上
 吊销后的记录**保留**（名字继续被占用、行继续出现在 `token ls`），这样运维读到一条审计记录时
 还能把名字解析回唯一一份凭据。
 
-**session 绑定 fail-closed 且校验整体身份。** `Caller.identity()` 把 kind、token 名、tier、
+**session 绑定 fail-closed 且校验整体身份。** `Caller.Identity()` 把 kind、token 名、tier、
 allowlist、profile 拼成指纹，session 冻结创建时的指纹并**每请求比对整体**——一个之后被收窄了
 tier 或 allowlist 的 token，不能继续骑着旧 session 用旧权限。查不到、过期、他人拥有三种情况
 返回同一个 false，handler 统一回那句冻结的 404 文案（防探测）。**他人拥有的 session 故意不
@@ -546,7 +546,7 @@ tier 或 allowlist 的 token，不能继续骑着旧 session 用旧权限。查�
 `Caller.Profile` 变成 `scope.Sources.Extra` 的额外层，由与持久化三层同一个 `Merge` 取交集
 （都是安全字段，只能收窄）。连接按**整份凭据**（kind/名字/tier/allowlist/profile）键控并复用，
 所以一个发出后被收窄的 token 拿到的是新网关而不是旧权限——与 session 的
-`Caller.identity()` 同一条规则；空闲 30 分钟后回收。
+`Caller.Identity()` 同一条规则；空闲 30 分钟后回收。
 
 证明「没有分叉」的测试是 `internal/gateway/inproc_test.go` 的 `TestInProcGateCountParity`：
 一次经 `Conn` 的 `tools/call` 与一次经 stdio 管道的 `tools/call` 推进的门计数**完全相同**，

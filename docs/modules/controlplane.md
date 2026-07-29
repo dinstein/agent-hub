@@ -593,7 +593,7 @@ authorization fail open. `MaxTokens = 64` is not resource protection but governa
 list is a list nobody audits. Records are **retained** after revocation (the name stays taken and the row keeps appearing
 in `token ls`), so an operator reading an audit record can still resolve the name back to exactly one credential.
 
-**Session binding is fail-closed and validates the whole identity.** `Caller.identity()` composes kind, token name, tier,
+**Session binding is fail-closed and validates the whole identity.** `Caller.Identity()` composes kind, token name, tier,
 allowlist, and profile into a fingerprint; a session freezes the fingerprint at creation and **compares the whole thing on
 every request** — a token whose tier or allowlist was later narrowed cannot keep riding an old session with old
 privileges. Not found, expired, and owned by someone else all return the same false, and the handler answers the same
@@ -634,7 +634,7 @@ two existing entry points: `Caller.Tier` becomes `gateway.Config.CallerTier` →
 `Caller.Servers` and `Caller.Profile` become extra layers in `scope.Sources.Extra`, intersected by the same `Merge` as the
 five persisted layers (they are security fields and can only narrow). Connections are keyed and reused by the **whole
 credential** (kind/name/tier/allowlist/profile), so a token narrowed after issuance gets a new gateway rather than the old
-privileges — the same rule as the session's `Caller.identity()`; reclaimed after 30 minutes idle.
+privileges — the same rule as the session's `Caller.Identity()`; reclaimed after 30 minutes idle.
 
 The test proving "there is no fork" is `TestInProcGateCountParity` in `internal/gateway/inproc_test.go`: a `tools/call`
 through `Conn` and one through the stdio pipe advance **exactly the same** gate counts — the same test as the one used for
