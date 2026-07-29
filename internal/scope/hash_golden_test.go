@@ -16,9 +16,10 @@ func goldenScope(t *testing.T) *EffectiveScope {
 			ResultBudget: map[string]*Budget{"*": {Bytes: 4096, Forced: true}},
 			Approval:     ApprovalPolicy{DenyDestructive: boolPtr(true)}},
 		{Kind: LayerProfile, Servers: []string{"fs", "git"},
-			Tools: map[string]*ToolSelector{"fs": {Allow: []string{"read", "write", "delete"}}}},
-		{Kind: LayerClient, Discovery: discPtr(DiscoveryGrouped),
-			Tools:    map[string]*ToolSelector{"fs": {Deny: []string{"delete"}}},
+			Discovery: discPtr(DiscoveryGrouped),
+			Tools: map[string]*ToolSelector{"fs": {
+				Allow: []string{"read", "write", "delete"}, Deny: []string{"delete"},
+			}},
 			Approval: ApprovalPolicy{HumanApproval: boolPtr(true)}},
 		{Kind: LayerSession, ResultBudget: map[string]*Budget{"git": {Bytes: 512}}},
 	}

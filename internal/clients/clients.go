@@ -93,7 +93,7 @@ const (
 func (s Shape) Writable() bool { return s == ShapeServerMap || s == ShapeNested }
 
 // Placement is where a configuration file lives. It is about file location
-// only and has nothing to do with internal/scope's four-layer chain.
+// only and has nothing to do with internal/scope's three-layer chain.
 type Placement string
 
 // The two placements.

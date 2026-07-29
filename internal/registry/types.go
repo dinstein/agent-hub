@@ -298,8 +298,8 @@ type ProfileBinding struct {
 	Name string             `json:"name,omitempty"` // required iff Kind == named
 }
 
-// Profile is one named tier in profiles.json: an enabled-server set plus
-// per-server tool selectors.
+// Profile is one named tier in profiles.json: an enabled-server set, the
+// per-server tool selectors, and how that surface is presented.
 //
 // Servers three-state mirrors ToolSelector.Allow: nil = no intervention
 // (all registered servers), [] = none, [...] = that set. omitzero keeps the
@@ -307,6 +307,13 @@ type ProfileBinding struct {
 type Profile struct {
 	Servers []string                     `json:"servers,omitzero"`
 	Tools   map[string]Doc[ToolSelector] `json:"tools,omitempty"` // serverID -> selector
+	// Discovery is how this profile's tools are surfaced ("lazy", "grouped",
+	// "full"); empty inherits the global default. It lives with the tool set
+	// rather than on the client because it describes THAT set: a profile
+	// narrowed to two servers wants a different presentation than one holding
+	// forty, and binding a client to a profile should settle both questions at
+	// once rather than leave presentation to be configured a second time.
+	Discovery string `json:"discovery,omitempty"`
 }
 
 // ProfilesDoc is the typed view of profiles.json.
@@ -364,16 +371,19 @@ type RateLimitRule struct {
 	Scope string `json:"scope,omitempty"`
 }
 
-// ClientEntry binds one AI client to its profile, discovery mode and
-// narrowing rules (docs/architecture.md §7).
+// ClientEntry binds one AI client to a profile, and does nothing else
+// (docs/architecture.md §7).
+//
+// It used to carry its own servers / tools / discovery / approval /
+// resultBudget narrowing on top of the profile. That made "which profile is
+// this client on" an incomplete answer to "what can this client see", which
+// is the question the whole model exists to answer: an operator had to check
+// two places and intersect them by hand. Narrowing now has exactly one home
+// (the profile), and a client that needs a different surface is bound to a
+// different profile.
 type ClientEntry struct {
-	Profile      string                       `json:"profile,omitempty"`    // shorthand for ProfileRef named
-	ProfileRef   *Doc[ProfileBinding]         `json:"profileRef,omitempty"` // explicit form, wins over Profile
-	Discovery    string                       `json:"discovery,omitempty"`
-	Servers      []string                     `json:"servers,omitzero"`       // narrowing; nil = none, [] = block-all
-	Tools        map[string]Doc[ToolSelector] `json:"tools,omitempty"`        // serverID -> selector
-	ResultBudget map[string]Doc[Budget]       `json:"resultBudget,omitempty"` // serverID or "*"
-	Approval     ApprovalPolicy               `json:"approval,omitzero"`
+	Profile    string               `json:"profile,omitempty"`    // shorthand for ProfileRef named
+	ProfileRef *Doc[ProfileBinding] `json:"profileRef,omitempty"` // explicit form, wins over Profile
 }
 
 // Binding resolves the effective profile reference of a client entry.
@@ -436,7 +446,7 @@ type GovernanceDoc struct {
 	// switch.
 	//
 	// It sits at the GLOBAL layer only — it is deliberately NOT one of the
-	// four-layer scope-chain fields — for three reasons:
+	// three-layer scope-chain fields — for three reasons:
 	//
 	//  1. The rule pattern already carries the (client, server, tool)
 	//     dimension a per-client or per-project layer would add. A client
@@ -444,7 +454,7 @@ type GovernanceDoc struct {
 	//     same fact twice, in two places that can disagree.
 	//  2. The counters are SHARED ACROSS PROCESSES and keyed by the rule
 	//     pattern. The same pattern defined at several layers would either
-	//     split one quota into one bucket per layer (four layers = five
+	//     split one quota into one bucket per layer (three layers = five
 	//     times the limit — the opposite of the tighten-only merge every
 	//     other governance field obeys) or need a per-pattern min-merge that
 	//     exists nowhere else in this codebase.

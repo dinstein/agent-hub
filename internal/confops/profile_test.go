@@ -419,3 +419,39 @@ func writeActiveProfile(stateDir, name string) error {
 	return atomicWriteJSON(filepath.Join(stateDir, ActiveProfileFileName),
 		activeProfileFile{Version: 1, Profile: name})
 }
+
+// Discovery belongs to the profile because it describes THAT tool set. An
+// unknown mode is refused at the moment the operator can still fix it: the
+// resolver would otherwise fall back to a default nobody chose, which reads
+// as "my setting did nothing".
+func TestSetProfileDiscovery(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	if _, err := CreateProfile(ctx, st, "work", nil, Precondition{}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := SetProfileDiscovery(ctx, st, "work", "grouped", Precondition{})
+	if err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if res.Profile.Discovery != "grouped" {
+		t.Errorf("discovery = %q, want grouped", res.Profile.Discovery)
+	}
+
+	// "" clears the override so the global default applies again — distinct
+	// from an unknown mode, which is refused.
+	cleared, err := SetProfileDiscovery(ctx, st, "work", "", Precondition{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Profile.Discovery != "" {
+		t.Errorf("discovery = %q, want it cleared", cleared.Profile.Discovery)
+	}
+
+	_, err = SetProfileDiscovery(ctx, st, "work", "bogus", Precondition{})
+	wantErrorKind(t, err, KindUsage, CodeUsage)
+
+	_, err = SetProfileDiscovery(ctx, st, "ghost", "lazy", Precondition{})
+	wantErrorKind(t, err, KindNotFound, CodeProfileNotFound)
+}

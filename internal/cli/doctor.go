@@ -900,7 +900,7 @@ func (d *doctorRun) checkOneClient(clientID string) {
 	}
 	c.Status, c.Fixed = StatusWarn, true
 	c.Fix = "repointed the gateway entry at " + d.app.executable() +
-		" (a dangling profile, if any, still needs 'agenthub scope set')"
+		" (a dangling profile, if any, still needs 'agenthub client bind')"
 }
 
 // danglingProfileIssue reports a client scope binding whose profile does

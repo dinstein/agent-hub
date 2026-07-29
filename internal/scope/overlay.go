@@ -1,7 +1,7 @@
 package scope
 
 // Overlay is the session-layer input: an in-memory, never-persisted
-// narrowing applied on top of the persisted four layers (docs/architecture.md §7
+// narrowing applied on top of the persisted three layers (docs/architecture.md §7
 // "session layer (in-memory overlay, never persisted)"). Fields mirror ScopeLayer minus what
 // a session must never touch.
 //

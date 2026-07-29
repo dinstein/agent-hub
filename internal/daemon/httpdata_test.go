@@ -377,7 +377,7 @@ func TestHTTPDataPlaneTokenTierIsEnforced(t *testing.T) {
 
 // TestHTTPDataPlaneServerAllowlistNarrowsScope: a token allowlisting a
 // different server is denied by the SCOPE gate — the allowlist joins the
-// ordinary four-layer intersection rather than a bespoke HTTP filter.
+// ordinary three-layer intersection rather than a bespoke HTTP filter.
 func TestHTTPDataPlaneServerAllowlistNarrowsScope(t *testing.T) {
 	var narrow string
 	d := startHTTPDaemon(t, func(cfg *daemon.Config) {

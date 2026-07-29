@@ -69,19 +69,19 @@ func TestFromRegistryGovernance(t *testing.T) {
 	}
 }
 
-func TestFromRegistryNamedProfileAndClientLayer(t *testing.T) {
+// A bound client contributes NO layer of its own: clients.json says which
+// profile applies, and the profile says everything about what it contains —
+// including how it is surfaced. Two places to look was the defect.
+func TestFromRegistryClientSelectsProfileAndAddsNoLayer(t *testing.T) {
 	snap := emptySnap()
 	snap.Profiles.V.Profiles["dev"] = doc(registry.Profile{
-		Servers: []string{"fs", "git"},
+		Servers:   []string{"fs", "git"},
+		Discovery: "lazy",
 		Tools: map[string]registry.Doc[registry.ToolSelector]{
 			"fs": doc(registry.ToolSelector{Allow: []string{"read"}}),
 		},
 	})
-	snap.Clients.V.Clients["claude-code"] = doc(registry.ClientEntry{
-		Profile:   "dev",
-		Discovery: "lazy",
-		Approval:  registry.ApprovalPolicy{HumanApproval: boolPtr(true)},
-	})
+	snap.Clients.V.Clients["claude-code"] = doc(registry.ClientEntry{Profile: "dev"})
 
 	layers, diags := FromRegistry(snap, SessionKey{ClientID: "claude-code"})
 	if len(diags) != 0 {
@@ -97,15 +97,15 @@ func TestFromRegistryNamedProfileAndClientLayer(t *testing.T) {
 	if len(pl.Servers) != 2 || pl.Tools["fs"] == nil || len(pl.Tools["fs"].Allow) != 1 {
 		t.Errorf("profile layer content wrong: %+v", pl)
 	}
-	cl := layerOfKind(t, layers, LayerClient)
-	if cl == nil || cl.Discovery == nil || *cl.Discovery != DiscoveryLazy {
-		t.Fatalf("client layer wrong: %+v", cl)
+	// Discovery rides with the tool set it describes.
+	if pl.Discovery == nil || *pl.Discovery != DiscoveryLazy {
+		t.Errorf("profile discovery not mapped: %+v", pl.Discovery)
 	}
-	if cl.Approval.HumanApproval == nil || !*cl.Approval.HumanApproval {
-		t.Error("client approval not mapped")
-	}
-	if cl.Approval.DenyDestructive != nil {
-		t.Error("client layer must never carry DenyDestructive")
+	for _, l := range layers {
+		if l.Kind != LayerGlobal && l.Kind != LayerProfile {
+			t.Errorf("unexpected layer %s from a bound client: only global and profile "+
+				"are persisted layers", l.Kind)
+		}
 	}
 }
 

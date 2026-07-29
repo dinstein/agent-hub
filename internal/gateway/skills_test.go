@@ -120,7 +120,7 @@ func TestSkillsOverMCPExposesAndServes(t *testing.T) {
 }
 
 // TestSkillsFaceIsAScopeSubject: the pseudo-server obeys the ordinary
-// four-layer scope chain. A profile that lists its servers explicitly and
+// three-layer scope chain. A profile that lists its servers explicitly and
 // omits "skills" hides the whole face — that IS the docs/modules/config.md
 // skillScope chain, expressed in the chain that already exists.
 func TestSkillsFaceIsAScopeSubject(t *testing.T) {

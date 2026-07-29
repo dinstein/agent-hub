@@ -515,30 +515,50 @@ func TestScopeBinding(t *testing.T) {
 	}
 
 	res := doAdmin(t, env.sock, http.MethodPut, "/v1/scope/cursor", map[string]any{
-		"profile":   map[string]any{"kind": "named", "name": "dev"},
-		"servers":   []string{"github"},
-		"discovery": "lazy",
-		"tools":     map[string]any{"github": map[string]any{"mode": "none"}},
+		"profile": map[string]any{"kind": "named", "name": "dev"},
 	})
 	if res.status != http.StatusOK {
 		t.Fatalf("put: %d %s", res.status, res.raw)
 	}
 	entry := env.reg.Snapshot().Clients.V.Clients["cursor"].V
-	if entry.Binding().Name != "dev" || entry.Discovery != "lazy" || len(entry.Servers) != 1 {
+	if entry.Binding().Name != "dev" {
 		t.Fatalf("entry = %+v", entry)
 	}
-	if sel, ok := entry.Tools["github"]; !ok || sel.V.Allow == nil || len(sel.V.Allow) != 0 {
-		t.Errorf("block-all selector was not stored as the EMPTY allow list: %+v", entry.Tools)
+
+	// Rebinding replaces the reference. The entry holds nothing else, so
+	// there is no second field a rebind could leave stale.
+	doAdmin(t, env.sock, http.MethodPost, "/v1/profiles", map[string]any{"name": "other"})
+	if res = doAdmin(t, env.sock, http.MethodPut, "/v1/scope/cursor", map[string]any{
+		"profile": map[string]any{"kind": "named", "name": "other"},
+	}); res.status != http.StatusOK {
+		t.Fatalf("rebind: %d %s", res.status, res.raw)
+	}
+	if got := env.reg.Snapshot().Clients.V.Clients["cursor"].V.Binding().Name; got != "other" {
+		t.Fatalf("rebind = %q, want other", got)
+	}
+	if res = doAdmin(t, env.sock, http.MethodPut, "/v1/scope/cursor", map[string]any{
+		"profile": map[string]any{"kind": "named", "name": "dev"},
+	}); res.status != http.StatusOK {
+		t.Fatalf("rebind back: %d %s", res.status, res.raw)
 	}
 
-	// Amending one field leaves the others alone.
-	if res = doAdmin(t, env.sock, http.MethodPut, "/v1/scope/cursor",
-		map[string]any{"discovery": "full"}); res.status != http.StatusOK {
-		t.Fatalf("amend: %d %s", res.status, res.raw)
-	}
-	entry = env.reg.Snapshot().Clients.V.Clients["cursor"].V
-	if entry.Discovery != "full" || entry.Binding().Name != "dev" {
-		t.Fatalf("amend lost a field: %+v", entry)
+	// A retired narrowing field is REFUSED, never accepted-and-dropped. The
+	// caller was asking to narrow; binding the client while silently
+	// discarding that half would report success for a WIDER surface than it
+	// asked for.
+	for _, field := range []string{"servers", "tools", "discovery"} {
+		body := map[string]any{"profile": map[string]any{"kind": "named", "name": "dev"}}
+		switch field {
+		case "servers":
+			body[field] = []string{"github"}
+		case "tools":
+			body[field] = map[string]any{"github": map[string]any{"mode": "none"}}
+		default:
+			body[field] = "lazy"
+		}
+		if res = doAdmin(t, env.sock, http.MethodPut, "/v1/scope/cursor", body); res.status != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400 — a retired field must fail loudly", field, res.status)
+		}
 	}
 
 	// A dangling profile is reported loudly rather than shown as an empty set.
@@ -562,8 +582,11 @@ func TestScopeBinding(t *testing.T) {
 	doAdmin(t, env.sock, http.MethodDelete, "/v1/scope/cursor", nil).
 		wantErr(t, http.StatusNotFound, CodeNotFound)
 
+	// Three successful writes above: the initial bind, the rebind, and the
+	// rebind back. Requests refused for carrying a retired field never reach
+	// the store, so they are not among them.
 	recs := findAudit(env.aud.records(), "scope/set:cursor")
-	if len(recs) != 2 || recs[0].Client != "cursor" {
+	if len(recs) != 3 || recs[0].Client != "cursor" {
 		t.Fatalf("scope writes not audited with the client: %+v", recs)
 	}
 }
@@ -571,16 +594,17 @@ func TestScopeBinding(t *testing.T) {
 func TestScopeRejectsUnknownValues(t *testing.T) {
 	env, _, _ := adminServer(t, nil)
 	doAdmin(t, env.sock, http.MethodPut, "/v1/scope/cursor",
-		map[string]any{"discovery": "telepathy"}).
-		wantErr(t, http.StatusBadRequest, confops.CodeUsage)
-	doAdmin(t, env.sock, http.MethodPut, "/v1/scope/cursor",
 		map[string]any{"profile": map[string]any{"kind": "whatever"}}).
 		wantErr(t, http.StatusBadRequest, confops.CodeUsage)
-	// A narrowing set naming a server nobody registered is a rule that would
-	// silently not apply.
+	// A named binding with no name is a typo. "No profile" is spelled
+	// followActive, so resolving the typo to it would be a silent widening.
+	doAdmin(t, env.sock, http.MethodPut, "/v1/scope/cursor",
+		map[string]any{"profile": map[string]any{"kind": "named"}}).
+		wantErr(t, http.StatusBadRequest, confops.CodeUsage)
+	// A retired narrowing field is a usage error, not a quietly dropped one.
 	doAdmin(t, env.sock, http.MethodPut, "/v1/scope/cursor",
 		map[string]any{"servers": []string{"ghost"}}).
-		wantErr(t, http.StatusNotFound, CodeNotFound)
+		wantErr(t, http.StatusBadRequest, confops.CodeUsage)
 	doAdmin(t, env.sock, http.MethodPut, "/v1/scope/cursor", map[string]any{}).
 		wantErr(t, http.StatusBadRequest, confops.CodeUsage)
 }

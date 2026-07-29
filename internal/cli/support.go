@@ -16,8 +16,8 @@ import (
 
 // Shared plumbing for the command groups added by the CLI completion task:
 // registry mutation helpers, the online-only gate, the CLI-owned state
-// files, and the three-state selector parsing that profile/scope/session
-// all speak.
+// files, and the three-state selector parsing that profile and session
+// both speak.
 
 // stateDir resolves <data>/state, the home of the integrity stores and the
 // shared state files. It does NOT create the directory (readers must not
@@ -108,15 +108,6 @@ func parseSelectorFlags(cmd *cobra.Command, only []string, all, none bool) (conf
 		return confops.ToolSelection{}, e
 	}
 	return sel, nil
-}
-
-// toolSelectionFor turns one parsed `--tools s:t1,t2` entry into a selection:
-// an empty list after the colon is block-all, never "all tools".
-func toolSelectionFor(tools []string) confops.ToolSelection {
-	if len(tools) == 0 {
-		return confops.ToolSelection{Mode: confops.ToolSelectNone}
-	}
-	return confops.ToolSelection{Mode: confops.ToolSelectOnly, Tools: tools}
 }
 
 // describeSelector renders a selector for the human table.

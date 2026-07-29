@@ -27,7 +27,7 @@ func toolsOf(t *testing.T, es *EffectiveScope, server string) []string {
 }
 
 // TestMergeMatrix drives the full 4.1 merge table: three-state selectors,
-// four layers, intersection / union / OR / most-specific-wins.
+// three layers, intersection / union / OR / most-specific-wins.
 func TestMergeMatrix(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -49,7 +49,7 @@ func TestMergeMatrix(t *testing.T) {
 		{
 			name: "nil servers on every layer = no intervention",
 			layers: []ScopeLayer{
-				{Kind: LayerGlobal}, {Kind: LayerProfile}, {Kind: LayerClient},
+				{Kind: LayerGlobal}, {Kind: LayerProfile},
 				{Kind: LayerSession},
 			},
 			cat: testCatalog(),
@@ -69,7 +69,7 @@ func TestMergeMatrix(t *testing.T) {
 			name: "server visibility intersects across layers",
 			layers: []ScopeLayer{
 				{Kind: LayerProfile, Servers: []string{"fs", "git", "web"}},
-				{Kind: LayerClient, Servers: []string{"fs", "git"}},
+				{Kind: LayerProfile, Servers: []string{"fs", "git"}},
 				{Kind: LayerSession, Servers: []string{"git", "web"}},
 			},
 			cat:     testCatalog(),
@@ -117,7 +117,7 @@ func TestMergeMatrix(t *testing.T) {
 		{
 			name: "exposed-style names in allow do not match raw names",
 			layers: []ScopeLayer{
-				{Kind: LayerClient, Tools: map[string]*ToolSelector{"fs": {Allow: []string{"fs__read", "read"}}}},
+				{Kind: LayerProfile, Tools: map[string]*ToolSelector{"fs": {Allow: []string{"fs__read", "read"}}}},
 			},
 			cat: testCatalog(),
 			servers: map[string][]string{
@@ -140,7 +140,7 @@ func TestMergeMatrix(t *testing.T) {
 			layers: []ScopeLayer{
 				{Kind: LayerSession, Discovery: discPtr(DiscoveryLazy)},
 				{Kind: LayerGlobal, Discovery: discPtr(DiscoveryFull)},
-				{Kind: LayerClient, Discovery: discPtr(DiscoveryGrouped)},
+				{Kind: LayerProfile, Discovery: discPtr(DiscoveryGrouped)},
 			},
 			cat: testCatalog(),
 			servers: map[string][]string{
@@ -182,7 +182,7 @@ func TestMergeMatrix(t *testing.T) {
 			name: "forced tighter than specific wins the min",
 			layers: []ScopeLayer{
 				{Kind: LayerGlobal, ResultBudget: map[string]*Budget{"git": {Bytes: 100, Forced: true}}},
-				{Kind: LayerClient, ResultBudget: map[string]*Budget{"git": {Bytes: 50}}},
+				{Kind: LayerProfile, ResultBudget: map[string]*Budget{"git": {Bytes: 50}}},
 			},
 			cat: testCatalog(),
 			servers: map[string][]string{
@@ -194,7 +194,7 @@ func TestMergeMatrix(t *testing.T) {
 			name: "approval ORs across layers; false never loosens",
 			layers: []ScopeLayer{
 				{Kind: LayerGlobal, Approval: ApprovalPolicy{DenyDestructive: boolPtr(true)}},
-				{Kind: LayerClient, Approval: ApprovalPolicy{HumanApproval: boolPtr(true)}},
+				{Kind: LayerProfile, Approval: ApprovalPolicy{HumanApproval: boolPtr(true)}},
 				{Kind: LayerSession, Approval: ApprovalPolicy{
 					HumanApproval:      boolPtr(false), // inert: cannot switch off the client's true
 					ConfirmDestructive: boolPtr(false),
@@ -207,13 +207,13 @@ func TestMergeMatrix(t *testing.T) {
 			appr: EffectiveApproval{HumanApproval: true, ConfirmDestructive: false, DenyDestructive: true},
 		},
 		{
-			name: "all four layers combined",
+			name: "all three layers combined",
 			layers: []ScopeLayer{
 				{Kind: LayerGlobal, Discovery: discPtr(DiscoveryFull),
 					Approval: ApprovalPolicy{DenyDestructive: boolPtr(true)}},
 				{Kind: LayerProfile, Servers: []string{"fs", "git"},
 					Tools: map[string]*ToolSelector{"fs": {Allow: []string{"read", "write", "delete"}}}},
-				{Kind: LayerClient, Discovery: discPtr(DiscoveryGrouped), Servers: []string{"fs"},
+				{Kind: LayerProfile, Discovery: discPtr(DiscoveryGrouped), Servers: []string{"fs"},
 					Tools: map[string]*ToolSelector{"fs": {Deny: []string{"delete"}}}},
 				{Kind: LayerSession,
 					Tools: map[string]*ToolSelector{"fs": {Allow: []string{"read", "delete"}}}},

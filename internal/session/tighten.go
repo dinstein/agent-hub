@@ -17,7 +17,7 @@ import (
 // over-lenient one hands a widening to the threat-model subject (the agent).
 //
 // Note the merge already guarantees an overlay can never widen beyond the
-// static four-layer waterline (session layers intersect). This check guards
+// static three-layer waterline (session layers intersect). This check guards
 // the OTHER direction: an agent undoing its own (or an operator's) runtime
 // narrowing without a grant.
 

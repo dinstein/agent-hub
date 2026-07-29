@@ -39,11 +39,13 @@ func newReleaseTestRoot(t *testing.T) *cobra.Command {
 // withheldCommands its flattened membership. Both are spelled out here rather
 // than read back from the tree, so the test fails if a group's membership
 // drifts instead of silently agreeing with whatever it finds.
-var withheldGroups = []*cobra.Group{groupScope, groupGovern, groupOperate}
+var withheldGroups = []*cobra.Group{groupGovern, groupOperate}
 
+// `profile` is deliberately NOT withheld: a shipped build that can connect a
+// client but cannot say what that client will then see teaches half the
+// model. Setup -> profile -> client bind is the whole everyday path.
 var withheldCommands = []string{
-	"profile", "scope", "tool", "token",
-	"approval", "grant", "config", "audit",
+	"approval", "grant", "config", "audit", "tool", "token",
 	"daemon", "session", "events", "activity", "doctor",
 }
 
@@ -81,9 +83,10 @@ func TestCommandTreeCoversDesign(t *testing.T) {
 		"agenthub profile ls", "agenthub profile create", "agenthub profile rm",
 		"agenthub profile rename", "agenthub profile use",
 		"agenthub profile server add", "agenthub profile server rm", "agenthub profile tools",
+		"agenthub profile discovery",
 		"agenthub client detect", "agenthub client connect",
 		"agenthub client disconnect", "agenthub client import",
-		"agenthub scope ls", "agenthub scope set", "agenthub scope clear",
+		"agenthub client ls", "agenthub client bind", "agenthub client unbind",
 		"agenthub session ls", "agenthub session show",
 		"agenthub session scope", "agenthub session kill",
 		"agenthub approval watch", "agenthub approval ls",
@@ -197,7 +200,7 @@ func TestListingsAreNamedLs(t *testing.T) {
 // groupRunE contract, and both must hold for every group, old and new.
 func TestEveryGroupShowsHelpOnBareInvocation(t *testing.T) {
 	groups := []string{
-		"server", "profile", "client", "scope", "session", "secret", "token",
+		"server", "profile", "client", "session", "secret", "token",
 		"tool", "skill", "config", "audit", "approval", "grant", "daemon", "auth",
 	}
 	for _, g := range groups {
@@ -219,7 +222,7 @@ func TestEveryGroupShowsHelpOnBareInvocation(t *testing.T) {
 }
 
 // TestRootHelpOrderIsTheOnboardingPath pins the root listing: the phase
-// order (setup -> wire up -> scope -> govern -> operate, connect held apart)
+// order (setup -> wire up -> govern -> operate, connect held apart)
 // is the one thing on the help page that carries meaning, and with
 // EnableCommandSorting off it is only as good as the declaration order. A new
 // command appended to whichever AddCommand call is nearest is how that
@@ -230,9 +233,8 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		cmds  []string
 	}{
 		{"setup", []string{"catalog", "server", "secret", "auth"}},
-		{"wire", []string{"client", "skill"}},
-		{"scope", []string{"profile", "scope", "tool", "token"}},
-		{"govern", []string{"approval", "grant", "config", "audit"}},
+		{"wire", []string{"profile", "client", "skill"}},
+		{"govern", []string{"approval", "grant", "config", "audit", "tool", "token"}},
 		{"operate", []string{"daemon", "session", "events", "activity", "doctor"}},
 		{"entry", []string{"connect"}},
 	}
@@ -423,7 +425,7 @@ func TestHiddenCommandsStillRun(t *testing.T) {
 	// Hidden, at the group and at the leaf.
 	root := newReleaseTestRoot(t)
 	for _, path := range [][]string{
-		{"profile", "ls"}, {"scope", "ls"}, {"tool", "ls"}, {"token"},
+		{"tool", "ls"}, {"token"},
 		{"audit", "tail"}, {"config", "ls"}, {"approval", "ls"}, {"grant", "ls"},
 		{"daemon", "status"}, {"session", "ls"}, {"events"}, {"activity"}, {"doctor"},
 	} {

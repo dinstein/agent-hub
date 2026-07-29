@@ -14,7 +14,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dinstein/agent-hub/api"
-	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/gateway"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -92,7 +91,7 @@ type SessionDetail struct {
 	Note string `json:"note,omitempty"`
 }
 
-// Human renders the four-layer view.
+// Human renders the three-layer view.
 func (d SessionDetail) Human(w io.Writer) error {
 	if err := (SessionList{Sessions: []SessionRow{d.Session}}).Human(w); err != nil {
 		return err
@@ -141,11 +140,10 @@ func (d SessionDetail) Human(w io.Writer) error {
 // SessionScopeResult is the `session scope` result.
 type SessionScopeResult struct {
 	SessionID string `json:"session_id"`
-	// Applied lists the runtime overlay edits that took effect.
+	// Applied lists the runtime overlay edits that took effect. They are
+	// volatile by construction: the overlay dies with the session, and the
+	// way to make a surface permanent is to edit the profile.
 	Applied []string `json:"applied,omitempty"`
-	// Persisted names the client whose clients.json entry was amended
-	// (--persist), "" when the change stayed volatile.
-	Persisted string `json:"persisted,omitempty"`
 	// GrantID is set when a widening request was filed instead of applied:
 	// agents and operators may only NARROW at runtime; widening is a human
 	// grant with a TTL (A.1 #8).
@@ -157,11 +155,6 @@ type SessionScopeResult struct {
 func (r SessionScopeResult) Human(w io.Writer) error {
 	for _, s := range r.Applied {
 		if _, err := fmt.Fprintf(w, "session %s: %s\n", r.SessionID, s); err != nil {
-			return err
-		}
-	}
-	if r.Persisted != "" {
-		if _, err := fmt.Fprintf(w, "persisted to clients.json#%s\n", r.Persisted); err != nil {
 			return err
 		}
 	}
@@ -295,7 +288,7 @@ func (a *App) followSessions(ctx context.Context, ctl *ctlClient, client string)
 func (a *App) newSessionShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <sid>",
-		Short: "Show a session's four-layer scope resolution, effective surface and diagnostics",
+		Short: "Show a session's three-layer scope resolution, effective surface and diagnostics",
 		Args:  exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sid := args[0]
@@ -329,7 +322,7 @@ func (a *App) newSessionShowCmd() *cobra.Command {
 	}
 }
 
-// resolveSessionScope resolves the PERSISTED four layers for one live
+// resolveSessionScope resolves the PERSISTED three layers for one live
 // session and merges them against the cached catalog.
 //
 // The session (fifth) layer is deliberately absent: the volatile overlay
@@ -405,7 +398,6 @@ type sessionScopeFlags struct {
 	tools         []string
 	discovery     string
 	reset         bool
-	persist       bool
 	ttl           time.Duration
 	reason        string
 }
@@ -414,7 +406,7 @@ func (a *App) newSessionScopeCmd() *cobra.Command {
 	var f sessionScopeFlags
 	cmd := &cobra.Command{
 		Use: "scope <sid> [--disable-server s] [--tools s:t1,t2] [--discovery m] " +
-			"[--enable-server s] [--reset] [--persist]",
+			"[--enable-server s] [--reset]",
 		Short: "Adjust a live session's scope (narrowing is applied; widening files a grant)",
 		Long: "Adjust one live session's scope overlay.\n\n" +
 			"Narrowing (--disable-server, --tools, --reset) and the experience field\n" +
@@ -422,8 +414,9 @@ func (a *App) newSessionScopeCmd() *cobra.Command {
 			"--enable-server WIDENS, which no runtime path may do on its own (A.1 #8):\n" +
 			"it files a TTL-bounded grant that a human approves with 'agenthub grant\n" +
 			"approve'. Name the tools to widen with --tools <server>:<tool>,...\n\n" +
-			"--persist additionally writes the narrowing into the client layer\n" +
-			"(clients.json), where it survives the session.",
+			"Every edit here is VOLATILE: it lives on the session overlay and dies\n" +
+			"with the session. To change what a client sees permanently, edit its\n" +
+			"profile ('agenthub profile server') or bind it to another one.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runSessionScope(cmd, args[0], f)
@@ -435,7 +428,6 @@ func (a *App) newSessionScopeCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&f.tools, "tools", nil, "narrow one server's tools: <server>:<tool>[,<tool>] (repeatable)")
 	cmd.Flags().StringVar(&f.discovery, "discovery", "", "discovery mode for this session: lazy, grouped or full")
 	cmd.Flags().BoolVar(&f.reset, "reset", false, "drop the overlay and restore the static scope baseline")
-	cmd.Flags().BoolVar(&f.persist, "persist", false, "also write the narrowing into the client layer (clients.json)")
 	cmd.Flags().DurationVar(&f.ttl, "ttl", 0, "widen-request lifetime after approval (default 1h)")
 	cmd.Flags().StringVar(&f.reason, "reason", "", "reason recorded on a widen request")
 	return cmd
@@ -481,14 +473,7 @@ func (a *App) runSessionScope(cmd *cobra.Command, sid string, f sessionScopeFlag
 		res.Applied = describeScopeEdits(body)
 	}
 
-	if f.persist {
-		client, err := a.persistSessionScope(cmd.Context(), ctl, sid, f, toolSpecs)
-		if err != nil {
-			return err
-		}
-		res.Persisted = client
-	}
-	if res.GrantID == "" && len(res.Applied) == 0 && res.Persisted == "" {
+	if res.GrantID == "" && len(res.Applied) == 0 {
 		res.Note = "nothing changed"
 	}
 	return a.printer().Emit(res)
@@ -555,64 +540,6 @@ func (a *App) fileWidenGrant(
 		return "", classifyScopeError(err)
 	}
 	return out.ID, nil
-}
-
-// persistSessionScope writes the session's narrowing into the CLIENT layer,
-// so it outlives the session. Only narrowings are persisted: a widening is
-// a TTL-bounded grant by construction and must never become permanent
-// configuration behind the operator's back.
-func (a *App) persistSessionScope(
-	ctx context.Context, ctl *ctlClient, sid string,
-	f sessionScopeFlags, toolSpecs map[string][]string,
-) (string, error) {
-	list, err := a.fetchSessions(ctx, ctl, "")
-	if err != nil {
-		return "", err
-	}
-	client := ""
-	for _, s := range list.Sessions {
-		if s.ID == sid {
-			client = s.ClientID
-			break
-		}
-	}
-	if client == "" {
-		e := NotFoundf(CodeSessionNotFound, "no live session %q", sid)
-		e.Hint = "run 'agenthub session ls' to see live sessions"
-		return "", e
-	}
-	_, err = a.mutate(ctx, func(tx *registry.Tx) error {
-		if tx.Clients.V.Clients == nil {
-			tx.Clients.V.Clients = map[string]registry.Doc[registry.ClientEntry]{}
-		}
-		doc := tx.Clients.V.Clients[client]
-		entry := doc.V
-		if entry.Tools == nil {
-			entry.Tools = map[string]registry.Doc[registry.ToolSelector]{}
-		}
-		for _, id := range f.disableServer {
-			confops.ApplyToolSelection(entry.Tools, id, confops.ToolSelection{Mode: confops.ToolSelectNone})
-		}
-		for _, id := range sortedKeys(toolSpecs) {
-			if containsString(f.enableServer, id) {
-				continue
-			}
-			confops.ApplyToolSelection(entry.Tools, id, toolSelectionFor(toolSpecs[id]))
-		}
-		if f.discovery != "" {
-			entry.Discovery = f.discovery
-		}
-		if len(entry.Tools) == 0 {
-			entry.Tools = nil
-		}
-		doc.V = entry
-		tx.Clients.V.Clients[client] = doc
-		return nil
-	})
-	if err != nil {
-		return "", err
-	}
-	return client, nil
 }
 
 func (a *App) newSessionKillCmd() *cobra.Command {

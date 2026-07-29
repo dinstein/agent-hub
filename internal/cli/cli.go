@@ -47,16 +47,22 @@ type Options struct {
 	Resolver *platform.Resolver
 	// LockTimeout overrides the registry lock timeout (0 = registry default).
 	LockTimeout time.Duration
-	// ReducedHelp drops the Scope, Govern and Operate groups from the help
-	// pages, leaving a shipped build's page at Setup -> Wire up -> connect.
-	// Set for release builds only (main.channel); every one of those commands
-	// stays registered and stays runnable — this narrows what the help page
+	// ReducedHelp drops the Govern and Operate groups from the help pages,
+	// leaving a shipped build's page at Setup -> Wire up -> connect. Set for
+	// release builds only (main.channel); every one of those commands stays
+	// registered and stays runnable — this narrows what the help page
 	// TEACHES, never what the binary can do.
+	//
+	// What survives is the whole everyday path and no more: register a server
+	// and authorize it, build a profile, bind a client to it. Withholding the
+	// profile commands (as the Scope group once did) left a shipped build able
+	// to connect a client while giving it no vocabulary for what that client
+	// would then see.
 	//
 	// One field rather than one per group: there is a single reason to
 	// withhold any of them (this is a shipped build) and no caller that wants
-	// a partial reduction. Three bools driven off one comparison are three
-	// chances for a fourth group to be added and left behind.
+	// a partial reduction. Two bools driven off one comparison are two
+	// chances for a third group to be added and left behind.
 	ReducedHelp bool
 }
 
@@ -155,16 +161,20 @@ func (a *App) newRoot() *cobra.Command {
 		return e
 	})
 	addGrouped(root, groupSetup, a.newCatalogCmd(), a.newServerCmd(), a.newSecretCmd(), a.newAuthCmd())
-	addGrouped(root, groupWire, a.newClientCmd(), a.newSkillCmd())
-	// Hidden takes these three groups off the help page only: cobra still
+	// `profile` sits in Wire up beside `client` because the two halves of one
+	// question live here: a profile says what a surface CONTAINS, `client
+	// bind` says who gets it. Splitting them across a visible and a withheld
+	// group left a shipped build able to connect a client but not to say what
+	// that client would see.
+	addGrouped(root, groupWire, a.newProfileCmd(), a.newClientCmd(), a.newSkillCmd())
+	// Hidden takes these two groups off the help page only: cobra still
 	// resolves and runs them, so `agenthub tool ls` or `agenthub audit tail`
 	// behaves identically in a release build. Routing them through the same
 	// call as every other group is what keeps a newly added member of one of
 	// them from being left visible.
-	addGroupedHidden(root, a.reducedHelp, groupScope,
-		a.newProfileCmd(), a.newScopeCmd(), a.newToolCmd(), a.newTokenCmd())
 	addGroupedHidden(root, a.reducedHelp, groupGovern,
-		a.newApprovalCmd(), a.newGrantCmd(), a.newConfigCmd(), a.newAuditCmd())
+		a.newApprovalCmd(), a.newGrantCmd(), a.newConfigCmd(), a.newAuditCmd(),
+		a.newToolCmd(), a.newTokenCmd())
 	addGroupedHidden(root, a.reducedHelp, groupOperate,
 		a.newDaemonCmd(), a.newSessionCmd(), a.newEventsCmd(), a.newActivityCmd(), a.newDoctorCmd())
 	addGrouped(root, groupEntry, a.newConnectCmd())
@@ -172,14 +182,17 @@ func (a *App) newRoot() *cobra.Command {
 }
 
 // Help groups, in the order the onboarding path actually runs: bring a server
-// in -> hand it to an AI client -> narrow what that client sees -> govern ->
-// run and watch it. `connect` is held apart because it is the machine entry
-// point a client's MCP config invokes; a human who types it gets a terminal
-// that just hangs on stdio.
+// in -> choose a surface and hand it to an AI client -> govern -> run and
+// watch it. `connect` is held apart because it is the machine entry point a
+// client's MCP config invokes; a human who types it gets a terminal that just
+// hangs on stdio.
+//
+// There is no separate Scope group: narrowing is what a profile IS, so it
+// belongs with the commands that build and hand out profiles rather than in a
+// section of its own.
 var (
 	groupSetup   = &cobra.Group{ID: "setup", Title: "Setup — bring a downstream server in:"}
-	groupWire    = &cobra.Group{ID: "wire", Title: "Wire up — hand it to an AI client:"}
-	groupScope   = &cobra.Group{ID: "scope", Title: "Scope — narrow what each client can see:"}
+	groupWire    = &cobra.Group{ID: "wire", Title: "Wire up — choose a surface, hand it to an AI client:"}
 	groupGovern  = &cobra.Group{ID: "govern", Title: "Govern — allow, hold, record:"}
 	groupOperate = &cobra.Group{ID: "operate", Title: "Operate — run it, watch it, fix it:"}
 	groupEntry   = &cobra.Group{ID: "entry", Title: "Machine entry point (not for humans):"}

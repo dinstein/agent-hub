@@ -11,7 +11,9 @@ import (
 //
 //	global (governance.json + active profile selection)
 //	→ profile (chosen by: client binding > followActive)
-//	→ client (clients.json entry for key.ClientID)
+//
+// The client contributes no layer: clients.json says WHICH profile applies,
+// never what it contains.
 //
 // The session layer is NOT produced here — the Resolver appends the live
 // Overlay. Returned layers never alias snapshot-owned maps or slices
@@ -43,8 +45,9 @@ func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diag
 	}
 	layers = append(layers, gl)
 
-	// Client entry (may be absent: unknown clients get no client layer and
-	// follow the active profile).
+	// Client entry (may be absent: an unbound client follows the active
+	// profile). It contributes no layer of its own — a client SELECTS a
+	// profile, it does not narrow on top of one.
 	var ce *registry.ClientEntry
 	if doc, ok := snap.Clients.V.Clients[key.ClientID]; ok {
 		c := doc.V
@@ -73,12 +76,17 @@ func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diag
 	if profileName != "" {
 		if pdoc, ok := snap.Profiles.V.Profiles[profileName]; ok {
 			p := pdoc.V
-			layers = append(layers, ScopeLayer{
+			pl := ScopeLayer{
 				Kind:    LayerProfile,
 				Origin:  "profiles.json#" + profileName,
 				Servers: cloneStrings(p.Servers),
 				Tools:   selectorsFromDocs(p.Tools),
-			})
+			}
+			if p.Discovery != "" {
+				d := DiscoveryMode(p.Discovery)
+				pl.Discovery = &d
+			}
+			layers = append(layers, pl)
 		} else {
 			dangling = true
 		}
@@ -97,24 +105,6 @@ func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diag
 			Origin:  bindingOrigin,
 			Message: fmt.Sprintf("dangling profile %q → empty scope", profileName),
 		})
-	}
-
-	// Client layer.
-	if ce != nil {
-		cl := ScopeLayer{
-			Kind:         LayerClient,
-			Origin:       "clients.json#" + key.ClientID,
-			Servers:      cloneStrings(ce.Servers),
-			Tools:        selectorsFromDocs(ce.Tools),
-			ResultBudget: budgetsFromDocs(ce.ResultBudget),
-		}
-		if ce.Discovery != "" {
-			d := DiscoveryMode(ce.Discovery)
-			cl.Discovery = &d
-		}
-		cl.Approval.HumanApproval = cloneBool(ce.Approval.HumanApproval)
-		cl.Approval.ConfirmDestructive = cloneBool(ce.Approval.ConfirmDestructive)
-		layers = append(layers, cl)
 	}
 
 	return layers, diags

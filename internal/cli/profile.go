@@ -29,6 +29,9 @@ type ProfileRow struct {
 	Servers []string `json:"servers"`
 	// Tools maps serverID -> selector for the servers this profile narrows.
 	Tools map[string]registry.ToolSelector `json:"tools,omitempty"`
+	// Discovery is how this profile's tools are surfaced; "" inherits the
+	// global default.
+	Discovery string `json:"discovery,omitempty"`
 	// Active marks the globally active profile (`profile use`).
 	Active bool `json:"active"`
 }
@@ -47,7 +50,7 @@ func (l ProfileList) Human(w io.Writer) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NAME\tACTIVE\tSERVERS\tTOOL RULES")
+	_, _ = fmt.Fprintln(tw, "NAME\tACTIVE\tSERVERS\tDISCOVERY\tTOOL RULES")
 	for _, p := range l.Profiles {
 		rules := "-"
 		if len(p.Tools) > 0 {
@@ -61,7 +64,8 @@ func (l ProfileList) Human(w io.Writer) error {
 		if p.Active {
 			active = "*"
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.Name, active, describeServers(p.Servers), rules)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+			p.Name, active, describeServers(p.Servers), dash(p.Discovery), rules)
 	}
 	return tw.Flush()
 }
@@ -122,13 +126,17 @@ func (a *App) newProfileCmd() *cobra.Command {
 		a.newProfileUseCmd(),
 		a.newProfileServerCmd(),
 		a.newProfileToolsCmd(),
+		a.newProfileDiscoveryCmd(),
 	)
 	return cmd
 }
 
 // profileRow projects one registry profile into its rendered form.
 func profileRow(name string, p registry.Profile, active string) ProfileRow {
-	row := ProfileRow{Name: name, Servers: p.Servers, Active: name == active && active != ""}
+	row := ProfileRow{
+		Name: name, Servers: p.Servers, Discovery: p.Discovery,
+		Active: name == active && active != "",
+	}
 	if len(p.Tools) > 0 {
 		row.Tools = make(map[string]registry.ToolSelector, len(p.Tools))
 		for id, doc := range p.Tools {
@@ -355,4 +363,38 @@ func (a *App) newProfileToolsCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&all, "all", false, "expose the server's full tool set")
 	cmd.Flags().BoolVar(&none, "none", false, "block every tool of the server")
 	return cmd
+}
+
+func (a *App) newProfileDiscoveryCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "discovery <profile> <lazy|grouped|full|->",
+		Short: "Set how a profile's tools are surfaced (\"-\" clears the override)",
+		Long: "Set the discovery mode of one profile.\n\n" +
+			"Discovery is an experience field: it changes how the same tool set is\n" +
+			"presented, never which tools are in it. It lives on the profile because\n" +
+			"it describes THAT set — a profile narrowed to two servers wants a\n" +
+			"different presentation than one holding forty.\n\n" +
+			"\"-\" clears the override so the global default (agenthub config set\n" +
+			"discovery) applies again.",
+		Args: exactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			profileName, mode := args[0], args[1]
+			if mode == "-" {
+				mode = ""
+			}
+			store, warnings, err := a.opsStore()
+			if err != nil {
+				return err
+			}
+			res, err := confops.SetProfileDiscovery(cmd.Context(), store, profileName, mode, noPrecondition)
+			warnings = append(warnings, res.Warnings...)
+			if err != nil {
+				return opsError(err)
+			}
+			row := profileRow(res.Name, res.Profile, "")
+			return a.printer().Emit(ProfileChange{
+				Action: "discovery updated", Name: profileName, Profile: &row,
+			}, warnings...)
+		},
+	}
 }

@@ -119,15 +119,15 @@ func TestProfileLifecycle(t *testing.T) {
 func TestProfileRenameRepointsClients(t *testing.T) {
 	setDataDir(t)
 	mustRun(t, "", "profile", "create", "work")
-	mustRun(t, "", "scope", "set", "--client", "claude-code", "--profile", "work")
+	mustRun(t, "", "client", "bind", "claude-code", "work")
 
 	var change ProfileChange
 	decodeInto(t, mustRun(t, "", "profile", "rename", "work", "work2", "--json"), &change)
 	if len(change.Repointed) != 1 || change.Repointed[0] != "claude-code" {
 		t.Fatalf("repointed = %v, want [claude-code]", change.Repointed)
 	}
-	var scopes ScopeList
-	decodeInto(t, mustRun(t, "", "scope", "ls", "--json"), &scopes)
+	var scopes ClientBindingList
+	decodeInto(t, mustRun(t, "", "client", "ls", "--json"), &scopes)
 	if len(scopes.Bindings) != 1 || scopes.Bindings[0].Profile != "work2" || scopes.Bindings[0].Dangling {
 		t.Errorf("binding = %+v, want a live reference to work2", scopes.Bindings)
 	}
@@ -138,75 +138,91 @@ func TestProfileRenameRepointsClients(t *testing.T) {
 func TestProfileRemoveReportsDanglingClients(t *testing.T) {
 	setDataDir(t)
 	mustRun(t, "", "profile", "create", "work")
-	mustRun(t, "", "scope", "set", "--client", "claude-code", "--profile", "work")
+	mustRun(t, "", "client", "bind", "claude-code", "work")
 
 	env := decodeInto(t, mustRun(t, "", "profile", "rm", "work", "--json"), nil)
 	joined := strings.Join(env.Warnings, " ")
 	if !strings.Contains(joined, "claude-code") || !strings.Contains(joined, "EMPTY scope") {
 		t.Errorf("warnings = %v, want a loud dangling-reference warning", env.Warnings)
 	}
-	var scopes ScopeList
-	decodeInto(t, mustRun(t, "", "scope", "ls", "--json"), &scopes)
+	var scopes ClientBindingList
+	decodeInto(t, mustRun(t, "", "client", "ls", "--json"), &scopes)
 	if !scopes.Bindings[0].Dangling {
 		t.Errorf("scope ls must mark the dangling binding: %+v", scopes.Bindings[0])
 	}
 }
 
-// TestScopeSetAndClear covers the client-layer round trip.
-func TestScopeSetAndClear(t *testing.T) {
+// TestClientBindAndUnbind covers the binding round trip.
+func TestClientBindAndUnbind(t *testing.T) {
 	setDataDir(t)
 	mustRun(t, "", "server", "add", "github", "--cmd", "gh-mcp")
 	mustRun(t, "", "profile", "create", "work")
+	mustRun(t, "", "profile", "create", "personal")
 
-	var res ScopeSetResult
-	decodeInto(t, mustRun(t, "",
-		"scope", "set", "--client", "cursor", "--profile", "work",
-		"--servers", "github", "--tools", "github:list_prs", "--discovery", "grouped", "--json"), &res)
-	b := res.Binding
-	if b.Binding != "named" || b.Profile != "work" || b.Discovery != "grouped" {
-		t.Fatalf("binding = %+v", b)
-	}
-	if len(b.Servers) != 1 || b.Servers[0] != "github" {
-		t.Errorf("servers = %v", b.Servers)
-	}
-	if got := b.Tools["github"].Allow; len(got) != 1 || got[0] != "list_prs" {
-		t.Errorf("tool selector = %v", got)
+	var res ClientBindResult
+	decodeInto(t, mustRun(t, "", "client", "bind", "cursor", "work", "--json"), &res)
+	if res.Binding.Binding != "named" || res.Binding.Profile != "work" {
+		t.Fatalf("binding = %+v", res.Binding)
 	}
 
-	// Amending touches only what was named.
-	var amended ScopeSetResult
-	decodeInto(t, mustRun(t, "", "scope", "set", "--client", "cursor", "--discovery", "lazy", "--json"), &amended)
-	if amended.Binding.Profile != "work" || amended.Binding.Discovery != "lazy" {
-		t.Errorf("amend dropped an unrelated field: %+v", amended.Binding)
-	}
-	// An empty --tools value for a server is block-all, not "all".
-	var blocked ScopeSetResult
-	decodeInto(t, mustRun(t, "", "scope", "set", "--client", "cursor", "--tools", "github:", "--json"), &blocked)
-	if allow := blocked.Binding.Tools["github"].Allow; allow == nil || len(allow) != 0 {
-		t.Errorf("empty tool list must be block-all, got %v", allow)
+	// Rebinding replaces the reference outright.
+	var rebound ClientBindResult
+	decodeInto(t, mustRun(t, "", "client", "bind", "cursor", "personal", "--json"), &rebound)
+	if rebound.Binding.Profile != "personal" {
+		t.Errorf("rebind = %+v, want personal", rebound.Binding)
 	}
 
-	// Validation.
-	if code, _, _ := runCLI(t, "", "scope", "set", "--client", "cursor", "--discovery", "bogus"); code != ExitUsage {
+	// Binding to a profile nobody created is ACCEPTED but fail-closes, and
+	// says so: refusing would stop an operator binding before creating, while
+	// silence would show an empty tool list as though it were working.
+	var ghost ClientBindResult
+	env := decodeInto(t, mustRun(t, "", "client", "bind", "cursor", "ghost", "--json"), &ghost)
+	if !ghost.Binding.Dangling {
+		t.Errorf("binding to a missing profile not marked dangling: %+v", ghost.Binding)
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "EMPTY scope") {
+		t.Errorf("warnings = %v, want the fail-closed warning", env.Warnings)
+	}
+
+	// Validation: both arguments are required.
+	if code, _, _ := runCLI(t, "", "client", "bind", "cursor"); code != ExitUsage {
+		t.Errorf("bind without a profile exit = %d, want %d", code, ExitUsage)
+	}
+	if code, _, _ := runCLI(t, "", "client", "bind"); code != ExitUsage {
+		t.Errorf("bind with no arguments exit = %d, want %d", code, ExitUsage)
+	}
+	mustRun(t, "", "client", "unbind", "cursor")
+	var list ClientBindingList
+	decodeInto(t, mustRun(t, "", "client", "ls", "--json"), &list)
+	if len(list.Bindings) != 0 {
+		t.Errorf("bindings survived unbind: %+v", list.Bindings)
+	}
+	if code, _, _ := runCLI(t, "", "client", "unbind", "cursor"); code != ExitNotFound {
+		t.Errorf("unbinding an absent binding exit = %d, want %d", code, ExitNotFound)
+	}
+}
+
+// Discovery is a profile field: it describes the tool set it ships with.
+func TestProfileDiscovery(t *testing.T) {
+	setDataDir(t)
+	mustRun(t, "", "profile", "create", "work")
+
+	var change ProfileChange
+	decodeInto(t, mustRun(t, "", "profile", "discovery", "work", "grouped", "--json"), &change)
+	if change.Profile.Discovery != "grouped" {
+		t.Fatalf("discovery = %q, want grouped", change.Profile.Discovery)
+	}
+
+	var cleared ProfileChange
+	decodeInto(t, mustRun(t, "", "profile", "discovery", "work", "-", "--json"), &cleared)
+	if cleared.Profile.Discovery != "" {
+		t.Errorf("discovery = %q, want it cleared", cleared.Profile.Discovery)
+	}
+
+	if code, _, _ := runCLI(t, "", "profile", "discovery", "work", "telepathy"); code != ExitUsage {
 		t.Errorf("bad discovery exit = %d, want %d", code, ExitUsage)
 	}
-	if code, _, _ := runCLI(t, "", "scope", "set", "--client", "cursor"); code != ExitUsage {
-		t.Errorf("scope set with nothing to set exit = %d, want %d", code, ExitUsage)
-	}
-	if code, _, _ := runCLI(t, "", "scope", "set", "--profile", "work"); code != ExitUsage {
-		t.Errorf("scope set without --client exit = %d, want %d", code, ExitUsage)
-	}
-	if code, _, _ := runCLI(t, "", "scope", "set", "--client", "x", "--servers", "ghost"); code != ExitNotFound {
-		t.Errorf("scope set with an unknown server exit = %d, want %d", code, ExitNotFound)
-	}
-
-	mustRun(t, "", "scope", "clear", "--client", "cursor")
-	var list ScopeList
-	decodeInto(t, mustRun(t, "", "scope", "ls", "--json"), &list)
-	if len(list.Bindings) != 0 {
-		t.Errorf("bindings survived clear: %+v", list.Bindings)
-	}
-	if code, _, _ := runCLI(t, "", "scope", "clear", "--client", "cursor"); code != ExitNotFound {
-		t.Errorf("clearing an absent binding exit = %d, want %d", code, ExitNotFound)
+	if code, _, _ := runCLI(t, "", "profile", "discovery", "ghost", "lazy"); code != ExitNotFound {
+		t.Errorf("unknown profile exit = %d, want %d", code, ExitNotFound)
 	}
 }

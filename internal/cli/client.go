@@ -113,9 +113,12 @@ func (a *App) newClientCmd() *cobra.Command {
 		Args:    cobra.ArbitraryArgs,
 		RunE:    groupRunE,
 	}
+	// Read before write (canonical.md §3), so `ls` leads.
 	cmd.AddCommand(
-		a.newClientDetectCmd(), a.newClientConnectCmd(),
-		a.newClientDisconnectCmd(), a.newClientImportCmd(),
+		a.newClientLsCmd(), a.newClientDetectCmd(),
+		a.newClientConnectCmd(), a.newClientDisconnectCmd(),
+		a.newClientBindCmd(), a.newClientUnbindCmd(),
+		a.newClientImportCmd(),
 	)
 	return cmd
 }

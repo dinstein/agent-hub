@@ -66,6 +66,12 @@ func TestProfilesRoundTripGolden(t *testing.T) {
 }
 
 func TestClientsRoundTripGolden(t *testing.T) {
+	// The retired client-layer fields (discovery / servers / tools /
+	// resultBudget / approval) are deliberately still in the input: they are
+	// now unknown to ClientEntry, so this doubles as the proof that a legacy
+	// clients.json survives a rewrite instead of being silently truncated.
+	// doctor's scope:projects check is what tells the operator such a block
+	// stopped applying; losing it here would destroy the evidence.
 	input := `{
   "future_top": [1, 2],
   "clients": {
@@ -86,7 +92,7 @@ func TestClientsRoundTripGolden(t *testing.T) {
 `
 	writeDocAndRoundTrip(t, DocClients, input, func(tx *Tx) error {
 		c := tx.Clients.V.Clients["claude-code"]
-		c.V.Discovery = "grouped" // edit a known field
+		c.V.Profile = "dev2" // edit a known field
 		tx.Clients.V.Clients["claude-code"] = c
 		return nil
 	})

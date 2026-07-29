@@ -98,7 +98,7 @@ func (g *gateway) onRegistryChange(kind registry.DocKind) {
 		}
 	}
 	// Every document kind is a scope input (servers/profiles/clients/
-	// governance all feed the four-layer merge): recompute, push on hash
+	// governance all feed the three-layer merge): recompute, push on hash
 	// change only.
 	if g.scopeRes != nil {
 		g.scopeRes.Invalidate(scope.Event{Kind: scope.EvRegistryChanged})

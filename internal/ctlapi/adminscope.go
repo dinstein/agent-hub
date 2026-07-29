@@ -1,6 +1,7 @@
 package ctlapi
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -8,8 +9,8 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// The CLIENT layer of the four-layer scope chain (docs/modules/controlplane.md
-// §5): which profile a client follows, plus its own narrowing.
+// The client binding (docs/modules/controlplane.md §5): which profile a
+// client follows. Narrowing itself lives on the profile.
 //
 // Not to be confused with POST /v1/sessions/{id}/scope, which mutates one
 // LIVE session's volatile overlay and may only tighten. This surface edits
@@ -34,24 +35,37 @@ type scopeWire struct {
 	DanglingProfile string `json:"dangling_profile,omitempty"`
 }
 
-// scopeBindingWire is the PUT /v1/scope/{client} body: a PATCH of the
-// binding in which a nil field is left untouched.
+// scopeBindingWire is the PUT /v1/scope/{client} body: which profile the
+// client is bound to.
 //
-// Optional-by-pointer rather than "zero means unset" because every zero
-// value is meaningful here — an empty server list is block-all, an empty
-// discovery string is inherit. A caller amending one field must not reset
-// the rules it never mentioned.
+// The retired narrowing fields are still DECLARED so a caller that sends one
+// gets a 400 naming it, rather than a 200 that quietly bound the client and
+// dropped the rest of the request. An old client sending servers/tools was
+// asking to narrow; accepting the request while discarding that half would
+// hand it a WIDER surface than it asked for and report success.
 type scopeBindingWire struct {
 	preconditionWire
 	// Profile sets the profile reference.
 	Profile *profileBindingWire `json:"profile,omitempty"`
-	// Servers replaces the three-state narrowing set. Absent (or null)
-	// leaves it alone; [] is block-all.
-	Servers *[]string `json:"servers,omitempty"`
-	// Tools applies one three-state selector per server id.
-	Tools map[string]toolSelectionWire `json:"tools,omitempty"`
-	// Discovery overrides the discovery mode for this client.
-	Discovery *string `json:"discovery,omitempty"`
+
+	// Retired: narrowing moved to the profile (docs/architecture.md §7).
+	Servers   *[]string                    `json:"servers,omitempty"`
+	Tools     map[string]toolSelectionWire `json:"tools,omitempty"`
+	Discovery *string                      `json:"discovery,omitempty"`
+}
+
+// retiredField names the first retired narrowing field the request carried,
+// or "" when it carries none.
+func (w scopeBindingWire) retiredField() string {
+	switch {
+	case w.Servers != nil:
+		return "servers"
+	case w.Tools != nil:
+		return "tools"
+	case w.Discovery != nil:
+		return "discovery"
+	}
+	return ""
 }
 
 // profileBindingWire is the explicit profile reference. "No profile" is
@@ -105,17 +119,19 @@ func (s *Server) handleScopePut(w http.ResponseWriter, r *http.Request, client s
 	if !ok {
 		return
 	}
-	binding := confops.ClientBinding{Servers: req.Servers, Discovery: req.Discovery}
+	if field := req.retiredField(); field != "" {
+		writeErr(w, http.StatusBadRequest, confops.CodeUsage,
+			fmt.Sprintf("%q is no longer part of a client binding: narrowing lives on the profile now", field),
+			"put the rule in a profile ('agenthub profile server' / 'profile tools' / "+
+				"'profile discovery') and bind this client to it",
+			requestIDFrom(r.Context()))
+		return
+	}
+	var binding confops.ClientBinding
 	if req.Profile != nil {
 		binding.Profile = &confops.ProfileBindingSpec{
 			Kind: registry.ProfileBindingKind(req.Profile.Kind),
 			Name: req.Profile.Name,
-		}
-	}
-	if req.Tools != nil {
-		binding.Tools = make(map[string]confops.ToolSelection, len(req.Tools))
-		for id, sel := range req.Tools {
-			binding.Tools[id] = sel.selection()
 		}
 	}
 	start := time.Now()

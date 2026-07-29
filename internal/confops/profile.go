@@ -299,6 +299,39 @@ func SetProfileTools(
 	return ProfileResult{Result: res, Name: profile, Profile: p, Exists: true}, nil
 }
 
+// SetProfileDiscovery sets how a profile's tools are surfaced ("lazy",
+// "grouped", "full"), or clears the override when mode is "" so the global
+// default applies again.
+//
+// Discovery is an experience field, not a security one: it changes how the
+// same tool set is presented, never which tools are in it. That is why an
+// unknown mode is refused here rather than left to the resolver, which would
+// silently fall back to a default the operator did not choose.
+func SetProfileDiscovery(
+	ctx context.Context, st *registry.Store, profile, mode string, pre Precondition,
+) (ProfileResult, error) {
+	if mode != "" {
+		if err := ValidateDiscovery(mode); err != nil {
+			return ProfileResult{}, err
+		}
+	}
+	var p registry.Profile
+	res, err := apply(ctx, st, pre, func(tx *registry.Tx) error {
+		doc, ok := tx.Profiles.V.Profiles[profile]
+		if !ok {
+			return profileNotFound(profile)
+		}
+		doc.V.Discovery = mode
+		tx.Profiles.V.Profiles[profile] = doc
+		p = doc.V
+		return nil
+	})
+	if err != nil {
+		return ProfileResult{Result: res}, err
+	}
+	return ProfileResult{Result: res, Name: profile, Profile: p, Exists: true}, nil
+}
+
 // SetActiveProfile points the global active marker at a profile, or clears
 // it when name is "" (every registered server visible again).
 //

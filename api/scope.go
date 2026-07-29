@@ -25,7 +25,7 @@ type ProfileBinding struct {
 }
 
 // ClientEntry is one client's STORED binding — the CLIENT layer of the
-// four-layer scope chain, in the registry document's own shape.
+// three-layer scope chain, in the registry document's own shape.
 //
 // CONTRACT: field names mirror internal/registry.ClientEntry (camelCase).
 // Profile is the shorthand for {kind:"named"}; an explicit ProfileRef wins

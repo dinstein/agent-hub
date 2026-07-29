@@ -48,10 +48,11 @@ func runScriptThroughCLI(t *testing.T) {
 	mustRun(t, "", "profile", "tools", "work", "github", "--only", "list_prs,create_pr")
 	mustRun(t, "", "profile", "tools", "work", "linear", "--none")
 
-	mustRun(t, "", "scope", "set", "--client", "cursor", "--profile", "work",
-		"--servers", "github,linear", "--tools", "github:list_prs", "--discovery", "grouped")
-	mustRun(t, "", "scope", "set", "--client", "throwaway", "--follow-active")
-	mustRun(t, "", "scope", "clear", "--client", "throwaway")
+	mustRun(t, "", "profile", "discovery", "work", "grouped")
+
+	mustRun(t, "", "client", "bind", "cursor", "work")
+	mustRun(t, "", "client", "bind", "throwaway", "work")
+	mustRun(t, "", "client", "unbind", "throwaway")
 
 	mustRun(t, "", "profile", "rename", "work", "work2")
 	mustRun(t, "", "profile", "use", "work2")
@@ -129,21 +130,16 @@ func runScriptThroughConfops(t *testing.T, dataDir string) {
 		confops.ToolSelection{Mode: confops.ToolSelectNone}, no)
 	must("profile tools --none", err)
 
-	clientServers := []string{"github", "linear"}
-	grouped := "grouped"
-	_, err = confops.SetClientBinding(ctx, st, "cursor", confops.ClientBinding{
-		Profile:   &confops.ProfileBindingSpec{Kind: registry.BindingNamed, Name: "work"},
-		Servers:   &clientServers,
-		Tools:     map[string]confops.ToolSelection{"github": {Mode: confops.ToolSelectOnly, Tools: []string{"list_prs"}}},
-		Discovery: &grouped,
-	}, no)
-	must("scope set cursor", err)
-	_, err = confops.SetClientBinding(ctx, st, "throwaway", confops.ClientBinding{
-		Profile: &confops.ProfileBindingSpec{Kind: registry.BindingFollowActive},
-	}, no)
-	must("scope set throwaway", err)
+	_, err = confops.SetProfileDiscovery(ctx, st, "work", "grouped", no)
+	must("profile discovery", err)
+
+	work := &confops.ProfileBindingSpec{Kind: registry.BindingNamed, Name: "work"}
+	_, err = confops.SetClientBinding(ctx, st, "cursor", confops.ClientBinding{Profile: work}, no)
+	must("client bind cursor", err)
+	_, err = confops.SetClientBinding(ctx, st, "throwaway", confops.ClientBinding{Profile: work}, no)
+	must("client bind throwaway", err)
 	_, err = confops.ClearClientBinding(ctx, st, "throwaway", no)
-	must("scope clear throwaway", err)
+	must("client unbind throwaway", err)
 
 	_, err = confops.RenameProfile(ctx, st, "work", "work2", no)
 	must("rename", err)

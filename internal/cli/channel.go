@@ -27,10 +27,10 @@ const ChannelRelease = "release"
 func (o *Options) ForChannel(channel string) {
 	release := channel == ChannelRelease
 
-	// A shipped build leads with the everyday path and keeps the scope,
-	// governance and operate groups off the help page. They stay registered
-	// and stay runnable, so this decides what the binary TEACHES, never what
-	// it can do.
+	// A shipped build leads with the everyday path — register a server,
+	// authorize it, build a profile, bind a client — and keeps the governance
+	// and operate groups off the help page. They stay registered and stay
+	// runnable, so this decides what the binary TEACHES, never what it can do.
 	o.ReducedHelp = release
 
 	if !release {

@@ -4,9 +4,9 @@
       "approval": {
         "confirmDestructive": true
       },
-      "discovery": "grouped",
+      "discovery": "lazy",
       "future_client": "keep-me",
-      "profile": "dev",
+      "profile": "dev2",
       "resultBudget": {
         "*": {
           "bytes": 49152,
