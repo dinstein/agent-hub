@@ -64,6 +64,11 @@ func setDataDir(t *testing.T) string {
 	t.Setenv(platform.EnvDataDir, dir)
 	t.Setenv(platform.EnvRegistry, "")
 	t.Setenv("HOME", t.TempDir())
+	// And forbid running another application's configuration CLI. Connect
+	// on a client agenthub does not rewrite DELEGATES to that client's own
+	// tool, and a test that does it runs the developer's real codex. Tests
+	// that want the delegated path put a fake one on PATH and clear this.
+	t.Setenv(platform.EnvNoClientCLI, "1")
 	return dir
 }
 

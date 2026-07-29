@@ -973,8 +973,11 @@ func (d *doctorRun) checkPath() {
 // (the check reports it by path), and that file may not be the current
 // default target — writing a correct entry into the default while leaving the
 // broken one in place would clear the diagnosis without fixing the client.
+// Delegation is allowed here for the same reason it is on connect: a
+// repoint that only prints advice leaves --fix reporting a repair it did
+// not perform.
 func (a *App) repointClient(clientID string) error {
-	format, _, err := a.clientTarget(clientID, "", "")
+	format, _, err := a.clientTarget(clientID, "", "", false)
 	if err != nil {
 		return err
 	}

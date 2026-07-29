@@ -48,6 +48,11 @@ const (
 	// credential passed as a command-line argument is readable by every
 	// process on the machine.
 	EnvHTTPToken = "AGENTHUB_HTTP_TOKEN"
+	// EnvNoClientCLI set to "1" forbids agenthub from running another
+	// application's configuration CLI on the user's behalf (the delegation
+	// that connects clients whose file format agenthub will not rewrite).
+	// Connect and Disconnect then explain what to run instead.
+	EnvNoClientCLI = "AGENTHUB_NO_CLIENT_CLI"
 )
 
 // dirName is the release data directory name. DevDirName below is its

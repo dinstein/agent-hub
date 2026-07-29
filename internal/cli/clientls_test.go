@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dinstein/agent-hub/internal/platform"
 )
 
 // TestClientLsJoinsConnectAndBind: one row per client, answering both
@@ -179,8 +181,8 @@ func TestClientLsReadsCodexTOML(t *testing.T) {
 		t.Errorf("placements = %v, want the user file", row.Placements)
 	}
 
-	// Connect still refuses — reading is not writing — and the refusal
-	// hands over the command that does work.
+	// With delegation forbidden, connect refuses — reading is not writing —
+	// and the refusal hands over the command that does work.
 	code, _, errOut := runCLI(t, "", "client", "connect", "codex")
 	if code != ExitGeneral {
 		t.Errorf("connect exit = %d, want %d (agenthub must not rewrite TOML)", code, ExitGeneral)
@@ -270,5 +272,52 @@ func TestClientInspectExplainsTheRow(t *testing.T) {
 	// An id nobody supports is a not-found, not a crash or an empty answer.
 	if code, _, _ := runCLI(t, "", "client", "inspect", "nope"); code != ExitNotFound {
 		t.Errorf("unknown client exit = %d, want %d", code, ExitNotFound)
+	}
+}
+
+// TestClientConnectDelegatesToTheClientsOwnCLI: for a format agenthub will
+// not rewrite, `client connect` runs the client's own tool instead of
+// printing advice — and reports it as a real connect, verified by reading
+// the file back.
+func TestClientConnectDelegatesToTheClientsOwnCLI(t *testing.T) {
+	setDataDir(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cfg := filepath.Join(home, ".codex", "config.toml")
+	write(t, cfg, "# keep me\n[mcp_servers.linear]\ncommand = \"npx\"\n")
+
+	// A stand-in codex on PATH; the real one must never run in a test.
+	dir := t.TempDir()
+	script := "#!/bin/sh\nset -e\ncfg=\"$HOME/.codex/config.toml\"\n" +
+		"case \"$1 $2\" in\n" +
+		"\"mcp add\")\n  name=\"$3\"; shift 4\n  cmd=\"$1\"; shift\n" +
+		"  args=\"\"\n  for a in \"$@\"; do args=\"$args, \\\"$a\\\"\"; done\n" +
+		"  args=\"${args#, }\"\n" +
+		"  printf '\\n[mcp_servers.%s]\\ncommand = \"%s\"\\nargs = [%s]\\n' \"$name\" \"$cmd\" \"$args\" >> \"$cfg\"\n" +
+		"  ;;\nesac\n"
+	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv(platform.EnvNoClientCLI, "")
+
+	var plan ConnectPlan
+	decodeInto(t, mustRun(t, "", "client", "connect", "codex", "--json"), &plan)
+	if !plan.Changed || plan.Path != cfg {
+		t.Fatalf("plan = %+v, want a change to %s", plan, cfg)
+	}
+	if plan.Backup == "" {
+		t.Errorf("no backup recorded before another program edited the file: %+v", plan)
+	}
+
+	// The claim is checked against the file, not taken from an exit code.
+	var list ClientList
+	decodeInto(t, mustRun(t, "", "client", "ls", "--json"), &list)
+	if len(list.Clients) != 1 || list.Clients[0].State != "connected" {
+		t.Errorf("after connect, ls says %+v", list.Clients)
+	}
+	body, _ := os.ReadFile(cfg)
+	if !strings.Contains(string(body), "# keep me") {
+		t.Errorf("the delegate lost the rest of the file:\n%s", body)
 	}
 }

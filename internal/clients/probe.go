@@ -2,6 +2,7 @@ package clients
 
 import (
 	"encoding/json"
+	"errors"
 	"slices"
 	"sort"
 )
@@ -59,13 +60,37 @@ func (f *probeFormat) ManualSnippet(entry Entry) string {
 // This is the same "already up to date" the writable clients report.
 func (f *probeFormat) Connect(path string, entry Entry) (Result, error) {
 	path = f.resolvePath(path)
-	if name, found, ok := f.ownedEntry(path); ok && found != nil {
-		if found.command == entry.Command && slices.Equal(found.args, entry.Args) {
-			return Result{Path: path, Changed: false}, nil
-		}
+	name, found, ok := f.ownedEntry(path)
+	if ok && found != nil && found.command == entry.Command && slices.Equal(found.args, entry.Args) {
+		return Result{Path: path, Changed: false}, nil
+	}
+	if f.spec.delegate == nil || !f.tbl.delegationEnabled() {
 		return Result{}, f.refuse("connect", path, entry, name)
 	}
-	return Result{}, f.refuse("connect", path, entry, "")
+
+	// A stale entry is replaced, not duplicated: `mcp add` on a name that
+	// already exists is an error in every CLI worth delegating to.
+	var args []string
+	if ok && found != nil {
+		args = f.spec.delegate.remove(name)
+		if _, _, err := f.runDelegate("connect", path, args); err != nil {
+			return Result{}, f.delegationFailed(err, "connect", entry)
+		}
+	}
+	args = f.spec.delegate.add(entryName, entry)
+	backup, cmd, err := f.runDelegate("connect", path, args)
+	if err != nil {
+		return Result{}, f.delegationFailed(err, "connect", entry)
+	}
+	// Verify rather than assume. An exit status is the delegate's opinion
+	// about its own success; the file is the fact.
+	if _, after, readOK := f.ownedEntry(path); !readOK || after == nil ||
+		after.command != entry.Command || !slices.Equal(after.args, entry.Args) {
+		return Result{}, f.delegationFailed(&DelegateError{
+			Client: f.spec.id, Op: "connect", Command: cmd,
+		}, "connect", entry)
+	}
+	return Result{Path: path, Backup: backup, Changed: true}, nil
 }
 
 // Disconnect refuses to write, and says how to take the entry out — which
@@ -79,13 +104,36 @@ func (f *probeFormat) Connect(path string, entry Entry) (Result, error) {
 func (f *probeFormat) Disconnect(path string) (Result, error) {
 	path = f.resolvePath(path)
 	name, found, ok := f.ownedEntry(path)
-	switch {
-	case ok && found == nil:
+	if ok && found == nil {
 		return Result{}, &NotConnectedError{Path: path}
-	case ok:
+	}
+	if f.spec.delegate == nil || !f.tbl.delegationEnabled() || !ok {
 		return Result{}, f.refuse("disconnect", path, Entry{}, name)
 	}
-	return Result{}, f.refuse("disconnect", path, Entry{}, "")
+	backup, cmd, err := f.runDelegate("disconnect", path, f.spec.delegate.remove(name))
+	if err != nil {
+		return Result{}, f.delegationFailed(err, "disconnect", Entry{})
+	}
+	if _, after, readOK := f.ownedEntry(path); !readOK || after != nil {
+		return Result{}, f.delegationFailed(&DelegateError{
+			Client: f.spec.id, Op: "disconnect", Command: cmd,
+		}, "disconnect", Entry{})
+	}
+	return Result{Path: path, Backup: backup, Removed: []string{name}}, nil
+}
+
+// delegationFailed turns any delegation failure into an error that still
+// tells the user how to do it themselves. A delegate that is not installed
+// is not a failure at all — it is the manual path, which is what agenthub
+// did before it could delegate.
+func (f *probeFormat) delegationFailed(err error, op string, entry Entry) error {
+	var de *DelegateError
+	if errors.As(err, &de) {
+		de.Snippet = f.refuse(op, f.DefaultPath(""), entry, "").Snippet
+		return de
+	}
+	// LookPath failed, or the backup did: fall back to instructions.
+	return f.refuse(op, f.DefaultPath(""), entry, "")
 }
 
 // orEntryName falls back to the name agenthub would have used.

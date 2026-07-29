@@ -39,6 +39,9 @@ type clientSpec struct {
 	// actually found in the file. A disconnect that answered with the add
 	// snippet would read like an instruction and be the wrong one.
 	removal func(spec *clientSpec, name string) string
+	// delegate is the client's own CLI, the one program allowed to rewrite
+	// a format agenthub will not touch itself. nil means the manual path.
+	delegate *clientCLI
 }
 
 // locSpec describes where one configuration file lives and where inside it
@@ -176,8 +179,9 @@ var specs = []clientSpec{
 		note: "Codex stores MCP servers in TOML. agenthub reads that file but will not " +
 			"rewrite it: re-encoding would cost you its comments and layout. Codex's own " +
 			"CLI edits it correctly — or edit it by hand.",
-		manual:  tomlSnippet,
-		removal: tomlRemoval,
+		manual:   tomlSnippet,
+		removal:  tomlRemoval,
+		delegate: codexCLI,
 	},
 	{
 		id:      "continue",

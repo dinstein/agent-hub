@@ -63,6 +63,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+
+	"github.com/dinstein/agent-hub/internal/platform"
 )
 
 // entryName is the server entry name agenthub writes into the server map.
@@ -202,6 +204,15 @@ type Options struct {
 	// KeepBackups is the per-client backup retention count
 	// (<= 0 means DefaultKeepBackups).
 	KeepBackups int
+	// NoDelegate forbids running a client's own configuration CLI for the
+	// formats agenthub will not rewrite itself. Connect and Disconnect then
+	// refuse with the manual instructions, which is what they did before
+	// delegation existed.
+	//
+	// The default is to delegate: `client connect codex` that prints advice
+	// and changes nothing is not a connect. A caller who does not want
+	// agenthub executing another program says so here.
+	NoDelegate bool
 }
 
 // Table is the adapter table bound to one environment. Tables are
@@ -215,6 +226,19 @@ func New(opts Options) *Table { return &Table{opts: opts} }
 
 // Default returns a Table bound to the real process environment.
 func Default() *Table { return &Table{} }
+
+// delegationEnabled reports whether a client's own CLI may be run.
+//
+// The environment can only ever FORBID it, never enable it: a caller that
+// constructed a Table with NoDelegate meant it, and an env var that could
+// turn execution back on would be a way to make a program run other
+// programs behind its caller's back.
+func (t *Table) delegationEnabled() bool {
+	if t.opts.NoDelegate {
+		return false
+	}
+	return os.Getenv(platform.EnvNoClientCLI) != "1"
+}
 
 func (t *Table) goos() string {
 	if t.opts.GOOS != "" {

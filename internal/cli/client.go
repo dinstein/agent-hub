@@ -134,6 +134,7 @@ func (a *App) newClientConnectCmd() *cobra.Command {
 		placement string
 		bin       string
 		dryRun    bool
+		manual    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "connect <client-id>",
@@ -155,12 +156,12 @@ func (a *App) newClientConnectCmd() *cobra.Command {
 				// Best-effort target: a preview stays available for clients
 				// this binary cannot write (that is what --dry-run is for),
 				// so an unresolvable target only leaves the path blank.
-				if _, target, err := a.clientTarget(clientID, path, placement); err == nil {
+				if _, target, err := a.clientTarget(clientID, path, placement, manual); err == nil {
 					plan.Path = target
 				}
 				return a.printer().Emit(plan)
 			}
-			format, target, err := a.clientTarget(clientID, path, placement)
+			format, target, err := a.clientTarget(clientID, path, placement, manual)
 			if err != nil {
 				return err
 			}
@@ -182,6 +183,7 @@ func (a *App) newClientConnectCmd() *cobra.Command {
 	cmd.Flags().StringVar(&placement, "placement", "", placementUsage)
 	cmd.Flags().StringVar(&bin, "bin", "", "path to agenthub to put in the entry (default: the agenthub you are running)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be written, and where, without changing anything")
+	cmd.Flags().BoolVar(&manual, "manual", false, manualUsage)
 	return cmd
 }
 
@@ -189,6 +191,7 @@ func (a *App) newClientDisconnectCmd() *cobra.Command {
 	var (
 		path      string
 		placement string
+		manual    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "disconnect <client-id>",
@@ -199,7 +202,7 @@ func (a *App) newClientDisconnectCmd() *cobra.Command {
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientID := args[0]
-			format, target, err := a.clientTarget(clientID, path, placement)
+			format, target, err := a.clientTarget(clientID, path, placement, manual)
 			if err != nil {
 				return err
 			}
@@ -228,6 +231,7 @@ func (a *App) newClientDisconnectCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&path, "path", "", "edit this exact file instead of the one --placement would choose")
 	cmd.Flags().StringVar(&placement, "placement", "", placementUsage)
+	cmd.Flags().BoolVar(&manual, "manual", false, manualUsage)
 	return cmd
 }
 
@@ -239,8 +243,13 @@ const placementUsage = "which config file to use: user (yours, the default) or p
 // clientTarget resolves the Format for clientID and the configuration file to
 // operate on. Precedence: an explicit --path, then --placement, then the
 // client's default target (user-level, see clients.DefaultPlacement).
-func (a *App) clientTarget(clientID, pathOverride, placement string) (clients.Format, string, error) {
-	format, ok := clients.Lookup(clientID)
+// manualUsage documents --manual on connect and disconnect.
+const manualUsage = "do not run the client's own config CLI; print what to run instead"
+
+func (a *App) clientTarget(
+	clientID, pathOverride, placement string, manual bool,
+) (clients.Format, string, error) {
+	format, ok := clients.New(clients.Options{NoDelegate: manual}).Lookup(clientID)
 	if !ok {
 		e := NotFoundf(CodeClientUnsupported, "client %q is not supported for direct configuration writing in M0", clientID)
 		e.Hint = fmt.Sprintf("supported: %s (use 'client connect --dry-run' to preview the snippet for any client)",

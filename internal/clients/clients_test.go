@@ -32,7 +32,13 @@ func newEnv(t *testing.T, goos string) env {
 			t.Fatal(err)
 		}
 	}
-	e.tbl = clients.New(clients.Options{GOOS: goos, Home: e.home, BackupDir: e.backups})
+	// NoDelegate by default: delegation RUNS another application's CLI, and
+	// a test that does that edits the developer's own configuration with
+	// their real codex. The delegation tests opt back in with a fake one on
+	// PATH.
+	e.tbl = clients.New(clients.Options{
+		GOOS: goos, Home: e.home, BackupDir: e.backups, NoDelegate: true,
+	})
 	return e
 }
 
