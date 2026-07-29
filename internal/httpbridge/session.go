@@ -28,13 +28,13 @@ type Session struct {
 	// ID is the value carried in the Mcp-Session-Id header.
 	ID string
 	// Caller is the identity that created the session. It is re-checked on
-	// every request as a WHOLE (Caller.identity): a token narrowed or
+	// every request as a WHOLE (Caller.Identity): a token narrowed or
 	// revoked after binding must not keep its old authority.
 	Caller *Caller
 
 	created  time.Time
 	lastSeen time.Time
-	// owner is the frozen Caller.identity() fingerprint of the creator.
+	// owner is the frozen Caller.Identity() fingerprint of the creator.
 	owner string
 }
 
@@ -83,7 +83,7 @@ func (s *sessions) create(c *Caller) (*Session, error) {
 		Caller:   c,
 		created:  now,
 		lastSeen: now,
-		owner:    c.identity(),
+		owner:    c.Identity(),
 	}
 	s.byID[id] = sess
 	return sess, nil
@@ -104,7 +104,7 @@ func (s *sessions) get(id string, c *Caller) (*Session, bool) {
 		delete(s.byID, id)
 		return nil, false
 	}
-	if sess.owner != c.identity() {
+	if sess.owner != c.Identity() {
 		// Deliberately NOT deleted: a foreign probe must not be able to
 		// destroy somebody else's session by guessing its id.
 		return nil, false
@@ -123,7 +123,7 @@ func (s *sessions) drop(id string, c *Caller) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess, ok := s.byID[id]
-	if !ok || sess.owner != c.identity() {
+	if !ok || sess.owner != c.Identity() {
 		return false
 	}
 	delete(s.byID, id)

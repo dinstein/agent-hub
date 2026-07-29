@@ -58,12 +58,13 @@ func (c *Caller) AllowsServer(serverID string) bool {
 	return false
 }
 
-// identity is the owner fingerprint of a caller: the value an established
-// session is pinned to. Sessions compare the WHOLE fingerprint, not just the
-// token name (docs/canonical.md §2 "HTTP session owner is validated as a whole") — a token whose
-// tier or allowlist was narrowed since must not keep riding an old session
-// at its old authority.
-func (c *Caller) identity() string {
+// Identity is the owner fingerprint of a caller: the value an established
+// session is pinned to, and the key the HTTP data plane uses to deduplicate
+// per-credential gateways. Both consumers compare the WHOLE fingerprint, not
+// just the token name (docs/canonical.md §2 "HTTP session owner is validated as a whole") — a
+// token whose tier or allowlist was narrowed since must not keep riding the
+// old session or gateway at its old authority.
+func (c *Caller) Identity() string {
 	if c == nil {
 		return ""
 	}

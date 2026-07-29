@@ -165,7 +165,7 @@ func (p *httpPlane) connFor(ctx context.Context, c *httpbridge.Caller) (*gateway
 	if c == nil {
 		return nil, fmt.Errorf("daemon: no caller identity") // fail-closed
 	}
-	key := callerKey(c)
+	key := c.Identity()
 
 	p.mu.Lock()
 	if p.closed {
@@ -237,12 +237,6 @@ func clientIDOf(c *httpbridge.Caller) string {
 	default:
 		return "http:loopback"
 	}
-}
-
-// callerKey fingerprints a credential for the connection table.
-func callerKey(c *httpbridge.Caller) string {
-	return string(c.Kind) + "\x00" + c.Token + "\x00" + string(c.Tier) +
-		"\x00" + strings.Join(c.Servers, ",") + "\x00" + c.Profile
 }
 
 // scopeLayers turns the credential's allowlist and profile pin into scope
