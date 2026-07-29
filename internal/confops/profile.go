@@ -3,11 +3,13 @@ package confops
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/dinstein/agent-hub/internal/registry"
 )
@@ -458,14 +460,23 @@ func MigrateActiveProfile(ctx context.Context, st *registry.Store, stateDir stri
 
 // atomicWriteJSON marshals v and replaces path by rename, so a reader never
 // observes a half-written document (the registry's write discipline, in
-// miniature, for the small state files).
+// miniature, for the small state files) — including the fsync of the parent
+// directory that makes the rename itself durable.
+//
+// That last rung is not optional here. The files this writes are
+// tool-overrides.json and the active-profile pointer: an override is the
+// neutralization path for a poisoned tool description, and losing one to a
+// crash would put the poisoned description back while the operator was told
+// the write succeeded. Only a cache may skip this rung, because losing a cache
+// entry costs a re-fetch.
 func atomicWriteJSON(path string, v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
 	b = append(b, '\n')
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp*")
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp*")
 	if err != nil {
 		return err
 	}
@@ -486,5 +497,30 @@ func atomicWriteJSON(path string, v any) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	return syncDir(dir)
+}
+
+// syncDir fsyncs a directory so a preceding rename is durable. Filesystems
+// that do not support fsync on directories (returning EINVAL/ENOTSUP) are
+// tolerated — the rename itself is still atomic there.
+//
+// An independent copy of the same helper in internal/registry and
+// internal/integrity, for the reason those two give: confops must not import
+// either package's document model to get at a six-line syscall wrapper.
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = d.Close() }()
+	if err := d.Sync(); err != nil {
+		if errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOTSUP) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
