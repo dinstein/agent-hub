@@ -604,7 +604,7 @@ approval/approvals、grant/grants），而且 alias 必须真的能解析出来�
 persistent flag，这条测试实际断言的是没有命令遮蔽或摘掉它）。动作/流式组（daemon、
 auth、audit、activity、events、config、doctor、connect）保持原名，不加复数 alias。
 不再有 `scope` 组：绑定归 `client bind` / `unbind` / `ls`，收窄归 `profile`。
-同一份测试还钉住了帮助分组的成员——Setup 是 `server, auth, catalog`（`catalog` 只有一小撮策展条目，
+同一份测试还钉住了帮助分组的成员——Setup 是 `server, auth, secret, catalog`（`catalog` 只有一小撮策展条目，
 让它打头会教出一条对多数 server 以「没收录」结尾的路；`server add --url ...` 才是通用答案），
 Wire up 是 `profile, client`（一份面**装了什么**和**给谁**是同一个问题的两半），
 Daemon 是 `daemon, session, events, token`，Manage 是其余全部。
@@ -614,13 +614,18 @@ Daemon 是 `daemon, session, events, token`，Manage 是其余全部。
 凭证，没有 daemon 它就没有主语。按这个共同前提分组，「daemon 起来了吗」整节只需要回答一次，而不是
 每条命令回答一次；`daemon` 打头，答案就是第一个能拿到的东西。Manage 就叫它本来的样子——剩下的部分，
 不用起任何东西、对着本地状态就能跑。它替换掉的是 Govern/Operate 那种按主题切的分法，而那些主题
-没能扛住自己的成员表：`secret` 和 `token` 是 setup 不是治理，`skill` 和 `activity` 不是运维。
+没能扛住自己的成员表：`token` 是 setup 不是治理，`skill` 和 `activity` 不是运维。
 一个把自己成员归错的标题，教给读者的是错的工具模型——所以兜底那一组不给它一个迟早会被打破的主题。
 `audit` 和 `activity` 是 `audit.jsonl` / `savings.jsonl` 的投影，是磁盘上的文件，这就是它们不进
 Daemon 的原因。
 
 `skill` 不在 Wire up：把技能包物化出来和「给 client 发 MCP 工具」是两件事，
 而 shipped build 的帮助页是一条路线推荐——`profile` 和 `client` 旁边多一项会被读成第三个必做步骤。
+`secret` 则相反，**在** Setup 里，紧跟 `auth`：这两条回答的是同一个问题——这台 server 怎么证明我们是谁——
+一条管自己发凭证的 server，一条管你手里已经有 key 的。它曾经被藏起来，理由是凭证反正会被替操作者处理掉；
+并不会。`secret set` 是唯一一条会去读凭证的命令，而 `catalog show` 本来就在给每个需要凭证的条目打印
+「store it with 'agenthub secret set …'」——于是 release 在推荐一条被自己帮助页藏起来的命令。
+藏起来之后剩下的路是 `--env KEY=<字面量>`，那会把 key 写进 registry，而这正是 registry 绝不能装的东西。
 每个 group 裸调用打印 help 且退出 0，未知子命令退出 2。
 
 **错误文案是 golden 测试冻结的**（`errorgolden_test.go`）。canonical.md §6 要求三族 golden

@@ -169,11 +169,22 @@ func (a *App) newRoot() *cobra.Command {
 	// most servers. `agenthub server add --url ...` is the general answer and
 	// is what Setup should show first.
 	//
-	// `secret` is not here at all. Credentials are usually handled for the
-	// operator — `server add` prompts, `auth login` stores its own — so a
-	// manual secret command in the first section implies a step the everyday
-	// path does not have.
-	addGrouped(root, groupSetup, a.newServerCmd(), a.newAuthCmd(), a.newCatalogCmd())
+	// `secret` sits directly after `auth` because the two are one question
+	// answered twice: how does this server prove who we are. `auth` covers the
+	// servers that hand out their own credential, `secret` the ones that take
+	// an API key you already hold, and a page showing only the first implies
+	// the second is handled for you.
+	//
+	// It used to be withheld, on the reasoning that credentials are handled
+	// for the operator anyway. They are not: no command but `secret set` ever
+	// reads a credential (it is the only caller of readSecretValue), and
+	// `catalog show` already prints "store it with 'agenthub secret set …'"
+	// for every entry that needs one — a shipped build was recommending a
+	// command its own help page withheld. The alternative a hidden `secret`
+	// leaves is `--env KEY=<literal>`, which writes the key into the registry;
+	// that is the one thing the registry must never hold, so the everyday path
+	// has to show the way that does not.
+	addGrouped(root, groupSetup, a.newServerCmd(), a.newAuthCmd(), a.newSecretCmd(), a.newCatalogCmd())
 	// `profile` sits in Wire up beside `client` because the two halves of one
 	// question live here: a profile says what a surface CONTAINS, `client
 	// bind` says who gets it. Splitting them across a visible and a withheld
@@ -206,7 +217,7 @@ func (a *App) newRoot() *cobra.Command {
 	// savings.jsonl, which is why neither belongs above. Order is read-then-
 	// write within each pair, decide -> inspect -> repair across them.
 	addGroupedHidden(root, a.reducedHelp, groupManage,
-		a.newApprovalCmd(), a.newGrantCmd(), a.newConfigCmd(), a.newSecretCmd(),
+		a.newApprovalCmd(), a.newGrantCmd(), a.newConfigCmd(),
 		a.newToolCmd(), a.newAuditCmd(), a.newActivityCmd(),
 		a.newSkillCmd(), a.newDoctorCmd())
 	addGrouped(root, groupEntry, a.newConnectCmd())
@@ -227,15 +238,20 @@ func (a *App) newRoot() *cobra.Command {
 // need a running daemon? — because that is the only line through the back half
 // of the CLI that a reader can check against behavior. The former Govern and
 // Operate split was thematic, and the themes did not survive contact with the
-// membership: `secret` and `token` are setup, not governance, and `skill` and
-// `activity` are not operations. A heading that mis-sorts its own members
-// teaches the wrong model of the tool, so the fallback group is named for what
-// it honestly is — the remainder — rather than given a theme to break.
+// membership: `token` is setup, not governance, and `skill` and `activity` are
+// not operations. A heading that mis-sorts its own members teaches the wrong
+// model of the tool, so the fallback group is named for what it honestly is —
+// the remainder — rather than given a theme to break.
+//
+// `secret` was the other member cited there, and it has since moved to Setup,
+// where that sentence said it belonged all along. Manage's title drops
+// "credentials" with it: naming a theme no member carries is the same fault
+// read from the other end.
 var (
 	groupSetup  = &cobra.Group{ID: "setup", Title: "Setup — bring a downstream server in:"}
 	groupWire   = &cobra.Group{ID: "wire", Title: "Wire up — choose a surface, hand it to an AI client:"}
 	groupDaemon = &cobra.Group{ID: "daemon", Title: "Daemon — the coordination plane and what rides on it:"}
-	groupManage = &cobra.Group{ID: "manage", Title: "Manage — governance, credentials, and local state:"}
+	groupManage = &cobra.Group{ID: "manage", Title: "Manage — governance and local state:"}
 	groupEntry  = &cobra.Group{ID: "entry", Title: "Machine entry point (not for humans):"}
 )
 

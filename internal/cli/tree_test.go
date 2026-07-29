@@ -44,9 +44,12 @@ var withheldGroups = []*cobra.Group{groupDaemon, groupManage}
 // `profile` is deliberately NOT withheld: a shipped build that can connect a
 // client but cannot say what that client will then see teaches half the
 // model. Setup -> profile -> client bind is the whole everyday path.
+// `secret` is likewise NOT withheld: it is the only command that stores an
+// API key, and the path left when it is hidden writes the key into the
+// registry instead.
 var withheldCommands = []string{
 	"daemon", "session", "events", "token",
-	"approval", "grant", "config", "secret", "tool", "audit", "activity",
+	"approval", "grant", "config", "tool", "audit", "activity",
 	"skill", "doctor",
 }
 
@@ -235,17 +238,18 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 	}{
 		// `server` first and `catalog` last: the catalog is a small curated
 		// set, so leading with it teaches a path that ends in "not listed"
-		// for most servers. `secret` is not in Setup at all — credentials are
-		// normally handled by `server add` and `auth login`, and a manual
-		// command up front implies a step the everyday path does not have.
-		{"setup", []string{"server", "auth", "catalog"}},
+		// for most servers. `secret` sits immediately after `auth` because the
+		// two answer one question — how this server proves who we are — for
+		// the servers that hand out a credential and the ones that take a key
+		// you already hold.
+		{"setup", []string{"server", "auth", "secret", "catalog"}},
 		{"wire", []string{"profile", "client"}},
 		// Split on one testable question — does this need a running daemon?
 		// `token` mints credentials for the daemon's HTTP data plane, so it
 		// sits with the daemon rather than with the other governance verbs.
 		{"daemon", []string{"daemon", "session", "events", "token"}},
 		{"manage", []string{
-			"approval", "grant", "config", "secret", "tool", "audit", "activity",
+			"approval", "grant", "config", "tool", "audit", "activity",
 			"skill", "doctor",
 		}},
 		{"entry", []string{"connect"}},
@@ -409,7 +413,7 @@ func TestReleaseHidesExactlyTheWithheldCommands(t *testing.T) {
 			t.Errorf("release --help dropped the %q heading, which stays visible:\n%s", g.ID, out)
 		}
 	}
-	for _, other := range []string{"catalog", "server", "auth", "profile", "client", "connect"} {
+	for _, other := range []string{"catalog", "server", "auth", "secret", "profile", "client", "connect"} {
 		if !strings.Contains(out, "  "+other+" ") {
 			t.Errorf("release --help dropped %q, which is not withheld:\n%s", other, out)
 		}
