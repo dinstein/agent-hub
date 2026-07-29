@@ -12,15 +12,18 @@ import (
 	"github.com/dinstein/agent-hub/internal/scope"
 )
 
-func TestModeOfDefaultsToFull(t *testing.T) {
+// A client that configures nothing gets lazy. The garbage case matters as
+// much as the unset one: a typo in a config file must land on the default
+// rather than blanking the surface or erroring.
+func TestModeOfDefaultsToLazy(t *testing.T) {
 	cases := []struct {
 		name string
 		es   *scope.EffectiveScope
 		want Mode
 	}{
-		{"nil scope", nil, ModeFull},
-		{"unset", &scope.EffectiveScope{}, ModeFull},
-		{"garbage", &scope.EffectiveScope{Discovery: scope.DiscoveryMode("swarm")}, ModeFull},
+		{"nil scope", nil, ModeLazy},
+		{"unset", &scope.EffectiveScope{}, ModeLazy},
+		{"garbage", &scope.EffectiveScope{Discovery: scope.DiscoveryMode("swarm")}, ModeLazy},
 		{"lazy", &scope.EffectiveScope{Discovery: scope.DiscoveryLazy}, ModeLazy},
 		{"grouped", &scope.EffectiveScope{Discovery: scope.DiscoveryGrouped}, ModeGrouped},
 		{"full", &scope.EffectiveScope{Discovery: scope.DiscoveryFull}, ModeFull},

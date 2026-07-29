@@ -350,7 +350,7 @@ How the tool catalog is exposed to the agent is decided by `EffectiveScope.Disco
 |---|---|---|
 | `full` | Every tool in scope | Few tools, or a client that filters for itself |
 | `grouped` | One aggregate tool per server + a generic call entry point | Many tools, but you still want to skip searching |
-| `lazy` | The five meta-tools: `status` / `search_tools` / `describe_tool` / `call_tool` / `fetch_result` | Very many tools; trades token budget for coverage |
+| `lazy` | The five meta-tools: `status` / `search_tools` / `describe_tool` / `call_tool` / `fetch_result` | Very many tools; trades token budget for coverage. **`discovery.DefaultMode`** — what a scope that sets no mode gets |
 
 In lazy mode `call_tool` can be split by a governance switch into three variants, `call_tool_read` /
 `call_tool_write` / `call_tool_destructive`, so an IDE's tool allowlist can permit them separately. The

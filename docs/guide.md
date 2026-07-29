@@ -120,9 +120,9 @@ agenthub profile discovery research lazy      # or grouped / full / -
 
 | mode | what `tools/list` returns | use when |
 |---|---|---|
-| `full` | every visible tool, one entry each | small surfaces. The default when nothing sets a mode |
+| `full` | every visible tool, one entry each | small surfaces, or a client that filters for itself — ask for it explicitly |
 | `grouped` | one aggregate entry per server, then `call_tool` | a mid-sized set — the client reads per-server entries, then dispatches |
-| `lazy` | the meta-tools (`status`, `search_tools`, `describe_tool`, `call_tool`, `fetch_result`) plus any pinned tools | large surfaces — the client holds a handful of names instead of hundreds |
+| `lazy` | the meta-tools (`status`, `search_tools`, `describe_tool`, `call_tool`, `fetch_result`) plus any pinned tools | large surfaces — the client holds a handful of names instead of hundreds. **The default when nothing sets a mode** |
 | `-` | clears the profile's override | fall back to the global default |
 
 The reason to care is context, not security. Forty servers in `full` mode
@@ -130,6 +130,17 @@ means a tool list the client re-reads on every turn; `lazy` turns that into
 five names plus a search. Visibility is unchanged either way — a tool hidden
 from the initial list is still callable if it is in scope, and a tool out of
 scope is not callable no matter which mode you pick.
+
+That is also why `lazy` is the default. Nobody revisits this setting when the
+fourth server is added, so the default is what most installations run forever,
+and `full` spends context in proportion to how much you are using the gateway
+— one hosted server can bring fifty tools by itself. What `lazy` costs is
+discoverability: the client has to search for a tool instead of being handed
+its name. On a small surface that trade is not worth it, so say so:
+
+```bash
+agenthub config set discovery full
+```
 
 ## Where things live
 

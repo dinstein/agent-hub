@@ -41,6 +41,10 @@ func seedServers(t *testing.T, resolver *platform.Resolver, ids ...string) {
 		t.Fatalf("registry.Open: %v", err)
 	}
 	err = store.Update(context.Background(), func(tx *registry.Tx) error {
+		// Full mode, for the same reason as seedRegistry's copy: these tests
+		// look for a downstream tool by the name tools/list hands out, and the
+		// default (lazy) hands out the five meta-tools instead.
+		tx.Governance.V.Discovery = "full"
 		if tx.Servers.V.Servers == nil {
 			tx.Servers.V.Servers = map[string]registry.Doc[registry.ServerEntry]{}
 		}

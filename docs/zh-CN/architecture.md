@@ -307,7 +307,7 @@ deny 取并集，审批开关取布尔或——只能越来越紧；**体验字�
 |---|---|---|
 | `full` | 作用域内全部工具 | 工具少，或客户端自己会做筛选 |
 | `grouped` | 每个 server 一个聚合工具 + 通用调用入口 | 工具多但仍想免搜索 |
-| `lazy` | 五件套 meta-tool：`status` / `search_tools` / `describe_tool` / `call_tool` / `fetch_result` | 工具很多，用 token 预算换覆盖面 |
+| `lazy` | 五件套 meta-tool：`status` / `search_tools` / `describe_tool` / `call_tool` / `fetch_result` | 工具很多，用 token 预算换覆盖面。**`discovery.DefaultMode`** —— 没有任何一层设过模式时就是它 |
 
 lazy 模式下 `call_tool` 可按治理开关拆成 `call_tool_read` / `call_tool_write` /
 `call_tool_destructive` 三个变体，好让 IDE 的工具白名单分别放行；等级由下游 annotations 推导，

@@ -316,6 +316,13 @@ func seedRegistry(t *testing.T, resolver *platform.Resolver, ids ...string) {
 		t.Fatal(err)
 	}
 	err = store.Update(context.Background(), func(tx *registry.Tx) error {
+		// These tests assert the data plane, and they identify a tool by the
+		// name tools/list hands out — which only full mode puts there. The
+		// default is lazy, whose list is the five meta-tools, so the mode is
+		// pinned here rather than left to whatever the default happens to be:
+		// a data-plane test must not start failing because the presentation
+		// default moved.
+		tx.Governance.V.Discovery = "full"
 		if tx.Servers.V.Servers == nil {
 			tx.Servers.V.Servers = map[string]registry.Doc[registry.ServerEntry]{}
 		}

@@ -56,10 +56,22 @@ const (
 )
 
 // DefaultMode is used when no scope layer set a mode (EffectiveScope.
-// Discovery == ""): full, the M0 gateway behaviour. Defaulting to full is
-// safe in the security sense — visibility is decided by the scope, not by
-// the mode; the mode only decides how many names the client is shown.
-const DefaultMode = ModeFull
+// Discovery == ""): lazy.
+//
+// The default has to serve the gateway's whole point, which is that a client
+// is wired up once and servers accumulate behind it. Nobody re-reads this
+// setting when the fourth server is added, so the default is what most
+// installations run forever — and full mode spends the client's context in
+// proportion to how well the gateway is being used. One hosted server can
+// contribute fifty tools on its own.
+//
+// Either default is safe in the security sense: visibility is decided by the
+// scope, never by the mode, and lazy hides names from the initial list without
+// taking any capability away. What is traded is discoverability — a client in
+// lazy mode has to call search_tools instead of reading tool names it was
+// handed. Set full explicitly (globally with `agenthub config set discovery
+// full`, or per profile) on a small surface where that trade is not worth it.
+const DefaultMode = ModeLazy
 
 // ModeOf reads the exposure mode out of an effective scope. An unset or
 // unrecognised value degrades to DefaultMode rather than erroring: a typo in

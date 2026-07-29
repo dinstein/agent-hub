@@ -109,15 +109,24 @@ agenthub profile discovery research lazy      # 或 grouped / full / -
 
 | 模式 | `tools/list` 返回什么 | 什么时候用 |
 |---|---|---|
-| `full` | 每个可见 tool 一条 | 工具面小的时候。谁都没设模式时的默认值 |
+| `full` | 每个可见 tool 一条 | 工具面小、或者客户端自己会筛的时候——要显式指定 |
 | `grouped` | 每台 server 一条聚合条目，然后走 `call_tool` | 中等规模的集合——客户端先读每台 server 的条目，再分派 |
-| `lazy` | 元工具（`status`、`search_tools`、`describe_tool`、`call_tool`、`fetch_result`）加上被 pin 住的 tool | 工具面很大的时候——客户端手里只握几个名字，而不是几百个 |
+| `lazy` | 元工具（`status`、`search_tools`、`describe_tool`、`call_tool`、`fetch_result`）加上被 pin 住的 tool | 工具面很大的时候——客户端手里只握几个名字，而不是几百个。**谁都没设模式时的默认值** |
 | `-` | 清除这个 profile 的覆盖 | 回落到全局默认值 |
 
 值得在意它的理由是**上下文，不是安全**。四十台 server 跑在 `full` 模式下，意味着一份客户端
 每轮都要重读一遍的工具清单；`lazy` 把它变成五个名字加一次搜索。两种模式下可见性都没变——
 一个没出现在初始清单里的 tool，只要在作用域内就仍然调得动；而一个不在作用域内的 tool，
 你选哪个模式它都调不动。
+
+`lazy` 是默认值也是同一个理由。加到第四台 server 的时候没人会回头改这个设置，所以默认值
+就是绝大多数装机长期实际在跑的那个；而 `full` 花掉的上下文，恰好与你把这个网关用得有多
+充分成正比——光一台托管 server 就可能带来五十个工具。`lazy` 换来的代价是**可发现性**：
+客户端得自己搜，而不是被直接递上工具名。工具面小的时候这笔交换不划算，那就明说：
+
+```bash
+agenthub config set discovery full
+```
 
 ## 东西都放在哪
 
