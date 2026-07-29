@@ -268,7 +268,7 @@ func TestDisconnectDefaultFindsTheOtherPlacement(t *testing.T) {
 func TestDisconnectDefaultSurfacesRefusals(t *testing.T) {
 	e := newEnv(t, "darwin")
 	f := e.format(t, "claude-code")
-	write(t, filepath.Join(e.project, ".mcp.json"), "{ // a comment\n}\n")
+	write(t, filepath.Join(e.project, ".mcp.json"), "{ \"mcpServers\": [] }\n")
 
 	_, err := clients.DisconnectDefault(f, e.project)
 	var pe *clients.ParseError
@@ -426,36 +426,56 @@ func TestConnectRejectsUnparseableFile(t *testing.T) {
 	}
 }
 
-// TestConnectRefusesJSONC: VS Code / Zed settings are routinely JSONC.
-// Rewriting them would silently delete the user's comments, so agenthub
-// refuses and says exactly why, with the snippet to paste.
-func TestConnectRefusesJSONC(t *testing.T) {
+// TestConnectSplicesJSONCInsteadOfRewritingIt: VS Code / Zed settings are
+// routinely JSONC. agenthub reads them and edits ONLY the bytes of its own
+// entry — the comments, the key order and the user's formatting all come
+// out the other side untouched, because nothing else was re-encoded.
+func TestConnectSplicesJSONCInsteadOfRewritingIt(t *testing.T) {
 	e := newEnv(t, "darwin")
 	path := filepath.Join(e.project, ".vscode", "mcp.json")
-	content := "{\n  // my servers\n  \"servers\": {}\n}\n"
+	content := "{\n  // my servers\n  \"servers\": {\n    // linear does the tickets\n" +
+		"    \"linear\": {\"command\": \"npx\"},\n  }\n}\n"
 	write(t, path, content)
 
-	_, err := e.format(t, "vscode").Connect(path, entry("vscode"))
-	var pe *clients.ParseError
-	if !errors.As(err, &pe) {
-		t.Fatalf("err = %v, want *ParseError", err)
+	res, err := e.format(t, "vscode").Connect(path, entry("vscode"))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
 	}
-	if !contains(pe.Hint, "JSONC") {
-		t.Errorf("hint does not diagnose JSONC: %q", pe.Hint)
+	if !res.Changed || res.Backup == "" {
+		t.Errorf("result = %+v, want a change with a backup", res)
 	}
-	if !contains(pe.Snippet, "servers") || !contains(pe.Snippet, "agenthub") {
-		t.Errorf("snippet is not usable: %q", pe.Snippet)
+	got := read(t, path)
+	for _, keep := range []string{"// my servers", "// linear does the tickets", "\"linear\""} {
+		if !contains(got, keep) {
+			t.Errorf("the splice lost %q:\n%s", keep, got)
+		}
 	}
-	if got := read(t, path); got != content {
-		t.Errorf("JSONC file was rewritten:\n%s", got)
+	// A trailing comma is legal here and is the user's, not ours to fix.
+	if !contains(got, "},\n  }") {
+		t.Errorf("the splice reformatted the document:\n%s", got)
+	}
+	if !contains(got, "agenthub") {
+		t.Errorf("the entry did not land:\n%s", got)
 	}
 
-	// A '/' inside a string is not a comment.
-	plain := `{"servers": {"a": {"command": "/usr/bin/x"}}}`
-	other := filepath.Join(e.project, "other", "mcp.json")
-	write(t, other, plain)
-	if _, err := e.format(t, "vscode").Connect(other, entry("vscode")); err != nil {
-		t.Fatalf("path-like string misdetected as a comment: %v", err)
+	// Idempotent: connecting again changes nothing at all.
+	again, err := e.format(t, "vscode").Connect(path, entry("vscode"))
+	if err != nil || again.Changed {
+		t.Errorf("second connect = (%+v, %v), want no change", again, err)
+	}
+
+	// And removing it takes out only our own bytes.
+	if _, err := e.format(t, "vscode").Disconnect(path); err != nil {
+		t.Fatalf("disconnect: %v", err)
+	}
+	after := read(t, path)
+	if contains(after, "agenthub") {
+		t.Errorf("the entry survived a disconnect:\n%s", after)
+	}
+	for _, keep := range []string{"// my servers", "// linear does the tickets", "\"linear\""} {
+		if !contains(after, keep) {
+			t.Errorf("disconnect lost %q:\n%s", keep, after)
+		}
 	}
 }
 

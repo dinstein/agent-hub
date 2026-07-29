@@ -93,6 +93,14 @@ func (f *jsonFormat) Connect(path string, entry Entry) (Result, error) {
 		return Result{}, fmt.Errorf("clients: encode gateway entry: %w", err)
 	}
 	cfg.servers[entryName] = raw
+	if cfg.jsonc {
+		return f.spliceWrite(cfg, func(src []byte) ([]byte, error) {
+			return spliceEntry(src, loc.Section, entryName, struct {
+				Command string   `json:"command"`
+				Args    []string `json:"args"`
+			}{Command: entry.Command, Args: entry.Args})
+		}, []string{entryName})
+	}
 	return f.write(cfg)
 }
 
@@ -119,6 +127,16 @@ func (f *jsonFormat) Disconnect(path string) (Result, error) {
 	slices.Sort(removed)
 	for _, name := range removed {
 		delete(cfg.servers, name)
+	}
+	if cfg.jsonc {
+		res, err := f.spliceWrite(cfg, func(src []byte) ([]byte, error) {
+			return spliceRemove(src, cfg.loc.Section, removed)
+		}, removed)
+		if err != nil {
+			return Result{}, err
+		}
+		res.Removed = removed
+		return res, nil
 	}
 	res, err := f.write(cfg)
 	if err != nil {
@@ -162,6 +180,11 @@ type jsonConfig struct {
 	orig    []byte                       // original file bytes (nil when !exists)
 	exists  bool
 	mode    fs.FileMode
+	// jsonc marks a document that only parsed after its comments were
+	// blanked. Such a file is never re-encoded: writes go through the
+	// splice in jsonc.go, which leaves every byte it did not have to
+	// change exactly where it was.
+	jsonc bool
 }
 
 // read loads loc.Path.
@@ -217,8 +240,18 @@ func (f *jsonFormat) read(loc Location) (*jsonConfig, error) {
 	c.orig = data
 	c.mode = info.Mode().Perm()
 
+	parseFrom := data
 	if err := json.Unmarshal(data, &c.levels[0]); err != nil {
-		return nil, f.parseError(loc, data, err)
+		// A settings.json with comments in it is the normal case for
+		// several clients, not a corrupt file. Reading it is a separate
+		// power from rewriting it (jsonc.go), and refusing to read cost
+		// the user an answer without protecting anything.
+		blanked := blankJSONC(data)
+		if !looksLikeJSONC(data) || json.Unmarshal(blanked, &c.levels[0]) != nil {
+			return nil, f.parseError(loc, data, err)
+		}
+		c.jsonc = true
+		parseFrom = blanked
 	}
 	for i, key := range loc.Section {
 		raw, ok := c.levels[i][key]
@@ -227,7 +260,7 @@ func (f *jsonFormat) read(loc Location) (*jsonConfig, error) {
 		}
 		var next map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &next); err != nil {
-			return nil, f.parseError(loc, data,
+			return nil, f.parseError(loc, parseFrom,
 				fmt.Errorf("%q must be a JSON object: %w", pathOf(loc.Section[:i+1]), err))
 		}
 		c.levels[i+1] = next
@@ -242,8 +275,11 @@ func (f *jsonFormat) read(loc Location) (*jsonConfig, error) {
 func (f *jsonFormat) parseError(loc Location, data []byte, err error) *ParseError {
 	pe := &ParseError{Path: loc.Path, Client: f.spec.id, Err: err}
 	if looksLikeJSONC(data) {
-		pe.Hint = "this file uses JSONC (comments); agenthub will not rewrite it because " +
-			"re-encoding would delete the comments. Add the entry below by hand."
+		// Comments alone are no longer a refusal (jsonc.go reads them and
+		// splices without re-encoding), so reaching here means the file
+		// does not parse even with them blanked out.
+		pe.Hint = "this file has comments in it, and still does not parse with them removed; " +
+			"agenthub will not edit what it cannot read. Fix the syntax, or add the entry below by hand."
 	} else {
 		pe.Hint = "fix or remove the file; agenthub never overwrites configuration it cannot parse"
 	}
@@ -402,4 +438,56 @@ func atomicWrite(path string, data []byte, mode fs.FileMode) error {
 		_ = d.Close()
 	}
 	return nil
+}
+
+// spliceWrite applies an edit to the ORIGINAL bytes of a JSONC document and
+// persists it — but only after proving the result is what was asked for.
+//
+// This is the whole safety argument for writing into a file agenthub cannot
+// re-encode. The splice is produced by a locator that could be wrong; what
+// makes it safe is that the result is then checked against the original
+// (parses, differs only in `changed`, comments byte-identical). A locator
+// bug therefore costs the user a refusal, not their settings.
+//
+// Failure direction: any doubt at all leaves the file exactly as it was and
+// reports the same *ParseError-with-snippet the client used to get.
+func (f *jsonFormat) spliceWrite(
+	c *jsonConfig, edit func([]byte) ([]byte, error), changed []string,
+) (Result, error) {
+	path := c.loc.Path
+	out, err := edit(c.orig)
+	if err != nil {
+		return Result{}, f.spliceRefusal(c, err)
+	}
+	if err := verifySplice(c.orig, out, c.loc.Section, changed); err != nil {
+		return Result{}, f.spliceRefusal(c, err)
+	}
+	if bytes.Equal(c.orig, out) {
+		return Result{Path: path, Changed: false}, nil
+	}
+	backup, err := f.tbl.backup(f.spec.id, path, c.orig)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := atomicWrite(path, out, c.mode); err != nil {
+		if pe := f.tbl.classifyAccess(err, path, f.spec.id, "write"); pe != nil {
+			return Result{}, pe
+		}
+		return Result{}, fmt.Errorf("clients: write %s: %w", path, err)
+	}
+	return Result{Path: path, Backup: backup, Changed: true}, nil
+}
+
+// spliceRefusal reports a document agenthub could read but may not safely
+// edit. It carries the manual snippet, because the user still needs to get
+// the entry in there.
+func (f *jsonFormat) spliceRefusal(c *jsonConfig, cause error) *ParseError {
+	return &ParseError{
+		Path: c.loc.Path, Client: f.spec.id, Err: cause,
+		Hint: "agenthub read this file but will not edit it blind: " + cause.Error() +
+			". Add the entry below by hand.",
+		Snippet: f.ManualSnippet(Entry{
+			Command: "agenthub", Args: []string{"connect", "--client", f.spec.id},
+		}),
+	}
 }

@@ -305,11 +305,19 @@ func (a *App) clientBaseDir() string {
 func classifyClientsError(err error) error {
 	var pe *clients.ParseError
 	if errors.As(err, &pe) {
+		hint := pe.Hint
+		if hint == "" {
+			hint = "fix or remove the file; agenthub refuses to overwrite configuration it cannot parse"
+		}
+		if pe.Snippet != "" {
+			hint += "\n\n" + pe.Snippet
+		}
+		// No Err: Message already renders it, and Error.Error() appends
+		// Err to Message — the same sentence printed twice.
 		return &Error{
 			Code: CodeInvalidJSON, ExitCode: ExitGeneral,
 			Message: pe.Error(),
-			Hint:    "fix or remove the file; agenthub refuses to overwrite configuration it cannot parse",
-			Err:     pe.Err,
+			Hint:    hint,
 		}
 	}
 	var nc *clients.NotConnectedError
