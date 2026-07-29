@@ -60,8 +60,10 @@ A lint rule that is configured but not in effect is more dangerous than no rule 
 ## Testing and verification
 
 ```bash
+make             # the target list, one line each
 make ci          # build + test + lint
 make ci-full     # everything the CI workflow actually runs (use this before pushing)
+make ci-landing  # ci-full with the caches dropped and CI's environment (use this before landing)
 make gui         # build the GUI separately (excluded from build/lint by default)
 ```
 
@@ -79,8 +81,10 @@ push, and `make ci-full` covers all of them:
    `package-lock.json` that disagrees with `package.json`; CI runs `npm ci`, which rejects outright.
    Only `gui-frontend-ci` reproduces this one.
 
-- **Run e2e with the CI environment simulated**: `XDG_RUNTIME_DIR=/tmp/fake-xdg-e2e go test ./test/e2e/`.
-  CI's Linux runner sets this variable. It should **no longer** change where the run directory lives —
+- **Run e2e with the CI environment simulated**: `make e2e-ci` (`XDG_RUNTIME_DIR=/tmp/fake-xdg-e2e go
+  test ./test/e2e/`; `make e2e` is the same suite in this machine's own environment, and both shapes
+  have to pass). CI's Linux runner sets this variable. It should **no longer** change where the run
+  directory lives —
   `AGENTHUB_DATA_DIR` moves the run directory along with everything else — and that is precisely why
   you run with it set: the e2e suite is the end-to-end regression test for that rule. The class of
   "only happens on CI" problem that once took four rounds to diagnose was rooted right here.
@@ -93,15 +97,17 @@ push, and `make ci-full` covers all of them:
 - **When touching a parser that reads untrusted input, run a round of fuzzing**:
 
   ```bash
-  go test ./internal/mcp/ -run xxx -fuzz FuzzParseMessage -fuzztime 60s
+  make fuzz FUZZ=FuzzParseMessage   # one target; FUZZTIME=60s by default
+  make fuzz                          # all five, back to back
   ```
 
   The five targets each guard one path by which external bytes arrive: `FuzzParseMessage` (downstream
   JSON-RPC frames), `FuzzSSEScanner` (remote SSE streams, a hand-written line scanner — the least
   trustworthy of them), `FuzzScanAuthParam` (remote `WWW-Authenticate`, hand-written index-based
   scanning), `FuzzEncodeJSON` (downstream tool results, on the response path), and
-  `FuzzScanTOMLServers` in `internal/clients` (another application's config file, hand-written —
-  `go test ./internal/clients/ -run xxx -fuzz FuzzScanTOMLServers`).
+  `FuzzScanTOMLServers` (another application's config file, hand-written). They do not all live in
+  `internal/mcp`; the Makefile's `FUZZ_TARGETS` carries each one's package, so the target name alone
+  is enough to run it.
   `make ci` runs only their seed corpora (fast); `-fuzz` must be enabled explicitly — keep it out of CI.
 
 ## Reference implementations: read, never copy
@@ -125,29 +131,23 @@ what the failures look like, and what the correct behavior is.
   ```bash
   # in the worktree
   git fetch origin && git rebase origin/main
-  XDG_RUNTIME_DIR=/tmp/fake-xdg-e2e make ci-full
+  make ci-landing
 
   # in the main work tree
   git merge --ff-only <topic> && git push origin main
   git worktree remove ../agent-hub-<topic> && git branch -d <topic>
   ```
 
-- **`make ci-full` runs after the rebase, not before it, and after `go clean -testcache`.** A rebase
-  replays your commits onto code you have never tested against, so a green run on the old base says
-  nothing about the tree that is about to land. This is the whole cost of the rebase rule, and
-  skipping it is how `main` goes red.
+- **`make ci-landing` runs after the rebase, not before it.** A rebase replays your commits onto code
+  you have never tested against, so a green run on the old base says nothing about the tree that is
+  about to land. This is the whole cost of the rebase rule, and skipping it is how `main` goes red.
 
-  The cache defeats that rule silently, which is why the clean is part of it. `test/e2e` builds the
-  binary under test inside `TestMain`, so a change to `cmd/agenthub` on the new base is not part of
-  the key Go caches the result under: the suite reports `ok (cached)` for a tree it never ran
-  against. A landing run that prints `(cached)` on most packages has verified almost nothing —
-  count the lines if you are unsure:
-
-  ```bash
-  go clean -testcache
-  XDG_RUNTIME_DIR=/tmp/fake-xdg-e2e make ci-full 2>&1 | tee ci.log
-  grep -c '(cached)' ci.log        # want 0 on a landing run
-  ```
+  The target is `ci-full` plus the two things that rule needs to be true, both easy to get wrong by
+  hand. It drops the test cache first: `test/e2e` builds the binary under test inside `TestMain`, so
+  a change to `cmd/agenthub` on the new base is not part of the key Go caches the result under, and
+  the suite reports `ok (cached)` for a tree it never ran against. Then it greps its own log for
+  `(cached)` and fails on any hit — a run that verified almost nothing looks exactly like a run that
+  verified everything, and the word you would have to notice is one that is *absent*.
 - **`--ff-only` is the enforcement, not a formality.** If it refuses, either the rebase did not happen
   or `origin/main` moved again — rebase again. Never reach for a plain `git merge` to get past it.
 - Pull with `git pull --rebase` so an out-of-date `main` does not grow a merge commit of its own.

@@ -447,7 +447,7 @@ separately with `make gui`.
 CI coverage comes in two layers. The untagged half (the `services` service body, the golden test in
 `internal/healthgen`) is already inside `make test`'s `go test ./...` and runs on both matrix legs; the
 `wails`-tagged shell and the frontend are covered by a **separate `gui` job** (`make gui-frontend-ci` +
-`make gui-go` + `go vet -tags wails`), which runs on a macOS runner — on Linux, `-tags wails` fails in
+`make gui-go` + `make gui-vet`), which runs on a macOS runner — on Linux, `-tags wails` fails in
 the cgo preamble (`pkg-config: gtk4 webkitgtk-6.0`) before even `go vet` can pass, whereas the macOS
 runner ships with the Cocoa/WebKit SDK and needs no packages installed. This job is deliberately **not**
 in `make ci`: "the GUI is optional" is a compile-time property, and it must not become a prerequisite of

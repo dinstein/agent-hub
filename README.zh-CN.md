@@ -111,6 +111,7 @@ endpoint（例如 `server add --url`）。
 需要 Go 1.26+ 与 golangci-lint v2。
 
 ```bash
+make         # 列出全部 target，每个一行
 make build   # go build ./...
 make test    # go test ./...
 make lint    # golangci-lint run

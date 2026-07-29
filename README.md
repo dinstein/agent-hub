@@ -118,6 +118,7 @@ See the decision record in [canonical.md](docs/canonical.md) §7, item 6.
 Requires Go 1.26+ and golangci-lint v2.
 
 ```bash
+make         # list every target, one line each
 make build   # go build ./...
 make test    # go test ./...
 make lint    # golangci-lint run

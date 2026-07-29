@@ -78,5 +78,8 @@ jobs:
         run: make gui-frontend-ci
       - name: Build the Wails-tagged binary
         run: make gui-go
+      # `make gui-vet`, not the bare `go vet`: `make ci-full` runs the same
+      # target, so the local pre-push check and this job cannot drift into
+      # vetting different things.
       - name: Vet the Wails-tagged code
-        run: go vet -tags wails ./cmd/agenthub-gui/...
+        run: make gui-vet

@@ -32,6 +32,11 @@ node_modules/
 # Per-checkout golangci-lint cache (the Makefile says why it must not be shared)
 /.lintcache/
 
+# Per-checkout scratch for the make targets that grade their own output
+# (ci-landing, ci-depguard-proof) — same reason: two worktrees running at once
+# must not read each other's log.
+/.make/
+
 
 # Local dev data (agenthub writes to the platform data dir, but keep this for -data-dir overrides)
 /.agenthub/
