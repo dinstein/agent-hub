@@ -172,14 +172,7 @@ func (t *Table) Inspect(clientID, baseDir string) (Inspection, error) {
 	for _, loc := range spec.resolve(t, baseDir) {
 		file := InspectedFile{Path: loc.Path, Placement: loc.Placement, Section: loc.Section}
 		if !writable {
-			// Probe-only: report existence, read nothing. The file's
-			// syntax is not ours to interpret.
-			if info, err := os.Stat(loc.Path); err == nil && !info.IsDir() {
-				file.Exists = true
-			} else if pe := t.classifyAccess(err, loc.Path, spec.id, "stat"); pe != nil {
-				file.Exists = true
-				file.Err, file.Error = pe, pe.Error()
-			}
+			t.inspectProbe(spec, loc, &file)
 			insp.Files = append(insp.Files, file)
 			insp.noteErr(file.Err)
 			continue
@@ -206,6 +199,80 @@ func (t *Table) Inspect(clientID, baseDir string) (Inspection, error) {
 		insp.Files = append(insp.Files, file)
 	}
 	return insp, insp.firstE
+}
+
+// inspectProbe fills in one location of a client agenthub does not rewrite.
+//
+// A row with no readTable is reported as existing and nothing more: its
+// syntax is not ours to interpret. A row that has one is READ — reading and
+// rewriting are different powers, and refusing to answer "is our entry in
+// here?" bought nothing except a `?` in every listing.
+//
+// Failure direction: a file the scanner does not fully understand leaves
+// Parsed false, which callers turn into "unknown". It is never reported as
+// a file with no servers in it, because the two are indistinguishable
+// downstream and only one of them is true.
+func (t *Table) inspectProbe(spec *clientSpec, loc Location, file *InspectedFile) {
+	info, err := os.Stat(loc.Path)
+	switch {
+	case err == nil && !info.IsDir():
+		file.Exists = true
+	case err == nil:
+		return // a directory where a config would be is not a config
+	default:
+		if pe := t.classifyAccess(err, loc.Path, spec.id, "stat"); pe != nil {
+			file.Exists = true
+			file.Err, file.Error = pe, pe.Error()
+		}
+		return
+	}
+	if spec.readTable == "" {
+		return
+	}
+	if info.Size() > MaxConfigSize {
+		file.Err = &TooLargeError{Path: loc.Path, Size: info.Size(), Limit: MaxConfigSize}
+		file.Error = file.Err.Error()
+		return
+	}
+	data, err := readLimited(loc.Path)
+	if err != nil {
+		if pe := t.classifyAccess(err, loc.Path, spec.id, "read"); pe != nil {
+			file.Err, file.Error = pe, pe.Error()
+		}
+		return
+	}
+	entries, ok := scanTOMLServers(data, spec.readTable)
+	if !ok {
+		return
+	}
+	file.Parsed = true
+	file.Servers = summarise(tomlServerMap(entries), spec.id)
+	for _, s := range file.Servers {
+		if s.Owned {
+			file.Connected = true
+		}
+	}
+}
+
+// tomlServerMap re-renders scanned TOML entries as the JSON shape the rest
+// of the package speaks, so ownership, transport and the disabled flag are
+// decided by exactly one implementation for every client — a second copy of
+// the ownership rule for TOML is how the two would drift apart.
+func tomlServerMap(entries map[string]tomlEntry) map[string]json.RawMessage {
+	out := make(map[string]json.RawMessage, len(entries))
+	for name, e := range entries {
+		raw, err := json.Marshal(struct {
+			Command  string   `json:"command,omitempty"`
+			Args     []string `json:"args,omitempty"`
+			URL      string   `json:"url,omitempty"`
+			Disabled bool     `json:"disabled,omitempty"`
+		}{Command: e.command, Args: e.args, URL: e.url, Disabled: e.disabled})
+		if err != nil {
+			continue
+		}
+		out[name] = raw
+	}
+	return out
 }
 
 func (i *Inspection) noteErr(err error) {

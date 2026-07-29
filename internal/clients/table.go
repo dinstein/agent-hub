@@ -21,6 +21,15 @@ type clientSpec struct {
 	// fileless ShapeRemote. Empty means the shape is derived from the
 	// first location's section.
 	nonJSON Shape
+	// readTable names the top-level TOML table holding this client's
+	// servers, for the probe-only shapes agenthub can READ without being
+	// able to rewrite them. Empty means detection only: Inspect reports
+	// that the file exists and nothing about its contents.
+	//
+	// Reading is not a step towards writing. Connect still refuses — the
+	// rule it enforces is about re-encoding a document, and answering
+	// "is our entry in here?" re-encodes nothing.
+	readTable string
 	// note is user-facing text explaining a probe-only or remote client.
 	note string
 	// manual renders the fragment a user pastes by hand. nil means "use
@@ -159,8 +168,10 @@ var specs = []clientSpec{
 		locs: []locSpec{
 			{placement: User, home: sameOnAll(".codex", "config.toml")},
 		},
-		note: "Codex stores MCP servers in TOML. agenthub detects the file and reads nothing else; " +
-			"add the entry below to ~/.codex/config.toml by hand.",
+		readTable: "mcp_servers",
+		note: "Codex stores MCP servers in TOML. agenthub reads that file but will not " +
+			"rewrite it: re-encoding would cost you its comments and layout. Codex's own " +
+			"CLI writes it correctly — or add the entry by hand.",
 		manual: tomlSnippet,
 	},
 	{
@@ -316,9 +327,17 @@ func (s *clientSpec) locationFor(t *Table, baseDir, path string) Location {
 
 // --- manual snippets -------------------------------------------------
 
-// tomlSnippet renders the codex-style TOML fragment.
+// tomlSnippet renders the codex path: the client's own CLI first, then the
+// fragment to paste.
+//
+// The CLI line leads because it is the one that cannot go wrong — codex
+// writes its own TOML, so nobody has to hand-place a table in a file that
+// already has 200 lines of them. The fragment stays for the case where
+// codex is not on PATH, or the user wants to see exactly what will land.
 func tomlSnippet(s *clientSpec, e Entry) string {
 	var b strings.Builder
+	fmt.Fprintf(&b, "codex mcp add %s -- %s %s\n", entryName, e.Command, strings.Join(e.Args, " "))
+	b.WriteString("\n# or, by hand:\n")
 	fmt.Fprintf(&b, "[mcp_servers.%s]\n", entryName)
 	fmt.Fprintf(&b, "command = %q\n", e.Command)
 	fmt.Fprintf(&b, "args = [%s]\n", quoteJoin(e.Args))

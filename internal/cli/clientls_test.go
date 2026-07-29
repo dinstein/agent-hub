@@ -125,27 +125,68 @@ func TestClientLsStatOnlyOpensNothing(t *testing.T) {
 	}
 }
 
-// TestClientLsAdmitsFormatsItDoesNotParse: a probe-only client is "?" with
-// an explanation, never "no". agenthub cannot see inside a TOML config, and
-// reporting that as "not connected" would send the user to run connect
-// against a file connect also refuses to write.
+// TestClientLsAdmitsFormatsItDoesNotParse: a client whose format agenthub
+// does not read is "?" with an explanation, never "no". Reporting that as
+// not connected would send the user to run connect against a file connect
+// also refuses to write.
 func TestClientLsAdmitsFormatsItDoesNotParse(t *testing.T) {
 	setDataDir(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	write(t, filepath.Join(home, ".codex", "config.toml"), "[mcp_servers.x]\ncommand = \"y\"\n")
+	write(t, filepath.Join(home, ".continue", "config.yaml"), "mcpServers:\n  - name: x\n")
 
 	var list ClientList
 	decodeInto(t, mustRun(t, "", "client", "ls", "--json"), &list)
 	if len(list.Clients) != 1 {
-		t.Fatalf("listing = %+v, want the codex row", list.Clients)
+		t.Fatalf("listing = %+v, want the continue row", list.Clients)
 	}
 	row := list.Clients[0]
 	if row.State != "unknown" || row.Connected || row.Note == "" {
-		t.Errorf("codex row = %+v, want an explained unknown", row)
+		t.Errorf("continue row = %+v, want an explained unknown", row)
 	}
 	if out := mustRun(t, "", "client", "ls"); !strings.Contains(out, "NOTE") {
 		t.Errorf("the note column must appear when a row has one: %q", out)
+	}
+}
+
+// TestClientLsReadsCodexTOML: agenthub will not rewrite codex's TOML, but
+// it does read it, so the row is a real answer rather than a "?" — and the
+// entry is matched by ownership, not by the name it was given.
+func TestClientLsReadsCodexTOML(t *testing.T) {
+	setDataDir(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cfg := filepath.Join(home, ".codex", "config.toml")
+	write(t, cfg, "# my notes\n[mcp_servers.linear]\ncommand = \"npx\"\n")
+
+	var before ClientList
+	decodeInto(t, mustRun(t, "", "client", "ls", "--json"), &before)
+	if len(before.Clients) != 1 || before.Clients[0].State != "not_connected" || !before.Clients[0].Read {
+		t.Fatalf("codex row = %+v, want a read file with no gateway entry", before.Clients)
+	}
+
+	// Named anything, owned all the same.
+	write(t, cfg, "# my notes\n[mcp_servers.linear]\ncommand = \"npx\"\n\n"+
+		"[mcp_servers.hub]\ncommand = \"/opt/homebrew/bin/agenthub\"\n"+
+		"args = [\"connect\", \"--client\", \"codex\"]\n")
+	var after ClientList
+	decodeInto(t, mustRun(t, "", "client", "ls", "--json"), &after)
+	row := after.Clients[0]
+	if row.State != "connected" || !row.Connected {
+		t.Fatalf("codex row = %+v, want connected", row)
+	}
+	if len(row.Placements) != 1 || row.Placements[0] != "user" {
+		t.Errorf("placements = %v, want the user file", row.Placements)
+	}
+
+	// Connect still refuses — reading is not writing — and the refusal
+	// hands over the command that does work.
+	code, _, errOut := runCLI(t, "", "client", "connect", "codex")
+	if code != ExitGeneral {
+		t.Errorf("connect exit = %d, want %d (agenthub must not rewrite TOML)", code, ExitGeneral)
+	}
+	if !strings.Contains(errOut, "codex mcp add") {
+		t.Errorf("the refusal must name the command that works: %q", errOut)
 	}
 }
 

@@ -309,6 +309,19 @@ func classifyClientsError(err error) error {
 		e.Hint = "only entries written by 'agenthub client connect' are removed"
 		return e
 	}
+	// A refusal to rewrite a format agenthub does not re-encode is a
+	// redirection, not a dead end — and the snippet IS the redirection. It
+	// was being dropped here, leaving the user with "connect is not
+	// supported" and nowhere to go but --dry-run.
+	var unsupported *clients.UnsupportedError
+	if errors.As(err, &unsupported) {
+		return &Error{
+			Code: CodeClientUnsupported, ExitCode: ExitGeneral,
+			Message: unsupported.Error(),
+			Hint:    unsupported.Snippet,
+			Err:     err,
+		}
+	}
 	return err
 }
 

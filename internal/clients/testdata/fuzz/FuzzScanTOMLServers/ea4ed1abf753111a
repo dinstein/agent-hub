@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("[mcp_servers.0]command=\"0\\0\"")

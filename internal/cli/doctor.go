@@ -855,14 +855,10 @@ func (d *doctorRun) checkOneClient(clientID string) {
 		return
 	}
 	var issues []string
-	connected := false
+	state, _ := insp.ConnectState()
 	for _, f := range insp.Files {
 		for _, s := range f.Servers {
-			if !s.Owned {
-				continue
-			}
-			connected = true
-			if s.Command == "" {
+			if !s.Owned || s.Command == "" {
 				continue
 			}
 			if !binaryExists(s.Command) {
@@ -870,9 +866,24 @@ func (d *doctorRun) checkOneClient(clientID string) {
 			}
 		}
 	}
-	if !connected {
+	// The states between yes and no are reported as themselves. Walking the
+	// server lists alone made every one of them "no agenthub gateway entry"
+	// — an absence asserted about a file doctor had not read — and then
+	// suggested a connect, which for an unreadable or unwritable format is
+	// a command that cannot work.
+	switch state {
+	case clients.ConnectedNo:
 		d.add(name, StatusOK, "configured, no agenthub gateway entry").Fix =
 			"agenthub client connect " + clientID
+		return
+	case clients.ConnectedUnknown:
+		d.add(name, StatusOK,
+			"configured; agenthub does not read this client's configuration format").Fix =
+			"agenthub client connect " + clientID + " --dry-run   (prints what to add by hand)"
+		return
+	case clients.ConnectedDenied, clients.ConnectedUnreadable:
+		c := d.add(name, StatusWarn, "cannot tell whether it is connected: "+firstFileError(insp))
+		c.Fix = "agenthub client inspect " + clientID
 		return
 	}
 	issues = append(issues, d.danglingProfileIssue(clientID)...)
@@ -1069,4 +1080,16 @@ func (a *App) toolCacheAge() time.Duration {
 		return -1
 	}
 	return time.Since(newest)
+}
+
+// firstFileError names the location that stopped an inspection reaching an
+// answer. Reporting "something failed" without the path leaves the operator
+// with nothing to act on.
+func firstFileError(insp clients.Inspection) string {
+	for _, f := range insp.Files {
+		if f.Error != "" {
+			return f.Error
+		}
+	}
+	return "no location could be read"
 }

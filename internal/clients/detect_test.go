@@ -247,17 +247,34 @@ func TestInspectReportsServers(t *testing.T) {
 		}
 	}
 
-	// Probe-only clients report existence without parsing anything.
+	// A client agenthub will not rewrite is still READ when its shape has a
+	// reader: refusing to re-encode TOML never required refusing to look.
 	write(t, filepath.Join(e.home, ".codex", "config.toml"), "[mcp_servers.x]\ncommand='y'\n")
 	ci, err := e.tbl.Inspect("codex", e.project)
 	if err != nil {
 		t.Fatalf("inspect codex: %v", err)
 	}
-	if len(ci.Files) != 1 || !ci.Files[0].Exists || ci.Files[0].Parsed || len(ci.Files[0].Servers) != 0 {
-		t.Errorf("codex inspection = %+v, want existence only", ci.Files)
+	if len(ci.Files) != 1 || !ci.Files[0].Exists || !ci.Files[0].Parsed {
+		t.Fatalf("codex inspection = %+v, want the file read", ci.Files)
+	}
+	if len(ci.Files[0].Servers) != 1 || ci.Files[0].Servers[0].Name != "x" ||
+		ci.Files[0].Servers[0].Command != "y" || ci.Files[0].Servers[0].Owned {
+		t.Errorf("codex servers = %+v, want one foreign entry", ci.Files[0].Servers)
 	}
 	if ci.Manual == "" || ci.Note == "" {
 		t.Errorf("probe-only inspection must explain itself: %+v", ci)
+	}
+
+	// A YAML client has no reader, and says so by staying unparsed rather
+	// than by reporting an empty server list.
+	write(t, filepath.Join(e.home, ".continue", "config.yaml"), "mcpServers:\n  - name: x\n")
+	yi, err := e.tbl.Inspect("continue", e.project)
+	if err != nil {
+		t.Fatalf("inspect continue: %v", err)
+	}
+	user := yi.Files[len(yi.Files)-1]
+	if !user.Exists || user.Parsed || len(user.Servers) != 0 {
+		t.Errorf("continue inspection = %+v, want existence only", user)
 	}
 
 	var uce *clients.UnknownClientError
@@ -334,11 +351,36 @@ func TestConnectStateReportsWhereAndFailsLoud(t *testing.T) {
 		t.Errorf("unparseable file = %q, want unreadable (never not_connected)", state)
 	}
 
-	// Nor a shape whose syntax is not ours to read.
+	// Nor a shape whose syntax is not ours to read at all.
 	e4 := newEnv(t, "darwin")
-	write(t, filepath.Join(e4.home, ".codex", "config.toml"), "[mcp_servers.x]\ncommand='y'\n")
-	insp, _ = e4.tbl.Inspect("codex", e4.project)
+	write(t, filepath.Join(e4.home, ".continue", "config.yaml"), "mcpServers:\n  - name: x\n")
+	insp, _ = e4.tbl.Inspect("continue", e4.project)
 	if state, _ := insp.ConnectState(); state != clients.ConnectedUnknown {
-		t.Errorf("probe-only client = %q, want unknown (never not_connected)", state)
+		t.Errorf("unreadable shape = %q, want unknown (never not_connected)", state)
+	}
+
+	// A TOML client IS read, so it gets a real answer both ways.
+	e5 := newEnv(t, "darwin")
+	write(t, filepath.Join(e5.home, ".codex", "config.toml"), "[mcp_servers.x]\ncommand = 'y'\n")
+	insp, _ = e5.tbl.Inspect("codex", e5.project)
+	if state, _ := insp.ConnectState(); state != clients.ConnectedNo {
+		t.Errorf("codex without our entry = %q, want not_connected", state)
+	}
+	write(t, filepath.Join(e5.home, ".codex", "config.toml"),
+		"[mcp_servers.agenthub]\ncommand = '/opt/agenthub/bin/agenthub'\n"+
+			"args = [\"connect\", \"--client\", \"codex\"]\n")
+	insp, _ = e5.tbl.Inspect("codex", e5.project)
+	state, where = insp.ConnectState()
+	if state != clients.ConnectedYes || len(where) != 1 || where[0] != clients.User {
+		t.Errorf("codex with our entry = (%q, %v), want connected in the user file", state, where)
+	}
+
+	// ...and a document the scanner does not fully understand goes back to
+	// unknown rather than claiming the entry is absent.
+	e6 := newEnv(t, "darwin")
+	write(t, filepath.Join(e6.home, ".codex", "config.toml"), "mcp_servers = { agenthub = { command = 'x' } }\n")
+	insp, _ = e6.tbl.Inspect("codex", e6.project)
+	if state, _ := insp.ConnectState(); state != clients.ConnectedUnknown {
+		t.Errorf("unmodelled TOML = %q, want unknown (never not_connected)", state)
 	}
 }

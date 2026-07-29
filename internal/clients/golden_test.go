@@ -200,7 +200,12 @@ func TestMergeGolden(t *testing.T) {
 func TestManualSnippetGolden(t *testing.T) {
 	e := newEnv(t, "darwin")
 	cases := map[string]string{
-		"codex": `[mcp_servers.agenthub]
+		// The client's own CLI leads: it writes codex's TOML correctly,
+		// which is exactly what agenthub refuses to do.
+		"codex": `codex mcp add agenthub -- /opt/agenthub/bin/agenthub connect --client codex
+
+# or, by hand:
+[mcp_servers.agenthub]
 command = "/opt/agenthub/bin/agenthub"
 args = ["connect", "--client", "codex"]
 `,

@@ -542,3 +542,74 @@ func TestDoctorSilentWithoutQuarantinedDocs(t *testing.T) {
 		t.Error("doctor reported registry:quarantined with an intact registry")
 	}
 }
+
+// TestDoctorNeverClaimsAbsenceFromAFileItCannotRead: the three states
+// between yes and no each get their own report. Reading the server lists
+// alone made all of them "no agenthub gateway entry" — an absence asserted
+// about a file doctor had not read — and suggested a connect that, for a
+// format agenthub will not rewrite, cannot work.
+func TestDoctorNeverClaimsAbsenceFromAFileItCannotRead(t *testing.T) {
+	requireUnprivilegedCLI(t)
+	setDataDir(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// A format with no reader.
+	write(t, filepath.Join(home, ".continue", "config.yaml"), "mcpServers:\n  - name: x\n")
+	// A file that may not be read at all.
+	blocked := filepath.Join(home, ".cursor", "mcp.json")
+	write(t, blocked, `{"mcpServers":{}}`)
+	if err := os.Chmod(blocked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blocked, 0o644) })
+
+	var report DoctorReport
+	decodeInto(t, mustRun(t, "", "doctor", "--json"), &report)
+	checks := map[string]DoctorCheck{}
+	for _, c := range report.Checks {
+		checks[c.Name] = c
+	}
+
+	cont, ok := checks["client:continue"]
+	if !ok {
+		t.Fatalf("continue not reported: %+v", report.Checks)
+	}
+	if strings.Contains(cont.Detail, "no agenthub gateway entry") {
+		t.Errorf("continue = %q, want an admission that the format is not read", cont.Detail)
+	}
+	cur, ok := checks["client:cursor"]
+	if !ok {
+		t.Fatalf("cursor not reported: %+v", report.Checks)
+	}
+	if strings.Contains(cur.Detail, "no agenthub gateway entry") || cur.Status != StatusWarn {
+		t.Errorf("cursor = %+v, want a warning that it could not be read", cur)
+	}
+	if !strings.Contains(cur.Fix, "client inspect") {
+		t.Errorf("cursor fix = %q, want it to point at inspect", cur.Fix)
+	}
+}
+
+// TestDoctorReadsCodexTOML: the entry codex's own CLI wrote is agenthub's,
+// and doctor must say so rather than report the client as unconfigured.
+func TestDoctorReadsCodexTOML(t *testing.T) {
+	setDataDir(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	write(t, filepath.Join(home, ".codex", "config.toml"),
+		"[mcp_servers.agenthub]\ncommand = \"/bin/sh\"\n"+
+			"args = [\"connect\", \"--client\", \"codex\"]\n")
+
+	var report DoctorReport
+	decodeInto(t, mustRun(t, "", "doctor", "--json"), &report)
+	for _, c := range report.Checks {
+		if c.Name != "client:codex" {
+			continue
+		}
+		if !strings.Contains(c.Detail, "gateway entry present") {
+			t.Errorf("codex = %+v, want the entry recognised", c)
+		}
+		return
+	}
+	t.Errorf("codex not reported: %+v", report.Checks)
+}
