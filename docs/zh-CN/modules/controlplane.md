@@ -606,7 +606,18 @@ auth、audit、activity、events、config、doctor、connect）保持原名，�
 同一份测试还钉住了帮助分组的成员——Setup 是 `server, auth, catalog`（`catalog` 只有一小撮策展条目，
 让它打头会教出一条对多数 server 以「没收录」结尾的路；`server add --url ...` 才是通用答案），
 Wire up 是 `profile, client`（一份面**装了什么**和**给谁**是同一个问题的两半），
-Govern 收下了 `secret`、`tool`、`token`，Operate 收下了 `skill`。
+Daemon 是 `daemon, session, events, token`，Manage 是其余全部。
+
+后半段按**一个可验证的问题**切分：这条命令需不需要 daemon 在跑？Daemon 组的每个成员没有 daemon
+都是空转的——`session` 和 `events` 在自己的帮助文案里就写了，`token` 发的是 daemon HTTP 数据面的
+凭证，没有 daemon 它就没有主语。按这个共同前提分组，「daemon 起来了吗」整节只需要回答一次，而不是
+每条命令回答一次；`daemon` 打头，答案就是第一个能拿到的东西。Manage 就叫它本来的样子——剩下的部分，
+不用起任何东西、对着本地状态就能跑。它替换掉的是 Govern/Operate 那种按主题切的分法，而那些主题
+没能扛住自己的成员表：`secret` 和 `token` 是 setup 不是治理，`skill` 和 `activity` 不是运维。
+一个把自己成员归错的标题，教给读者的是错的工具模型——所以兜底那一组不给它一个迟早会被打破的主题。
+`audit` 和 `activity` 是 `audit.jsonl` / `savings.jsonl` 的投影，是磁盘上的文件，这就是它们不进
+Daemon 的原因。
+
 `skill` 不在 Wire up：把技能包物化出来和「给 client 发 MCP 工具」是两件事，
 而 shipped build 的帮助页是一条路线推荐——`profile` 和 `client` 旁边多一项会被读成第三个必做步骤。
 每个 group 裸调用打印 help 且退出 0，未知子命令退出 2。

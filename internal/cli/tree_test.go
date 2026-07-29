@@ -39,14 +39,15 @@ func newReleaseTestRoot(t *testing.T) *cobra.Command {
 // withheldCommands its flattened membership. Both are spelled out here rather
 // than read back from the tree, so the test fails if a group's membership
 // drifts instead of silently agreeing with whatever it finds.
-var withheldGroups = []*cobra.Group{groupGovern, groupOperate}
+var withheldGroups = []*cobra.Group{groupDaemon, groupManage}
 
 // `profile` is deliberately NOT withheld: a shipped build that can connect a
 // client but cannot say what that client will then see teaches half the
 // model. Setup -> profile -> client bind is the whole everyday path.
 var withheldCommands = []string{
-	"approval", "grant", "config", "audit", "secret", "tool", "token",
-	"daemon", "session", "events", "activity", "skill", "doctor",
+	"daemon", "session", "events", "token",
+	"approval", "grant", "config", "secret", "tool", "audit", "activity",
+	"skill", "doctor",
 }
 
 // walk visits every command in the tree, root included.
@@ -222,7 +223,7 @@ func TestEveryGroupShowsHelpOnBareInvocation(t *testing.T) {
 }
 
 // TestRootHelpOrderIsTheOnboardingPath pins the root listing: the phase
-// order (setup -> wire up -> govern -> operate, connect held apart)
+// order (setup -> wire up -> daemon -> manage, connect held apart)
 // is the one thing on the help page that carries meaning, and with
 // EnableCommandSorting off it is only as good as the declaration order. A new
 // command appended to whichever AddCommand call is nearest is how that
@@ -239,8 +240,14 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		// command up front implies a step the everyday path does not have.
 		{"setup", []string{"server", "auth", "catalog"}},
 		{"wire", []string{"profile", "client"}},
-		{"govern", []string{"approval", "grant", "config", "audit", "secret", "tool", "token"}},
-		{"operate", []string{"daemon", "session", "events", "activity", "skill", "doctor"}},
+		// Split on one testable question — does this need a running daemon?
+		// `token` mints credentials for the daemon's HTTP data plane, so it
+		// sits with the daemon rather than with the other governance verbs.
+		{"daemon", []string{"daemon", "session", "events", "token"}},
+		{"manage", []string{
+			"approval", "grant", "config", "secret", "tool", "audit", "activity",
+			"skill", "doctor",
+		}},
 		{"entry", []string{"connect"}},
 	}
 	root := newTestRoot(t)
@@ -361,7 +368,7 @@ func TestEveryCommandHasShortHelp(t *testing.T) {
 }
 
 // TestReleaseHidesExactlyTheWithheldCommands: a release build withholds the
-// Scope, Govern and Operate groups from the help page and nothing else.
+// Daemon and Manage groups from the help page and nothing else.
 // Asserting the complement matters as much as the groups themselves —
 // `Hidden` is one field on a shared tree, and hiding one command too many is
 // the same edit as hiding the right thirteen.

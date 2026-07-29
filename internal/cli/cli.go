@@ -47,7 +47,7 @@ type Options struct {
 	Resolver *platform.Resolver
 	// LockTimeout overrides the registry lock timeout (0 = registry default).
 	LockTimeout time.Duration
-	// ReducedHelp drops the Govern and Operate groups from the help pages,
+	// ReducedHelp drops the Daemon and Manage groups from the help pages,
 	// leaving a shipped build's page at Setup -> Wire up -> connect. Set for
 	// release builds only (main.channel); every one of those commands stays
 	// registered and stays runnable — this narrows what the help page
@@ -186,31 +186,53 @@ func (a *App) newRoot() *cobra.Command {
 	// behaves identically in a release build. Routing them through the same
 	// call as every other group is what keeps a newly added member of one of
 	// them from being left visible.
-	addGroupedHidden(root, a.reducedHelp, groupGovern,
-		a.newApprovalCmd(), a.newGrantCmd(), a.newConfigCmd(), a.newAuditCmd(),
-		a.newSecretCmd(), a.newToolCmd(), a.newTokenCmd())
-	addGroupedHidden(root, a.reducedHelp, groupOperate,
-		a.newDaemonCmd(), a.newSessionCmd(), a.newEventsCmd(), a.newActivityCmd(),
+	//
+	// The daemon group is drawn along one line: every member is inert without
+	// a running daemon. `session` and `events` say so in their own help text,
+	// and `token` mints credentials for the daemon's HTTP data plane — with no
+	// daemon the command has no subject. Grouping by that shared prerequisite
+	// rather than by topic answers "is the daemon up?" once for the section
+	// instead of once per command, and `daemon` leads so the answer is the
+	// first thing on offer.
+	addGroupedHidden(root, a.reducedHelp, groupDaemon,
+		a.newDaemonCmd(), a.newSessionCmd(), a.newEventsCmd(), a.newTokenCmd())
+	// Everything else, and the title says so rather than naming a theme the
+	// membership does not honor. These run against local state with nothing
+	// started; `audit` and `activity` are projections of audit.jsonl and
+	// savings.jsonl, which is why neither belongs above. Order is read-then-
+	// write within each pair, decide -> inspect -> repair across them.
+	addGroupedHidden(root, a.reducedHelp, groupManage,
+		a.newApprovalCmd(), a.newGrantCmd(), a.newConfigCmd(), a.newSecretCmd(),
+		a.newToolCmd(), a.newAuditCmd(), a.newActivityCmd(),
 		a.newSkillCmd(), a.newDoctorCmd())
 	addGrouped(root, groupEntry, a.newConnectCmd())
 	return root
 }
 
 // Help groups, in the order the onboarding path actually runs: bring a server
-// in -> choose a surface and hand it to an AI client -> govern -> run and
-// watch it. `connect` is held apart because it is the machine entry point a
-// client's MCP config invokes; a human who types it gets a terminal that just
-// hangs on stdio.
+// in -> choose a surface and hand it to an AI client -> start the daemon and
+// watch what it serves -> everything else. `connect` is held apart because it
+// is the machine entry point a client's MCP config invokes; a human who types
+// it gets a terminal that just hangs on stdio.
 //
 // There is no separate Scope group: narrowing is what a profile IS, so it
 // belongs with the commands that build and hand out profiles rather than in a
 // section of its own.
+//
+// The last two groups are split on ONE testable question — does this command
+// need a running daemon? — because that is the only line through the back half
+// of the CLI that a reader can check against behavior. The former Govern and
+// Operate split was thematic, and the themes did not survive contact with the
+// membership: `secret` and `token` are setup, not governance, and `skill` and
+// `activity` are not operations. A heading that mis-sorts its own members
+// teaches the wrong model of the tool, so the fallback group is named for what
+// it honestly is — the remainder — rather than given a theme to break.
 var (
-	groupSetup   = &cobra.Group{ID: "setup", Title: "Setup — bring a downstream server in:"}
-	groupWire    = &cobra.Group{ID: "wire", Title: "Wire up — choose a surface, hand it to an AI client:"}
-	groupGovern  = &cobra.Group{ID: "govern", Title: "Govern — allow, hold, record:"}
-	groupOperate = &cobra.Group{ID: "operate", Title: "Operate — run it, watch it, fix it:"}
-	groupEntry   = &cobra.Group{ID: "entry", Title: "Machine entry point (not for humans):"}
+	groupSetup  = &cobra.Group{ID: "setup", Title: "Setup — bring a downstream server in:"}
+	groupWire   = &cobra.Group{ID: "wire", Title: "Wire up — choose a surface, hand it to an AI client:"}
+	groupDaemon = &cobra.Group{ID: "daemon", Title: "Daemon — the coordination plane and what rides on it:"}
+	groupManage = &cobra.Group{ID: "manage", Title: "Manage — governance, credentials, and local state:"}
+	groupEntry  = &cobra.Group{ID: "entry", Title: "Machine entry point (not for humans):"}
 )
 
 // addGrouped stamps every command with its group before adding it. Cobra does

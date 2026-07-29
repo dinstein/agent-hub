@@ -805,14 +805,27 @@ SIGTTIN/SIGTTOU.
 (`server`, `auth`, `catalog` — `server add --url ...` is the general answer, so it leads, and the curated
 catalog trails because leading with it teaches a path that ends in "not listed" for most servers), Wire up
 (`profile`, `client` — a profile says what a surface *contains*, `client bind` says who gets it,
-so the two halves of one question sit together), Govern (`approval`, `grant`, `config`, `audit`, `secret`,
-`tool`, `token`), Operate (which also holds `skill`), and the machine entry point `connect`.
+so the two halves of one question sit together), Daemon (`daemon`, `session`, `events`, `token`), Manage
+(everything else), and the machine entry point `connect`.
+
+**The back half is split on one testable question — does this command need a running daemon?** Every
+member of Daemon is inert without one: `session` and `events` say so in their own help text, and `token`
+mints credentials for the daemon's HTTP data plane, so with no daemon it has no subject. Grouping by that
+shared prerequisite answers "is the daemon up?" once for the section instead of once per command, and
+`daemon` leads so the answer is the first thing on offer. Manage is named for what it honestly is — the
+remainder, usable against local state with nothing started. This replaced a thematic Govern/Operate split
+whose themes did not survive contact with their own membership: `secret` and `token` are setup rather than
+governance, and `skill` and `activity` are not operations. A heading that mis-sorts its own members
+teaches the wrong model of the tool, which is why the fallback group is not given a theme it would then
+break. `audit` and `activity` are projections of `audit.jsonl` and `savings.jsonl` — files on disk, which
+is why neither sits under Daemon.
+
 `skill` is deliberately not in Wire up: materializing skill packages is a separate job from giving a
 client MCP tools, and a shipped build's help page is a route recommendation — a third entry beside
 `profile` and `client` reads as a third required step. `secret` is deliberately **not** in
 Setup: credentials are normally handled for the operator (`server add` prompts, `auth login` stores its
 own), so a manual secret command in the first section would imply a step the everyday path does not have.
-`Options.ReducedHelp` (set for release builds only) withholds **Govern and Operate**. Every withheld
+`Options.ReducedHelp` (set for release builds only) withholds **Daemon and Manage**. Every withheld
 command stays registered and stays runnable: this narrows what the binary *teaches*, never what it can do.
 Withholding `profile` — which the retired Scope group used to do — left a shipped build able to connect a
 client while giving it no vocabulary for what that client would then see.
