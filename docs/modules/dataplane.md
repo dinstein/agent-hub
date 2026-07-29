@@ -240,8 +240,9 @@ credential is read once and held for the life of the round tripper — the alter
 on macOS for every single request. But the writers of that vault are *other processes*: `agenthub auth login`,
 and the daemon's proactive refresher, neither of which holds a handle on a live round tripper. Nor can the
 registry hot-reload plane help, because `specEqual` compares URL/args/env/headers and credentials are invisible
-to it — a vault write produces no diff and no reconnect. So the cache has two rules, and each is pinned by its
-own test:
+to it — a vault write produces no diff and no reconnect, and that is deliberate: putting credentials into the
+registry's comparison surface would mean the registry holds secrets. So the cache has three rules, each pinned
+by its own test:
 
 - **A miss is never cached.** Only a hit sets `loaded`. A server enabled before its credential existed
   (`server add` → `server enable` → `auth login`) would otherwise hold the empty string forever, and on a
@@ -250,9 +251,37 @@ own test:
   stale copy. A read burns no refresh token and prompts nobody, so it is tried first; the `tok != stale` guard
   is what keeps it from swallowing the genuine renewal path, since re-reading the same rejected value proves
   the vault holds nothing newer and the OAuth grant still runs.
+- **A moved credential epoch drops the cache.** The first two rules are both *reactive* — they need a request
+  to have been rejected. A credential **rotated** while the one in hand is still accepted produces no
+  rejection at all, so the daemon's refresher could never deliver its work to a live connection. The
+  announcement plane below supplies the missing signal, and `WithEpoch` is how a source opts into it; a source
+  without one keeps the reactive contract exactly.
 
-The failure this prevents is the expensive kind to diagnose: the gateway lists the server, and every call to
-it 401s until the process is restarted.
+**The announcement plane** (`internal/secrets/announce.go`) is what the vault has instead of the registry's
+revision counter. `<data>/secrets/credentials.rev` records server ids and a monotonic counter and **nothing
+else** — that is what lets it sit unencrypted beside `secrets.enc`, and a test asserts a stored credential
+never appears in it. It is a file of its own rather than a watch over the vault's storage because a credential
+may live in the OS keyring, where replacing a value in place changes no file at all — precisely the most
+common case, a refreshed token.
+
+`Chain.Set` / `Chain.Delete` announce, because they are the one choke point every credential travels through:
+`auth login`, `secret set` and the daemon's refresher all land there, so no caller can forget. The failure
+direction is fail-soft in both halves — an announcement that cannot be written, or a `credentials.rev` that
+cannot be parsed, degrades to exactly the behaviour of the release before it, because every consumer still has
+the reactive path it always had.
+
+What a gateway does with one depends on the server's state (`internal/gateway/credwatch.go`): **connected** →
+bump the epoch, so the next request re-reads the vault and *nothing reconnects* (the daemon rewrites the vault
+every 60s; reconnecting per refresh would be a storm, not a fix); **not connected** → wake its re-dial rung, so
+a login that repairs a rejected handshake is not made to wait out a backoff earned before the credential
+existed. Epochs are keyed by server and not by scope, because a derived instance inherits its base server's
+login and one counter has to invalidate every instance.
+
+The failure all of this prevents is the expensive kind to diagnose: the gateway lists the server, and every
+call to it 401s until the client is restarted. Note what does **not** close that on its own — the 401 retry
+hangs off a live connection's round tripper, so it repairs a credential that expired under a working
+connection and can do nothing for a handshake that never completed. That case needs the re-dial ladder
+(`internal/gateway`, below), and the announcement plane is what makes it prompt instead of eventual.
 
 ### Current wiring status
 
@@ -578,6 +607,34 @@ gate, with no re-implementation of the decision in this package. `Config.ScopeLa
 credential's server allowlist and profile pin, wired to `scope.Sources.Extra` — the same `Merge` as the five persisted
 layers, security fields intersecting, **narrowing only**. Neither field is used by `agenthub connect`, and their zero
 values are exactly the stdio behavior.
+
+### The re-dial ladder
+
+A dial that fails records **why** (`connErr`) so the server reports as errored rather than as perpetually
+connecting — and, until this plane existed, that was the end of it: the connection was never attempted again,
+so every recovery cost a client restart whatever the cause. The server came up slower than the gateway, the
+network blinked, a stdio child crashed on its first launch, or a credential arrived after a 401 had already
+been answered.
+
+`redial.go` gives each failed server a ladder: **5s, 15s, 45s, 135s, then 5 minutes forever**, armed by the
+recorded failure and cleared by a success, so `connErr` and the ladder can never disagree about whether a
+server is broken. Only the base is configurable (`Config.RedialBase`); the tick and the ceiling derive from it,
+because two independent knobs would let a caller set a base above its own cap.
+
+Three properties are load-bearing:
+
+- **The cap is not decoration.** Without it a permanently dead server is dialed at the base delay for the life
+  of the process, and for a stdio entry each rung is a process spawn.
+- **The ladder is driven by a recorded failure, never by the tick.** A connected server is never re-dialed;
+  a gateway that respawned healthy stdio children on a timer would be worse than the bug it fixes.
+- **Dials are claimed per server** (`beginDial` / `finishDial`) across all three paths — startup, hot reload,
+  re-dial — so a reload landing next to a due rung cannot produce two connections for one server. A reload
+  that cannot claim a slot hands the server to the ladder instead of dropping it; otherwise a redefinition
+  arriving while the previous definition's dial is still in flight ends up dialed by nobody, since that dial
+  drops itself as stale when it lands.
+
+Discovery mode rules out the cheaper design. In lazy mode a failed server's tools are absent from the catalog,
+so no call can ever arrive to trigger a dial on demand: recovery has to come off a timer, not off traffic.
 
 ### Current wiring status
 
