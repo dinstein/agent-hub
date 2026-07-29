@@ -586,20 +586,16 @@ func (d *doctorRun) checkOneServer(
 	cachedTools []mcp.ToolDef, cacheAge time.Duration,
 ) {
 	name := "server:" + id
+	// A container entry is handshaked like any other (the dial spawns the
+	// container, not the host command), but an invalid `docker run` line is
+	// worth catching before the dial: the spawn failure it produces names the
+	// symptom, and this names the flag to fix.
 	if entry.IsDocker() {
-		// Fail-closed: probing this entry through the connection layer
-		// would spawn the command on the host and silently discard the
-		// isolation. Report what CAN be verified — the configuration —
-		// and say plainly that the handshake was not attempted.
 		if err := validateDockerEntry(id, entry); err != nil {
 			d.add(name, StatusFail, "docker runtime configuration is invalid: "+err.Error()).Fix =
 				"agenthub server rm " + id + "   (then re-add it with corrected --image/--mount flags)"
 			return
 		}
-		d.add(name, StatusWarn,
-			"docker runtime: configuration and 'docker run' line validate, but the connection layer "+
-				"does not select the docker runtime yet, so no handshake was attempted")
-		return
 	}
 	start := time.Now()
 	tools, protocol, err := d.app.probeServer(ctx, id, entry)

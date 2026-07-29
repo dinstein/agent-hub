@@ -312,8 +312,10 @@ profile).
 **The non-registry face (`nonreg*.go`)** — the half of the control plane that **doesn't land on the config
 registry**: credentials, skills, agent tokens, client adapters, the OAuth lifecycle, and live connection
 self-tests. A few rules only visible here: **verifying that a credential works is `POST /v1/servers/{id}/test`,
-not part of the secrets face**; `POST /v1/servers/{id}/test` **refuses docker-runtime entries fail-closed rather
-than probing them on the host**; client wiring resolves its write target as `path` > `placement` > the default
+not part of the secrets face**; `POST /v1/servers/{id}/test` **probes a docker-runtime entry as a container**,
+because the dial carries `Spec.Docker` into the spawner instead of running the command on the host (this
+endpoint used to refuse such entries fail-closed, back when the dial could not);
+client wiring resolves its write target as `path` > `placement` > the default
 user-level file, and a client lacking that placement gets a 400 refusal rather than a rewrite to a different
 location; `PATCH /v1/skills/{id}` exposes **only** the coarse library-level switch. `GET /v1/audit` and
 `GET /v1/security` exist so frontends can backfill the two governance streams — the GUI is not allowed to touch

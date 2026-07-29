@@ -261,7 +261,8 @@ client 绑定（收窄搬到了 profile 上），但 `scopeBindingWire` 依旧�
 **非 registry 面（`nonreg*.go`）**——控制面里**不落在配置 registry 上**的那一半：
 凭据、技能、agent token、客户端适配、OAuth 生命周期，以及活连接自检。几条只在这里能看到的规矩：
 **验证凭据对不对是 `POST /v1/servers/{id}/test`，不属于 secrets 面**；`POST /v1/servers/{id}/test`
-对 docker runtime 条目 **fail-closed 拒绝，绝不在宿主机上探**；客户端接线的写入目标按
+对 docker runtime 条目 **按容器探测**——dial 把 `Spec.Docker` 带进 spawner，不会在宿主机上跑那条命令
+（早期 dial 还做不到，这里曾是 fail-closed 拒绝）；客户端接线的写入目标按
 `path` > `placement` > 默认用户级文件解析，客户端没有该 placement 时 400 拒绝而不是改写另一个位置；
 `PATCH /v1/skills/{id}` **只有**库级粗开关。`GET /v1/audit` 与 `GET /v1/security` 的存在是为了让前端
 回填两条治理流——GUI 不许自己碰数据目录。`POST /v1/parse/client-config` 只读不写（产出条目**预览**），

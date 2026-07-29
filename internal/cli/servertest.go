@@ -190,9 +190,6 @@ func (a *App) newServerTestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if entry.IsDocker() {
-				return errDockerProbeUnwired(id)
-			}
 			spec, err := downstream.SpecFromEntry(id, entry)
 			if err != nil {
 				return &Error{

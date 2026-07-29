@@ -282,9 +282,14 @@ func TestServerTestUnknownServerIs404(t *testing.T) {
 	}
 }
 
-// TestServerTestRefusesDocker: probing a container-isolated entry on the host
-// would silently discard exactly the isolation the operator configured.
-func TestServerTestRefusesDocker(t *testing.T) {
+// TestServerTestProbesDockerAsContainer: a container-isolated entry is
+// probed like any other, and the isolation reaches the dial. This endpoint
+// used to 409 such entries, back when the dial would have spawned the
+// command on the host; the assertion that matters now is not "it was
+// dialed" but "what was dialed still carried the container config" —
+// probing a docker entry AS A HOST PROCESS is the failure to guard against,
+// and it would show up here as a nil Spec.Docker.
+func TestServerTestProbesDockerAsContainer(t *testing.T) {
 	c := &nrConnector{conn: nrTestConn()}
 	env := nrStart(t, func(d *NonRegistryDeps) { d.Connect = c.connect })
 	if err := env.reg.Update(t.Context(), func(tx *registry.Tx) error {
@@ -298,11 +303,17 @@ func TestServerTestRefusesDocker(t *testing.T) {
 	}
 
 	status, body := nrDo(t, env.sock, http.MethodPost, "/v1/servers/boxed/test", ServerTestRequest{})
-	if status != http.StatusConflict {
-		t.Fatalf("status = %d, want 409: %s", status, body)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", status, body)
 	}
-	if c.dialed != 0 {
-		t.Errorf("a docker-runtime entry was spawned on the host")
+	if c.dialed != 1 {
+		t.Fatalf("dialed = %d, want 1", c.dialed)
+	}
+	if c.gotSpec.Docker == nil {
+		t.Fatal("the probe dialed a docker entry with a nil Spec.Docker: it would run on the host")
+	}
+	if got := c.gotSpec.Docker.Image; got != "ghcr.io/x/y:1" {
+		t.Errorf("Spec.Docker.Image = %q, want the configured image", got)
 	}
 }
 

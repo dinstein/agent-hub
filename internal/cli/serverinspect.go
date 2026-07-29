@@ -224,12 +224,11 @@ func (a *App) newServerToggleCmd(enable bool) *cobra.Command {
 // returns an error: every result is descriptive, because the enable it
 // accompanies has already happened.
 //
-// Docker entries are skipped rather than guessed at — the CLI has no
-// container probe wired (errDockerProbeUnwired), and reporting "unreachable"
-// for something never dialed would be a lie.
+// Docker entries are probed like any other: the dial spawns the container,
+// not the host command (see dockerruntime.go).
 func (a *App) probeForEnable(ctx context.Context, id string, p *output.Printer) *ProbeResult {
 	entry, _, err := a.serverEntry(id)
-	if err != nil || entry.IsDocker() {
+	if err != nil {
 		return nil
 	}
 	spec, err := downstream.SpecFromEntry(id, entry)

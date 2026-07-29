@@ -154,20 +154,12 @@ func validateDockerEntry(id string, e registry.ServerEntry) error {
 	return opsError(confops.ValidateDockerEntry(id, e))
 }
 
-// errDockerProbeUnwired is the fail-CLOSED answer for probe paths
-// (`server test`, `doctor`) asked to connect to a docker-runtime server.
+// Probing a docker-runtime entry needs no special case here, and used to.
 //
-// The connection layer (internal/downstream) selects a transport from
-// Spec.Kind and has no runtime dimension yet, so probing such an entry
-// would spawn the command ON THE HOST — silently discarding exactly the
-// isolation the operator configured. Refusing is the only honest option:
-// the wrong answer here is one nobody would notice.
-func errDockerProbeUnwired(id string) error {
-	return &Error{
-		Code: CodeNotImplemented, ExitCode: ExitGeneral,
-		Message: fmt.Sprintf(
-			"server %q uses the docker runtime, which the connection layer does not select yet; "+
-				"refusing to probe it on the host", id),
-		Hint: "validate the configuration with 'agenthub server inspect " + id + "'",
-	}
-}
+// The probe paths (`server test`, `doctor`, `server enable`) reach a
+// container through the same SpecFromEntry -> downstream.Connect path the
+// gateway uses, because the runtime dimension rides INSIDE the stdio
+// transport rather than beside it: Spec.Docker is a pointer whose nil value
+// is the only thing meaning "host", and dialStdio hands a non-nil one to
+// SpawnDocker. A container entry therefore cannot degrade into a host spawn
+// by defaulting — which is the exact failure these paths once refused over.

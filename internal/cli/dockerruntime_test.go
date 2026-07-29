@@ -263,26 +263,40 @@ func TestDockerConfigForMapsEveryField(t *testing.T) {
 	}
 }
 
-// TestServerTestRefusesDockerEntry pins the fail-closed direction: probing a
-// containerized entry through the connection layer would spawn it on the
-// host, silently discarding the isolation. Refusing is the only honest
-// answer until the connection layer selects the runtime.
-func TestServerTestRefusesDockerEntry(t *testing.T) {
+// TestServerTestProbesDockerEntryAsContainer pins the direction that
+// replaced the old fail-closed refusal: `server test` on a containerized
+// entry goes through the docker spawner, never a host spawn.
+//
+// The entry names a command that exists on every host (`true`, which exits 0
+// immediately) inside an image that exists nowhere. A host spawn would run
+// /usr/bin/true and fail with a handshake/EOF error; the docker path cannot
+// get that far — it dies on the image, or on the missing CLI when the
+// machine has no docker. Either way the failure names docker, and that is
+// the evidence the runtime dimension was honored. No daemon required, so
+// this runs the same on a CI box without docker.
+func TestServerTestProbesDockerEntryAsContainer(t *testing.T) {
 	setDataDir(t)
+	const image = "agenthub-nonexistent.invalid/no-such-image:0"
 	if code, out, _ := runCLI(t, "", "server", "add", "boxed", "--json",
-		"--cmd", "node", "--image", "alpine"); code != ExitOK {
+		"--cmd", "true", "--image", image); code != ExitOK {
 		t.Fatalf("add failed:\n%s", out)
 	}
 	code, out, _ := runCLI(t, "", "server", "test", "boxed", "--json")
 	if code == ExitOK {
-		t.Fatalf("server test probed a docker entry:\n%s", out)
+		t.Fatalf("server test succeeded against a nonexistent image:\n%s", out)
 	}
-	env := decodeEnvelope(t, out)
-	if env.Error == nil || env.Error.Code != CodeNotImplemented {
-		t.Fatalf("error = %+v, want %s", env.Error, CodeNotImplemented)
+	// Progress lines precede the envelope; the envelope is always last.
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	env := decodeEnvelope(t, lines[len(lines)-1])
+	if env.Error == nil {
+		t.Fatalf("no error envelope:\n%s", out)
 	}
-	if !strings.Contains(env.Error.Message, "refusing to probe it on the host") {
-		t.Fatalf("message does not say what it refused: %q", env.Error.Message)
+	// "docker" appears in every failure the container path can produce (CLI
+	// missing, daemon down, image unpullable) and in none the host path
+	// produces for /usr/bin/true.
+	if !strings.Contains(strings.ToLower(env.Error.Message), "docker") {
+		t.Fatalf("failure does not come from the docker path — the entry may have been "+
+			"spawned on the host: %q", env.Error.Message)
 	}
 }
 
@@ -314,23 +328,21 @@ func TestParseMountFlags(t *testing.T) {
 	}
 }
 
-// TestDoctorReportsDockerRuntimeHonestly covers the doctor half of the
-// fail-closed rule: a docker-runtime entry is NEVER probed, because the
-// connection layer has no runtime dimension and probing would spawn the
-// command on the host — discarding the isolation while reporting a healthy
-// handshake. Doctor must instead validate what it can and say plainly that no
-// handshake was attempted.
+// TestDoctorHandshakesADockerEntry covers the doctor half of the same
+// change: a docker-runtime entry is handshaked like any other, because the
+// dial spawns the container rather than the host command. Doctor used to
+// warn "no handshake was attempted" here.
 //
-// This path (doctor → validateDockerEntry) had no test at all: every existing
-// docker case went through `server add`, which validates on the way IN. Doctor
-// is what re-validates entries that are already on disk, which is where a
-// registry edited by hand, restored from a backup, or written by an older
-// build shows up.
-func TestDoctorReportsDockerRuntimeHonestly(t *testing.T) {
+// The image is unresolvable on purpose, so the check FAILS — and the failure
+// is the assertion: a status of warn would mean doctor went back to
+// describing the entry instead of contacting it, and an ok would mean it
+// handshaked something that was never the container. The image reference is
+// also unroutable by design, so this neither pulls nor touches the network.
+func TestDoctorHandshakesADockerEntry(t *testing.T) {
 	setDataDir(t)
 	isolateHome(t)
 	if code, _, stderr := runCLI(t, "", "server", "add", "boxed",
-		"--cmd", "node", "--image", "alpine:3"); code != ExitOK {
+		"--cmd", "true", "--image", "agenthub-nonexistent.invalid/no-such-image:0"); code != ExitOK {
 		t.Fatalf("add failed: %s", stderr)
 	}
 	if code, _, stderr := runCLI(t, "", "server", "enable", "boxed", "--no-probe"); code != ExitOK {
@@ -338,19 +350,22 @@ func TestDoctorReportsDockerRuntimeHonestly(t *testing.T) {
 	}
 
 	code, out, _ := runCLI(t, "", "doctor", "--json")
-	if code != ExitOK {
-		t.Fatalf("exit = %d, want 0\n%s", code, out)
+	if code == ExitOK {
+		t.Fatalf("doctor reported no failure for an unresolvable image\n%s", out)
 	}
 	check := findCheck(t, decodeDoctor(t, decodeEnvelope(t, out)), "server:boxed")
-	if check.Status != StatusWarn {
-		t.Fatalf("status = %q, want warn (a valid config that cannot be handshaked): %+v",
+	if check.Status != StatusFail {
+		t.Fatalf("status = %q, want fail (the handshake was attempted and could not succeed): %+v",
 			check.Status, check)
 	}
-	// The wording is the point: an operator must not read this as "healthy".
-	for _, want := range []string{"docker runtime", "no handshake"} {
-		if !strings.Contains(check.Detail, want) {
-			t.Errorf("detail %q missing %q", check.Detail, want)
-		}
+	if !strings.Contains(check.Detail, "handshake") {
+		t.Errorf("detail does not describe a handshake attempt: %q", check.Detail)
+	}
+	// Proof the attempt went through the container path: only it can fail
+	// on the image. A host spawn would have run /usr/bin/true.
+	if !strings.Contains(strings.ToLower(check.Detail), "docker") {
+		t.Errorf("failure does not come from the docker path — the entry may have been "+
+			"spawned on the host: %q", check.Detail)
 	}
 }
 

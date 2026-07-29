@@ -127,17 +127,10 @@ func (s *Server) handleServerTest(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 	entry := doc.V
-	if entry.IsDocker() {
-		// Refusing is the only honest option: the connection layer selects a
-		// transport from Spec.Kind and has no runtime dimension yet, so
-		// probing would spawn the command ON THE HOST and silently discard
-		// exactly the isolation the operator configured.
-		writeErr(w, http.StatusConflict, CodeConflict,
-			fmt.Sprintf("server %q uses the docker runtime, which the connection layer does not select yet; "+
-				"refusing to probe it on the host", id),
-			"validate the configuration instead", reqID)
-		return
-	}
+	// A docker-runtime entry needs no special case: SpecFromEntry carries the
+	// container config into Spec.Docker, and the dial spawns the container
+	// rather than the host command, so the isolation the operator configured
+	// is delivered by the probe path too.
 	spec, err := downstream.SpecFromEntry(id, entry)
 	if err != nil {
 		// A definition this build cannot speak is the operator's to fix, so
