@@ -45,14 +45,14 @@ hands each client exactly the surface you decided it should see.
 ## Quickstart
 
 ```bash
-# 1. register a downstream MCP server
+# 1. register a downstream MCP server (written down, still switched off)
 agenthub server add linear --url https://mcp.linear.app/mcp
 
-# 2. authorize it, if it needs that
-agenthub auth login linear
+# 2. switch it on — this connects first, and says what it still needs
+agenthub server enable linear
 
-# 3. prove it actually works, before any client depends on it
-agenthub server test linear
+# 3. sign in, if step 2 asked for it (this enables the server too)
+agenthub auth login linear
 
 # 4. connect a client — once, ever
 agenthub client connect claude-code --dry-run   # look first

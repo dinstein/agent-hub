@@ -9,7 +9,9 @@ it.
 
 Three nouns, one sentence each:
 
-- **Server** — a downstream MCP server you registered. The set of *enabled*
+- **Server** — a downstream MCP server you registered. Registering and
+  switching on are two steps: `server add` writes the definition and leaves it
+  off, `server enable` connects and puts it into service. The set of *enabled*
   servers is everything agenthub could offer anyone.
 - **Profile** — a named subset of that: which servers, which of their tools,
   and how the result is presented.
@@ -38,14 +40,15 @@ switch: no profile can bring it back.
 ## The everyday path
 
 ```bash
-# 1. register a server
+# 1. register a server — written down, still switched off
 agenthub server add linear --url https://mcp.linear.app/mcp
 
-# 2. authorize it, if it needs that
-agenthub auth login linear
+# 2. switch it on; this connects first, and reports what it still needs
+agenthub server enable linear
 
-# 3. prove it actually works, before any client depends on it
-agenthub server test linear
+# 3. sign in, if step 2 asked for it (this enables the server too, so a
+#    server you were always going to log into needs only steps 1 and 3)
+agenthub auth login linear
 
 # 4. connect a client — once, ever
 agenthub client connect claude-code --dry-run   # look first
@@ -172,6 +175,7 @@ and asking it to use a tool, a new audit line is the confirmation.
 
 | symptom | likely cause |
 |---|---|
+| a server you added never shows up | `server add` leaves it switched off — check `server ls`, then `agenthub server enable <id>` |
 | client sees no tools at all | bound to a profile that does not exist (`client ls` shows `MISSING`), or it was never restarted after `client connect` |
 | a tool disappeared | a profile's `--only` list, `agenthub tool disable`, or drift quarantine — check before suspecting the server |
 | a server works in `server test` but not in the client | the client has not been restarted, or its profile does not include that server |

@@ -7,8 +7,9 @@
 
 三个名词，一句话一个：
 
-- **server** —— 你注册进来的一台下游 MCP server。所有**已启用**的 server 合起来，就是
-  agenthub 有可能提供给任何人的全部东西。
+- **server** —— 你注册进来的一台下游 MCP server。「注册」和「打开」是两步：
+  `server add` 只写下定义、保持关闭，`server enable` 才会去连接并把它投入使用。
+  所有**已启用**的 server 合起来，就是 agenthub 有可能提供给任何人的全部东西。
 - **profile** —— 上面那个集合的一个具名子集：包含哪些 server、这些 server 的哪些 tool、
   以及结果怎么呈现。
 - **client** —— 一个 AI 应用（Claude Code、Cursor、Codex……）。一个 client **绑定**到一个
@@ -33,14 +34,15 @@ profile 能把它拉回来。
 ## 日常路径
 
 ```bash
-# 1. 注册一台 server
+# 1. 注册一台 server —— 只写下来，此时还是关着的
 agenthub server add linear --url https://mcp.linear.app/mcp
 
-# 2. 需要授权的话，登录它
-agenthub auth login linear
+# 2. 打开它；这一步会先连一次，并报出它还缺什么
+agenthub server enable linear
 
-# 3. 在任何 client 依赖它之前，先证明它真的能用
-agenthub server test linear
+# 3. 如果第 2 步要求登录，就登录（它自己也会把 server 打开，
+#    所以一台注定要登录的 server，只走第 1、3 步即可）
+agenthub auth login linear
 
 # 4. 接上一个 client —— 一辈子只做一次
 agenthub client connect claude-code --dry-run   # 先看一眼
@@ -157,6 +159,7 @@ agenthub audit          # 真正到达网关的调用
 
 | 症状 | 多半是因为 |
 |---|---|
+| 加过的 server 一直不出现 | `server add` 之后它是关着的——看 `server ls`，再 `agenthub server enable <id>` |
 | client 一个 tool 都看不见 | 绑到了一个不存在的 profile（`client ls` 里显示 `MISSING`），或者 `client connect` 之后从没重启过 |
 | 某个 tool 消失了 | 某个 profile 的 `--only` 列表、`agenthub tool disable`、或者 drift 隔离——先查这三样，再去怀疑 server |
 | `server test` 通得过，但客户端里用不了 | 客户端没重启，或者它的 profile 里没有这台 server |

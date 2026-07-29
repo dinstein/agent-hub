@@ -42,14 +42,14 @@ Claude Code · Cursor · Codex · Open WebUI · 以及另外 8 种
 ## 快速开始
 
 ```bash
-# 1. 注册一个下游 MCP server
+# 1. 注册一个下游 MCP server —— 只写下来，此时还是关着的
 agenthub server add linear --url https://mcp.linear.app/mcp
 
-# 2. 如果它需要授权，就授权
-agenthub auth login linear
+# 2. 打开它；这一步会先连一次，并报出它还缺什么
+agenthub server enable linear
 
-# 3. 在任何客户端依赖它之前，先证明它真的能用
-agenthub server test linear
+# 3. 如果第 2 步要求登录，就登录（登录本身也会把 server 打开）
+agenthub auth login linear
 
 # 4. 接一个客户端 —— 一辈子只做一次
 agenthub client connect claude-code --dry-run   # 先看一眼
