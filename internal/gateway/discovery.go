@@ -120,8 +120,23 @@ func (g *gateway) handleMetaCall(ctx context.Context, req *mcp.Request, s *disco
 		g.handleFetchResult(ctx, req, p.Arguments)
 
 	default:
-		// Unreachable: Classify only returns KindMeta for the names above.
-		// Stay closed rather than assume.
+		// Unreachable TODAY, and only because one switch is off. Classify
+		// returns KindMeta for the names above — plus the three intent
+		// variants, whenever the surface was built with them
+		// (Surface.exposesMeta). This gateway never sets
+		// discovery.Options.IntentVariants, so that cannot happen here.
+		//
+		// Whoever wires that switch must add the three cases with it. The
+		// variants REPLACE call_tool rather than joining it (MetaDefsFor), so
+		// forgetting this arm does not degrade the feature — it removes the
+		// only call door the session has, and every call answers "unknown
+		// tool" while tools/list plainly advertises three. Resolve them with
+		// Surface.ResolveCallVariant, which is ResolveCall plus the tier
+		// equality check; execTool takes it from there unchanged.
+		//
+		// Staying closed is still right for whatever is left: an unlisted
+		// name reaching this far is a bug somewhere above, and answering it
+		// would be guessing.
 		g.replyUnknownTool(req.ID, p.Name)
 	}
 }

@@ -358,6 +358,12 @@ tier is derived from downstream annotations, and **no annotations at all means d
 (fail-closed); a variant that conflicts with the actual tier is rejected with a hint naming the correct
 variant.
 
+**The switch is not read yet.** `internal/discovery` implements all of the above and tests it, but the
+stdio gateway never sets `discovery.Options.IntentVariants` from `intentVariants`, so setting that field
+in governance changes nothing today — see the unwired-faces appendix in
+[modules/dataplane.md](modules/dataplane.md). This is written down here rather than only there because
+this section is where someone decides to turn it on.
+
 Search results carry a **compact signature** rather than a full schema; the agent calls `describe_tool`
 when it needs detail. Every tool id that can't be shown — nonexistent, out of scope, quarantined, or
 disabled — returns the same copy, because differentiated errors would turn `describe_tool` into an

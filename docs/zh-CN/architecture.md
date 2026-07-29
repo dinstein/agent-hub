@@ -313,6 +313,11 @@ lazy 模式下 `call_tool` 可按治理开关拆成 `call_tool_read` / `call_too
 `call_tool_destructive` 三个变体，好让 IDE 的工具白名单分别放行；等级由下游 annotations 推导，
 **完全没有 annotations 即视为 destructive**（fail-closed），变体与实际等级冲突即拒绝并提示正确变体。
 
+**但这个开关目前还没有人去读。** 上面这些 `internal/discovery` 都实现了、也有测试，可是 stdio 网关
+从来不会拿 `intentVariants` 去设 `discovery.Options.IntentVariants`——所以今天在治理里打开这个字段，
+什么都不会发生，详见 [modules/dataplane.md](modules/dataplane.md) 里那份「已实现但尚未接线」的附录。
+这句话写在这里而不是只写在那边，是因为决定要不要打开它的人是在这一节里做这个决定的。
+
 搜索结果携带的是**紧凑签名**而不是完整 schema，agent 需要细节时再调 `describe_tool`。
 凡是不能展示的工具 id——不存在、作用域外、被隔离、被禁用——返回同一段文案，
 因为差异化的错误会把 `describe_tool` 变成一个枚举 oracle。
