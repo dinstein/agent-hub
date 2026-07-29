@@ -660,7 +660,33 @@ Daemon 的原因。
 `${SECRET_X}` 占位符，解析发生在连接时的 `internal/downstream` 里。一个条目需要哪些
 **vault 键**由 `downstream.SecretKeysIn` 给出，而不是本地再扫一遍 `${...}`：只有
 `${SECRET_<KEY>}` 才是凭据，且它指向的条目是去掉前缀的 `<KEY>`——自己扫的那份列表，恰恰在它
-唯一存在的用途（与 `secret ls` 对账）上失败。
+唯一存在的用途（与 `secret ls` 对账）上失败。`server inspect` 出于同样的理由把它们印在
+`configuration` 段里，但有**一个例外**：字面量的 `Authorization` 值，正是上面那条假设已经被打破
+的情形——它是粘进来的 token，不是占位符——所以人类视图拒绝把它读回终端。判定用的是
+`hasLiteralAuthorization` 那条窄规则，因为去猜"还有哪个 header 也在认证"就会开始隐藏普通配置；
+`--json` 信封保持原样，给已经拿着那个文件的程序看。
+
+**`server inspect` 是唯一一个描述"整台 server"的视图，它按四段排布**
+（`internal/cli/serverinspect.go`）：`configuration`（目标、cwd、容器运行命令行、derive 策略、
+声明为本地的 endpoint、trace 文件、env 与 headers）、`credentials`（下面那套分类、登录提示、每个
+vault 键的状态）、`visibility`（见下）、`status`（daemon 的实时视图，然后是带时间戳的工具缓存）。
+一段只在有话可说时才打印，所以一台普通的本地子进程仍然只占几行。其中两行的存在是因为别处根本没印过：
+**`spawns` 是 spawner 真会执行的那条 `docker run` argv**——由 `confops.DockerRunLine` 渲染，也就
+是 spawn guard 审查的同一个翻译器，于是"配置声称的隔离必须被兑现"变成读一眼就能核对的事，并且有测试
+把打印出来的这条与真正拨号的那条对比；另一行把**"从没缓存过目录"和"0 个工具"区分开**，这是旧措辞做
+不到的：两者之中只有一个是关于这台 server 的事实。标签用固定列宽而不是 `tabwriter`——明细视图在每个
+段标题处都会切断列块，算出来的宽度会在段与段之间漂移。
+
+**`visibility` 为一台 server 把 profile 与 client 绑定合到一起**
+（`internal/cli/servervisibility.go`），这正是"一切都健康、可我的 client 还是看不到工具"背后那道
+心算。三种状态被刻意分开，因为它们要的修法不同：**disabled** 的 server 不管 profile 怎么写都谁也够
+不着（全局开关压过它们，所以那句话是*替换*掉 client 列表而不是并排放着）；**排除**了这台 server 的
+profile 会被点名（只列出其余那些，回答不了"哪个 profile 漏了它"）；指向不存在 profile 的绑定
+fail-close 成空作用域——从外面看，它和一次刻意的排除长得一模一样。**未绑定** client 会看到什么，是每
+份报告都写出来，而不是只在它改变结论时才写：因为"我哪些 client 被绑定了"恰恰是读的人不知道的。它**只
+读 registry**：不打开任何 client 配置文件（那是 `client inspect` 刻意的逐 client 动作，带着 macOS
+隐私弹窗），也不需要 daemon，所以答案在坏掉的那台机器上依然拿得到。又因为作用域链只会收窄，它报告的
+是上界——会话作用域仍可以在其下再拿掉工具。
 
 **`AUTH` 列报告的是"存了什么"，绝不是"能不能用"**（`internal/cli/serverauth.go`）。这正是禁止
 持久化 `needsAuth` 那条线：「这台机器上有 notion 的 OAuth token」是本地事实，所有下游都连不上时

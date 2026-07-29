@@ -731,7 +731,33 @@ a defer (an interrupted read never leaves the user's shell with echo off).
 `${SECRET_X}` placeholders, and resolution happens at connect time inside `internal/downstream`. The **vault keys** an entry needs
 come from `downstream.SecretKeysIn`, not from a local `${...}` scan: only `${SECRET_<KEY>}` is a credential and the entry it names
 is `<KEY>` without the prefix, so a private scan produced a list that failed at the very cross-check against `secret ls` it exists
-for.
+for. `server inspect` prints them under `configuration` for the same reason and with **one exception**: a *literal* `Authorization`
+value is the case where that assumption is already broken — it is a pasted token, not a placeholder — and the human view refuses to
+read it back out to a terminal. The test is the narrow one `hasLiteralAuthorization` makes, because guessing which other header
+authenticates something would start hiding ordinary configuration; the `--json` envelope is unchanged, for programs that already
+hold the file.
+
+**`server inspect` is the one view of a WHOLE server, and it is laid out as four sections** (`internal/cli/serverinspect.go`):
+`configuration` (target, cwd, container run line, derive policy, a declared-local endpoint, the trace file, env and headers),
+`credentials` (the classification below, the login hints, the per-key vault state), `visibility` (below), and `status` (the
+daemon's live view, then the dated tool cache). A section prints only when it has something to say, so a plain local subprocess
+still fits in a few lines. Two of its lines exist because nothing else prints them: **`spawns` is the exact `docker run` argv the
+spawner would execute** — rendered by `confops.DockerRunLine`, the same translator the spawn guard screens, so "isolation a config
+claims must be delivered" is checkable by reading, and a test compares the printed line against the dialed one — and the cache line
+distinguishes **"no catalog stored" from "0 tools"**, which the old wording could not: only one of the two is a fact about the
+server. Labels sit in a fixed column rather than a `tabwriter`'s, because a detail view breaks its column blocks at every section
+heading and the computed width then drifts between them.
+
+**`visibility` joins the profile and client bindings for one server** (`internal/cli/servervisibility.go`), which is the arithmetic
+behind "everything is healthy and my client still sees no tools". Three states stay distinct because they need different repairs: a
+**disabled** server reaches nobody whatever the profiles say (the global switch outranks them, so that sentence *replaces* the
+client lists), a profile that **excludes** the server is named (a list of the others cannot answer "which profile forgot it"), and a
+binding naming a profile that **does not exist** fail-closes to an empty scope — which from outside looks exactly like deliberate
+exclusion. What an *unbound* client gets is stated on every report rather than only when it changes the answer, because "which of my
+clients is bound" is what the reader does not know. It is computed from the **registry alone**: no client configuration file is
+opened (that is `client inspect`'s deliberate per-client act, with its macOS privacy prompt) and no daemon is required, so the
+answer survives on the machine that is broken. Since the scope chain only ever narrows, what it reports is an upper bound — a
+session scope can still take tools away below it.
 
 **The `AUTH` column reports what is STORED, never whether it works** (`internal/cli/serverauth.go`). This is the line the ban on a
 persisted `needsAuth` draws: "this machine holds an OAuth token for notion" is a local fact readable with every downstream
