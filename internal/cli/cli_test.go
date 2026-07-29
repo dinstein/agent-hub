@@ -1,0 +1,185 @@
+package cli
+
+import (
+	"bytes"
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/dinstein/agent-hub/internal/platform"
+)
+
+// runCLI executes one CLI invocation hermetically and returns exit code,
+// stdout and stderr. Callers must point AGENTHUB_DATA_DIR at a temp dir
+// first (see setDataDir) so no test touches the real user registry.
+func runCLI(t *testing.T, stdin string, args ...string) (int, string, string) {
+	t.Helper()
+	return runCLIWithTimeout(t, stdin, 0, args...)
+}
+
+func runCLIWithTimeout(t *testing.T, stdin string, lockTimeout time.Duration, args ...string) (int, string, string) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	code := Main(Options{
+		Version:     "1.2.3-test",
+		Args:        args,
+		Stdin:       strings.NewReader(stdin),
+		Stdout:      &out,
+		Stderr:      &errOut,
+		LockTimeout: lockTimeout,
+	})
+	return code, out.String(), errOut.String()
+}
+
+// runCLIReleaseHelp runs one invocation the way a release build's Main
+// does, so the "hidden commands still run" assertion goes through the real
+// Main rather than a hand-built tree.
+func runCLIReleaseHelp(t *testing.T, stdin string, args ...string) (int, string, string) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	code := Main(Options{
+		Version:     "1.2.3-test",
+		Args:        args,
+		Stdin:       strings.NewReader(stdin),
+		Stdout:      &out,
+		Stderr:      &errOut,
+		ReducedHelp: true,
+	})
+	return code, out.String(), errOut.String()
+}
+
+// setDataDir points AGENTHUB_DATA_DIR at a fresh temp dir (proving the
+// override is honored end-to-end via internal/platform) and neutralizes any
+// ambient AGENTHUB_REGISTRY override.
+func setDataDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv(platform.EnvDataDir, dir)
+	t.Setenv(platform.EnvRegistry, "")
+	return dir
+}
+
+// envelope mirrors the --json output contract for test decoding.
+type envelope struct {
+	OK       bool            `json:"ok"`
+	Data     json.RawMessage `json:"data"`
+	Warnings []string        `json:"warnings"`
+	Error    *struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Hint    string `json:"hint"`
+	} `json:"error"`
+}
+
+func decodeEnvelope(t *testing.T, s string) envelope {
+	t.Helper()
+	var env envelope
+	if err := json.Unmarshal([]byte(s), &env); err != nil {
+		t.Fatalf("output is not a JSON envelope: %v\n%s", err, s)
+	}
+	return env
+}
+
+func TestVersionFlag(t *testing.T) {
+	setDataDir(t)
+	code, out, _ := runCLI(t, "", "--version")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if out != "agenthub 1.2.3-test\n" {
+		t.Errorf("output = %q", out)
+	}
+}
+
+func TestBareInvocationShowsHelp(t *testing.T) {
+	setDataDir(t)
+	code, out, _ := runCLI(t, "")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	for _, want := range []string{"Usage:", "server", "client", "connect", "doctor"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("help output missing %q", want)
+		}
+	}
+}
+
+// TestUsageErrorsExit2 pins the "cobra parse error => exit 2" contract for
+// every class of usage error: unknown command, unknown subcommand, unknown
+// flag, wrong arg count, and missing required combinations.
+func TestUsageErrorsExit2(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"unknown command", []string{"bogus"}},
+		{"unknown subcommand", []string{"server", "bogus"}},
+		{"unknown flag", []string{"server", "ls", "--nope"}},
+		{"rm missing arg", []string{"server", "rm"}},
+		{"rm extra args", []string{"server", "rm", "a", "b"}},
+		{"add without --cmd", []string{"server", "add", "x"}},
+		{"add without name", []string{"server", "add", "--cmd", "foo"}},
+		{"add stdin plus flags", []string{"server", "add", "x", "--stdin", "--cmd", "foo"}},
+		{"connect without --client", []string{"connect"}},
+		{"connect positional arg", []string{"connect", "claude-code"}},
+		{"client connect missing arg", []string{"client", "connect"}},
+		{"doctor extra arg", []string{"doctor", "x"}},
+		{"bad env flag", []string{"server", "add", "x", "--cmd", "foo", "--env", "NOEQUALS"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			setDataDir(t)
+			code, _, stderr := runCLI(t, "", tc.args...)
+			if code != ExitUsage {
+				t.Fatalf("exit = %d, want %d (stderr: %s)", code, ExitUsage, stderr)
+			}
+			if !strings.Contains(stderr, "agenthub: ") {
+				t.Errorf("stderr should carry the error line, got %q", stderr)
+			}
+		})
+	}
+}
+
+func TestUsageErrorJSONEnvelope(t *testing.T) {
+	setDataDir(t)
+	// Unknown flag: parsing fails before the bound --json variable is set,
+	// exercising the raw-args fallback in Main.
+	code, out, _ := runCLI(t, "", "server", "ls", "--nope", "--json")
+	if code != ExitUsage {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	env := decodeEnvelope(t, out)
+	if env.OK || env.Error == nil || env.Error.Code != CodeUsage {
+		t.Errorf("envelope = %+v, want ok:false code E_USAGE", env)
+	}
+
+	// Args-validation failure: parsing succeeded, the bound flag drives it.
+	code, out, _ = runCLI(t, "", "server", "rm", "--json")
+	if code != ExitUsage {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	env = decodeEnvelope(t, out)
+	if env.OK || env.Error == nil || env.Error.Code != CodeUsage {
+		t.Errorf("envelope = %+v, want ok:false code E_USAGE", env)
+	}
+	if env.Error.Hint == "" {
+		t.Errorf("usage errors should hint at --help")
+	}
+}
+
+func TestGroupAliases(t *testing.T) {
+	setDataDir(t)
+	// Plural aliases resolve to the singular canonical groups.
+	code, out, _ := runCLI(t, "", "servers", "ls", "--json")
+	if code != ExitOK {
+		t.Fatalf("servers ls exit = %d", code)
+	}
+	if env := decodeEnvelope(t, out); !env.OK {
+		t.Errorf("servers ls envelope not ok: %s", out)
+	}
+	code, _, _ = runCLI(t, "", "clients", "connect", "claude-code", "--dry-run")
+	if code != ExitOK {
+		t.Fatalf("clients connect exit = %d", code)
+	}
+}

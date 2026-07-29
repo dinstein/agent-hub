@@ -1,0 +1,61 @@
+# Platform-independent halves of a GUI package: the frontend bundle, the two
+# binaries, and the rule about how they sit relative to each other.
+#
+# THE LAYOUT CONTRACT. Every platform's package must end up with the GUI binary
+# and the CLI binary in the SAME directory:
+#
+#   macOS    AgentHub.app/Contents/MacOS/{agenthub-gui, agenthub}
+#   Windows  AgentHub/{agenthub-gui.exe, agenthub.exe}
+#   Linux    AppDir/usr/bin/{agenthub-gui, agenthub}
+#
+# This is not a packaging preference. api/dialorstart.go resolves the daemon as
+# "the sibling of my own executable", falling back to a bare $PATH name. Break
+# the sibling relationship and the GUI silently stops finding the daemon it
+# shipped with: the user gets a socket-missing error describing a launch that
+# never happened, which points at the daemon rather than at the packaging.
+
+version: "3"
+
+tasks:
+  frontend:
+    desc: Build the Vite bundle that gets embedded into the GUI binary
+    dir: cmd/agenthub-gui/frontend
+    cmds:
+      - npm install
+      - npm run build
+    sources:
+      - src/**/*
+      - index.html
+      - package.json
+      - vite.config.*
+    generates:
+      - dist/**/*
+
+  # `npm ci` installs from the lockfile exactly and fails when it disagrees
+  # with package.json — the check a CI run wants and a working copy does not.
+  frontend:ci:
+    desc: Build the Vite bundle from the lockfile exactly (CI)
+    dir: cmd/agenthub-gui/frontend
+    cmds:
+      - npm ci
+      - npm run build
+
+  # The CLI goes through the Makefile rather than a `go build` written twice:
+  # it already stamps the version, and two copies of the ldflags would drift.
+  # CHANNEL=release is mandatory here: this binary ships inside the .app, so a
+  # dev-flavoured copy would send every installed user to the sandbox
+  # directory and make the app look freshly installed on every launch.
+  cli:
+    desc: Build the CLI binary that ships inside the GUI package
+    cmds:
+      - make bin CHANNEL=release
+
+  gui:
+    desc: Build the GUI binary for the host platform
+    cmds:
+      - >-
+        go build -tags wails
+        -ldflags "-X main.version={{.VERSION}}"
+        -o bin/{{.GUI_BIN}}{{.EXE_SUFFIX}} {{.GUI_PKG}}
+    vars:
+      EXE_SUFFIX: '{{if eq OS "windows"}}.exe{{end}}'

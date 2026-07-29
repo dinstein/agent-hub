@@ -1,0 +1,712 @@
+package transport
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/dinstein/agent-hub/internal/mcp"
+)
+
+// dialStreamable is the test constructor: it returns the concrete type so
+// tests can reach internal state (session id) the interface hides.
+func dialStreamable(t *testing.T, cfg HTTPConfig) *streamableHTTP {
+	t.Helper()
+	tr, err := DialStreamableHTTP(cfg)
+	if err != nil {
+		t.Fatalf("DialStreamableHTTP: %v", err)
+	}
+	t.Cleanup(func() { _ = tr.Close() })
+	sh, ok := tr.(*streamableHTTP)
+	if !ok {
+		t.Fatalf("transport is %T", tr)
+	}
+	return sh
+}
+
+func initResult(t *testing.T, version string) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(mcp.InitializeResult{
+		ProtocolVersion: version,
+		Capabilities:    json.RawMessage(`{"tools":{"listChanged":true}}`),
+		ServerInfo:      mcp.Implementation{Name: "fake-http", Version: "1"},
+	})
+	if err != nil {
+		t.Fatalf("marshal initialize result: %v", err)
+	}
+	return raw
+}
+
+// TestStreamableHTTPSingleJSONResponse covers the plain application/json
+// answer plus the Mcp-Session-Id round trip and the negotiated
+// MCP-Protocol-Version header.
+func TestStreamableHTTPSingleJSONResponse(t *testing.T) {
+	const sessionID = "sess-abc-123"
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete { // Close's session teardown
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		msg := readRPC(t, r)
+		switch m := msg.(type) {
+		case *mcp.Request:
+			if m.Method == mcp.MethodInitialize {
+				if got := r.Header.Get(headerSessionID); got != "" {
+					t.Errorf("initialize carried a session id %q", got)
+				}
+				if got := r.Header.Get(headerProtocolVersion); got != mcp.ProtocolVersion {
+					t.Errorf("initialize protocol header = %q, want %q", got, mcp.ProtocolVersion)
+				}
+				w.Header().Set(headerSessionID, sessionID)
+				writeJSONRPC(t, w, mcp.NewResponse(m.ID, initResult(t, "2025-06-18")))
+				return
+			}
+			// Every later request must echo the session and the negotiated
+			// (downgraded) protocol version.
+			if got := r.Header.Get(headerSessionID); got != sessionID {
+				t.Errorf("%s session header = %q, want %q", m.Method, got, sessionID)
+			}
+			if got := r.Header.Get(headerProtocolVersion); got != "2025-06-18" {
+				t.Errorf("%s protocol header = %q, want negotiated 2025-06-18", m.Method, got)
+			}
+			if !strings.Contains(r.Header.Get(headerAccept), mediaSSE) {
+				t.Errorf("Accept = %q, want it to allow %s", r.Header.Get(headerAccept), mediaSSE)
+			}
+			writeJSONRPC(t, w, mcp.NewResponse(m.ID, json.RawMessage(`{"tools":[]}`)))
+		case *mcp.Notification:
+			if got := r.Header.Get(headerSessionID); got != sessionID {
+				t.Errorf("notification session header = %q, want %q", got, sessionID)
+			}
+			w.WriteHeader(http.StatusAccepted)
+		default:
+			t.Errorf("unexpected message %T", msg)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	})
+
+	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+
+	// Version negotiation goes through the shared initialize.go path.
+	res, err := Initialize(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"})
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	if res.ProtocolVersion != "2025-06-18" {
+		t.Fatalf("negotiated %q, want the server's 2025-06-18", res.ProtocolVersion)
+	}
+	tr.mu.Lock()
+	gotSession := tr.sessionID
+	tr.mu.Unlock()
+	if gotSession != sessionID {
+		t.Fatalf("session id = %q, want %q", gotSession, sessionID)
+	}
+
+	raw, err := tr.Call(testCtx(t), mcp.MethodToolsList, mcp.ListToolsParams{})
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	if string(raw) != `{"tools":[]}` {
+		t.Fatalf("result = %s", raw)
+	}
+}
+
+// TestStreamableHTTPStreamResponse covers the text/event-stream answer: a
+// notification arrives mid-call and the response closes the stream.
+func TestStreamableHTTPStreamResponse(t *testing.T) {
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		req := readRequestRPC(t, r)
+		s := startSSE(t, w)
+		s.comment("keep-alive before any message")
+		s.message("e1", mcp.NewNotification(mcp.NotificationToolsListChanged, nil))
+		s.event("vendor-ping", "e2", []byte("not a jsonrpc message"))
+		s.message("e3", mcp.NewResponse(req.ID, json.RawMessage(`{"ok":true}`)))
+	})
+
+	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+	changed := make(chan ChangeMask, 4)
+	tr.OnListChanged(func(m ChangeMask) { changed <- m })
+
+	raw, err := tr.Call(testCtx(t), mcp.MethodToolsCall, mcp.CallToolParams{Name: "x"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if string(raw) != `{"ok":true}` {
+		t.Fatalf("result = %s", raw)
+	}
+	select {
+	case m := <-changed:
+		if m != ChangeTools {
+			t.Fatalf("mask = %s", m)
+		}
+	default:
+		t.Fatal("list_changed notification on the response stream was dropped")
+	}
+	tr.mu.Lock()
+	last := tr.lastEventID
+	tr.mu.Unlock()
+	if last != "e3" {
+		t.Fatalf("lastEventID = %q, want e3", last)
+	}
+}
+
+// TestStreamableHTTPReverseRPCOverStream covers a server-initiated request
+// arriving on the response stream: the client answers it with a separate
+// POST, and only then does the server finish the original call.
+func TestStreamableHTTPReverseRPCOverStream(t *testing.T) {
+	answered := make(chan *mcp.Response, 1)
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		msg := readRPC(t, r)
+		switch m := msg.(type) {
+		case *mcp.Response:
+			// The client's answer to our reverse RPC.
+			answered <- m
+			w.WriteHeader(http.StatusAccepted)
+		case *mcp.Request:
+			s := startSSE(t, w)
+			s.message("r1", mcp.NewRequest(mcp.NewStringID("srv-1"), mcp.MethodRootsList, nil))
+			select {
+			case peerResp := <-answered:
+				var roots mcp.ListRootsResult
+				if err := json.Unmarshal(peerResp.Result, &roots); err != nil {
+					t.Errorf("decode roots result: %v", err)
+				}
+				if peerResp.ID.Key() != mcp.NewStringID("srv-1").Key() {
+					t.Errorf("peer response id = %s, want the request id", peerResp.ID)
+				}
+				out, _ := json.Marshal(map[string]any{"roots": len(roots.Roots)})
+				s.message("r2", mcp.NewResponse(m.ID, out))
+			case <-time.After(5 * time.Second):
+				t.Error("client never answered the reverse RPC")
+			}
+		default:
+			w.WriteHeader(http.StatusAccepted)
+		}
+	})
+
+	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+	tr.OnPeerRequest(func(_ context.Context, req *mcp.Request) (*mcp.Response, error) {
+		if req.Method != mcp.MethodRootsList {
+			return nil, errors.New("unexpected method " + req.Method)
+		}
+		out, _ := json.Marshal(mcp.ListRootsResult{Roots: []mcp.Root{{URI: "file:///w", Name: "w"}}})
+		// The id is forced by the transport; a wrong one here must not leak.
+		return mcp.NewResponse(mcp.NewIntID(999), out), nil
+	})
+
+	raw, err := tr.Call(testCtx(t), mcp.MethodToolsCall, mcp.CallToolParams{Name: "x"})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if string(raw) != `{"roots":1}` {
+		t.Fatalf("result = %s", raw)
+	}
+}
+
+// TestStreamableHTTPPeerWithoutHandler pins the fallback: an unhandled
+// reverse RPC gets a method-not-found answer, never silence.
+func TestStreamableHTTPPeerWithoutHandler(t *testing.T) {
+	answered := make(chan *mcp.Response, 1)
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		msg := readRPC(t, r)
+		switch m := msg.(type) {
+		case *mcp.Response:
+			answered <- m
+			w.WriteHeader(http.StatusAccepted)
+		case *mcp.Request:
+			s := startSSE(t, w)
+			s.message("r1", mcp.NewRequest(mcp.NewStringID("srv-1"), "sampling/createMessage", nil))
+			select {
+			case resp := <-answered:
+				out, _ := json.Marshal(map[string]any{"code": resp.Error.Code})
+				s.message("r2", mcp.NewResponse(m.ID, out))
+			case <-time.After(5 * time.Second):
+				t.Error("no answer to the unhandled reverse RPC")
+			}
+		}
+	})
+
+	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+	raw, err := tr.Call(testCtx(t), mcp.MethodToolsCall, nil)
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	want := `{"code":` + strconv.Itoa(mcp.CodeMethodNotFound) + `}`
+	if string(raw) != want {
+		t.Fatalf("result = %s, want %s", raw, want)
+	}
+}
+
+func TestStreamableHTTPStatusClassification(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     int
+		header     http.Header
+		wantClass  Class
+		wantRetry  time.Duration
+		wantErrIs  error
+		wantCalls2 int // requests the server sees after a second Call
+	}{
+		{
+			name:       "429 with Retry-After is the only retryable server answer",
+			status:     http.StatusTooManyRequests,
+			header:     http.Header{headerRetryAfter: []string{"2"}},
+			wantClass:  ClassRetry,
+			wantRetry:  2 * time.Second,
+			wantCalls2: 2,
+		},
+		{
+			name:       "500 counts against the breaker but is never replayed",
+			status:     http.StatusInternalServerError,
+			wantClass:  ClassUnavailable,
+			wantCalls2: 2,
+		},
+		{
+			name:       "503 is unavailable, not retry",
+			status:     http.StatusServiceUnavailable,
+			wantClass:  ClassUnavailable,
+			wantCalls2: 2,
+		},
+		{
+			name:       "410 Gone poisons the endpoint forever",
+			status:     http.StatusGone,
+			wantClass:  ClassUnavailable,
+			wantErrIs:  ErrEndpointMoved,
+			wantCalls2: 1, // the second call never leaves the process
+		},
+		{
+			name:       "404 expires the session",
+			status:     http.StatusNotFound,
+			wantClass:  ClassUnavailable,
+			wantErrIs:  ErrSessionExpired,
+			wantCalls2: 2,
+		},
+		{
+			name:       "400 is fatal: our request was bad, the server is fine",
+			status:     http.StatusBadRequest,
+			wantClass:  ClassFatal,
+			wantCalls2: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := newFakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				for k, vs := range tt.header {
+					for _, v := range vs {
+						w.Header().Add(k, v)
+					}
+				}
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(`{"error":"nope"}`))
+			})
+			tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+			// Seed a session id so the 404 case has one to invalidate.
+			tr.mu.Lock()
+			tr.sessionID = "seeded"
+			tr.mu.Unlock()
+
+			_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+			te := transportError(t, err)
+			if te.Class != tt.wantClass {
+				t.Fatalf("class = %s, want %s (err %v)", te.Class, tt.wantClass, err)
+			}
+			if te.RetryAfter != tt.wantRetry {
+				t.Fatalf("RetryAfter = %v, want %v", te.RetryAfter, tt.wantRetry)
+			}
+			if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
+				t.Fatalf("err = %v, want errors.Is %v", err, tt.wantErrIs)
+			}
+
+			_, _ = tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+			if got := fs.count(); got != tt.wantCalls2 {
+				t.Fatalf("server saw %d requests, want %d", got, tt.wantCalls2)
+			}
+			if tt.status == http.StatusNotFound {
+				tr.mu.Lock()
+				sid := tr.sessionID
+				tr.mu.Unlock()
+				if sid != "" {
+					t.Fatalf("session id %q survived a 404", sid)
+				}
+			}
+		})
+	}
+}
+
+// TestStreamableHTTPGoneSkipsDelete pins that a 410 endpoint is never
+// contacted again — not even by Close's session DELETE.
+func TestStreamableHTTPGoneSkipsDelete(t *testing.T) {
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			t.Error("DELETE sent to an endpoint that answered 410")
+		}
+		w.Header().Set(headerSessionID, "s1")
+		w.WriteHeader(http.StatusGone)
+	})
+	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+	if _, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil); !errors.Is(err, ErrEndpointMoved) {
+		t.Fatalf("err = %v, want ErrEndpointMoved", err)
+	}
+	if err := tr.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if got := fs.count(); got != 1 {
+		t.Fatalf("server saw %d requests after 410, want 1", got)
+	}
+}
+
+func TestStreamableHTTPFrameBounds(t *testing.T) {
+	const limit = 4096
+	big := strings.Repeat("x", limit*2)
+
+	t.Run("oversized json response body", func(t *testing.T) {
+		fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+			req := readRequestRPC(t, r)
+			out, _ := json.Marshal(map[string]string{"blob": big})
+			writeJSONRPC(t, w, mcp.NewResponse(req.ID, out))
+		})
+		tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp", MaxFrame: limit})
+		_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+		if !errors.Is(err, mcp.ErrFrameTooLarge) {
+			t.Fatalf("err = %v, want ErrFrameTooLarge", err)
+		}
+		if te := transportError(t, err); te.Class != ClassUnavailable {
+			t.Fatalf("class = %s, want unavailable", te.Class)
+		}
+	})
+
+	t.Run("oversized sse event", func(t *testing.T) {
+		fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+			req := readRequestRPC(t, r)
+			s := startSSE(t, w)
+			out, _ := json.Marshal(map[string]string{"blob": big})
+			s.message("e1", mcp.NewResponse(req.ID, out))
+		})
+		tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp", MaxFrame: limit})
+		_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+		if !errors.Is(err, mcp.ErrFrameTooLarge) {
+			t.Fatalf("err = %v, want ErrFrameTooLarge", err)
+		}
+	})
+
+	t.Run("oversized outgoing request never leaves the process", func(t *testing.T) {
+		fs := newFakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			t.Error("oversized request was sent")
+			w.WriteHeader(http.StatusOK)
+		})
+		tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp", MaxFrame: limit})
+		_, err := tr.Call(testCtx(t), mcp.MethodToolsCall, map[string]string{"blob": big})
+		if !errors.Is(err, mcp.ErrFrameTooLarge) {
+			t.Fatalf("err = %v, want ErrFrameTooLarge", err)
+		}
+		if te := transportError(t, err); te.Class != ClassFatal {
+			t.Fatalf("class = %s, want fatal (retrying the same payload cannot help)", te.Class)
+		}
+		if fs.count() != 0 {
+			t.Fatalf("server saw %d requests", fs.count())
+		}
+	})
+}
+
+// TestStreamableHTTPContextCancel pins the cancellation contract: the call
+// returns ctx.Err() (not a transport error) and notifications/cancelled is
+// forwarded best-effort naming the abandoned request id.
+func TestStreamableHTTPContextCancel(t *testing.T) {
+	cancelled := make(chan mcp.CancelledParams, 1)
+	streamOpen := make(chan struct{})
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		msg := readRPC(t, r)
+		switch m := msg.(type) {
+		case *mcp.Notification:
+			if m.Method == mcp.NotificationCancelled {
+				var p mcp.CancelledParams
+				if err := json.Unmarshal(m.Params, &p); err != nil {
+					t.Errorf("decode cancelled params: %v", err)
+				}
+				select {
+				case cancelled <- p:
+				default:
+				}
+			}
+			w.WriteHeader(http.StatusAccepted)
+		case *mcp.Request:
+			s := startSSE(t, w)
+			s.comment("open, but never answering")
+			close(streamOpen)
+			select {
+			case <-r.Context().Done():
+			case <-time.After(5 * time.Second):
+			}
+		}
+	})
+
+	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-streamOpen
+		cancel()
+	}()
+
+	_, err := tr.Call(ctx, mcp.MethodToolsCall, mcp.CallToolParams{Name: "slow"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	select {
+	case p := <-cancelled:
+		if p.RequestID.Key() != mcp.NewIntID(1).Key() {
+			t.Fatalf("cancelled requestId = %s, want 1", p.RequestID)
+		}
+		if p.Reason == "" {
+			t.Fatal("cancelled reason is empty")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("notifications/cancelled was never forwarded")
+	}
+}
+
+// TestStreamableHTTPNotificationStream covers the optional GET stream: it
+// carries notifications that belong to no call, and it reconnects.
+func TestStreamableHTTPNotificationStream(t *testing.T) {
+	gets := make(chan string, 4) // Last-Event-ID of each GET
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodGet {
+			gets <- r.Header.Get(headerLastEventID)
+			s := startSSE(t, w)
+			s.message("n1", mcp.NewNotification(mcp.NotificationResourcesListChanged, nil))
+			return // stream ends; the client must reconnect
+		}
+		req := readRequestRPC(t, r)
+		w.Header().Set(headerSessionID, "s9")
+		writeJSONRPC(t, w, mcp.NewResponse(req.ID, initResult(t, mcp.ProtocolVersion)))
+	})
+
+	tr := dialStreamable(t, HTTPConfig{
+		URL:                fs.URL + "/mcp",
+		NotificationStream: true,
+		retryBase:          time.Millisecond,
+	})
+	changed := make(chan ChangeMask, 8)
+	tr.OnListChanged(func(m ChangeMask) { changed <- m })
+
+	if _, err := tr.Call(testCtx(t), mcp.MethodInitialize, mcp.InitializeParams{ProtocolVersion: mcp.ProtocolVersion}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	select {
+	case m := <-changed:
+		if m != ChangeResources {
+			t.Fatalf("mask = %s", m)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("notification stream delivered nothing")
+	}
+	// The first GET carries no Last-Event-ID; the reconnect carries the
+	// last id seen.
+	if got := <-gets; got != "" {
+		t.Fatalf("first GET Last-Event-ID = %q, want empty", got)
+	}
+	select {
+	case got := <-gets:
+		if got != "n1" {
+			t.Fatalf("reconnect Last-Event-ID = %q, want n1", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("notification stream never reconnected")
+	}
+}
+
+// TestStreamableHTTPNotificationStreamGivesUpOn405 pins that a server which
+// does not offer the GET stream is not hammered.
+func TestStreamableHTTPNotificationStreamGivesUpOn405(t *testing.T) {
+	var gets int
+	done := make(chan struct{})
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodGet {
+			gets++
+			if gets == 1 {
+				close(done)
+			}
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		req := readRequestRPC(t, r)
+		writeJSONRPC(t, w, mcp.NewResponse(req.ID, initResult(t, mcp.ProtocolVersion)))
+	})
+	tr := dialStreamable(t, HTTPConfig{
+		URL:                fs.URL + "/mcp",
+		NotificationStream: true,
+		retryBase:          time.Millisecond,
+	})
+	if _, err := tr.Call(testCtx(t), mcp.MethodInitialize, mcp.InitializeParams{}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	<-done
+	time.Sleep(50 * time.Millisecond)
+	if gets != 1 {
+		t.Fatalf("GET attempted %d times after 405, want exactly 1", gets)
+	}
+}
+
+// TestStreamableHTTPResume covers best-effort Last-Event-ID resumption of a
+// POST stream that died before delivering its response.
+func TestStreamableHTTPResume(t *testing.T) {
+	var pendingID mcp.ID
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			if got := r.Header.Get(headerLastEventID); got != "ev-1" {
+				t.Errorf("resume Last-Event-ID = %q, want ev-1", got)
+			}
+			s := startSSE(t, w)
+			s.message("ev-2", mcp.NewResponse(pendingID, json.RawMessage(`{"resumed":true}`)))
+			return
+		}
+		req := readRequestRPC(t, r)
+		pendingID = req.ID
+		s := startSSE(t, w)
+		s.message("ev-1", mcp.NewNotification(mcp.NotificationPromptsListChanged, nil))
+		// Handler returns: the stream dies before the response.
+	})
+
+	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+	raw, err := tr.Call(testCtx(t), mcp.MethodToolsCall, nil)
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if string(raw) != `{"resumed":true}` {
+		t.Fatalf("result = %s", raw)
+	}
+}
+
+func TestStreamableHTTPResumeDisabled(t *testing.T) {
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			t.Error("resumption attempted although DisableResume is set")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_ = readRequestRPC(t, r)
+		s := startSSE(t, w)
+		s.message("ev-1", mcp.NewNotification(mcp.NotificationPromptsListChanged, nil))
+	})
+	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp", DisableResume: true})
+	_, err := tr.Call(testCtx(t), mcp.MethodToolsCall, nil)
+	te := transportError(t, err)
+	if te.Class != ClassUnavailable {
+		t.Fatalf("class = %s, want unavailable", te.Class)
+	}
+	if !strings.Contains(err.Error(), "stream ended before the response") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestStreamableHTTPCloseDeletesSession pins the session teardown and the
+// post-Close contract.
+func TestStreamableHTTPCloseDeletesSession(t *testing.T) {
+	deleted := make(chan string, 1)
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			deleted <- r.Header.Get(headerSessionID)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		req := readRequestRPC(t, r)
+		w.Header().Set(headerSessionID, "sid-7")
+		writeJSONRPC(t, w, mcp.NewResponse(req.ID, initResult(t, mcp.ProtocolVersion)))
+	})
+	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+	if _, err := tr.Call(testCtx(t), mcp.MethodInitialize, mcp.InitializeParams{}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	if err := tr.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	select {
+	case sid := <-deleted:
+		if sid != "sid-7" {
+			t.Fatalf("DELETE session id = %q", sid)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close did not DELETE the session")
+	}
+	// Close is idempotent and post-Close use is a typed failure.
+	if err := tr.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+	_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+	if !errors.Is(err, ErrClosed) {
+		t.Fatalf("err = %v, want ErrClosed", err)
+	}
+	if err := tr.Notify(testCtx(t), mcp.NotificationInitialized, nil); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Notify err = %v, want ErrClosed", err)
+	}
+	if tr.Stderr() != "" {
+		t.Fatalf("Stderr = %q, want empty for a non-stdio transport", tr.Stderr())
+	}
+}
+
+// TestStreamableHTTPProtocolViolations pins the two shapes a server must
+// not answer a request with.
+func TestStreamableHTTPProtocolViolations(t *testing.T) {
+	t.Run("202 with no body", func(t *testing.T) {
+		fs := newFakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+		})
+		tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+		_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+		if !errors.Is(err, ErrHTTPProtocol) {
+			t.Fatalf("err = %v, want ErrHTTPProtocol", err)
+		}
+	})
+	t.Run("json body without our response", func(t *testing.T) {
+		fs := newFakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			writeJSONRPC(t, w, mcp.NewResponse(mcp.NewIntID(4242), json.RawMessage(`{}`)))
+		})
+		tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+		_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+		if !errors.Is(err, ErrHTTPProtocol) {
+			t.Fatalf("err = %v, want ErrHTTPProtocol", err)
+		}
+	})
+	t.Run("malformed sse payload", func(t *testing.T) {
+		fs := newFakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			s := startSSE(t, w)
+			s.event("message", "e1", []byte(`{"jsonrpc":"1.0"}`))
+		})
+		tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+		_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+		if !errors.Is(err, mcp.ErrMalformedFrame) {
+			t.Fatalf("err = %v, want ErrMalformedFrame", err)
+		}
+	})
+}
+
+// TestStreamableHTTPJSONRPCErrorIsFatal pins that an ordinary error
+// response never trips the breaker.
+func TestStreamableHTTPJSONRPCErrorIsFatal(t *testing.T) {
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		req := readRequestRPC(t, r)
+		writeJSONRPC(t, w, mcp.NewErrorResponse(req.ID, &mcp.Error{Code: mcp.CodeInvalidParams, Message: "bad args"}))
+	})
+	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+	_, err := tr.Call(testCtx(t), mcp.MethodToolsCall, nil)
+	te := transportError(t, err)
+	if te.Class != ClassFatal {
+		t.Fatalf("class = %s, want fatal", te.Class)
+	}
+	var rpcErr *mcp.Error
+	if !errors.As(err, &rpcErr) || rpcErr.Code != mcp.CodeInvalidParams {
+		t.Fatalf("err = %v, want the peer's JSON-RPC error", err)
+	}
+}

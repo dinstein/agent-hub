@@ -1,0 +1,169 @@
+package daemon
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"os"
+	"path/filepath"
+
+	"github.com/dinstein/agent-hub/internal/clients"
+	"github.com/dinstein/agent-hub/internal/ctlapi"
+	"github.com/dinstein/agent-hub/internal/downstream"
+	"github.com/dinstein/agent-hub/internal/httpbridge"
+	"github.com/dinstein/agent-hub/internal/oauthflow"
+	"github.com/dinstein/agent-hub/internal/secrets"
+	"github.com/dinstein/agent-hub/internal/skills"
+)
+
+// This file assembles the collaborators behind the non-registry control
+// plane: credentials, skills, agent tokens, client adapters and OAuth
+// status. The endpoints themselves live in internal/ctlapi and were routed
+// before this wiring existed, which meant they answered "this daemon does
+// not serve that endpoint yet" — the routes were real, the dependencies
+// were nil. Declaring an interface is not the same as satisfying it, and
+// the gap is invisible from either side alone.
+//
+// Every dependency is optional by design: a vault that cannot be opened
+// costs the secrets endpoints and nothing else. The daemon must keep
+// coordinating everything it still can, so each failure logs and continues
+// rather than refusing to start.
+
+// nonRegistryDeps builds what the non-registry endpoints need. vault may be
+// nil, in which case the production chain over <data>/secrets is used —
+// the same chain the OAuth refresher gets, because two chains over one
+// vault would be two caches of the same rotating credential.
+//
+// The agent-token store is returned CONCRETELY alongside the deps: the
+// control plane only needs the ctlapi.TokenStore interface, but the data
+// plane's authenticator needs *httpbridge.Store, and both must be the same
+// object — a second store would be a second HMAC-key cache over one file.
+func nonRegistryDeps(cfg Config, dataDir string, vault secrets.Store, log *slog.Logger, coord func() *oauthflow.Coordinator) (ctlapi.NonRegistryDeps, *httpbridge.Store) {
+	secretsDir := filepath.Join(dataDir, "secrets")
+	if vault == nil {
+		vault = secrets.NewChain(secrets.ChainConfig{Dir: secretsDir})
+	}
+	deps := ctlapi.NonRegistryDeps{
+		SecretsDir:    secretsDir,
+		ClientBaseDir: cfg.ClientBaseDir,
+		Clients:       clients.Default(),
+	}
+	if chain, ok := vault.(*secrets.Chain); ok {
+		// SecretVault needs List, which only the chain exposes; an injected
+		// test store that cannot enumerate simply leaves the endpoint off
+		// rather than pretending the vault is empty.
+		deps.Secrets = chain
+	}
+	deps.OAuth = oauthflow.NewStore(vault)
+	deps.TestDeps = testDeps(vault, coord)
+
+	if lib, err := skills.Open(filepath.Join(dataDir, "skills"), skills.Options{}); err != nil {
+		log.Warn("skills library unavailable; its endpoints stay off", "error", err)
+	} else {
+		deps.Skills = lib
+	}
+	var tokens *httpbridge.Store
+	if store, err := httpbridge.OpenStore(dataDir); err != nil {
+		log.Warn("agent-token store unavailable; its endpoints stay off", "error", err)
+	} else {
+		tokens = store
+		deps.Tokens = store
+	}
+	if exe, err := os.Executable(); err == nil {
+		deps.Executable = exe
+	}
+	return deps, tokens
+}
+
+// planeAuth builds the OAuth bearer source for the HTTP data plane's
+// per-credential gateways.
+//
+// Third occurrence of one omission: the self-test probed with a bare Deps
+// (testDeps below), the stdio gateway dialed with Deps.Auth unset, and this
+// plane passed a non-nil Secrets — which suppresses the gateway's own
+// production default — while supplying no Auth. Each time the vault held a
+// valid token and each time the server answered 401, indistinguishable from
+// an expired login.
+//
+// coord is late-bound for the same reason it is in testDeps: the refresh
+// coordinator is created after the control plane. It is the daemon's OWN
+// coordinator, not a second one — the daemon is the always-up component that
+// renews proactively, and two coordinators over one vault eventually spend a
+// one-time refresh token twice.
+//
+// A nil coordinator (no data dir, so no proactive refresh either) leaves
+// renewal off; the stored token is still attached, degrading to "works until
+// it expires" rather than to no credential at all.
+func planeAuth(vault secrets.Store, coord func() *oauthflow.Coordinator) func(string, string) downstream.TokenSource {
+	chain, _ := vault.(*secrets.Chain)
+	if chain == nil {
+		return nil
+	}
+	resolve := chain.Resolver()
+	return func(serverID, scopeName string) downstream.TokenSource {
+		var renew downstream.RefreshFunc
+		if coord != nil {
+			renew = func(ctx context.Context) (string, error) {
+				c := coord()
+				if c == nil {
+					return "", downstream.ErrNoRefresher
+				}
+				_, tok, err := c.Refresh(ctx, serverID)
+				// ErrRefreshSuperseded means another writer already stored a
+				// fresh credential; the token it returns IS usable, so it is a
+				// success for the caller, not a failure.
+				if err != nil && !errors.Is(err, oauthflow.ErrRefreshSuperseded) {
+					return "", err
+				}
+				return tok, nil
+			}
+		}
+		return downstream.NewScopedVaultTokenSource(serverID, scopeName, resolve, renew)
+	}
+}
+
+// testDeps builds the credential collaborators for POST /v1/servers/{id}/test.
+//
+// Without it the handler probes with a bare downstream.Deps and every
+// authorized server answers 401 — a failure that reads exactly like an
+// expired token (the hint even tells the operator to log in again) while
+// the real cause is that no credential was ever attached. The CLI's own
+// `server test` has always passed these, which is why the same server would
+// connect from the terminal and fail from the GUI.
+//
+// coord is late-bound: the refresh coordinator is created after the control
+// plane, so this closure resolves it per call instead of capturing a nil.
+// A nil coordinator (data dir unresolved — the daemon then runs without
+// proactive refresh at all) leaves renewal off; the vault's stored token is
+// still sent, so a self-test degrades to "works until the token expires"
+// rather than failing outright.
+func testDeps(vault secrets.Store, coord func() *oauthflow.Coordinator) func(string, downstream.Spec) downstream.Deps {
+	chain, _ := vault.(*secrets.Chain)
+	return func(id string, spec downstream.Spec) downstream.Deps {
+		var deps downstream.Deps
+		if chain != nil {
+			deps.Secrets = chain.Resolver()
+		}
+		// Only HTTP transports carry a bearer; a stdio child gets its
+		// credentials through the environment, which Secrets already covers.
+		if !spec.IsHTTP() || chain == nil || coord == nil {
+			return deps
+		}
+		c := coord()
+		if c == nil {
+			return deps
+		}
+		deps.Auth = downstream.NewVaultTokenSource(id, chain.Resolver(),
+			func(ctx context.Context) (string, error) {
+				_, tok, err := c.Refresh(ctx, id)
+				// ErrRefreshSuperseded means another writer already stored a
+				// fresh credential; the token it returns IS usable, so it is
+				// a success for the caller, not a failure.
+				if err != nil && !errors.Is(err, oauthflow.ErrRefreshSuperseded) {
+					return "", err
+				}
+				return tok, nil
+			})
+		return deps
+	}
+}

@@ -1,0 +1,5 @@
+tools[3]{calls,name,ok,server}:
+  12,read_file,true,fs
+  3,write_file,true,fs
+  0,commit,false,git
+total: 3

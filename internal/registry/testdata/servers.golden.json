@@ -1,0 +1,24 @@
+{
+  "future_top": {
+    "a": 1
+  },
+  "servers": {
+    "alpha": {
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem"
+      ],
+      "command": "npx",
+      "enabled": false,
+      "env": {
+        "TOKEN": "${SECRET_ALPHA}"
+      },
+      "future_entry": {
+        "nested": [
+          "x"
+        ]
+      },
+      "transport": "stdio"
+    }
+  }
+}

@@ -1,0 +1,189 @@
+package mcp
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strconv"
+)
+
+// Version is the only JSON-RPC protocol version MCP uses.
+const Version = "2.0"
+
+// Standard JSON-RPC 2.0 error codes.
+const (
+	CodeParseError     = -32700
+	CodeInvalidRequest = -32600
+	CodeMethodNotFound = -32601
+	CodeInvalidParams  = -32602
+	CodeInternalError  = -32603
+)
+
+// ErrMalformedFrame is the decidable sentinel for a frame that is not a
+// valid JSON-RPC 2.0 message (bad JSON, wrong "jsonrpc" version, invalid id
+// type, or none of request/response/notification). Errors returned by
+// ParseMessage satisfy errors.Is(err, ErrMalformedFrame).
+var ErrMalformedFrame = errors.New("malformed jsonrpc frame")
+
+// ID is a JSON-RPC request id. The spec allows strings and numbers; the raw
+// JSON text is preserved so ids received from a peer are echoed back
+// byte-for-byte (including number formatting beyond float64 precision).
+// The zero value is "unset" and marshals as null.
+type ID struct {
+	raw string
+}
+
+// NewIntID returns a numeric ID.
+func NewIntID(n int64) ID { return ID{raw: strconv.FormatInt(n, 10)} }
+
+// NewStringID returns a string ID.
+func NewStringID(s string) ID {
+	b, err := json.Marshal(s)
+	if err != nil {
+		// Marshaling a string cannot fail.
+		panic(err)
+	}
+	return ID{raw: string(b)}
+}
+
+// IsSet reports whether the ID carries a value. Response ids for pending-call
+// matching must be set; an unset ID marshals as null (used only for
+// protocol-level error responses that cannot name a request).
+func (id ID) IsSet() bool { return id.raw != "" }
+
+// Key returns a stable map key. String and number ids never collide because
+// string keys keep their JSON quotes.
+func (id ID) Key() string { return id.raw }
+
+// String returns the raw JSON text of the id (or "<unset>").
+func (id ID) String() string {
+	if !id.IsSet() {
+		return "<unset>"
+	}
+	return id.raw
+}
+
+// MarshalJSON implements json.Marshaler.
+func (id ID) MarshalJSON() ([]byte, error) {
+	if !id.IsSet() {
+		return []byte("null"), nil
+	}
+	return []byte(id.raw), nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler. Only strings and numbers are
+// accepted; null yields the unset ID.
+func (id *ID) UnmarshalJSON(data []byte) error {
+	var v any
+	if err := json.Unmarshal(data, &v); err != nil {
+		return fmt.Errorf("%w: invalid id: %v", ErrMalformedFrame, err)
+	}
+	switch v.(type) {
+	case nil:
+		*id = ID{}
+		return nil
+	case string, float64:
+		*id = ID{raw: string(data)}
+		return nil
+	default:
+		return fmt.Errorf("%w: id must be a string or number, got %T", ErrMalformedFrame, v)
+	}
+}
+
+// Error is a JSON-RPC 2.0 error object. It implements the error interface so
+// a peer's error response can travel through Go error chains.
+type Error struct {
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
+}
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("jsonrpc error %d: %s", e.Code, e.Message)
+}
+
+// Request is a JSON-RPC 2.0 request (id is always set; see Notification).
+type Request struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      ID              `json:"id"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+}
+
+// Response is a JSON-RPC 2.0 response. Exactly one of Result / Error is set.
+type Response struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      ID              `json:"id"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *Error          `json:"error,omitempty"`
+}
+
+// Notification is a JSON-RPC 2.0 notification (no id, never answered).
+type Notification struct {
+	JSONRPC string          `json:"jsonrpc"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+}
+
+// NewRequest builds a request with the jsonrpc version filled in.
+func NewRequest(id ID, method string, params json.RawMessage) *Request {
+	return &Request{JSONRPC: Version, ID: id, Method: method, Params: params}
+}
+
+// NewNotification builds a notification with the jsonrpc version filled in.
+func NewNotification(method string, params json.RawMessage) *Notification {
+	return &Notification{JSONRPC: Version, Method: method, Params: params}
+}
+
+// NewResponse builds a success response. A nil result is encoded as null so
+// the response always carries a "result" member.
+func NewResponse(id ID, result json.RawMessage) *Response {
+	if result == nil {
+		result = json.RawMessage("null")
+	}
+	return &Response{JSONRPC: Version, ID: id, Result: result}
+}
+
+// NewErrorResponse builds an error response.
+func NewErrorResponse(id ID, e *Error) *Response {
+	return &Response{JSONRPC: Version, ID: id, Error: e}
+}
+
+// ParseMessage classifies one frame into *Request, *Response, or
+// *Notification. Any shape violation returns an error satisfying
+// errors.Is(err, ErrMalformedFrame); ParseMessage never panics on hostile
+// input. Callers (the transport read loop) decide whether a malformed frame
+// closes the connection — a single bad frame must not crash the process.
+func ParseMessage(data []byte) (any, error) {
+	var probe struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      json.RawMessage `json:"id"`
+		Method  string          `json:"method"`
+		Params  json.RawMessage `json:"params"`
+		Result  json.RawMessage `json:"result"`
+		Error   *Error          `json:"error"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrMalformedFrame, err)
+	}
+	if probe.JSONRPC != Version {
+		return nil, fmt.Errorf("%w: jsonrpc version %q (want %q)", ErrMalformedFrame, probe.JSONRPC, Version)
+	}
+	var id ID
+	if len(probe.ID) > 0 {
+		if err := id.UnmarshalJSON(probe.ID); err != nil {
+			return nil, err
+		}
+	}
+	switch {
+	case probe.Method != "" && id.IsSet():
+		return &Request{JSONRPC: probe.JSONRPC, ID: id, Method: probe.Method, Params: probe.Params}, nil
+	case probe.Method != "":
+		// A null id on a method-bearing message is treated as a notification.
+		return &Notification{JSONRPC: probe.JSONRPC, Method: probe.Method, Params: probe.Params}, nil
+	case probe.Result != nil || probe.Error != nil:
+		return &Response{JSONRPC: probe.JSONRPC, ID: id, Result: probe.Result, Error: probe.Error}, nil
+	default:
+		return nil, fmt.Errorf("%w: neither request, response, nor notification", ErrMalformedFrame)
+	}
+}

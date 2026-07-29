@@ -1,0 +1,53 @@
+{
+  "tools": [
+    {
+      "tool": "fs__read_file",
+      "server": "fs",
+      "call_with": "call_tool",
+      "sig": "fs__read_file(path?:str) -\u003e str",
+      "description": "Read the contents of a file from disk.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "tool": "web__count",
+      "server": "web",
+      "call_with": "call_tool",
+      "sig": "web__count(q:str) -\u003e obj",
+      "description": "Count matching documents.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  ],
+  "errors": [
+    {
+      "tool": "ghost",
+      "error": "not_found",
+      "remediation": "run search_tools to find the tool you meant; the exposed name in a search result is the name to pass here"
+    }
+  ],
+  "hint": "build the arguments from the schema, then invoke the tool with the meta-tool named in its call_with field"
+}

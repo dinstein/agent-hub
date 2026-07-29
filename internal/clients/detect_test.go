@@ -1,0 +1,276 @@
+package clients_test
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/dinstein/agent-hub/internal/clients"
+)
+
+// TestDetectQuietWhenNothingInstalled: a machine with no AI clients yields
+// an empty slice, not a pile of not-found noise. Detect is a scan, and a
+// scan that reports absences is unusable.
+func TestDetectQuietWhenNothingInstalled(t *testing.T) {
+	e := newEnv(t, "darwin")
+	got := e.tbl.Detect(context.Background(), e.project)
+	if len(got) != 0 {
+		t.Fatalf("Detect on a clean machine = %+v, want empty", got)
+	}
+
+	// A directory sitting where a config file would be is not a config.
+	if err := os.MkdirAll(filepath.Join(e.home, ".cursor", "mcp.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.tbl.Detect(context.Background(), e.project); len(got) != 0 {
+		t.Fatalf("Detect reported a directory as a config: %+v", got)
+	}
+}
+
+// TestDetectFindsFilesAcrossPlacements: project and user files of several
+// clients are found, ordered by client ID, and carry the shape metadata a
+// caller needs to explain them.
+func TestDetectFindsFilesAcrossPlacements(t *testing.T) {
+	e := newEnv(t, "darwin")
+	write(t, filepath.Join(e.project, ".mcp.json"), `{"mcpServers":{}}`)
+	write(t, filepath.Join(e.home, ".cursor", "mcp.json"), `{"mcpServers":{}}`)
+	write(t, filepath.Join(e.home, ".codex", "config.toml"), "[mcp_servers]\n")
+
+	got := e.tbl.Detect(context.Background(), e.project)
+	if len(got) != 3 {
+		t.Fatalf("Detect = %+v, want 3 findings", got)
+	}
+	byClient := map[string]clients.Detected{}
+	prev := ""
+	for _, d := range got {
+		if d.Client < prev {
+			t.Errorf("results are not ordered by client id: %v after %v", d.Client, prev)
+		}
+		prev = d.Client
+		byClient[d.Client] = d
+	}
+
+	cc := byClient["claude-code"]
+	if cc.Placement != clients.Project || cc.Shape != clients.ShapeServerMap || !cc.Writable {
+		t.Errorf("claude-code finding = %+v", cc)
+	}
+	if cc.Size == 0 || cc.Modified.IsZero() {
+		t.Errorf("claude-code finding lacks stat metadata: %+v", cc)
+	}
+	cu := byClient["cursor"]
+	if cu.Placement != clients.User || cu.Path != filepath.Join(e.home, ".cursor", "mcp.json") {
+		t.Errorf("cursor finding = %+v", cu)
+	}
+	cx := byClient["codex"]
+	if cx.Shape != clients.ShapeTOML || cx.Writable || cx.Note == "" {
+		t.Errorf("codex finding = %+v (must be probe-only and explained)", cx)
+	}
+	for _, d := range got {
+		if d.Denied || d.Err != nil {
+			t.Errorf("%s reported denied on a readable file: %+v", d.Client, d)
+		}
+	}
+}
+
+// TestDetectStatsButNeverReads is the macOS TCC invariant expressed as a
+// behaviour: a file whose CONTENT is unreadable but
+// whose metadata is visible must still be detected. If Detect ever opened
+// files, this would fail — and on a real Mac it would raise a privacy
+// prompt per client instead.
+func TestDetectStatsButNeverReads(t *testing.T) {
+	requireUnprivileged(t)
+	e := newEnv(t, "darwin")
+	path := filepath.Join(e.home, ".cursor", "mcp.json")
+	write(t, path, `{"mcpServers":{"x":{"command":"npx"}}}`)
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+
+	got := e.tbl.Detect(context.Background(), e.project)
+	if len(got) != 1 || got[0].Client != "cursor" || got[0].Denied {
+		t.Fatalf("Detect = %+v, want one undenied cursor finding (stat only)", got)
+	}
+
+	// Reading the same file IS refused, and with the typed error.
+	insp, err := e.tbl.Inspect("cursor", e.project)
+	var pe *clients.PermissionError
+	if !errors.As(err, &pe) {
+		t.Fatalf("Inspect err = %v, want *PermissionError", err)
+	}
+	if pe.Op != "read" || pe.Remediation == "" || pe.HTTPStatus() != 403 {
+		t.Errorf("PermissionError = %+v (op/remediation/status)", pe)
+	}
+	if !clients.IsPermission(err) {
+		t.Error("IsPermission did not recognise the error")
+	}
+	denied := false
+	for _, f := range insp.Files {
+		if f.Err != nil && f.Exists {
+			denied = true
+		}
+	}
+	if !denied {
+		t.Errorf("Inspect must still report the file it could not read: %+v", insp.Files)
+	}
+	if insp.Err() == nil {
+		t.Error("Inspection.Err() must expose the first per-file failure")
+	}
+}
+
+// TestDetectClassifiesDeniedStat: when even the stat is refused (an
+// unsearchable parent directory, the shape macOS TCC actually takes), the
+// location is reported as denied with remediation — never dropped as
+// "not found", because the two call for opposite user actions.
+func TestDetectClassifiesDeniedStat(t *testing.T) {
+	requireUnprivileged(t)
+	e := newEnv(t, "darwin")
+	dir := filepath.Join(e.home, ".cursor")
+	write(t, filepath.Join(dir, "mcp.json"), `{"mcpServers":{}}`)
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	got := e.tbl.Detect(context.Background(), e.project)
+	if len(got) != 1 {
+		t.Fatalf("Detect = %+v, want the denied location reported", got)
+	}
+	d := got[0]
+	if d.Client != "cursor" || !d.Denied || d.Err == nil {
+		t.Fatalf("finding = %+v, want denied", d)
+	}
+	if d.Err.Op != "stat" || d.Remediation == "" || d.Remediation != d.Err.Remediation {
+		t.Errorf("denial detail = %+v", d.Err)
+	}
+	if d.Size != 0 {
+		t.Errorf("denied finding must not claim stat metadata: %+v", d)
+	}
+
+	// A denial is not a not-found: Connect surfaces the same typed error.
+	var pe *clients.PermissionError
+	_, err := e.format(t, "cursor").Connect(filepath.Join(dir, "mcp.json"), entry("cursor"))
+	if !errors.As(err, &pe) {
+		t.Fatalf("Connect err = %v, want *PermissionError", err)
+	}
+	var nc *clients.NotConnectedError
+	if errors.As(err, &nc) {
+		t.Error("a denial must never be reported as not-connected")
+	}
+}
+
+// TestDetectRemediationIsPlatformSpecific: the macOS text names the TCC
+// remedy (Full Disk Access); other platforms must not.
+func TestDetectRemediationIsPlatformSpecific(t *testing.T) {
+	requireUnprivileged(t)
+	for _, tc := range []struct{ goos, want string }{
+		{"darwin", "Full Disk Access"},
+		{"linux", "ownership"},
+	} {
+		e := newEnv(t, tc.goos)
+		dir := filepath.Join(e.home, ".cursor")
+		write(t, filepath.Join(dir, "mcp.json"), `{}`)
+		if err := os.Chmod(dir, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+		got := e.tbl.Detect(context.Background(), e.project)
+		if len(got) != 1 || !got[0].Denied {
+			t.Fatalf("%s: Detect = %+v", tc.goos, got)
+		}
+		if !contains(got[0].Remediation, tc.want) {
+			t.Errorf("%s remediation = %q, want it to mention %q", tc.goos, got[0].Remediation, tc.want)
+		}
+	}
+}
+
+// TestDetectHonoursContextCancellation: a cancelled scan stops early and
+// returns what it had, rather than statting the whole table.
+func TestDetectHonoursContextCancellation(t *testing.T) {
+	e := newEnv(t, "darwin")
+	write(t, filepath.Join(e.project, ".mcp.json"), `{}`)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := e.tbl.Detect(ctx, e.project); len(got) != 0 {
+		t.Errorf("cancelled Detect = %+v, want empty", got)
+	}
+}
+
+// TestInspectReportsServers: the detail view parses one client's files and
+// marks the agenthub entry as owned.
+func TestInspectReportsServers(t *testing.T) {
+	e := newEnv(t, "darwin")
+	write(t, filepath.Join(e.project, ".mcp.json"), `{"mcpServers":{
+      "fs": {"command": "npx", "args": ["-y", "server-filesystem"]},
+      "remote": {"type": "sse", "url": "https://example.com/sse"},
+      "agenthub": {"command": "/usr/local/bin/agenthub", "args": ["connect", "--client", "claude-code"]},
+      "off": {"command": "x", "disabled": true}
+  }}`)
+	insp, err := e.tbl.Inspect("claude-code", e.project)
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+	if len(insp.Files) != 2 {
+		t.Fatalf("files = %+v, want project + user candidates", insp.Files)
+	}
+	f := insp.Files[0]
+	if !f.Exists || !f.Parsed || !f.Connected {
+		t.Fatalf("project file = %+v", f)
+	}
+	if insp.Files[1].Exists {
+		t.Errorf("user file must be reported absent: %+v", insp.Files[1])
+	}
+	want := map[string]struct {
+		transport string
+		owned     bool
+		disabled  bool
+	}{
+		"agenthub": {"stdio", true, false},
+		"fs":       {"stdio", false, false},
+		"off":      {"stdio", false, true},
+		"remote":   {"sse", false, false},
+	}
+	if len(f.Servers) != len(want) {
+		t.Fatalf("servers = %+v", f.Servers)
+	}
+	for _, s := range f.Servers {
+		w, ok := want[s.Name]
+		if !ok {
+			t.Errorf("unexpected server %q", s.Name)
+			continue
+		}
+		if s.Transport != w.transport || s.Owned != w.owned || s.Disabled != w.disabled {
+			t.Errorf("%s = %+v, want %+v", s.Name, s, w)
+		}
+	}
+
+	// Probe-only clients report existence without parsing anything.
+	write(t, filepath.Join(e.home, ".codex", "config.toml"), "[mcp_servers.x]\ncommand='y'\n")
+	ci, err := e.tbl.Inspect("codex", e.project)
+	if err != nil {
+		t.Fatalf("inspect codex: %v", err)
+	}
+	if len(ci.Files) != 1 || !ci.Files[0].Exists || ci.Files[0].Parsed || len(ci.Files[0].Servers) != 0 {
+		t.Errorf("codex inspection = %+v, want existence only", ci.Files)
+	}
+	if ci.Manual == "" || ci.Note == "" {
+		t.Errorf("probe-only inspection must explain itself: %+v", ci)
+	}
+
+	var uce *clients.UnknownClientError
+	if _, err := e.tbl.Inspect("nope", e.project); !errors.As(err, &uce) {
+		t.Fatalf("unknown client: err = %v, want *UnknownClientError", err)
+	}
+}
+
+// requireUnprivileged skips permission tests for root, which bypasses the
+// mode bits they depend on.
+func requireUnprivileged(t *testing.T) {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: permission bits are not enforced")
+	}
+}

@@ -1,0 +1,50 @@
+[
+  {
+    "name": "fs_tools",
+    "description": "Tools of server \"fs\" (3): list_directory, read_file, write_file. Call this entry for their full input schemas, then run one with call_tool{tool, arguments}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_tools",
+    "description": "Tools of server \"git\" (3): commit, log, status. Call this entry for their full input schemas, then run one with call_tool{tool, arguments}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "web_tools",
+    "description": "Tools of server \"web\" (2): fetch_url, search_web. Call this entry for their full input schemas, then run one with call_tool{tool, arguments}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "call_tool",
+    "description": "Invoke a tool by the exposed name reported by search_tools, passing that tool's own arguments.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "type": "string",
+          "description": "exposed tool name from a search result"
+        },
+        "arguments": {
+          "type": "object",
+          "description": "arguments for the target tool"
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

@@ -1,0 +1,141 @@
+package gateway
+
+import (
+	"github.com/dinstein/agent-hub/internal/guard/injection"
+	"github.com/dinstein/agent-hub/internal/router"
+	"github.com/dinstein/agent-hub/internal/scope"
+)
+
+// This file is the gateway's visibility plane (docs/architecture.md §7): the
+// EffectiveScope is a QUERY-TIME projection over the connection plane. The
+// two planes are deliberately separate — invariant 2: narrowing the scope
+// (profile edit, session overlay) never touches a downstream connection;
+// only servers.json spec changes reconnect anything (see hotreload.go).
+
+// scopeKey identifies this process's single upstream session for the
+// resolver cache. The session id is the daemon-assigned one when the
+// control link is registered ("" when standalone); a re-registration mints
+// a new id and therefore a fresh cache slot — a stale overlay from a dead
+// session can never be served under the new identity.
+func (g *gateway) scopeKey() scope.SessionKey {
+	sid := ""
+	if g.ctl != nil {
+		sid = g.ctl.Session()
+	}
+	return scope.SessionKey{
+		ClientID:  g.cfg.ClientID,
+		SessionID: scope.SessionID(sid),
+		// Root is the client's first reported root, read from the cache only
+		// (cachedPrimaryRoot explains why this must not block). It selects the
+		// per-project layer in scope/layers.go, which outranks the
+		// client-level binding.
+		//
+		// An empty root — client declares no roots capability, reports none,
+		// or the prefetch has not landed yet — consults no project binding at
+		// all, so the client-level binding applies. That is the behavior every
+		// session had before this was wired, which is what makes an
+		// unpopulated cache safe rather than merely tolerable.
+		Root: g.cachedPrimaryRoot(),
+	}
+}
+
+// currentScope resolves the session's effective scope through the cached
+// resolver. Returns nil only when scope authority does not exist at all
+// (no registry store — see newGateway); with a store present, a resolution
+// failure returns an EMPTY scope (zero visible servers): fail-closed, an
+// error must never widen visibility.
+func (g *gateway) currentScope() *scope.EffectiveScope {
+	if g.scopeRes == nil {
+		return nil
+	}
+	es, err := g.scopeRes.Resolve(g.lifeCtx, g.scopeKey())
+	if err != nil {
+		g.log.Warn("scope resolution failed; failing closed to an empty scope", "error", err)
+		return &scope.EffectiveScope{Servers: map[string]scope.ToolView{}}
+	}
+	return es
+}
+
+// catalogSnapshot is the scope.Sources.Catalog input: the raw-name tool
+// directory of whatever router currently serves (cache-built before ready,
+// live after), so scope intersection and tools/list can never disagree
+// about which catalog they describe.
+func (g *gateway) catalogSnapshot() router.Catalog {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.cat
+}
+
+// catalogFromRouter projects a router back into its raw (server, tool)
+// catalog via RouteOf — the only legitimate reverse mapping (never by
+// splitting exposed names).
+func catalogFromRouter(rt *router.Router) router.Catalog {
+	m := make(map[string][]string)
+	for _, def := range rt.List() {
+		route, ok := rt.RouteOf(def.Name)
+		if !ok {
+			continue // unroutable listing cannot happen by construction
+		}
+		m[route.ServerID] = append(m[route.ServerID], route.RawTool)
+	}
+	return router.NewCatalog(m)
+}
+
+// The tools/list view projection lives in discovery.Visible (called from
+// currentSurface): it drops every aggregated tool whose route is not visible
+// under the effective scope, using pipeline.ScopeAllows — the identical
+// predicate the pipeline's scope gate enforces on the execute path. The
+// router itself is NOT rebuilt and no downstream connection is touched
+// (docs/architecture.md §7 invariant 2 — visibility is a query-time projection).
+
+// injectionPolicy derives the defend_and_shape enforcement policy from the
+// applied governance document: label by default, block when
+// governance.blockOnInjection is set (docs/flows.md).
+func (g *gateway) injectionPolicy() injection.Policy {
+	var pol injection.Policy // zero value = label mode, nobody exempt
+	if snap := g.snap.Load(); snap != nil && snap.Governance.V.BlockOnInjection {
+		pol.Mode = injection.ModeBlock
+	}
+	// Per-server exemptions are explicit operator configuration; the
+	// registry schema has no field for them yet — none are granted until
+	// it does (the closed direction: no exemption by default).
+	return pol
+}
+
+// refreshScopeAndNotify recomputes the effective scope and pushes
+// tools/list_changed iff the CONTENT hash moved (docs/architecture.md §7: only a
+// content change warrants a push — no rebuild amplification).
+func (g *gateway) refreshScopeAndNotify() {
+	es := g.currentScope() // resolve OUTSIDE g.mu (resolver takes its own locks)
+	g.mu.Lock()
+	changed := scope.Changed(g.lastScope, es)
+	g.lastScope = es
+	initialized := g.initialized
+	g.mu.Unlock()
+	if !changed {
+		return
+	}
+	// A content change may have moved the discovery MODE as well, so the
+	// surface the client sees is a different one. The cached surface needs no
+	// explicit invalidation (its key carries the scope hash), but the search
+	// guard does: its streak describes a tool surface that no longer exists
+	// (docs/architecture.md §7).
+	g.guard.Reset()
+	if initialized {
+		g.notifyToolsChanged()
+	}
+}
+
+// onOverlayChanged reacts to any session-overlay transition (daemon push,
+// registration, link loss). Invalidation clears the whole cache rather than
+// one session: the session identity itself may have just changed, and this
+// process hosts exactly one upstream session — over-invalidation is a cheap
+// recompute (the closed direction; under-invalidation would serve a stale
+// scope).
+func (g *gateway) onOverlayChanged() {
+	if g.scopeRes == nil {
+		return
+	}
+	g.scopeRes.Invalidate(scope.Event{Kind: scope.EvRegistryChanged})
+	g.refreshScopeAndNotify()
+}

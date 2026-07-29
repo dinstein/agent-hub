@@ -1,0 +1,48 @@
+{
+  "server": "fs",
+  "tools": [
+    {
+      "tool": "fs__list_directory",
+      "raw_name": "list_directory",
+      "description": "List the entries of a directory on disk.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "call_with": "call_tool"
+    },
+    {
+      "tool": "fs__read_file",
+      "raw_name": "read_file",
+      "description": "Read the contents of a file from disk.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "call_with": "call_tool"
+    },
+    {
+      "tool": "fs__write_file",
+      "raw_name": "write_file",
+      "description": "Write text to a file, creating the file if needed.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "call_with": "call_tool"
+    }
+  ],
+  "hint": "call one of these with call_tool{tool, arguments}"
+}

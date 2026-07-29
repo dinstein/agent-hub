@@ -1,0 +1,335 @@
+package downstream
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/dinstein/agent-hub/internal/mcp/transport"
+	"github.com/dinstein/agent-hub/internal/secrets"
+)
+
+// Sentinel errors of this package.
+var (
+	// ErrCircuitOpen is returned by Call while the circuit breaker is open
+	// (cooldown) or a half-open probe is already in flight. Callers fail
+	// fast; nothing is queued.
+	ErrCircuitOpen = errors.New("downstream: circuit open")
+	// ErrServerClosed is returned by Call/RefreshTools after Close.
+	ErrServerClosed = errors.New("downstream: server closed")
+	// ErrNoRefresher reports a 401/403 on a server whose TokenSource has no
+	// renewal half wired (no OAuth state, or a caller that opted out).
+	ErrNoRefresher = errors.New("downstream: no token refresher wired")
+)
+
+// envPrefix is stripped from the child environment on spawn
+// (canonical.md §1: AGENTHUB_* is stripped wholesale for downstreams).
+const envPrefix = "AGENTHUB_"
+
+// DefaultConnectTimeout bounds the first connection (dial + initialize +
+// tools/list). 120s is deliberately generous: npx/uvx launchers with a cold
+// cache can take minutes to first byte.
+const DefaultConnectTimeout = 120 * time.Second
+
+// refreshTimeout bounds an owner-initiated tools/list refresh triggered by
+// a list_changed notification.
+const refreshTimeout = 30 * time.Second
+
+// Provenance values for Spec.Provenance — the stable trust flag SSRF
+// screening derives from (docs/flows.md: "block_private is a
+// provenance-derived stable flag"). They mirror registry.Provenance*.
+const (
+	// ProvenanceRemote (also the empty default) screens every outbound
+	// connection: a private or non-public address is refused.
+	ProvenanceRemote = "remote"
+	// ProvenanceLocal marks an operator-declared local endpoint. It
+	// unblocks LITERAL loopback addresses only — never RFC1918, never a
+	// hostname whose DNS answer claims to be local.
+	ProvenanceLocal = "local"
+)
+
+// Spec is the runtime description of one downstream server, resolved from
+// registry.ServerEntry (see SpecFromEntry). Placeholders in Env and Headers
+// are still unresolved here: they are expanded against the vault at dial
+// time so a rotated secret takes effect on the next (re)connect and so no
+// resolved credential is ever held in a long-lived configuration value.
+type Spec struct {
+	ID   string
+	Kind transport.Kind
+
+	// stdio fields.
+	Command string
+	Args    []string
+	// Docker, when non-nil, runs the stdio child inside a container instead
+	// of on this host (registry `runtime: docker`). It is a POINTER on
+	// purpose: a nil value is the only thing that means "host", so a config
+	// asking for isolation can never degrade to a host spawn by defaulting.
+	Docker *transport.DockerConfig
+	// Env entries are overlaid on the parent environment after AGENTHUB_*
+	// stripping. Values may carry ${SECRET_X} placeholders.
+	Env map[string]string
+	Cwd string
+
+	// URL is the MCP endpoint for the http and sse transports.
+	URL string
+	// Headers are caller-owned request headers for the HTTP transports.
+	// Values may carry ${SECRET_X} placeholders. An explicit Authorization
+	// header suppresses the vault/OAuth bearer injection.
+	Headers map[string]string
+
+	// Provenance drives SSRF screening (see the Provenance* constants).
+	Provenance string
+
+	// Derive is the server's derivation POLICY (registry `derive`), read by
+	// the assembling gateway/daemon to decide whether a session gets its own
+	// instance. The connection layer itself never interprets it: by the time
+	// a Spec reaches Connect the decision is already expressed by DeriveKey.
+	Derive DeriveMode
+	// DeriveKey identifies THIS instance's derivation; "" is the base
+	// instance shared by every session. It never changes ID — see derive.go
+	// invariant 1.
+	DeriveKey DeriveKey
+	// ScopeName is the vault scope component of every secret this instance
+	// resolves: the composite key (ServerID, ScopeName). Empty means
+	// secrets.DefaultScope ("_global"). Derive sets it to the derive key so
+	// a per-root/per-session identity is storable without a migration
+	// (docs/modules/dataplane.md early warning).
+	ScopeName string
+}
+
+// IsHTTP reports whether the spec uses one of the two HTTP transports.
+func (s Spec) IsHTTP() bool {
+	return s.Kind == transport.StreamableHTTP || s.Kind == transport.SSE
+}
+
+// DialFunc creates a connected (but not yet initialized) transport for a
+// spec. It doubles as the respawn factory used when a half-open probe fails
+// (the respawn factory is injected; the slot owns no spawn
+// logic).
+type DialFunc func(ctx context.Context, spec Spec) (transport.Transport, error)
+
+// TokenSource supplies and renews the bearer credential of an HTTP
+// downstream. It is the only OAuth surface this package knows: the flow,
+// the vault and the refresh coordination all live behind it, so
+// internal/downstream never imports internal/oauthflow.
+//
+// NewVaultTokenSource builds the standard implementation.
+type TokenSource interface {
+	// Token returns the current access token. ok=false means "this server
+	// has no stored credential"; the connection is then attempted
+	// anonymously (several servers allow initialize and tools/list without
+	// auth and only 401 on tools/call — docs/modules/oauth.md).
+	Token(ctx context.Context) (tok string, ok bool, err error)
+	// Refresh renews the credential after a downstream answered 401/403 and
+	// returns the new access token. Implementations MUST serialize
+	// (singleflight online, the sibling file lock offline): a one-time
+	// refresh token spent twice concurrently locks the user out.
+	Refresh(ctx context.Context) (string, error)
+}
+
+// RefreshFunc is the renewal half of a TokenSource, adapted by the wiring
+// from oauthflow.Refresher (which the daemon backs with a singleflight
+// coordinator and the CLI/standalone gateway with the sibling file lock).
+type RefreshFunc func(ctx context.Context) (string, error)
+
+// BreakerConfig tunes the circuit breaker. Zero fields take the frozen
+// defaults (3 consecutive health failures to open, 20s cooldown).
+type BreakerConfig struct {
+	FailureThreshold int
+	Cooldown         time.Duration
+}
+
+// RetryConfig tunes the retry loop for ClassRetry errors. Zero fields take
+// the defaults: 3 attempts total, 25ms base backoff (doubling, jittered),
+// 1s cap.
+type RetryConfig struct {
+	MaxAttempts int
+	BaseDelay   time.Duration
+	MaxDelay    time.Duration
+}
+
+func (c RetryConfig) withDefaults() RetryConfig {
+	if c.MaxAttempts <= 0 {
+		c.MaxAttempts = 3
+	}
+	if c.BaseDelay <= 0 {
+		c.BaseDelay = 25 * time.Millisecond
+	}
+	if c.MaxDelay <= 0 {
+		c.MaxDelay = time.Second
+	}
+	return c
+}
+
+// withReconnectDefaults fills the RECONNECT ladder (a separate, much slower
+// ladder than the in-call retry above: re-spawning a downstream costs a
+// process launch, so the base delay is measured in hundreds of ms and the
+// cap in tens of seconds). MaxAttempts is unused on this path — the ladder
+// is bounded by the breaker, not by an attempt count.
+func (c RetryConfig) withReconnectDefaults() RetryConfig {
+	if c.BaseDelay <= 0 {
+		c.BaseDelay = 250 * time.Millisecond
+	}
+	if c.MaxDelay <= 0 {
+		c.MaxDelay = 30 * time.Second
+	}
+	if c.MaxAttempts <= 0 {
+		c.MaxAttempts = 1
+	}
+	return c
+}
+
+// Deps carries the collaborators Connect needs. All fields may be nil/zero;
+// a zero Deps still connects a stdio server that needs no secrets.
+type Deps struct {
+	Log *slog.Logger
+
+	// Secrets resolves ${SECRET_X} placeholders in Env and Headers. nil
+	// makes any placeholder a hard error (ErrNoResolver) rather than a
+	// silent passthrough.
+	Secrets secrets.Resolver
+
+	// Auth supplies the bearer credential of an HTTP downstream and renews
+	// it once after a 401/403. nil means no credential is attached and no
+	// passive refresh is attempted.
+	Auth TokenSource
+
+	// AuthFor builds the TokenSource of ONE instance, so a derived instance
+	// can carry its own identity (the vault scope name is spec.ScopeName).
+	// It exists because Deps is shared by every instance of a Pool while the
+	// credential is per (server, scope). Returning nil falls back to Auth —
+	// which is also what a nil AuthFor does, keeping every pre-M2 assembly
+	// byte-for-byte unchanged.
+	AuthFor func(spec Spec) TokenSource
+
+	// Spawn is reserved for M1 spawnguard wiring; nil today.
+	Spawn any
+
+	// DialContext overrides the SSRF-screening dialer used by the HTTP
+	// transports. nil selects the netguard-screened dialer derived from
+	// Spec.Provenance — which is what production always wants; this field
+	// exists for tests that must reach an httptest server.
+	DialContext transport.DialContextFunc
+
+	// NotificationStream opens the optional server→client GET SSE stream of
+	// the streamable-http transport after initialize. Servers that do not
+	// offer it answer 405 and are left alone.
+	NotificationStream bool
+
+	// Dial overrides transport creation (tests, in-process fakes). nil
+	// selects the built-in dialer for Spec.Kind. The same function is the
+	// respawn factory after a failed half-open probe.
+	Dial DialFunc
+
+	// ConnectTimeout bounds first connect and every respawn; 0 means
+	// DefaultConnectTimeout.
+	ConnectTimeout time.Duration
+
+	Breaker BreakerConfig
+	Retry   RetryConfig
+
+	// Reconnect tunes the respawn backoff ladder (see
+	// withReconnectDefaults). Its exponent is Server.Reconnects(), which
+	// survives successful reconnects by design.
+	Reconnect RetryConfig
+
+	// PingInterval starts a background MCP ping health probe at this period
+	// (0 = no background probing; Server.Ping stays available for on-demand
+	// probes). Three consecutive transient failures — or one hard failure
+	// such as connection refused — flip Server.Health() to ConnError.
+	PingInterval time.Duration
+
+	// Trace is the per-server JSON-RPC frame log (OpenServerLog). nil = no
+	// tracing; a non-nil log still records nothing until SetEnabled(true).
+	Trace *ServerLog
+}
+
+// authFor returns the TokenSource of one instance: the per-instance source
+// when the assembly supplies one, otherwise the shared Auth.
+func (d Deps) authFor(spec Spec) TokenSource {
+	if d.AuthFor != nil {
+		if ts := d.AuthFor(spec); ts != nil {
+			return ts
+		}
+	}
+	return d.Auth
+}
+
+// dialer returns the DialFunc Connect uses: the caller's override when set,
+// otherwise the built-in per-kind dialer closed over these deps.
+func (d Deps) dialer() DialFunc {
+	if d.Dial != nil {
+		return d.Dial
+	}
+	return func(ctx context.Context, spec Spec) (transport.Transport, error) {
+		switch spec.Kind {
+		case transport.Stdio:
+			return d.dialStdio(ctx, spec)
+		case transport.StreamableHTTP, transport.SSE:
+			return d.dialHTTP(ctx, spec)
+		default:
+			return nil, fmt.Errorf("downstream %q: unknown transport kind %q", spec.ID, spec.Kind)
+		}
+	}
+}
+
+// dialStdio spawns the child described by spec and speaks stdio to it. The
+// child environment is the parent environment with every AGENTHUB_*
+// variable stripped, overlaid with spec.Env after secret expansion.
+func (d Deps) dialStdio(ctx context.Context, spec Spec) (transport.Transport, error) {
+	if spec.Command == "" {
+		return nil, fmt.Errorf("downstream %q: empty command", spec.ID)
+	}
+	env, err := expandSecretMap(ctx, spec.ID, spec.ScopeName, spec.Env, d.Secrets)
+	if err != nil {
+		return nil, err
+	}
+	cfg := transport.StdioConfig{
+		Command: spec.Command,
+		Args:    spec.Args,
+		Env:     buildEnv(env),
+		Cwd:     spec.Cwd,
+	}
+	if spec.Docker != nil {
+		// Container isolation: the env the child sees is passed through the
+		// docker CLI's own environment rather than argv, so secrets never
+		// appear in ps(1) output.
+		docker := *spec.Docker
+		docker.Env = env
+		docker.ServerID = spec.ID
+		cfg.Docker = &docker
+	}
+	return transport.SpawnStdio(cfg)
+}
+
+// buildEnv assembles the child environment: parent env minus AGENTHUB_*
+// and minus any key overridden by extra, plus extra in sorted key order
+// (deterministic output for a given input).
+func buildEnv(extra map[string]string) []string {
+	base := os.Environ()
+	out := make([]string, 0, len(base)+len(extra))
+	for _, kv := range base {
+		if strings.HasPrefix(kv, envPrefix) {
+			continue
+		}
+		name, _, _ := strings.Cut(kv, "=")
+		if _, ok := extra[name]; ok {
+			continue
+		}
+		out = append(out, kv)
+	}
+	keys := make([]string, 0, len(extra))
+	for k := range extra {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		out = append(out, k+"="+extra[k])
+	}
+	return out
+}

@@ -1,0 +1,9 @@
+generation: 7
+server:
+  id: fs
+  transport:
+    cmd: /usr/bin/fs-mcp
+    env:
+      HOME: /home/u
+      PATH: /usr/bin
+    kind: stdio

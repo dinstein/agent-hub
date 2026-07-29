@@ -1,0 +1,12 @@
+nested:
+  - a:
+      deep: 1
+  - a:
+      deep: 2
+rows:
+  - a: 1
+    b: 2
+  - a: 1
+    c: 2
+short:
+  - a: 1

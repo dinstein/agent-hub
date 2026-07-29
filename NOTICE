@@ -1,0 +1,16 @@
+AgentHub
+Copyright (c) 2026 dinstein
+
+This project is an original implementation. No source code was copied from
+other projects.
+
+The architecture design (docs/architecture.md) references, as read-only design
+material, the problem catalogs and battle-tested behaviors of:
+
+  - mcpproxy-go (https://github.com/smart-mcp-proxy/mcpproxy-go), MIT License
+  - toolport   (https://github.com/tsouth89/toolport), MIT License
+
+What was inherited from them is the list of edge cases, failure modes, and
+correct behaviors they discovered in production — not their code. This notice
+records the design provenance for academic honesty; it is not a license
+obligation.

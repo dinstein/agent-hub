@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The .app bundle's identity. {{.Version}} is substituted at package time from
+  the VERSION file, so the version a user sees in Finder is the same string
+  `agenthub --version` prints.
+
+  LSUIElement is deliberately absent: this is a real windowed app, not a menu
+  bar agent. NSHighResolutionCapable must stay true or the webview renders
+  blurry on Retina displays.
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>AgentHub</string>
+    <key>CFBundleDisplayName</key>
+    <string>AgentHub</string>
+    <key>CFBundleExecutable</key>
+    <string>agenthub-gui</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.dinstein.agenthub</string>
+    <key>CFBundleVersion</key>
+    <string>{{.Version}}</string>
+    <key>CFBundleShortVersionString</key>
+    <string>{{.ShortVersion}}</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>icons</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>AgentHub</string>
+    <!--
+      The minimum macOS the webview stack supports. Lowering this does not make
+      an older system work; it only removes the error that would have said why.
+    -->
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+</dict>
+</plist>

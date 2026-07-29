@@ -1,0 +1,70 @@
+[
+  {
+    "method": "POST",
+    "path": "/mcp",
+    "header": {
+      "Accept": "application/json, text/event-stream",
+      "Authorization": "Bearer golden-token",
+      "Content-Type": "application/json",
+      "Mcp-Protocol-Version": "2025-11-25"
+    },
+    "body": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "protocolVersion": "2025-11-25",
+        "capabilities": {
+          "roots": {
+            "listChanged": true
+          }
+        },
+        "clientInfo": {
+          "name": "agenthub",
+          "version": "test"
+        }
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/mcp",
+    "header": {
+      "Accept": "application/json, text/event-stream",
+      "Authorization": "Bearer golden-token",
+      "Content-Type": "application/json",
+      "Mcp-Protocol-Version": "2025-11-25",
+      "Mcp-Session-Id": "golden-session"
+    },
+    "body": {
+      "jsonrpc": "2.0",
+      "method": "notifications/initialized"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/mcp",
+    "header": {
+      "Accept": "application/json, text/event-stream",
+      "Authorization": "Bearer golden-token",
+      "Content-Type": "application/json",
+      "Mcp-Protocol-Version": "2025-11-25",
+      "Mcp-Session-Id": "golden-session"
+    },
+    "body": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "tools/list",
+      "params": {}
+    }
+  },
+  {
+    "method": "DELETE",
+    "path": "/mcp",
+    "header": {
+      "Authorization": "Bearer golden-token",
+      "Mcp-Protocol-Version": "2025-11-25",
+      "Mcp-Session-Id": "golden-session"
+    }
+  }
+]

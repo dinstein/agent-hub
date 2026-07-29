@@ -1,0 +1,188 @@
+[
+  {
+    "name": "clean",
+    "findings": []
+  },
+  {
+    "name": "plain-injection",
+    "findings": [
+      {
+        "rule": "override-instructions",
+        "severity": "high",
+        "start": 8,
+        "end": 36,
+        "window": "full",
+        "excerpt": "ignore previous instructions"
+      }
+    ]
+  },
+  {
+    "name": "zero-width",
+    "findings": [
+      {
+        "rule": "override-instructions",
+        "severity": "high",
+        "start": 0,
+        "end": 43,
+        "window": "full",
+        "excerpt": "ignore previous instructions"
+      }
+    ]
+  },
+  {
+    "name": "fullwidth-uppercase",
+    "findings": [
+      {
+        "rule": "override-instructions",
+        "severity": "high",
+        "start": 0,
+        "end": 42,
+        "window": "full",
+        "excerpt": "ignore previous instructions"
+      }
+    ]
+  },
+  {
+    "name": "multi-rule",
+    "findings": [
+      {
+        "rule": "reveal-system-prompt",
+        "severity": "high",
+        "start": 0,
+        "end": 24,
+        "window": "full",
+        "excerpt": "reveal the system prompt"
+      },
+      {
+        "rule": "system-prompt-mention",
+        "severity": "low",
+        "start": 11,
+        "end": 24,
+        "window": "full",
+        "excerpt": "system prompt"
+      },
+      {
+        "rule": "persona-switch",
+        "severity": "medium",
+        "start": 26,
+        "end": 39,
+        "window": "full",
+        "excerpt": "you are now a"
+      },
+      {
+        "rule": "do-anything-now",
+        "severity": "medium",
+        "start": 40,
+        "end": 48,
+        "window": "full",
+        "excerpt": "dan mode"
+      }
+    ]
+  },
+  {
+    "name": "base64-single",
+    "findings": [
+      {
+        "rule": "override-instructions",
+        "severity": "high",
+        "start": 6,
+        "end": 82,
+        "depth": 1,
+        "window": "full",
+        "excerpt": "ignore previous instructions"
+      },
+      {
+        "rule": "reveal-system-prompt",
+        "severity": "high",
+        "start": 6,
+        "end": 82,
+        "depth": 1,
+        "window": "full",
+        "excerpt": "reveal the system prompt"
+      },
+      {
+        "rule": "system-prompt-mention",
+        "severity": "low",
+        "start": 6,
+        "end": 82,
+        "depth": 1,
+        "window": "full",
+        "excerpt": "system prompt"
+      }
+    ]
+  },
+  {
+    "name": "base64-nested",
+    "findings": [
+      {
+        "rule": "override-instructions",
+        "severity": "high",
+        "start": 9,
+        "end": 125,
+        "depth": 2,
+        "window": "full",
+        "excerpt": "ignore previous instructions"
+      },
+      {
+        "rule": "reveal-system-prompt",
+        "severity": "high",
+        "start": 9,
+        "end": 125,
+        "depth": 2,
+        "window": "full",
+        "excerpt": "reveal the system prompt"
+      },
+      {
+        "rule": "system-prompt-mention",
+        "severity": "low",
+        "start": 9,
+        "end": 125,
+        "depth": 2,
+        "window": "full",
+        "excerpt": "system prompt"
+      }
+    ]
+  },
+  {
+    "name": "chatml",
+    "findings": [
+      {
+        "rule": "chatml-marker",
+        "severity": "high",
+        "start": 5,
+        "end": 17,
+        "window": "full",
+        "excerpt": "\u003c|im_start|\u003e"
+      },
+      {
+        "rule": "chatml-marker",
+        "severity": "high",
+        "start": 28,
+        "end": 38,
+        "window": "full",
+        "excerpt": "\u003c|im_end|\u003e"
+      }
+    ]
+  },
+  {
+    "name": "fake-system-tag",
+    "findings": [
+      {
+        "rule": "fake-system-tag",
+        "severity": "medium",
+        "start": 2,
+        "end": 10,
+        "window": "full",
+        "excerpt": "\u003csystem\u003e"
+      },
+      {
+        "rule": "fake-system-tag",
+        "severity": "medium",
+        "start": 23,
+        "end": 32,
+        "window": "full",
+        "excerpt": "\u003c/system\u003e"
+      }
+    ]
+  }
+]

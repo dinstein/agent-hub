@@ -1,0 +1,19 @@
+backslash: "C:\\tmp"
+boolish: "true"
+brace: "{x}"
+bracket: "[x]"
+colon: "key: value"
+comma: "a,b"
+dash: "- item"
+dash-ok: a-b
+empty: ""
+floaty: "1e9"
+hash: "#tag"
+"key with space": 1
+newline: "one\ntwo"
+nully: "null"
+numeric: "42"
+quote: "say \"hi\""
+spaced: "  padded  "
+tab: "a\tb"
+unicode: 路径/文件

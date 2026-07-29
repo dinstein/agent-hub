@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AgentHub icon: many clients converge on one hub.
+
+  The mark is the product's one-line definition drawn literally — several
+  callers (Claude Code, Cursor, Codex, …) reaching one shared centre, rather
+  than each holding its own configuration and credentials. The six inbound
+  nodes are deliberately uneven in weight: two solid, four hollow, because a
+  hub whose clients are all identical is not a hub, it is a list.
+
+  The centre is a rounded square, not a circle: it echoes the app window and
+  keeps the silhouette readable when macOS masks it into the squircle.
+
+  COLOUR. The GUI itself has no brand hue on purpose (see style.css: every hue
+  in the UI is a health claim). An icon lives outside that rule — it is never
+  next to a status badge — so it may carry one identity colour. The teal here
+  is chosen to survive both the light and dark Dock, and it appears nowhere in
+  the interface, so it can never be mistaken for a status.
+
+  Drawn at 1024×1024, the largest size macOS asks for; every smaller variant
+  is downsampled from this file.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1b2733"/>
+      <stop offset="100%" stop-color="#0e1116"/>
+    </linearGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5ee0c8"/>
+      <stop offset="100%" stop-color="#2aa8a0"/>
+    </linearGradient>
+    <!-- The hairline that keeps the mark from dissolving into a dark Dock. -->
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.03"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Canvas. 190 ≈ the 22.37% corner radius Apple's grid uses, so the shape
+       already looks right before the system mask is applied. -->
+  <rect width="1024" height="1024" rx="190" fill="url(#bg)"/>
+  <rect x="4" y="4" width="1016" height="1016" rx="187" fill="none"
+        stroke="url(#rim)" stroke-width="8"/>
+
+  <!-- Spokes, drawn under the nodes so the joins stay clean.
+       Weight is set for the SMALL sizes: at 16px a 26px stroke disappears and
+       the mark reads as loose dots. 38px survives the downsample, and the
+       large sizes can carry a heavier line without looking clumsy. -->
+  <g stroke="#5ee0c8" stroke-width="38" stroke-linecap="round" fill="none">
+    <g opacity="0.95">
+      <path d="M512 512 L512 250"/>
+      <path d="M512 512 L738 642"/>
+    </g>
+    <g opacity="0.5">
+      <path d="M512 512 L286 382"/>
+      <path d="M512 512 L738 382"/>
+      <path d="M512 512 L286 642"/>
+      <path d="M512 512 L512 774"/>
+    </g>
+  </g>
+
+  <!-- Client nodes. Two filled, four hollow: the hub serves callers that are
+       not interchangeable. -->
+  <g>
+    <circle cx="512" cy="250" r="62" fill="#5ee0c8"/>
+    <circle cx="738" cy="642" r="62" fill="#5ee0c8"/>
+    <g fill="#0e1116" stroke="#5ee0c8" stroke-width="22">
+      <circle cx="286" cy="382" r="52"/>
+      <circle cx="738" cy="382" r="52"/>
+      <circle cx="286" cy="642" r="52"/>
+      <circle cx="512" cy="774" r="52"/>
+    </g>
+  </g>
+
+  <!-- The hub. Sized to read as the anchor at 16px, where the spokes have
+       already blurred into a halo — so it is the one element that must not be
+       subtle. The dark keyline separates it from the spokes converging under
+       it; without it the centre and the lines merge into one teal blob. -->
+  <rect x="376" y="376" width="272" height="272" rx="74" fill="url(#core)"/>
+  <rect x="376" y="376" width="272" height="272" rx="74" fill="none"
+        stroke="#0e1116" stroke-width="22"/>
+  <!-- The pipeline through the centre: one path, not several. -->
+  <rect x="454" y="454" width="116" height="116" rx="30" fill="#0e1116" opacity="0.85"/>
+</svg>

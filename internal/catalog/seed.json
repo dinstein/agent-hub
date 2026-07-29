@@ -1,0 +1,279 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "filesystem",
+      "name": "Filesystem",
+      "description": "Read, write and search files under directories you explicitly allow.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "{{directory}}"],
+      "params": [
+        {
+          "name": "directory",
+          "description": "Absolute path the server may read and write. Nothing outside it is reachable.",
+          "example": "/Users/me/projects"
+        }
+      ],
+      "tags": ["files", "local", "reference"]
+    },
+    {
+      "id": "git",
+      "name": "Git",
+      "description": "Inspect a local Git repository: status, diffs, log and blame.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-git", "--repository", "{{repository}}"],
+      "params": [
+        {
+          "name": "repository",
+          "description": "Absolute path of the Git working tree to expose.",
+          "example": "/Users/me/projects/agent-hub"
+        }
+      ],
+      "tags": ["git", "vcs", "local", "reference"]
+    },
+    {
+      "id": "fetch",
+      "name": "Fetch",
+      "description": "Fetch a URL and convert the page to markdown for reading.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
+      "tags": ["web", "http", "reference"]
+    },
+    {
+      "id": "memory",
+      "name": "Memory",
+      "description": "A knowledge graph the agent can write notes into and recall later.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "tags": ["memory", "notes", "reference"]
+    },
+    {
+      "id": "sequential-thinking",
+      "name": "Sequential Thinking",
+      "description": "A scratchpad tool for step-by-step reasoning over a hard problem.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequentialthinking"],
+      "tags": ["reasoning", "reference"]
+    },
+    {
+      "id": "everything",
+      "name": "Everything (protocol test server)",
+      "description": "The reference server exercising every MCP feature. Useful for testing agenthub itself.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/everything",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-everything"],
+      "tags": ["test", "diagnostics", "reference"]
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "description": "Current time and time-zone conversion.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/time",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-time"],
+      "tags": ["time", "timezone", "reference"]
+    },
+    {
+      "id": "sqlite",
+      "name": "SQLite",
+      "description": "Query and modify a local SQLite database file.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-sqlite", "--db-path", "{{db_path}}"],
+      "params": [
+        {
+          "name": "db_path",
+          "description": "Absolute path of the SQLite database file.",
+          "example": "/Users/me/data/app.db"
+        }
+      ],
+      "tags": ["database", "sql", "local", "reference"]
+    },
+    {
+      "id": "postgres",
+      "name": "PostgreSQL",
+      "description": "Read-only SQL access to a PostgreSQL database, with schema inspection.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/postgres",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "{{connection_url}}"],
+      "params": [
+        {
+          "name": "connection_url",
+          "description": "Connection string. It is stored in the registry as written, so prefer a URL whose password comes from your environment or a .pgpass file rather than pasting one here.",
+          "example": "postgresql://localhost/mydb"
+        }
+      ],
+      "tags": ["database", "sql", "postgres"]
+    },
+    {
+      "id": "redis",
+      "name": "Redis",
+      "description": "Read and write keys on a Redis instance.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/redis",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-redis", "{{redis_url}}"],
+      "params": [
+        {
+          "name": "redis_url",
+          "description": "Redis connection URL.",
+          "example": "redis://localhost:6379"
+        }
+      ],
+      "tags": ["database", "cache", "redis"]
+    },
+    {
+      "id": "slack",
+      "name": "Slack",
+      "description": "Read channels and post messages as a Slack bot user.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/slack",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-slack"],
+      "env": {
+        "SLACK_BOT_TOKEN": "${SECRET_SLACK_BOT_TOKEN}",
+        "SLACK_TEAM_ID": "{{team_id}}"
+      },
+      "keys": [
+        {
+          "key": "SLACK_BOT_TOKEN",
+          "description": "Slack bot user OAuth token (starts with xoxb-)."
+        }
+      ],
+      "params": [
+        {
+          "name": "team_id",
+          "description": "Slack workspace (team) id.",
+          "example": "T01234567"
+        }
+      ],
+      "tags": ["chat", "slack", "team"]
+    },
+    {
+      "id": "brave-search",
+      "name": "Brave Search",
+      "description": "Web and local search through the Brave Search API.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/brave-search",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "${SECRET_BRAVE_API_KEY}"
+      },
+      "keys": [
+        {
+          "key": "BRAVE_API_KEY",
+          "description": "Brave Search API key."
+        }
+      ],
+      "tags": ["search", "web"]
+    },
+    {
+      "id": "google-maps",
+      "name": "Google Maps",
+      "description": "Geocoding, directions and place details through the Google Maps API.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/google-maps",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-google-maps"],
+      "env": {
+        "GOOGLE_MAPS_API_KEY": "${SECRET_GOOGLE_MAPS_API_KEY}"
+      },
+      "keys": [
+        {
+          "key": "GOOGLE_MAPS_API_KEY",
+          "description": "Google Maps Platform API key."
+        }
+      ],
+      "tags": ["maps", "geo", "search"]
+    },
+    {
+      "id": "puppeteer",
+      "name": "Puppeteer",
+      "description": "Drive a headless Chrome: navigate, click, fill forms and screenshot.",
+      "publisher": "modelcontextprotocol",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/puppeteer",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+      "tags": ["browser", "web", "automation"]
+    },
+    {
+      "id": "github",
+      "name": "GitHub",
+      "description": "GitHub's own hosted server: issues, pull requests, code search and Actions.",
+      "publisher": "GitHub",
+      "homepage": "https://github.com/github/github-mcp-server",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "auth": "oauth",
+      "tags": ["git", "vcs", "issues", "code"]
+    },
+    {
+      "id": "sentry",
+      "name": "Sentry",
+      "description": "Sentry's hosted server: issues, events and release health.",
+      "publisher": "Sentry",
+      "homepage": "https://docs.sentry.io/product/sentry-mcp/",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://mcp.sentry.dev/mcp",
+      "auth": "oauth",
+      "tags": ["errors", "monitoring", "observability"]
+    },
+    {
+      "id": "notion",
+      "name": "Notion",
+      "description": "Notion's hosted server: search, read and update pages and databases.",
+      "publisher": "Notion",
+      "homepage": "https://developers.notion.com/docs/mcp",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://mcp.notion.com/mcp",
+      "auth": "oauth",
+      "tags": ["notes", "docs", "wiki"]
+    }
+  ]
+}

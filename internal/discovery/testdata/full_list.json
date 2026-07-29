@@ -1,0 +1,98 @@
+[
+  {
+    "name": "fs__list_directory",
+    "description": "List the entries of a directory on disk.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "fs__read_file",
+    "description": "Read the contents of a file from disk.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "fs__write_file",
+    "description": "Write text to a file, creating the file if needed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "git__commit",
+    "description": "Record the staged changes in the repository history.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "git__log",
+    "description": "Show the commit log of the repository.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "git__status",
+    "description": "Show the working tree status of the repository.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "web__fetch_url",
+    "description": "Fetch a URL over HTTP and return the response body as text.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "web__search_web",
+    "description": "Search the web for a query and return matching links.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      }
+    }
+  }
+]

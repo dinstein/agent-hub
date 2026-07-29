@@ -1,0 +1,202 @@
+[
+  {
+    "name": "clean",
+    "findings": []
+  },
+  {
+    "name": "pem-block",
+    "findings": [
+      {
+        "rule": "private-key-block",
+        "severity": "high",
+        "redaction": "match",
+        "start": 5,
+        "end": 85,
+        "length": 80,
+        "window": "full",
+        "preview": "[REDACTED:private-key-block](80B)"
+      }
+    ]
+  },
+  {
+    "name": "aws-pair",
+    "findings": [
+      {
+        "rule": "aws-access-key-id",
+        "severity": "high",
+        "redaction": "match",
+        "start": 0,
+        "end": 20,
+        "length": 20,
+        "window": "full",
+        "preview": "[REDACTED:aws-access-key-id](20B)"
+      },
+      {
+        "rule": "aws-secret-access-key",
+        "severity": "high",
+        "redaction": "secret",
+        "start": 43,
+        "end": 83,
+        "length": 40,
+        "window": "full",
+        "preview": "[REDACTED:aws-secret-access-key](40B)"
+      }
+    ]
+  },
+  {
+    "name": "aws-docs-sample",
+    "findings": [
+      {
+        "rule": "high-entropy-string",
+        "severity": "low",
+        "redaction": "none",
+        "start": 25,
+        "end": 65,
+        "length": 40,
+        "window": "full",
+        "preview": "[REDACTED:high-entropy-string](40B)",
+        "entropy": 4.66
+      }
+    ]
+  },
+  {
+    "name": "vendor-tokens",
+    "findings": [
+      {
+        "rule": "github-token",
+        "severity": "high",
+        "redaction": "match",
+        "start": 0,
+        "end": 40,
+        "length": 40,
+        "window": "full",
+        "preview": "[REDACTED:github-token](40B)"
+      },
+      {
+        "rule": "slack-token",
+        "severity": "high",
+        "redaction": "match",
+        "start": 41,
+        "end": 84,
+        "length": 43,
+        "window": "full",
+        "preview": "[REDACTED:slack-token](43B)"
+      },
+      {
+        "rule": "stripe-secret-key",
+        "severity": "high",
+        "redaction": "match",
+        "start": 85,
+        "end": 118,
+        "length": 33,
+        "window": "full",
+        "preview": "[REDACTED:stripe-secret-key](33B)"
+      }
+    ]
+  },
+  {
+    "name": "jwt",
+    "findings": [
+      {
+        "rule": "jwt",
+        "severity": "high",
+        "redaction": "match",
+        "start": 9,
+        "end": 117,
+        "length": 108,
+        "window": "full",
+        "preview": "[REDACTED:jwt](108B)"
+      }
+    ]
+  },
+  {
+    "name": "authorization",
+    "findings": [
+      {
+        "rule": "authorization-header",
+        "severity": "high",
+        "redaction": "secret",
+        "start": 39,
+        "end": 68,
+        "length": 29,
+        "window": "full",
+        "preview": "[REDACTED:authorization-header](29B)"
+      }
+    ]
+  },
+  {
+    "name": "card",
+    "findings": [
+      {
+        "rule": "credit-card",
+        "severity": "high",
+        "redaction": "match",
+        "start": 8,
+        "end": 27,
+        "length": 19,
+        "window": "full",
+        "preview": "[REDACTED:credit-card](19B)"
+      }
+    ]
+  },
+  {
+    "name": "email-password",
+    "findings": [
+      {
+        "rule": "email-password-pair",
+        "severity": "medium",
+        "redaction": "secret",
+        "start": 18,
+        "end": 29,
+        "length": 11,
+        "window": "full",
+        "preview": "[REDACTED:email-password-pair](11B)"
+      }
+    ]
+  },
+  {
+    "name": "credential-urls",
+    "findings": [
+      {
+        "rule": "internal-credential-url",
+        "severity": "high",
+        "redaction": "secret",
+        "start": 15,
+        "end": 26,
+        "length": 11,
+        "window": "full",
+        "preview": "[REDACTED:internal-credential-url](11B)"
+      },
+      {
+        "rule": "credential-url",
+        "severity": "high",
+        "redaction": "secret",
+        "start": 64,
+        "end": 76,
+        "length": 12,
+        "window": "full",
+        "preview": "[REDACTED:credential-url](12B)"
+      }
+    ]
+  },
+  {
+    "name": "entropy-only",
+    "findings": [
+      {
+        "rule": "high-entropy-string",
+        "severity": "low",
+        "redaction": "none",
+        "start": 7,
+        "end": 50,
+        "length": 43,
+        "window": "full",
+        "preview": "[REDACTED:high-entropy-string](43B)",
+        "entropy": 4.68
+      }
+    ]
+  },
+  {
+    "name": "placeholders",
+    "findings": []
+  }
+]

@@ -1,0 +1,4 @@
+pipeline: token_tier gate blocked call (E_TOKEN_TIER_DENIED): caller tier "read" may not invoke tool "rm" of server "srv" (tool tier "destructive")
+pipeline: token_tier gate blocked call (E_TOKEN_TIER_DENIED): caller tier "read" may not invoke tool "rm" of server "srv" (tool tier "write")
+pipeline: token_tier gate blocked call (E_TOKEN_TIER_DENIED): caller tier "write" may not invoke tool "rm" of server "srv" (tool tier "destructive")
+pipeline: token_tier gate blocked call (E_TOKEN_TIER_DENIED): caller tier "write" may not invoke tool "rm" of server "srv" (tool tier "destructive")

@@ -1,0 +1,49 @@
+[
+  {
+    "method": "GET",
+    "path": "/sse",
+    "header": {
+      "Accept": "text/event-stream",
+      "Authorization": "Bearer golden-token"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/messages?sid=golden",
+    "header": {
+      "Accept": "application/json",
+      "Authorization": "Bearer golden-token",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "protocolVersion": "2025-11-25",
+        "capabilities": {
+          "roots": {
+            "listChanged": true
+          }
+        },
+        "clientInfo": {
+          "name": "agenthub",
+          "version": "test"
+        }
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/messages?sid=golden",
+    "header": {
+      "Accept": "application/json",
+      "Authorization": "Bearer golden-token",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "jsonrpc": "2.0",
+      "method": "notifications/initialized"
+    }
+  }
+]

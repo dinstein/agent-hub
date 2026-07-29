@@ -1,0 +1,144 @@
+[
+  {
+    "name": "00-E_USAGE",
+    "code": "E_USAGE",
+    "exitCode": 2,
+    "message": "nothing to change: pass --enable-server/--disable-server/--tools/--discovery/--reset"
+  },
+  {
+    "name": "01-E_SERVER_NOT_FOUND",
+    "code": "E_SERVER_NOT_FOUND",
+    "exitCode": 3,
+    "message": "no server \"github\""
+  },
+  {
+    "name": "02-E_PROFILE_NOT_FOUND",
+    "code": "E_PROFILE_NOT_FOUND",
+    "exitCode": 3,
+    "message": "no profile \"work\""
+  },
+  {
+    "name": "03-E_SECRET_NOT_FOUND",
+    "code": "E_SECRET_NOT_FOUND",
+    "exitCode": 3,
+    "message": "no secret \"TOKEN\" for server \"github\""
+  },
+  {
+    "name": "04-E_SKILL_NOT_FOUND",
+    "code": "E_SKILL_NOT_FOUND",
+    "exitCode": 3,
+    "message": "no skill \"review\""
+  },
+  {
+    "name": "05-E_TOOL_NOT_FOUND",
+    "code": "E_TOOL_NOT_FOUND",
+    "exitCode": 3,
+    "message": "no tool \"fs__read_file\""
+  },
+  {
+    "name": "06-E_SESSION_NOT_FOUND",
+    "code": "E_SESSION_NOT_FOUND",
+    "exitCode": 3,
+    "message": "no live session \"cursor:1\""
+  },
+  {
+    "name": "07-E_DAEMON_DOWN",
+    "code": "E_DAEMON_DOWN",
+    "exitCode": 4,
+    "message": "this command needs a running daemon",
+    "hint": "start it with 'agenthub daemon start'"
+  },
+  {
+    "name": "08-E_AUTH_FAILED",
+    "code": "E_AUTH_FAILED",
+    "exitCode": 5,
+    "message": "authentication failed for server \"github\""
+  },
+  {
+    "name": "09-E_GOVERNANCE_DENIED",
+    "code": "E_GOVERNANCE_DENIED",
+    "exitCode": 6,
+    "message": "the call was denied by governance policy"
+  },
+  {
+    "name": "10-E_SERVER_EXISTS",
+    "code": "E_SERVER_EXISTS",
+    "exitCode": 1,
+    "message": "server \"github\" already exists",
+    "hint": "pass a different name, or remove the existing entry first"
+  },
+  {
+    "name": "11-E_DAEMON_RUNNING",
+    "code": "E_DAEMON_RUNNING",
+    "exitCode": 1,
+    "message": "the daemon is already running"
+  },
+  {
+    "name": "12-E_INVALID_JSON",
+    "code": "E_INVALID_JSON",
+    "exitCode": 2,
+    "message": "stdin is not valid JSON: unexpected end of JSON input"
+  },
+  {
+    "name": "13-E_UNSUPPORTED_TRANSPORT",
+    "code": "E_UNSUPPORTED_TRANSPORT",
+    "exitCode": 2,
+    "message": "unknown transport \"grpc\""
+  },
+  {
+    "name": "14-E_CLIENT_UNSUPPORTED",
+    "code": "E_CLIENT_UNSUPPORTED",
+    "exitCode": 1,
+    "message": "client \"emacs\" is not supported"
+  },
+  {
+    "name": "15-E_CLIENT_NOT_CONNECTED",
+    "code": "E_CLIENT_NOT_CONNECTED",
+    "exitCode": 1,
+    "message": "client \"cursor\" is not connected"
+  },
+  {
+    "name": "16-E_NOT_IMPLEMENTED",
+    "code": "E_NOT_IMPLEMENTED",
+    "exitCode": 1,
+    "message": "not implemented in this milestone"
+  },
+  {
+    "name": "17-E_STATE_CORRUPT",
+    "code": "E_STATE_CORRUPT",
+    "exitCode": 7,
+    "message": "the integrity state file is corrupt"
+  },
+  {
+    "name": "18-E_TIGHTEN_ONLY",
+    "code": "E_TIGHTEN_ONLY",
+    "exitCode": 6,
+    "message": "this operation may only tighten scope; widening needs an approved grant"
+  },
+  {
+    "name": "19-E_CONFIG_KEY_UNKNOWN",
+    "code": "E_CONFIG_KEY_UNKNOWN",
+    "exitCode": 2,
+    "message": "unknown config key \"colour\""
+  },
+  {
+    "name": "20-E_LOCK_TIMEOUT",
+    "code": "E_LOCK_TIMEOUT",
+    "exitCode": 7,
+    "message": "registry: lock acquisition timed out",
+    "hint": "another agenthub process holds the registry lock; retry in a moment"
+  },
+  {
+    "name": "21-E_REGISTRY_CORRUPT",
+    "code": "E_REGISTRY_CORRUPT",
+    "exitCode": 7,
+    "message": "registry: /data/registry/servers.json is unreadable (quarantined to /data/registry/servers.json.unreadable-20260726T120000.000000000Z): invalid character '}' looking for beginning of object key string",
+    "hint": "the unreadable file was quarantined, not destroyed; inspect it and re-run"
+  },
+  {
+    "name": "22-E_GENERAL",
+    "code": "E_GENERAL",
+    "exitCode": 1,
+    "message": "an unclassified failure"
+  }
+]

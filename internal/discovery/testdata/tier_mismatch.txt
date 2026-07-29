@@ -1,0 +1,4 @@
+tier_mismatch: tool "fs__delete_file" is a destructive tool and cannot be invoked through call_tool_read; use call_tool_destructive instead
+tier_mismatch: tool "fs__read_file" is a read tool and cannot be invoked through call_tool_destructive; use call_tool_read instead
+tier_mismatch: tool "fs__write_file" is a write tool and cannot be invoked through call_tool_read; use call_tool_write instead
+tier_mismatch: tool "web__fetch_url" is a destructive tool and cannot be invoked through call_tool_write; use call_tool_destructive instead

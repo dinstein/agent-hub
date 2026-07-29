@@ -1,0 +1,6 @@
+agenthub discovery: mode=full, 3 server(s), 8 tool(s) visible.
+  fs: 3 tool(s)
+  git: 3 tool(s)
+  web: 2 tool(s)
+pinned (callable directly): fs__read_file
+next: every visible tool is listed directly; call it by name.

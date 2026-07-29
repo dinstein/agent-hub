@@ -1,0 +1,44 @@
+query="read file" matched=2
+  1. fs__read_file score=82 call_with=call_tool
+  2. fs__write_file score=41 call_with=call_tool
+query="read" matched=1
+  1. fs__read_file score=41 call_with=call_tool
+query="file" matched=2
+  1. fs__read_file score=41 call_with=call_tool
+  2. fs__write_file score=41 call_with=call_tool
+query="fs" matched=3
+  1. fs__list_directory score=17 call_with=call_tool
+  2. fs__read_file score=17 call_with=call_tool
+  3. fs__write_file score=17 call_with=call_tool
+query="git commit" matched=3
+  1. git__commit score=52 call_with=call_tool
+  2. git__log score=28 call_with=call_tool
+  3. git__status score=17 call_with=call_tool
+query="repository" matched=3
+  1. git__commit score=11 call_with=call_tool
+  2. git__log score=11 call_with=call_tool
+  3. git__status score=11 call_with=call_tool
+query="searching the web" matched=8
+  1. web__search_web score=64 call_with=call_tool
+  2. web__fetch_url score=28 call_with=call_tool
+  3. fs__list_directory score=11 call_with=call_tool
+  4. fs__read_file score=11 call_with=call_tool
+  5. fs__write_file score=11 call_with=call_tool
+  6. git__commit score=11 call_with=call_tool
+  7. git__log score=11 call_with=call_tool
+  8. git__status score=11 call_with=call_tool
+query="list" matched=1
+  1. fs__list_directory score=41 call_with=call_tool
+query="disk" matched=2
+  1. fs__list_directory score=11 call_with=call_tool
+  2. fs__read_file score=11 call_with=call_tool
+query="wr" matched=1
+  1. fs__write_file score=17 call_with=call_tool
+query="a" matched=5
+  1. fs__list_directory score=11 call_with=call_tool
+  2. fs__read_file score=11 call_with=call_tool
+  3. fs__write_file score=11 call_with=call_tool
+  4. web__fetch_url score=11 call_with=call_tool
+  5. web__search_web score=11 call_with=call_tool
+query="quantum flux" matched=0
+  (no match)

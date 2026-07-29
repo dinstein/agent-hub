@@ -1,0 +1,50 @@
+# Binaries
+/agenthub
+/agenthub-gui
+/bin/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test & coverage
+*.test
+*.out
+coverage.*
+
+# depguard proof probes (internal/depguardtest writes and removes these;
+# ignored as a safety net in case a crashed run leaves one behind)
+zz_depguard_probe_*.go
+
+# Go workspace
+go.work
+go.work.sum
+
+# Wails3 frontend build output
+cmd/agenthub-gui/frontend/dist/
+cmd/agenthub-gui/frontend/node_modules/
+node_modules/
+
+# Task runner checksum cache (Taskfile.yml sources/generates tracking)
+.task/
+
+
+# Local dev data (agenthub writes to the platform data dir, but keep this for -data-dir overrides)
+/.agenthub/
+/tmp/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Agent session state stays local; skills are a deliverable and ship with the
+# repo. The rule has to re-include the chain step by step, because git will
+# not look inside a directory it has already excluded — and .claude IS
+# excluded here, by a global ~/.gitignore rather than by this file. A negation
+# on the leaf alone would silently do nothing.
+!.claude/
+.claude/*
+!.claude/skills/

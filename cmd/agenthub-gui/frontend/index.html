@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>agenthub</title>
+    <script>
+      /*
+       * Theme bootstrap (docs/docs/modules/gui.md).
+       *
+       * This runs INLINE in <head>, before the stylesheet is applied and
+       * before the first paint. Doing it from the module bundle instead
+       * would flash the default palette for a frame every launch, which on a
+       * desktop window reads as a broken app rather than a slow one.
+       *
+       * Three states, one stored value:
+       *   "light" / "dark" — an explicit choice, honoured forever;
+       *   "system"        — follow the OS, which is also the default when
+       *                     nothing has been stored (and after a reset).
+       *
+       * The resolved answer is written to data-theme; the CHOICE is written
+       * to data-theme-mode so the Settings control can render which of the
+       * three is selected without a second source of truth. Everything is
+       * wrapped in try/catch: localStorage throws in some embedded webview
+       * configurations and a theme preference must never stop the app from
+       * starting.
+       */
+      (function () {
+        var mode = "system";
+        try {
+          var saved = localStorage.getItem("agenthub.theme");
+          if (saved === "light" || saved === "dark" || saved === "system") mode = saved;
+        } catch (e) {
+          /* storage unavailable: fall back to following the system */
+        }
+        var dark = mode === "dark";
+        if (mode === "system") {
+          try {
+            dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          } catch (e) {
+            dark = true;
+          }
+        }
+        var root = document.documentElement;
+        root.setAttribute("data-theme", dark ? "dark" : "light");
+        root.setAttribute("data-theme-mode", mode);
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="shell">
+      <nav class="sidebar">
+        <div class="brand">agenthub</div>
+        <div class="nav-group">Configuration</div>
+        <a class="nav" href="#/servers" data-route="servers">Servers</a>
+        <!-- Catalog sits directly under Servers: it is the other half of
+             "add a server", and the half that does not require knowing an
+             npx line by heart (docs/modules/gui.md). -->
+        <a class="nav" href="#/catalog" data-route="catalog">Catalog</a>
+        <a class="nav" href="#/profiles" data-route="profiles">Profiles</a>
+        <a class="nav" href="#/scope" data-route="scope">Client scope</a>
+        <a class="nav" href="#/tools" data-route="tools">
+          Tools
+          <!-- The quarantine backstop: a dismissed alert on the Tools page
+               never clears this counter (docs/modules/gui.md). -->
+          <span class="badge-count alarm" id="quarantine-count" hidden></span>
+        </a>
+        <a class="nav" href="#/config" data-route="config">Governance</a>
+        <div class="nav-group">Credentials</div>
+        <a class="nav" href="#/secrets" data-route="secrets">Secrets</a>
+        <a class="nav" href="#/tokens" data-route="tokens">Agent tokens</a>
+        <a class="nav" href="#/auth" data-route="auth">Auth</a>
+        <div class="nav-group">Runtime</div>
+        <!-- Playground sits first: it is the "try one tool for real" surface,
+             and it is what the setup guide falls back to when a client cannot
+             be made to call anything (docs/modules/gui.md). -->
+        <a class="nav" href="#/playground" data-route="playground">Playground</a>
+        <a class="nav" href="#/sessions" data-route="sessions">Sessions</a>
+        <a class="nav" href="#/approvals" data-route="approvals">
+          Approvals <span class="badge-count" id="approvals-count" hidden></span>
+        </a>
+        <a class="nav" href="#/skills" data-route="skills">Skills</a>
+        <a class="nav" href="#/clients" data-route="clients">Clients</a>
+        <a class="nav" href="#/audit" data-route="audit">Audit</a>
+        <a class="nav" href="#/settings" data-route="settings">Settings</a>
+        <!-- The setup guide auto-opens once, on a genuinely new install. It
+             stays reachable afterwards because "check it actually works" is
+             worth re-running after any change to a client. -->
+        <a class="nav" href="#/onboarding" data-route="onboarding">Setup guide</a>
+        <div class="spacer"></div>
+        <!-- Two lines, not one: "daemon <version> · pid <n>" does not fit the
+             sidebar and was being clipped mid-word, so the one thing this
+             footer exists to answer — is it connected — was the part that got
+             cut. The state word leads; the build and pid are detail. -->
+        <div class="daemon" id="daemon-status">
+          <span class="dot" id="daemon-dot"></span>
+          <span class="daemon-lines">
+            <span id="daemon-text">connecting…</span>
+            <span class="daemon-detail" id="daemon-detail"></span>
+          </span>
+        </div>
+      </nav>
+      <main class="content" id="view"></main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

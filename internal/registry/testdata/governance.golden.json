@@ -1,0 +1,15 @@
+{
+  "blockOnInjection": true,
+  "denyDestructive": true,
+  "discovery": "lazy",
+  "future_governance": {
+    "flag": false
+  },
+  "humanApproval": true,
+  "resultBudget": {
+    "*": {
+      "bytes": 65536,
+      "forced": true
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "tool": "fs__read_file",
+      "server": "fs",
+      "rank": 1,
+      "score": 82,
+      "call_with": "call_tool",
+      "sig": "fs__read_file(path?:str) -\u003e str",
+      "description": "Read the contents of a file from disk."
+    },
+    {
+      "tool": "fs__write_file",
+      "server": "fs",
+      "rank": 2,
+      "score": 41,
+      "call_with": "call_tool",
+      "sig": "fs__write_file(path?:str) -\u003e str",
+      "summary": "Write text to a file, creating the file if needed."
+    }
+  ],
+  "matched": 2,
+  "hint": "each sig is the tool's compact signature; call describe_tool{tool} for the full schema when it is not enough. Call the tool you want with call_tool{tool, arguments}; search again with different words if none of these fit"
+}

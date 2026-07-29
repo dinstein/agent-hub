@@ -1,0 +1,882 @@
+# Configuration and Scope Layer
+
+This layer answers two questions: **what can this session see right now**, and **where do these
+configs, credentials, and files come from, and who is responsible for changing them**. Seven packages
+divide the work as follows.
+
+`internal/scope` holds this layer's core computation: it takes the four persisted configuration layers
+from the registry, adds the session's in-memory overlay, and folds them into a single
+content-addressed `EffectiveScope`. `internal/session` owns the overlay — session identity, lifecycle,
+and the "may only tighten" mutation check; the overlay lives only in memory and is gone the moment the
+daemon restarts, which is deliberate. `internal/event` is the notification channel between the two
+(and across the daemon generally): session changes the overlay, an event goes out, and scope's cache
+is invalidated on it. event also provides two mergers that compress a change storm into a single
+notification.
+
+The other four packages each guard a class of external state. `internal/secrets` is the credential
+vault, a four-level resolution chain stringing together environment variables, an encrypted file, and
+the OS keyring; `internal/secrets/secureenv` builds an allowlist-admission clean environment for
+downstream processes. `internal/clients` adapts the config file formats of 12 AI clients, writing the
+agenthub gateway into them and safely taking it back out. `internal/skills` manages the skill library
+and its materialized copies inside client directories.
+
+These four packages do not depend on one another; all they share is one discipline: **if you can't
+read it, error; if you can't change it, refuse; if you don't understand it, don't write it**. Each
+package's "invariants and failure directions" section is the part of this document most worth reading
+closely — those are the real hard constraints in the code, and violating any one of them while making
+a change turns fail-closed into fail-open.
+
+---
+
+## internal/scope
+
+### Responsibility in one sentence
+
+Fold five configuration layers (Global, Profile, Client, Project, Session) into one deterministic,
+content-addressed `EffectiveScope` that answers "which servers and which tools can this session see
+right now, does it need human approval, and how big is the result budget".
+
+### Key types and entry points
+
+`Merge` is a **pure function**: the same input always produces the same output, and it never mutates
+or aliases its input. The stdio gateway and the daemon call the same implementation — this is where
+the design goal "both modes behave identically" lands in code. `MergeWithDiagnostics` folds a
+pre-collected `[]Diagnostic` into the result **before hashing**, so diagnostics participate in content
+addressing too.
+
+`CachedResolver`'s cache key is the triple `(registryGeneration, overlayVersion, normalizedRoot)`,
+invalidated event-driven through `Invalidate(Event)`, never by polling.
+
+`Sources.Extra` holds extra layers appended after the overlay, so that **credentials with no registry
+entry** can participate in the same intersection (the daemon's HTTP data plane folds an agent token's
+server allowlist and profile pin in here; the profile pin uses `PinnedProfileLayer`, and an
+unresolvable name yields a block-all layer plus `ok=false`, matching how `FromRegistry` treats dangling
+references). They are ordinary layers and `Merge` treats them no differently — security fields
+intersect, deny unions, approval switches OR — so Extra **has no shape that can widen visibility**.
+Constraint: its return value must be a pure function of "session id + registry generation", because it
+does not enter the cache key.
+
+`NormalizePath` and `PathIsWithin` are pure string path utilities used by project layer matching.
+
+**Where the project layer's root comes from.** `SessionKey.Root` is filled in by the stdio gateway from
+the first MCP root the client reports (`cachedPrimaryRoot` in `gateway/derive.go`). It **only reads the
+roots cache and never blocks** — scope resolution runs on tools/list, on the execution path, and inside
+`newGateway` (at which point the client has not yet initialized, so a reverse RPC could not be answered
+at all). The cache is filled by a prefetch after `notifications/initialized`, so any resolution before
+that sees an empty root.
+
+An empty root matches no project binding, so the client layer takes effect — which is exactly how every
+session behaved before wiring, and why "cache not yet filled" is safe. A late-arriving root needs no
+explicit invalidation: `CachedResolver`'s cache key **includes the root**, so the next resolution
+naturally recomputes. After the prefetch the gateway additionally calls `refreshScopeAndNotify` once,
+which pushes `tools/list_changed` only if the content hash actually changed. `roots/list_changed`
+travels the same path.
+
+The direction is fail-**open**, and deliberately so: project bindings outrank client bindings, so a miss
+means the **wider** client layer applies. `agenthub doctor`'s `scope:projects` spells this dependency out
+(it cannot confirm on the operator's behalf whether the client actually reports a root).
+
+```mermaid
+flowchart LR
+  G["governance.json<br/>LayerGlobal"] --> M
+  P["profiles.json<br/>LayerProfile"] --> M
+  C["clients.json#client<br/>LayerClient"] --> M
+  J["clients.json#projects<br/>LayerProject"] --> M
+  O["Overlay (in memory, never persisted)<br/>LayerSession"] --> M
+  CAT["router.Catalog<br/>seed set for visibility"] --> M
+  M["Merge<br/>pure function"] --> ES["EffectiveScope<br/>Hash = SHA-256(every field except Generation)"]
+```
+
+### Invariants and failure directions
+
+**There are two classes of merge semantics, and changes must not confuse them.** Security fields tighten
+monotonically: server visibility **intersects** across layers (seeded from the catalog's server set),
+a tool's `Allow` intersects and its `Deny` unions across layers, and approval switches fold with a
+**boolean OR**. Experience fields take the nearest value: `Discovery` is won by the most specific layer
+(within the same `LayerKind`, the later layer wins) and `ResultBudget` takes the nearest value per key.
+The one exception is `Budget.Forced`: a budget marked forced is capped at the **minimum**, so it can only
+push the nearest value down, never raise it.
+
+**The numeric ordering of `LayerKind` is the specificity ordering and must not be rearranged.** `Merge`
+does not require the layers passed in to be sorted; specificity comes entirely from comparing
+`LayerKind` values, so swapping the enum values silently changes who wins.
+
+**A nil tri-state pointer means "don't intervene", not false.** `orInto` only lets `true` take effect;
+a `false` pointer is inert and can never turn off a `true` set by another layer. That is the fail-closed
+direction: if any layer demands approval, approval is required.
+
+**`DenyDestructive` can only be set by governance.json.** The code enforces this with two mechanisms
+rather than validation: `Overlay` (the input type for the session layer) **has no such field at all**,
+so no overlay can possibly carry it; and `FromRegistry` populates it only on `LayerGlobal`, while
+`registry.ApprovalPolicy` (the persisted type for client/project) does not model this field either. In
+other words the constraint is "inexpressible", not "rejected".
+
+**The keys of a tool selector are always raw tool names, never exposed names.** `ToolSelector` is a type
+alias for `registry.ToolSelector`, and the persisted semantics have exactly one source of truth: an
+absent selector means no intervention, `Allow == nil` means everything, `Allow == []` means nothing, and
+`Allow == [...]` means narrowed to a subset. `cloneStrings` deliberately preserves the difference between
+nil and an empty slice — degrading an empty slice to nil silently flips "block everything" into
+"allow everything".
+
+**Dangling profile references fail closed to the empty set, and never silently.** If something references
+a profile that doesn't exist (or a named binding with no name), `FromRegistry` appends a profile layer
+with `Servers: []` (block everything) and emits a `Diagnostic`. It never falls back to activeProfile —
+that would turn deleting a profile into a silent widening. Diagnostics are part of `EffectiveScope`, and
+`session show` and `doctor` print them.
+
+**`NormalizePath` never canonicalizes and never touches the disk.** It does exactly four pure-string
+things: backslashes to `/`, collapse repeated slashes (a leading `//` for UNC is preserved), strip the
+trailing slash (a bare `/` is preserved), and lowercase Windows-shaped paths wholesale. Client-reported
+paths may not exist on this machine at all, so symlink resolution or existence probing would both fail
+and introduce TOCTOU. This function must be idempotent, because it gets applied repeatedly to output it
+has already normalized.
+
+**`PathIsWithin` matches on path boundaries, and any ambiguity returns false.** `/a/proj` does not swallow
+`/a/project`. Empty input and shape mismatches return false, the effect being that the project layer's
+overrides (and the profile switch they carry) simply don't apply and the session falls back to the
+client/global scope; the opposite misjudgment would apply another project's configuration to an unrelated
+path, and that is what would be unacceptable.
+
+**`EffectiveScope.Hash` covers every field except `Generation` and `Hash` itself.** `Generation` records
+"which registry state this value was computed from"; it is not part of content identity and is stamped by
+`Resolver` after the merge. The hash uses a length-prefixed canonical encoding with map keys visited in
+order, so it is stable across processes and Go versions, and a golden test pins it down — determinism is a
+contract. `Changed(prev, next)` compares only the `Hash`: only a content change is worth pushing
+`tools/list_changed` to a session, otherwise a single registry rebuild would amplify into a notification
+storm.
+
+**Better to over-invalidate the cache than to under-invalidate.** `EvOverlayChanged` and `EvRootChanged`
+clear only the corresponding session; `EvRegistryChanged` and `EvCatalogChanged` clear everything, and
+**an unknown event type also clears everything**. The catalog is not in the cache key triple, so
+`EvCatalogChanged` is the only channel through which a change in the downstream tool set becomes visible;
+lose it and stale scopes get served forever. Over-invalidating costs one recomputation;
+under-invalidating costs emitting the wrong visibility.
+
+**Refuse to resolve without a registry snapshot.** `Resolve` errors outright when `src.Registry()` returns
+nil, rather than conjuring an "empty but legal" scope. Likewise, a nil `Catalog` function or one that
+returns an empty catalog resolves to zero visible servers — also the closed direction.
+
+### followActive is read from the snapshot, not from a state file
+
+`activeProfileName` reads `snap.Governance.V.ActiveProfile`. It **used to be hardcoded to return the
+empty string** while `agenthub profile use` wrote the name into a state file — the mark could be set and
+listed, but no session would ever apply it. Moving this value into the registry document fixed two things
+at once: followActive actually follows, and `FromRegistry` stays a pure function — the value arrives with
+the snapshot rather than being read from a file mid-resolution.
+
+When unset it returns `""`, so followActive performs no profile narrowing, equivalent to
+`agenthub profile use -` (clear). An unresolvable name is handled by the caller as a **dangling
+reference** (fail-closed, block-all) — routing it through the same path as named bindings is precisely how
+we get that property.
+
+---
+
+## internal/session
+
+### Responsibility in one sentence
+
+The daemon-side session registry: it mints session identities, holds in-memory overlays, runs the
+"tighten only" check on overlay changes, and pushes changes out to stdio gateways.
+
+### Invariants and failure directions
+
+**There are two identity shapes, each serving a different reader.** The human-facing one is the short ID
+`"client:seq"` (e.g. `claude-code:17`), where seq is monotonic per client and **never reused** within the
+daemon's lifetime. The protocol-facing one is the HTTP session's 128-bit random token (`Mcp-Session-Id`).
+stdio sessions have no token (all zeros); `TokenHex()` returns an empty string for them and `MatchToken`
+always returns false.
+
+**Token comparison must be constant-time, and any anomalous input is denied.** `MatchToken` returns false
+outright in three cases — not an HTTP session, hex decode failure, wrong length — and only reaches
+`subtle.ConstantTimeCompare` at the very end. `FindByToken` does a constant-time comparison against each
+candidate and returns `(nil, false)` for unknown or malformed tokens.
+
+**No entropy, no existence.** `OpenHTTP` returns an error outright when `io.ReadFull` fails to read the
+token, and never mints a session with an under-filled token.
+
+**A re-registering gateway always gets a new identity.** seq is monotonic and never reused, so a gateway
+that drops and reconnects will not silently reuse its old ID. The old overlay's authority died with the
+old session, so references must break rather than quietly rebind to a blank overlay.
+
+**Overlays are never persisted to disk.** Nowhere in this package serializes an overlay. Losing them on
+daemon restart is the design intent — a "resurrected runtime loosening" is a security incident, not an
+availability improvement. `Close` explicitly nils out the overlay.
+
+**The "tighten only" check: every ambiguity is judged a loosening and rejected.** `loosenings(prev, next)`
+compares security fields one by one: `Servers` going from non-nil to nil is a loosening, and adding any
+server is a loosening; for a server that prev constrained, `Tools` counts removing the selector, undoing an
+`Allow` narrowing, adding an `Allow` entry, or removing a `Deny` entry as loosenings; canceling an approval
+switch already set to `true` is a loosening; and removing or raising a `Forced` budget is a loosening.
+Experience fields (`Discovery`, non-forced `ResultBudget`) may change freely. `prev == nil` is the
+"no overlay" baseline, in which case creating any overlay counts as a tightening. Being too strict costs the
+caller one extra human authorization; being too lax hands a loosening to the very subject of the threat
+model (the agent itself).
+
+Note **which direction** this check guards. The merge itself already guarantees an overlay can never breach
+the watermark set by the four static layers (the session layer only intersects); `loosenings` guards the
+other end: the agent revoking a runtime tightening that it (or the operator) just made.
+
+**A rejection rejects the entire mutation; there is no partial application.** The moment a loosening is
+found, `Mutate` returns `ErrLoosening` listing every violation, and `s.overlay` is untouched. A partial
+application would commit a state nobody asked for.
+
+**The version number is assigned by `Mutate` after `fn` runs** (`next.Version = prev.Version + 1`). The
+mutation function cannot forge or roll back the version, so the resolver's cache key moves **if and only
+if** a mutation was actually committed.
+
+**stdio does "push then commit"; HTTP swaps directly.** Authority lives in the daemon, execution in the
+gateway. A stdio session calls `Link.PushOverlay(ctx, next)` first, and only after the gateway applies and
+acks does the daemon do `s.overlay.Store(next)`; if the push fails, **nothing is committed**, so the daemon
+and the gateway cannot diverge.
+
+**The overlay is a copy-on-write immutable snapshot.** The pointer returned by `Session.Overlay()` **must
+never be modified by callers** (the scope resolver included); `Mutate` clones a private copy under the
+per-session mutex, hands it to `fn`, and then swaps the whole thing in. The per-session lock fully
+serializes concurrent `Mutate` calls, so no update is lost.
+
+**Only HTTP sessions are reaped by TTL.** A stdio session's lifetime is the gateway process's lifetime,
+cleaned up when the daemon calls `Close` on link teardown, and the reaper skips them explicitly. Default TTL
+is 24 hours with a 5-minute sweep interval.
+
+**Root is a mutable attribute, not part of identity.** `SetRoots` updates it on `roots/list_changed`; it
+participates in the scope resolution cache key but not in the session ID.
+
+**Derivation keys and scope live on two different planes.** Nothing in `derive.go` touches a scope type, and
+`DeriveKey` enters no scope hash: narrowing a session should not restart a process, and switching to another
+instance should not change any visible tool name. `DeriveRoot` **deliberately returns an empty key** when the
+session has no root (i.e. use the base instance), rather than degrading to building a key from the session ID
+— the latter would hand a rootless session private state the operator intended to be isolated per project,
+and would also spin up one process per rootless session. A multi-root session takes the **first** reported
+root rather than a digest of the set, because this key is the vault scope name the operator uses when
+managing credentials, and it has to be readable.
+
+**Cascading close only takes down instances keyed by session.** Root-keyed instances are by construction
+shared by every session with the same root, and tearing one down here would cut a neighbor's connection;
+those instances are left to the connection pool's idle TTL. The worst case is an instance living 30 minutes
+too long, not a call arriving one instance too late.
+
+---
+
+## internal/event
+
+### Responsibility in one sentence
+
+The daemon's in-process event bus, plus two event mergers: a 50ms-window **coalescer** for change storms,
+and a 750ms **settling debouncer** for scan-style event streams.
+
+Both merger modes share one implementation: `NewCoalescer(publish, window)` anchors the window at a
+key's **first** `Add` (throttling, with bounded latency); `NewSettler(publish, window)` **resets** the
+window on every `Add` (debouncing, collapsing an entire lifecycle into a single terminal event).
+
+### Invariants and failure directions
+
+**`Publish` never blocks — that is the reason this package exists.** A full subscriber buffer means the event
+is dropped and counted, never that the publisher stalls. Consumers must therefore treat the bus as a
+**change notification channel**, not a **change log**: when `Dropped()` is non-zero (or after a reconnect), the
+consumer must re-read the authoritative state. Losing a notification is recoverable; blocking the publisher is
+not.
+
+**The ordering of unsubscribe and channel close is an invariant.** `Close` first removes the subscription from
+the bus under the write lock, **and only then** closes the channel; `Publish` only sends under the read lock.
+This ordering guarantees no send can ever race with the close. `Close` is idempotent.
+
+**The payload is the same value for every subscriber and must be treated as immutable.** The same `Event`
+value fans out to every matching subscription, so any party mutating it affects everyone else.
+
+**A merger's payload is built lazily, and built exactly once.** Only the **last** builder passed to `Add` is
+invoked, and it is invoked once, at fire time. A burst of K occurrences pays the cost of building an expensive
+payload once. The builder runs on the timer goroutine (or on `Flush`'s caller) and holds **none** of the
+Merger's locks while running, so it must capture state by reference or be a cheap closure.
+
+**The reset race in settling mode is solved with a `gen` counter.** A timer that has already begun firing
+cannot be stopped, so every re-armed timer captures the `gen` at that moment, and `fire` ignores callbacks
+whose `gen` is stale.
+
+**`Close` discards pending events; `Flush` fires them.** Dropping one merged notification at shutdown is an
+acceptable failure direction — the bus contract already requires consumers to re-read state after a loss. After
+`Close`, `Add` is a no-op.
+
+**This package depends only on the standard library.** It sits beneath every business package and must stay
+dependency-free.
+
+`internal/ctlapi/sse.go` is the actual consumer of both mergers: server list changes go through the coalescer,
+scan-type topics through the settler.
+
+---
+
+## internal/secrets
+
+### Responsibility in one sentence
+
+agenthub's credential vault: a four-level resolution chain stringing together environment variables, an
+XChaCha20-Poly1305 encrypted file, and the OS keyring, with every entry addressed by the composite key
+`(ServerID, Scope) + Key`.
+
+### Key types and entry points
+
+`Ref{ServerID, Scope, Key}` is a credential's address; when `Scope` is empty it takes `DefaultScope`
+(`"_global"`). `Ref.StorageKey()` produces the **frozen** storage encoding
+`agenthub/v1/<serverID>/<scope>/<key>`, which is used both as the keyring account name and as the map key in
+secrets.enc; `ParseStorageKey` is its inverse.
+
+The `Store` interface is the persistence face (`Get` / `Set` / `Delete`), and `Resolver` is the narrow
+interface injected into `internal/downstream` (resolve one ref, nothing else). `Chain` is the only
+implementation, constructed by `NewChain(ChainConfig)`; `Chain.Resolver()` yields the narrow interface and
+`Chain.List(ctx)` enumerates every stored entry.
+
+`HTTPAuthRef` / `OAuthStateRef` / `UserRef` in `wiring.go` are constructors for three well-known refs. The
+reason they exist is practical: the shape of the composite key is spelled out in exactly one place, and a
+caller hand-writing a `Ref` literal is one refactor away from forgetting the scope component and silently
+reading a different entry.
+
+`Migrate(ctx, from, to, refs)` moves credentials between two stores. `Chain.Backend(ctx, kind)` exposes the two
+**persistent backends** (`keyring` / `enc-file`) individually as a `Store` precisely to feed it — see "why it
+must be a backend-level store" below. The user-facing entry point is
+`agenthub secret migrate --from X --to Y`.
+
+**Why an explicit command rather than automatic migration.** Backend availability changes underneath the
+operator (installing a desktop environment makes the keyring probe start passing, setting
+`AGENTHUB_SECRET_KEY` activates the enc file), and after such a change the old credentials still sit in the old
+backend. Automatic moving means touching credentials the operator did not ask to touch while they weren't
+looking. And **not moving them doesn't break anything** — the four-level chain still resolves from the old
+backend, right up until that backend becomes unavailable one day and the credentials appear to vanish into thin
+air. That "lazy direction" is exactly the value of this command.
+
+The environment variable level has **no** `Store` and is not in `BackendKinds()`: it is a per-process **input**
+rather than storage, with nothing to write and nothing to delete, so credentials can neither migrate into nor
+out of it.
+
+### Invariants and failure directions
+
+**Four levels, first hit wins, and an empty or whitespace-only value counts as "unset" at every level.**
+
+| Level | Source | Activation condition |
+|---|---|---|
+| 1 | environment variable `AGENTHUB_SECRET_<KEY>` | always |
+| 2 | bare environment variable `<KEY>` | explicit opt-in `AGENTHUB_ALLOW_BARE_SECRET_ENV=1` |
+| 3 | `secrets.enc` (XChaCha20-Poly1305) | `AGENTHUB_SECRET_KEY` set, or the dev-fallback pair of files already exists |
+| 4 | OS keyring (zalando/go-keyring) | availability probe passes |
+
+**Level 2 being off by default is fail-closed:** no arbitrary environment variable should be treated as a
+credential unless the user explicitly asks for it. And even when it is on, `envValue` **never** resolves any
+variable starting with `AGENTHUB_` through the bare path — the opt-in must not become a way to read out our own
+control variables.
+
+**Reserved-name collision: an entry named `key` would map to `AGENTHUB_SECRET_KEY`, which is the key material
+variable for the encrypted file.** `envValue` skips that name explicitly; key material must never be readable
+through the credential chain.
+
+**"Couldn't read it" and "read something broken" must be distinguished.** A file that won't decrypt
+(`ErrDecrypt`) or a keyring reporting anything other than not-found is raised as an **error**, never treated as a
+miss and carried further down the chain. A mistyped `AGENTHUB_SECRET_KEY` or a broken keychain must be visible,
+not silently degraded into "that credential isn't set". The **only** exception is a keyring whose availability
+probe fails: that machine simply doesn't have that level, so it is skipped without error (writes then land in the
+encrypted file per A.6 #5).
+
+**Three keyring hardening measures, none optional.**
+First, the availability probe **reads only, never writes**: a `Set` probe would trigger that destructive macOS
+confirmation dialog. The probe reads a well-known nonexistent account; both success and `ErrKeyringNotFound` prove
+the backend is alive, while a timeout or any other error marks it unavailable.
+Second, the probe's conclusion is **cached for the process lifetime**: an unavailable keyring flips the chain over
+to the encrypted file fallback, and it must not re-prompt on every call.
+Third, **every operation has a hard timeout** (3 seconds by default): after a timeout the worker goroutine is
+**deliberately abandoned** — a stuck keychain prompt cannot be canceled, and abandoning it is the only way to
+unblock the caller; the result travels over a buffered channel, so an abandoned worker can never collide with the
+caller's return value.
+
+**The OS keyring cannot be enumerated, so there is a self-managed key registry.** `keyring-keys.json` mirrors
+**key names only** and never stores values. The invariant is: the registry is **only modified in sync with a
+successful keyring mutation**, so it neither claims to hold keys the keyring has already lost nor misses keys the
+keyring still holds.
+
+**The dev-mode fallback is an explicit ruling (A.6 #5), not laziness.** During development every `go build`
+produces a new unsigned binary, and the macOS keychain ACL re-prompts each time. So when the keyring probe fails, or
+when `AGENTHUB_DEV_SECRETS=1` is set explicitly, writes land in `secrets.enc` with a key auto-generated and
+persisted **right next to it** in `secrets.enc.key` (0600). The docs say the quiet part out loud: putting the key
+beside the ciphertext is obfuscation, not encryption at rest, and an attacker who can read both files has the
+plaintext. This is acceptable only for the dev fallback; the production path goes through `AGENTHUB_SECRET_KEY` or
+the OS keyring.
+
+`encForRead`'s dev-fallback test requires `secrets.enc` and `secrets.enc.key` to **both** exist — data written by
+the dev backend must remain readable after the keyring probe starts passing again.
+
+**Persistence discipline for the encrypted file.** The whole map is sealed under a single random nonce; the AAD is
+`"agenthub/secrets/v1"`, binding the ciphertext to the format version so a v2 envelope can never be replayed as a
+v1; and writes go through the atomic ladder (temp file in the same directory, chmod 0600, write, fsync, rename,
+fsync parent directory), never leaving a half-written target file. A missing file is an empty map, not an error.
+
+**`storageKeyPrefix = "agenthub/v1"` is frozen and golden-tested.** Changing it orphans every stored credential.
+Within a component only `%` and `/` are percent-escaped (those are the only two bytes that would break the
+delimiter structure); everything else passes through verbatim, so `secret ls` output stays readable.
+`ParseStorageKey` errors on an unknown prefix or malformed escaping, rather than silently dropping a key we can't
+decode from the enumeration.
+
+**`Migrate`'s order is "read old, write new, read back and verify, delete old", and a failure at any step leaves
+two copies.** The value read back from the new store must match the original exactly before the old entry is
+deleted; a duplicated credential is recoverable, a lost one is not. The docs explicitly require passing
+**backend-level** stores: `*Chain`'s `Get` consults environment variables first, so a single environment variable
+could fool the read-back verification while the new backend actually stored nothing — and once verification passes,
+the old entry gets deleted, which is exactly the outcome the read-back step exists to prevent. `Chain.Backend`
+produces precisely this kind of store, and `TestBackendIgnoresEnvironmentLevels` pins it down.
+
+**`Chain.Backend` determines availability eagerly.** An unavailable backend (no OS keyring, or no key to open
+`secrets.enc`) returns `ErrBackendUnavailable` on the spot rather than failing on first use: discovering halfway
+through a migration that the destination can't be written is exactly how you get a half-migrated vault. So the CLI
+resolves both ends before moving anything.
+
+**Concurrency.** `Chain` serializes its own read-modify-write of the encrypted file and registry updates with an
+in-process mutex; cross-process write coordination is the caller's business (the vault sibling lock used by OAuth
+refresh lives in `oauthflow`).
+
+**Tests never touch the real keychain.** The keyring hides behind the `Backend` interface, and tests inject fakes
+everywhere; the smoke test against the real backend only runs under `AGENTHUB_TEST_REAL_KEYRING=1`.
+
+---
+
+## internal/secrets/secureenv
+
+### Responsibility in one sentence
+
+Build a hardened environment for a downstream process about to be spawned: allowlist admission (deny by
+default), login-shell PATH capture, and userinfo redaction in proxy variables.
+
+### Key types and entry points
+
+Pure functions only. `Filter(environ []string, cfg Config) []string` filters `KEY=value` entries against the
+allowlist while preserving order. `Config` allows extending the allowlist by name (`Allow`) and by prefix
+(`AllowPrefixes`), and enables forwarding of proxy variables via `ForwardProxy`. `RedactProxyValue(name, val)
+(string, bool)` is separately usable. `CaptureLoginPATH(ctx, shell)` and `LoginPATH()` handle PATH capture.
+
+### Invariants and failure directions
+
+**Deny by default.** Any variable not explicitly allowed is dropped; there is no "everything but a blocklist"
+mode.
+
+**The `AGENTHUB_` prefix is a hard deny that `Config` cannot override.** Our own control variables must never leak
+downstream. This stacks with the identical stripping in `internal/downstream` — both sides reject `AGENTHUB_*`, so
+the composition is idempotent.
+
+**Proxy variables are not forwarded by default.** Proxy endpoints frequently embed credentials, which is not
+downstream's business unless asked for. Once `ForwardProxy` is on, values go through `RedactProxyValue`:
+`NO_PROXY` is a plain host list and passes through verbatim; a value with no `@` passes through verbatim; and a
+value containing `@` that **cannot** be reliably identified and stripped as URL userinfo (for example a
+scheme-less `user:pass@host`, which parses into the opaque part) is **dropped outright** — we never forward a
+value we cannot prove is credential-free.
+
+**`LoginPATH` is the one place in this layer that is deliberately fail-open.** Processes launched by
+launchd/systemd inherit a truncated PATH, and the login shell's PATH is the one an interactive user actually has
+(this bit mcpproxy three times). Capture runs `shell -l -c 'echo $PATH'` and takes the **last** non-empty line of
+output (a login profile may print a greeting before the echo), with a 3-second hard timeout and
+`cmd.WaitDelay = 1s` to force the pipes closed — otherwise the login shell's children inherit the stdout pipe and
+`Output` keeps blocking until every descendant exits, even after the context kills the shell. Any failure falls
+back to the current process's `PATH`: a broken login shell should not block a spawn, and the worst case is keeping
+the truncated PATH we already had, never less. The captured result is cached with `sync.Once`, once per process.
+
+### Current integration status
+
+**Not yet wired.** Nothing outside this package and its tests references `secureenv`;
+`internal/downstream/spec.go` still does its own `AGENTHUB_*` stripping (`envPrefix`).
+
+---
+
+## internal/clients
+
+### Responsibility in one sentence
+
+Adapt AI client config file formats: detect where they're installed, write the agenthub gateway entry into them,
+safely take it back out, and import their existing MCP server definitions into the registry.
+
+### Key types and entry points
+
+The `Format` interface is the entire behavior of one client adapter (`Locations` / `DefaultPath` / `PathFor` /
+`Connect` / `Disconnect` / `ManualSnippet`). It has exactly two implementations: `jsonFormat` covers the two JSON
+shapes, and `probeFormat` covers the shapes we don't rewrite.
+
+`Table` is an adapter table bound to one environment (GOOS, HOME, backup directory), constructed by
+`New(Options)` / `Default()`, with `Lookup(id)` / `IDs()` / `Formats()` as the query entry points. The table
+itself is the `specs` slice in `table.go`.
+
+Three action methods hang directly off `Table`: `Detect(ctx, baseDir)` enumerates the config files present on this
+machine, `Inspect(clientID, baseDir)` reads one client's config and lists its server entries, and
+`Import(clientID, baseDir, existing)` turns those entries into `registry.ServerEntry` proposals.
+
+### A shape-driven adapter table
+
+Behavior is driven by the **shape** of the config rather than by a hand-written branch per product. Five shapes
+cover the entire ecosystem:
+
+| Shape | Meaning | Rows | Clients |
+|---|---|---|---|
+| `ShapeServerMap` | A JSON file with `{"mcpServers": {...}}` at the top level | 7 | claude-code, claude-desktop, cursor, windsurf, cline, roo-code, gemini-cli |
+| `ShapeNested` | The same name→entry map, but buried under a key path inside a larger document | 2 | vscode (`servers` / `mcp.servers`), zed (`context_servers`) |
+| `ShapeTOML` | A TOML document, **detect only, never rewrite** | 1 | codex |
+| `ShapeYAML` | A YAML document, **detect only, never rewrite** | 1 | continue |
+| `ShapeRemote` | No config file on this machine at all | 1 | open-webui |
+
+Twelve rows in total. Adding a client is one more row in `table.go`, not one more code path. `Shape.Writable()`
+returns true only for the two JSON shapes.
+
+Each row's `locs` is ordered **project first**, but that is **read priority** (when `Import` hits a duplicate name,
+the project-level definition wins), **not a write preference** — the default write target is decided by placement,
+see below. `locSpec.home` is a GOOS-to-path map, and a missing GOOS makes that location unavailable on that
+platform — this is the mechanism by which Windows was deferred to M2, with no build tags involved.
+
+### Invariants and failure directions
+
+**Default writes go to the user level (`DefaultPlacement = User`).** When nobody specifies a path or a placement,
+`DefaultPath` yields the file under `$HOME`. Two reasons: the entry written carries **the absolute path of this
+machine's agenthub binary**, and project-level files (`.mcp.json`, `.cursor/mcp.json`) are meant to be committed
+and shared — defaulting to project would mean committing a path that only holds on your own machine to your
+teammates; and agenthub is by nature "one hub shared by every client on this machine", not something you re-wire
+per repository. **Which servers a client can see is decided by `internal/scope`, never by which file the entry was
+written into.** When a row has no user location on this platform (or `$HOME` won't resolve), it falls back to the
+first location — every Windows row lacks a user location, and the fallback keeps it writable.
+
+**An explicitly specified placement is either honored exactly or refused.** `PathFor` returns `""` for a client
+that lacks the location, and callers (the CLI's `--placement`, the control plane's `placement` field) error on
+that; they **never** redirect the write to a different location: writing the gateway entry into a file nobody named
+is far worse than an up-front refusal. Passing `--path` and `--placement` together is a usage error, not a place to
+silently invent a precedence.
+
+**`DisconnectDefault` is the backstop for the default write target having moved.** A disconnect with no target
+looks at the default target first, and **only** if there's no agenthub-owned entry there does it check the same
+client's other location — because entries written before the default moved to user level are still sitting in
+`.mcp.json`, and "the entry is obviously still there but we report not connected" is the least acceptable answer
+here. It is not a search: it visits only this one client's own locations, and only after the default target comes
+up empty. If the fallback location fails for some other reason (unparseable, oversized, denied), it **returns that
+error** rather than skipping — a file agenthub refuses to touch must not be reported as "nothing in there". Calls
+that specified a path or placement don't take this route: an explicit target is an instruction, not a starting
+point.
+
+**macOS TCC: `Detect` only stats, never reads.** Reading another application's data directory triggers the system
+privacy dialog, and a bulk scan that pops a dozen of them is worse than not scanning. Content reading only happens
+in `Inspect` and `Import`, which are single-client user actions where the dialog is expected and explicable.
+
+**"There is no such file" and "you're not allowed to look at this file" are never conflated.** A denied access is
+classified as a `*PermissionError` carrying actionable remediation text, and its `HTTPStatus()` returns 403, not
+404. The two cases call for opposite user actions: the former means "the client isn't installed, nothing to do",
+the latter means "the client is installed, go grant permission". `classifyAccess` only classifies something as
+denied when `errors.Is(err, fs.ErrPermission)`, so no ambiguous I/O error gets dressed up as a TCC prompt.
+
+**A parse failure must error and must never destroy.** A file that exists but won't parse aborts the entire
+operation with a `*ParseError`, leaving the file untouched. JSONC (with comments) counts as unparseable, and the
+error carries the specific JSONC diagnostic — that's the single most common reason a real `settings.json` fails to
+parse, and just saying "invalid JSON" reads like a bug. Every `*ParseError` comes with a hand-pasteable snippet, so
+the user isn't stuck.
+
+**Anything over `MaxConfigSize` (64 MiB) is refused **before any read at all**.** The stat size is checked first;
+`readLimited` catches it a second time with an `io.LimitReader` in case the file grows between the stat and the
+read. A client config that large is a runaway log, not a config.
+
+**Unknown fields and foreign entries are preserved byte for byte.** Every level from the document root down to the
+server map is stored as `map[string]json.RawMessage`, so every sibling key at every level and every unrecognized
+field round-trips verbatim.
+
+**Backups are centralized, not in-place.** Before writing, the original content is copied to
+`<data>/backups/clients/<client>-<ts>Z.json` (0600, rotated per `DefaultKeepBackups = 10`), never as a sidecar next
+to the original: a project-level `.mcp.json` lives in a git working tree, and dropping a
+`.mcp.json.agenthub-backup` beside it would dirty `git status` on every connect and risk committing someone else's
+credentials. The 0600 reasoning is just as concrete: the env block of a client config frequently holds API tokens,
+so its copy is as sensitive as the vault. Backup files are created with `O_EXCL`, with same-microsecond collisions
+resolved by a suffix loop; **rotation is best-effort**, since failing to delete an old copy must never fail a
+connect that has already landed the new backup safely.
+
+**If the backup can't be written, the whole operation fails and the target file is untouched.** Modifying a user's
+config with no recoverable copy is worse than not connecting.
+
+**`Disconnect` identifies by ownership, never by name.** `ownedBy` checks that the entry's args contain both the
+`connect` subcommand and a `--client` value equal to this client's ID. An entry that just happens to be named
+`agenthub` is **not** ours; an entry the user renamed that still points at our gateway **is**. This is the
+"identify by shape, not by name" rule inherited from toolport's repoint.
+
+**Writes are atomic and preserve the original permissions.** New files are created 0644 (a project-level
+`.mcp.json` is meant to be committed and shared, unlike registry documents at 0600), and existing files keep their
+own mode. When the rendered result is byte-identical to the current content it returns `Changed: false` and does
+not write — repeated connects are idempotent. Directory fsync is best-effort, since a project directory may live on
+a filesystem that refuses it, and the rename there is still atomic regardless.
+
+**Only rewrite documents that round-trip losslessly.** TOML/YAML re-encoders drop comments, key order, and anchors;
+that is a config-destruction machine wearing a helpful hat. So those clients get detection plus one precise manual
+snippet, and `Connect` **fails loudly** with the snippet rather than half-working. `probeFormat.Disconnect`
+refuses in the same way: agenthub never wrote anything here, so there's nothing it can safely remove.
+
+**`locationFor`'s match order guarantees the section is deterministic.** Exact path equality first, then equal
+basename (this is what makes `--path /tmp/x/settings.json` behave like a real settings.json instead of silently
+picking a different section), and finally a fallback to this client's primary location. The failure direction is:
+a path that doesn't match **never** guesses at another client's shape.
+
+**`Import` is a proposal, not a write.** Nothing lands in the registry; the caller decides. Entries that collide
+with an existing registry name go into `Conflicts` and **not** into `Entries` — an import never silently redefines a
+server the user is already governing. Locations are processed in table order (project before user), so on a name
+collision the project-level definition wins and the loser is reported as a "duplicate" rather than dropped. Entries
+pointing at agenthub's own gateway are skipped (importing one would point agenthub at itself).
+
+**`toServerEntry` has two failure directions.** An entry with neither a command nor a url is **rejected**, never
+given a default — a half-built server that only explodes at connect time is much harder to diagnose than an import
+that says so up front. Imported HTTP endpoints are always set to `registry.ProvenanceRemote`: provenance is a
+statement of trust, and an imported endpoint has made no such statement, so the default takes the value that keeps
+SSRF checks on, and only an explicit operator action can relax it.
+
+**`looksSecretBearing` is a warning, not a block.** A credential-looking key carrying a literal value (rather than
+a `${...}` placeholder) goes into `SecretWarnings`, for the caller to prompt the user toward
+`agenthub secret set`.
+
+---
+
+## internal/skills
+
+### Responsibility in one sentence
+
+The skills subsystem: an agenthub-owned, content-addressed skill library, plus its materialized copies inside
+various AI client directories (and the receipts for those copies), plus a protocol face that serves the library
+upstream as read-only MCP tools.
+
+### The two-layer model and "honest granularity"
+
+An MCP server is a runtime intermediary and agenthub sits on the call path, so visibility can change per session.
+Skills are the exact opposite: clients read them straight off the filesystem, and agenthub is **not** on the read
+path. That difference forces a two-layer structure:
+
+- **The store**: agenthub's own canonical copy, placed content-addressed at
+  `<skills>/store/<id>/<contentHash>/` and indexed by `skills.json`. This is the only source of truth.
+- **An install**: a **receipt** in `installs.json` recording that "this skill was materialized once, for this
+  client, under this scope". Receipts go stale, so every one of them must be verifiable and repairable and
+  **never blindly trusted**.
+
+Which yields this package's single most important sentence, written into the `Granularity` field of every return
+value: **file materialization can only achieve client granularity, never session granularity.** Once bytes are on
+disk, every session of that client can see them, and agenthub cannot retract a file for one session while keeping
+it for another. Per-session skill visibility can only go through the skills-over-MCP path (`mcp.go`), because
+there agenthub actually is on the read path. The `GranularityClient` constant is echoed back in every result value
+precisely so the CLI and the GUI are forced to state this limitation rather than imply a precision that doesn't
+exist.
+
+### Key types and entry points
+
+`Manager` is this package's entire API surface: constructed by `Open(dir, Options)`, with library operations
+`Add` / `List` / `Inspect` / `Enable` / `Disable` / `Remove` / `Update` / `Verify` and install operations
+`Plan` / `InstallTo` / `Sync`.
+
+`Skill` is a library entry, `InstallState` is a receipt, and `Pin` is a fingerprint baseline. `ApplyState` is the
+receipt's five states, and `LibraryState` is a library entry's own health (`ok` / `tampered` / `unpinned` /
+`missing`).
+
+`TargetDef` is the definition of a materialization target (`targets.go`); it is the skills-side counterpart of
+`internal/clients`' `Format` table — same set of methods, different table. `WriteStrategy` has exactly two values:
+`StrategyOwnedDir` and `StrategySentinelBlock`.
+
+`Provider` (`mcp.go`) is the skills-over-MCP supply face: `NewProvider(m)` constructs it, `Refresh(ctx)` rebuilds
+the projection, `Tools()` returns a snapshot, and `Call` / `Read` serve a single read.
+
+### The two write strategies
+
+**`StrategyOwnedDir`: agenthub owns the entire directory and can rebuild it from scratch.** Ownership is proven by
+the marker file `.agenthub-managed.json` (`MarkerFileName`), **and only by it** — path conventions, naming patterns,
+and receipts are all things a user might reproduce by coincidence, whereas an explicit marker file cannot be
+produced by accident. A directory without our marker is somebody else's and always reports `StateConflict`, and is
+**never absorbed**.
+
+`applyOwnedDir` **rebuilds** rather than merges: the directory is ours end to end, so stray files left by an older
+version (or the remains of a half-finished write) must not survive. The ordering is deliberate — the marker is
+checked **before** deletion and written only at the end, so a crash mid-write leaves a directory that verifies as
+`Drifted` (repairable) rather than one that looks complete.
+
+**`StrategySentinelBlock`: agenthub owns the span between BEGIN/END inside someone else's file.** The marker
+strings (`<!-- agenthub:skill:<id>:start -->` / `:end -->`) are **frozen**: changing them orphans every block
+agenthub has ever written, and an orphaned block is indistinguishable from user content and would be left there
+forever. Bytes outside the sentinels are preserved verbatim, with the **one** exception documented in the comment on
+`upsertBlock`: appending to a file that doesn't end in a newline adds one, so the start marker gets a line to
+itself.
+
+`findBlock` is the safety valve for the whole strategy: anything other than "exactly zero" or "exactly one
+well-formed pair" (unpaired, inverted, duplicated) returns a `*SentinelError`, and the caller **must** refuse to
+write. Broken markers mean we can no longer tell which bytes are ours and which are the user's, and the only safe
+action is to stop and say so. Overwriting on a guess is exactly how a "managed block" tool eats someone else's
+file. `SentinelError` satisfies `errors.Is(err, ErrConflict)`, because the failure direction is identical.
+
+Import also applies a source-side guard: a package whose content contains an agenthub sentinel string (in the name,
+the description, or the SKILL.md body) is **rejected at the door**, because an embedded END marker would truncate
+its own block and everything after it would silently become "user content" that agenthub will never manage or
+remove again.
+
+### ApplyState and decision precedence
+
+Five states: `applied`, `stale`, `drifted`, `missing`, `conflict`. This axis is **orthogonal** to
+`internal/integrity`'s tool approval state machine: `ApplyState` answers "are the bytes still where we think they
+are", approval answers "is this content trustworthy". The two live in separate fields, and a transition in either
+implies nothing about the other.
+
+`verifyOne`'s decision order is "most actionable first", with each level answering a different question:
+
+```mermaid
+flowchart TD
+  A["Is there a shadowing file in the container?<br/>(TargetDef.BlockedIf)"] -->|yes| C1[conflict]
+  A -->|no| B["Are the bytes there?"]
+  B -->|no| M[missing]
+  B -->|yes| D["Are they ours?<br/>owned-dir: marker file<br/>sentinel: block present and well-formed"]
+  D -->|no / markers broken| C2[conflict]
+  D -->|yes| E["Does the content match the receipt?"]
+  E -->|no| DR[drifted]
+  E -->|yes| F["Does the library entry still exist, and is it unchanged?"]
+  F -->|entry gone| C3[conflict]
+  F -->|library updated| S[stale]
+  F -->|all good| OK[applied]
+```
+
+Ruling "library entry gone" as `conflict` rather than `missing` is deliberate: something deleted a skill without
+deleting its install, and automated writing has to stop and wait for a human to look.
+
+### Invariants and failure directions
+
+**Every read-modify-write goes through `withState`; there is no second path.** N gateways plus the daemon plus the
+CLI all mutate this state, so multi-writer discipline is a necessity rather than an optimization. A cross-process
+flock on a single `.lock` guards the whole skills directory, and the three state files are loaded and saved as one
+unit under that one lock — because every interesting operation touches at least two of them (add writes the index
+and a pin; remove writes the index and receipts), and one lock makes cross-file consistency structural rather than
+an ordering convention nobody can verify. Read-only callers take the same exclusive lock: operations are all short,
+and correctness beats concurrency here.
+
+**A corrupt state file always fails closed, and is never renamed out of the way.** A file that exists but won't
+parse is a `*CorruptError`, the operation aborts, and the file **stays in place**. Renaming it to `.corrupt` would
+make the next read look like a legitimate brand-new store, which is exactly the silent re-baselining an attacker
+wants. A *missing* file is what constitutes a brand-new store (first run has no skills). Unreadable, unparseable,
+trailing data, empty file (the atomic writer never produces one), unsupported version — all count as corrupt. There
+are 4 read retries to absorb rename transients on the lock-free read path; a parse failure that survives the retries
+is real corruption.
+
+**A missing `enabled` field reads as disabled.** The persisted spelling is `Enabled`, not `Disabled`, precisely so
+that a hand-written or truncated record omitting the field reads as **disabled** — for the question "should agenthub
+push these bytes into a client directory", that is the closed direction. `Add` always writes the field explicitly.
+
+**Fingerprints and pins: a mismatch refuses to propagate.** `Fingerprint` is `"v1:<sha256>"` covering content
+**plus** metadata (name, description, kind), making it strictly broader than `ContentHash`. description is included
+because it is what the client's model actually reads when deciding whether to invoke a skill — identical files with a
+swapped description **is** a meaningful change, and a classic prompt injection vector. `Version` and timestamps are
+deliberately excluded: a version bump with unchanged content is not a content change, and folding in timestamps
+would make re-importing identical bytes produce an unstable fingerprint.
+
+The `HashSchemaVersion` prefix earns its keep: once the formula changes, pins recorded with the old formula must be
+identifiable as "different algorithm" rather than "content changed". Without the prefix, a formula upgrade would
+present as a fleet-wide alert, and users would learn to ignore alerts. It is deliberately separate from
+`integrity.HashSchemaVersion`; the two snapshot different kinds of thing and must be able to evolve independently.
+
+`requireTrusted` runs ahead of `InstallTo` and `syncOne`: **unpinned entries are allowed** (they predate the pin
+mechanism), **mismatched entries are not** (`TamperError`). `Verify` does a full recomputation — recomputing the
+fingerprint from the bytes on disk rather than reading the value out of the index, because an index a tamperer has
+edited cannot vouch for itself.
+
+**Pins are never deleted.** Not even by `Remove`. When the same skill is deleted and added back, it is compared
+against the **original baseline** rather than blindly re-pinned. This rule is inherited from integrity's "merge
+never deletes".
+
+**Drift refuses to be overwritten unless a human explicitly decides.** A materialized copy modified by something
+other than agenthub returns `ErrDrifted`, and the caller must pass `InstallRequest.AllowDrift` to overwrite it.
+Drift is the user telling us something, even if what they mean is "I edited the wrong file"; silently rolling it
+back is how a sync tool teaches users not to trust its own receipts.
+
+**Import is this package's largest attack surface, and every rejection is non-negotiable.** `scanTree` rejects:
+symlinks of any kind (following one copies content from outside the package; preserving one makes the installed copy
+point at an attacker-chosen path inside the user's home directory), non-regular files (devices, sockets, fifos), a
+`MarkerFileName` appearing in the source tree (that is the ownership credential for an install directory, and a
+package carrying one could forge ownership), and trees exceeding the size and count limits (a mistyped path — a home
+directory, a repo with node_modules — should fail fast rather than copy several GB). Path escapes (`..`, absolute
+paths) are structurally impossible (every path is derived by `filepath.Rel` relative to the walk root), but the check
+stays, because the entire install layer trusts `FileEntry.Path` to be a package-relative path.
+
+`copyTree` **re-hashes** each file as it copies and compares against the scan result: if the source changed between
+scan and copy, the import aborts rather than producing a library copy whose `ContentHash` is lying (TOCTOU).
+
+`Options.ContentScanner` is the seam for injecting a scanner — SKILL.md is a first-class prompt injection carrier. A
+hit **rejects the import outright** rather than importing and flagging — an imported skill is one `sync` away from
+being materialized into a client directory. This hook lives in Options so that this package depends on no guard
+package.
+
+**An unreadable entry inside `hashDir` is an error, never a skipped file.** Silently skipping would let a permissions
+trick hide drift. A symlink or device file appearing where a skill file belongs is drift by definition, and gets
+assigned a hash that can never match.
+
+**`Sync`'s convergence semantics.** A conflict on one skill **never** aborts the batch: a shadowed file or a
+hand-edited copy is recorded as one failed item while the other skills still converge, and only a store-level failure
+returns an error. Pruning (removing skills no longer selected) is the default behavior, because "sync" means
+converge; but pruning happens **only within the containers this request converged** — a sync of project A must never
+de-materialize project B, and a generic target pointing at one directory should not touch another; the `Container`
+field in the receipt is what distinguishes them. `Disable` **does not** de-materialize anything by itself: the bytes
+stay until a `Sync` (or an explicit `Remove`) converges the target, and until then the receipt honestly reports their
+presence.
+
+**The library's `Enabled` and scope's `SkillSelector` only narrow, never widen.** A disabled skill will not be
+materialized by `Sync` no matter what the selector says. `SkillSelector`'s tri-state semantics are exactly those of
+the scope chain's tool selector.
+
+**The boundary of `Remove` and `Force`.** `Force` means "stop tracking", **never** "delete things we cannot prove are
+ours": files on a conflicting target stay in place, and only the receipt is discarded.
+
+**`CharCap` measures the entire rendered file, not just our block.** This is the lesson of Windsurf's 6000-character
+limit: what the client truncates is the file, so budgeting per block measures the wrong thing. Exceeding it is ruled
+`conflict` — silently writing a file the client will truncate produces a skill that "exists but is broken", which is
+worse than one that "doesn't exist and is reported as such".
+
+**`BlockedIf` shadow detection.** This is the lesson of `AGENTS.override.md`: a file the client prefers can make our
+write invisible, and an invisible write paired with a healthy receipt is a lie.
+
+**Both `renderSkillBody` and `renderSkillDocument` call out unmaterialized attachments.** A single shared file cannot
+hold attachments, and an MCP reply cannot hand over a directory; saying so in the rendered text is the honest
+alternative to pretending the install is complete. Both are deterministic renderers pinned by golden tests.
+
+**The SKILL.md frontmatter parser is a deliberately restricted YAML subset, not a YAML implementation.** It
+recognizes only single-line `key: value` (quotes allowed). Two reasons: this package cannot take on a dependency; and
+a half-finished YAML parser that silently misreads nested structure is worse than one that admits it doesn't
+understand a line. Lines it doesn't understand are **never discarded** — they are stored verbatim in `Meta.Extra` and
+written back in their original positions, so packages using richer frontmatter round-trip losslessly even though
+agenthub only reads four of the keys. A file with no frontmatter is valid (the whole file becomes the Body); an
+**unclosed** frontmatter is an error — a file that opens a fence and never closes it is either truncated or broken by
+hand, and guessing where the metadata ends is exactly how an entire document ends up inside the description field.
+For duplicate keys, **the first occurrence wins**; taking the later one would let an appended line silently override a
+value that has already been reviewed.
+
+**Three versions are retained.** `pruneVersions` keeps the current content-addressed version plus the two most recent
+older ones. Old versions are what rollback and drift diffs read, and pruning down to one saves space by deleting
+evidence.
+
+**Three properties of the skills-over-MCP face.** First, **it is currently shaped as tools rather than resources**:
+MCP resources are semantically a better fit, but the gateway's upstream face currently offers only tools, and
+inventing a protocol face inside a subsystem package is the wrong place for it. Tools are the honestly available
+shape — same content, same governance, no pretending at capabilities. Second, **the host stays on the gate path**:
+this type never answers on its own in any privileged way, and the gateway that assembles it routes the call through
+exactly the same `pipeline.Execute` as a downstream call, so scope, HITL, and injection scanning all apply; this path
+**deliberately does not** re-scan SKILL.md locally, because a second scanner is a second policy. Third, **enabled
+state is verified live at call time**: `Tools()` serves a snapshot (it is invoked on every catalog build and cannot do
+I/O), but `Call` re-reads the library, so a skill disabled or deleted since the last `Refresh` is rejected rather than
+served out of a stale snapshot.
+
+`NewProvider`'s snapshot **starts empty**: nothing is exposed until a `Refresh` succeeds, so a broken or unreadable
+store broadcasts zero skills rather than a stale set. A failed `Refresh` retains the previous snapshot (serving the
+last known-good set beats serving nothing because a lock was busy). Disabled skills are **invisible** rather than
+"listed and then refused" — the same anti-probing rule that scope narrowing follows. When two IDs sanitize to the same
+tool name, the first in sort order is kept and the rest are skipped: a silently shadowed skill is worse than a
+nonexistent one.
+
+`Annotations()` is **payload, not decoration**: the pipeline's destructiveness ruling treats **missing** annotations as
+destructive (fail-closed), so a read-only tool without annotations would prompt for approval on every call.
+
+**This package never shells out to git and never touches the network.** git sources are imported from a local
+checkout the caller already has, and `--pin <rev>` is **recorded** (`Source.GitRef` / `Source.PinnedCommit`) so the
+revision that produced this library copy is reproducible. fetch, clone, and ref resolution are M2; until then, an
+`Update` on a git skill without a new checkout path returns `ErrGitFetchUnsupported`, rather than reporting
+"already up to date" without having looked.
+
+### Current capability boundaries
+
+`ApplyState` landed at **five** values rather than one per failure: any target we're not allowed to write is
+`StateConflict` (being occupied by someone else is only one of its causes), and a removed install has no receipt at
+all, so it needs no state value.
+
+The targets table landed at **three rows**: claude-code as the owned-dir reference implementation, cursor as the
+sentinel-block reference implementation, and generic to prove the table extends without code changes.
+
+git-sourced skills record and pin a revision but **do not execute git and do not go online**; an update without a
+local checkout returns `ErrGitFetchUnsupported` rather than reporting "already up to date" without having looked.
+
+The cross-process lock is only implemented for darwin/linux (`flock_unix.go`); other platforms get a compile-time
+placeholder (`flock_stub.go`) — Windows' `LockFileEx` is covered in [../windows.md](../windows.md).
+

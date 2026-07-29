@@ -1,0 +1,33 @@
+{
+  "future_top": {
+    "a": 1
+  },
+  "profiles": {
+    "dev": {
+      "future_profile": "keep-me",
+      "servers": [
+        "github",
+        "filesystem",
+        "stripe"
+      ],
+      "tools": {
+        "filesystem": {
+          "allow": [],
+          "deny": [
+            "delete_file"
+          ]
+        },
+        "github": {
+          "allow": [
+            "create_issue",
+            "get_issue"
+          ],
+          "future_sel": true
+        }
+      }
+    },
+    "readonly": {
+      "servers": []
+    }
+  }
+}

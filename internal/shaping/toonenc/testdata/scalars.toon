@@ -1,0 +1,9 @@
+big: 9007199254740993
+huge: 123456789012345678901234567890
+missing: null
+name: agenthub
+note: a plain sentence with spaces
+off: false
+ok: true
+port: 8080
+ratio: 0.5

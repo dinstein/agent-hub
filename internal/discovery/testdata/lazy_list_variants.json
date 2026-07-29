@@ -1,0 +1,146 @@
+[
+  {
+    "name": "status",
+    "description": "Report the agenthub tool surface: visible servers, how many tools each exposes, and how to reach them. Call this first when you do not know what is available.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "search_tools",
+    "description": "Search the tools visible to this session by keyword. Every match comes back with a compact one-line signature in its sig field; call describe_tool for the full input schema. Invoke a result with the meta-tool named in its call_with field.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "keywords describing the tool you need"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "maximum results (default 5)"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "describe_tool",
+    "description": "Return the full input schema of up to 5 tools found through search_tools. Use it when a signature from a search result is not enough to build the arguments.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "type": "string",
+          "description": "one exposed tool name from a search result"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "description": "up to 5 exposed tool names (use instead of \"tool\" to describe several at once)"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "call_tool_read",
+    "description": "Invoke a READ-ONLY tool by the exposed name reported by search_tools. Only tools whose call_with field says call_tool_read are callable here.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "type": "string",
+          "description": "exposed tool name from a search result"
+        },
+        "arguments": {
+          "type": "object",
+          "description": "arguments for the target tool"
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "call_tool_write",
+    "description": "Invoke a WRITING tool by the exposed name reported by search_tools. Only tools whose call_with field says call_tool_write are callable here.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "type": "string",
+          "description": "exposed tool name from a search result"
+        },
+        "arguments": {
+          "type": "object",
+          "description": "arguments for the target tool"
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "call_tool_destructive",
+    "description": "Invoke a DESTRUCTIVE tool by the exposed name reported by search_tools. Only tools whose call_with field says call_tool_destructive are callable here; a tool whose server declared no annotations counts as destructive.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "type": "string",
+          "description": "exposed tool name from a search result"
+        },
+        "arguments": {
+          "type": "object",
+          "description": "arguments for the target tool"
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "fetch_result",
+    "description": "Fetch the next page of a result that was truncated, using the cursor from the truncation notice.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "type": "string",
+          "description": "cursor from a truncated result"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "character offset to resume at"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "maximum characters to return"
+        }
+      },
+      "required": [
+        "cursor"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

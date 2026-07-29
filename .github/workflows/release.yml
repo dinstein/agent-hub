@@ -1,0 +1,208 @@
+name: release
+
+# Tag-triggered. The tag is the trigger AND the claim about what is being
+# released, so the first job checks the tag against the VERSION file before
+# anything is built: a Release whose assets disagree with its title is
+# discovered by a user, months later, and is close to impossible to diagnose
+# from the outside.
+on:
+  push:
+    tags: ["v*"]
+  # Lets a release be rehearsed end to end without creating a tag. The publish
+  # step stays disabled on this path — see its `if`.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tagged: ${{ steps.v.outputs.tagged }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the tag matches VERSION
+        id: v
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+            echo "dry run at VERSION=${version}; publish step will be skipped"
+            exit 0
+          fi
+          echo "tagged=true" >> "$GITHUB_OUTPUT"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "${tag}" != "${version}" ]; then
+            echo "tag ${GITHUB_REF_NAME} disagrees with VERSION ${version}" >&2
+            echo "bump VERSION and re-tag, or tag v${version}" >&2
+            exit 1
+          fi
+
+  # Pure Go, no cgo: one runner cross-compiles every platform. This is the
+  # artifact for people who only use Claude Code / Cursor and never open a GUI.
+  cli:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Version stamping reads the commit hash, which needs history.
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+      - name: Build every platform
+        env:
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+        # One implementation, shared with the local release path. The loop
+        # used to live inline here, which meant the ldflags that decide the
+        # data CHANNEL existed in two places that had to agree by hand.
+        run: scripts/build-release-artifacts.sh "${RELEASE_VERSION}"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: cli
+          path: dist/*
+          retention-days: 7
+
+  # The GUI must be built on the platform it targets: the webview is native.
+  # macOS only for now — Windows and Linux need their own runners and their own
+  # packaging, and neither has ever been exercised.
+  gui-macos:
+    needs: verify
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22.x"
+          cache: npm
+          cache-dependency-path: cmd/agenthub-gui/frontend/package-lock.json
+      - name: Install wails3
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.118
+      # Same reason as ci.yml: gui_main.go embeds frontend/dist, which is
+      # gitignored, so every Go step fails to load the package until it exists.
+      - name: Frontend (typecheck + bundle)
+        run: make gui-frontend-ci
+      - name: Package the DMG
+        run: make release-macos
+      - name: Checksums
+        run: cd dist && shasum -a 256 *.dmg > checksums-macos.txt
+      - uses: actions/upload-artifact@v5
+        with:
+          name: gui-macos
+          path: |
+            dist/*.dmg
+            dist/checksums-macos.txt
+          retention-days: 7
+
+  publish:
+    needs: [verify, cli, gui-macos]
+    # Never publishes on the workflow_dispatch rehearsal path: that run has no
+    # tag, so there is nothing to attach a Release to.
+    if: needs.verify.outputs.tagged == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+      - name: Collect
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.dmg' -o -name 'checksums-*.txt' \) \
+            -exec mv {} release/ \;
+          ls -la release
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: release/*
+          body: |
+            ## Install
+
+            **GUI (macOS)** — download the `.dmg`. It contains the CLI too, so
+            nothing else is needed. The app is ad-hoc signed but **not
+            notarized**: on first launch, right-click → Open, or run
+            `xattr -cr /Applications/AgentHub.app`.
+
+            **CLI only** — download the `.tar.gz` for your platform and put
+            `agenthub` somewhere on your `$PATH`.
+
+            Windows binaries are cross-compiled and have never been run on real
+            hardware; treat them as experimental.
+
+            Verify downloads against `checksums-*.txt`.
+
+  # Updates the Homebrew tap.
+  #
+  # A separate job on purpose. By the time it runs the Release is complete and
+  # correct; a tap push that fails must not retract or re-cut it. It goes red
+  # here instead, which is the honest signal — the release shipped, the tap did
+  # not catch up.
+  #
+  # Opt-in by setting the HOMEBREW_TAP_REPO variable (e.g. dinstein/homebrew-
+  # agenthub). Until it is set the job is SKIPPED and says so in the run
+  # summary, rather than being silently absent.
+  homebrew:
+    needs: [verify, publish]
+    if: needs.verify.outputs.tagged == 'true' && vars.HOMEBREW_TAP_REPO != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Require the push token
+        env:
+          TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP: ${{ vars.HOMEBREW_TAP_REPO }}
+        run: |
+          # Half-configured is worse than not configured at all. With the
+          # variable set somebody is expecting the tap to be updated, so a
+          # missing token has to fail here — skipping quietly is how a tap
+          # ends up serving a version that no longer exists.
+          if [ -z "${TOKEN}" ]; then
+            echo "HOMEBREW_TAP_REPO is ${TAP} but HOMEBREW_TAP_TOKEN is empty" >&2
+            echo "add a repository secret holding a token with contents:write on the tap," >&2
+            echo "or clear the variable to turn tap publishing off" >&2
+            exit 1
+          fi
+      # The same bytes the Release serves. Reading the checksums from the
+      # artifact rather than re-hashing anything keeps one source for the sums
+      # the formula pins.
+      - uses: actions/download-artifact@v5
+        with:
+          name: cli
+          path: cli
+      - name: Render the formula
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          scripts/homebrew-formula.sh "${GITHUB_REF_NAME}" cli/checksums-cli.txt > out/agenthub.rb
+          cat out/agenthub.rb
+      - name: Push it to the tap
+        env:
+          TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP: ${{ vars.HOMEBREW_TAP_REPO }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${TAP}.git" tap
+          mkdir -p tap/Formula
+          cp out/agenthub.rb tap/Formula/agenthub.rb
+          cd tap
+          # Re-running a release must not produce an empty commit.
+          if git diff --quiet -- Formula/agenthub.rb; then
+            echo "formula already matches ${GITHUB_REF_NAME}; nothing to push"
+            exit 0
+          fi
+          git config user.name "agenthub release"
+          git config user.email "noreply@github.com"
+          git add Formula/agenthub.rb
+          git commit -m "agenthub ${GITHUB_REF_NAME}"
+          git push

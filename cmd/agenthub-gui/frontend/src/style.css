@@ -1,0 +1,1810 @@
+/* agenthub GUI stylesheet.
+ *
+ * ---------------------------------------------------------------------------
+ * COLOUR DISCIPLINE (docs/modules/gui.md)
+ * ---------------------------------------------------------------------------
+ * There are exactly four semantic tokens — --success, --warning, --danger,
+ * --info — and they are reserved for ONE question: is this thing healthy?
+ *
+ * Everything else (transport, source, provenance, profile name, session id,
+ * fingerprints, counts) is metadata and is rendered in --muted / --fg. The
+ * reason is not taste. A healthy stdio server rendered with a green health dot
+ * AND a green "stdio" chip puts two greens on one row that mean unrelated
+ * things, and the moment a colour can mean two things it means nothing: the
+ * operator has to read the text anyway, which is the cost the colour was
+ * supposed to remove.
+ *
+ * So: if a colour is carrying meaning here, that meaning is health. The
+ * quarantine state deliberately does NOT get a fifth hue — it is warning-
+ * coloured and the WORD "quarantined" carries the distinction from "degraded".
+ * Adding a hue per state is how a palette stops being readable.
+ *
+ * Every semantic colour is also paired with a second channel (an icon shape, a
+ * word, or a border) so the state survives a colour-blind reader and a
+ * greyscale screenshot.
+ *
+ * ---------------------------------------------------------------------------
+ * THEMING (docs/modules/gui.md)
+ * ---------------------------------------------------------------------------
+ * index.html stamps data-theme="light|dark" on <html> BEFORE first paint, so
+ * the attribute selectors below are the primary source. The prefers-color-
+ * scheme block is the no-JS fallback only, and is written so it can never
+ * override an explicit attribute.
+ */
+
+:root {
+  --font-sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius: 10px;
+  font-family: var(--font-sans);
+
+  /* Type scale. Six ad-hoc pixel values used to be written at their call
+   * sites, which is why sibling elements drifted a point apart for no
+   * reason anyone could name. A closed set makes "which size is this"
+   * answerable, and makes an unintended seventh size visible in review. */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 15px;
+  --text-xl: 17px;
+
+  /* Spacing scale, same argument. The old file had eight distinct gap
+   * values including a lone 7px; the eye reads that as sloppiness long
+   * before anyone can point at the rule being broken. */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 24px;
+  --space-8: 32px;
+
+  /* One easing curve and two durations for the whole application. Motion
+   * that differs per component reads as jitter rather than as feedback. */
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --dur-fast: 90ms;
+  --dur: 150ms;
+
+  --sidebar-w: 208px;
+  /* Tables of eight columns are unreadable at 2000px. The cap is on the
+   * content column, not the window, so the chrome still fills the screen. */
+  --content-max: 1180px;
+}
+
+/* -- dark (the default; the bootstrap resolves "system" to one of the two) -- */
+
+:root,
+:root[data-theme="dark"] {
+  --bg: #0d1014;
+  --panel: #14181e;
+  --panel-2: #1b2027;
+  --fg: #e8ecf2;
+  --muted: #868fa0;
+  --faint: #6b7383;
+  --line: #262d36;
+  /* Hairline between records inside one surface: quieter than --line, which
+   * separates a surface from the page. */
+  --line-soft: #1e242c;
+
+  /* There is no brand hue. --accent resolves to the ink colour, so emphasis
+   * is contrast rather than a fifth colour. The reason is the rule at the top
+   * of this file: every hue here is a health claim, so a blue primary button
+   * would be the one coloured thing on screen that means nothing — and the
+   * moment a colour can mean two things it means neither. */
+  --accent: var(--fg);
+
+  /* The four semantic tokens. Health only. */
+  --success: #46c06b;
+  --warning: #e0a02e;
+  --danger: #f0605a;
+  --info: #5aa9f0;
+
+  /* Elevation is a per-theme token, not a shared one: on a dark surface a
+   * black shadow is nearly invisible, so depth there comes mostly from a
+   * lighter hairline. Sharing one shadow across both themes is how dark
+   * mode ends up looking flat. */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 8px 24px rgb(0 0 0 / 0.5);
+  --hairline: rgb(255 255 255 / 0.06);
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --panel-2: #eef1f5;
+  --fg: #0e1116;
+  --muted: #5b6472;
+  --faint: #8a93a2;
+  --line: #dfe3ea;
+  --line-soft: #eaedf2;
+  --accent: var(--fg);
+
+  --success: #167a3a;
+  --warning: #8a6100;
+  --danger: #c4322c;
+  --info: #0b62c4;
+
+  --shadow-1: 0 1px 2px rgb(16 24 40 / 0.06);
+  --shadow-2: 0 12px 28px rgb(16 24 40 / 0.12);
+  --hairline: rgb(255 255 255 / 0.9);
+
+  color-scheme: light;
+}
+
+/* No-JS fallback. Scoped to :root:not([data-theme]) so it can never fight the
+ * attribute the bootstrap sets. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --panel-2: #eef1f5;
+    --fg: #0e1116;
+    --muted: #5b6472;
+    --faint: #8a93a2;
+    --line: #dfe3ea;
+    --line-soft: #eaedf2;
+    --accent: var(--fg);
+    --success: #167a3a;
+    --warning: #8a6100;
+    --danger: #c4322c;
+    --info: #0b62c4;
+    --shadow-1: 0 1px 2px rgb(16 24 40 / 0.06);
+    --shadow-2: 0 12px 28px rgb(16 24 40 / 0.12);
+    --hairline: rgb(255 255 255 / 0.9);
+    color-scheme: light;
+  }
+}
+
+/* Compatibility aliases: the older names still used by a few pages. They are
+ * aliases, not a second palette — there is one source per colour. */
+:root {
+  --ok: var(--success);
+  --warn: var(--warning);
+  --bad: var(--danger);
+  --quarantine: var(--warning);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+}
+
+/* One focus ring for the whole application. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex: 0 0 var(--sidebar-w);
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-6) var(--space-5);
+  gap: var(--space-2);
+  overflow-y: auto;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+/* Narrow windows tighten the sidebar; they never hide it. The counters on
+ * Approvals and Tools are the un-dismissable backstop for pending decisions
+ * and quarantine alerts (docs/modules/gui.md), so a layout that can put
+ * them off-screen defeats the reason they exist. Collapsing to an icon rail
+ * is the obvious alternative and is deliberately not done: there is no icon
+ * set yet, and the labels are bare text nodes, so the rail would be a column
+ * of unexplained badges. */
+@media (max-width: 900px) {
+  :root {
+    --sidebar-w: 164px;
+  }
+
+  .sidebar {
+    padding: var(--space-5) var(--space-4);
+  }
+
+  .content {
+    padding: var(--space-6) var(--space-6);
+  }
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 4px 8px 14px;
+}
+
+a.nav {
+  color: var(--muted);
+  text-decoration: none;
+  padding: var(--space-4) 10px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-md);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+a.nav:hover {
+  background: var(--panel-2);
+  color: var(--fg);
+}
+
+/* The active item is the only nav entry at full foreground contrast. The
+ * rest sit at --muted so that "where am I" is answerable peripherally,
+ * without reading the labels. */
+a.nav.active {
+  background: var(--panel-2);
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* The sidebar counters are the un-dismissable backstop for anything a page
+ * can hide: a quarantine alert dismissed on the Tools page still shows up
+ * here (docs/modules/gui.md). */
+.badge-count {
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 1px 7px;
+  font-weight: 700;
+}
+
+.badge-count.alarm {
+  background: var(--danger);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.daemon {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  padding: var(--space-4) 10px;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+
+.daemon-lines {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.daemon-lines > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.daemon-detail {
+  font-size: var(--text-xs);
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+.daemon-detail:empty {
+  display: none;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: 0 0 8px;
+}
+
+.dot.ok,
+.dot.success {
+  background: var(--success);
+}
+
+.dot.warning {
+  background: var(--warning);
+}
+
+.dot.bad,
+.dot.danger {
+  background: var(--danger);
+}
+
+.dot.neutral {
+  background: var(--muted);
+}
+
+.dot.pulse {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.content {
+  flex: 1;
+  padding: var(--space-7) var(--space-7);
+  overflow: auto;
+  min-width: 0;
+}
+
+/* The cap lives on an inner wrapper so the scroll container still spans the
+ * window: capping .content itself would strand the scrollbar in the middle
+ * of a wide screen. */
+.content > * {
+  max-width: var(--content-max);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: var(--space-6) 18px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow-1);
+}
+
+.panel > h2 {
+  margin: 0 0 var(--space-5);
+  font-size: var(--text-lg);
+  letter-spacing: 0.01em;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+/* Row hover is a readability aid on wide tables — it ties a status cell on
+ * the right back to the name on the left. It is deliberately weaker than
+ * anything that signals state, so it never competes with the health colours
+ * for meaning. */
+tbody tr {
+  transition: background var(--dur-fast) var(--ease);
+}
+
+tbody tr:hover {
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* overflow-wrap:anywhere rather than word-break:break-all: both stop a
+ * hash or a long path from overflowing, but break-all also chops ordinary
+ * words mid-syllable when it does not have to. anywhere breaks at the
+ * natural opportunities first and only splits a token when there is no
+ * other option, which is what these cells actually hold. */
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* Metadata: transport, source, provenance, profile. NEUTRAL on purpose. */
+.meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.badge-healthy {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
+}
+
+.badge-degraded {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+}
+
+.badge-unhealthy {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+.badge-disabled {
+  color: var(--muted);
+  border-color: var(--line);
+}
+
+/* No fifth hue: the word does the distinguishing (see the header comment). */
+.badge-quarantined {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+}
+
+/* The button.
+ *
+ * Three states carry real information and each gets its own channel: hover
+ * says "this is the thing under your cursor", :active says "the click
+ * landed", and [aria-busy] says "it landed and the daemon has not answered
+ * yet". The third matters most here — every button in this application
+ * triggers a round trip to a socket, and without a busy state the honest
+ * user response to a slow gate is to click again.
+ */
+.btn {
+  background: var(--panel-2);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px var(--space-5);
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: 1.5;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  white-space: nowrap;
+  position: relative;
+  box-shadow: var(--shadow-1), inset 0 1px 0 var(--hairline);
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel-2));
+}
+
+/* 1px, not 2: the press should read as the surface giving way, not as the
+ * layout reflowing. Paired with dropping the shadow so it reads as the
+ * button moving toward the page rather than merely sliding down it. */
+.btn:active:not([disabled]):not([aria-busy="true"]) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.btn[disabled] {
+  opacity: 0.5;
+  cursor: default;
+  box-shadow: none;
+}
+
+.btn[disabled]:hover {
+  border-color: var(--line);
+  background: var(--panel-2);
+}
+
+/* Busy keeps the label in place and dims it rather than swapping in a
+ * spinner-only button: the label is what tells the user which of several
+ * pending actions this one was, and a width change on click makes the row
+ * jump under the pointer. */
+.btn[aria-busy="true"] {
+  cursor: progress;
+  color: transparent;
+  pointer-events: none;
+}
+
+.btn[aria-busy="true"]::after {
+  content: "";
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, currentcolor 30%, transparent);
+  border-top-color: var(--accent);
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Reduced motion still needs the busy state to be legible, so the spinner
+ * degrades to a static ring rather than disappearing (the global
+ * prefers-reduced-motion rule kills the animation, not the element). */
+
+/* Primary is filled, not merely outlined. The old primary changed only its
+ * border colour, which put it on the same visual level as every secondary
+ * button in the row — a hierarchy nobody could see is not a hierarchy. */
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  background: color-mix(in srgb, var(--accent) 86%, var(--fg));
+  border-color: color-mix(in srgb, var(--accent) 86%, var(--fg));
+}
+
+.btn-primary[disabled]:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.btn-primary[aria-busy="true"]::after {
+  border-top-color: var(--bg);
+}
+
+/* Approve and deny are tonal, not filled: they sit side by side and filling
+ * both would make the pair shout equally, while filling only one would put
+ * a thumb on the scale of a security decision. */
+.btn-approve {
+  border-color: color-mix(in srgb, var(--success) 50%, transparent);
+  color: var(--success);
+}
+
+.btn-approve:hover {
+  background: color-mix(in srgb, var(--success) 12%, var(--panel-2));
+  border-color: var(--success);
+}
+
+.btn-deny {
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+  color: var(--danger);
+}
+
+.btn-deny:hover {
+  background: color-mix(in srgb, var(--danger) 12%, var(--panel-2));
+  border-color: var(--danger);
+}
+
+.btn-danger {
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+  color: var(--danger);
+}
+
+.btn-danger:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--bg);
+}
+
+.btn-secondary {
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+}
+
+.btn-secondary:hover {
+  color: var(--fg);
+}
+
+/* Size variants. Table rows carry actions at sm; a page's single leading
+ * action gets lg. Both stay on the type and space scales. */
+.btn-sm {
+  padding: 3px var(--space-4);
+  font-size: var(--text-sm);
+  border-radius: 6px;
+}
+
+.btn-lg {
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--text-base);
+}
+
+.action {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+/* A command shown for reading, not retyping. It wraps rather than
+ * overflowing: unlike the one-line .rec-run in a ledger row, these appear in the
+ * paste preview where seeing the WHOLE parsed command is the point — that is
+ * what the reader is checking before committing it. */
+code.cmd {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--muted);
+  display: block;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.input {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--fg);
+  padding: 6px 10px;
+  font: inherit;
+  min-width: 160px;
+}
+
+.error {
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.error > header {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.notice {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.notice-slot:empty {
+  display: none;
+}
+
+/* --- error detail: one-line headline + the full text, always copyable ----- */
+
+/* docs/modules/gui.md. The headline is a lossy summary by construction, so
+ * the raw text is never thrown away — it sits one disclosure away with a Copy
+ * button, because the operator's next move is usually to paste it into an
+ * issue. */
+.raw {
+  margin-top: 4px;
+}
+
+.raw > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+pre.raw-text {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  margin: 6px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* --- the three empty states (docs/modules/gui.md) ------------------------ */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 18px 2px;
+  color: var(--muted);
+}
+
+.empty-state > .es-title {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.empty-state.es-failed {
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.skeleton > i {
+  display: block;
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--panel-2) 0%,
+    color-mix(in srgb, var(--panel-2) 60%, var(--line)) 50%,
+    var(--panel-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* --- overview chips (docs/modules/gui.md) -------------------------------- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 999px;
+  padding: 3px 11px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chip > b {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.chip.c-warning > b {
+  color: var(--warning);
+}
+
+.chip.c-danger > b {
+  color: var(--danger);
+}
+
+.chip.c-success > b {
+  color: var(--success);
+}
+
+/* --- buckets (needs attention / active / disabled) ------------------------ */
+
+.bucket {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  background: var(--panel);
+}
+
+.bucket > summary {
+  cursor: pointer;
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  list-style: none;
+}
+
+.bucket > summary::-webkit-details-marker {
+  display: none;
+}
+
+.bucket > summary::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 11px;
+  transition: transform 0.12s ease;
+}
+
+.bucket[open] > summary::before {
+  content: "▾";
+}
+
+.bucket > summary > .bucket-count {
+  color: var(--muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.bucket.b-attention > summary {
+  color: var(--warning);
+}
+
+.bucket-body {
+  border-top: 1px solid var(--line);
+}
+
+/* --- one server row ------------------------------------------------------- */
+
+
+
+
+
+.srv-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.state-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.state-text {
+  font-variant-numeric: tabular-nums;
+}
+
+.t-success {
+  color: var(--success);
+}
+
+.t-warning {
+  color: var(--warning);
+}
+
+.t-danger {
+  color: var(--danger);
+}
+
+.t-muted {
+  color: var(--muted);
+}
+
+
+@media (max-width: 820px) {
+  .srv {
+    grid-template-columns: 1fr;
+  }
+
+  .srv-actions {
+    align-items: flex-start;
+  }
+}
+
+/* --- equivalent CLI command (docs/modules/gui.md) -------------------------- */
+
+/* One line, always. It used to wrap, and inside a narrow card that turned a
+ * three-part hint into three stacked rows — the ⌘, then a full-width command
+ * box, then the Copy button — which read as three unrelated controls. The
+ * command is truncated rather than broken because it is never meant to be
+ * retyped from the screen: Copy takes the whole thing, and the title carries
+ * it for a reader who only wants to look. */
+.cli-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: nowrap;
+  font-size: var(--text-sm);
+  min-width: 0;
+}
+
+.cli-hint > code {
+  font-family: var(--font-mono);
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 8px;
+  user-select: all;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cli-hint > .cli-copy {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  line-height: 1.4;
+  font-size: var(--text-sm);
+}
+
+details.cli-block > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  list-style: none;
+}
+
+details.cli-block > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.cli-block[open] > summary {
+  margin-bottom: 6px;
+}
+
+.cli-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+/* --- cards / approvals ---------------------------------------------------- */
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: var(--panel-2);
+}
+
+.card > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+/* A decided card is greyed and inert until the DAEMON says it is gone. No
+ * optimistic removal: a card that vanishes and comes back reads as a bug and
+ * teaches the operator to distrust the queue (docs/modules/gui.md). */
+.card.deciding {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.countdown {
+  font-family: var(--font-mono);
+  color: var(--warning);
+  font-variant-numeric: tabular-nums;
+}
+
+.countdown.urgent,
+.countdown.expired {
+  color: var(--danger);
+}
+
+/* Second channel for the countdown: the bar shortens as the number falls, so
+ * "running out" is visible without reading. */
+.countdown-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+  margin: 8px 0 0;
+}
+
+.countdown-bar > i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: var(--warning);
+  transition: width 0.5s linear;
+}
+
+.countdown-bar.urgent > i {
+  background: var(--danger);
+}
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.decision-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 6px;
+}
+
+.decision-group > .glabel {
+  color: var(--muted);
+  font-size: 12px;
+  padding-left: 4px;
+}
+
+pre.args {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  margin: 10px 0 0;
+  max-height: 240px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+/* --- the HITL banner (docs/modules/gui.md) ------------------------------- */
+
+/* role="alertdialog" with aria-modal="false": it announces itself and takes
+ * focus order, but it does NOT trap focus or block the rest of the window.
+ * A gate that holds a call must be impossible to miss and must still let the
+ * operator go and look at what the tool would touch. */
+.hitl {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, var(--panel));
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* A class selector beats the UA's `[hidden] { display: none }`, so the
+ * banner needs its own hidden rule or `banner.hidden = true` does nothing. */
+.hitl[hidden] {
+  display: none;
+}
+
+.hitl > .hitl-title {
+  font-weight: 700;
+}
+
+.hitl > .hitl-sub {
+  color: var(--fg);
+  font-size: 13px;
+}
+
+.hitl > .hitl-keys {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 0 5px;
+  background: var(--panel-2);
+}
+
+/* --- quarantine alerts (docs/modules/gui.md) ----------------------- */
+
+.alert {
+  border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent);
+  background: color-mix(in srgb, var(--warning) 10%, var(--panel));
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.alert > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.alert-title {
+  font-weight: 700;
+  color: var(--warning);
+}
+
+.alert-item {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* docs/modules/gui.md: protection nobody can see produces no trust. */
+.resting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.installs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.install {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.live {
+  max-height: 220px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.live-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.kvs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 18px;
+}
+
+.kv {
+  display: contents;
+}
+
+.kv .k {
+  color: var(--muted);
+}
+
+.kv .v {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+/* --- navigation groups --------------------------------------------------- */
+
+.nav-group {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 12px 10px 4px;
+}
+
+/* --- forms --------------------------------------------------------------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.form-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.field-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+fieldset.group {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+fieldset.group > legend {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 6px;
+}
+
+.textarea {
+  min-height: 60px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  width: 100%;
+}
+
+select.input {
+  cursor: pointer;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.editor,
+.tristate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rows > .row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.tool-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-left: 2px solid var(--line);
+  padding-left: 10px;
+}
+
+.tool-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.btn-icon {
+  padding: 4px 9px;
+  line-height: 1;
+}
+
+.panel-inset {
+  background: var(--panel-2);
+  margin: 12px 0;
+}
+
+.panel-inset > h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.form-host:empty {
+  display: none;
+}
+
+/* --- theme control -------------------------------------------------------- */
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.segmented > button {
+  background: var(--panel-2);
+  color: var(--muted);
+  border: none;
+  border-right: 1px solid var(--line);
+  padding: 6px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.segmented > button:last-child {
+  border-right: none;
+}
+
+.segmented > button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+/* --- notices ------------------------------------------------------------- */
+
+.notice-warn {
+  border-color: color-mix(in srgb, var(--warning) 50%, transparent);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+
+.warn-line {
+  color: var(--warning);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.danger-hint {
+  color: var(--danger);
+}
+
+/* --- modal (legacy overlay, still used for the non-confirm dialogs) ------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 10;
+}
+
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  width: min(640px, 100%);
+  max-height: 85vh;
+  overflow: auto;
+  padding: var(--space-6) 18px;
+  box-shadow: var(--shadow-2);
+}
+
+.modal-danger {
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+}
+
+.modal > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* --- native <dialog> confirm (docs/modules/gui.md) ----------------------- */
+
+dialog.dlg {
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  width: min(560px, calc(100vw - 48px));
+  max-height: 85vh;
+  overflow: auto;
+  padding: 18px 20px;
+  box-shadow: var(--shadow-2);
+}
+
+/* A confirm dialog that appears instantly reads as an error the user
+ * triggered rather than as a question the application is asking. The rise is
+ * short enough not to delay the answer — and the global reduced-motion rule
+ * removes it entirely for anyone who asked for that. */
+dialog.dlg[open] {
+  animation: dlg-in var(--dur) var(--ease);
+}
+
+@keyframes dlg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+dialog.dlg.danger {
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+}
+
+dialog.dlg::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+dialog.dlg > h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.dlg-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.consequences {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dlg-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.token-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  display: block;
+  word-break: break-all;
+  user-select: all;
+}
+
+
+
+
+
+
+
+
+/* What will actually be run. One line, ellipsised, full text in the title:
+ * the package name is what a reader recognises the server by, and the tail
+ * of a long flag list is not worth three lines of card. */
+
+
+
+.cat-pub {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cat-search {
+  width: 100%;
+  max-width: 420px;
+}
+
+/* --- progressive disclosure in forms ---------------------------------------
+ *
+ * Deliberately quiet: a summary that looked like a button would compete with
+ * the form's actual actions, and this is navigation, not a decision. */
+
+details.adv {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+details.adv > summary {
+  cursor: pointer;
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--text-md);
+  color: var(--muted);
+  list-style-position: inside;
+  border-radius: 8px;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+details.adv > summary:hover {
+  color: var(--fg);
+}
+
+details.adv[open] > summary {
+  border-bottom: 1px solid var(--line);
+  border-radius: 8px 8px 0 0;
+}
+
+.adv-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-5);
+}
+
+/* --- the ledger ------------------------------------------------------------
+ *
+ * Records, not cards. A deck of unequal-height cards never aligns, and the
+ * grid track is what let long tokens overflow in the first place; a row puts
+ * the one thing that differs between entries in a fixed place the eye can run
+ * down.
+ *
+ * The state spine carries TWO channels on purpose. Its colour is health — the
+ * same four hues as everywhere else. Its pattern is provenance: dashed means
+ * the definition came from somewhere that is not this machine. That second
+ * channel is not decoration; "where did this come from and has it changed" is
+ * the question this product exists to answer, and it survives a greyscale
+ * screenshot and a colour-blind reader.
+ */
+
+.ledger {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+  box-shadow: var(--shadow-1);
+}
+
+.rec {
+  display: grid;
+  grid-template-columns: 3px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 var(--space-6);
+  border-top: 1px solid var(--line-soft);
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.rec:first-child {
+  border-top: none;
+}
+
+.rec:hover {
+  background: var(--panel-2);
+}
+
+.spine {
+  align-self: stretch;
+  background: var(--faint);
+}
+
+.spine.ok,
+.spine.success {
+  background: var(--success);
+}
+
+.spine.warning {
+  background: var(--warning);
+}
+
+.spine.bad,
+.spine.danger {
+  background: var(--danger);
+}
+
+.spine.off {
+  background: var(--line);
+}
+
+/* Masked rather than over-painted. Filling the gaps with --panel looked right
+ * until the row was hovered, when the row behind it becomes --panel-2 and the
+ * dashes stop matching; punching holes lets whatever is behind show through in
+ * every state. */
+.spine.remote {
+  -webkit-mask-image: repeating-linear-gradient(to bottom, #000 0 4px, transparent 4px 7px);
+  mask-image: repeating-linear-gradient(to bottom, #000 0 4px, transparent 4px 7px);
+}
+
+.rec-body {
+  padding: var(--space-5) 0 var(--space-5) var(--space-6);
+  min-width: 0;
+}
+
+.rec-act {
+  padding: var(--space-5) var(--space-6) var(--space-5) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.rec-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.rec-name {
+  font-size: var(--text-base);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rec-desc {
+  color: var(--muted);
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A machine identifier must never be mistakable for prose. Confusing an
+ * exposed name with a raw tool name is a real hazard in this product, so
+ * every id gets the same tinted mono treatment wherever it appears. */
+.id-chip {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.rec-run {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--faint);
+  margin-top: var(--space-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The status position says something with information in it — a tool count —
+ * rather than repeating what the spine already said in colour. */
+.rec-state {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-state.ok {
+  color: var(--fg);
+}
+
+.rec-state.warning {
+  color: var(--warning);
+}
+
+.rec-state.bad,
+.rec-state.danger {
+  color: var(--danger);
+}
+
+.rec-state.off {
+  color: var(--faint);
+  font-weight: 500;
+}
+
+.rec-needs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.req {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--line));
+  color: var(--warning);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+/* A requirement that is not a credential (a browser sign-in, a count of
+ * settings) is neutral: only the thing you must go and obtain is warning-
+ * coloured. */
+.req.plain {
+  border-color: var(--line);
+  color: var(--muted);
+  font-family: var(--font-sans);
+}

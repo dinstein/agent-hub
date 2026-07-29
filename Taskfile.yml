@@ -1,0 +1,62 @@
+# GUI packaging only. The CLI belongs to the Makefile and stays there.
+#
+# WHY TWO BUILD SYSTEMS. `make ci` must remain a pure check that a Linux runner
+# can run with nothing but Go, and `make bin` must keep working if this file is
+# deleted — "the GUI is optional" is a compile-time constraint (CLAUDE.md), not
+# a preference. Packaging a .app, merging a universal binary and building a DMG
+# are none of the Makefile's business, and wails3 already knows how to do them.
+#
+# The split is therefore: Makefile owns the CLI and the checks, Taskfile owns
+# GUI packaging and calls `make bin` when it needs the CLI to put inside the
+# bundle. Nothing in the Makefile depends on this file existing.
+#
+# Run with `wails3 task <name>` (the CLI embeds the Task runner) or plain
+# `task <name>` if Task is installed.
+
+version: "3"
+
+vars:
+  # Single source of the x.y.z half — same file the Makefile reads.
+  RELEASE_VERSION:
+    sh: cat VERSION 2>/dev/null || echo 0.0.0
+  # Must match the Makefile's GIT_HASH. `git describe` is deliberately not used:
+  # once a tag exists it prefers the tag and yields "v0.1.0-7-ge993b79", which
+  # pasted after RELEASE_VERSION reads "0.2.0-v0.1.0-7-ge993b79". The hash half
+  # must be a hash — it ends up in the DMG filename and the bundle version.
+  GIT_HASH:
+    sh: echo "$(git rev-parse --short=7 HEAD 2>/dev/null || echo unknown)$(git diff --quiet 2>/dev/null || echo -dirty)"
+  VERSION: "{{.RELEASE_VERSION}}-{{.GIT_HASH}}"
+
+  APP_NAME: AgentHub
+  GUI_BIN: agenthub-gui
+  CLI_BIN: agenthub
+  GUI_PKG: ./cmd/agenthub-gui
+  DIST: dist
+
+includes:
+  common:
+    taskfile: ./build/Taskfile.common.yml
+  darwin:
+    taskfile: ./build/darwin/Taskfile.yml
+    platforms: [darwin]
+  # Not yet implemented — see build/README.md for what each one owes the
+  # layout contract before it can be enabled.
+  # windows:
+  #   taskfile: ./build/windows/Taskfile.yml
+  #   platforms: [windows]
+  # linux:
+  #   taskfile: ./build/linux/Taskfile.yml
+  #   platforms: [linux]
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  version:
+    desc: Print the version that would be stamped into a build
+    cmds:
+      - echo "{{.VERSION}}"
+    silent: true

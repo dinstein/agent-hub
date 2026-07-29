@@ -1,0 +1,82 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+      # golangci-lint must be installed BEFORE `make test`: the depguard
+      # proof test (internal/depguardtest) skips itself when the binary is
+      # absent, and a skipped proof is no proof (canonical.md §6).
+      - name: Install golangci-lint v2.12.2
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" v2.12.2
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Build
+        run: make build
+      - name: Test
+        run: make test
+      - name: Verify depguard proof was not skipped
+        run: |
+          set -o pipefail
+          go test ./internal/depguardtest/ -run TestDepguardRulesActuallyFire -count=1 -v \
+            | tee /tmp/depguardproof.log
+          if grep -q -- "--- SKIP" /tmp/depguardproof.log; then
+            echo "depguard proof test was skipped; golangci-lint missing on runner" >&2
+            exit 1
+          fi
+      - name: Lint
+        run: make lint
+
+  # The GUI job is SEPARATE from `ci` on purpose: "the GUI is optional by
+  # construction" is a compile-time property (canonical.md §7 item 3), so it
+  # must never become a prerequisite of the default build. `make ci` above
+  # still covers the untagged half of the GUI — `go test ./...` builds and
+  # tests cmd/agenthub-gui/services (the whole service body: api calls, SSE
+  # bridge, dialer) and internal/healthgen's golden test on both runners.
+  # What is left uncovered without this job is exactly the tagged shell plus
+  # the frontend, and wails v3 is an alpha whose API does change.
+  #
+  # Why macOS: on Linux, `-tags wails` pulls in pkg/application's cgo
+  # preamble (`#cgo pkg-config: gtk4 webkitgtk-6.0`), which cgo resolves
+  # during type-checking — so even `go vet` fails on a bare ubuntu runner,
+  # not just the link step. The fix would be apt-installing GTK/WebKit on
+  # every run; the macOS runner already carries the Cocoa/WebKit SDK and
+  # needs zero package installation, so the same signal costs nothing extra.
+  gui:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22.x"
+          cache: npm
+          cache-dependency-path: cmd/agenthub-gui/frontend/package-lock.json
+      # Must run first: gui_main.go embeds frontend/dist, and the directory
+      # is gitignored — every Go step below fails to load the package until
+      # the bundle exists. `npm run build` is `tsc --noEmit && vite build`.
+      - name: Frontend (typecheck + bundle)
+        run: make gui-frontend-ci
+      - name: Build the Wails-tagged binary
+        run: make gui-go
+      - name: Vet the Wails-tagged code
+        run: go vet -tags wails ./cmd/agenthub-gui/...

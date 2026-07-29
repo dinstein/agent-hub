@@ -1,0 +1,652 @@
+package cli
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"slices"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/spf13/cobra"
+
+	"github.com/dinstein/agent-hub/internal/confops"
+	"github.com/dinstein/agent-hub/internal/registry"
+)
+
+// sourceManual marks entries created interactively via the CLI (flags or
+// pasted stdin JSON), as opposed to future sources like "imported:<client>".
+const sourceManual = "manual"
+
+// ServerRow is the per-server data structure both output modes render from.
+//
+// Headers are rendered with their VALUES INTACT only because a registry
+// entry never holds a credential: values are ${SECRET_X} placeholders that
+// name a vault entry (docs/modules/controlplane.md rule 5 — no CLI surface ever echoes a
+// secret; resolution happens at connect time inside internal/downstream).
+type ServerRow struct {
+	ID        string            `json:"id"`
+	Transport string            `json:"transport"`
+	Command   string            `json:"command,omitempty"`
+	Args      []string          `json:"args,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+	Cwd       string            `json:"cwd,omitempty"`
+	URL       string            `json:"url,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	// OAuth mirrors the entry's login hints. NeedsAuth is deliberately
+	// absent: it is runtime state (a live 401), never configuration.
+	OAuth      *registry.OAuthHint `json:"oauth,omitempty"`
+	Provenance string              `json:"provenance,omitempty"`
+	// Runtime is omitted for the host default so `--json` output of a
+	// pre-M2 entry is byte-identical to what it always was.
+	Runtime string                  `json:"runtime,omitempty"`
+	Docker  *registry.DockerRuntime `json:"docker,omitempty"`
+	Enabled bool                    `json:"enabled"`
+	Source  string                  `json:"source,omitempty"`
+}
+
+// target is the connection target column: the command line for stdio, the
+// endpoint URL for the HTTP transports. A containerized entry names its
+// image first — "where does this run" is the question the column answers,
+// and for a docker-runtime server the command alone answers it wrongly.
+func (r ServerRow) target() string {
+	if r.URL != "" {
+		return r.URL
+	}
+	line := strings.TrimSpace(strings.Join(append([]string{r.Command}, r.Args...), " "))
+	if r.Runtime == registry.RuntimeDocker && r.Docker != nil {
+		return strings.TrimSpace("docker[" + r.Docker.Image + "] " + line)
+	}
+	return line
+}
+
+// ServerList is the `server ls` result. JSON shape: a plain array.
+type ServerList []ServerRow
+
+// Human renders the list as a table.
+func (l ServerList) Human(w io.Writer) error {
+	if len(l) == 0 {
+		_, err := fmt.Fprintln(w, "no servers configured")
+		return err
+	}
+	// Writes to a tabwriter only fail at Flush, which is where the error is
+	// surfaced.
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tTRANSPORT\tENABLED\tSOURCE\tTARGET")
+	for _, r := range l {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%t\t%s\t%s\n", r.ID, r.Transport, r.Enabled, r.Source, r.target())
+	}
+	return tw.Flush()
+}
+
+// AddedServers is the `server add` result.
+type AddedServers struct {
+	Added []ServerRow `json:"added"`
+}
+
+// Human renders one "added:" line per entry (docs/modules/controlplane.md example).
+func (a AddedServers) Human(w io.Writer) error {
+	for _, r := range a.Added {
+		if _, err := fmt.Fprintf(w, "added: %s (%s, source=%s)\n", r.ID, r.Transport, r.Source); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RemovedServer is the `server rm` result.
+type RemovedServer struct {
+	Removed string `json:"removed"`
+}
+
+// Human renders the removal confirmation.
+func (r RemovedServer) Human(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "removed: %s\n", r.Removed)
+	return err
+}
+
+func (a *App) newServerCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "server",
+		Aliases: []string{"servers"}, // singular canonical, plural alias (canonical.md §3)
+		Short:   "Manage downstream MCP servers",
+		Args:    cobra.ArbitraryArgs,
+		RunE:    groupRunE,
+	}
+	cmd.AddCommand(
+		a.newServerLsCmd(), a.newServerInspectCmd(), a.newServerAddCmd(), a.newServerRmCmd(),
+		a.newServerToggleCmd(true), a.newServerToggleCmd(false),
+		a.newServerTestCmd(), a.newServerLogsCmd(),
+	)
+	return cmd
+}
+
+func (a *App) newServerAddCmd() *cobra.Command {
+	var (
+		cmdPath      string
+		argv         []string
+		envKV        []string
+		cwd          string
+		url          string
+		transportOpt string
+		headerKV     []string
+		local        bool
+		fromStdin    bool
+		docker       dockerFlags
+		oauth        oauthFlags
+	)
+	cmd := &cobra.Command{
+		Use:   "add [<name>]",
+		Short: "Add a downstream MCP server (flags or pasted JSON via --stdin)",
+		Args:  rangeArgs(0, 1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := ""
+			if len(args) == 1 {
+				name = args[0]
+			}
+
+			var entries []namedEntry
+			if fromStdin {
+				if cmdPath != "" || len(argv) > 0 || len(envKV) > 0 || cwd != "" ||
+					url != "" || transportOpt != "" || len(headerKV) > 0 || local ||
+					docker.any() || oauth.any() {
+					e := Usagef("--stdin cannot be combined with the definition flags")
+					e.Hint = helpHint(cmd)
+					return e
+				}
+				data, err := io.ReadAll(a.stdin)
+				if err != nil {
+					return fmt.Errorf("read stdin: %w", err)
+				}
+				entries, err = normalizeStdin(data, name)
+				if err != nil {
+					return err
+				}
+			} else {
+				if name == "" {
+					e := Usagef("a server name argument is required (or use --stdin)")
+					e.Hint = helpHint(cmd)
+					return e
+				}
+				entry, err := entryFromFlags(cmd, addFlags{
+					command:   cmdPath,
+					args:      argv,
+					env:       envKV,
+					cwd:       cwd,
+					url:       url,
+					transport: transportOpt,
+					headers:   headerKV,
+					local:     local,
+					docker:    docker,
+					oauth:     oauth,
+				})
+				if err != nil {
+					return err
+				}
+				entries = []namedEntry{{Name: name, Entry: entry}}
+			}
+
+			// Validate BEFORE the store is opened: a rejected entry must not
+			// leave a half-written registry behind, and the operator can
+			// still fix what they typed. confops re-checks under the lock —
+			// this call only moves the refusal earlier.
+			specs := make([]confops.ServerSpec, 0, len(entries))
+			for _, ne := range entries {
+				spec := confops.ServerSpec{ID: ne.Name, Entry: ne.Entry}
+				if err := confops.ValidateServerSpec(spec); err != nil {
+					return opsError(err)
+				}
+				specs = append(specs, spec)
+			}
+
+			store, warnings, err := a.opsStore()
+			if err != nil {
+				return err
+			}
+			res, err := confops.AddServers(cmd.Context(), store, specs, noPrecondition)
+			warnings = append(warnings, res.Warnings...)
+			if err != nil {
+				return opsError(err)
+			}
+
+			result := AddedServers{Added: make([]ServerRow, 0, len(res.Servers))}
+			for _, spec := range res.Servers {
+				result.Added = append(result.Added, rowFor(spec.ID, spec.Entry))
+			}
+			return a.printer().Emit(result, warnings...)
+		},
+	}
+	cmd.Flags().StringVar(&cmdPath, "cmd", "", "executable to spawn (stdio transport)")
+	cmd.Flags().StringSliceVar(&argv, "args", nil, "comma-separated arguments for the executable")
+	cmd.Flags().StringArrayVar(&envKV, "env", nil, "environment variable KEY=VALUE (repeatable); values may use ${SECRET_X}")
+	cmd.Flags().StringVar(&cwd, "cwd", "", "working directory for the spawned server")
+	cmd.Flags().StringVar(&url, "url", "", "MCP endpoint URL (http/sse transports)")
+	cmd.Flags().StringVar(&transportOpt, "transport", "", "transport: stdio (default with --cmd), http or sse (default with --url)")
+	cmd.Flags().StringArrayVar(&headerKV, "header", nil, "HTTP header KEY=VALUE (repeatable); values may use ${SECRET_X}")
+	cmd.Flags().BoolVar(&local, "local", false,
+		"the endpoint is a local server: allow a literal loopback URL (never RFC1918)")
+	cmd.Flags().BoolVar(&fromStdin, "stdin", false,
+		`read server definition JSON from stdin ({"mcpServers":{...}} or a single entry)`)
+	cmd.Flags().StringVar(&docker.runtime, "runtime", "",
+		"where the stdio child runs: host (default) or docker")
+	cmd.Flags().StringVar(&docker.image, "image", "",
+		"container image (implies --runtime docker)")
+	cmd.Flags().StringArrayVar(&docker.mounts, "mount", nil,
+		"host directory to expose: SRC[:DST][:ro|rw] (repeatable; read-only by default)")
+	cmd.Flags().StringVar(&docker.network, "network", "",
+		"container network (default none: no network at all)")
+	cmd.Flags().StringVar(&docker.memory, "memory", "", "container memory limit, e.g. 512m")
+	cmd.Flags().StringVar(&docker.cpus, "cpus", "", "container CPU limit, e.g. 1.5")
+	cmd.Flags().StringVar(&docker.user, "container-user", "", "container user (docker --user)")
+	cmd.Flags().StringVar(&docker.workdir, "container-workdir", "", "container working directory")
+	cmd.Flags().StringArrayVar(&docker.extra, "docker-arg", nil,
+		"extra 'docker run' argument (repeatable); cannot override the isolation defaults")
+	cmd.Flags().StringVar(&oauth.issuer, "oauth-issuer", "",
+		"pin the authorization server, skipping RFC 9728 discovery")
+	cmd.Flags().StringSliceVar(&oauth.scopes, "oauth-scope", nil,
+		"OAuth scope to request (repeatable or comma-separated); sent verbatim")
+	cmd.Flags().StringVar(&oauth.resourceMetadata, "oauth-resource-metadata", "",
+		"pin the RFC 9728 protected-resource metadata URL")
+	return cmd
+}
+
+// oauthFlags is the login-hint half of `server add`. The three fields are
+// the whole of registry.OAuthHint: what a later `agenthub auth login` should
+// discover against. They are transport-independent (an stdio child may proxy
+// to a remote authorization server), so they are not part of either
+// transport's flag group.
+//
+// needsAuth is deliberately absent and stays absent: whether a server
+// currently requires authorization is runtime state, discovered by a live
+// 401, never configuration.
+type oauthFlags struct {
+	issuer           string
+	scopes           []string
+	resourceMetadata string
+}
+
+func (f oauthFlags) any() bool {
+	return f.issuer != "" || len(f.scopes) > 0 || f.resourceMetadata != ""
+}
+
+// hint builds the registry hint, or nil when no flag was given. nil rather
+// than an empty struct: an entry that was never given hints must not grow an
+// empty "oauth": {} block on disk, because that is a difference a diff shows
+// and a reader has to explain.
+func (f oauthFlags) hint() *registry.OAuthHint {
+	if !f.any() {
+		return nil
+	}
+	return &registry.OAuthHint{
+		Issuer:              strings.TrimSpace(f.issuer),
+		Scopes:              f.scopes,
+		ResourceMetadataURL: strings.TrimSpace(f.resourceMetadata),
+	}
+}
+
+// addFlags is the flag half of `server add`, grouped so the (already long)
+// RunE keeps one statement per concern.
+type addFlags struct {
+	command   string
+	args      []string
+	env       []string
+	cwd       string
+	url       string
+	transport string
+	headers   []string
+	local     bool
+	docker    dockerFlags
+	oauth     oauthFlags
+}
+
+// entryFromFlags builds one registry entry from the definition flags,
+// inferring the transport from which of --cmd / --url is present and
+// rejecting every combination that would silently ignore a flag.
+func entryFromFlags(cmd *cobra.Command, f addFlags) (registry.ServerEntry, error) {
+	var zero registry.ServerEntry
+	usage := func(format string, a ...any) error {
+		e := Usagef(format, a...)
+		e.Hint = helpHint(cmd)
+		return e
+	}
+
+	kind := f.transport
+	switch {
+	case kind == "":
+		// Inference, not magic: exactly one of the two target flags decides.
+		switch {
+		case f.url != "" && f.command != "":
+			return zero, usage("--cmd and --url are mutually exclusive; pick one transport")
+		case f.url != "":
+			kind = registry.TransportHTTP
+		case f.command != "":
+			kind = registry.TransportStdio
+		default:
+			return zero, usage("--cmd or --url is required (or use --stdin)")
+		}
+	case kind != registry.TransportStdio && kind != registry.TransportHTTP && kind != registry.TransportSSE:
+		return zero, &Error{
+			Code: CodeUnsupportedTransport, ExitCode: ExitUsage,
+			Message: fmt.Sprintf("unknown transport %q", kind),
+			Hint:    "supported transports: stdio, http (streamable-http), sse (legacy HTTP+SSE)",
+		}
+	}
+
+	entry := registry.ServerEntry{Transport: kind, Enabled: true, Source: sourceManual}
+	// Login hints are transport-independent — attached before the transport
+	// split so an stdio entry that proxies to a remote authorization server
+	// keeps them too, exactly like the pasted-JSON path does.
+	entry.OAuth = f.oauth.hint()
+	if kind == registry.TransportStdio {
+		if f.command == "" {
+			return zero, usage("the stdio transport needs --cmd")
+		}
+		if f.url != "" || len(f.headers) > 0 || f.local {
+			return zero, usage("--url/--header/--local apply to the http and sse transports only")
+		}
+		env, err := parseKVFlags("--env", f.env)
+		if err != nil {
+			return zero, err
+		}
+		entry.Command = f.command
+		entry.Args = f.args
+		entry.Env = env
+		entry.Cwd = f.cwd
+		if err := applyDockerFlags(&entry, f.docker, usage); err != nil {
+			return zero, err
+		}
+		return entry, nil
+	}
+	if f.docker.any() {
+		return zero, usage("--runtime/--image and the container flags apply to the stdio transport only")
+	}
+
+	if f.url == "" {
+		return zero, usage("the %s transport needs --url", kind)
+	}
+	if f.command != "" || len(f.args) > 0 || len(f.env) > 0 || f.cwd != "" {
+		return zero, usage("--cmd/--args/--env/--cwd apply to the stdio transport only")
+	}
+	headers, err := parseKVFlags("--header", f.headers)
+	if err != nil {
+		return zero, err
+	}
+	if err := validateEndpoint(f.url, f.local); err != nil {
+		return zero, err
+	}
+	entry.URL = f.url
+	entry.Headers = headers
+	if f.local {
+		entry.Provenance = registry.ProvenanceLocal
+	}
+	return entry, nil
+}
+
+// validateEndpoint screens an endpoint at the moment the operator can still
+// fix it. The predicate and its narrow --local exception live in confops so
+// `server add --url`, pasted stdin JSON and the control plane all refuse the
+// same set of addresses.
+func validateEndpoint(raw string, local bool) error {
+	return opsError(confops.ValidateEndpoint(raw, local))
+}
+
+func (a *App) newServerLsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "ls",
+		Short: "List configured servers",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, warnings, err := a.openStore()
+			if err != nil {
+				return err
+			}
+			snap := store.Snapshot()
+			rows := make(ServerList, 0, len(snap.Servers.V.Servers))
+			for name, doc := range snap.Servers.V.Servers {
+				rows = append(rows, rowFor(name, doc.V))
+			}
+			slices.SortFunc(rows, func(x, y ServerRow) int { return strings.Compare(x.ID, y.ID) })
+			return a.printer().Emit(rows, warnings...)
+		},
+	}
+}
+
+func (a *App) newServerRmCmd() *cobra.Command {
+	var keepCreds bool
+	cmd := &cobra.Command{
+		Use:   "rm <id>",
+		Short: "Remove a server and its stored credentials",
+		Args:  exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			store, warnings, err := a.opsStore()
+			if err != nil {
+				return err
+			}
+			opts := confops.RemoveOptions{KeepCredentials: keepCreds}
+			// The vault is opened only when it will be used: building it
+			// resolves the secrets dir, and a --keep-credentials run has no
+			// business failing on that.
+			if !keepCreds {
+				deps, derr := a.newOAuthDeps(false)
+				if derr != nil {
+					return derr
+				}
+				opts.Credentials = deps.chain
+			}
+			res, err := confops.RemoveServer(cmd.Context(), store, id, noPrecondition, opts)
+			warnings = append(warnings, res.Warnings...)
+			if err != nil {
+				return opsError(err)
+			}
+			return a.printer().Emit(RemovedServer{Removed: id}, warnings...)
+		},
+	}
+	cmd.Flags().BoolVar(&keepCreds, "keep-credentials", false,
+		"leave the server's stored credentials in the vault (they are removed by default)")
+	return cmd
+}
+
+func rowFor(name string, e registry.ServerEntry) ServerRow {
+	return ServerRow{
+		ID:         name,
+		Transport:  e.TransportName(),
+		Command:    e.Command,
+		Args:       e.Args,
+		Env:        e.Env,
+		Cwd:        e.Cwd,
+		URL:        e.URL,
+		Headers:    e.Headers,
+		OAuth:      e.OAuth,
+		Provenance: e.Provenance,
+		Runtime:    e.Runtime,
+		Docker:     e.Docker,
+		Enabled:    e.Enabled,
+		Source:     e.Source,
+	}
+}
+
+// parseKVFlags parses repeated KEY=VALUE flags (--env, --header). flag is
+// the flag name, used verbatim in the error so the message names what the
+// operator actually typed.
+func parseKVFlags(flag string, kvs []string) (map[string]string, error) {
+	if len(kvs) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(kvs))
+	for _, kv := range kvs {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || strings.TrimSpace(k) == "" {
+			return nil, Usagef("%s expects KEY=VALUE, got %q", flag, kv)
+		}
+		out[k] = v
+	}
+	return out, nil
+}
+
+// namedEntry pairs a server name with its normalized registry entry.
+type namedEntry struct {
+	Name  string
+	Entry registry.ServerEntry
+}
+
+// stdinEntry is the shape accepted per server in pasted JSON. It matches the
+// de-facto client convention ("command"/"args"/"env", optional "type") plus
+// our own field names ("transport", "cwd", "headers").
+type stdinEntry struct {
+	Type      string            `json:"type,omitempty"`
+	Transport string            `json:"transport,omitempty"`
+	Command   string            `json:"command"`
+	Args      []string          `json:"args,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+	Cwd       string            `json:"cwd,omitempty"`
+	URL       string            `json:"url,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	// OAuth carries the login hints (issuer / scopes / resource metadata
+	// pointer) for a server whose authorization server cannot be found by
+	// RFC 9728 discovery. NeedsAuth is deliberately not accepted: it is
+	// runtime state (a live 401), never configuration.
+	OAuth *registry.OAuthHint `json:"oauth,omitempty"`
+}
+
+// normalizeStdin turns pasted JSON into registry entries. Accepted shapes,
+// in order of detection (docs/modules/controlplane.md: "paste a README's mcpServers
+// fragment" is the highest-frequency action):
+//
+//  1. {"mcpServers": {"name": {...}, ...}}   client-config wrapper
+//  2. {"command": ..., ...}                  single entry (name argument required)
+//  3. {"name": {...}, ...}                   bare name->entry map
+//
+// A name argument may rename the entry only when exactly one entry is
+// present. Only stdio entries are accepted in M0. Results are sorted by name
+// for deterministic output.
+func normalizeStdin(data []byte, nameArg string) ([]namedEntry, error) {
+	invalid := func(format string, a ...any) *Error {
+		return &Error{Code: CodeInvalidJSON, ExitCode: ExitGeneral, Message: fmt.Sprintf(format, a...)}
+	}
+
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return nil, invalid("stdin is empty; expected server JSON")
+	}
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(data, &top); err != nil {
+		return nil, invalid("stdin is not a JSON object: %v", err)
+	}
+
+	rawEntries := map[string]json.RawMessage{}
+	switch {
+	case top["mcpServers"] != nil:
+		if err := json.Unmarshal(top["mcpServers"], &rawEntries); err != nil {
+			return nil, invalid(`"mcpServers" must be an object of name -> entry: %v`, err)
+		}
+	case isStringField(top, "command") || isStringField(top, "url"):
+		// Single bare entry.
+		if nameArg == "" {
+			return nil, Usagef("a server name argument is required when stdin holds a single entry")
+		}
+		rawEntries[nameArg] = json.RawMessage(data)
+	default:
+		rawEntries = top
+	}
+	if len(rawEntries) == 0 {
+		return nil, invalid("no server entries found in stdin JSON")
+	}
+	if nameArg != "" {
+		if len(rawEntries) > 1 {
+			return nil, Usagef("name argument %q conflicts with %d entries in stdin JSON", nameArg, len(rawEntries))
+		}
+		// Exactly one entry: the name argument renames it.
+		for _, v := range rawEntries {
+			rawEntries = map[string]json.RawMessage{nameArg: v}
+			break
+		}
+	}
+
+	entries := make([]namedEntry, 0, len(rawEntries))
+	for name, raw := range rawEntries {
+		if strings.TrimSpace(name) == "" {
+			return nil, invalid("server entries must have a non-empty name")
+		}
+		// DisallowUnknownFields: a key we do not model must be reported, not
+		// dropped. Silently discarding one produces the worst failure shape
+		// there is — `server add` reports success while the setting the user
+		// pasted (an "oauth" block, say) is simply absent, and the mismatch
+		// only surfaces much later as an unrelated-looking auth failure.
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		var spec stdinEntry
+		if err := dec.Decode(&spec); err != nil {
+			return nil, invalid("server %q: %v", name, err)
+		}
+		// "type" is the de-facto client-config spelling, "transport" ours;
+		// either may name the transport, and a bare "url" implies http
+		// (which is what every published remote-server snippet looks like).
+		kind := spec.Type
+		if kind == "" {
+			kind = spec.Transport
+		}
+		if kind == "" {
+			if spec.URL != "" {
+				kind = registry.TransportHTTP
+			} else {
+				kind = registry.TransportStdio
+			}
+		}
+		// Client configs spell streamable-http several ways; normalize the
+		// ones that unambiguously mean the same transport.
+		switch kind {
+		case "streamable-http", "streamableHttp", "http-stream":
+			kind = registry.TransportHTTP
+		}
+		entry := registry.ServerEntry{Transport: kind, Enabled: true, Source: sourceManual}
+		// Login hints are transport-independent: carried over before the
+		// transport switch so an stdio entry that proxies to a remote AS
+		// keeps them too.
+		entry.OAuth = spec.OAuth
+		switch kind {
+		case registry.TransportStdio:
+			if spec.Command == "" {
+				return nil, invalid("server %q: %q is required for the stdio transport", name, "command")
+			}
+			entry.Command = spec.Command
+			entry.Args = spec.Args
+			entry.Env = spec.Env
+			entry.Cwd = spec.Cwd
+		case registry.TransportHTTP, registry.TransportSSE:
+			if spec.URL == "" {
+				return nil, invalid("server %q: %q is required for the %s transport", name, "url", kind)
+			}
+			// Pasted JSON has no --local escape hatch on purpose: a snippet
+			// copied from a README must not be able to point the connector
+			// at a private address (fail-closed; `server add --url --local`
+			// is the explicit, typed-by-a-human path).
+			if err := validateEndpoint(spec.URL, false); err != nil {
+				return nil, err
+			}
+			entry.URL = spec.URL
+			entry.Headers = spec.Headers
+		default:
+			return nil, &Error{
+				Code: CodeUnsupportedTransport, ExitCode: ExitGeneral,
+				Message: fmt.Sprintf("server %q: unknown transport %q", name, kind),
+				Hint:    "supported transports: stdio, http (streamable-http), sse (legacy HTTP+SSE)",
+			}
+		}
+		entries = append(entries, namedEntry{Name: name, Entry: entry})
+	}
+	slices.SortFunc(entries, func(x, y namedEntry) int { return strings.Compare(x.Name, y.Name) })
+	return entries, nil
+}
+
+// isStringField reports whether m[key] exists and is a JSON string — used to
+// tell a single bare entry ({"command":"npx"}) apart from a name->entry map
+// (where every value is an object).
+func isStringField(m map[string]json.RawMessage, key string) bool {
+	raw, ok := m[key]
+	if !ok {
+		return false
+	}
+	var s string
+	return json.Unmarshal(raw, &s) == nil
+}

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "buckets": {
+    "*/*/*|claude-code|gh|create_issue": {
+      "tokens": 2200,
+      "updated": 1785153603000
+    },
+    "*/gh/create_issue|claude-code|gh|create_issue": {
+      "tokens": 1,
+      "updated": 1785153603000
+    }
+  }
+}
+

@@ -1,0 +1,121 @@
+# macOS packaging: universal binaries, the .app bundle, the DMG.
+#
+# UNIVERSAL. Both binaries are built once per arch and merged with lipo, so one
+# download runs natively on Intel and Apple Silicon. The alternative — shipping
+# two DMGs — pushes an architecture question onto a user who has no reason to
+# know the answer.
+#
+# SIGNING. `codesign --sign -` is ad-hoc: it satisfies the loader (an unsigned
+# binary will not run at all on Apple Silicon) but is NOT Developer ID signing
+# and is NOT notarization. Gatekeeper will still warn on first open. Doing this
+# properly needs a Developer ID certificate; until then the honest thing is a
+# bundle that runs once the user right-clicks → Open, not one that looks signed
+# and is not. `xattr -cr` removes the quarantine flag from OUR build output —
+# it does not and cannot affect what the user downloads.
+
+version: "3"
+
+vars:
+  APP_DIR: "{{.DIST}}/{{.APP_NAME}}.app"
+  MACOS_DIR: "{{.DIST}}/{{.APP_NAME}}.app/Contents/MacOS"
+  RES_DIR: "{{.DIST}}/{{.APP_NAME}}.app/Contents/Resources"
+
+tasks:
+  build:universal:
+    desc: Build GUI and CLI as universal (arm64 + amd64) binaries
+    deps: [":common:frontend"]
+    cmds:
+      - mkdir -p {{.DIST}}/tmp
+      # GUI, one per arch, then merged.
+      #
+      # CGO_ENABLED=1 is required, not incidental: the webview is Objective-C,
+      # so wails/v3/pkg/mac is cgo-only. Go disables cgo by default when GOARCH
+      # differs from the host, and the failure that produces names the import
+      # ("build constraints exclude all Go files in .../pkg/mac") rather than
+      # the cause, which sends you looking at build tags. -arch tells clang
+      # which slice to emit; without it cgo builds for the host and lipo then
+      # refuses to merge two binaries of the same architecture.
+      # main.channel=release here too, not just on the CLI below. The GUI
+      # resolves its paths through the api package, so a bundled GUI built
+      # without it would point at the DEVELOPMENT data directory while the
+      # CLI beside it in the same .app pointed at the real one.
+      - >-
+        GOOS=darwin GOARCH=arm64 CGO_ENABLED=1
+        CGO_CFLAGS="-arch arm64" CGO_LDFLAGS="-arch arm64"
+        go build -tags wails
+        -ldflags "-X main.version={{.VERSION}} -X main.channel=release"
+        -o {{.DIST}}/tmp/{{.GUI_BIN}}-arm64 {{.GUI_PKG}}
+      - >-
+        GOOS=darwin GOARCH=amd64 CGO_ENABLED=1
+        CGO_CFLAGS="-arch x86_64" CGO_LDFLAGS="-arch x86_64"
+        go build -tags wails
+        -ldflags "-X main.version={{.VERSION}} -X main.channel=release"
+        -o {{.DIST}}/tmp/{{.GUI_BIN}}-amd64 {{.GUI_PKG}}
+      - >-
+        lipo -create -output {{.DIST}}/tmp/{{.GUI_BIN}}
+        {{.DIST}}/tmp/{{.GUI_BIN}}-arm64 {{.DIST}}/tmp/{{.GUI_BIN}}-amd64
+      # CLI, same treatment. It ships inside the bundle (layout contract in
+      # build/Taskfile.common.yml) so the GUI can find its own daemon.
+      #
+      # main.channel=release is what makes the shipped binary resolve the real
+      # data directory. Omitting it defaults to dev — correct for a working
+      # tree, catastrophic inside a .dmg, where it would point every user at a
+      # sandbox and make the app look freshly installed on every launch.
+      - >-
+        GOOS=darwin GOARCH=arm64 go build
+        -ldflags "-X main.version={{.VERSION}} -X main.channel=release"
+        -o {{.DIST}}/tmp/{{.CLI_BIN}}-arm64 ./cmd/agenthub
+      - >-
+        GOOS=darwin GOARCH=amd64 go build
+        -ldflags "-X main.version={{.VERSION}} -X main.channel=release"
+        -o {{.DIST}}/tmp/{{.CLI_BIN}}-amd64 ./cmd/agenthub
+      - >-
+        lipo -create -output {{.DIST}}/tmp/{{.CLI_BIN}}
+        {{.DIST}}/tmp/{{.CLI_BIN}}-arm64 {{.DIST}}/tmp/{{.CLI_BIN}}-amd64
+
+  bundle:
+    desc: Assemble the .app bundle
+    deps: [build:universal]
+    cmds:
+      - rm -rf {{.APP_DIR}}
+      - mkdir -p {{.MACOS_DIR}} {{.RES_DIR}}
+      # Both binaries, side by side. See the layout contract.
+      - cp {{.DIST}}/tmp/{{.GUI_BIN}} {{.MACOS_DIR}}/{{.GUI_BIN}}
+      - cp {{.DIST}}/tmp/{{.CLI_BIN}} {{.MACOS_DIR}}/{{.CLI_BIN}}
+      - chmod +x {{.MACOS_DIR}}/{{.GUI_BIN}} {{.MACOS_DIR}}/{{.CLI_BIN}}
+      # CFBundleShortVersionString must be a plain x.y.z — Finder rejects the
+      # -hash suffix — while CFBundleVersion carries the full build identity.
+      - >-
+        sed -e 's|{{"{{"}}\.Version{{"}}"}}|{{.VERSION}}|g'
+        -e 's|{{"{{"}}\.ShortVersion{{"}}"}}|{{.RELEASE_VERSION}}|g'
+        build/darwin/Info.plist > {{.APP_DIR}}/Contents/Info.plist
+      - cp build/darwin/icons.icns {{.RES_DIR}}/icons.icns 2>/dev/null || true
+      - echo "APPL????" > {{.APP_DIR}}/Contents/PkgInfo
+
+  sign:
+    desc: Ad-hoc sign the bundle and clear quarantine
+    deps: [bundle]
+    cmds:
+      - codesign --force --deep --sign - {{.APP_DIR}}
+      - xattr -cr {{.APP_DIR}}
+      # Fails loudly if the signature did not take: an unsigned bundle will not
+      # launch on Apple Silicon, and finding that out from a user is worse.
+      - codesign --verify --verbose {{.APP_DIR}}
+
+  dmg:
+    desc: Build the distributable DMG
+    deps: [sign]
+    cmds:
+      - rm -f {{.DMG}}
+      - >-
+        hdiutil create -volname "{{.APP_NAME}}"
+        -srcfolder {{.APP_DIR}} -ov -format UDZO {{.DMG}}
+      - rm -rf {{.DIST}}/tmp
+      - echo "built {{.DMG}}"
+    vars:
+      DMG: "{{.DIST}}/{{.APP_NAME}}-{{.VERSION}}-macos-universal.dmg"
+
+  package:
+    desc: Full macOS release build (DMG)
+    cmds:
+      - task: dmg
