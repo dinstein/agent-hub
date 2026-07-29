@@ -18,12 +18,13 @@
 // 409. Pages read the generation from the same call that gave them the data
 // (ServerDetail, ProfileList, GovernanceList, ...) and hand it straight back.
 
-import { Call, Clipboard, Events } from "@wailsio/runtime";
+import { Browser, Call, Clipboard, Events } from "@wailsio/runtime";
 import type {
   Approval,
   ApprovalDecision,
   AuditRecord,
   AuthLoggedOut,
+  AuthLogin,
   AuthRefreshed,
   AuthStatus,
   CallError,
@@ -234,12 +235,25 @@ export const hub = {
     call<ClientConnection>("ConnectClient", client, req),
   disconnectClient: (client: string) => call<ClientDisconnected>("DisconnectClient", client),
 
-  // -- OAuth credentials (non-interactive half only) ------------------------
+  // -- OAuth credentials ----------------------------------------------------
   authStatus: (server: string) => call<AuthStatus[]>("AuthStatus", server),
   refreshAuth: (server: string) => call<AuthRefreshed>("AuthRefresh", server),
   /** Removes the credential FROM THIS MACHINE; it does not revoke it at the
    *  provider — agenthub cannot promise that. */
   logoutAuth: (server: string) => call<AuthLoggedOut>("AuthLogout", server),
+  /** Starts an interactive login. It returns BEFORE there is anything to show
+   *  — choosing between the device and loopback flows needs the authorization
+   *  server's metadata — so the caller polls `loginStatus` until the session
+   *  is actionable, then opens whatever it carries.
+   *
+   *  Starting one for a server that already has a login running returns THAT
+   *  session, so a double-clicked button cannot open two browser dances. */
+  startLogin: (server: string) => call<AuthLogin>("AuthLoginStart", server),
+  loginStatus: (id: string) => call<AuthLogin>("AuthLogin", id),
+  /** Stops the WAIT, not the authorization: a consent already granted at the
+   *  provider stays granted, and a login that had already stored a credential
+   *  keeps it. */
+  cancelLogin: (id: string) => call<AuthLogin>("AuthLoginCancel", id),
 
   // -- sessions / approvals / audit -----------------------------------------
   listSessions: () => call<SessionInfo[]>("ListSessions"),
@@ -314,6 +328,28 @@ export function on<T>(name: string, cb: (data: T) => void): () => void {
     const data = Array.isArray(ev.data) ? ev.data[0] : ev.data;
     cb(data as T);
   });
+}
+
+/**
+ * Opens a URL in the user's real browser.
+ *
+ * This is the frontend's half of an interactive login: the daemon returns the
+ * authorization URL rather than visiting it, because it may be headless and
+ * may not be where the user is sitting — this window is.
+ *
+ * It goes through the HOST browser, never `window.open` and never a
+ * navigation: an authorization page rendered inside the application's own
+ * webview would be agenthub asking for the user's provider password in a
+ * window agenthub controls, which is the exact shape of a credential-phishing
+ * screen and defeats every visual check the user has (the address bar, the
+ * lock, the password manager's origin match).
+ *
+ * Failure is reported, never swallowed. A login whose browser never opened
+ * looks identical to one the user has not got round to approving yet, and the
+ * caller has a deadline counting down on screen either way.
+ */
+export async function openExternal(url: string): Promise<void> {
+  await Browser.OpenURL(url);
 }
 
 /** Copies text through the host clipboard, falling back to the DOM API when

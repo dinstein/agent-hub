@@ -647,6 +647,39 @@ tbody tr:hover {
   color: var(--bg);
 }
 
+/* --- the interactive login -------------------------------------------------
+ *
+ * The device flow's user code is the one string in this application a person
+ * has to retype into a DIFFERENT window, usually while looking back and forth.
+ * So it gets the treatment a confirmation code needs and nothing else here
+ * does: large, monospaced, and letter-spaced so O/0 and I/l are separable at a
+ * glance rather than after a failed attempt.
+ */
+.login {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 22rem;
+}
+
+.login-code {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.login-code code {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  user-select: all;
+}
+
 /* --- the switch ------------------------------------------------------------
  *
  * A switch is a CONTROL, so its "on" colour is the ink accent and NOT

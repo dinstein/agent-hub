@@ -252,11 +252,6 @@ func (h *Hub) AuthStatus(ctx context.Context, server string) ([]api.AuthStatus, 
 // this call adopted its result: a SUCCESS with a different provenance, not a
 // race lost. Refreshing anyway would burn the refresh token the other writer
 // just stored.
-//
-// SCOPE LIMIT (docs/modules/controlplane.md): there is no interactive
-// login here. The loopback callback needs a local browser and a random port —
-// a second, easily-broken path with little to show for it — so an initial
-// authorization is `agenthub auth login --device` or `--manual` in the CLI.
 func (h *Hub) AuthRefresh(ctx context.Context, server string) (api.AuthRefreshed, error) {
 	return call(ctx, h, func(c *api.Client) (api.AuthRefreshed, error) {
 		return c.Auth.Refresh(ctx, server)
@@ -269,5 +264,38 @@ func (h *Hub) AuthRefresh(ctx context.Context, server string) (api.AuthRefreshed
 func (h *Hub) AuthLogout(ctx context.Context, server string) (api.AuthLoggedOut, error) {
 	return call(ctx, h, func(c *api.Client) (api.AuthLoggedOut, error) {
 		return c.Auth.Logout(ctx, server)
+	})
+}
+
+// AuthLoginStart begins an interactive login and returns before there is
+// anything to show: picking a mode needs the authorization server's metadata.
+// The frontend polls AuthLogin until the session is actionable.
+//
+// THE FRONTEND OPENS THE BROWSER, not this process and not the daemon. The
+// daemon may be headless; this window is where the user actually is. Three
+// separate calls rather than one composite, because a composite the CLI
+// cannot perform would be a GUI privilege — the property bridge.ts exists to
+// keep true.
+func (h *Hub) AuthLoginStart(ctx context.Context, server string) (api.AuthLogin, error) {
+	return call(ctx, h, func(c *api.Client) (api.AuthLogin, error) {
+		return c.Auth.StartLogin(ctx, server)
+	})
+}
+
+// AuthLogin reads one login session. A session that FAILED is a successful
+// read: the phase says so and the reason is on the struct. Only an id naming
+// no session at all is an error.
+func (h *Hub) AuthLogin(ctx context.Context, id string) (api.AuthLogin, error) {
+	return call(ctx, h, func(c *api.Client) (api.AuthLogin, error) {
+		return c.Auth.Login(ctx, id)
+	})
+}
+
+// AuthLoginCancel abandons a running login. It stops the WAIT, not the
+// authorization: a consent already granted at the provider stays granted, and
+// a login that had already stored a credential keeps it.
+func (h *Hub) AuthLoginCancel(ctx context.Context, id string) (api.AuthLogin, error) {
+	return call(ctx, h, func(c *api.Client) (api.AuthLogin, error) {
+		return c.Auth.CancelLogin(ctx, id)
 	})
 }

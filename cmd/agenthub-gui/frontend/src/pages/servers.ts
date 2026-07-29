@@ -30,7 +30,7 @@
 // resolves is "Test connection", which makes a REAL call — the vault has no
 // read path and this page must not grow one.
 
-import { EVT, hub, on } from "../bridge";
+import { EVT, hub, on, openExternal } from "../bridge";
 import { chip, chipRow, clear, el, emptyState, loadingState, section } from "../dom";
 import { AdminState, HealthAction, HealthLevel } from "../generated/health";
 import type { Page } from "../page";
@@ -43,6 +43,7 @@ import {
   cliHint,
   confirmAction,
   controls,
+  copyButton,
   field,
   formHost,
   group,
@@ -55,6 +56,7 @@ import {
   toggleSwitch,
 } from "../ui";
 import type {
+  AuthLogin,
   DockerMount,
   DockerRuntime,
   Health,
@@ -66,7 +68,7 @@ import type {
   ServerTestResult,
   TopicEvent,
 } from "../types";
-import { Provenance, Runtime, Transport } from "../types";
+import { LoginMode, LoginPhase, Provenance, Runtime, Transport } from "../types";
 
 // ---------------------------------------------------------------------------
 // Equivalent CLI commands (docs/modules/gui.md)
@@ -783,6 +785,204 @@ export function serversPage(): Page {
     }
   }
 
+  // -- the interactive login -------------------------------------------------
+
+  /** How often the login session is polled. Fast enough that the browser
+   *  opens without a visible pause, slow enough not to be a busy loop against
+   *  a socket that is also carrying the rest of the page. */
+  const LOGIN_POLL_MS = 700;
+
+  const sleep = (ms: number): Promise<void> =>
+    new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  /** The host of a URL, for a sentence that names where the user is being
+   *  sent without pasting a 400-character authorization URL into prose. */
+  function hostOf(raw: string): string {
+    try {
+      return new URL(raw).host;
+    } catch {
+      return raw;
+    }
+  }
+
+  /**
+   * Signs in to one server, for real.
+   *
+   * This replaces a modal whose entire content was "the GUI cannot do this,
+   * run `agenthub auth login` in a terminal" — in an application whose premise
+   * is that clients never handle credentials.
+   *
+   * THE SHAPE OF THE WAIT. The daemon runs the flow and this window polls it.
+   * Nothing is shown for the first moment on purpose: choosing between the
+   * device and loopback flows needs the authorization server's metadata, so
+   * there is genuinely nothing to say yet, and inventing a mode before the
+   * daemon has picked one would be a guess the user then has to unlearn.
+   *
+   * THE BROWSER IS OPENED BY US, through the HOST browser. An authorization
+   * page rendered inside this webview would be agenthub asking for a
+   * provider password in a window agenthub controls — the exact shape of a
+   * phishing screen, and it takes away every check the user has (address bar,
+   * lock, the password manager refusing to fill a wrong origin).
+   *
+   * CLOSING THE WINDOW CANCELS THE WAIT AND NOTHING ELSE. A consent already
+   * granted at the provider stays granted and a credential already stored is
+   * kept; this is the same caveat every cancellable surface here carries.
+   */
+  async function login(id: string): Promise<void> {
+    const body = el("div", { class: "login" });
+    let session = "";
+    let stopped = false;
+    // Set the moment the session reaches a terminal phase. Closing the window
+    // afterwards must not send a cancel: the daemon answers it correctly
+    // (cancelling a finished login keeps its result), but asking to abandon
+    // something that already succeeded is a question with no right answer, and
+    // a round trip that exists only because of the order this code runs in.
+    let finished = false;
+    let openedURL = "";
+
+    const close = openModal(`Authenticate ${id}`, [body], {
+      onClose: () => {
+        stopped = true;
+        if (session && !finished) {
+          // Best effort: the window is already gone, and a failure to cancel
+          // costs a session that expires on its own a few minutes later.
+          void hub.cancelLogin(session).catch(() => undefined);
+        }
+      },
+    });
+
+    const show = (...nodes: (Node | null)[]): void => {
+      clear(body);
+      body.append(...nodes.filter((n): n is Node => n !== null));
+    };
+
+    /** The equivalent command, on every state of this dialog — the same rule
+     *  every other action on this page follows. */
+    const equivalent = (): HTMLElement => cliHint(`agenthub auth login ${shellArg(id)}`);
+
+    const remaining = (deadline: number | undefined): Node | null => {
+      if (!deadline) return null;
+      const left = Math.max(0, deadline * 1000 - Date.now());
+      const mins = Math.floor(left / 60000);
+      const secs = Math.floor((left % 60000) / 1000);
+      return el("p", {
+        class: "hint",
+        text: `This sign-in expires in ${mins}:${String(secs).padStart(2, "0")}.`,
+      });
+    };
+
+    show(el("p", { class: "muted", text: `Contacting ${id}…` }), equivalent());
+
+    try {
+      const started = await hub.startLogin(id);
+      session = started.id;
+    } catch (err) {
+      show(failureBox(err), equivalent());
+      return;
+    }
+
+    for (;;) {
+      if (stopped) return;
+      let st: AuthLogin;
+      try {
+        st = await hub.loginStatus(session);
+      } catch (err) {
+        show(failureBox(err), equivalent());
+        return;
+      }
+      if (stopped) return;
+
+      if (st.phase === LoginPhase.Complete) {
+        finished = true;
+        close();
+        await draw();
+        slot.say(
+          `Signed in to ${id}.` +
+            (st.has_refresh_token
+              ? " agenthub will renew it on its own from here."
+              : " The provider issued no refresh token, so this will need signing in again when it expires."),
+        );
+        return;
+      }
+
+      if (st.phase === LoginPhase.Failed) {
+        finished = true;
+        show(
+          el("div", { class: "error" }, [
+            el("strong", { text: st.error || "The sign-in did not complete." }),
+            st.hint ? el("span", { class: "hint", text: st.hint }) : null,
+          ]),
+          el("p", {
+            class: "hint",
+            text: "Nothing was stored. The server is unchanged and can be signed in to again.",
+          }),
+          controls(
+            button("Try again", "btn btn-primary", () => {
+              close();
+              void login(id);
+            }),
+            button("Close", "btn btn-secondary", () => close()),
+          ),
+          equivalent(),
+        );
+        return;
+      }
+
+      // Still pending. Two shapes, and a third for "the daemon has not
+      // decided yet" — which is a real state and not a spinner over nothing.
+      if (st.mode === LoginMode.Device && st.user_code) {
+        const target = st.verification_uri_complete || st.verification_uri || "";
+        show(
+          el("p", { text: `Open ${hostOf(target)} and enter this code:` }),
+          el("div", { class: "login-code" }, [
+            el("code", { text: st.user_code }),
+            copyButton(() => st.user_code ?? "", "Copy"),
+          ]),
+          controls(
+            button("Open the page", "btn btn-primary", () => {
+              void openExternal(target).catch((err) => {
+                body.prepend(failureBox(err));
+              });
+            }),
+          ),
+          el("p", { class: "hint", text: "This window notices on its own once you have approved it." }),
+          remaining(st.deadline),
+          equivalent(),
+        );
+      } else if (st.mode === LoginMode.Loopback && st.authorization_url) {
+        // Opened once, not on every poll: re-opening a tab every 700ms would
+        // bury the user's browser in identical consent screens.
+        if (openedURL !== st.authorization_url) {
+          openedURL = st.authorization_url;
+          void openExternal(st.authorization_url).catch((err) => {
+            body.prepend(failureBox(err));
+          });
+        }
+        const url = st.authorization_url;
+        show(
+          el("p", { text: `Your browser is opening ${hostOf(url)}. Approve the request there.` }),
+          controls(
+            button("Open it again", "btn", () => {
+              void openExternal(url).catch((err) => {
+                body.prepend(failureBox(err));
+              });
+            }),
+            copyButton(() => url, "Copy the link"),
+          ),
+          el("p", { class: "hint", text: "This window notices on its own once you have approved it." }),
+          remaining(st.deadline),
+          equivalent(),
+        );
+      } else {
+        show(
+          el("p", { class: "muted", text: "Working out how this provider signs you in…" }),
+          equivalent(),
+        );
+      }
+      await sleep(LOGIN_POLL_MS);
+    }
+  }
+
   // -- the five status shapes (docs/modules/gui.md) -------------------------
 
   function dot(tone: string, extra = ""): HTMLElement {
@@ -804,25 +1004,10 @@ export function serversPage(): Page {
       ]);
     }
 
-    // needs-auth: the status position BECOMES the action. Interactive login
-    // is a CLI flow (there is no control-plane endpoint for the browser
-    // dance), so the button hands over the exact command rather than
-    // pretending to start it.
+    // needs-auth: the status position BECOMES the action, and the action now
+    // signs the user in rather than handing them a command to go and type.
     if (s.health.action === HealthAction.Login) {
-      const authenticate = button("Authenticate", "btn btn-primary", () => {
-        openModal(`Authenticate ${s.id}`, [
-          el("p", {
-            text:
-              "Signing in opens a browser and waits for the redirect, which is a terminal flow — " +
-              "the GUI has no endpoint that can do it. Run this, then come back:",
-          }),
-          cliHint(`agenthub auth login ${shellArg(s.id)}`),
-          el("p", {
-            class: "hint",
-            text: "Refreshing and logging out do not need a browser and are on the Auth page.",
-          }),
-        ]);
-      });
+      const authenticate = button("Authenticate", "btn btn-primary", () => void login(s.id));
       return el("div", { class: "srv-status" }, [
         el("div", { class: "state-line" }, [dot("warning"), authenticate]),
         s.health.summary

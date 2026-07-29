@@ -778,6 +778,57 @@ export interface AuthLoggedOut {
   server: string;
 }
 
+/** Phases of AuthLogin.phase. */
+export const LoginPhase = {
+  Pending: "pending",
+  Complete: "complete",
+  Failed: "failed",
+} as const;
+
+/** Interactive modes of AuthLogin.mode. */
+export const LoginMode = {
+  /** The frontend opens authorization_url; the daemon catches the redirect. */
+  Loopback: "loopback",
+  /** The frontend shows user_code and verification_uri; the daemon polls. */
+  Device: "device",
+} as const;
+
+/**
+ * One interactive login session.
+ *
+ * RED LINE, as everywhere: no access token, no refresh token, no authorization
+ * code and no device code. `user_code` is the short string the human types
+ * into the provider's own site and is meant to be displayed; the device code
+ * polled with has no field here.
+ *
+ * THE FRONTEND OPENS THE BROWSER. `authorization_url` is returned rather than
+ * visited, because the daemon may be headless, may have been started by a
+ * service manager with no session to draw into, and may not be where the user
+ * is sitting. A page that renders it and waits will wait forever.
+ */
+export interface AuthLogin {
+  id: string;
+  server: string;
+  phase: string;
+  /** Empty until the flow has chosen: that needs the authorization server's
+   *  metadata, so the first poll commonly has none. */
+  mode?: string;
+  authorization_url?: string;
+  verification_uri?: string;
+  verification_uri_complete?: string;
+  user_code?: string;
+  /** When the SESSION gives up, in Unix seconds. Not the credential's expiry. */
+  deadline?: number;
+  issuer?: string;
+  scope?: string;
+  /** Unix seconds; 0 means the provider advertised no expiry — "never
+   *  expires", NOT "expired". */
+  token_expires_at?: number;
+  has_refresh_token?: boolean;
+  error?: string;
+  hint?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Sessions / approvals / audit
 // ---------------------------------------------------------------------------
