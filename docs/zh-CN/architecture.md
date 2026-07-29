@@ -393,7 +393,7 @@ Linux CI runner 上没有。Wails 代码全部在 `//go:build wails` 之后，�
 
 CI 覆盖分两层：不带标签的那一半（`services` 服务体、`internal/healthgen` 的 golden）
 本来就在 `make test` 的 `go test ./...` 里，双矩阵都跑；带 `wails` 标签的壳与前端由
-**独立的 `gui` job** 覆盖（`make gui-frontend-ci` + `make gui-go` + `go vet -tags wails`），
+**独立的 `gui` job** 覆盖（`make gui-frontend-ci` + `make gui-go` + `make gui-vet`），
 跑在 macos runner 上——Linux 上 `-tags wails` 会在 cgo 前导（`pkg-config: gtk4
 webkitgtk-6.0`）就失败，连 `go vet` 都过不去，而 macOS runner 自带 Cocoa/WebKit SDK，
 不需要装任何包。这个 job 刻意**不在** `make ci` 里：「GUI 非必须」是编译期性质，
