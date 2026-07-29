@@ -2,6 +2,7 @@ package skills
 
 import (
 	"encoding/json"
+	"slices"
 	"time"
 )
 
@@ -266,10 +267,5 @@ func (s *SkillSelector) selects(id string) bool {
 	if s == nil || s.Allow == nil {
 		return true
 	}
-	for _, a := range s.Allow {
-		if a == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.Allow, id)
 }

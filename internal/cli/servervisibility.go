@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -114,12 +115,7 @@ func profileIncludesServer(p registry.Profile, id string) bool {
 	if p.Servers == nil {
 		return true
 	}
-	for _, s := range p.Servers {
-		if s == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.Servers, id)
 }
 
 // profileReaches resolves one binding to a yes/no for this server, in the

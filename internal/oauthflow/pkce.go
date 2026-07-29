@@ -3,6 +3,7 @@ package oauthflow
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"slices"
 )
 
 // ChallengeMethodS256 is the only code_challenge_method this package will
@@ -62,10 +63,5 @@ func SupportsS256(md *AuthServerMetadata) bool {
 	if md == nil || len(md.CodeChallengeMethodsSupported) == 0 {
 		return true
 	}
-	for _, m := range md.CodeChallengeMethodsSupported {
-		if m == ChallengeMethodS256 {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(md.CodeChallengeMethodsSupported, ChallengeMethodS256)
 }
