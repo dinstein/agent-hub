@@ -126,6 +126,35 @@ there would block a legitimate rule written ahead of the first connection.
 **Verification.** A test that sets `--only ghost_tool` against a server with a populated cache must
 come back with a warning naming `ghost_tool`, and must still store the rule.
 
+### 4. A credential change reaches a live connection only via a 401, never by being announced
+
+**Symptom.** `agenthub auth login <server>` on a server that is **already enabled** writes the vault and
+nothing else. The registry is untouched, so no watcher event and no `LinkEventRegistry` frame fires; and
+even if one did, `syncServers`' `specEqual` (`internal/gateway/hotreload.go:236`) compares
+ID/Kind/Command/Cwd/URL/Derive/Provenance/Args/Env/Headers/Docker — **credentials are structurally
+invisible to the diff**, so it would produce no reconnect. `enableAfterLogin`
+(`internal/cli/auth.go:87`) returns early for an enabled server, which is why the documented
+`add` → `login` flow works at all: it flips the enabled bit, and *that* is a registry write.
+
+**What is already handled.** The two fixes in `internal/downstream/httpauth.go` mean a live connection
+now recovers on its own: a vault miss is not cached, and a 401/403 re-reads the vault before renewing. So
+the reported failure — a newly authorized server that 401s until the gateway restarts — is closed.
+
+**What remains.** Recovery is still *reactive*. A credential that is **rotated** (the vault's value
+replaced while the old one is still cached and still accepted) is not picked up until the downstream
+rejects the old token. That is correct but late, and it means the daemon's proactive refresher
+(`internal/daemon/oauth.go:50`) — which rewrites the vault every 60s — cannot deliver its work to a live
+connection ahead of a rejection.
+
+**Next step.** Give the credential store the announcement plane the registry already has: an event
+published on vault write (`credential.changed`, keyed by server id) that the gateway subscribes to and
+turns into a cache invalidation on the matching round tripper. Note this is a **new plane**, not a
+widening of `specEqual` — putting credentials into the spec diff would make them part of the registry's
+comparison surface, and the registry must never hold a secret.
+
+**Verification.** With a connection live and its token cached and accepted, write a new value to the
+vault; the next request must carry it **without** the downstream having issued a 401 first.
+
 ---
 
 ## Appendix: how these gaps were found

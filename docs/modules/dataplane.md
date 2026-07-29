@@ -211,6 +211,25 @@ repository that repeats a non-idempotent call, and the justification is: the 401
 request is only rebuilt when `GetBody` makes it replayable. An explicitly configured `Authorization` header
 always beats a vault credential.
 
+**The token cache is per connection, and it must never outlive the vault's version of the truth.** The
+credential is read once and held for the life of the round tripper — the alternative is a keychain round trip
+on macOS for every single request. But the writers of that vault are *other processes*: `agenthub auth login`,
+and the daemon's proactive refresher, neither of which holds a handle on a live round tripper. Nor can the
+registry hot-reload plane help, because `specEqual` compares URL/args/env/headers and credentials are invisible
+to it — a vault write produces no diff and no reconnect. So the cache has two rules, and each is pinned by its
+own test:
+
+- **A miss is never cached.** Only a hit sets `loaded`. A server enabled before its credential existed
+  (`server add` → `server enable` → `auth login`) would otherwise hold the empty string forever, and on a
+  server that answers anonymously no 401 would ever arrive to correct it.
+- **A 401/403 re-reads the vault before renewing.** The rejected credential is often just this connection's
+  stale copy. A read burns no refresh token and prompts nobody, so it is tried first; the `tok != stale` guard
+  is what keeps it from swallowing the genuine renewal path, since re-reading the same rejected value proves
+  the vault holds nothing newer and the OAuth grant still runs.
+
+The failure this prevents is the expensive kind to diagnose: the gateway lists the server, and every call to
+it 401s until the process is restarted.
+
 ### Current wiring status
 
 `internal/gateway` uses only three `Deps` fields — `Log` / `Dial` / `ConnectTimeout` — and `specsFromSnapshot`
