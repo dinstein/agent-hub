@@ -1,11 +1,12 @@
 package downstream
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -507,11 +508,8 @@ func (p *Pool) Instances() []InstanceInfo {
 	}
 	p.mu.Unlock()
 
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].ServerID != out[j].ServerID {
-			return out[i].ServerID < out[j].ServerID
-		}
-		return out[i].Key < out[j].Key
+	slices.SortFunc(out, func(a, b InstanceInfo) int {
+		return cmp.Or(cmp.Compare(a.ServerID, b.ServerID), cmp.Compare(a.Key, b.Key))
 	})
 	return out
 }

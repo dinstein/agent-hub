@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -318,7 +318,7 @@ func (c *Chain) List(_ context.Context) ([]Ref, error) {
 	for k := range keys {
 		sorted = append(sorted, k)
 	}
-	sort.Strings(sorted)
+	slices.Sort(sorted)
 	refs := make([]Ref, 0, len(sorted))
 	for _, k := range sorted {
 		ref, err := ParseStorageKey(k)

@@ -1,9 +1,10 @@
 package integrity
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 )
 
@@ -461,7 +462,7 @@ func (s *ApprovalStore) BaselineTrust(ctx context.Context, server string) ([]App
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Tool < out[j].Tool })
+	slices.SortFunc(out, func(a, b ApprovalRecord) int { return cmp.Compare(a.Tool, b.Tool) })
 	return out, nil
 }
 
@@ -558,6 +559,6 @@ func (s *ApprovalStore) ListServer(ctx context.Context, server string) ([]Approv
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Tool < out[j].Tool })
+	slices.SortFunc(out, func(a, b ApprovalRecord) int { return cmp.Compare(a.Tool, b.Tool) })
 	return out, nil
 }

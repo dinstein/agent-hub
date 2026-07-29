@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -193,7 +193,7 @@ func saveKeyRegistry(path string, keys []string) error {
 		seen[k] = struct{}{}
 		out = append(out, k)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	data, err := json.MarshalIndent(keyRegistryDoc{Version: 1, Keys: out}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("secrets: encode key registry: %w", err)

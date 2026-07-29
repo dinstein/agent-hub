@@ -1,9 +1,10 @@
 package integrity
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 )
 
@@ -142,7 +143,7 @@ func (s *PinStore) CheckServer(ctx context.Context, server string, tools []ToolS
 			}
 		}
 
-		sort.Slice(drifts, func(i, j int) bool { return drifts[i].Tool < drifts[j].Tool })
+		slices.SortFunc(drifts, func(a, b Drift) int { return cmp.Compare(a.Tool, b.Tool) })
 
 		if !dirty {
 			return nil

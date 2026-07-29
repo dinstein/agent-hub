@@ -12,7 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -604,7 +604,7 @@ func (a *App) renderLogLine(raw string, filter logFilter) {
 		}
 		extras = append(extras, fmt.Sprintf("%s=%v", k, v))
 	}
-	sort.Strings(extras)
+	slices.Sort(extras)
 	if len(extras) > 0 {
 		b.WriteString(" | ")
 		b.WriteString(strings.Join(extras, " "))

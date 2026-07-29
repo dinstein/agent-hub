@@ -1,10 +1,11 @@
 package gateway
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -112,8 +113,8 @@ func (g *gateway) connDiagnosis() string {
 	if len(failed) == 0 && len(connecting) == 0 {
 		return ""
 	}
-	sort.Slice(failed, func(i, j int) bool { return failed[i].ID < failed[j].ID })
-	sort.Slice(connecting, func(i, j int) bool { return connecting[i].ID < connecting[j].ID })
+	slices.SortFunc(failed, func(a, b ctlapi.GatewayServerState) int { return cmp.Compare(a.ID, b.ID) })
+	slices.SortFunc(connecting, func(a, b ctlapi.GatewayServerState) int { return cmp.Compare(a.ID, b.ID) })
 
 	var b strings.Builder
 	if len(failed) > 0 {

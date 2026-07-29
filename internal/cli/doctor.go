@@ -11,7 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -417,7 +417,7 @@ func (d *doctorRun) checkRetiredProjectBindings() {
 	if len(stale) == 0 {
 		return // nothing configured: no finding, and no noise either
 	}
-	sort.Strings(stale)
+	slices.Sort(stale)
 	d.add("scope:projects", StatusWarn, fmt.Sprintf(
 		"clients.json still carries per-project bindings (%s); that layer was retired and the "+
 			"block no longer applies, so a rule written to narrow one checkout is now inert "+
@@ -494,7 +494,7 @@ func (d *doctorRun) checkQuarantinedDocs(regDir string) {
 	for _, m := range matches {
 		names = append(names, filepath.Base(m))
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	d.add("registry:quarantined", StatusWarn, fmt.Sprintf(
 		"%d registry document(s) were unreadable and set aside, and the working copy was reset: %s",
 		len(names), strings.Join(names, ", "))).Fix =

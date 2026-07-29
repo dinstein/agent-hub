@@ -5,7 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"path/filepath"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -307,7 +307,7 @@ func (r *refresher) servers() []string {
 		}
 		ids = append(ids, id)
 	}
-	sort.Strings(ids)
+	slices.Sort(ids)
 	return ids
 }
 

@@ -1,6 +1,7 @@
 package httpbridge
 
 import (
+	"cmp"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -10,7 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -274,7 +275,7 @@ func (s *Store) List() ([]Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(f.Tokens, func(i, j int) bool { return f.Tokens[i].Name < f.Tokens[j].Name })
+	slices.SortFunc(f.Tokens, func(a, b Token) int { return cmp.Compare(a.Name, b.Name) })
 	return f.Tokens, nil
 }
 
@@ -361,7 +362,7 @@ func (s *Store) transact(ctx context.Context, fn func(*tokensFile) error) error 
 	if err := fn(f); err != nil {
 		return err
 	}
-	sort.Slice(f.Tokens, func(i, j int) bool { return f.Tokens[i].Name < f.Tokens[j].Name })
+	slices.SortFunc(f.Tokens, func(a, b Token) int { return cmp.Compare(a.Name, b.Name) })
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return fmt.Errorf("httpbridge: encoding tokens: %w", err)
@@ -411,6 +412,6 @@ func normalizeServers(in []string) []string {
 		seen[s] = true
 		out = append(out, s)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }

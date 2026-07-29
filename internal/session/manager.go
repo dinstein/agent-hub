@@ -1,12 +1,13 @@
 package session
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -252,7 +253,7 @@ func (m *MemoryManager) List() []Info {
 	for i, s := range sessions {
 		out[i] = s.info()
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	slices.SortFunc(out, func(a, b Info) int { return cmp.Compare(a.ID, b.ID) })
 	return out
 }
 

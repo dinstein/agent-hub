@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -399,7 +399,7 @@ func auditSegments(logsDir string) []string {
 	if err != nil {
 		return nil
 	}
-	sort.Strings(matches)
+	slices.Sort(matches)
 	return matches
 }
 
