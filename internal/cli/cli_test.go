@@ -52,11 +52,18 @@ func runCLIReleaseHelp(t *testing.T, stdin string, args ...string) (int, string,
 // setDataDir points AGENTHUB_DATA_DIR at a fresh temp dir (proving the
 // override is honored end-to-end via internal/platform) and neutralizes any
 // ambient AGENTHUB_REGISTRY override.
+//
+// It also moves $HOME somewhere empty. `client ls` reads the client
+// configuration files it finds, and the developer running these tests has
+// real ones: without this, the same test passes or fails depending on whose
+// laptop it runs on, and reads that machine's private files to do it. Tests
+// that want client files put them under their own HOME afterwards.
 func setDataDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv(platform.EnvDataDir, dir)
 	t.Setenv(platform.EnvRegistry, "")
+	t.Setenv("HOME", t.TempDir())
 	return dir
 }
 

@@ -126,10 +126,10 @@ func TestProfileRenameRepointsClients(t *testing.T) {
 	if len(change.Repointed) != 1 || change.Repointed[0] != "claude-code" {
 		t.Fatalf("repointed = %v, want [claude-code]", change.Repointed)
 	}
-	var scopes ClientBindingList
-	decodeInto(t, mustRun(t, "", "client", "ls", "--json"), &scopes)
-	if len(scopes.Bindings) != 1 || scopes.Bindings[0].Profile != "work2" || scopes.Bindings[0].Dangling {
-		t.Errorf("binding = %+v, want a live reference to work2", scopes.Bindings)
+	var list ClientList
+	decodeInto(t, mustRun(t, "", "client", "ls", "--json"), &list)
+	if len(list.Clients) != 1 || list.Clients[0].Profile != "work2" || list.Clients[0].Dangling {
+		t.Errorf("binding = %+v, want a live reference to work2", list.Clients)
 	}
 }
 
@@ -145,10 +145,10 @@ func TestProfileRemoveReportsDanglingClients(t *testing.T) {
 	if !strings.Contains(joined, "claude-code") || !strings.Contains(joined, "EMPTY scope") {
 		t.Errorf("warnings = %v, want a loud dangling-reference warning", env.Warnings)
 	}
-	var scopes ClientBindingList
-	decodeInto(t, mustRun(t, "", "client", "ls", "--json"), &scopes)
-	if !scopes.Bindings[0].Dangling {
-		t.Errorf("scope ls must mark the dangling binding: %+v", scopes.Bindings[0])
+	var list ClientList
+	decodeInto(t, mustRun(t, "", "client", "ls", "--json"), &list)
+	if len(list.Clients) != 1 || !list.Clients[0].Dangling {
+		t.Errorf("client ls must mark the dangling binding: %+v", list.Clients)
 	}
 }
 
@@ -192,10 +192,12 @@ func TestClientBindAndUnbind(t *testing.T) {
 		t.Errorf("bind with no arguments exit = %d, want %d", code, ExitUsage)
 	}
 	mustRun(t, "", "client", "unbind", "cursor")
-	var list ClientBindingList
+	var list ClientList
 	decodeInto(t, mustRun(t, "", "client", "ls", "--json"), &list)
-	if len(list.Bindings) != 0 {
-		t.Errorf("bindings survived unbind: %+v", list.Bindings)
+	for _, c := range list.Clients {
+		if c.Binding == "named" {
+			t.Errorf("binding survived unbind: %+v", c)
+		}
 	}
 	if code, _, _ := runCLI(t, "", "client", "unbind", "cursor"); code != ExitNotFound {
 		t.Errorf("unbinding an absent binding exit = %d, want %d", code, ExitNotFound)
