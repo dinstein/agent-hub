@@ -96,10 +96,12 @@ push, and `make ci-full` covers all of them:
   go test ./internal/mcp/ -run xxx -fuzz FuzzParseMessage -fuzztime 60s
   ```
 
-  The four targets each guard one path by which external bytes arrive: `FuzzParseMessage` (downstream
+  The five targets each guard one path by which external bytes arrive: `FuzzParseMessage` (downstream
   JSON-RPC frames), `FuzzSSEScanner` (remote SSE streams, a hand-written line scanner — the least
-  trustworthy of the four), `FuzzScanAuthParam` (remote `WWW-Authenticate`, hand-written index-based
-  scanning), and `FuzzEncodeJSON` (downstream tool results, on the response path).
+  trustworthy of them), `FuzzScanAuthParam` (remote `WWW-Authenticate`, hand-written index-based
+  scanning), `FuzzEncodeJSON` (downstream tool results, on the response path), and
+  `FuzzScanTOMLServers` in `internal/clients` (another application's config file, hand-written —
+  `go test ./internal/clients/ -run xxx -fuzz FuzzScanTOMLServers`).
   `make ci` runs only their seed corpora (fast); `-fuzz` must be enabled explicitly — keep it out of CI.
 
 ## Reference implementations: read, never copy

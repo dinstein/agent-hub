@@ -506,8 +506,19 @@ git 工作树里，旁边掉一个 `.mcp.json.agenthub-backup` 会让每次 conn
 
 **只重写能无损往返的文档。** TOML/YAML 的重编码器会丢注释、丢键序、丢锚点，那是一台戴着便利帽子的
 配置摧毁机器。所以这类客户端只有探测加一段精确的手工片段，`Connect` 带着片段**响亮地失败**，
-而不是半working。`probeFormat.Disconnect` 同样拒绝：agenthub 从没在这里写过东西，也就没有什么是它
+而不是做一半。`probeFormat.Disconnect` 同样拒绝：agenthub 从没在这里写过东西，也就没有什么是它
 可以安全移除的。
+
+**那条规矩管的是「写」，「读」是另一回事。** 表里的一行可以带 `readTable`，codex 就带了：
+`scanTOMLServers` 把 `~/.codex/config.toml` 读到足以回答「我们的条目在不在里面」，而 `Connect` 依然拒绝
+写它。不肯读换不来任何东西——它让 `client ls` 对一个明明已经接上的客户端只会说「?」，还让 doctor 对一个
+从没打开过的文件断言「no agenthub gateway entry」。
+
+扫描器只认 `[mcp_servers.NAME]` 表和 agenthub 用得上的那四个键，**遇到别的就整份拒绝**（array-of-tables、
+内联 `mcp_servers = {...}`、没闭合的字符串、TOML 规范之外的转义）。`ok=false` 就是契约：调用方报 unknown，
+任何这个扫描器读不了的构造都绝不会被转成「条目不在那儿」。扫出来的条目会被重新渲染成本包已经在用的 JSON
+形态，再走一遍 `summarise`/`ownedBy`，所以所有格式共用同一份所有权判定。它徒手读不可信字节，因此被 fuzz
+（`FuzzScanTOMLServers`）——第一轮就抓到它接受了 `"\0"` 并凭空造出一个文件里没有的 `0`。
 
 **`locationFor` 的匹配顺序保证 section 是确定的。** 先精确路径相等，再同 basename 相等（这是让
 `--path /tmp/x/settings.json` 表现得像真的 settings.json 而不是静默挑了另一个 section 的原因），

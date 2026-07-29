@@ -599,6 +599,19 @@ that is a config-destruction machine wearing a helpful hat. So those clients get
 snippet, and `Connect` **fails loudly** with the snippet rather than half-working. `probeFormat.Disconnect`
 refuses in the same way: agenthub never wrote anything here, so there's nothing it can safely remove.
 
+**That rule is about writing, and reading is a separate power.** A row may carry `readTable`, and codex does:
+`scanTOMLServers` reads `~/.codex/config.toml` well enough to answer "is our entry in here?" while `Connect` still
+refuses it. Refusing to read bought nothing — it made `client ls` say "?" for a client that was plainly connected,
+and made doctor assert "no agenthub gateway entry" about a file it had never opened.
+
+The scanner models exactly `[mcp_servers.NAME]` tables and the four keys agenthub uses, and **refuses the whole
+document** on anything else (array-of-tables, an inline `mcp_servers = {...}`, an unterminated string, an escape
+outside TOML's set). `ok=false` is the contract: callers report "unknown", and nothing this scanner cannot read is
+ever converted into "the entry is not there". Scanned entries are re-rendered as the JSON shape the package already
+speaks and go back through `summarise`/`ownedBy`, so ownership has one implementation for every format. It reads
+untrusted bytes by hand and is fuzzed (`FuzzScanTOMLServers`), which caught it accepting `"\0"` and inventing a
+`0` that was not in the file.
+
 **`locationFor`'s match order guarantees the section is deterministic.** Exact path equality first, then equal
 basename (this is what makes `--path /tmp/x/settings.json` behave like a real settings.json instead of silently
 picking a different section), and finally a fallback to this client's primary location. The failure direction is:
