@@ -83,19 +83,27 @@ func (a *authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 // unauthenticated and the server's own 401 is the diagnostic — failing the
 // request here would hide a working anonymous endpoint behind a vault
 // problem.
+//
+// A miss is NOT cached. The connection outlives the vault read, and a
+// server enabled before its credential existed (`server add` → `server
+// enable` → `auth login`, the order the CLI recommends) would otherwise
+// hold the empty string for the life of the process. The 401 path recovers
+// either way, but only after a request has already been rejected; leaving
+// the miss uncached means the very next request carries the credential.
+// The cache still does its job — sparing a keychain round trip per
+// request — for the case it was written for: a credential that is there.
 func (a *authRoundTripper) token(ctx context.Context) string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.loaded {
 		return a.tok
 	}
-	a.loaded = true
 	tok, ok, err := a.auth.Token(ctx)
 	if err != nil || !ok {
-		a.tok = ""
 		return ""
 	}
 	a.tok = tok
+	a.loaded = true
 	return tok
 }
 

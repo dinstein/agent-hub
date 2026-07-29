@@ -363,6 +363,56 @@ func TestHTTPVaultMissIsNotCached(t *testing.T) {
 	}
 }
 
+// TestHTTPCredentialArrivesWithoutA401 pins the other half: a miss is not
+// cached, so the credential is picked up by the NEXT request rather than by
+// the one after a rejection. The fake never demands a token here, so no 401
+// is ever issued and the passive-refresh path cannot be what recovers.
+func TestHTTPCredentialArrivesWithoutA401(t *testing.T) {
+	t.Parallel()
+	f := newHTTPFake(t)
+	f.wantToken.Store("") // accepts anything, always
+
+	var mu sync.Mutex
+	stored := ""
+	resolve := func(_ context.Context, ref secrets.Ref) (string, bool, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if ref != secrets.HTTPAuthRef("remote") || stored == "" {
+			return "", false, nil
+		}
+		return stored, true, nil
+	}
+
+	srv, err := downstream.Connect(context.Background(), downstream.Spec{
+		ID:         "remote",
+		Kind:       transport.StreamableHTTP,
+		URL:        f.url(),
+		Provenance: downstream.ProvenanceLocal,
+	}, downstream.Deps{
+		Secrets: resolve,
+		// nil refresher: there is no renewal path to fall back on.
+		Auth:           downstream.NewVaultTokenSource("remote", resolve, nil),
+		ConnectTimeout: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer srv.Close()
+
+	mu.Lock()
+	stored = "late-token"
+	mu.Unlock()
+
+	if err := srv.RefreshTools(context.Background()); err != nil {
+		t.Fatalf("RefreshTools: %v", err)
+	}
+	seen := f.authSeen()
+	if last := seen[len(seen)-1]; last != "Bearer late-token" {
+		t.Fatalf("request after the credential landed carried %q, want Bearer late-token "+
+			"(a cached miss would keep it anonymous until something forced a 401)", last)
+	}
+}
+
 // TestHTTPExplicitAuthorizationHeaderWins covers the hand-pasted-token
 // configuration: an operator-set Authorization header suppresses the vault
 // injection entirely.
