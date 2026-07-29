@@ -174,7 +174,7 @@ func connectedDetail(v ClientInspectView) string {
 
 func (a *App) newClientInspectCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "inspect <client-id>",
+		Use:   "inspect <id>",
 		Short: "Open one client's config and report what is actually in it",
 		Long: "This is the command that explains a 'client ls' row: every configuration\n" +
 			"file this client may use, whether agenthub's entry is in it, and the other\n" +

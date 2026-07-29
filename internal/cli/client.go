@@ -137,7 +137,7 @@ func (a *App) newClientConnectCmd() *cobra.Command {
 		manual    bool
 	)
 	cmd := &cobra.Command{
-		Use:   "connect <client-id>",
+		Use:   "connect <id>",
 		Short: "Wire one AI client up to agenthub by editing its config file",
 		Long: "RESTART THE CLIENT AFTERWARDS: it reads that file only at startup, so until\n" +
 			"you do, nothing appears to have happened.\n\n" +
@@ -194,7 +194,7 @@ func (a *App) newClientDisconnectCmd() *cobra.Command {
 		manual    bool
 	)
 	cmd := &cobra.Command{
-		Use:   "disconnect <client-id>",
+		Use:   "disconnect <id>",
 		Short: "Undo 'client connect': take agenthub out of a client's config file",
 		Long: "Only the entry agenthub wrote is touched; servers you configured in that client\n" +
 			"yourself are left alone, as are your own servers and profiles. Restart the\n" +

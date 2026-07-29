@@ -363,7 +363,7 @@ func (a *App) fillConnectState(
 
 func (a *App) newClientBindCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "bind <client-id> <profile>",
+		Use:   "bind <client> <profile>",
 		Short: "Decide what one client sees by putting it on a profile",
 		Long: "The profile then overrides the fallback from 'agenthub profile use', and the\n" +
 			"client has no say in it. This applies immediately, even to a client already\n" +
@@ -395,7 +395,7 @@ func (a *App) newClientBindCmd() *cobra.Command {
 
 func (a *App) newClientUnbindCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "unbind <client-id>",
+		Use:   "unbind <id>",
 		Short: "Take a client off its own profile, back onto the shared fallback",
 		Long: "The client then follows 'agenthub profile use', or sees every enabled server\n" +
 			"when that is unset — so this can WIDEN what it sees if it was on a narrow\n" +
