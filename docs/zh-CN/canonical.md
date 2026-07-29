@@ -236,7 +236,9 @@ GUI/CLI 改 profile → 对应 gateway 自动更新，链路见 [flows.md](flows
 - **Go 1.26+**
 - **LICENSE：MIT**（`Copyright (c) 2026 dinstein`）
 - `cobra`（CLI）、`fsnotify`（watch）、`zalando/go-keyring`（keyring）、`log/slog`
-- `golangci-lint`（**v2 配置格式**）+ **depguard**（固化第 2 节的四条依赖约束）
+- `golangci-lint`（**v2 配置格式**）+ **depguard**（固化第 2 节的四条依赖约束），
+  以及 `gofmt` 和 `goimports` —— 这两个声明在 `formatters:` 下，与 `linters:` 是彼此独立的两节，
+  但同样是 CI 的失败条件
 - CI：GitHub Actions，macOS + Linux 双矩阵跑 build / test / lint
 
 ### 约定的路径

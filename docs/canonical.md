@@ -291,7 +291,9 @@ GUI/CLI edits a profile → the corresponding gateway updates automatically; see
 - **Go 1.26+**
 - **LICENSE: MIT** (`Copyright (c) 2026 dinstein`)
 - `cobra` (CLI), `fsnotify` (watch), `zalando/go-keyring` (keyring), `log/slog`
-- `golangci-lint` (**v2 config format**) + **depguard** (which pins the four dependency constraints from §2)
+- `golangci-lint` (**v2 config format**) + **depguard** (which pins the four dependency constraints from §2),
+  plus `gofmt` and `goimports` — those two are declared under `formatters:`, a section separate from
+  `linters:`, and are no less a CI failure condition for it
 - CI: GitHub Actions, a macOS + Linux matrix running build / test / lint
 
 ### Conventional paths

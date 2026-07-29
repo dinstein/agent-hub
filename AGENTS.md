@@ -56,11 +56,21 @@ A lint rule that is configured but not in effect is more dangerous than no rule 
 - **Isolation a config claims must be delivered or refused**: for fields like `runtime: docker`, it is
   better to fail closed and reject than to silently degrade into host execution (this trap has
   actually happened).
+- **Formatting is enforced, and not from the place you would grep.** `.golangci.yml` enables `gofmt`
+  and `goimports` under `formatters:`, not under `linters:` — so a misformatted file fails `make lint`
+  while `go build` and `go vet` stay perfectly silent, and the only line the error names is the
+  `import (` itself, never the import that is out of place. The way this happens is always the same:
+  an import added by editing around a neighbouring line lands where the anchor was rather than where
+  gofmt wants it, and the ordering is strictly alphabetical within a group (`"cmp"` sorts before
+  `"context"`, `"maps"` before `"os"`). Run `make fmt` — or `gofmt -l <file>`, which prints nothing
+  when the file is clean — after touching an import block, not after the landing run has already
+  gone red.
 
 ## Testing and verification
 
 ```bash
 make             # the target list, one line each
+make fmt         # apply gofmt + goimports (they are CI failures, see above)
 make ci          # build + test + lint
 make ci-full     # everything the CI workflow actually runs (use this before pushing)
 make ci-landing  # ci-full with the caches dropped and CI's environment (use this before landing)
