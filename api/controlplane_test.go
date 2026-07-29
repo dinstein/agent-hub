@@ -355,6 +355,14 @@ func TestNonRegistryWireShapes(t *testing.T) {
 			method: "GET", path: "/v1/clients",
 		},
 		{
+			name: "clients_inspect",
+			call: func(c *Client) error {
+				_, err := c.Clients.Inspect(context.Background(), "claude")
+				return err
+			},
+			method: "GET", path: "/v1/clients/claude/inspect",
+		},
+		{
 			name: "clients_connect_dry_run",
 			call: func(c *Client) error {
 				_, err := c.Clients.Connect(context.Background(), "claude",
@@ -631,6 +639,39 @@ func TestResponseDecoding(t *testing.T) {
 		}
 		if len(got.Supported) != 2 {
 			t.Errorf("supported list not decoded: %v", got.Supported)
+		}
+	})
+
+	// A location that could not be read must survive decoding as itself:
+	// the state stays "denied", and a frontend that renders it as "not
+	// connected" would send the user to run a connect that will not help.
+	t.Run("client_inspect", func(t *testing.T) {
+		_, c := newCapturingDaemon(t, json.RawMessage(`{
+			"client":"claude","name":"Claude Code","state":"denied","connected":false,
+			"files":[
+				{"path":"/u/.claude.json","placement":"user","exists":true,"parsed":false,
+					"connected":false,"error":"permission denied"},
+				{"path":"/p/.mcp.json","placement":"project","exists":true,"parsed":true,"connected":true,
+					"servers":[{"name":"agenthub","transport":"stdio","command":"/bin/agenthub","owned":true},
+						{"name":"linear","transport":"stdio","command":"npx"}]}]}`))
+		got, err := c.Clients.Inspect(context.Background(), "claude")
+		if err != nil {
+			t.Fatalf("Inspect: %v", err)
+		}
+		if got.State != ClientConnectDenied || got.Connected {
+			t.Fatalf("state = %q connected = %v, want a denial", got.State, got.Connected)
+		}
+		if len(got.Files) != 2 || got.Files[0].Error == "" || got.Files[0].Parsed {
+			t.Fatalf("unreadable location did not survive: %+v", got.Files)
+		}
+		owned := 0
+		for _, srv := range got.Files[1].Servers {
+			if srv.Owned {
+				owned++
+			}
+		}
+		if owned != 1 || len(got.Files[1].Servers) != 2 {
+			t.Errorf("servers = %+v, want one owned entry beside the user's own", got.Files[1].Servers)
 		}
 	})
 

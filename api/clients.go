@@ -140,3 +140,83 @@ func (s *ClientsService) Disconnect(ctx context.Context, client string) (ClientD
 	err := s.c.do(ctx, http.MethodDelete, "/clients/"+url.PathEscape(client)+"/connect", nil, nil, &out)
 	return out, err
 }
+
+// ClientConnectState is the answer to "is agenthub wired into this client?".
+// It has five values rather than two because the three beyond yes/no each
+// send the operator somewhere different, and rendering any of them as "not
+// connected" points them at a connect that will not help.
+type ClientConnectState string
+
+const (
+	// ClientConnected: a location holds an entry agenthub itself wrote.
+	ClientConnected ClientConnectState = "connected"
+	// ClientNotConnected: every location was read, none holds one.
+	ClientNotConnected ClientConnectState = "not_connected"
+	// ClientConnectDenied: a configuration file may not be read.
+	ClientConnectDenied ClientConnectState = "denied"
+	// ClientConnectUnreadable: a file is there but agenthub refuses to
+	// interpret it (unparseable, oversized).
+	ClientConnectUnreadable ClientConnectState = "unreadable"
+	// ClientConnectUnknown: nothing was opened — a format agenthub does not
+	// parse (the TOML/YAML clients).
+	ClientConnectUnknown ClientConnectState = "unknown"
+)
+
+// ClientInspectedServer is one entry in an inspected client's server map.
+type ClientInspectedServer struct {
+	Name      string `json:"name"`
+	Transport string `json:"transport,omitempty"`
+	Command   string `json:"command,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Disabled  bool   `json:"disabled,omitempty"`
+	// Owned marks agenthub's own gateway entry. Ownership decides, never
+	// the name: a hand-written server called "agenthub" is not this.
+	Owned bool `json:"owned"`
+}
+
+// ClientInspectedFile is one configuration file of the inspected client.
+type ClientInspectedFile struct {
+	Path      string `json:"path"`
+	Placement string `json:"placement"`
+	Exists    bool   `json:"exists"`
+	// Parsed false with Exists true means nobody read it: a format agenthub
+	// does not parse, or the failure in Error. Servers is then empty
+	// because it was not looked at, NOT because there are none.
+	Parsed    bool                    `json:"parsed"`
+	Connected bool                    `json:"connected"`
+	Servers   []ClientInspectedServer `json:"servers,omitempty"`
+	Error     string                  `json:"error,omitempty"`
+}
+
+// ClientInspection is the answer to Inspect.
+type ClientInspection struct {
+	Client string `json:"client"`
+	Name   string `json:"name,omitempty"`
+	Shape  string `json:"shape,omitempty"`
+	// State is the authority; Connected is only its boolean projection.
+	State      ClientConnectState    `json:"state"`
+	Connected  bool                  `json:"connected"`
+	Placements []string              `json:"placements,omitempty"`
+	Files      []ClientInspectedFile `json:"files"`
+	// Note explains a client agenthub does not parse; Manual is the
+	// fragment to add to it by hand.
+	Note   string `json:"note,omitempty"`
+	Manual string `json:"manual,omitempty"`
+}
+
+// Inspect opens one client's configuration files and reports what is in
+// them — including whether agenthub's own entry is there, which Detect
+// cannot tell you because it never opens anything.
+//
+// This is the call that may raise a macOS privacy prompt, which is why it
+// takes one named client: a frontend asks for it per row, in response to a
+// user action, rather than for everything at once.
+//
+// A location that could not be read does not fail the call. It comes back
+// with its Error, and State says denied or unreadable — never
+// ClientNotConnected, which would be a claim nobody verified.
+func (s *ClientsService) Inspect(ctx context.Context, client string) (ClientInspection, error) {
+	var out ClientInspection
+	err := s.c.do(ctx, http.MethodGet, "/clients/"+url.PathEscape(client)+"/inspect", nil, nil, &out)
+	return out, err
+}
