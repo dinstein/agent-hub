@@ -47,19 +47,16 @@ func (s ToolSelection) validate() error {
 	}
 }
 
-// ApplyToolSelection writes the requested three-state edit into a selector
-// map, deleting entries that became fully inert so the document does not
+// applySelector writes the requested three-state edit into a selector map,
+// deleting entries that became fully inert so the document does not
 // accumulate `{}` noise.
 //
-// It is exported because the selector map appears in three layers (profile,
-// client, and the session overlay the CLI persists) and all three must edit
-// it with the SAME semantics — in particular the ToolSelectAll-drops-the-rule
-// and ToolSelectNone-keeps-the-empty-list pair, which is where a
-// re-implementation would fail open.
-func ApplyToolSelection(m map[string]registry.Doc[registry.ToolSelector], server string, sel ToolSelection) {
-	applySelector(m, server, sel)
-}
-
+// The pair to be careful with is ToolSelectAll-drops-the-rule against
+// ToolSelectNone-keeps-the-empty-list: nil Allow means "no narrowing", an
+// empty one means "block everything", and a re-implementation that collapses
+// the two fails OPEN. There is exactly one selector map left in the registry
+// documents — a profile's — so this is the only writer, and any second one
+// belongs here rather than beside it.
 func applySelector(m map[string]registry.Doc[registry.ToolSelector], server string, sel ToolSelection) {
 	cur := m[server].V
 	switch sel.Mode {
