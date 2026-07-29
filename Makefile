@@ -232,19 +232,35 @@ ci-depguard-proof: | $(LOGDIR) ## Prove the depguard rules fire; fail if the pro
 		exit 1; \
 	fi
 
+# A failing target must fail the whole run, and getting that wrong here is
+# easy: a recipe's exit status is its LAST command, so the trailing `if`
+# below used to decide it and every `go test` failure inside the loop was
+# discarded. A crasher then looked exactly like a clean sweep — the run said
+# nothing, printed a corpus path in the middle of thousands of progress
+# lines, and exited 0. `failed` is what carries the verdict past the loop.
+#
+# The loop deliberately does NOT stop at the first failure: the targets are
+# independent, and a long sweep should report every parser that broke rather
+# than only the earliest.
 fuzz: ## Fuzz the untrusted-input parsers (FUZZ=<name> for one, FUZZTIME=60s)
-	@matched=0; \
+	@matched=0; failed=""; \
 	for entry in $(FUZZ_TARGETS); do \
 		pkg="$${entry%%:*}"; target="$${entry##*:}"; \
 		case "$$target" in *"$(FUZZ)"*) ;; *) continue ;; esac; \
 		matched=1; \
 		echo "==> $$target  $$pkg  ($(FUZZTIME))"; \
-		$(GO) test "$$pkg" -run xxx -fuzz "^$$target\$$" -fuzztime $(FUZZTIME); \
+		$(GO) test "$$pkg" -run xxx -fuzz "^$$target\$$" -fuzztime $(FUZZTIME) \
+			|| failed="$$failed $$target"; \
 	done; \
 	if [ "$$matched" = 0 ]; then \
 		echo "no fuzz target matches FUZZ=$(FUZZ); known targets:" >&2; \
 		for entry in $(FUZZ_TARGETS); do echo "  $${entry##*:}" >&2; done; \
 		exit 2; \
+	fi; \
+	if [ -n "$$failed" ]; then \
+		echo "fuzzing FAILED:$$failed" >&2; \
+		echo "the crashing input is under the package's testdata/fuzz/<target>/ — commit it as a seed" >&2; \
+		exit 1; \
 	fi
 
 ##@ Binaries
