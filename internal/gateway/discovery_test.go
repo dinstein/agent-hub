@@ -96,7 +96,10 @@ func TestLazyModeSurfaceAndDispatch(t *testing.T) {
 	})
 	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
 
-	// Default (no discovery layer set) is full: the tool is listed verbatim.
+	// seedRegistry pins full, so the tool is listed verbatim. This test is
+	// about the transition, which needs a starting mode that differs from
+	// the one being switched to — inheriting the default (lazy) would make
+	// the switch a no-op and the assertion vacuous.
 	waitForTools(t, c, "fake__echo")
 
 	// A direct call establishes the counter baseline.

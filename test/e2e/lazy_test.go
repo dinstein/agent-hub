@@ -21,6 +21,19 @@ var lazyMetaTools = []string{"status", "search_tools", "describe_tool", "call_to
 // every change notification; there is no CLI verb for scope yet.
 func writeGovernance(t *testing.T, dataDir string, doc map[string]any) {
 	t.Helper()
+	// It writes the file whole, so it decides the discovery mode whether the
+	// caller thought about it or not — including for callers that ran after
+	// enableServer and would otherwise have their pin erased. Fixtures that
+	// set budgets or injection switches still assert on tool names, which is
+	// full; a fixture testing a mode names it and keeps it.
+	if _, ok := doc["discovery"]; !ok {
+		merged := make(map[string]any, len(doc)+1)
+		for k, v := range doc {
+			merged[k] = v
+		}
+		merged["discovery"] = "full"
+		doc = merged
+	}
 	dir := filepath.Join(dataDir, "registry")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)

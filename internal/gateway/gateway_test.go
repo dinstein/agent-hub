@@ -50,6 +50,13 @@ func seedRegistry(t *testing.T, resolver *platform.Resolver, ids ...string) {
 		t.Fatalf("registry.Open: %v", err)
 	}
 	err = store.Update(context.Background(), func(tx *registry.Tx) error {
+		// Full mode, pinned rather than inherited. These tests name the
+		// downstream tool they expect in tools/list, and only full mode puts
+		// it there — the default is lazy, whose list is the five meta-tools.
+		// A test about routing, hot reload or rate limits must not break
+		// because the presentation default moved; the default has its own
+		// coverage in discovery and in the lazy e2e chain.
+		tx.Governance.V.Discovery = "full"
 		if tx.Servers.V.Servers == nil {
 			tx.Servers.V.Servers = map[string]registry.Doc[registry.ServerEntry]{}
 		}

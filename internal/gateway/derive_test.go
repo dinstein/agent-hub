@@ -27,6 +27,10 @@ func seedDerivingServer(t *testing.T, resolver *platform.Resolver, id, mode stri
 		t.Fatalf("registry.Open: %v", err)
 	}
 	updateRegistry(t, store, func(tx *registry.Tx) {
+		// Full, for the same reason as seedRegistry's copy: these tests wait
+		// for a derived instance's tool to appear in tools/list by name, and
+		// the default (lazy) lists the meta-tools instead.
+		tx.Governance.V.Discovery = "full"
 		if tx.Servers.V.Servers == nil {
 			tx.Servers.V.Servers = map[string]registry.Doc[registry.ServerEntry]{}
 		}

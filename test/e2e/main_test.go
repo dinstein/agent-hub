@@ -115,6 +115,12 @@ func runAgenthub(t *testing.T, dataDir, stdin string, args ...string) (stdout, s
 func enableServer(t *testing.T, dataDir, id string) {
 	t.Helper()
 	runAgenthub(t, dataDir, "", "server", "enable", id, "--no-probe")
+	// The same fixtures then look for the server's tools by name, and only
+	// full mode puts those names in tools/list — the default is lazy, whose
+	// list is the five meta-tools. `config set` is a read-modify-write, so
+	// it keeps whatever else a test already put in governance.json. A test
+	// that means to exercise another mode writes it afterwards and wins.
+	runAgenthub(t, dataDir, "", "config", "set", "discovery", "full")
 }
 
 // runAgenthubEnv is runAgenthub with an explicit child environment (tests
