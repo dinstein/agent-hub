@@ -123,28 +123,13 @@ agenthub profile discovery research lazy      # or grouped / full / -
 | `full` | every visible tool, one entry each | small surfaces. The default when nothing sets a mode |
 | `grouped` | one aggregate entry per server, then `call_tool` | a mid-sized set — the client reads per-server entries, then dispatches |
 | `lazy` | the meta-tools (`status`, `search_tools`, `describe_tool`, `call_tool`, `fetch_result`) plus any pinned tools | large surfaces — the client holds a handful of names instead of hundreds |
-| `-` | clears the profile's override | fall back to `agenthub config set discovery` |
+| `-` | clears the profile's override | fall back to the global default |
 
 The reason to care is context, not security. Forty servers in `full` mode
 means a tool list the client re-reads on every turn; `lazy` turns that into
 five names plus a search. Visibility is unchanged either way — a tool hidden
 from the initial list is still callable if it is in scope, and a tool out of
 scope is not callable no matter which mode you pick.
-
-## Sessions: temporary changes
-
-A live session can be narrowed without touching any configuration:
-
-```bash
-agenthub session ls
-agenthub session scope <sid> --disable-server linear
-```
-
-These edits are **volatile**: they live in memory and die with the session.
-There is no way to persist them, on purpose — a permanent change belongs in
-the profile, where you can see it later. Going the other way (widening a live
-session) is not something the session can do to itself: it files a
-TTL-bounded grant that a human approves with `agenthub grant approve`.
 
 ## Where things live
 
@@ -156,20 +141,26 @@ TTL-bounded grant that a human approves with `agenthub grant approve`.
 | global switches, active profile | `governance.json` |
 | credentials | the OS keychain / vault — **never** the registry |
 
-`agenthub doctor` reports on all of it, and is the right first move when
-something is wrong. It is not a routine step: it probes every configured
-server, so run it when you have a symptom, not before.
+None of it needs editing by hand — the commands above are what write it, and
+`server ls`, `client ls` and `auth status` read the first three back.
 
 ## Verifying it end to end
 
 ```bash
-agenthub tool ls        # the aggregated catalog a client will see
-agenthub audit          # calls that actually arrived
+agenthub server test linear         # open a real connection and see what it answers
+agenthub server inspect linear --tools
+agenthub client ls                  # who is on which profile, and so what each sees
 ```
 
-`audit` is the only honest proof. A written config file shows intent; an
-audit line shows a call that reached the gateway. After restarting the client
-and asking it to use a tool, a new audit line is the confirmation.
+`server test` is the one check that proves something rather than reporting
+it: it connects for real, so a pass means credentials, transport and the
+server itself all work right now. `server inspect --tools` lists what was
+recorded at the last contact, which is why it answers instantly and can be
+stale. `client ls` closes the loop on the other side — it says what a client
+may see, not whether it is wired up, and `client detect` answers that.
+
+A written config file only shows intent. The confirmation is the client
+itself: restart it and ask it to use a tool.
 
 ## Common surprises
 
@@ -177,7 +168,7 @@ and asking it to use a tool, a new audit line is the confirmation.
 |---|---|
 | a server you added never shows up | `server add` leaves it switched off — check `server ls`, then `agenthub server enable <id>` |
 | client sees no tools at all | bound to a profile that does not exist (`client ls` shows `MISSING`), or it was never restarted after `client connect` |
-| a tool disappeared | a profile's `--only` list, `agenthub tool disable`, or drift quarantine — check before suspecting the server |
+| a tool disappeared | a profile's `--only` list, or the server changed it under a pin and it was quarantined — check the profile before suspecting the server |
 | a server works in `server test` but not in the client | the client has not been restarted, or its profile does not include that server |
 | `client connect` seems to do nothing | it edits a file; the client reads that file at startup |
-| a legacy `projects` block in `clients.json` | per-project bindings were retired. The block is preserved but inert, and `doctor` warns about it — it used to narrow, so leaving it does not restrict anything now |
+| a legacy `projects` block in `clients.json` | per-project bindings were retired. The block is preserved but inert — it used to narrow, so leaving it does not restrict anything now |

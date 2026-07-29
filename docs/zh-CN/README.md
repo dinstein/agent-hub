@@ -20,7 +20,7 @@
 
 | 文件 | 内容 |
 |---|---|
-| [guide.md](guide.md) | 面向使用者的手册：server / profile / client 模型、日常接线路径、profile 与三态 tool 选择、三种 discovery 模式各自适合什么、易失的 session 改动，以及大多数「它突然不工作了」背后的那些意外 |
+| [guide.md](guide.md) | 面向使用者的手册：server / profile / client 模型、日常接线路径、profile 与三态 tool 选择、三种 discovery 模式各自适合什么、怎么验证接线是否生效，以及大多数「它突然不工作了」背后的那些意外 |
 | [architecture.md](architecture.md) | 架构总览：双模进程模型、核心模块地图、分层与依赖约束、一次调用穿过什么、三条数据流向、作用域两个平面、三道防线、数据布局 |
 | [flows.md](flows.md) | 七个关键流程的时序图与失败分支：网关启动、lazy 调用、HITL 审批、配置写入、配置热更新、OAuth、派生实例 |
 | [modules/](modules/) | 逐包文档：职责、关键类型、**不变量与失败方向**。按层分五篇，另有 OAuth 与 GUI 两篇专题 |

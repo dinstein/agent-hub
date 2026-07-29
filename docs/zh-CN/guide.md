@@ -112,25 +112,12 @@ agenthub profile discovery research lazy      # 或 grouped / full / -
 | `full` | 每个可见 tool 一条 | 工具面小的时候。谁都没设模式时的默认值 |
 | `grouped` | 每台 server 一条聚合条目，然后走 `call_tool` | 中等规模的集合——客户端先读每台 server 的条目，再分派 |
 | `lazy` | 元工具（`status`、`search_tools`、`describe_tool`、`call_tool`、`fetch_result`）加上被 pin 住的 tool | 工具面很大的时候——客户端手里只握几个名字，而不是几百个 |
-| `-` | 清除这个 profile 的覆盖 | 回落到 `agenthub config set discovery` |
+| `-` | 清除这个 profile 的覆盖 | 回落到全局默认值 |
 
 值得在意它的理由是**上下文，不是安全**。四十台 server 跑在 `full` 模式下，意味着一份客户端
 每轮都要重读一遍的工具清单；`lazy` 把它变成五个名字加一次搜索。两种模式下可见性都没变——
 一个没出现在初始清单里的 tool，只要在作用域内就仍然调得动；而一个不在作用域内的 tool，
 你选哪个模式它都调不动。
-
-## session：临时改动
-
-一个活着的会话可以在不动任何配置的前提下被收窄：
-
-```bash
-agenthub session ls
-agenthub session scope <sid> --disable-server linear
-```
-
-这类改动是**易失的**：它们只活在内存里，随会话一起消失。没有任何办法把它们持久化，这是刻意的
-——永久性的改动属于 profile，在那里你以后还看得见它。反方向（放宽一个活着的会话）不是会话能对
-自己做的事：它只能提交一份有 TTL 的授权申请，由人用 `agenthub grant approve` 批准。
 
 ## 东西都放在哪
 
@@ -142,18 +129,23 @@ agenthub session scope <sid> --disable-server linear
 | 全局开关、激活的 profile | `governance.json` |
 | 凭据 | OS 钥匙串 / 金库——**绝不**在 registry 里 |
 
-`agenthub doctor` 会把上面这些全部体检一遍，出问题时第一步就该跑它。但它不是例行动作：
-它会去探测每一台已配置的 server，所以是**有症状之后**才跑，不是平时就跑。
+这些都不需要你手工去编辑——上面那些命令就是写它们的人，而 `server ls`、`client ls`、
+`auth status` 分别把前三份读回来。
 
 ## 端到端验证
 
 ```bash
-agenthub tool ls        # client 将会看到的聚合后目录
-agenthub audit          # 真正到达网关的调用
+agenthub server test linear         # 真的连一次，看它怎么答
+agenthub server inspect linear --tools
+agenthub client ls                  # 谁绑在哪个 profile 上，也就是各自能看见什么
 ```
 
-`audit` 是唯一诚实的证据。写好的配置文件说明的是意图；一条审计记录说明的是一次真的到达网关的
-调用。重启客户端、让它用一次某个 tool，然后看到一条新的审计行——那才是确认。
+`server test` 是这里唯一**证明**而不是**转述**的检查：它会真的建立一次连接，所以通过就意味着
+凭据、传输、server 本身此刻全都是好的。`server inspect --tools` 列的是上一次接触时记录下来的
+东西，所以它答得飞快，也因此可能是过期的。`client ls` 补上另一侧——它说的是一个 client
+**可以看见什么**，而不是它有没有被接上；后者要问 `client detect`。
+
+写好的配置文件说明的只是意图。真正的确认是客户端自己：重启它，让它用一次某个 tool。
 
 ## 常见的意外
 
@@ -161,7 +153,7 @@ agenthub audit          # 真正到达网关的调用
 |---|---|
 | 加过的 server 一直不出现 | `server add` 之后它是关着的——看 `server ls`，再 `agenthub server enable <id>` |
 | client 一个 tool 都看不见 | 绑到了一个不存在的 profile（`client ls` 里显示 `MISSING`），或者 `client connect` 之后从没重启过 |
-| 某个 tool 消失了 | 某个 profile 的 `--only` 列表、`agenthub tool disable`、或者 drift 隔离——先查这三样，再去怀疑 server |
+| 某个 tool 消失了 | 某个 profile 的 `--only` 列表，或者 server 在 pin 之下改了它、被隔离了——先查 profile，再去怀疑 server |
 | `server test` 通得过，但客户端里用不了 | 客户端没重启，或者它的 profile 里没有这台 server |
 | `client connect` 看起来什么都没干 | 它改的是一个文件；客户端在启动时才读那个文件 |
-| `clients.json` 里有遗留的 `projects` 块 | per-project 绑定已经退役。这个块被保留下来但不生效，`doctor` 会为它报警——它当初是用来收窄的，所以留着它现在不会限制任何东西 |
+| `clients.json` 里有遗留的 `projects` 块 | per-project 绑定已经退役。这个块被保留下来但不生效——它当初是用来收窄的，所以留着它现在不会限制任何东西 |
