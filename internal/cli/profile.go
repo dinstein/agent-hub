@@ -114,9 +114,16 @@ func (a *App) newProfileCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "profile",
 		Aliases: []string{"profiles"}, // singular canonical, plural alias (canonical.md §3)
-		Short:   "Manage capability profiles (server sets + three-state tool selectors)",
-		Args:    cobra.ArbitraryArgs,
-		RunE:    groupRunE,
+		Short:   "Build named sets of servers and tools to hand to a client",
+		Long: "Building one up:\n" +
+			"  agenthub profile create readonly\n" +
+			"  agenthub profile server add readonly github\n" +
+			"  agenthub client bind claude-code readonly\n\n" +
+			"A profile only ever takes things away: it cannot show a server you disabled,\n" +
+			"nor invent a tool. Clients you have not bound follow 'agenthub profile use',\n" +
+			"or see every enabled server when that is unset.",
+		Args: cobra.ArbitraryArgs,
+		RunE: groupRunE,
 	}
 	cmd.AddCommand(
 		a.newProfileLsCmd(),
@@ -149,8 +156,11 @@ func profileRow(name string, p registry.Profile, active string) ProfileRow {
 func (a *App) newProfileLsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "ls",
-		Short: "List profiles (* marks the active one)",
-		Args:  noArgs,
+		Short: "List your profiles and what each one includes",
+		Long: "In the servers column, \"(all registered)\" means the profile takes nothing away\n" +
+			"and \"(none)\" means a client bound to it sees nothing. For which client is on\n" +
+			"which profile, use 'agenthub client ls'.",
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, warnings, err := a.openStore()
 			if err != nil {
@@ -180,8 +190,11 @@ func (a *App) newProfileCreateCmd() *cobra.Command {
 	var servers []string
 	cmd := &cobra.Command{
 		Use:   "create <name>",
-		Short: "Create an empty profile (no narrowing until servers or tool rules are added)",
-		Args:  exactArgs(1),
+		Short: "Create a new profile, empty unless you name its servers",
+		Long: "A new profile takes nothing away until you say what it includes, so a client\n" +
+			"bound to a fresh one still sees everything. Fill it in with 'agenthub profile\n" +
+			"server add', or up front with --servers.",
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, warnings, err := a.opsStore()
 			if err != nil {
@@ -197,7 +210,7 @@ func (a *App) newProfileCreateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringSliceVar(&servers, "servers", nil,
-		"initial server set (omit for 'no narrowing'; pass an empty value for block-all)")
+		"the servers to include from the start; leave it out to include everything, or pass an empty value to include nothing")
 	return cmd
 }
 
@@ -205,8 +218,12 @@ func (a *App) newProfileRmCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "rm <name>",
 		Aliases: []string{"remove"},
-		Short:   "Remove a profile",
-		Args:    exactArgs(1),
+		Short:   "Delete a profile, leaving any client bound to it with nothing",
+		Long: "Clients bound to it are not moved, and a client pointing at a profile that no\n" +
+			"longer exists sees nothing at all — deliberately, so a deletion never widens\n" +
+			"access. They are named in the output; move them with 'agenthub client bind'\n" +
+			"or 'agenthub client unbind'.",
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			store, warnings, err := a.opsStore()
@@ -226,7 +243,7 @@ func (a *App) newProfileRmCmd() *cobra.Command {
 func (a *App) newProfileRenameCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "rename <old> <new>",
-		Short: "Rename a profile and repoint every client that references it",
+		Short: "Rename a profile, moving every client bound to it along with it",
 		Args:  exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, warnings, err := a.opsStore()
@@ -248,8 +265,11 @@ func (a *App) newProfileRenameCmd() *cobra.Command {
 func (a *App) newProfileUseCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   `use <name|->`,
-		Short: `Set the globally active profile ("-" clears it, back to every registered server)`,
-		Args:  exactArgs(1),
+		Short: "Choose the profile clients get when they have no profile of their own",
+		Long: "A client bound with 'agenthub client bind' keeps its own profile and ignores\n" +
+			"this. Passing \"-\" clears the fallback, so unbound clients go back to seeing\n" +
+			"every enabled server.",
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			store, warnings, err := a.opsStore()
@@ -279,7 +299,8 @@ func (a *App) newProfileServerCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "server",
 		Aliases: []string{"servers"},
-		Short:   "Add or remove a server from a profile's server set",
+		Short:   "Choose which servers a profile includes",
+		Long:    "A client bound to the profile sees these servers and nothing else.",
 		Args:    cobra.ArbitraryArgs,
 		RunE:    groupRunE,
 	}
@@ -290,15 +311,21 @@ func (a *App) newProfileServerCmd() *cobra.Command {
 // newProfileServerEditCmd builds `profile server add|rm`; both edit the
 // same three-state list, so they share one implementation.
 func (a *App) newProfileServerEditCmd(add bool) *cobra.Command {
-	use, short := "rm <profile> <server-id>", "Remove a server from a profile's server set"
+	use, short := "rm <profile> <server-id>", "Take one server out of a profile"
+	long := "Affects this profile only; the server stays registered and other profiles keep\n" +
+		"it. To take one away from everybody, use 'agenthub server disable'."
 	aliases := []string{"remove"}
 	if add {
-		use, short, aliases = "add <profile> <server-id>", "Add a server to a profile's server set", nil
+		use, short, aliases = "add <profile> <server-id>", "Put one server into a profile", nil
+		long = "On a fresh profile, which so far includes everything, the first server you add\n" +
+			"becomes the only one it includes — so this can narrow what a bound client\n" +
+			"sees rather than widen it."
 	}
 	return &cobra.Command{
 		Use:     use,
 		Aliases: aliases,
 		Short:   short,
+		Long:    long,
 		Args:    exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			profileName, serverID := args[0], args[1]
@@ -331,12 +358,16 @@ func (a *App) newProfileToolsCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "tools <profile> <server> (--only a,b | --all | --none)",
-		Short: "Set a profile's three-state tool selector for one server",
-		Long: "Set the tool selector of one server inside a profile.\n\n" +
-			"Three states (docs/architecture.md §7, keyed by ORIGINAL tool names):\n" +
-			"  --all       the server's full tool set (removes the rule)\n" +
-			"  --only a,b  narrow to that subset\n" +
-			"  --none      block every tool of the server (fail-closed)",
+		Short: "Choose which of one server's tools a profile lets through",
+		Long: "Restricts one server, inside one profile, to some of its tools. It does\n" +
+			"not change which servers the profile includes.\n\n" +
+			"  --only a,b  let just these through\n" +
+			"  --none      let none through (the server stays in the profile)\n" +
+			"  --all       drop the restriction\n\n" +
+			"Use the server's own tool names (search_repositories), not the longer\n" +
+			"github__search_repositories your client displays; 'agenthub server test\n" +
+			"<server> --tools' lists them. A name matching nothing is not an error,\n" +
+			"so check the result with 'agenthub profile ls'.",
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			profileName, serverID := args[0], args[1]
@@ -359,23 +390,22 @@ func (a *App) newProfileToolsCmd() *cobra.Command {
 			}, warnings...)
 		},
 	}
-	cmd.Flags().StringSliceVar(&only, "only", nil, "narrow to these original tool names")
-	cmd.Flags().BoolVar(&all, "all", false, "expose the server's full tool set")
-	cmd.Flags().BoolVar(&none, "none", false, "block every tool of the server")
+	cmd.Flags().StringSliceVar(&only, "only", nil, "let only these tools through, named as the server names them")
+	cmd.Flags().BoolVar(&all, "all", false, "drop the restriction: let all of this server's tools through again")
+	cmd.Flags().BoolVar(&none, "none", false, "let none of this server's tools through")
 	return cmd
 }
 
 func (a *App) newProfileDiscoveryCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "discovery <profile> <lazy|grouped|full|->",
-		Short: "Set how a profile's tools are surfaced (\"-\" clears the override)",
-		Long: "Set the discovery mode of one profile.\n\n" +
-			"Discovery is an experience field: it changes how the same tool set is\n" +
-			"presented, never which tools are in it. It lives on the profile because\n" +
-			"it describes THAT set — a profile narrowed to two servers wants a\n" +
-			"different presentation than one holding forty.\n\n" +
-			"\"-\" clears the override so the global default (agenthub config set\n" +
-			"discovery) applies again.",
+		Short: "Choose how a profile's tools are presented to the AI client",
+		Long: "Changes how the tools are shown, never which ones get through. Worth changing\n" +
+			"only when a profile holds so many that the client's list becomes unwieldy.\n\n" +
+			"  full     list every tool by name (the default)\n" +
+			"  grouped  list one entry per server, opened up on demand\n" +
+			"  lazy     list a small search-and-call set, and let the client look tools up\n" +
+			"  -        drop the setting and follow the global default",
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			profileName, mode := args[0], args[1]

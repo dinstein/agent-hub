@@ -135,8 +135,14 @@ func Main(opts Options) int {
 // not print or wrap anything on its own.
 func (a *App) newRoot() *cobra.Command {
 	root := &cobra.Command{
-		Use:               "agenthub",
-		Short:             "Local agent service hub: one config, one credential store, one governance pipeline",
+		Use:   "agenthub",
+		Short: "Give your AI clients MCP tools: add servers once, choose what each client sees",
+		Long: "Add and authorize each MCP server once here, and every AI client reaches them\n" +
+			"through agenthub. A first run:\n\n" +
+			"  agenthub server add github --cmd npx --args '-y,@modelcontextprotocol/server-github'\n" +
+			"  agenthub server enable github          # connects, then puts it into service\n" +
+			"  agenthub client connect claude-code    # then restart the client\n\n" +
+			"To give one client less than everything, put it on a profile.",
 		Version:           a.version,
 		SilenceUsage:      true,
 		SilenceErrors:     true,

@@ -99,6 +99,35 @@ listener once real hardware is available.
 
 ---
 
+### 3. `profile tools --only` accepts tool names no server has
+
+**Symptom.** `agenthub profile tools <profile> <server> --only <typo>` succeeds. The selector is stored
+verbatim, and because an allow-list is an intersection, a name matching nothing lets *nothing* through
+for that server. The operator asked for one tool and silently got zero.
+
+**Root cause.** `confops.SetProfileTools` (`internal/confops/profile.go:273-284`) validates that the
+profile exists and that the server exists, then calls `applySelector` with the names as given. Nothing
+compares them against the server's cached tool catalog.
+
+**Why it is not urgent.** The direction is fail-closed: a typo costs visibility, never grants it. That
+is the right way round, and it is why this is a gap rather than a bug.
+
+**Why it is still worth fixing.** It is invisible. The command prints success, `profile ls` shows the
+rule as written, and the tool is simply missing in the client — a symptom nobody traces back to a
+spelling mistake in a command that reported OK. `server add --stdin` had the same shape (a silently
+dropped `oauth` block) and it survived for months; the fix there was `DisallowUnknownFields`, i.e. make
+the mismatch loud.
+
+**Approach.** The catalog is already cached per server (`agenthub server test <id> --tools` reads it),
+so `SetProfileTools` can warn — not refuse — when a name is absent from it. A warning rather than an
+error because the cache may be cold: a server that has never connected has no tool list, and refusing
+there would block a legitimate rule written ahead of the first connection.
+
+**Verification.** A test that sets `--only ghost_tool` against a server with a populated cache must
+come back with a warning naming `ghost_tool`, and must still store the rule.
+
+---
+
 ## Appendix: how these gaps were found
 
 They surfaced during a session on 2026-07-27, while connecting two real MCP servers (both going through

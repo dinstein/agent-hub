@@ -177,8 +177,13 @@ func (a *App) newServerTestCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "test <id> [--tools] [--schema <tool>]",
-		Short: "Connect to a server and list its tools (optionally call one)",
-		Args:  exactArgs(1),
+		Short: "Actually connect to a server and see whether it works",
+		Long: "Contacts the server now and prints the tools it offers, so you know a server is\n" +
+			"usable before a client depends on it. If it reports that authorization is\n" +
+			"needed, run 'agenthub auth login <id>' and test again.\n\n" +
+			"You can also call one tool end to end, naming it as the server does:\n" +
+			"  agenthub server test github --tool search_repositories --args '{\"query\":\"mcp\"}'",
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			entry, warnings, err := a.serverEntry(id)
@@ -305,12 +310,12 @@ func (a *App) newServerTestCmd() *cobra.Command {
 			return p.Emit(res, warnings...)
 		},
 	}
-	cmd.Flags().StringVar(&toolName, "tool", "", "also call this tool (original downstream name)")
-	cmd.Flags().StringVar(&rawArgs, "args", "", "JSON arguments object for --tool")
-	cmd.Flags().DurationVar(&timeout, "timeout", 0, "connection timeout (default 120s: cold npx/uvx caches are slow)")
+	cmd.Flags().StringVar(&toolName, "tool", "", "also call this tool, named as the server itself names it")
+	cmd.Flags().StringVar(&rawArgs, "args", "", "arguments for --tool, as a JSON object")
+	cmd.Flags().DurationVar(&timeout, "timeout", 0, "how long to wait for a connection (default 120s: a first npx/uvx run has to download)")
 	cmd.Flags().BoolVar(&withTools, "tools", false,
-		"list every tool with its compact signature instead of just the names")
-	cmd.Flags().StringVar(&schema, "schema", "", "print one tool's full input schema")
+		"show each tool's arguments too, not just its name")
+	cmd.Flags().StringVar(&schema, "schema", "", "print the full argument definition of one tool")
 	return cmd
 }
 

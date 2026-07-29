@@ -101,8 +101,12 @@ func clientBindingOf(
 func (a *App) newClientLsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "ls",
-		Short: "List which profile each client is bound to",
-		Args:  noArgs,
+		Short: "Show which profile each client is on, and so what each one sees",
+		Long: "A client on no profile of its own follows 'agenthub profile use'. One on a\n" +
+			"profile that no longer exists sees nothing, and is flagged here as a warning.\n\n" +
+			"This is what a client may see, not whether it is wired up at all — for that,\n" +
+			"use 'agenthub client detect'.",
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, warnings, err := a.openStore()
 			if err != nil {
@@ -131,14 +135,12 @@ func (a *App) newClientLsCmd() *cobra.Command {
 func (a *App) newClientBindCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "bind <client-id> <profile>",
-		Short: "Bind a client to a profile (takes effect on live sessions immediately)",
-		Long: "Bind one client to a profile.\n\n" +
-			"The binding lives in agenthub's own registry, not in the client's MCP\n" +
-			"configuration, so rebinding takes effect on sessions that are already\n" +
-			"running: the resolver recomputes and pushes tools/list_changed. The\n" +
-			"client is never asked to restart.\n\n" +
-			"Binding to a profile that does not exist is accepted but fail-closes\n" +
-			"that client to an EMPTY scope, and says so.",
+		Short: "Decide what one client sees by putting it on a profile",
+		Long: "The profile then overrides the fallback from 'agenthub profile use', and the\n" +
+			"client has no say in it. This applies immediately, even to a client already\n" +
+			"running — only 'agenthub client connect' needs a restart.\n\n" +
+			"Naming a profile that does not exist is allowed and warned about, but leaves\n" +
+			"that client seeing nothing until it exists, so a typo can never widen access.",
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, profile := args[0], args[1]
@@ -165,8 +167,11 @@ func (a *App) newClientBindCmd() *cobra.Command {
 func (a *App) newClientUnbindCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "unbind <client-id>",
-		Short: "Remove a client's binding (it falls back to the active profile)",
-		Args:  exactArgs(1),
+		Short: "Take a client off its own profile, back onto the shared fallback",
+		Long: "The client then follows 'agenthub profile use', or sees every enabled server\n" +
+			"when that is unset — so this can WIDEN what it sees if it was on a narrow\n" +
+			"profile. Check where it landed with 'agenthub client ls'.",
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := args[0]
 			store, warnings, err := a.opsStore()

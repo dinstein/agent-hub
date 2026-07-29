@@ -196,9 +196,13 @@ func (a CatalogAdded) Human(w io.Writer) error {
 func (a *App) newCatalogCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "catalog",
-		Short: "Browse the curated MCP server directory and add from it",
-		Args:  cobra.ArbitraryArgs,
-		RunE:  groupRunE,
+		Short: "Browse a short built-in list of ready-made servers and add one",
+		Long: "A hand-checked list of popular MCP servers, so common ones can be added without\n" +
+			"hunting down the right command line.\n\n" +
+			"It is deliberately small: most servers are not in it, and 'agenthub server\n" +
+			"add' takes any of those directly.",
+		Args: cobra.ArbitraryArgs,
+		RunE: groupRunE,
 	}
 	cmd.AddCommand(a.newCatalogLsCmd(), a.newCatalogSearchCmd(),
 		a.newCatalogShowCmd(), a.newCatalogAddCmd())
@@ -208,7 +212,8 @@ func (a *App) newCatalogCmd() *cobra.Command {
 func (a *App) newCatalogLsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "ls",
-		Short: "List every curated server",
+		Short: "Show everything in the built-in list",
+		Long:  "These are on offer, not servers you have; 'agenthub server ls' shows those.",
 		Args:  noArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return a.printer().Emit(catalogRows(catalog.List()))
@@ -219,8 +224,10 @@ func (a *App) newCatalogLsCmd() *cobra.Command {
 func (a *App) newCatalogSearchCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "search <query>",
-		Short: "Search the curated servers by name, description or tag",
-		Args:  rangeArgs(1, 32),
+		Short: "Find a ready-made server by name, description or topic",
+		Long: "Several words narrow rather than widen the result — every word has to match.\n" +
+			"No matches usually just means it is not in this short list.",
+		Args: rangeArgs(1, 32),
 		RunE: func(_ *cobra.Command, args []string) error {
 			// Every term must match: `catalog search git hub` narrows.
 			return a.printer().Emit(catalogRows(catalog.Search(strings.Join(args, " "))))
@@ -231,8 +238,10 @@ func (a *App) newCatalogSearchCmd() *cobra.Command {
 func (a *App) newCatalogShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <id>",
-		Short: "Show one curated server and the command that adds it",
-		Args:  exactArgs(1),
+		Short: "Show what one ready-made server needs, and the command that adds it",
+		Long: "Includes the ready-made 'catalog add' line for the entry. Read this first when\n" +
+			"an entry needs a value from you: it is where the --param names come from.",
+		Args: exactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			entry, ok := catalog.Get(args[0])
 			if !ok {
@@ -254,8 +263,13 @@ func (a *App) newCatalogAddCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "add <id>",
-		Short: "Add a curated server to the registry",
-		Args:  exactArgs(1),
+		Short: "Add a ready-made server and switch it on in one step",
+		Long: "Unlike 'agenthub server add', this enables the server too, so a curated entry\n" +
+			"needing nothing else is a single command.\n\n" +
+			"Entries that do need a value from you take it as --param; 'agenthub catalog\n" +
+			"show <id>' lists which:\n" +
+			"  agenthub catalog add filesystem --param directory=/Users/me/projects",
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			source, ok := catalog.Get(args[0])
 			if !ok {
@@ -314,9 +328,9 @@ func (a *App) newCatalogAddCmd() *cobra.Command {
 			}, warnings...)
 		},
 	}
-	cmd.Flags().StringVar(&name, "name", "", "server name in the registry (default: the catalog id)")
+	cmd.Flags().StringVar(&name, "name", "", "name to register the server under (default: the id shown in the list)")
 	cmd.Flags().StringArrayVar(&paramsKV, "param", nil,
-		"value for a declared parameter, KEY=VALUE (repeatable); see 'agenthub catalog show <id>'")
+		"a value this entry asks for, KEY=VALUE (repeatable); 'agenthub catalog show <id>' lists them")
 	return cmd
 }
 

@@ -179,14 +179,21 @@ func (i ServerInspect) Human(w io.Writer) error {
 // a downstream that is merely down right now must not become a
 // configuration change.
 func (a *App) newServerToggleCmd(enable bool) *cobra.Command {
-	verb, short := "disable", "Disable a server globally (removes it from every profile's effective set)"
+	verb, short := "disable", "Switch a server off for every client at once"
+	long := "Takes the server away from every client at once, and no profile can bring it\n" +
+		"back. The server and its credentials stay; 'agenthub server enable' restores it."
 	if enable {
-		verb, short = "enable", "Enable a server globally (probes it and reports what it needs)"
+		verb, short = "enable", "Switch a server on, connecting to it first to see what it needs"
+		long = "Connects to the server before putting it into service, so a missing credential\n" +
+			"or a broken command is reported here rather than inside someone's AI client.\n\n" +
+			"A client bound to a profile that leaves this server out still will not see it;\n" +
+			"check with 'agenthub profile ls'."
 	}
 	var noProbe bool
 	cmd := &cobra.Command{
 		Use:   verb + " <id>",
 		Short: short,
+		Long:  long,
 		Args:  exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
@@ -263,8 +270,11 @@ func (a *App) newServerInspectCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "inspect <id> [--tools] [--schema <tool>]",
-		Short: "Show one server's configuration, cached tool catalog and live health",
-		Args:  exactArgs(1),
+		Short: "Show one server's settings, its known tools and whether it is currently up",
+		Long: "The tool list shown is remembered from the last contact, not fetched now. To\n" +
+			"connect for real and see what the server answers today, use\n" +
+			"'agenthub server test <id>'.",
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			store, warnings, err := a.openStore()
@@ -314,8 +324,8 @@ func (a *App) newServerInspectCmd() *cobra.Command {
 			return a.printer().Emit(out, warnings...)
 		},
 	}
-	cmd.Flags().BoolVar(&withTools, "tools", false, "list the cached tool catalog")
-	cmd.Flags().StringVar(&schema, "schema", "", "print one tool's raw input schema")
+	cmd.Flags().BoolVar(&withTools, "tools", false, "list the tools recorded for this server")
+	cmd.Flags().StringVar(&schema, "schema", "", "print the argument definition of one recorded tool")
 	return cmd
 }
 

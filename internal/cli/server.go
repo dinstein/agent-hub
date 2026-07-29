@@ -117,9 +117,14 @@ func (a *App) newServerCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "server",
 		Aliases: []string{"servers"}, // singular canonical, plural alias (canonical.md §3)
-		Short:   "Manage downstream MCP servers",
-		Args:    cobra.ArbitraryArgs,
-		RunE:    groupRunE,
+		Short:   "Add, inspect and switch off the MCP servers agenthub connects to",
+		Long: "Servers are registered once here, for every client at the same time. 'add'\n" +
+			"writes the definition and leaves it off; 'enable' connects and puts it into\n" +
+			"service.\n\n" +
+			"Enabled servers are the most any client can ever see, so 'disable' takes one\n" +
+			"away from everybody at once and no profile can put it back.",
+		Args: cobra.ArbitraryArgs,
+		RunE: groupRunE,
 	}
 	cmd.AddCommand(
 		a.newServerLsCmd(), a.newServerInspectCmd(), a.newServerAddCmd(), a.newServerRmCmd(),
@@ -163,9 +168,14 @@ func (a *App) newServerAddCmd() *cobra.Command {
 	// separate.
 	cmd := &cobra.Command{
 		Use:   "add [<name>]",
-		Short: "Add a downstream MCP server, disabled (flags or pasted JSON via --stdin)",
-		Long: "Writes the server definition only — no connection is made and the entry is left DISABLED.\n" +
-			"Run 'agenthub server enable <id>' to probe it and put it into service.",
+		Short: "Add an MCP server, switched off, from flags or from JSON you paste in",
+		Long: "Use --cmd for a server agenthub launches locally, --url for one behind an HTTP\n" +
+			"endpoint, or --stdin to pipe in the JSON block a README gives you. (--runtime\n" +
+			"docker fails outright rather than falling back to your machine.)\n\n" +
+			"This only writes the definition down: nothing connects, and the server stays\n" +
+			"off until 'agenthub server enable <id>' probes it and puts it into service.\n\n" +
+			"Never put a real token in --env or --header: write ${SECRET_NAME} and the\n" +
+			"value is looked up from agenthub's credential store at startup.",
 		Args: rangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := ""
@@ -244,37 +254,37 @@ func (a *App) newServerAddCmd() *cobra.Command {
 			return a.printer().Emit(result, warnings...)
 		},
 	}
-	cmd.Flags().StringVar(&cmdPath, "cmd", "", "executable to spawn (stdio transport)")
-	cmd.Flags().StringSliceVar(&argv, "args", nil, "comma-separated arguments for the executable")
-	cmd.Flags().StringArrayVar(&envKV, "env", nil, "environment variable KEY=VALUE (repeatable); values may use ${SECRET_X}")
-	cmd.Flags().StringVar(&cwd, "cwd", "", "working directory for the spawned server")
-	cmd.Flags().StringVar(&url, "url", "", "MCP endpoint URL (http/sse transports)")
-	cmd.Flags().StringVar(&transportOpt, "transport", "", "transport: stdio (default with --cmd), http or sse (default with --url)")
-	cmd.Flags().StringArrayVar(&headerKV, "header", nil, "HTTP header KEY=VALUE (repeatable); values may use ${SECRET_X}")
+	cmd.Flags().StringVar(&cmdPath, "cmd", "", "program agenthub runs to start the server, e.g. npx")
+	cmd.Flags().StringSliceVar(&argv, "args", nil, "arguments for that program, comma-separated")
+	cmd.Flags().StringArrayVar(&envKV, "env", nil, "environment variable KEY=VALUE (repeatable); write ${SECRET_X} instead of a real secret")
+	cmd.Flags().StringVar(&cwd, "cwd", "", "directory the server is started in")
+	cmd.Flags().StringVar(&url, "url", "", "address of a server that already runs behind HTTP")
+	cmd.Flags().StringVar(&transportOpt, "transport", "", "how to reach it: stdio (assumed with --cmd), http or sse (assumed with --url)")
+	cmd.Flags().StringArrayVar(&headerKV, "header", nil, "HTTP header KEY=VALUE (repeatable); write ${SECRET_X} instead of a real secret")
 	cmd.Flags().BoolVar(&local, "local", false,
-		"the endpoint is a local server: allow a literal loopback URL (never RFC1918)")
+		"allow a --url pointing at this machine (localhost); other private addresses stay refused")
 	cmd.Flags().BoolVar(&fromStdin, "stdin", false,
-		`read server definition JSON from stdin ({"mcpServers":{...}} or a single entry)`)
+		`read the server's JSON from standard input ({"mcpServers":{...}} or one bare entry)`)
 	cmd.Flags().StringVar(&docker.runtime, "runtime", "",
-		"where the stdio child runs: host (default) or docker")
+		"run the server on this machine (host, the default) or inside a container (docker)")
 	cmd.Flags().StringVar(&docker.image, "image", "",
-		"container image (implies --runtime docker)")
+		"container image to run; setting this turns on --runtime docker")
 	cmd.Flags().StringArrayVar(&docker.mounts, "mount", nil,
-		"host directory to expose: SRC[:DST][:ro|rw] (repeatable; read-only by default)")
+		"directory of yours the container may see: SRC[:DST][:ro|rw] (repeatable; read-only unless you say rw)")
 	cmd.Flags().StringVar(&docker.network, "network", "",
-		"container network (default none: no network at all)")
-	cmd.Flags().StringVar(&docker.memory, "memory", "", "container memory limit, e.g. 512m")
-	cmd.Flags().StringVar(&docker.cpus, "cpus", "", "container CPU limit, e.g. 1.5")
-	cmd.Flags().StringVar(&docker.user, "container-user", "", "container user (docker --user)")
-	cmd.Flags().StringVar(&docker.workdir, "container-workdir", "", "container working directory")
+		"container network; by default the container gets no network at all")
+	cmd.Flags().StringVar(&docker.memory, "memory", "", "how much memory the container may use, e.g. 512m")
+	cmd.Flags().StringVar(&docker.cpus, "cpus", "", "how many CPUs the container may use, e.g. 1.5")
+	cmd.Flags().StringVar(&docker.user, "container-user", "", "user the container runs as")
+	cmd.Flags().StringVar(&docker.workdir, "container-workdir", "", "directory the container starts in")
 	cmd.Flags().StringArrayVar(&docker.extra, "docker-arg", nil,
-		"extra 'docker run' argument (repeatable); cannot override the isolation defaults")
+		"extra argument for 'docker run' (repeatable); it may not undo the container's restrictions")
 	cmd.Flags().StringVar(&oauth.issuer, "oauth-issuer", "",
-		"pin the authorization server, skipping RFC 9728 discovery")
+		"tell agenthub which login service to use, instead of asking the server")
 	cmd.Flags().StringSliceVar(&oauth.scopes, "oauth-scope", nil,
-		"OAuth scope to request (repeatable or comma-separated); sent verbatim")
+		"permission to ask for at login (repeatable or comma-separated); sent exactly as written")
 	cmd.Flags().StringVar(&oauth.resourceMetadata, "oauth-resource-metadata", "",
-		"pin the RFC 9728 protected-resource metadata URL")
+		"address of the server's login-details document, if it is not where agenthub would look")
 	return cmd
 }
 
@@ -424,8 +434,10 @@ func validateEndpoint(raw string, local bool) error {
 func (a *App) newServerLsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "ls",
-		Short: "List configured servers",
-		Args:  noArgs,
+		Short: "List every server you have added, and whether it is switched on",
+		Long: "This is what is registered, not what is working: a server listed here can\n" +
+			"still fail to start. 'agenthub server test <id>' answers that.",
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, warnings, err := a.openStore()
 			if err != nil {
@@ -446,8 +458,10 @@ func (a *App) newServerRmCmd() *cobra.Command {
 	var keepCreds bool
 	cmd := &cobra.Command{
 		Use:   "rm <id>",
-		Short: "Remove a server and its stored credentials",
-		Args:  exactArgs(1),
+		Short: "Delete a server and the credentials stored for it",
+		Long: "Permanent. To stop a server being used without losing it, use\n" +
+			"'agenthub server disable' instead.",
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			store, warnings, err := a.opsStore()
@@ -474,7 +488,7 @@ func (a *App) newServerRmCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&keepCreds, "keep-credentials", false,
-		"leave the server's stored credentials in the vault (they are removed by default)")
+		"keep the server's stored credentials; by default they are deleted with it")
 	return cmd
 }
 

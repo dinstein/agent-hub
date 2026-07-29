@@ -153,11 +153,11 @@ func (r ImportResult) Human(w io.Writer) error {
 func (a *App) newClientDetectCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "detect",
-		Short: "Scan this machine for installed AI clients and their MCP configuration files",
-		Long: "List the MCP configuration files of every known AI client.\n\n" +
-			"This command only STATS files, it never opens them: a bulk scan that\n" +
-			"reads other applications' data directories would trigger a privacy\n" +
-			"prompt per client on macOS. Use 'client import' to read one.",
+		Short: "Find the AI clients installed here and where each keeps its config",
+		Long: "Start here when you are unsure what to pass to 'agenthub client connect'.\n\n" +
+			"It checks only that the config files exist, never opening them: reading every\n" +
+			"client's data on sight would set off a macOS privacy prompt per client.\n" +
+			"'agenthub client import' reads one when you ask it to.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			table := clients.Default()
@@ -191,10 +191,12 @@ func (a *App) newClientImportCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "import <client> [--as-team]",
-		Short: "Adopt a client's existing MCP servers into agenthub (source=imported:<client>)",
-		Long: "Read one client's MCP configuration and add its servers to the registry.\n\n" +
-			"A name that already exists in the registry is reported as a conflict and\n" +
-			"left alone: an import never redefines a server you already govern.",
+		Short: "Take over the MCP servers a client is already configured with",
+		Long: "Saves re-entering servers you already set up in that client. Try --dry-run\n" +
+			"first. A name clashing with a server you already have is reported and\n" +
+			"skipped; an import never overwrites one you set up yourself.\n\n" +
+			"This copies the servers over — it does not wire the client up to agenthub or\n" +
+			"remove its old entries. Use 'agenthub client connect' for that.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientID := args[0]
@@ -254,8 +256,8 @@ func (a *App) newClientImportCmd() *cobra.Command {
 			return a.printer().Emit(out, warnings...)
 		},
 	}
-	cmd.Flags().BoolVar(&asTeam, "as-team", false, "record the import as team-scoped (team support lands in M2)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be imported without writing")
+	cmd.Flags().BoolVar(&asTeam, "as-team", false, "note these as shared with a team; nothing behaves differently yet")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be imported without changing anything")
 	return cmd
 }
 

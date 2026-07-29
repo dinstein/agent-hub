@@ -160,9 +160,13 @@ func (r AuthLogoutResult) Human(w io.Writer) error {
 func (a *App) newAuthCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
-		Short: "Authorize downstream servers (OAuth 2.1, headless)",
-		Args:  cobra.ArbitraryArgs,
-		RunE:  groupRunE,
+		Short: "Sign in to servers that require an account, and manage those sign-ins",
+		Long: "You usually get here because 'agenthub server test' reported that a server\n" +
+			"refuses to answer until you authorize it. Sign in once with 'auth login' and\n" +
+			"agenthub keeps and renews the token for every client.\n\n" +
+			"Tokens are stored locally and never printed by any of these commands.",
+		Args: cobra.ArbitraryArgs,
+		RunE: groupRunE,
 	}
 	cmd.AddCommand(a.newAuthLoginCmd(), a.newAuthStatusCmd(), a.newAuthRefreshCmd(), a.newAuthLogoutCmd())
 	return cmd
@@ -183,10 +187,14 @@ func (a *App) newAuthLoginCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "login <server>",
-		Short: "Run an OAuth login for a server (loopback / manual / device)",
-		Long: "Mode selection: an explicit --manual/--device/--loopback wins; " +
-			"otherwise the device flow is used when the authorization server advertises it; " +
-			"otherwise loopback when a browser can be opened; otherwise manual.",
+		Short: "Sign in to one server and store the token for every client to use",
+		Long: "Signs you in once and stores the token, so your clients never handle the\n" +
+			"credentials. Three ways to finish it:\n\n" +
+			"  --loopback  opens your browser and catches the answer\n" +
+			"  --device    shows a short code you type into the provider's site\n" +
+			"  --manual    prints a link and waits for you to paste back where it sent you\n\n" +
+			"Left alone it picks the device code if offered, else the browser, else manual.\n" +
+			"With no browser available — over SSH, say — add --no-browser.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serverID := args[0]
@@ -313,29 +321,31 @@ func (a *App) newAuthLoginCmd() *cobra.Command {
 			}, warnings...)
 		},
 	}
-	cmd.Flags().BoolVar(&manual, "manual", false, "print the authorization URL and read the pasted callback back")
-	cmd.Flags().BoolVar(&device, "device", false, "use the RFC 8628 device flow")
-	cmd.Flags().BoolVar(&loopback, "loopback", false, "use the local browser + loopback redirect")
-	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "never launch a browser (downgrades auto-selection to manual)")
-	cmd.Flags().StringSliceVar(&scopes, "scopes", nil, "comma-separated scopes to request (sent verbatim)")
+	cmd.Flags().BoolVar(&manual, "manual", false, "print a link to open yourself, then wait for you to paste the result back")
+	cmd.Flags().BoolVar(&device, "device", false, "show a short code to type into the provider's website")
+	cmd.Flags().BoolVar(&loopback, "loopback", false, "open your browser and catch the answer automatically")
+	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "never open a browser; falls back to the manual sign-in")
+	cmd.Flags().StringSliceVar(&scopes, "scopes", nil, "permissions to ask for, comma-separated; sent exactly as written")
 	cmd.Flags().StringVar(&authzEndpt, "authorization-endpoint", "",
-		"replace the discovered authorization_endpoint, e.g. https://idp.example.com/oauth/authorize/tenant1 "+
-			"(off-spec: for providers serving endpoints they do not advertise; prefer fixing their metadata)")
-	cmd.Flags().StringVar(&issuer, "issuer", "", "authorization server issuer URL (skips RFC 9728 discovery)")
+		"the exact sign-in address to use, e.g. https://idp.example.com/oauth/authorize/tenant1 "+
+			"(only for providers that do not publish it correctly; better to get them to fix it)")
+	cmd.Flags().StringVar(&issuer, "issuer", "", "address of the login service, when agenthub cannot work it out from the server")
 	cmd.Flags().StringVar(&redirectURI, "redirect-uri", "",
-		"pin the loopback callback URI verbatim, e.g. http://localhost:8040/oauth2/callback "+
-			"(for providers with a pre-registered OAuth client whose allowlist we cannot change)")
+		"the exact return address to use, e.g. http://localhost:8040/oauth2/callback "+
+			"(for providers that only accept an address registered with them in advance)")
 	cmd.Flags().BoolVar(&allowLocal, "allow-local", false,
-		"permit a literal loopback authorization server (self-hosted providers)")
-	cmd.Flags().DurationVar(&timeout, "timeout", 0, "how long to wait for the loopback callback (default 180s)")
+		"allow a login service running on this machine (for a provider you host yourself)")
+	cmd.Flags().DurationVar(&timeout, "timeout", 0, "how long to wait for you to finish in the browser (default 180s)")
 	return cmd
 }
 
 func (a *App) newAuthStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status [server]",
-		Short: "Show stored authorization state (never prints credentials)",
-		Args:  rangeArgs(0, 1),
+		Short: "Show which servers you are signed in to, and when that expires",
+		Long: "Also shows whether agenthub can renew each sign-in on its own. One that has\n" +
+			"expired and cannot renew needs 'agenthub auth login <server>' again.",
+		Args: rangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, warnings, err := a.openStore()
 			if err != nil {
@@ -417,8 +427,10 @@ func authStatusOf(ctx context.Context, deps *oauthDeps, id string, now time.Time
 func (a *App) newAuthRefreshCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "refresh <server>",
-		Short: "Force a token refresh now",
-		Args:  exactArgs(1),
+		Short: "Renew a server's sign-in now instead of waiting for it to expire",
+		Long: "agenthub renews tokens by itself before they run out, so this is mainly for\n" +
+			"confirming that renewal still works.",
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serverID := args[0]
 			// The loopback carve-out follows the server's own provenance, so
@@ -453,8 +465,11 @@ func (a *App) newAuthRefreshCmd() *cobra.Command {
 func (a *App) newAuthLogoutCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout <server>",
-		Short: "Remove the locally stored credentials of a server",
-		Args:  exactArgs(1),
+		Short: "Forget the stored sign-in for one server",
+		Long: "The server stays registered; calls to it fail until you log in again. This\n" +
+			"clears only agenthub's copy — to revoke the access itself, use the provider's\n" +
+			"own settings page.",
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serverID := args[0]
 			deps, err := a.newOAuthDeps(false)

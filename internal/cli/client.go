@@ -109,9 +109,15 @@ func (a *App) newClientCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "client",
 		Aliases: []string{"clients"}, // singular canonical, plural alias (canonical.md §3)
-		Short:   "Connect AI clients to the agenthub gateway",
-		Args:    cobra.ArbitraryArgs,
-		RunE:    groupRunE,
+		Short:   "Point your AI clients at agenthub and decide what each one sees",
+		Long: "Two separate jobs, easily confused. 'connect' edits the client's own config so\n" +
+			"it talks to agenthub at all — once per client, and it must be restarted\n" +
+			"after. 'bind' decides which profile it gets, and so what it may see.\n\n" +
+			"  agenthub client detect\n" +
+			"  agenthub client connect claude-code   # then restart it\n" +
+			"  agenthub client bind claude-code readonly",
+		Args: cobra.ArbitraryArgs,
+		RunE: groupRunE,
 	}
 	// Read before write (canonical.md §3), so `ls` leads.
 	cmd.AddCommand(
@@ -132,8 +138,13 @@ func (a *App) newClientConnectCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "connect <client-id>",
-		Short: "Write the agenthub gateway entry into a client's MCP configuration",
-		Args:  exactArgs(1),
+		Short: "Wire one AI client up to agenthub by editing its config file",
+		Long: "RESTART THE CLIENT AFTERWARDS: it reads that file only at startup, so until\n" +
+			"you do, nothing appears to have happened.\n\n" +
+			"--dry-run shows what would be written and where, and is also how you get the\n" +
+			"entry to paste in yourself for a client agenthub cannot edit. Writes to your\n" +
+			"own config unless you pass --placement project.",
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientID := args[0]
 			exe := bin
@@ -168,10 +179,10 @@ func (a *App) newClientConnectCmd() *cobra.Command {
 			return a.printer().Emit(plan)
 		},
 	}
-	cmd.Flags().StringVar(&path, "path", "", "configuration file to write (overrides --placement)")
+	cmd.Flags().StringVar(&path, "path", "", "write to this exact file instead of the one --placement would choose")
 	cmd.Flags().StringVar(&placement, "placement", "", placementUsage)
-	cmd.Flags().StringVar(&bin, "bin", "", "agenthub binary path to write into the entry (default: this executable)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview the entry without writing anything")
+	cmd.Flags().StringVar(&bin, "bin", "", "path to agenthub to put in the entry (default: the agenthub you are running)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be written, and where, without changing anything")
 	return cmd
 }
 
@@ -182,8 +193,11 @@ func (a *App) newClientDisconnectCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "disconnect <client-id>",
-		Short: "Remove the agenthub gateway entry from a client's MCP configuration",
-		Args:  exactArgs(1),
+		Short: "Undo 'client connect': take agenthub out of a client's config file",
+		Long: "Only the entry agenthub wrote is touched; servers you configured in that client\n" +
+			"yourself are left alone, as are your own servers and profiles. Restart the\n" +
+			"client for it to take effect.",
+		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientID := args[0]
 			format, target, err := a.clientTarget(clientID, path, placement)
@@ -213,7 +227,7 @@ func (a *App) newClientDisconnectCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&path, "path", "", "configuration file to edit (overrides --placement)")
+	cmd.Flags().StringVar(&path, "path", "", "edit this exact file instead of the one --placement would choose")
 	cmd.Flags().StringVar(&placement, "placement", "", placementUsage)
 	return cmd
 }
@@ -221,7 +235,7 @@ func (a *App) newClientDisconnectCmd() *cobra.Command {
 // placementUsage documents --placement on both connect and disconnect. The
 // default is stated rather than implied: which file the entry lands in is
 // exactly the thing a user is deciding here.
-const placementUsage = "where the configuration file lives: user|project (default: user)"
+const placementUsage = "which config file to use: user (yours, the default) or project (this directory's)"
 
 // clientTarget resolves the Format for clientID and the configuration file to
 // operate on. Precedence: an explicit --path, then --placement, then the
@@ -307,8 +321,11 @@ func (a *App) newConnectCmd() *cobra.Command {
 	var clientID string
 	cmd := &cobra.Command{
 		Use:   "connect",
-		Short: "Run the stdio gateway for a client (invoked by client MCP configurations)",
-		Args:  noArgs,
+		Short: "Not for typing: the command an AI client runs to reach agenthub",
+		Long: "Speaks the MCP protocol on standard input and output until the client goes\n" +
+			"away. Run by hand it just waits for protocol messages — Ctrl-C to get out.\n" +
+			"To wire up a client, use 'agenthub client connect' instead.",
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if clientID == "" {
 				e := Usagef("--client is required")
@@ -343,6 +360,6 @@ func (a *App) newConnectCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&clientID, "client", "", "client identity this gateway serves (scope routing key)")
+	cmd.Flags().StringVar(&clientID, "client", "", "which client this is, so agenthub knows which profile applies to it")
 	return cmd
 }

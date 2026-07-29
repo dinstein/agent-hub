@@ -110,10 +110,10 @@ func (a *App) newServerLogsCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "logs <id> [--follow]",
-		Short: "Show a downstream server's JSON-RPC trace log",
-		Long: "Show the per-server trace log at <data>/logs/server-<id>.log.\n\n" +
-			"The log is written only while frame tracing is enabled for that server;\n" +
-			"an empty log means tracing was off, not that the server was idle.",
+		Short: "Show the recorded conversation between agenthub and one server",
+		Long: "Reads <data>/logs/server-<id>.log, for when a server connects but a tool call\n" +
+			"misbehaves. Recording is off unless it was switched on for that server, so an\n" +
+			"empty log means nothing was recorded, not that the server sat idle.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
@@ -134,8 +134,8 @@ func (a *App) newServerLogsCmd() *cobra.Command {
 			return a.followServerLogs(cmd.Context(), id, path, limit)
 		},
 	}
-	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "keep printing new frames as they are appended")
-	cmd.Flags().IntVar(&limit, "limit", serverLogsDefault, "how many frames to show (0 = all)")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "stay open and keep printing new messages as they arrive")
+	cmd.Flags().IntVar(&limit, "limit", serverLogsDefault, "how many messages to show (0 = all of them)")
 	return cmd
 }
 
