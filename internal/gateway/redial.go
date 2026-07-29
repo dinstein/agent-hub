@@ -122,7 +122,15 @@ func (g *gateway) claimDue(now time.Time) []downstream.Spec {
 		if !g.beginDialLocked(spec.ID) {
 			continue // a dial is already in flight under someone else's accounting
 		}
-		g.armLocked(spec.ID, now)
+		// Claiming does NOT advance the rung. The dial about to start ends in
+		// exactly one of two places, and both already own the ladder:
+		// noteConnectResult arms the next rung on failure and clears it on
+		// success. Arming here as well climbed two rungs per attempt, which
+		// turned the documented 5s/15s/45s/135s into 5s/45s/cap — a backoff
+		// that looks like it is working while skipping every other rung.
+		//
+		// The dial slot, not the due time, is what stops the next tick from
+		// dialing the same server again while this one is in flight.
 		due = append(due, spec)
 	}
 	return due

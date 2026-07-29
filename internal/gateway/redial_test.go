@@ -128,6 +128,52 @@ func TestRedialLadderBacksOffAndCaps(t *testing.T) {
 	}
 }
 
+// TestRedialClimbsExactlyOneRungPerAttempt is the regression test for a
+// ladder that backed off twice as fast as it documented. Arming lived in two
+// places — the tick that CLAIMED a dial and the failure that followed it — so
+// every attempt advanced two rungs and 5s/15s/45s/135s was really 5s/45s/cap.
+//
+// It only reproduces through the real loop: the arithmetic test above calls
+// armLocked directly and cannot see a caller arming twice.
+func TestRedialClimbsExactlyOneRungPerAttempt(t *testing.T) {
+	t.Parallel()
+	g := &gateway{
+		redial:      newRedialParams(0),
+		redialAt:    map[string]time.Time{},
+		redialTries: map[string]int{},
+		dialing:     map[string]struct{}{},
+		connErr:     map[string]string{},
+		servers:     map[string]*downstream.Server{},
+		specs:       []downstream.Spec{{ID: "s"}},
+	}
+	for attempt := 1; attempt <= 4; attempt++ {
+		// The dial that just ran failed: THIS is what arms the next rung.
+		g.noteConnectResult("s", "boom")
+		if got := g.redialTries["s"]; got != attempt {
+			t.Fatalf("after failure %d the ladder is at rung %d, want %d", attempt, got, attempt)
+		}
+		due := g.redialAt["s"]
+
+		// The tick that picks it up must claim the dial and nothing else.
+		claimed := g.claimDue(due)
+		if len(claimed) != 1 || claimed[0].ID != "s" {
+			t.Fatalf("attempt %d: claimDue returned %v, want the one due spec", attempt, claimed)
+		}
+		if got := g.redialTries["s"]; got != attempt {
+			t.Fatalf("claiming a dial advanced the ladder to rung %d; only a recorded failure may arm", got)
+		}
+		if !g.redialAt["s"].Equal(due) {
+			t.Fatalf("claiming a dial moved the due time from %v to %v", due, g.redialAt["s"])
+		}
+
+		// A second tick before that dial lands must not dial it again.
+		if again := g.claimDue(due); len(again) != 0 {
+			t.Fatalf("attempt %d: a second tick claimed a server whose dial was in flight", attempt)
+		}
+		g.finishDial("s") // what connectOne does on every exit path
+	}
+}
+
 // TestRedialParamsDeriveFromTheBase: one knob moves the whole ladder, so a
 // shrunken test ladder can never end up with a base above its own ceiling.
 func TestRedialParamsDeriveFromTheBase(t *testing.T) {
