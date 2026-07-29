@@ -195,16 +195,14 @@ func TestMergeMatrix(t *testing.T) {
 			layers: []ScopeLayer{
 				{Kind: LayerGlobal, Approval: ApprovalPolicy{DenyDestructive: boolPtr(true)}},
 				{Kind: LayerProfile, Approval: ApprovalPolicy{HumanApproval: boolPtr(true)}},
-				{Kind: LayerSession, Approval: ApprovalPolicy{
-					HumanApproval:      boolPtr(false), // inert: cannot switch off the client's true
-					ConfirmDestructive: boolPtr(false),
-				}},
+				// inert: a false can never switch off the profile layer's true.
+				{Kind: LayerSession, Approval: ApprovalPolicy{HumanApproval: boolPtr(false)}},
 			},
 			cat: testCatalog(),
 			servers: map[string][]string{
 				"fs": {"delete", "read", "write"}, "git": {"commit", "log"}, "web": {"fetch"},
 			},
-			appr: EffectiveApproval{HumanApproval: true, ConfirmDestructive: false, DenyDestructive: true},
+			appr: EffectiveApproval{HumanApproval: true, DenyDestructive: true},
 		},
 		{
 			name: "all three layers combined",
@@ -357,7 +355,6 @@ func deepCopyLayers(in []ScopeLayer) []ScopeLayer {
 			}
 		}
 		cp.Approval.HumanApproval = cloneBool(l.Approval.HumanApproval)
-		cp.Approval.ConfirmDestructive = cloneBool(l.Approval.ConfirmDestructive)
 		cp.Approval.DenyDestructive = cloneBool(l.Approval.DenyDestructive)
 		out[i] = cp
 	}

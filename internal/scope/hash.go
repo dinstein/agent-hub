@@ -42,7 +42,6 @@ func hashScope(es *EffectiveScope) [32]byte {
 
 	writeStr(h, "approval")
 	writeBool(h, es.Approval.HumanApproval)
-	writeBool(h, es.Approval.ConfirmDestructive)
 	writeBool(h, es.Approval.DenyDestructive)
 
 	writeStr(h, "diags")

@@ -327,8 +327,7 @@ type ProfilesDoc struct {
 // fail-closed). DenyDestructive lives only in governance.json: it is global
 // and never agent-writable.
 type ApprovalPolicy struct {
-	HumanApproval      *bool `json:"humanApproval,omitempty"`
-	ConfirmDestructive *bool `json:"confirmDestructive,omitempty"`
+	HumanApproval *bool `json:"humanApproval,omitempty"`
 }
 
 // Budget bounds result payloads. Forced marks an org/tighten-only rule: when

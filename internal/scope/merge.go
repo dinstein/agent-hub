@@ -152,7 +152,6 @@ func MergeWithDiagnostics(layers []ScopeLayer, cat router.Catalog, diags []Diagn
 	var ap EffectiveApproval
 	for _, l := range layers {
 		orInto(&ap.HumanApproval, l.Approval.HumanApproval)
-		orInto(&ap.ConfirmDestructive, l.Approval.ConfirmDestructive)
 		orInto(&ap.DenyDestructive, l.Approval.DenyDestructive)
 	}
 

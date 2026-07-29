@@ -257,7 +257,9 @@ describe、也不可路由。键**故意不同**，各自对齐产生它的存�
   的 `inputSchema` 直接跳过校验（fail-open：那是我们没读懂的下游数据，因为自己的解析能力有限而否决合法
   调用是不对的）。多处违规时报的一定是同一个字段（名字排序后遍历），因为错误文案是契约。
 - `hitlGate`：先做 `DenyDestructive`——这是机器可判的全局开关，**不需要 broker**，无论有没有 `Asker` 都强
-  制。然后 `need := HumanApproval || (destructive && ConfirmDestructive)`。走 broker 时，broker **报错 = 阻断**
+  制。然后 `HumanApproval` 对剩下的每一次调用都要求人工批准。两个开关刻意分处两端；中间那档（只对破坏性
+  调用发问）当初只能由 client 层设置，随该层一并删除，而不是留下一个「gate 会读、却没人能设」的字段。
+  annotation 仍然决定请求以什么**分类**呈现给审批者，而不决定要不要发问。走 broker 时，broker **报错 = 阻断**
   （`E_HITL_UNAVAILABLE`），未知 decision 字符串也阻断——只有显式 approved 才开门。审批绑定
   `HashArgs(req.Args)`，一次批准只覆盖这一组参数。
 

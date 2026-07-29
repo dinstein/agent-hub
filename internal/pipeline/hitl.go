@@ -132,8 +132,13 @@ func (g *hitlGate) Check(ctx context.Context, req *CallRequest) error {
 			"tool %q of server %q is destructive and denyDestructive is set", req.RawTool, req.ServerID)
 	}
 
-	need := es.Approval.HumanApproval || (destructive && es.Approval.ConfirmDestructive)
-	if !need {
+	// Two switches remain, and they sit at opposite ends: denyDestructive
+	// refuses without asking, humanApproval asks about everything. The middle
+	// setting (ask only about destructive calls) was reachable only from the
+	// client layer and lost its one writer when that layer was retired —
+	// keeping the field would have left this gate reading a value nothing
+	// could set.
+	if !es.Approval.HumanApproval {
 		return nil
 	}
 	if g.asker == nil {

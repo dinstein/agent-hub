@@ -71,23 +71,28 @@ func TestProfileSwitchHotReload(t *testing.T) {
 	c.close()
 }
 
-// TestProfileScopeSetHotReload covers the per-client binding path
-// (clients.json) rather than the global activeProfile marker.
-func TestProfileScopeSetHotReload(t *testing.T) {
+// TestClientBindHotReload covers the per-client binding path (clients.json)
+// rather than the global activeProfile marker.
+//
+// Rebinding a LIVE client is the reason the binding lives in agenthub's own
+// registry instead of in the client's MCP config file: a file the client owns
+// could only take effect on its next start. This test is what keeps that
+// property honest.
+func TestClientBindHotReload(t *testing.T) {
 	dataDir := t.TempDir()
 
 	runAgenthub(t, dataDir, "", "server", "add", "alpha", "--cmd", fakemcpBin, "--json")
 	runAgenthub(t, dataDir, "", "server", "add", "beta", "--cmd", fakemcpBin, "--json")
 	runAgenthub(t, dataDir, "", "profile", "create", "onlyalpha", "--servers", "alpha")
 	runAgenthub(t, dataDir, "", "profile", "create", "onlybeta", "--servers", "beta")
-	runAgenthub(t, dataDir, "", "scope", "set", "--client", "boundclient", "--profile", "onlyalpha")
+	runAgenthub(t, dataDir, "", "client", "bind", "boundclient", "onlyalpha")
 
 	c := startGateway(t, dataDir, "boundclient")
 	c.initialize()
 	c.waitForTool("alpha__echo", 30*time.Second)
 
 	start := time.Now()
-	runAgenthub(t, dataDir, "", "scope", "set", "--client", "boundclient", "--profile", "onlybeta")
+	runAgenthub(t, dataDir, "", "client", "bind", "boundclient", "onlybeta")
 	c.waitForTool("beta__echo", 30*time.Second)
 	t.Logf("clients.json rebinding took effect in %s", time.Since(start))
 

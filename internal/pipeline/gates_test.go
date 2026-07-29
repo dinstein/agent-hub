@@ -250,10 +250,10 @@ func TestHITLGateTriggers(t *testing.T) {
 			t.Fatalf("asker consulted %d times without a trigger", asker.n)
 		}
 	})
-	t.Run("confirm-destructive-triggers-on-missing-annotations", func(t *testing.T) {
+	t.Run("missing-annotations-classify-as-destructive", func(t *testing.T) {
 		asker := &fakeAsker{dec: pipeline.DecisionDenied}
 		p := pipeline.New(pipeline.Options{
-			Scope: scopeOf(scopeWith(view, scope.EffectiveApproval{ConfirmDestructive: true})),
+			Scope: scopeOf(scopeWith(view, scope.EffectiveApproval{HumanApproval: true})),
 			Asker: asker,
 		})
 		_, err := execute(t, p, bareReq)
@@ -261,14 +261,19 @@ func TestHITLGateTriggers(t *testing.T) {
 		if !asker.last.Destructive {
 			t.Error("missing annotations must classify as destructive")
 		}
-		// Read-only and explicitly non-destructive tools do not trigger.
+		// The annotation decides how a request is CLASSIFIED to the approver,
+		// not whether one is asked: humanApproval gates every call, so these
+		// reach the broker too — flagged non-destructive.
 		for _, r := range []pipeline.CallRequest{readReq, explicitSafe} {
 			asker.n = 0
-			if _, err := execute(t, p, r); err != nil {
-				t.Fatalf("non-destructive call: %v", err)
+			if _, err := execute(t, p, r); err == nil {
+				t.Fatalf("%q: humanApproval must gate non-destructive calls too", r.RawTool)
 			}
-			if asker.n != 0 {
-				t.Fatal("non-destructive call must not consult the broker")
+			if asker.n != 1 {
+				t.Fatalf("%q: broker consulted %d times, want 1", r.RawTool, asker.n)
+			}
+			if asker.last.Destructive {
+				t.Errorf("%q classified as destructive", r.RawTool)
 			}
 		}
 	})

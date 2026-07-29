@@ -34,7 +34,12 @@ func goldenScope(t *testing.T) *EffectiveScope {
 // Frozen digest of goldenScope. If this test fails you changed the content
 // encoding — that invalidates every persisted consumer of the hash; bump
 // deliberately, never casually.
-const goldenHashHex = "aef6cb8424a0f047da62060111df1eb6dc5a24da1c2d6771d064d6a5891ab746"
+//
+// Bumped once, on purpose: EffectiveApproval lost ConfirmDestructive when the
+// client layer was retired, so hash.go writes one fewer bool and every digest
+// moved. The cost is a cold start for cursors, search caches and approval
+// staleness checks — they recompute rather than serve a wrong answer.
+const goldenHashHex = "2d5ed27e55b0a510a7d6755631e25f64f1c407d537f1f15f4f762bdf63fff45c"
 
 func TestHashGolden(t *testing.T) {
 	es := goldenScope(t)

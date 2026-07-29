@@ -322,7 +322,10 @@ attention, so it comes before HITL (ruling #16).
   call because of our own limited parsing ability is wrong). When multiple fields violate, the one reported is
   always the same (iterating names in sorted order), because the error text is a contract.
 - `hitlGate`: `DenyDestructive` runs first — a machine-decidable global switch that **needs no broker** and is
-  enforced whether or not an `Asker` exists. Then `need := HumanApproval || (destructive && ConfirmDestructive)`.
+  enforced whether or not an `Asker` exists. Then `HumanApproval` gates every remaining call. The two switches
+  sit at opposite ends deliberately; the middle setting (ask about destructive calls only) was reachable solely
+  from the client layer and was removed with it, rather than left as a field this gate reads and nothing sets.
+  The annotation still decides how a request is CLASSIFIED to the approver, not whether one is asked.
   When going through the broker, a **broker error means block** (`E_HITL_UNAVAILABLE`), and an unknown decision
   string also blocks — only an explicit approval opens the gate. An approval is bound to `HashArgs(req.Args)`, so
   one approval covers exactly that set of arguments.

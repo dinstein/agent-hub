@@ -57,7 +57,6 @@ func cloneOverlay(ov *scope.Overlay) *scope.Overlay {
 		}
 	}
 	cp.Approval.HumanApproval = cloneBool(ov.Approval.HumanApproval)
-	cp.Approval.ConfirmDestructive = cloneBool(ov.Approval.ConfirmDestructive)
 	return cp
 }
 
@@ -134,9 +133,6 @@ func loosenings(prev, next *scope.Overlay) []string {
 	// false or nil in prev is inert and may change freely).
 	if isTrue(prev.Approval.HumanApproval) && !isTrue(next.Approval.HumanApproval) {
 		out = append(out, "approval.humanApproval: true removed")
-	}
-	if isTrue(prev.Approval.ConfirmDestructive) && !isTrue(next.Approval.ConfirmDestructive) {
-		out = append(out, "approval.confirmDestructive: true removed")
 	}
 
 	// Budgets are experience fields EXCEPT Forced entries, which are

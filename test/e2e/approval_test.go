@@ -34,9 +34,9 @@ type hitlEnv struct {
 	watch   *watchProc
 }
 
-// setupHITL builds: registry with confirmDestructive for the client, a
-// fakemcp downstream with one read-only and one destructive tool, a
-// background daemon, and a running `approval watch` frontend.
+// setupHITL builds: governance with humanApproval set, a fakemcp downstream
+// with one read-only and one destructive tool, a background daemon, and a
+// running `approval watch` frontend.
 func setupHITL(t *testing.T) *hitlEnv {
 	t.Helper()
 	dataDir := t.TempDir()
@@ -50,19 +50,25 @@ func setupHITL(t *testing.T) *hitlEnv {
 	socket := filepath.Join(sockDir, "ctl.sock")
 	env := append(testEnv(dataDir), "AGENTHUB_SOCKET="+socket)
 
-	// Client entry: confirmDestructive gates destructive calls only, so the
-	// read-only tool proves "normal calls keep working" in the same run.
+	// humanApproval gates EVERY call. It is global (governance.json) because
+	// that is the only place an approval switch lives: the retired client
+	// layer used to carry a destructive-only variant, and removing the layer
+	// removed the setting rather than leaving the gate reading a field nothing
+	// could set.
 	regDir := filepath.Join(dataDir, "registry")
 	if err := os.MkdirAll(regDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	clientsJSON := []byte(`{"clients":{"e2e-hitl":{"approval":{"confirmDestructive":true}}}}`)
-	if err := os.WriteFile(filepath.Join(regDir, "clients.json"), clientsJSON, 0o600); err != nil {
+	governanceJSON := []byte(`{"humanApproval":true}`)
+	if err := os.WriteFile(filepath.Join(regDir, "governance.json"), governanceJSON, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	// Downstream: "read" is annotated read-only (never gated); "boom" has no
-	// annotations and therefore counts as destructive (fail-closed default).
+	// Downstream: "read" is annotated read-only; "boom" has no annotations and
+	// therefore counts as destructive (fail-closed default). Under
+	// humanApproval BOTH are gated — the annotation still decides how the
+	// request is CLASSIFIED to the approver, which is what the Destructive
+	// assertions below check.
 	script := `{"tools":[
 	  {"def":{"name":"read","description":"read-only echo","inputSchema":{"type":"object"},
 	          "annotations":{"readOnlyHint":true}}},
@@ -335,17 +341,32 @@ func TestApprovalEndToEnd(t *testing.T) {
 	c.initialize()
 	c.waitForTool("fake__boom", 30*time.Second)
 
-	// Non-gated read-only call works without any human.
-	res := c.callTool("fake__read", map[string]any{"marker": "plain-read"}, 30*time.Second)
-	if text := c.textContent(res); !strings.Contains(text, "plain-read") {
+	// A read-only call is gated too under humanApproval, and is classified as
+	// NON-destructive when it reaches the approver — the annotation decides
+	// how the request is presented, not whether it is asked about.
+	readOutcome := func(marker string) <-chan callOutcome {
+		out := make(chan callOutcome, 1)
+		go func() {
+			out <- c.tryCallTool("fake__read", map[string]any{"marker": marker}, 90*time.Second)
+		}()
+		return out
+	}
+	pending := readOutcome("plain-read")
+	token := waitApprovalToken(t, h.env)
+	runAgenthubEnv(t, h.env, "", "approval", "approve", token)
+	o := recvOutcome(t, pending)
+	if o.rpcErr != nil {
+		c.fatalf("approved read-only call failed: %v", o.rpcErr)
+	}
+	if text := c.textContent(o.res); !strings.Contains(text, "plain-read") {
 		c.fatalf("read echo = %q", text)
 	}
 
 	// --- approve path: gated call blocks, ls shows it, approve releases it.
 	outcome := gatedCallAsync(c, "gated-approved")
-	token := waitApprovalToken(t, h.env)
+	token = waitApprovalToken(t, h.env)
 	runAgenthubEnv(t, h.env, "", "approval", "approve", token)
-	o := recvOutcome(t, outcome)
+	o = recvOutcome(t, outcome)
 	if o.rpcErr != nil {
 		c.fatalf("approved call failed: %v", o.rpcErr)
 	}
@@ -392,10 +413,9 @@ func TestApprovalEndToEnd(t *testing.T) {
 	if !strings.Contains(o.rpcErr.Message, "E_HITL_UNAVAILABLE") {
 		c.fatalf("dead-daemon gated call error = %v, want E_HITL_UNAVAILABLE", o.rpcErr)
 	}
-	res = c.callTool("fake__read", map[string]any{"marker": "still-works"}, 30*time.Second)
-	if text := c.textContent(res); !strings.Contains(text, "still-works") {
-		c.fatalf("read echo after daemon kill = %q", text)
-	}
+	// Every call is gated under humanApproval, so with the broker gone there
+	// is no "normal call" left to keep working: the fail-closed direction is
+	// the whole answer, and it is asserted above.
 
 	c.close()
 }

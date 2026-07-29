@@ -64,15 +64,20 @@ const (
 // three-state: nil = no intervention. Merge direction is boolean OR across
 // layers — any layer requiring approval wins (tighten-only, fail-closed: a
 // false can never switch off a true from another layer).
+//
+// Two switches, at opposite ends: HumanApproval asks about every call,
+// DenyDestructive refuses destructive ones without asking. There used to be a
+// middle one (ConfirmDestructive: ask only about destructive calls), settable
+// only from the client layer; it was removed with that layer rather than left
+// as a field the HITL gate reads and nothing can set.
 type ApprovalPolicy struct {
-	HumanApproval      *bool
-	ConfirmDestructive *bool
+	HumanApproval *bool
 	// DenyDestructive is settable ONLY by the global governance layer
 	// (governance.json) — it is NEVER agent-writable. Two mechanisms enforce
 	// this: (1) the session-layer input type Overlay deliberately has no such
 	// field, so no overlay can ever carry it; (2) FromRegistry populates it
 	// exclusively on the LayerGlobal layer (registry.ApprovalPolicy, the
-	// client/project on-disk type, does not even model the field).
+	// on-disk type, does not even model the field).
 	DenyDestructive *bool
 }
 
@@ -109,9 +114,8 @@ type ToolView struct {
 // EffectiveApproval is the folded approval outcome: pointers collapsed to
 // concrete booleans by OR across layers.
 type EffectiveApproval struct {
-	HumanApproval      bool
-	ConfirmDestructive bool
-	DenyDestructive    bool
+	HumanApproval   bool
+	DenyDestructive bool
 }
 
 // Diagnostic is a non-fatal resolution warning (e.g. a dangling profile

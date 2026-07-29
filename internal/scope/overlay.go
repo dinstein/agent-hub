@@ -34,8 +34,7 @@ type Overlay struct {
 // OverlayApproval is the session-writable subset of ApprovalPolicy:
 // tighten-only switches, no DenyDestructive (see Overlay doc).
 type OverlayApproval struct {
-	HumanApproval      *bool
-	ConfirmDestructive *bool
+	HumanApproval *bool
 }
 
 // Layer converts the overlay into its ScopeLayer form (Kind LayerSession).
@@ -72,7 +71,6 @@ func (o *Overlay) Layer(origin string) ScopeLayer {
 		}
 	}
 	l.Approval.HumanApproval = cloneBool(o.Approval.HumanApproval)
-	l.Approval.ConfirmDestructive = cloneBool(o.Approval.ConfirmDestructive)
 	// l.Approval.DenyDestructive stays nil: unrepresentable in an Overlay.
 	return l
 }
