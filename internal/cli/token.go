@@ -66,7 +66,7 @@ func (l TokenList) Human(w io.Writer) error {
 	_, _ = fmt.Fprintln(tw, "NAME\tPREFIX\tTIER\tSERVERS\tPROFILE\tSTATE\tEXPIRES")
 	for _, t := range l.Tokens {
 		_, _ = fmt.Fprintf(tw, "%s\t%s…\t%s\t%s\t%s\t%s\t%s\n",
-			t.Name, t.Prefix, t.Tier, serversText(t.Servers), dashIfEmpty(t.Profile),
+			t.Name, t.Prefix, t.Tier, serversText(t.Servers), dash(t.Profile),
 			t.State, expiryText(t.ExpiresAt))
 	}
 	if err := tw.Flush(); err != nil {
@@ -317,13 +317,6 @@ func serversText(servers []string) string {
 	default:
 		return strings.Join(servers, ",")
 	}
-}
-
-func dashIfEmpty(s string) string {
-	if s == "" {
-		return "-"
-	}
-	return s
 }
 
 func expiryText(t *time.Time) string {

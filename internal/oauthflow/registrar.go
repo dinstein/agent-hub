@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -127,7 +128,7 @@ func (r *dcrRegistrar) Register(ctx context.Context, md *AuthServerMetadata, req
 	// redirect_uris are required only for grant types that redirect. The
 	// device flow has no redirect at all, so demanding one there would
 	// force callers to invent a fake URI and register it.
-	if len(req.RedirectURIs) == 0 && containsString(grants, GrantAuthorizationCode) {
+	if len(req.RedirectURIs) == 0 && slices.Contains(grants, GrantAuthorizationCode) {
 		e := newFlowError(ErrorTypeRegistration,
 			fmt.Errorf("%w: authorization_code registration needs at least one redirect_uri", ErrRegistration))
 		e.Registration = RegistrationFailed
@@ -263,13 +264,4 @@ func defaultStrings(v, def []string) []string {
 		return def
 	}
 	return v
-}
-
-func containsString(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }

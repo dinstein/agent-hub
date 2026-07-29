@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -69,7 +70,7 @@ func TestCompatModeKeepsSingleCallTool(t *testing.T) {
 		}
 	}
 	for _, n := range VariantNames() {
-		if containsString(names, n) {
+		if slices.Contains(names, n) {
 			t.Errorf("compat mode exposed the variant %q", n)
 		}
 	}
@@ -77,11 +78,11 @@ func TestCompatModeKeepsSingleCallTool(t *testing.T) {
 
 func TestVariantListReplacesCallToolExactlyOnce(t *testing.T) {
 	names := listNames(variantSurface(t, true).List())
-	if containsString(names, MetaCallTool) {
+	if slices.Contains(names, MetaCallTool) {
 		t.Errorf("variant mode still exposes the single %s door: %v", MetaCallTool, names)
 	}
 	for _, n := range VariantNames() {
-		if !containsString(names, n) {
+		if !slices.Contains(names, n) {
 			t.Errorf("variant mode does not expose %q: %v", n, names)
 		}
 	}
@@ -331,13 +332,4 @@ func listNames(defs []mcp.ToolDef) []string {
 		out = append(out, d.Name)
 	}
 	return out
-}
-
-func containsString(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }

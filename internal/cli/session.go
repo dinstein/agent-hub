@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -497,7 +498,7 @@ func scopeNarrowBody(f sessionScopeFlags, toolSpecs map[string][]string) (ctlapi
 	body.DisableServers = f.disableServer
 	body.Reset = f.reset
 	for id, tools := range toolSpecs {
-		if containsString(f.enableServer, id) {
+		if slices.Contains(f.enableServer, id) {
 			continue
 		}
 		if body.Tools == nil {
@@ -616,15 +617,6 @@ func classifyScopeError(err error) error {
 // slash cannot smuggle extra segments into the request path (the server
 // matches on the escaped path for the same reason).
 func escapePathSegment(s string) string { return url.PathEscape(s) }
-
-func containsString(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
-}
 
 func dash(s string) string {
 	if s == "" {

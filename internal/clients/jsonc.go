@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 )
 
 // JSONC: the settings files that are JSON with comments in them.
@@ -358,7 +359,7 @@ func spliceRemoveMembers(src []byte, obj *jsonObject, names []string) []byte {
 	// Right to left: earlier spans keep their offsets that way.
 	for i := len(obj.members) - 1; i >= 0; i-- {
 		m := obj.members[i]
-		if !containsString(names, m.name) {
+		if !slices.Contains(names, m.name) {
 			continue
 		}
 		start, end := m.start, m.end
@@ -405,15 +406,6 @@ func trimLineEnd(b []byte, i int) int {
 		i++
 	}
 	return i
-}
-
-func containsString(v []string, s string) bool {
-	for _, x := range v {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 // memberIndent is the indentation of the object's first member, or the

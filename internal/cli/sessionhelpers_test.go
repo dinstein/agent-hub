@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -62,7 +63,7 @@ func TestDescribeScopeEditsNamesEveryEdit(t *testing.T) {
 		"server fs narrowed to read,list",
 		"discovery set to lazy",
 	} {
-		if !containsString(got, want) {
+		if !slices.Contains(got, want) {
 			t.Errorf("summary %v is missing %q", got, want)
 		}
 	}
