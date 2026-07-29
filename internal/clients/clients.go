@@ -62,7 +62,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 
 	"github.com/dinstein/agent-hub/internal/platform"
 )
@@ -290,7 +290,7 @@ func (t *Table) IDs() []string {
 	for i := range specs {
 		ids = append(ids, specs[i].id)
 	}
-	sort.Strings(ids)
+	slices.Sort(ids)
 	return ids
 }
 

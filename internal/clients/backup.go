@@ -6,7 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -125,7 +125,7 @@ func (t *Table) rotate(dir, prefix string) {
 	if len(names) <= keep {
 		return
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	for _, n := range names[:len(names)-keep] {
 		_ = os.Remove(filepath.Join(dir, n))
 	}

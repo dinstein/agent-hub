@@ -6,7 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -359,7 +359,7 @@ func summarise(servers map[string]json.RawMessage, clientID string) []InspectedS
 	for n := range servers {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	out := make([]InspectedServer, 0, len(names))
 	for _, n := range names {
 		raw := servers[n]
