@@ -3,7 +3,7 @@ package skills
 import (
 	"fmt"
 	"path/filepath"
-	"sort"
+	"slices"
 )
 
 // WriteStrategy is how a target's bytes are managed.
@@ -67,12 +67,7 @@ type TargetDef struct {
 
 // supports reports whether the target accepts a skill kind.
 func (t TargetDef) supports(k SkillKind) bool {
-	for _, s := range t.Supports {
-		if s == k {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(t.Supports, k)
 }
 
 // container resolves the directory this target writes into, for one scope.
@@ -173,14 +168,4 @@ func targetTable(extra []TargetDef) map[string]TargetDef {
 func (m *Manager) Target(clientID string) (TargetDef, bool) {
 	t, ok := m.targets[clientID]
 	return t, ok
-}
-
-// Targets lists the known targets, sorted by client ID.
-func (m *Manager) Targets() []TargetDef {
-	out := make([]TargetDef, 0, len(m.targets))
-	for _, t := range m.targets {
-		out = append(out, t)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ClientID < out[j].ClientID })
-	return out
 }
