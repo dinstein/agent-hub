@@ -955,8 +955,8 @@ package's source.
 
 ### Invariants and failure directions
 
-**Compile-time constraint: `cmd/agenthub-gui` (including its own `services` and `internal/healthgen` subpackages) never
-imports the top-level `internal/*`**,
+**Compile-time constraint: nothing under `cmd/agenthub-gui` — including `cmd/agenthub-gui/services` and
+`cmd/agenthub-gui/internal/healthgen` — ever imports the top-level `internal/*`**,
 and may only talk to the daemon through the public `api` package, exactly like any third-party integration. It also never
 reads or writes the data directory and never speaks MCP. The corollary is that **every single thing the GUI can do has a
 control plane endpoint, and is therefore something the CLI can do too** — so "the GUI is optional" is a compile-time property

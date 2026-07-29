@@ -830,8 +830,9 @@ JSON 模式下把这个值原样 marshal 成信封的 `data` 字段，人类模�
 
 ### 不变量与失败方向
 
-**编译期约束：`cmd/agenthub-gui`（含它自己的 `services`、`internal/healthgen` 子包）绝不 import
-顶层的 `internal/*`**，只能通过公共 `api` 包跟 daemon 说话，跟任何第三方集成一样。它也绝不读写数据
+**编译期约束：`cmd/agenthub-gui` 下的任何东西——包括 `cmd/agenthub-gui/services` 和
+`cmd/agenthub-gui/internal/healthgen`——都绝不 import 顶层的 `internal/*`**，只能通过公共 `api`
+包跟 daemon 说话，跟任何第三方集成一样。它也绝不读写数据
 目录、绝不说 MCP。推论是**GUI 能做的每一件事都有控制面端点，也就都是 CLI 能做的事**——
 "GUI 可选"因此是编译期性质而非口头承诺。这条由 depguard 强制、由 `internal/depguardtest` 的
 两个失败用例（api 一个、gui 一个）证明。
