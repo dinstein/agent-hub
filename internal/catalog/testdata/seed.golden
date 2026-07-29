@@ -1,4 +1,4 @@
-brave-search	stdio	npx -y @modelcontextprotocol/server-brave-search	needsConfig=yes	keys=BRAVE_API_KEY	params=-	auth=-
+brave-search	stdio	npx -y @brave/brave-search-mcp-server --transport stdio	needsConfig=yes	keys=BRAVE_API_KEY	params=-	auth=-
 everything	stdio	npx -y @modelcontextprotocol/server-everything	needsConfig=no	keys=-	params=-	auth=-
 fetch	stdio	uvx mcp-server-fetch	needsConfig=no	keys=-	params=-	auth=-
 filesystem	stdio	npx -y @modelcontextprotocol/server-filesystem {{directory}}	needsConfig=yes	keys=-	params=directory	auth=-
@@ -7,11 +7,11 @@ github	http	https://api.githubcopilot.com/mcp/	needsConfig=no	keys=-	params=-	au
 google-maps	stdio	npx -y @modelcontextprotocol/server-google-maps	needsConfig=yes	keys=GOOGLE_MAPS_API_KEY	params=-	auth=-
 memory	stdio	npx -y @modelcontextprotocol/server-memory	needsConfig=no	keys=-	params=-	auth=-
 notion	http	https://mcp.notion.com/mcp	needsConfig=no	keys=-	params=-	auth=oauth
+playwright	stdio	npx @playwright/mcp@latest	needsConfig=no	keys=-	params=-	auth=-
 postgres	stdio	npx -y @modelcontextprotocol/server-postgres {{connection_url}}	needsConfig=yes	keys=-	params=connection_url	auth=-
-puppeteer	stdio	npx -y @modelcontextprotocol/server-puppeteer	needsConfig=no	keys=-	params=-	auth=-
 redis	stdio	npx -y @modelcontextprotocol/server-redis {{redis_url}}	needsConfig=yes	keys=-	params=redis_url	auth=-
 sentry	http	https://mcp.sentry.dev/mcp	needsConfig=no	keys=-	params=-	auth=oauth
-sequential-thinking	stdio	npx -y @modelcontextprotocol/server-sequentialthinking	needsConfig=no	keys=-	params=-	auth=-
+sequential-thinking	stdio	npx -y @modelcontextprotocol/server-sequential-thinking	needsConfig=no	keys=-	params=-	auth=-
 slack	stdio	npx -y @modelcontextprotocol/server-slack	needsConfig=yes	keys=SLACK_BOT_TOKEN	params=team_id	auth=-
 sqlite	stdio	uvx mcp-server-sqlite --db-path {{db_path}}	needsConfig=yes	keys=-	params=db_path	auth=-
 time	stdio	uvx mcp-server-time	needsConfig=no	keys=-	params=-	auth=-

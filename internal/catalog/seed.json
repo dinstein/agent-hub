@@ -72,7 +72,7 @@
       "provenance": "curated",
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sequentialthinking"],
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
       "tags": ["reasoning", "reference"]
     },
     {
@@ -102,9 +102,9 @@
     {
       "id": "sqlite",
       "name": "SQLite",
-      "description": "Query and modify a local SQLite database file.",
+      "description": "Archived reference server, no longer maintained upstream. Query and modify a local SQLite database file.",
       "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
+      "homepage": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/sqlite",
       "provenance": "curated",
       "transport": "stdio",
       "command": "uvx",
@@ -121,9 +121,9 @@
     {
       "id": "postgres",
       "name": "PostgreSQL",
-      "description": "Read-only SQL access to a PostgreSQL database, with schema inspection.",
+      "description": "Archived reference server, no longer maintained upstream. Read-only SQL access to a PostgreSQL database, with schema inspection.",
       "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/postgres",
+      "homepage": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/postgres",
       "provenance": "curated",
       "transport": "stdio",
       "command": "npx",
@@ -140,9 +140,9 @@
     {
       "id": "redis",
       "name": "Redis",
-      "description": "Read and write keys on a Redis instance.",
+      "description": "Archived reference server, no longer maintained upstream. Read and write keys on a Redis instance.",
       "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/redis",
+      "homepage": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/redis",
       "provenance": "curated",
       "transport": "stdio",
       "command": "npx",
@@ -159,9 +159,9 @@
     {
       "id": "slack",
       "name": "Slack",
-      "description": "Read channels and post messages as a Slack bot user.",
+      "description": "Archived reference server, no longer maintained upstream. Read channels and post messages as a Slack bot user.",
       "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/slack",
+      "homepage": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/slack",
       "provenance": "curated",
       "transport": "stdio",
       "command": "npx",
@@ -188,13 +188,13 @@
     {
       "id": "brave-search",
       "name": "Brave Search",
-      "description": "Web and local search through the Brave Search API.",
-      "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/brave-search",
+      "description": "Web, news, image and local search through the Brave Search API.",
+      "publisher": "Brave",
+      "homepage": "https://github.com/brave/brave-search-mcp-server",
       "provenance": "curated",
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "args": ["-y", "@brave/brave-search-mcp-server", "--transport", "stdio"],
       "env": {
         "BRAVE_API_KEY": "${SECRET_BRAVE_API_KEY}"
       },
@@ -209,9 +209,9 @@
     {
       "id": "google-maps",
       "name": "Google Maps",
-      "description": "Geocoding, directions and place details through the Google Maps API.",
+      "description": "Archived reference server, no longer maintained upstream. Geocoding, directions and place details through the Google Maps API.",
       "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/google-maps",
+      "homepage": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/google-maps",
       "provenance": "curated",
       "transport": "stdio",
       "command": "npx",
@@ -228,16 +228,16 @@
       "tags": ["maps", "geo", "search"]
     },
     {
-      "id": "puppeteer",
-      "name": "Puppeteer",
-      "description": "Drive a headless Chrome: navigate, click, fill forms and screenshot.",
-      "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/puppeteer",
+      "id": "playwright",
+      "name": "Playwright",
+      "description": "Drive a browser: navigate, click, fill forms and screenshot. Microsoft's maintained replacement for the archived Puppeteer reference server.",
+      "publisher": "Microsoft",
+      "homepage": "https://github.com/microsoft/playwright-mcp",
       "provenance": "curated",
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
-      "tags": ["browser", "web", "automation"]
+      "args": ["@playwright/mcp@latest"],
+      "tags": ["browser", "web", "automation", "puppeteer"]
     },
     {
       "id": "github",
