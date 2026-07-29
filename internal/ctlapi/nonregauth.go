@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/oauthflow"
@@ -74,7 +74,7 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		for id := range s.opts.Registry.Snapshot().Servers.V.Servers {
 			ids = append(ids, id)
 		}
-		sort.Strings(ids)
+		slices.Sort(ids)
 	}
 
 	now := time.Now()

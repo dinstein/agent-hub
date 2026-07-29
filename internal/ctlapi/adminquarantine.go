@@ -1,8 +1,9 @@
 package ctlapi
 
 import (
+	"cmp"
 	"net/http"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/integrity"
@@ -69,7 +70,7 @@ func (s *Server) handleQuarantineList(w http.ResponseWriter, r *http.Request) {
 	for exposed, e := range snap {
 		out.Entries = append(out.Entries, quarantineWireOf(exposed, e))
 	}
-	sort.Slice(out.Entries, func(i, j int) bool { return out.Entries[i].Exposed < out.Entries[j].Exposed })
+	slices.SortFunc(out.Entries, func(a, b quarantineWire) int { return cmp.Compare(a.Exposed, b.Exposed) })
 	writeOK(w, http.StatusOK, out)
 }
 

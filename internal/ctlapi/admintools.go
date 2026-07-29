@@ -1,8 +1,9 @@
 package ctlapi
 
 import (
+	"cmp"
 	"net/http"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/confops"
@@ -134,11 +135,8 @@ func (s *Server) handleToolsList(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	sort.Slice(out.Tools, func(i, j int) bool {
-		if out.Tools[i].Server != out.Tools[j].Server {
-			return out.Tools[i].Server < out.Tools[j].Server
-		}
-		return out.Tools[i].Tool < out.Tools[j].Tool
+	slices.SortFunc(out.Tools, func(a, b toolGovWire) int {
+		return cmp.Or(cmp.Compare(a.Server, b.Server), cmp.Compare(a.Tool, b.Tool))
 	})
 	writeOK(w, http.StatusOK, out)
 }

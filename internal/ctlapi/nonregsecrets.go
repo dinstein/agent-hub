@@ -1,11 +1,12 @@
 package ctlapi
 
 import (
+	"cmp"
 	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -95,14 +96,8 @@ func (s *Server) handleSecretsList(w http.ResponseWriter, r *http.Request) {
 			Set:     true,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Server != out[j].Server {
-			return out[i].Server < out[j].Server
-		}
-		if out[i].Scope != out[j].Scope {
-			return out[i].Scope < out[j].Scope
-		}
-		return out[i].Key < out[j].Key
+	slices.SortFunc(out, func(a, b SecretWire) int {
+		return cmp.Or(cmp.Compare(a.Server, b.Server), cmp.Compare(a.Scope, b.Scope), cmp.Compare(a.Key, b.Key))
 	})
 	writeOK(w, http.StatusOK, out)
 }

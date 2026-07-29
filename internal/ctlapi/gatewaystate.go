@@ -1,10 +1,11 @@
 package ctlapi
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
 	"sync"
 
 	"github.com/dinstein/agent-hub/internal/event"
@@ -188,11 +189,8 @@ func (g *GatewayStates) ServerRuntime(id string) (ServerRuntime, bool) {
 	}
 	// Deterministic order: the same set of reports must always fold to the
 	// same bytes (push and pull share this payload, and tests pin it).
-	sort.Slice(list, func(i, j int) bool {
-		if list[i].client != list[j].client {
-			return list[i].client < list[j].client
-		}
-		return list[i].sess < list[j].sess
+	slices.SortFunc(list, func(a, b reporter) int {
+		return cmp.Or(cmp.Compare(a.client, b.client), cmp.Compare(a.sess, b.sess))
 	})
 
 	worst := 0
@@ -221,7 +219,7 @@ func (g *GatewayStates) ServerRuntime(id string) (ServerRuntime, bool) {
 		for s := range secrets {
 			rt.MissingSecrets = append(rt.MissingSecrets, s)
 		}
-		sort.Strings(rt.MissingSecrets)
+		slices.Sort(rt.MissingSecrets)
 	}
 	rt.ConnDetail = attributeDetail(rt.ConnDetail, winnerOf(list, worst), len(list))
 	return rt, true

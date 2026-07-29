@@ -1,10 +1,10 @@
 package ratelimit
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"cmp"
 	"os"
 	"path/filepath"
 	"slices"

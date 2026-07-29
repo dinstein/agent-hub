@@ -1,8 +1,9 @@
 package ctlapi
 
 import (
+	"cmp"
 	"net/http"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/confops"
@@ -103,7 +104,7 @@ func (s *Server) handleProfilesList(w http.ResponseWriter, _ *http.Request) {
 	for name, doc := range snap.Profiles.V.Profiles {
 		out.Profiles = append(out.Profiles, profileWireOf(name, doc.V))
 	}
-	sort.Slice(out.Profiles, func(i, j int) bool { return out.Profiles[i].Name < out.Profiles[j].Name })
+	slices.SortFunc(out.Profiles, func(a, b profileWire) int { return cmp.Compare(a.Name, b.Name) })
 	if s.opts.StateDir != "" {
 		// A missing or unreadable marker reads as "no active profile" —
 		// the same fail-closed direction a dangling reference takes.
