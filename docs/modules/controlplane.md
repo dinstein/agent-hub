@@ -721,6 +721,17 @@ a defer (an interrupted read never leaves the user's shell with echo off).
 **`server ls` can safely display header values verbatim**, because a registry entry never contains a credential — the values are
 `${SECRET_X}` placeholders, and resolution happens at connect time inside `internal/downstream`.
 
+**`server add` writes configuration only; `server enable` puts the server into service** (CANONICAL §3). `add` makes no
+connection and leaves the entry **disabled**, so it stays deterministic and safe to run against a downstream that is
+unreachable right now. The connection probe lives in `enable`, where the operator has said they want to use the server — and
+it **reports without vetoing**: the enable always happens, and a server needing a login is enabled and says so (`--no-probe`
+skips the dial). Two callers compose the pair rather than duplicating it: `catalog add` runs both so a curated entry stays one
+command, and `auth login` enables the server it just authorized. That last one is not mere convenience — it is what makes an
+already-running gateway pick the credential up. The vault is not a registry document, so storing a token fires no hot-reload
+event, and `syncServers` would keep the existing connection anyway because `specEqual` does not compare credentials; flipping
+`enabled` is a spec change the differ does act on. It fails open: the credential is already stored, so a failed enable is a
+warning, never a failed login.
+
 **OAuth login hints are configuration, not runtime state.** `server add --oauth-issuer/--oauth-scope/--oauth-resource-metadata`
 writes all three fields of `registry.OAuthHint`, the same target and the same validation as `--stdin`'s `oauth` block
 (`confops.ValidateOAuthHint`: https (http only with `--local`), no private addresses, an issuer with no query/fragment

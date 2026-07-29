@@ -289,6 +289,24 @@ func (a *App) newCatalogAddCmd() *cobra.Command {
 			if err != nil {
 				return opsError(err)
 			}
+			// `catalog add` is an ORCHESTRATION over the two primitives, not
+			// a third way to write a server: it composes add + enable so a
+			// curated entry that needs nothing else is one command, which is
+			// the whole point of the catalog. `server add` stays the
+			// configuration-only primitive underneath.
+			//
+			// An entry that still needs a credential or a login is enabled
+			// too — the operator asked for this server by name, and leaving
+			// it disabled would mean a second thing to remember on top of
+			// the step already named in NextSteps.
+			enabled := true
+			if _, eerr := confops.SetServerEnabled(cmd.Context(), store, serverID, true, noPrecondition); eerr != nil {
+				enabled = false
+				warnings = append(warnings,
+					"added, but "+serverID+" could not be enabled: "+eerr.Error()+
+						"; enable it with 'agenthub server enable "+serverID+"'")
+			}
+			entry.Enabled = enabled
 			return a.printer().Emit(CatalogAdded{
 				Added:     rowFor(serverID, entry),
 				CatalogID: source.ID,
@@ -352,6 +370,11 @@ func catalogAddCommand(e catalog.Entry) string {
 // catalogNextSteps renders what is left after the definition is stored.
 // Same list the control plane returns for the same entry — one wording, two
 // front ends.
+//
+// The enable is deliberately NOT listed: `catalog add` performs it, so
+// naming it here would tell the operator to run a command that has already
+// run. An entry that needs nothing else therefore still has an empty list —
+// the one-click case stays one click.
 func catalogNextSteps(e catalog.Entry, serverID string) []string {
 	var out []string
 	for _, key := range e.RequiredKeys() {

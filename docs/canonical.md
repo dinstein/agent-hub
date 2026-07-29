@@ -156,6 +156,28 @@ the implementation, the change is sealed inside one package, rather than borrowi
 - List subcommands are always `ls`
 - Every command must support `--json`, with human and machine output rendered from the same data structure
 
+### `add` and `enable` are separate primitives, and stay that way
+
+`server add` writes the definition and **nothing else**: no connection, no probe, and the entry lands
+**disabled**. `server enable` is what puts a server into service, and it is where the connection probe
+lives.
+
+They answer different questions. `add` records what a server IS — pure configuration, no network,
+deterministic, safe to script against a downstream that happens to be unreachable right now. `enable`
+declares the operator wants to USE it, which is the only point at which "can we actually reach it?" is
+worth asking. Folding the two together makes `enabled` mean both *the user wants this* and *it answered
+a probe*, and then a downstream that was merely mid-deploy at add time becomes indistinguishable from
+one that was never added.
+
+Two consequences that must not be "simplified" away later:
+
+- **The probe reports; it never vetoes.** The enable is what was asked for and always happens. A server
+  that needs a login is enabled and says so. Refusing would strand an entry the operator explicitly
+  enabled, and would turn a transient outage into a configuration change.
+- **Composition belongs to the caller.** `catalog add` and the GUI may offer one action over the two
+  operations — `catalog add` does exactly that, and `auth login` enables the server it just authorized
+  (which is what keeps the OAuth path two commands, not three). The primitives underneath stay separate.
+
 ---
 
 ## 4. Known capability boundaries
