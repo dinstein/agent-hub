@@ -66,8 +66,9 @@ func TestSpecFromEntryDerive(t *testing.T) {
 	}
 }
 
-// TestDeriveKeysNamespaced: a root and a session id that spell the same
-// string must not collide, and an empty input means "base instance".
+// TestDeriveKeys: the keys are namespaced, so a root and a session id that
+// spell the same string must not collide, and an empty input means
+// "base instance".
 func TestDeriveKeys(t *testing.T) {
 	t.Parallel()
 	if got := downstream.RootDeriveKey("/Users/x/proj/"); got != "root:/Users/x/proj" {

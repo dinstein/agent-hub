@@ -73,9 +73,9 @@ func TestLoginLoopbackEndToEnd(t *testing.T) {
 	}
 }
 
-// TestLoginLoopbackBindsBeforeRegistering: the redirect URI registered with
-// the AS must be the port actually bound, or an exact-match provider
-// rejects the callback.
+// TestLoginLoopbackRegistersTheBoundPort: the redirect URI registered with
+// the AS must be the port actually bound — the bind happens first — or an
+// exact-match provider rejects the callback.
 func TestLoginLoopbackRegistersTheBoundPort(t *testing.T) {
 	as := newFakeAS(t)
 	f, _ := newTestFlow(t, as)

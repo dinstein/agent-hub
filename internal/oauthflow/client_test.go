@@ -180,7 +180,7 @@ func TestRegistrationPostFollowsZeroRedirects(t *testing.T) {
 	}
 }
 
-// TestDiscoveryFollowsBoundedRedirects: metadata GETs may follow redirects
+// TestDiscoveryRedirectIsRescreened: metadata GETs may follow redirects
 // (providers relocate documents) but every hop is re-screened.
 func TestDiscoveryRedirectIsRescreened(t *testing.T) {
 	as := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

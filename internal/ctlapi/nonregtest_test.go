@@ -178,8 +178,8 @@ func TestServerTestDefinitionsAreOptIn(t *testing.T) {
 	}
 }
 
-// TestServerTestToolError: a tool-level failure is a valid ANSWER (200 with
-// is_error), a transport failure is not.
+// TestServerTestToolErrorIsAnAnswer: a tool-level failure is a valid ANSWER
+// (200 with is_error), a transport failure is not.
 func TestServerTestToolErrorIsAnAnswer(t *testing.T) {
 	conn := nrTestConn()
 	conn.result = &mcp.CallResult{IsError: true, Content: json.RawMessage(`[{"type":"text","text":"no such repo"}]`)}

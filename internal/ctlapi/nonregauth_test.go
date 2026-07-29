@@ -92,8 +92,8 @@ func TestAuthStatusFilteredAlwaysAnswers(t *testing.T) {
 	}
 }
 
-// TestAuthStatusBrokenEntryDoesNotHideTheRest: one unreadable entry is folded
-// into its own row; the listing is a diagnostic and must still render.
+// TestAuthStatusBrokenEntry: one unreadable entry is folded into its own row
+// and does not hide the rest; the listing is a diagnostic and must still render.
 func TestAuthStatusBrokenEntry(t *testing.T) {
 	store := &nrOAuth{loadErr: errors.New("cannot decrypt secrets.enc")}
 	env := nrStart(t, func(d *NonRegistryDeps) { d.OAuth = store })
