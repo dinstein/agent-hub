@@ -44,7 +44,7 @@ func TestConnectRequiresClientFlag(t *testing.T) {
 
 func TestClientConnectDryRun(t *testing.T) {
 	setDataDir(t)
-	code, out, stderr := runCLI(t, "", "client", "connect", "claude-code", "--profile", "dev", "--dry-run", "--json")
+	code, out, stderr := runCLI(t, "", "client", "connect", "claude-code", "--dry-run", "--json")
 	if code != ExitOK {
 		t.Fatalf("exit = %d, stderr: %s", code, stderr)
 	}
@@ -56,10 +56,10 @@ func TestClientConnectDryRun(t *testing.T) {
 	if err := json.Unmarshal(env.Data, &plan); err != nil {
 		t.Fatalf("data: %v", err)
 	}
-	if plan.Client != "claude-code" || plan.Profile != "dev" || !plan.DryRun {
+	if plan.Client != "claude-code" || !plan.DryRun {
 		t.Errorf("plan = %+v", plan)
 	}
-	wantArgs := []string{"connect", "--client", "claude-code", "--profile", "dev"}
+	wantArgs := []string{"connect", "--client", "claude-code"}
 	if len(plan.Entry.Args) != len(wantArgs) {
 		t.Fatalf("entry args = %v, want %v", plan.Entry.Args, wantArgs)
 	}
@@ -73,21 +73,38 @@ func TestClientConnectDryRun(t *testing.T) {
 	}
 
 	// Human mode renders the exact snippet from the same plan.
-	code, humanOut, _ := runCLI(t, "", "client", "connect", "claude-code", "--profile", "dev", "--dry-run")
+	code, humanOut, _ := runCLI(t, "", "client", "connect", "claude-code", "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("human exit = %d", code)
 	}
-	for _, want := range []string{"dry-run", "nothing written", "mcpServers", "--client", "claude-code", "--profile", "dev"} {
+	for _, want := range []string{"dry-run", "nothing written", "mcpServers", "--client", "claude-code"} {
 		if !strings.Contains(humanOut, want) {
 			t.Errorf("human output missing %q:\n%s", want, humanOut)
 		}
 	}
 }
 
+// TestClientConnectRejectsProfileFlag pins that the profile binding cannot be
+// smuggled into the client's own MCP configuration.
+//
+// The flag used to exist, was written into the entry's argv, and was then
+// discarded by the gateway that received it — settable, displayable, and
+// applied by nothing. Rejecting it outright is the honest replacement: a
+// profile lives in clients.json, where agenthub can rebind it and push
+// tools/list_changed without asking the client to restart.
+func TestClientConnectRejectsProfileFlag(t *testing.T) {
+	setDataDir(t)
+	code, _, _ := runCLI(t, "", "client", "connect", "claude-code", "--profile", "dev", "--dry-run")
+	if code != ExitUsage {
+		t.Errorf("exit = %d, want %d — an unknown flag must fail loudly, never be accepted "+
+			"and ignored the way the old one was", code, ExitUsage)
+	}
+}
+
 // TestConnectSnippetSeam pins the shared seam that both the M0-3 dry-run
 // preview and the M0-9 config writer must go through.
 func TestConnectSnippetSeam(t *testing.T) {
-	plan := ConnectSnippet("/usr/local/bin/agenthub", "cursor", "")
+	plan := ConnectSnippet("/usr/local/bin/agenthub", "cursor")
 	if plan.Client != "cursor" || !plan.DryRun {
 		t.Errorf("plan = %+v", plan)
 	}
@@ -96,7 +113,8 @@ func TestConnectSnippetSeam(t *testing.T) {
 	}
 	want := []string{"connect", "--client", "cursor"}
 	if len(plan.Entry.Args) != len(want) {
-		t.Fatalf("args = %v, want %v (no --profile when unset)", plan.Entry.Args, want)
+		t.Fatalf("args = %v, want %v (client identity only; the profile is bound in "+
+			"clients.json, never in the client's own config)", plan.Entry.Args, want)
 	}
 	for i, a := range want {
 		if plan.Entry.Args[i] != a {

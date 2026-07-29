@@ -975,7 +975,7 @@ func (a *App) repointClient(clientID string) error {
 	if err != nil && len(insp.Files) == 0 {
 		return err
 	}
-	plan := ConnectSnippet(a.executable(), clientID, "")
+	plan := ConnectSnippet(a.executable(), clientID)
 	entry := clients.Entry{Command: plan.Entry.Command, Args: plan.Entry.Args}
 	repointed := 0
 	for _, f := range insp.Files {

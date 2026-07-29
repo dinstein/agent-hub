@@ -27,7 +27,6 @@ type GatewayEntry struct {
 // false and Path/Backup/Changed report what happened on disk.
 type ConnectPlan struct {
 	Client  string       `json:"client"`
-	Profile string       `json:"profile,omitempty"`
 	DryRun  bool         `json:"dry_run"`
 	Entry   GatewayEntry `json:"entry"`
 	Path    string       `json:"path,omitempty"`
@@ -91,16 +90,18 @@ func (r DisconnectResult) Human(w io.Writer) error {
 // clientID's configuration. This function is the single seam between the
 // --dry-run preview and the config writer: both go through it, so the
 // preview and the actual write can never drift.
-func ConnectSnippet(executable, clientID, profile string) ConnectPlan {
-	args := []string{"connect", "--client", clientID}
-	if profile != "" {
-		args = append(args, "--profile", profile)
-	}
+//
+// The entry carries the client identity and nothing else. A profile is bound
+// in clients.json, never here: a binding written into the client's own config
+// file would be a second source of truth that agenthub cannot edit, and
+// switching profiles would mean rewriting a file the client owns and then
+// restarting it — which is precisely the hot-reload this design refuses to
+// give up.
+func ConnectSnippet(executable, clientID string) ConnectPlan {
 	return ConnectPlan{
-		Client:  clientID,
-		Profile: profile,
-		DryRun:  true, // the writer flips this after the write succeeds
-		Entry:   GatewayEntry{Command: executable, Args: args},
+		Client: clientID,
+		DryRun: true, // the writer flips this after the write succeeds
+		Entry:  GatewayEntry{Command: executable, Args: []string{"connect", "--client", clientID}},
 	}
 }
 
@@ -121,7 +122,6 @@ func (a *App) newClientCmd() *cobra.Command {
 
 func (a *App) newClientConnectCmd() *cobra.Command {
 	var (
-		profile   string
 		path      string
 		placement string
 		bin       string
@@ -137,7 +137,7 @@ func (a *App) newClientConnectCmd() *cobra.Command {
 			if exe == "" {
 				exe = a.executable()
 			}
-			plan := ConnectSnippet(exe, clientID, profile)
+			plan := ConnectSnippet(exe, clientID)
 			if dryRun {
 				// Best-effort target: a preview stays available for clients
 				// this binary cannot write (that is what --dry-run is for),
@@ -165,7 +165,6 @@ func (a *App) newClientConnectCmd() *cobra.Command {
 			return a.printer().Emit(plan)
 		},
 	}
-	cmd.Flags().StringVar(&profile, "profile", "", "profile to bind this client to (reserved for M1)")
 	cmd.Flags().StringVar(&path, "path", "", "configuration file to write (overrides --placement)")
 	cmd.Flags().StringVar(&placement, "placement", "", placementUsage)
 	cmd.Flags().StringVar(&bin, "bin", "", "agenthub binary path to write into the entry (default: this executable)")
@@ -302,10 +301,7 @@ func classifyClientsError(err error) error {
 // the process stdin/stdout until the client disconnects. Distinct from
 // `client connect`, which writes the configuration snippet.
 func (a *App) newConnectCmd() *cobra.Command {
-	var (
-		clientID string
-		profile  string
-	)
+	var clientID string
 	cmd := &cobra.Command{
 		Use:   "connect",
 		Short: "Run the stdio gateway for a client (invoked by client MCP configurations)",
@@ -345,6 +341,5 @@ func (a *App) newConnectCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&clientID, "client", "", "client identity this gateway serves (scope routing key)")
-	cmd.Flags().StringVar(&profile, "profile", "", "initial profile (reserved for M1)")
 	return cmd
 }
