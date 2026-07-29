@@ -36,7 +36,7 @@ accessibility requirement and a guard against misreading:
 | State | Display |
 |---|---|
 | connected | **`23 tools`** — not "connected". An informative number displaces a redundant status word |
-| needs-auth | the status cell **becomes an `Authenticate` button** |
+| needs-auth | the status cell **becomes an `Authenticate` button** that signs in for real (§2.1) |
 | checking | after 4 seconds, if the command is `npx`/`uvx`, it changes to **`Installing…`** — reinterpreting a wait as progress |
 | error | a one-line distilled error headline, expandable to the full text |
 | disabled | gray dot, no text |
@@ -52,6 +52,48 @@ dots at once, and color would stop meaning anything.
 daemon; the frontend only displays it. The constants are generated from the `api` package into
 `generated/health.ts`, with a golden test watching for three-way drift. A frontend that assembles a
 status from connection flags is a second judgment.
+
+**The global switch is a switch, not a verb.** Enabling and disabling used to be a word in a row of
+four identically-shaped buttons at the far end of the row, which got the most-used setting on the
+page wrong twice: it sat where the eye arrives last, and it named the ACTION rather than the VALUE —
+so read as a label, "Disable" marked the servers that were on. It now leads the row.
+
+Two rules on it, both easy to undo by accident:
+
+- **Its "on" color is `--accent` (ink), never `--success`.** A green track puts a second green on a
+  row that already carries a green health dot, and the two mean unrelated things — "you switched
+  this on" versus "it is actually working". Every other product's switch is green, so this is
+  written into `style.css` at the spot someone would go to "fix" it.
+- **The position is never set by the click.** `onChange` performs the write and the page repaints
+  from the answer, so a refused write, a lost precondition or a cancelled confirmation leaves the
+  switch showing what is *stored*. Optimistic flips have to be walked back, and the moment they are
+  wrong is exactly the moment the user looks away satisfied — the same reason approval rows gray out
+  instead of vanishing (§5).
+
+### 2.1 The Authenticate button signs in
+
+It used to open a dialog whose whole content was "the GUI has no endpoint that can do this, run
+`agenthub auth login` in a terminal" — in an application whose premise is that clients never handle
+credentials. The control plane now serves the login
+([controlplane.md](controlplane.md#the-one-long-running-exchange-an-interactive-login)); this page
+drives it.
+
+- **Nothing is shown for the first moment, on purpose.** Choosing between the device and loopback
+  flows needs the authorization server's metadata, so there is genuinely nothing to say yet. That
+  state says what it is waiting for instead of spinning over an invented mode the user must unlearn.
+- **The page opens the HOST browser**, never this webview. An authorization page rendered inside the
+  application is agenthub asking for a provider password in a window agenthub controls: the shape of
+  a phishing screen, and it removes the address bar, the lock, and the password manager's refusal to
+  fill a wrong origin.
+- **The loopback URL is opened once**, tracked by value — opening it per poll would bury the browser
+  in a consent screen every 700ms.
+- **Closing the window cancels the wait and nothing else**, and does not cancel once the session is
+  terminal: asking to abandon something that already succeeded is a question with no right answer.
+- **A failure says nothing was stored**, carries the flow's own suggestion, and offers a retry, so
+  the user is never left guessing whether the server is now half-authorized.
+- **The device code is large, monospaced and letter-spaced.** It is the one string in this
+  application a person retypes into a different window, and `O`/`0` and `I`/`l` have to separate at a
+  glance rather than after a failed attempt.
 
 ---
 
@@ -176,10 +218,10 @@ zero runtime dependency).
 | File | Contents |
 |---|---|
 | `main.ts` | Entry point: theme bootstrap, routing, sidebar, SSE subscription |
-| `bridge.ts` | The only seam with the Go side: `Call.ByName(<Go FQN>)` + `Events.On` (no `wails3 generate bindings`) |
+| `bridge.ts` | The only seam with the Go side: `Call.ByName(<Go FQN>)` + `Events.On` (no `wails3 generate bindings`), plus `openExternal` — the HOST browser, never this webview |
 | `page.ts` | The `Page` contract, `failureBox` / `failureState`, `CONFLICT_MESSAGE`, `noticeSlot` |
 | `dom.ts` | Dependency-free DOM construction: `el` / `table` / `emptyState` (three kinds) / `chip` (returns null for 0) / `errorHeadline` / time formatting |
-| `ui.ts` | Form widgets: inputs, tri-state selector, pair/lines editors, confirmation dialog |
+| `ui.ts` | Form widgets: inputs, tri-state selector, pair/lines editors, confirmation dialog, `toggleSwitch` (never optimistic) |
 | `types.ts` | TS mirror of the control plane DTOs |
 | `generated/health.ts` | **Generated**: Health's Level/AdminState/Action constants, via `go generate ./cmd/agenthub-gui/...` |
 | `pages/*.ts` | One page per resource, 17 pages |

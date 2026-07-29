@@ -165,6 +165,46 @@ that can loosen them.
 and the control plane pushes it to the frontend over SSE. A frontend's own writes travel the same loop,
 so "someone else's change" and "my change" behave identically in the UI.
 
+#### The one long-running exchange: an interactive login
+
+`POST /v1/auth/{server}/login` → `GET /v1/logins/{id}` → `DELETE /v1/logins/{id}`
+(`internal/ctlapi/nonreglogin.go`, driven by `internal/oauthlogin`).
+
+This **reverses a decision that used to be recorded in `api/auth.go`**: "an interactive login is NOT on
+this API", because a loopback callback needs a local browser and a random port and would be "a second,
+easily-broken code path". Half of that held. The half that did not is the expensive half — with no login
+here, every graphical frontend's answer to a server needing authorization was a dialog telling the user to
+go and run a terminal command, inside a product whose premise is that clients never handle credentials.
+
+What makes it affordable is that it is **not a second code path**: the daemon drives the same
+`oauthflow.Flow` the CLI drives, and what is new is only the session bookkeeping a flow too long for one
+request needs. The protocol keeps exactly one implementation, the rule `internal/mcp` follows.
+
+Four properties this exchange must keep:
+
+- **Start answers 202 before there is anything to show.** Choosing between the device and loopback flows
+  needs the authorization server's metadata; holding the response until then puts a discovery timeout
+  inside a button press. `mode` is empty on the first poll, and that is a real state, not a missing field.
+- **The CALLER opens the browser.** The daemon returns `authorization_url` and never visits it: it may be
+  headless, may have been started by a service manager with no session to draw into, and may not be where
+  the user is. A frontend must open it in the **host** browser — an authorization page inside the
+  application's own webview is agenthub asking for a provider password in a window agenthub controls,
+  which is the shape of a phishing screen and removes every check the user has.
+- **A failed session is a 200** carrying `phase: "failed"` and the reason: the read succeeded, and what
+  failed is the thing it describes. The hint is `oauthflow`'s own suggestion, so this surface and the CLI
+  answer one failure with one sentence. Only an id naming no session is a 404, and a finished session
+  stays readable for a retention window, so a poller one moment late is not told it never existed.
+- **The loopback SSRF carve-out follows the stored entry's provenance**, exactly as `auth login` does.
+  There is deliberately no request field that can ask for it, so no caller can exempt itself.
+
+A second login for a server that already has one running **joins the first**. Two concurrent flows would
+each bind a loopback port and race the same vault entry, leaving the loser's consent screen calling back
+into nothing — which is what a double-clicked button would otherwise arrange.
+
+The wire carries `user_code` (the string a human types into the provider's site) and never the device code
+polled with, never an authorization code and never a token. The test asserts on the **key set**, so it
+fails the day someone adds a field rather than the day someone leaks a particular string.
+
 ### Invariants and failure directions
 
 **Two authentication gates, both mandatory.** The first is file permissions: the socket's directory is

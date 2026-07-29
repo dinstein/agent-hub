@@ -74,6 +74,20 @@ option right now is pre-provisioning via `--client-id`.
 | Device flow (RFC 8628) | ✅ Chosen automatically: used whenever the AS advertises `device_authorization_endpoint` |
 | Automatic downgrade to manual when the browser fails to open | ✅ `ModeAuto` only |
 
+**Two callers drive this flow, and there is only one implementation of it.** `agenthub auth login`
+runs it in the foreground; the control plane runs it as a session for graphical frontends
+(`internal/oauthlogin`, and
+[controlplane.md](controlplane.md#the-one-long-running-exchange-an-interactive-login)). The single
+behavioural difference is `LoginRequest.Open`: the CLI opens a browser there, the session **records
+the URL and returns success** so the caller can open it — the daemon may be headless and may not be
+the machine the user is at.
+
+That inversion has a consequence worth naming, because it is invisible from the code: on the session
+path `Paste` is nil, so `SelectMode` can never choose `ModeManual` and the automatic
+loopback→manual downgrade in the last row above **cannot fire**. Manual mode reads a pasted callback
+from a terminal, and there is none behind an HTTP API. A frontend on a host that truly cannot open a
+browser has to fall back to the CLI, not to a mode that would block forever waiting for a paste.
+
 ### Token handling
 
 | Shape | Supported |
