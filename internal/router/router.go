@@ -30,6 +30,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -179,11 +180,7 @@ func BuildFromCache(cached map[string][]mcp.ToolDef, pol Policy) (*Router, error
 // nothing to connect to — so the cold catalog can already list and CALL its
 // tools.
 func BuildFromCacheWith(cached map[string][]mcp.ToolDef, providers []Provider, pol Policy) (*Router, error) {
-	ids := make([]string, 0, len(cached))
-	for id := range cached {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
+	ids := slices.Sorted(maps.Keys(cached))
 	sources := make([]source, 0, len(ids))
 	for _, id := range ids {
 		sources = append(sources, source{id: id, tools: cached[id]})
@@ -231,11 +228,7 @@ func build(sources []source, pol Policy) (*Router, error) {
 	// name, then serverID as tiebreaker). A suffixed name that is itself
 	// already taken (e.g. group "x" produced "x_2" and a base "x_2" also
 	// exists) keeps scanning upward — order stays fully deterministic.
-	bases := make([]string, 0, len(groups))
-	for b := range groups {
-		bases = append(bases, b)
-	}
-	slices.Sort(bases)
+	bases := slices.Sorted(maps.Keys(groups))
 
 	taken := make(map[string]bool)
 	byExposed := make(map[string]entry)
@@ -269,11 +262,7 @@ func build(sources []source, pol Policy) (*Router, error) {
 		}
 	}
 
-	ordered := make([]string, 0, len(byExposed))
-	for name := range byExposed {
-		ordered = append(ordered, name)
-	}
-	slices.Sort(ordered)
+	ordered := slices.Sorted(maps.Keys(byExposed))
 	return &Router{byExposed: byExposed, ordered: ordered}, nil
 }
 

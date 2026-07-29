@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -176,11 +177,7 @@ func ParseClientConfig(text string) (ParseResult, error) {
 		}
 	}
 
-	names := make([]string, 0, len(raws))
-	for name := range raws {
-		names = append(names, name)
-	}
-	slices.Sort(names)
+	names := slices.Sorted(maps.Keys(raws))
 	for _, name := range names {
 		entry, warnings, err := entryFrom(raws[name])
 		if err != nil {

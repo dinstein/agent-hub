@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 
@@ -237,10 +238,6 @@ func (s *Surface) HandleDescribe(raw json.RawMessage) (*mcp.CallResult, Describe
 // exists for the CLI and doctor, which render the surface without going
 // through the meta-tool wire shape.
 func (s *Surface) DescribeNames() []string {
-	out := make([]string, 0, len(s.byExposed))
-	for name := range s.byExposed {
-		out = append(out, name)
-	}
-	slices.Sort(out)
+	out := slices.Sorted(maps.Keys(s.byExposed))
 	return out
 }

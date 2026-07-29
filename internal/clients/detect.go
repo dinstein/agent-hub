@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -355,11 +356,7 @@ func (i Inspection) ConnectState() (ConnectState, []Placement) {
 
 // summarise renders a server map into a stable, sorted overview.
 func summarise(servers map[string]json.RawMessage, clientID string) []InspectedServer {
-	names := make([]string, 0, len(servers))
-	for n := range servers {
-		names = append(names, n)
-	}
-	slices.Sort(names)
+	names := slices.Sorted(maps.Keys(servers))
 	out := make([]InspectedServer, 0, len(names))
 	for _, n := range names {
 		raw := servers[n]

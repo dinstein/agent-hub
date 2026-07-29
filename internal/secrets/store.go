@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -314,11 +315,7 @@ func (c *Chain) List(_ context.Context) ([]Ref, error) {
 	for _, k := range regKeys {
 		keys[k] = struct{}{}
 	}
-	sorted := make([]string, 0, len(keys))
-	for k := range keys {
-		sorted = append(sorted, k)
-	}
-	slices.Sort(sorted)
+	sorted := slices.Sorted(maps.Keys(keys))
 	refs := make([]Ref, 0, len(sorted))
 	for _, k := range sorted {
 		ref, err := ParseStorageKey(k)

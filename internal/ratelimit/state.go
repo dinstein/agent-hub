@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -270,15 +271,11 @@ func prune(st *state, now time.Time) {
 	if len(st.Buckets) <= maxBuckets {
 		return
 	}
-	keys := make([]string, 0, len(st.Buckets))
-	for k := range st.Buckets {
-		keys = append(keys, k)
-	}
-	slices.SortFunc(keys, func(a, b string) int {
-		if c := cmp.Compare(st.Buckets[a].Updated, st.Buckets[b].Updated); c != 0 {
-			return c
-		}
-		return strings.Compare(a, b)
+	keys := slices.SortedFunc(maps.Keys(st.Buckets), func(a, b string) int {
+		return cmp.Or(
+			cmp.Compare(st.Buckets[a].Updated, st.Buckets[b].Updated),
+			strings.Compare(a, b),
+		)
 	})
 	for _, k := range keys[:len(keys)-maxBuckets] {
 		delete(st.Buckets, k)

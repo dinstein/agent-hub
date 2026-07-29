@@ -1,6 +1,9 @@
 package discovery
 
-import "slices"
+import (
+	"maps"
+	"slices"
+)
 
 // PinSet reports which tools are PINNED: exposed directly in lazy mode, so
 // the agent can call them without a search round-trip (docs/modules/dataplane.md, the
@@ -83,10 +86,6 @@ func (p *StaticPins) Servers() []string {
 	for id := range p.all {
 		seen[id] = true
 	}
-	out := make([]string, 0, len(seen))
-	for id := range seen {
-		out = append(out, id)
-	}
-	slices.Sort(out)
+	out := slices.Sorted(maps.Keys(seen))
 	return out
 }

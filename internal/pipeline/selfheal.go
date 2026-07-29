@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -233,11 +234,7 @@ func healArgs(args, schema json.RawMessage) (json.RawMessage, []fix, bool) {
 
 	// Deterministic order: the fix list is an audit record and a golden-test
 	// subject, so it must not depend on map iteration order.
-	names := make([]string, 0, len(obj))
-	for name := range obj {
-		names = append(names, name)
-	}
-	slices.Sort(names)
+	names := slices.Sorted(maps.Keys(obj))
 	for _, name := range names {
 		prop, declared := full.Properties[name]
 		if !declared {

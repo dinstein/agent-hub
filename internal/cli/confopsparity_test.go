@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -225,10 +226,6 @@ func readDocs(t *testing.T, dir string) map[string][]byte {
 }
 
 func sortedNames(m map[string][]byte) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	slices.Sort(out)
+	out := slices.Sorted(maps.Keys(m))
 	return out
 }

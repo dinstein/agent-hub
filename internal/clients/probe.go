@@ -3,6 +3,7 @@ package clients
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"slices"
 )
 
@@ -167,11 +168,7 @@ func (f *probeFormat) ownedEntry(path string) (name string, entry *tomlEntry, ok
 	if !scanned {
 		return "", nil, false
 	}
-	names := make([]string, 0, len(entries))
-	for n := range entries {
-		names = append(names, n)
-	}
-	slices.Sort(names)
+	names := slices.Sorted(maps.Keys(entries))
 	for _, n := range names {
 		e := entries[n]
 		raw, err := json.Marshal(struct {

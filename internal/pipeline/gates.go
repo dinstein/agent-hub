@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -249,11 +250,7 @@ func precheckViolation(req *CallRequest) *BlockedError {
 	}
 	// Deterministic report: a multi-violation call must always name the same
 	// argument, or the error text stops being a contract.
-	names := make([]string, 0, len(args))
-	for name := range args {
-		names = append(names, name)
-	}
-	slices.Sort(names)
+	names := slices.Sorted(maps.Keys(args))
 	for _, name := range names {
 		prop, declared := schema.Properties[name]
 		if !declared {

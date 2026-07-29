@@ -162,11 +162,7 @@ func (e Entry) Placeholders() []string {
 			seen[name] = struct{}{}
 		}
 	}
-	out := make([]string, 0, len(seen))
-	for name := range seen {
-		out = append(out, name)
-	}
-	slices.Sort(out)
+	out := slices.Sorted(maps.Keys(seen))
 	return out
 }
 
@@ -179,11 +175,7 @@ func (e Entry) SecretRefs() []string {
 			seen[key] = struct{}{}
 		}
 	}
-	out := make([]string, 0, len(seen))
-	for key := range seen {
-		out = append(out, key)
-	}
-	slices.Sort(out)
+	out := slices.Sorted(maps.Keys(seen))
 	return out
 }
 
