@@ -240,6 +240,18 @@
       "tags": ["browser", "web", "automation", "puppeteer"]
     },
     {
+      "id": "chrome-devtools",
+      "name": "Chrome DevTools",
+      "description": "Inspect and debug a live Chrome page: performance traces, network requests, console output and the DOM.",
+      "publisher": "ChromeDevTools",
+      "homepage": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+      "provenance": "curated",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"],
+      "tags": ["browser", "debugging", "performance", "web"]
+    },
+    {
       "id": "github",
       "name": "GitHub",
       "description": "GitHub's own hosted server: issues, pull requests, code search and Actions.",
@@ -274,6 +286,53 @@
       "url": "https://mcp.notion.com/mcp",
       "auth": "oauth",
       "tags": ["notes", "docs", "wiki"]
+    },
+    {
+      "id": "linear",
+      "name": "Linear",
+      "description": "Linear's hosted server: issues, projects, cycles and comments.",
+      "publisher": "Linear",
+      "homepage": "https://linear.app/docs/mcp",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://mcp.linear.app/mcp",
+      "auth": "oauth",
+      "tags": ["issues", "projects", "planning", "tracker"]
+    },
+    {
+      "id": "asana",
+      "name": "Asana",
+      "description": "Asana's hosted v2 server: tasks, projects, portfolios and reporting.",
+      "publisher": "Asana",
+      "homepage": "https://developers.asana.com/docs/using-asanas-mcp-server",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://mcp.asana.com/v2/mcp",
+      "auth": "oauth",
+      "tags": ["tasks", "projects", "planning", "tracker"]
+    },
+    {
+      "id": "stripe",
+      "name": "Stripe",
+      "description": "Stripe's hosted server. Its default tool set moves money — creating payments and issuing refunds — so narrow what a client may see before handing it to an agent.",
+      "publisher": "Stripe",
+      "homepage": "https://docs.stripe.com/mcp",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://mcp.stripe.com",
+      "auth": "oauth",
+      "tags": ["payments", "billing", "finance"]
+    },
+    {
+      "id": "cloudflare-docs",
+      "name": "Cloudflare Docs",
+      "description": "Search Cloudflare's product documentation. Needs no login and no credential.",
+      "publisher": "Cloudflare",
+      "homepage": "https://developers.cloudflare.com/agents/model-context-protocol/",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://docs.mcp.cloudflare.com/mcp",
+      "tags": ["docs", "search", "cloudflare"]
     }
   ]
 }
