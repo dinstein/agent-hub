@@ -45,7 +45,7 @@ var withheldGroups = []*cobra.Group{groupGovern, groupOperate}
 // client but cannot say what that client will then see teaches half the
 // model. Setup -> profile -> client bind is the whole everyday path.
 var withheldCommands = []string{
-	"approval", "grant", "config", "audit", "tool", "token",
+	"approval", "grant", "config", "audit", "secret", "tool", "token",
 	"daemon", "session", "events", "activity", "doctor",
 }
 
@@ -232,9 +232,14 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		group string
 		cmds  []string
 	}{
-		{"setup", []string{"catalog", "server", "secret", "auth"}},
+		// `server` first and `catalog` last: the catalog is a small curated
+		// set, so leading with it teaches a path that ends in "not listed"
+		// for most servers. `secret` is not in Setup at all — credentials are
+		// normally handled by `server add` and `auth login`, and a manual
+		// command up front implies a step the everyday path does not have.
+		{"setup", []string{"server", "auth", "catalog"}},
 		{"wire", []string{"profile", "client", "skill"}},
-		{"govern", []string{"approval", "grant", "config", "audit", "tool", "token"}},
+		{"govern", []string{"approval", "grant", "config", "audit", "secret", "tool", "token"}},
 		{"operate", []string{"daemon", "session", "events", "activity", "doctor"}},
 		{"entry", []string{"connect"}},
 	}
@@ -397,7 +402,7 @@ func TestReleaseHidesExactlyTheWithheldCommands(t *testing.T) {
 			t.Errorf("release --help dropped the %q heading, which stays visible:\n%s", g.ID, out)
 		}
 	}
-	for _, other := range []string{"catalog", "server", "secret", "auth", "client", "skill", "connect"} {
+	for _, other := range []string{"catalog", "server", "auth", "profile", "client", "skill", "connect"} {
 		if !strings.Contains(out, "  "+other+" ") {
 			t.Errorf("release --help dropped %q, which is not withheld:\n%s", other, out)
 		}

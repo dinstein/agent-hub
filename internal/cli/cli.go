@@ -160,7 +160,16 @@ func (a *App) newRoot() *cobra.Command {
 		e.Hint = helpHint(cmd)
 		return e
 	})
-	addGrouped(root, groupSetup, a.newCatalogCmd(), a.newServerCmd(), a.newSecretCmd(), a.newAuthCmd())
+	// `server` leads and `catalog` trails: the catalog holds a small curated
+	// set, so leading with it teaches a path that ends in "not listed" for
+	// most servers. `agenthub server add --url ...` is the general answer and
+	// is what Setup should show first.
+	//
+	// `secret` is not here at all. Credentials are usually handled for the
+	// operator — `server add` prompts, `auth login` stores its own — so a
+	// manual secret command in the first section implies a step the everyday
+	// path does not have.
+	addGrouped(root, groupSetup, a.newServerCmd(), a.newAuthCmd(), a.newCatalogCmd())
 	// `profile` sits in Wire up beside `client` because the two halves of one
 	// question live here: a profile says what a surface CONTAINS, `client
 	// bind` says who gets it. Splitting them across a visible and a withheld
@@ -174,7 +183,7 @@ func (a *App) newRoot() *cobra.Command {
 	// them from being left visible.
 	addGroupedHidden(root, a.reducedHelp, groupGovern,
 		a.newApprovalCmd(), a.newGrantCmd(), a.newConfigCmd(), a.newAuditCmd(),
-		a.newToolCmd(), a.newTokenCmd())
+		a.newSecretCmd(), a.newToolCmd(), a.newTokenCmd())
 	addGroupedHidden(root, a.reducedHelp, groupOperate,
 		a.newDaemonCmd(), a.newSessionCmd(), a.newEventsCmd(), a.newActivityCmd(), a.newDoctorCmd())
 	addGrouped(root, groupEntry, a.newConnectCmd())
