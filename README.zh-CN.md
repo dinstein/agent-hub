@@ -1,17 +1,64 @@
+<div align="center">
+
 # AgentHub
 
-本地 Agent 服务枢纽：一份配置、一套凭据、一条治理管线，供全部 AI 客户端
-（Claude Code、Cursor、Codex、Open WebUI 等）共享。
+**一份配置、一套凭据、一条治理管线，供全部 AI 客户端共享。**
 
-*[English documentation](README.md)*
+Claude Code · Cursor · Codex · Open WebUI · 以及另外 8 种
 
-- 单一必装二进制 `agenthub`：`connect`（stdio 网关，每 client 一进程）/
-  `daemon`（HTTP 共享池 + 控制面 + 协调面）/ CLI 管理子命令
-- 可选 GUI `agenthub-gui`（Wails3，仅消费控制面 API）
+[![CI](https://github.com/dinstein/agent-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/dinstein/agent-hub/actions/workflows/ci.yml)
+[![Go 1.26+](https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](VERSION)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey.svg)](#平台)
+[![Telemetry: none](https://img.shields.io/badge/telemetry-none-brightgreen.svg)](#隐私不收集任何数据)
 
-**状态**：功能相对设计已完整。CI 双矩阵全绿，
-真实 Claude Code 经网关调用真实下游 MCP server 的端到端验收通过。
-平台：macOS + Linux 已验证；Windows **尚不可用**（见下）。
+**[English documentation](README.md)** · [架构](docs/architecture.md) · [使用指南](docs/guide.md) · [流程](docs/flows.md)
+
+</div>
+
+---
+
+每个 AI 客户端都想有自己那份 MCP server 清单、自己那份 API key、以及自己那套「工具能干什么」的
+判断。AgentHub 就是同时持有这三样的那一个地方，并且只把你决定给它看的那一面递给每个客户端。
+
+```
+   Claude Code ──┐                                   ┌── linear
+   Cursor ───────┤      ┌──────────────────┐         ├── github
+   Codex ────────┼─────►│     AgentHub     │────────►┼── postgres
+   Open WebUI ───┤      │   一份配置       │         ├── filesystem
+   … 另外 8 种 ──┘      │   一套凭据       │         └── …
+                        │   一条治理管线   │
+                        └──────────────────┘
+```
+
+- **单一必装二进制 `agenthub`** —— `connect`（stdio 网关，每 client 一进程）、
+  `daemon`（HTTP 共享池 + 控制面 + 协调面），以及 CLI 管理子命令
+- **可选 GUI `agenthub-gui`** —— Wails3，仅消费控制面 API；它没有任何 CLI 没有的能力
+
+> **状态：功能相对设计已完整。** CI 双矩阵全绿，真实 Claude Code 经网关调用真实下游 MCP server
+> 的端到端验收通过。macOS + Linux 已验证；Windows **尚不可用**（[详见](#平台)）。
+
+## 快速开始
+
+```bash
+# 1. 注册一个下游 MCP server
+agenthub server add linear --url https://mcp.linear.app/mcp
+
+# 2. 如果它需要授权，就授权
+agenthub auth login linear
+
+# 3. 在任何客户端依赖它之前，先证明它真的能用
+agenthub server test linear
+
+# 4. 接一个客户端 —— 一辈子只做一次
+agenthub client connect claude-code --dry-run   # 先看一眼
+agenthub client connect claude-code
+```
+
+第 4 步**每个客户端只做一次**：它写进去的条目跑的是 `agenthub connect --client claude-code`，
+所以之后你再加的每个 server 都会被自动带上，不用再动客户端的配置。
+完整走法（profile、收窄、整套模型）见 [docs/guide.md](docs/guide.md)。
 
 ## 能力
 
@@ -31,12 +78,33 @@
 
 | 文件 | 内容 |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | **先看这个**：进程模型、核心模块地图、分层与依赖约束、一次调用穿过什么、三条数据流向、三道防线 |
+| [docs/guide.md](docs/guide.md) | **怎么用**：三个名词（server / profile / client）、日常路径，以及你真正要做的那几个决定 |
+| [docs/architecture.md](docs/architecture.md) | **要改代码先看这个**：进程模型、核心模块地图、分层与依赖约束、一次调用穿过什么、三条数据流向、三道防线 |
 | [docs/flows.md](docs/flows.md) | 七个关键流程的时序图与失败分支 |
 | [docs/modules/](docs/modules/) | 逐包文档：职责、关键类型、不变量与失败方向 |
 | [docs/canonical.md](docs/canonical.md) | 架构约定的唯一真源：冻结标识符、包布局、依赖约束、命令名规则、全部裁决记录 |
 | [docs/windows.md](docs/windows.md) | Windows 现状：已实现什么、未验证什么、缺什么 |
 | [docs/backlog.md](docs/backlog.md) | 已确认但未修复的缺口：症状、根因（指到行）、做法、验证方式 |
+
+## 平台
+
+| 平台 | 状态 |
+|---|---|
+| macOS | ✅ 支持，CI 常跑 |
+| Linux | ✅ 支持，CI 常跑 |
+| Windows | ⚠️ **跑不起来**：路径与 named pipe 设计已实现，CI 也有 `GOOS=windows go build ./...` 门禁，但 registry 的跨进程锁与 pipe 监听器仍是 stub——既读不了配置也起不了 daemon，且从未在真实 Windows 机器上跑过。[详见](docs/windows.md) |
+
+## 隐私：不收集任何数据
+
+AgentHub **不收集任何数据**。没有遥测、没有崩溃上报、没有使用统计、没有更新检查器，
+默认关闭与手动开启都不存在——这条通道根本没有实现。不存在指向 AgentHub 自有域名的请求。
+
+进程的出站连接只有三类，全部由你的配置决定：你在 `servers.json` 里配置的下游 MCP server、
+这些 server 的 OAuth 授权服务器（仅在你执行 `agenthub auth login` 后），以及你显式指定的
+endpoint（例如 `server add --url`）。
+
+审计流（`audit.jsonl` / `security.jsonl` / `savings.jsonl`）与每 server 日志**只写本地磁盘**。
+版本更新交给你的包管理器。裁决记录见 [canonical.md](docs/canonical.md) §7 第 6 项。
 
 ## 开发
 
@@ -47,63 +115,18 @@ make build   # go build ./...
 make test    # go test ./...
 make lint    # golangci-lint run
 make ci      # build + test + lint
+make gui     # GUI 单独构建（见下）
 ```
 
-### GUI（可选，默认不构建）
+GUI **不在默认构建里**：链接 webview 需要 CI runner 上没有的 GTK/WebKit 开发包，所以 Wails
+代码全部带 `//go:build wails` 标签，默认构建拿到的是占位 main；`make gui-frontend` /
+`make gui-go` 分别构建前后两半。前端是 vanilla TS + Vite，唯一运行时依赖是 `@wailsio/runtime`，
+且只能通过 `api` 包访问控制面——它没有任何 CLI 没有的能力。
 
-`make build` / `make lint` **不包含 GUI**：链接 webview 需要 GTK/WebKit 开发包，
-CI runner 上没有。因此 `cmd/agenthub-gui` 的 Wails 代码全部带 `//go:build wails`
-标签，默认构建拿到的是一个提示如何构建 GUI 的占位 main（裁决见 [canonical.md](docs/canonical.md) §7 第 3 项）。
-
-```bash
-make gui            # 前端 npm install + vite build，然后 go build -tags wails
-make gui-frontend   # 只构建前端（产物 cmd/agenthub-gui/frontend/dist，被 embed 进二进制）
-make gui-go         # 只构建 Go 侧（要求 dist 已存在）
-```
-
-前端是 vanilla TS + Vite，唯一运行时依赖是 `@wailsio/runtime`；Health 契约的
-Level/AdminState/Action 常量由 `go generate ./cmd/agenthub-gui/...` 从 `api` 包生成到
-`frontend/src/generated/health.ts`，golden 测试盯着它防三端漂移。
-GUI 只能通过 `api` 包访问控制面——它没有任何 CLI 没有的能力。
-
-依赖方向硬约束（违反即 CI 失败，详见 [canonical.md](docs/canonical.md) §2）：
-
-1. `cmd/agenthub-gui` 与 `api` 不得 import 任何 `internal/*`
-2. `internal/mcp` 只依赖标准库；其余包不得 import 任何第三方 MCP 库
-3. `internal/pipeline` 不得 import `internal/ctlapi`
-4. `internal/mcp`、`internal/platform`、`internal/logx`、`internal/guard/*` 是零业务依赖底座
-
-## 平台
-
-| 平台 | 状态 |
-|---|---|
-| macOS | ✅ 支持，CI 常跑 |
-| Linux | ✅ 支持，CI 常跑 |
-| Windows | ⚠️ **跑不起来**：路径解析已实现，但 registry 锁与 named pipe 仍是 stub |
-
-Windows 上 `%APPDATA%\agenthub` 数据目录、MSIX 包身份探测与 loopback-UNC 孪生路径逃逸、
-控制面 named pipe 路径 `\\.\pipe\agenthub-ctl-<sha8(SID)>` 与它的 SDDL 都已实现，
-接缝按裁决收敛在 `internal/platform`，CI 有 `GOOS=windows go build ./...` 门禁——
-但**没有任何一行在 Windows 机器上跑过**，而且还差两块前置件：registry 的跨进程锁与控制面的
-named pipe 监听器目前都是返回 unsupported 的 stub，所以 Windows 上既读不了配置也起不了 daemon。
-现状、待办与验收标准见 [docs/windows.md](docs/windows.md)。
-
-## 隐私：不收集任何数据
-
-AgentHub **不收集任何数据**。没有遥测、没有崩溃上报、没有使用统计、没有更新检查器，
-默认关闭与手动开启都不存在——这条通道根本没有实现。
-
-进程的出站网络连接只有三类，全部由你的配置决定：
-
-1. 你在 `servers.json` 里配置的下游 MCP server；
-2. 这些 server 的 OAuth 授权服务器（仅在你执行 `agenthub auth login` 后）；
-3. 你显式指定的 endpoint（例如 `server add --url`）。
-
-不存在指向 AgentHub 自有域名的请求。审计流（`audit.jsonl` / `security.jsonl` /
-`savings.jsonl`）与每 server 日志（`logs/server-<name>.log`）**只写本地磁盘**，
-任何人都不会读走它们。版本更新交给你的包管理器。
-
-裁决记录见 [canonical.md](docs/canonical.md) §7 第 6 项。
+四条依赖方向硬约束由 CI 保证（详见 [canonical.md](docs/canonical.md) §2）：`cmd/agenthub-gui`
+与 `api` 不得 import `internal/*`；`internal/mcp` 只依赖标准库、且是唯一的 MCP 协议门面；
+`internal/pipeline` 不得 import `internal/ctlapi`；`internal/mcp`、`internal/platform`、
+`internal/logx`、`internal/guard/*` 保持零业务依赖。
 
 ## License
 

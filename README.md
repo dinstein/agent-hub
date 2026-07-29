@@ -1,17 +1,67 @@
+<div align="center">
+
 # AgentHub
 
-A local hub for Agent services: one configuration, one set of credentials, one governance
-pipeline — shared by every AI client (Claude Code, Cursor, Codex, Open WebUI, and others).
+**One configuration, one set of credentials, one governance pipeline — shared by every AI client.**
 
-*[中文文档](README.zh-CN.md)*
+Claude Code · Cursor · Codex · Open WebUI · and 8 more
 
-- A single required binary, `agenthub`: `connect` (stdio gateway, one process per client) /
-  `daemon` (shared HTTP pool + control plane + coordination plane) / CLI management subcommands
-- An optional GUI, `agenthub-gui` (Wails3, consumes the control-plane API only)
+[![CI](https://github.com/dinstein/agent-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/dinstein/agent-hub/actions/workflows/ci.yml)
+[![Go 1.26+](https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](VERSION)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey.svg)](#platforms)
+[![Telemetry: none](https://img.shields.io/badge/telemetry-none-brightgreen.svg)](#privacy-no-data-collection)
 
-**Status**: feature-complete against its design. CI is green across both matrices, and end-to-end
-acceptance passes with real Claude Code calling real downstream MCP servers through the gateway.
-Platforms: macOS and Linux are verified; Windows is **not yet usable** (see below).
+**[中文文档](README.zh-CN.md)** · [Architecture](docs/architecture.md) · [User guide](docs/guide.md) · [Flows](docs/flows.md)
+
+</div>
+
+---
+
+Every AI client wants its own copy of your MCP server list, its own copy of your API keys, and
+its own idea of what a tool is allowed to do. AgentHub is the one place that holds all three, and
+hands each client exactly the surface you decided it should see.
+
+```
+   Claude Code ──┐                                   ┌── linear
+   Cursor ───────┤      ┌──────────────────┐         ├── github
+   Codex ────────┼─────►│     AgentHub     │────────►┼── postgres
+   Open WebUI ───┤      │  one config      │         ├── filesystem
+   … 8 more ─────┘      │  one credential  │         └── …
+                        │  one pipeline    │
+                        └──────────────────┘
+```
+
+- **A single required binary, `agenthub`** — `connect` (stdio gateway, one process per client),
+  `daemon` (shared HTTP pool + control plane + coordination plane), plus CLI management subcommands
+- **An optional GUI, `agenthub-gui`** — Wails3, consumes the control-plane API only; it has no
+  capability the CLI lacks
+
+> **Status: feature-complete against its design.** CI is green across both matrices, and end-to-end
+> acceptance passes with real Claude Code calling real downstream MCP servers through the gateway.
+> macOS and Linux are verified; Windows is **not yet usable** ([details](#platforms)).
+
+## Quickstart
+
+```bash
+# 1. register a downstream MCP server
+agenthub server add linear --url https://mcp.linear.app/mcp
+
+# 2. authorize it, if it needs that
+agenthub auth login linear
+
+# 3. prove it actually works, before any client depends on it
+agenthub server test linear
+
+# 4. connect a client — once, ever
+agenthub client connect claude-code --dry-run   # look first
+agenthub client connect claude-code
+```
+
+Step 4 happens **once per client**: the entry it writes runs `agenthub connect --client
+claude-code`, so every server you add later is picked up without touching the client's config
+again. Full walkthrough — profiles, narrowing, the whole model — in [docs/guide.md](docs/guide.md).
 
 ## Capabilities
 
@@ -31,7 +81,8 @@ Platforms: macOS and Linux are verified; Windows is **not yet usable** (see belo
 
 | File | Contents |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | **Start here**: process model, core module map, layering and dependency constraints, what a single call passes through, the three data-flow directions, the three lines of defense |
+| [docs/guide.md](docs/guide.md) | **Using it**: the three nouns (server / profile / client), the everyday path, and the decisions you actually have to make |
+| [docs/architecture.md](docs/architecture.md) | **Changing it**: process model, core module map, layering and dependency constraints, what a single call passes through, the three data-flow directions, the three lines of defense |
 | [docs/flows.md](docs/flows.md) | Sequence diagrams and failure branches for seven key flows |
 | [docs/modules/](docs/modules/) | Per-package documentation: responsibilities, key types, invariants and failure directions |
 | [docs/canonical.md](docs/canonical.md) | The single source of truth for architectural conventions: frozen identifiers, package layout, dependency constraints, command naming rules, and every decision record |
@@ -39,6 +90,28 @@ Platforms: macOS and Linux are verified; Windows is **not yet usable** (see belo
 | [docs/backlog.md](docs/backlog.md) | Confirmed but unfixed gaps: symptom, root cause (pinned to a line), approach, and how to verify |
 
 Chinese translations live in [docs/zh-CN/](docs/zh-CN/).
+
+## Platforms
+
+| Platform | Status |
+|---|---|
+| macOS | ✅ Supported, exercised by CI |
+| Linux | ✅ Supported, exercised by CI |
+| Windows | ⚠️ **Does not run**: paths and the named-pipe design are implemented and CI gates on `GOOS=windows go build ./...`, but the registry's cross-process lock and the pipe listener are still stubs — you can neither read configuration nor start the daemon. Nothing has ever run on a real Windows machine. [Details](docs/windows.md) |
+
+## Privacy: no data collection
+
+AgentHub **collects no data**. No telemetry, no crash reporting, no usage statistics, no update
+checker — not disabled by default, not available to turn on: the channel simply does not exist.
+No request ever targets an AgentHub-owned domain.
+
+The process makes only three kinds of outbound connection, all determined by your configuration:
+the downstream MCP servers in `servers.json`, those servers' OAuth authorization servers (only
+after you run `agenthub auth login`), and endpoints you specify explicitly (`server add --url`).
+
+Audit streams (`audit.jsonl` / `security.jsonl` / `savings.jsonl`) and per-server logs are
+**written to local disk only**. Version updates are left to your package manager.
+See the decision record in [canonical.md](docs/canonical.md) §7, item 6.
 
 ## Development
 
@@ -49,68 +122,19 @@ make build   # go build ./...
 make test    # go test ./...
 make lint    # golangci-lint run
 make ci      # build + test + lint
+make gui     # the GUI, built separately (see below)
 ```
 
-### GUI (optional, not built by default)
+The GUI is **excluded from the default build**: linking a webview needs GTK/WebKit packages that
+CI runners do not have, so all Wails code carries the `//go:build wails` tag and a default build
+produces a placeholder main. `make gui-frontend` / `make gui-go` build the two halves separately.
+The frontend is vanilla TS + Vite with `@wailsio/runtime` as its only runtime dependency, and it
+reaches the control plane solely through the `api` package — it has no capability the CLI lacks.
 
-`make build` and `make lint` **exclude the GUI**: linking a webview requires GTK/WebKit
-development packages, which CI runners do not have. All Wails code under `cmd/agenthub-gui`
-therefore carries the `//go:build wails` tag, and a default build produces a placeholder main
-that explains how to build the GUI (see the decision record in [canonical.md](docs/canonical.md) §7, item 3).
-
-```bash
-make gui            # frontend npm install + vite build, then go build -tags wails
-make gui-frontend   # frontend only (output at cmd/agenthub-gui/frontend/dist, embedded into the binary)
-make gui-go         # Go side only (requires dist to already exist)
-```
-
-The frontend is vanilla TS + Vite, with `@wailsio/runtime` as its only runtime dependency. The
-Level/AdminState/Action constants of the Health contract are generated from the `api` package into
-`frontend/src/generated/health.ts` by `go generate ./cmd/agenthub-gui/...`, and a golden test
-watches it to prevent drift across the three ends.
-The GUI can only reach the control plane through the `api` package — it has no capability the CLI lacks.
-
-Hard constraints on dependency direction (violations fail CI; see [canonical.md](docs/canonical.md) §2):
-
-1. `cmd/agenthub-gui` and `api` must not import anything under `internal/*`
-2. `internal/mcp` depends on the standard library only; no other package may import a third-party MCP library
-3. `internal/pipeline` must not import `internal/ctlapi`
-4. `internal/mcp`, `internal/platform`, `internal/logx`, and `internal/guard/*` are zero-business-dependency foundations
-
-## Platforms
-
-| Platform | Status |
-|---|---|
-| macOS | ✅ Supported, exercised by CI |
-| Linux | ✅ Supported, exercised by CI |
-| Windows | ⚠️ **Does not run**: path resolution is implemented, but the registry lock and named pipe are still stubs |
-
-On Windows, the `%APPDATA%\agenthub` data directory, MSIX package-identity detection, loopback-UNC
-twin-path escape handling, the control-plane named pipe path `\\.\pipe\agenthub-ctl-<sha8(SID)>` and
-its SDDL are all implemented, with the seams converged into `internal/platform` per the decision
-record, and CI gates on `GOOS=windows go build ./...` — but **not a single line has run on a Windows
-machine**, and two prerequisites are still missing: the registry's cross-process lock and the
-control-plane named pipe listener are both stubs that return unsupported, so on Windows you can
-neither read configuration nor start the daemon.
-See [docs/windows.md](docs/windows.md) for current status, remaining work, and acceptance criteria.
-
-## Privacy: no data collection
-
-AgentHub **collects no data**. There is no telemetry, no crash reporting, no usage statistics, and
-no update checker — not disabled by default, not available to turn on: the channel simply does not exist.
-
-The process makes only three kinds of outbound network connection, all determined by your configuration:
-
-1. The downstream MCP servers you configured in `servers.json`;
-2. Those servers' OAuth authorization servers (only after you run `agenthub auth login`);
-3. Endpoints you specify explicitly (for example `server add --url`).
-
-No request ever targets an AgentHub-owned domain. The audit streams (`audit.jsonl` /
-`security.jsonl` / `savings.jsonl`) and the per-server logs (`logs/server-<name>.log`) are
-**written to local disk only** — nobody reads them off your machine. Version updates are left to
-your package manager.
-
-See the decision record in [canonical.md](docs/canonical.md) §7, item 6.
+Four dependency-direction constraints are enforced by CI (see [canonical.md](docs/canonical.md) §2):
+`cmd/agenthub-gui` and `api` must not import `internal/*`; `internal/mcp` is standard-library-only
+and is the sole MCP protocol facade; `internal/pipeline` must not import `internal/ctlapi`; and
+`internal/mcp`, `internal/platform`, `internal/logx`, `internal/guard/*` stay zero-business-dependency.
 
 ## License
 
