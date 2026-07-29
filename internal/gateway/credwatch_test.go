@@ -43,7 +43,7 @@ func TestCredentialChangeWakesAFailedServer(t *testing.T) {
 
 	// Four failures in: the next rung is 135s away, far past anything a test
 	// would sit through and far past a user's patience.
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		g.noteConnectResult("alpha", "401 unauthorized")
 	}
 	if due := g.redialAt["alpha"]; !due.After(time.Now().Add(time.Minute)) {

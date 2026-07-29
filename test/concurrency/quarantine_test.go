@@ -66,7 +66,7 @@ func helperQuarantineChurn() {
 	}
 	ctx := context.Background()
 	exposed := "srv__churn-" + id
-	for i := 0; i < n; i++ {
+	for range n {
 		if err := store.Add(ctx, exposed, integrity.QuarantineEntry{
 			Server: "srv", Tool: "churn-" + id, Reason: "churn",
 		}); err != nil {

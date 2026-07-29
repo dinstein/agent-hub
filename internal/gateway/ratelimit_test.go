@@ -176,7 +176,7 @@ func TestRateLimitCountersAreSharedAcrossGateways(t *testing.T) {
 		c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
 		waitForTools(t, c, "fake__echo")
 		n := 0
-		for i := 0; i < attempts; i++ {
+		for range attempts {
 			if callQuotaOutcome(t, c, "fake__echo") {
 				n++
 			}

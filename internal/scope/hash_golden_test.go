@@ -53,7 +53,7 @@ func TestHashGolden(t *testing.T) {
 // repeated merges (map iteration order must not leak in).
 func TestHashStability(t *testing.T) {
 	a := goldenScope(t)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		b := goldenScope(t)
 		if a.Hash != b.Hash {
 			t.Fatal("hash unstable across identical merges")

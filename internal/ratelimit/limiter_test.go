@@ -177,7 +177,7 @@ func TestAllOrNothingAcrossRules(t *testing.T) {
 	if !tl.Allow(expensive).Allowed {
 		t.Fatal("first expensive call must pass")
 	}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if dec := tl.Allow(expensive); dec.Allowed {
 			t.Fatal("further expensive calls must be denied by the narrow rule")
 		}
@@ -199,7 +199,7 @@ func TestNoRulesMeansNoEnforcement(t *testing.T) {
 	if tl.Enabled() {
 		t.Fatal("an empty config must report disabled")
 	}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		if !tl.Allow(Key{Server: "s", Tool: "t"}).Allowed {
 			t.Fatal("no rules means no quota")
 		}
@@ -356,7 +356,7 @@ func TestConcurrentAllowInOneProcess(t *testing.T) {
 	var mu sync.Mutex
 	allowed := 0
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

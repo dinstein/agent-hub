@@ -218,7 +218,7 @@ func assertGolden(t *testing.T, name, got string) {
 func TestSignaturesAreDeterministic(t *testing.T) {
 	for _, tc := range corpus {
 		first := Of(tc.def, tc.opts)
-		for i := 0; i < 64; i++ {
+		for range 64 {
 			if again := Of(tc.def, tc.opts); again != first {
 				t.Fatalf("%s: %q then %q", tc.name, first.Text, again.Text)
 			}
@@ -320,7 +320,7 @@ func TestCache(t *testing.T) {
 	base := corpus[0].def
 	want := Of(base, Options{})
 
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		if got := c.Of(base); got != want {
 			t.Fatalf("cache returned %+v, want %+v", got, want)
 		}

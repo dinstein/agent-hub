@@ -45,14 +45,14 @@ func TestBreakerDefaults(t *testing.T) {
 
 func TestBreakerOpensAfterThresholdConsecutiveFailures(t *testing.T) {
 	b, _ := newTestBreaker(BreakerConfig{FailureThreshold: 3, Cooldown: time.Second})
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		mustAllow(t, b, false)
 		b.recordFailure()
 	}
 	// A success in between resets the streak.
 	mustAllow(t, b, false)
 	b.recordSuccess()
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		mustAllow(t, b, false)
 		b.recordFailure()
 	}

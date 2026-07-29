@@ -38,7 +38,7 @@ func TestBusSlowConsumerDropsAndCounts(t *testing.T) {
 	s := b.Subscribe(1)
 	defer s.Close()
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		b.Publish(Event{Topic: "t", Key: "k"}) // must never block
 	}
 	if got := s.Dropped(); got != 4 {
@@ -56,7 +56,7 @@ func TestBusSubscribeDefaultBuffer(t *testing.T) {
 	b := NewBus()
 	s := b.Subscribe(0)
 	defer s.Close()
-	for i := 0; i < DefaultBuffer; i++ {
+	for range DefaultBuffer {
 		b.Publish(Event{Topic: "t"})
 	}
 	if got := s.Dropped(); got != 0 {
@@ -80,7 +80,7 @@ func TestSubscriptionCloseIsIdempotentAndStopsDelivery(t *testing.T) {
 func TestBusConcurrentPublishClose(t *testing.T) {
 	b := NewBus()
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		s := b.Subscribe(1, "t")
 		wg.Add(2)
 		go func() {

@@ -110,7 +110,7 @@ func helperSecurity() {
 	if err != nil {
 		helperFail(err)
 	}
-	for i := 0; i < n; i++ {
+	for range n {
 		s.Emit(SecurityEvent{
 			Event:    "injection.blocked",
 			Severity: SeverityCritical,

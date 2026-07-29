@@ -119,7 +119,7 @@ func TestNextIDUnique(t *testing.T) {
 			const n = 200
 			out := make(chan string, n)
 			var wg sync.WaitGroup
-			for i := 0; i < n; i++ {
+			for range n {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()

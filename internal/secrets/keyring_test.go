@@ -34,7 +34,7 @@ func TestProbeResultCached(t *testing.T) {
 	if h.available(ctx) {
 		t.Fatal("timed-out probe reported available")
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if h.available(ctx) {
 			t.Fatal("cached probe verdict flipped")
 		}

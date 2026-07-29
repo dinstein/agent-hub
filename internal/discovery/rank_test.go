@@ -141,7 +141,7 @@ func TestDuplicateQueryTermsCollapse(t *testing.T) {
 // bound: a hostile server cannot make every search expensive.
 func TestDescriptionIndexIsBounded(t *testing.T) {
 	var b strings.Builder
-	for i := 0; i < MaxDescriptionTokens; i++ {
+	for range MaxDescriptionTokens {
 		b.WriteString("pad ")
 	}
 	b.WriteString("needle")

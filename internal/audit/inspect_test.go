@@ -29,7 +29,7 @@ func TestInspectOptIn(t *testing.T) {
 func TestInspectDisableClears(t *testing.T) {
 	r := NewInspectRing()
 	r.SetEnabled(true)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		r.Add(InspectEntry{Kind: "request", Body: "b"})
 	}
 	r.SetEnabled(false)

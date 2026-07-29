@@ -79,7 +79,7 @@ func TestDeniedCallSpendsNoToken(t *testing.T) {
 		tl.Guard(Key{Client: "c", Server: "gh", Tool: "search"}, &req)
 		return req
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if _, err := denyPipe.Execute(context.Background(), build()); err == nil {
 			t.Fatal("gate must deny")
 		}

@@ -65,7 +65,7 @@ func helperAllow() {
 	}
 	key := Key{Client: "c", Server: "s", Tool: "t"}
 	granted := 0
-	for i := 0; i < n; i++ {
+	for range n {
 		dec := lim.Allow(key)
 		if dec.Degraded {
 			helperFail(fmt.Errorf("degraded decision in helper: %s", dec))

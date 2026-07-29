@@ -41,7 +41,7 @@ func TestSelfWriteTTLExpiry(t *testing.T) {
 func TestSelfWriteBoundedEvictsOldest(t *testing.T) {
 	var s selfWriteSet
 	s.register("first")
-	for i := 0; i < selfWriteSlots; i++ {
+	for range selfWriteSlots {
 		s.register("filler")
 	}
 	if s.consume("first") {

@@ -32,7 +32,7 @@ func hit(t *testing.T, base, query string) {
 // next flow's callback. Random ports make that structurally impossible.
 func TestLoopbackBindsRandomPortEachTime(t *testing.T) {
 	seen := map[int]bool{}
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		ln, err := Listen()
 		if err != nil {
 			t.Fatal(err)

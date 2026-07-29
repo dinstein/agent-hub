@@ -40,7 +40,7 @@ func TestMultiProcessCountersMerge(t *testing.T) {
 		outputs []string
 	)
 	start := make(chan struct{})
-	for i := 0; i < procs; i++ {
+	for range procs {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

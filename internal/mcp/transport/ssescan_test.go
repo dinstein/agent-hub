@@ -100,7 +100,7 @@ func TestSSEScannerBound(t *testing.T) {
 	})
 	t.Run("accumulated data lines", func(t *testing.T) {
 		var b strings.Builder
-		for i := 0; i < 20; i++ {
+		for range 20 {
 			b.WriteString("data: " + strings.Repeat("y", 30) + "\n")
 		}
 		b.WriteString("\n")

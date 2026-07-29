@@ -47,7 +47,7 @@ func TestConcurrentRefreshMergesIntoOneRoundTrip(t *testing.T) {
 			errs[i] = s.RefreshTools(context.Background())
 		}(i)
 	}
-	for i := 0; i < callers; i++ {
+	for range callers {
 		<-started
 	}
 	// Give every caller a chance to reach the merger before releasing.
