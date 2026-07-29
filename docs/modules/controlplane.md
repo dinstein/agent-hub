@@ -725,7 +725,31 @@ from a non-terminal fd** (redirected stdin must not silently echo credentials in
 a defer (an interrupted read never leaves the user's shell with echo off).
 
 **`server ls` can safely display header values verbatim**, because a registry entry never contains a credential — the values are
-`${SECRET_X}` placeholders, and resolution happens at connect time inside `internal/downstream`.
+`${SECRET_X}` placeholders, and resolution happens at connect time inside `internal/downstream`. The **vault keys** an entry needs
+come from `downstream.SecretKeysIn`, not from a local `${...}` scan: only `${SECRET_<KEY>}` is a credential and the entry it names
+is `<KEY>` without the prefix, so a private scan produced a list that failed at the very cross-check against `secret ls` it exists
+for.
+
+**The `AUTH` column reports what is STORED, never whether it works** (`internal/cli/serverauth.go`). This is the line the ban on a
+persisted `needsAuth` draws: "this machine holds an OAuth token for notion" is a local fact readable with every downstream
+unreachable, while "notion will accept it" is a live 401 and belongs to the enable probe and the Health contract. The column says
+`oauth`, `oauth:expiring`, `oauth:expired`, `oauth:login`, `token`, `secret`, `secret:missing`, `header`, `error` or `-`, and no
+value of it may be read as health. It is classified by a **first-match-wins ladder** whose first two rungs are placed rather than
+convenient: a missing secret outranks everything so that the CLI and `ComputeHealth` cannot disagree about the same server, and a
+literal `Authorization` header outranks the stored credential because `attachBearer` leaves an explicit header alone — reporting
+the token behind one would name a credential that is never sent. The last rung does **not** guess: an HTTP endpoint with no
+credential and no hints is `-`, not "probably needs a login". `server inspect` renders the same classification unabbreviated, and
+the footer hints prefer `auth refresh` over `auth login` whenever a refresh token exists — both repair an expiry, only one needs a
+browser.
+
+**Reading it is index-first, and that is a cost rule, not an optimization.** One `Chain.List` — the enc-file map plus the keyring
+key registry, both plain files — answers *which* entries exist without touching the OS keychain; only a server that actually has
+`__oauth_state__` costs a value read, and `__http_auth__` is never read at all (its value is the token, and presence is the whole
+question). `server ls` is where every error hint sends people, and doctor's `checkVault` already states the consequence: a command
+that pops a keychain dialog is a command people stop running. Failure direction: **fail-open for the listing, fail-visible for the
+cells** — an unreadable vault still prints every registry fact, but its cells read `error`, never `-`, because "no credential
+needed" is the one answer it must not invent. The column appears only when at least one server has a credential, for the same
+reason `TRACE` appears only when something is being traced.
 
 **`server add` writes configuration only; `server enable` puts the server into service** (CANONICAL §3). `add` makes no
 connection and leaves the entry **disabled**, so it stays deterministic and safe to run against a downstream that is

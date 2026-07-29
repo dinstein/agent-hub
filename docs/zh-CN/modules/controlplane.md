@@ -657,7 +657,31 @@ Daemon 的原因。
 恢复终端状态挂在 defer 上（中断的读不会把用户的 shell 留在 echo 关闭状态）。
 
 **`server ls` 敢原样显示 header 值**，因为 registry 条目里从来没有凭据——值是
-`${SECRET_X}` 占位符，解析发生在连接时的 `internal/downstream` 里。
+`${SECRET_X}` 占位符，解析发生在连接时的 `internal/downstream` 里。一个条目需要哪些
+**vault 键**由 `downstream.SecretKeysIn` 给出，而不是本地再扫一遍 `${...}`：只有
+`${SECRET_<KEY>}` 才是凭据，且它指向的条目是去掉前缀的 `<KEY>`——自己扫的那份列表，恰恰在它
+唯一存在的用途（与 `secret ls` 对账）上失败。
+
+**`AUTH` 列报告的是"存了什么"，绝不是"能不能用"**（`internal/cli/serverauth.go`）。这正是禁止
+持久化 `needsAuth` 那条线：「这台机器上有 notion 的 OAuth token」是本地事实，所有下游都连不上时
+也读得出来；而「notion 会不会接受它」是一次活的 401，属于 enable 探测和 Health 契约。所以这一列
+的取值是 `oauth`、`oauth:expiring`、`oauth:expired`、`oauth:login`、`token`、`secret`、
+`secret:missing`、`header`、`error`、`-`，其中没有一个可以被读成健康度。分类是**先匹配先赢的阶梯**，
+前两级是排出来的而不是顺手的：缺 secret 排在最前，是为了让 CLI 和 `ComputeHealth` 不可能对同一台
+server 各说各话；字面 `Authorization` header 排在已存凭据之前，是因为 `attachBearer` 遇到显式
+header 就不再附加——报告它背后的 token 等于点名一个根本不会被发出去的凭据。最后一级**不猜**：一个
+没有凭据也没有提示的 HTTP endpoint 就是 `-`，不是"大概需要登录"。`server inspect` 渲染同一份分类，
+只是不做压缩；footer 提示在有 refresh token 时优先建议 `auth refresh` 而不是 `auth login`——两者
+都能修好过期，但只有一个需要浏览器。
+
+**读取采用索引优先，这是成本规则而不是优化。** 一次 `Chain.List`——enc 文件的 map 加 keyring 键
+注册表，两个普通文件——就能回答"哪些条目存在"，全程不碰 OS 钥匙串；只有真的存了
+`__oauth_state__` 的 server 才付一次读值的代价，而 `__http_auth__` 从头到尾不读值（它的值就是
+token，存在与否就是全部问题）。`server ls` 是所有错误提示都在推荐的命令，doctor 的 `checkVault`
+早就把后果写清楚了：一个会弹钥匙串对话框的命令，是人们会停止运行的命令。失败方向：**列表 fail-open，
+单元格 fail-visible**——vault 读不了时 registry 那半张表照常打印，但单元格是 `error` 而不是 `-`，
+因为"不需要凭据"正是它绝不能编造的那个答案。整列只在至少有一台 server 有凭据时出现，理由和 `TRACE`
+只在有东西被 trace 时出现是同一条。
 
 **OAuth 登录提示是配置，不是运行时状态。** `server add --oauth-issuer/--oauth-scope/
 --oauth-resource-metadata` 写的是 `registry.OAuthHint` 的全部三个字段，与 `--stdin` 的

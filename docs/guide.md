@@ -156,6 +156,13 @@ agenthub config set discovery full
 None of it needs editing by hand — the commands above are what write it, and
 `server ls`, `client ls` and `auth status` read the first three back.
 
+`server ls` grows an `AUTH` column as soon as any server has a credential,
+saying what is stored here: `oauth`, `token` or `secret` when there is one,
+`oauth:expired` or `secret:missing` when something needs you — with the
+command that fixes it printed under the table. It reports what this machine
+holds, not whether the server still accepts it; `agenthub server test <id>`
+goes and asks.
+
 ## Verifying it end to end
 
 ```bash

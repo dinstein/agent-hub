@@ -142,6 +142,11 @@ agenthub config set discovery full
 这些都不需要你手工去编辑——上面那些命令就是写它们的人，而 `server ls`、`client ls`、
 `auth status` 分别把前三份读回来。
 
+只要有任何一台 server 存了凭据，`server ls` 就会多出一列 `AUTH`，告诉你这台机器上存的是什么：
+有凭据时是 `oauth`、`token`、`secret`，需要你出手时是 `oauth:expired`、`secret:missing`，
+并在表格下面直接给出该跑哪条命令。它报告的是本机存了什么，不是对方还认不认——那个问题由
+`agenthub server test <id>` 去真连一次来回答。
+
 ## 端到端验证
 
 ```bash
