@@ -37,7 +37,13 @@ func secretsDir(resolver *platform.Resolver) (string, error) {
 // comes from the vault, renewal goes through the offline refresh
 // coordinator. One store and one coordinator are shared by every server so
 // the lock and the vault handle are not rebuilt per dial.
-func vaultAuth(chain *secrets.Chain, dir string) func(string, string) downstream.TokenSource {
+//
+// epochs is the credential announcement counter set (credwatch.go). Every
+// source is wrapped in it, so a login or a refresh performed by ANY process
+// drops the bearer this gateway has cached instead of waiting for the
+// downstream to reject it. It is keyed by server, not by scope, on purpose —
+// see credEpochs.
+func vaultAuth(chain *secrets.Chain, dir string, epochs *credEpochs) func(string, string) downstream.TokenSource {
 	coord := oauthflow.NewCoordinator(oauthflow.CoordinatorConfig{
 		Store:   oauthflow.NewStore(chain),
 		Client:  oauthflow.NewClient(oauthflow.Config{}),
@@ -50,7 +56,7 @@ func vaultAuth(chain *secrets.Chain, dir string) func(string, string) downstream
 	// Refresh stays keyed on serverID: the refresh token is the server's, and
 	// a per-scope lock would let two derivations spend it concurrently.
 	return func(serverID, scopeName string) downstream.TokenSource {
-		return downstream.NewScopedVaultTokenSource(serverID, scopeName, resolve,
+		ts := downstream.NewScopedVaultTokenSource(serverID, scopeName, resolve,
 			func(ctx context.Context) (string, error) {
 				_, tok, err := coord.Refresh(ctx, serverID)
 				// ErrRefreshSuperseded means another writer already stored a
@@ -61,5 +67,9 @@ func vaultAuth(chain *secrets.Chain, dir string) func(string, string) downstream
 				}
 				return tok, nil
 			})
+		if epochs == nil {
+			return ts
+		}
+		return downstream.WithEpoch(ts, func() uint64 { return epochs.get(serverID) })
 	}
 }

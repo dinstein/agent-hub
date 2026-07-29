@@ -41,13 +41,61 @@ type authRoundTripper struct {
 	// mu guards the cached token. The cache exists because the alternative
 	// is a vault read — on macOS, a keychain round trip — on every single
 	// HTTP request.
+	//
+	// epoch is the credential epoch the cached value was read AT, when the
+	// TokenSource reports one (credentialEpoch). It is what turns a credential
+	// announcement into a cache drop without a request having to be rejected
+	// first — see token().
 	mu     sync.Mutex
 	tok    string
 	loaded bool
+	epoch  uint64
 }
+
+// credentialEpoch is the optional face of a TokenSource that can say when its
+// stored credential may have changed. A source that does not implement it
+// keeps the previous behaviour exactly: the cache is dropped only by a 401.
+//
+// It is a counter and not a timestamp on purpose — the writer is usually
+// another process, and "different from what I last saw" is the only
+// comparison this needs to support.
+type credentialEpoch interface{ Epoch() uint64 }
+
+// EpochFunc reports the current credential epoch of one server.
+type EpochFunc func() uint64
+
+// WithEpoch attaches a credential epoch to a TokenSource, so a round tripper
+// built over it drops its cached credential the moment the epoch moves
+// instead of waiting for the downstream to reject what it is holding.
+//
+// It is a decorator rather than a constructor parameter because only an
+// assembly that HAS an announcement plane to read (the gateway) can supply
+// one; the daemon and the CLI build the same sources without it and must not
+// be made to pass nil.
+func WithEpoch(ts TokenSource, epoch EpochFunc) TokenSource {
+	if ts == nil || epoch == nil {
+		return ts
+	}
+	return epochTokenSource{TokenSource: ts, epoch: epoch}
+}
+
+type epochTokenSource struct {
+	TokenSource
+	epoch EpochFunc
+}
+
+func (e epochTokenSource) Epoch() uint64 { return e.epoch() }
 
 func newAuthRoundTripper(base http.RoundTripper, auth TokenSource) *authRoundTripper {
 	return &authRoundTripper{base: base, auth: auth}
+}
+
+// currentEpoch reports the source's epoch and whether it has one at all.
+func (a *authRoundTripper) currentEpoch() (uint64, bool) {
+	if es, ok := a.auth.(credentialEpoch); ok {
+		return es.Epoch(), true
+	}
+	return 0, false
 }
 
 // RoundTrip implements http.RoundTripper.
@@ -92,10 +140,20 @@ func (a *authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 // the miss uncached means the very next request carries the credential.
 // The cache still does its job — sparing a keychain round trip per
 // request — for the case it was written for: a credential that is there.
+//
+// A cached value is also dropped when the credential epoch has moved, for
+// the case a 401 cannot cover: a credential ROTATED while the one in hand
+// is still accepted. Without it the daemon's proactive refresher, which
+// rewrites the vault every 60s, could never deliver its work to a live
+// connection — the new token would sit in the vault until the old one was
+// finally rejected, which is correct but late, and late is what the
+// announcement plane exists to fix.
 func (a *authRoundTripper) token(ctx context.Context) string {
+	epoch, versioned := a.currentEpoch()
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.loaded {
+	if a.loaded && (!versioned || a.epoch == epoch) {
 		return a.tok
 	}
 	tok, ok, err := a.auth.Token(ctx)
@@ -104,6 +162,7 @@ func (a *authRoundTripper) token(ctx context.Context) string {
 	}
 	a.tok = tok
 	a.loaded = true
+	a.epoch = epoch
 	return tok
 }
 
@@ -133,9 +192,10 @@ func (a *authRoundTripper) refresh(ctx context.Context, stale string) (string, e
 	// The tok != stale guard is what keeps this from swallowing the real
 	// refresh path: re-reading the very credential that was just rejected
 	// proves the vault has nothing newer, so fall through and renew.
+	epoch, _ := a.currentEpoch()
 	if tok, ok, err := a.auth.Token(ctx); err == nil && ok && tok != stale {
 		a.mu.Lock()
-		a.tok, a.loaded = tok, true
+		a.tok, a.loaded, a.epoch = tok, true, epoch
 		a.mu.Unlock()
 		return tok, nil
 	}
@@ -144,9 +204,16 @@ func (a *authRoundTripper) refresh(ctx context.Context, stale string) (string, e
 	if err != nil {
 		return "", err
 	}
+	// Re-read the epoch AFTER the renewal: the renew path writes the vault,
+	// which announces, so the value read before it is already one behind.
+	// Caching the new token under the stale epoch would make the very next
+	// request throw it away and read the vault again — harmless, but it
+	// would defeat the cache on exactly the servers that refresh most.
+	epoch, _ = a.currentEpoch()
 	a.mu.Lock()
 	a.tok = tok
 	a.loaded = true
+	a.epoch = epoch
 	a.mu.Unlock()
 	return tok, nil
 }

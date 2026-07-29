@@ -152,12 +152,28 @@ func (c *Chain) Get(ctx context.Context, ref Ref) (string, bool, error) {
 //  2. AGENTHUB_DEV_SECRETS=1 → secrets.enc under the dev key
 //  3. keyring available       → OS keyring (+ key registry)
 //  4. keyring probe failed    → secrets.enc under the dev key (A.6 #5)
+//
+// A successful write is ANNOUNCED (announce.go): this is the one choke
+// point every credential travels through — `auth login`, `secret set`, and
+// the daemon's proactive refresher all land here — so subscribing to it is
+// how a running gateway learns that the credential it holds was replaced.
+// Announcing from the callers instead would mean one of them eventually
+// forgets, and the symptom of forgetting is a client that keeps using a dead
+// token until it is restarted.
 func (c *Chain) Set(ctx context.Context, ref Ref, val string) error {
 	if err := ref.Validate(); err != nil {
 		return err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.setLocked(ctx, ref, val); err != nil {
+		return err
+	}
+	c.announce(ref.ServerID)
+	return nil
+}
+
+func (c *Chain) setLocked(ctx context.Context, ref Ref, val string) error {
 	enc, useEnc, err := c.encForWrite(ctx)
 	if err != nil {
 		return err
@@ -178,12 +194,24 @@ func (c *Chain) Set(ctx context.Context, ref Ref, val string) error {
 
 // Delete removes ref from every writable backend it may live in (enc file
 // and keyring). Deleting an absent secret is a no-op, not an error.
+//
+// A successful delete is announced for the same reason a Set is: a logout
+// changes what a live connection should be sending just as much as a login
+// does.
 func (c *Chain) Delete(ctx context.Context, ref Ref) error {
 	if err := ref.Validate(); err != nil {
 		return err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.deleteLocked(ctx, ref); err != nil {
+		return err
+	}
+	c.announce(ref.ServerID)
+	return nil
+}
+
+func (c *Chain) deleteLocked(ctx context.Context, ref Ref) error {
 	sk := ref.StorageKey()
 	enc, active, err := c.encForRead()
 	if err != nil {

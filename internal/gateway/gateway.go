@@ -259,6 +259,12 @@ type gateway struct {
 	watchWG  sync.WaitGroup
 	redialWG sync.WaitGroup // the re-dial loop (redial.go)
 	redial   redialParams   // its resolved ladder
+	// The credential announcement plane (credwatch.go). credEpochs is nil in
+	// an assembly with no vault wiring, which is what startCredWatch tests
+	// before subscribing.
+	credEpochs  *credEpochs
+	credWatcher *secrets.CredWatcher
+	credWG      sync.WaitGroup
 	// reloadMu serializes onRegistryChange (watcher + daemon link may fire
 	// concurrently; reload/diff/apply must not interleave).
 	reloadMu sync.Mutex
@@ -324,6 +330,7 @@ func newGateway(cfg Config) (*gateway, error) {
 	// and the OAuth bearer — so it is built once and shared. An injected
 	// Secrets marks a test assembly: it keeps its own resolver and gets no
 	// OAuth source, so no test run reaches the real keyring through here.
+	var epochs *credEpochs
 	if cfg.Secrets == nil {
 		dir, derr := secretsDir(resolver)
 		if derr != nil {
@@ -336,7 +343,11 @@ func newGateway(cfg Config) (*gateway, error) {
 			chain := secrets.NewChain(secrets.ChainConfig{Dir: dir})
 			cfg.Secrets = chain.Resolver()
 			if cfg.Auth == nil {
-				cfg.Auth = vaultAuth(chain, dir)
+				// The epochs are created here, ahead of the gateway struct,
+				// because the TokenSource factory closes over them: the round
+				// trippers must read the SAME counters credwatch.go bumps.
+				epochs = newCredEpochs()
+				cfg.Auth = vaultAuth(chain, dir, epochs)
 			}
 		}
 	}
@@ -353,6 +364,7 @@ func newGateway(cfg Config) (*gateway, error) {
 		owner:       shaping.Owner("stdio:" + cfg.ClientID),
 		catGen:      1,
 		redial:      newRedialParams(cfg.RedialBase),
+		credEpochs:  epochs,
 		lifeCtx:     lifeCtx,
 		stop:        stop,
 		servers:     make(map[string]*downstream.Server),
@@ -586,6 +598,7 @@ func (g *gateway) run(ctx context.Context) error {
 	g.startWatch()
 	g.startPolicyWatch()
 	g.startRedial()
+	g.startCredWatch()
 	if g.ctl != nil {
 		g.linkDone = make(chan struct{})
 		go func() {
@@ -648,6 +661,10 @@ func (g *gateway) shutdown() {
 	}
 	g.policyWG.Wait() // ends on lifeCtx cancellation (g.stop above)
 	g.redialWG.Wait() // same
+	if g.credWatcher != nil {
+		g.credWatcher.Close() // closes Events, which ends the subscriber
+		g.credWG.Wait()
+	}
 	if g.linkDone != nil {
 		<-g.linkDone
 	}
