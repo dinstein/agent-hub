@@ -383,3 +383,124 @@ func TestClientErrorMapping(t *testing.T) {
 		})
 	}
 }
+
+// TestClientInspectReadsOneNamedClient is the other half of the TCC rule:
+// the listing stats, and THIS endpoint is where contents may be read — for
+// one client, because the caller named it. It runs against the real adapter
+// table so the read is a real read.
+func TestClientInspectReadsOneNamedClient(t *testing.T) {
+	project := t.TempDir()
+	home := t.TempDir()
+	cfg := filepath.Join(project, ".mcp.json")
+	body := `{"mcpServers":{"agenthub":{"command":"/usr/local/bin/agenthub",` +
+		`"args":["connect","--client","claude-code"]},"linear":{"command":"npx"}}}`
+	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	table := clients.New(clients.Options{Home: home, BackupDir: filepath.Join(t.TempDir(), "b")})
+	env := nrStart(t, func(d *NonRegistryDeps) {
+		d.Clients = table
+		d.ClientBaseDir = project
+	})
+
+	status, raw := nrDo(t, env.sock, http.MethodGet, "/v1/clients/claude-code/inspect", nil)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d: %s", status, raw)
+	}
+	var out ClientInspectWire
+	nrData(t, raw, &out)
+	if out.State != string(clients.ConnectedYes) || !out.Connected {
+		t.Fatalf("state = %q connected = %v, want connected", out.State, out.Connected)
+	}
+	if len(out.Placements) != 1 || out.Placements[0] != string(clients.Project) {
+		t.Errorf("placements = %v, want the project file", out.Placements)
+	}
+	var file *ClientInspectFileWire
+	for i := range out.Files {
+		if out.Files[i].Path == cfg {
+			file = &out.Files[i]
+		}
+	}
+	if file == nil || !file.Parsed || !file.Connected {
+		t.Fatalf("project file = %+v, want it read and connected", file)
+	}
+	owned, other := 0, 0
+	for _, s := range file.Servers {
+		if s.Owned {
+			owned++
+			continue
+		}
+		other++
+	}
+	// Ownership, never the name: exactly one entry is agenthub's, and the
+	// user's own server is reported without being claimed.
+	if owned != 1 || other != 1 {
+		t.Errorf("servers = %+v, want one owned and one foreign", file.Servers)
+	}
+	// Locations that do not exist are still reported: "we looked here too".
+	if len(out.Files) < 2 {
+		t.Errorf("files = %+v, want every location of the client", out.Files)
+	}
+
+	// An unknown client is the uniform 404, same as an unknown route.
+	if status, _ := nrDo(t, env.sock, http.MethodGet, "/v1/clients/nope/inspect", nil); status != http.StatusNotFound {
+		t.Errorf("unknown client status = %d, want 404", status)
+	}
+}
+
+// TestClientInspectReportsUnreadableFileWithoutLosingTheRest: one denied
+// location must not sink the request. The state goes to "denied" — never
+// "not connected" — and the readable locations are still reported.
+func TestClientInspectReportsUnreadableFileWithoutLosingTheRest(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	project := t.TempDir()
+	home := t.TempDir()
+	cfg := filepath.Join(project, ".mcp.json")
+	if err := os.WriteFile(cfg, []byte(`{"mcpServers":{}}`), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(cfg, 0o600) })
+	table := clients.New(clients.Options{Home: home, BackupDir: filepath.Join(t.TempDir(), "b")})
+	env := nrStart(t, func(d *NonRegistryDeps) {
+		d.Clients = table
+		d.ClientBaseDir = project
+	})
+
+	status, raw := nrDo(t, env.sock, http.MethodGet, "/v1/clients/claude-code/inspect", nil)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d: %s", status, raw)
+	}
+	var out ClientInspectWire
+	nrData(t, raw, &out)
+	if out.State != string(clients.ConnectedDenied) || out.Connected {
+		t.Errorf("state = %q, want denied (a file we may not read is not an absent entry)", out.State)
+	}
+	found := false
+	for _, f := range out.Files {
+		if f.Path == cfg && f.Error != "" && !f.Parsed {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("files = %+v, want the denied location reported with its error", out.Files)
+	}
+}
+
+// TestClientInspectPassesTheBaseDir: the endpoint must resolve project
+// placements against the daemon's configured base directory, not the
+// process working directory.
+func TestClientInspectPassesTheBaseDir(t *testing.T) {
+	fake := &nrClients{ids: []string{"cursor"}, inspection: clients.Inspection{Client: "cursor"}}
+	env := nrStart(t, func(d *NonRegistryDeps) {
+		d.Clients = fake
+		d.ClientBaseDir = "/tmp/some/project"
+	})
+	if status, raw := nrDo(t, env.sock, http.MethodGet, "/v1/clients/cursor/inspect", nil); status != http.StatusOK {
+		t.Fatalf("status = %d: %s", status, raw)
+	}
+	if fake.inspected != "cursor" || fake.inspectBase != "/tmp/some/project" {
+		t.Errorf("Inspect(%q, %q), want (cursor, /tmp/some/project)", fake.inspected, fake.inspectBase)
+	}
+}

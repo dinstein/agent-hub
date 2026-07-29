@@ -77,6 +77,11 @@ type TokenStore interface {
 // the Table's own so the daemon can pass one straight through.
 type ClientAdapters interface {
 	Detect(ctx context.Context, baseDir string) []clients.Detected
+	// Inspect OPENS one client's configuration files. It is deliberately
+	// not folded into Detect: the listing stays a stat, and a caller that
+	// wants contents asks for one named client, which is what makes the
+	// macOS privacy prompt it may raise explainable.
+	Inspect(clientID, baseDir string) (clients.Inspection, error)
 	Lookup(id string) (clients.Format, bool)
 	IDs() []string
 }
@@ -214,6 +219,11 @@ func (s *Server) routeNonRegistry(w http.ResponseWriter, r *http.Request) bool {
 		}
 	}
 	if d.Clients != nil {
+		if seg, ok := pathSegments(r, "/v1/clients/", 2); ok && seg[1] == "inspect" &&
+			r.Method == http.MethodGet {
+			s.handleClientInspect(w, r, seg[0])
+			return true
+		}
 		if seg, ok := pathSegments(r, "/v1/clients/", 2); ok && seg[1] == "connect" {
 			switch r.Method {
 			case http.MethodPost:

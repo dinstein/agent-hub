@@ -321,11 +321,22 @@ type nrClients struct {
 	ids    []string
 	format *nrFormat
 	base   string // records the baseDir Detect was called with
+
+	inspection  clients.Inspection
+	inspectErr  error
+	inspected   string // records the client Inspect was called with
+	inspectBase string
 }
 
 func (c *nrClients) Detect(_ context.Context, baseDir string) []clients.Detected {
 	c.base = baseDir
 	return c.found
+}
+
+// inspection is the canned answer to Inspect; inspectErr its failure.
+func (c *nrClients) Inspect(clientID, baseDir string) (clients.Inspection, error) {
+	c.inspected, c.inspectBase = clientID, baseDir
+	return c.inspection, c.inspectErr
 }
 
 func (c *nrClients) Lookup(id string) (clients.Format, bool) {

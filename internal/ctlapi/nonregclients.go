@@ -116,6 +116,100 @@ func (s *Server) handleClientsList(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, http.StatusOK, out)
 }
 
+// ClientInspectServerWire is one entry in an inspected client's server map.
+type ClientInspectServerWire struct {
+	Name      string `json:"name"`
+	Transport string `json:"transport,omitempty"`
+	Command   string `json:"command,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Disabled  bool   `json:"disabled,omitempty"`
+	// Owned marks agenthub's own gateway entry, decided by what the entry
+	// says rather than by its name.
+	Owned bool `json:"owned"`
+}
+
+// ClientInspectFileWire is one configuration file of the inspected client.
+type ClientInspectFileWire struct {
+	Path      string `json:"path"`
+	Placement string `json:"placement"`
+	Exists    bool   `json:"exists"`
+	// Parsed false with Exists true means nobody read it: a probe-only
+	// shape, or the failure in Error. Servers is then empty because it was
+	// not looked at, NOT because the file holds no servers.
+	Parsed    bool                      `json:"parsed"`
+	Connected bool                      `json:"connected"`
+	Servers   []ClientInspectServerWire `json:"servers,omitempty"`
+	Error     string                    `json:"error,omitempty"`
+}
+
+// ClientInspectWire is the answer to GET /v1/clients/{id}/inspect.
+type ClientInspectWire struct {
+	Client string `json:"client"`
+	Name   string `json:"name,omitempty"`
+	Shape  string `json:"shape,omitempty"`
+	// State is a clients.ConnectState. Connected is only its boolean
+	// projection: "denied", "unreadable" and "unknown" all mean the
+	// question is still open, and a consumer that renders them as "not
+	// connected" is the failure this field exists to prevent.
+	State      string   `json:"state"`
+	Connected  bool     `json:"connected"`
+	Placements []string `json:"placements,omitempty"`
+
+	Files []ClientInspectFileWire `json:"files"`
+	// Note explains a client agenthub does not parse; Manual is the
+	// fragment to add to it by hand.
+	Note   string `json:"note,omitempty"`
+	Manual string `json:"manual,omitempty"`
+}
+
+// handleClientInspect implements GET /v1/clients/{id}/inspect: the
+// deliberate, one-client content read that GET /v1/clients refuses to do in
+// bulk. A GUI showing connect status asks for it per row, so the privacy
+// prompt it may raise belongs to a user action rather than to opening a page.
+//
+// Failure direction: a per-file failure does NOT fail the request. The
+// unreadable location is reported as itself — Error, plus the state it
+// forces — next to the locations that were fine, because dropping the whole
+// answer over one denied file would hide the entry that IS there.
+func (s *Server) handleClientInspect(w http.ResponseWriter, r *http.Request, id string) {
+	d := &s.opts.NonRegistry
+	insp, err := d.Clients.Inspect(id, d.ClientBaseDir)
+	if err != nil && len(insp.Files) == 0 {
+		var unknown *clients.UnknownClientError
+		if errors.As(err, &unknown) {
+			// Uniform 404: an unknown client reads like an unknown route.
+			writeNotFound(w, r)
+			return
+		}
+		s.writeClientsError(w, r, err)
+		return
+	}
+	state, where := insp.ConnectState()
+	out := ClientInspectWire{
+		Client: insp.Client, Name: insp.Name, Shape: string(insp.Shape),
+		State: string(state), Connected: state == clients.ConnectedYes,
+		Files: make([]ClientInspectFileWire, 0, len(insp.Files)),
+		Note:  insp.Note, Manual: insp.Manual,
+	}
+	for _, p := range where {
+		out.Placements = append(out.Placements, string(p))
+	}
+	for _, f := range insp.Files {
+		file := ClientInspectFileWire{
+			Path: f.Path, Placement: string(f.Placement), Exists: f.Exists,
+			Parsed: f.Parsed, Connected: f.Connected, Error: f.Error,
+		}
+		for _, srv := range f.Servers {
+			file.Servers = append(file.Servers, ClientInspectServerWire{
+				Name: srv.Name, Transport: srv.Transport, Command: srv.Command,
+				URL: srv.URL, Disabled: srv.Disabled, Owned: srv.Owned,
+			})
+		}
+		out.Files = append(out.Files, file)
+	}
+	writeOK(w, http.StatusOK, out)
+}
+
 // handleClientConnect implements POST /v1/clients/{id}/connect.
 func (s *Server) handleClientConnect(w http.ResponseWriter, r *http.Request, id string) {
 	reqID := requestIDFrom(r.Context())
