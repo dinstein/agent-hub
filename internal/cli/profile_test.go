@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -226,5 +227,57 @@ func TestProfileDiscovery(t *testing.T) {
 	}
 	if code, _, _ := runCLI(t, "", "profile", "discovery", "ghost", "lazy"); code != ExitNotFound {
 		t.Errorf("unknown profile exit = %d, want %d", code, ExitNotFound)
+	}
+}
+
+// TestProfileToolsWarnsOnUnknownTool pins the fail-closed-but-invisible case
+// backlog gap #3 described: an `--only` name the server does not have stores a
+// rule that lets NOTHING through, because an allow-list is an intersection.
+//
+// Both halves are asserted, and the second is the one that keeps the fix
+// honest: the warning must not have become a refusal. The rule is still
+// stored, and the command still succeeds.
+func TestProfileToolsWarnsOnUnknownTool(t *testing.T) {
+	dir := setDataDir(t)
+	mustRun(t, "", "server", "add", "fs", "--cmd", "fs-server")
+	mustRun(t, "", "profile", "create", "work")
+	seedToolCache(t, dir, "fs", []map[string]any{
+		{"name": "read_file", "inputSchema": map[string]any{"type": "object"}},
+		{"name": "write_file", "inputSchema": map[string]any{"type": "object"}},
+	})
+
+	var change ProfileChange
+	env := decodeInto(t, mustRun(t, "", "profile", "tools", "work", "fs",
+		"--only", "read_file,raed_file", "--json"), &change)
+
+	warning := strings.Join(env.Warnings, "\n")
+	if !strings.Contains(warning, `"raed_file"`) {
+		t.Errorf("the typo was not named in the warnings: %q", warning)
+	}
+	if strings.Contains(warning, `"read_file"`) {
+		t.Errorf("a tool the server does have was reported as unknown: %q", warning)
+	}
+	// Stored, not refused: a cold cache must never block a rule, so the
+	// check may only ever add a warning to a write that already happened.
+	if got := change.Profile.Tools["fs"].Allow; !slices.Equal(got, []string{"raed_file", "read_file"}) {
+		t.Errorf("selector = %v, want the rule stored exactly as typed", got)
+	}
+}
+
+// TestProfileToolsSilentWithoutCatalog holds the other direction: a server no
+// gateway has ever connected to has no catalog to check against, and a rule
+// written ahead of that first connection is legitimate. Guessing "unknown"
+// from an empty cache would warn about every correctly-spelled name.
+func TestProfileToolsSilentWithoutCatalog(t *testing.T) {
+	setDataDir(t)
+	mustRun(t, "", "server", "add", "fs", "--cmd", "fs-server")
+	mustRun(t, "", "profile", "create", "work")
+
+	env := decodeInto(t, mustRun(t, "", "profile", "tools", "work", "fs",
+		"--only", "read_file", "--json"), nil)
+	for _, w := range env.Warnings {
+		if strings.Contains(w, "no recorded tool") {
+			t.Errorf("warned against a cache that was never written: %q", w)
+		}
 	}
 }

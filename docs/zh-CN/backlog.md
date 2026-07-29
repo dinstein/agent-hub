@@ -89,32 +89,6 @@ release 的那个名字不能动；而且它当初就**不能**由 `dirName` 推
 
 ---
 
-### 三、`profile tools --only` 接受任何服务器都没有的工具名
-
-**症状。** `agenthub profile tools <profile> <server> --only <拼错的名字>` 会成功。选择器原样落盘，
-而 allow 列表是取交集，所以一个匹配不到任何东西的名字会让那台 server **一个工具都不放行**。
-操作者要的是一个工具，静默得到零个。
-
-**根因。** `confops.SetProfileTools`（`internal/confops/profile.go:273-284`）校验了 profile 存在、
-server 存在，然后把名字原样交给 `applySelector`。没有任何一处拿它和该 server 的缓存工具目录比对。
-
-**为什么不急。** 方向是 fail-closed：拼错只会损失可见性，绝不会放大权限。这个方向是对的，
-也正是它是「缺口」而非「bug」的原因。
-
-**为什么仍然值得修。** 它是**不可见**的。命令打印成功，`profile ls` 原样显示这条规则，
-而工具只是在客户端那边消失了——没人会把这个症状追溯到一条报了 OK 的命令里的拼写错误。
-`server add --stdin` 曾是同一形状（静默丢弃 `oauth` 块），它存活了好几个月；
-那次的修法是 `DisallowUnknownFields`，也就是让不匹配变响。
-
-**做法。** 工具目录本来就按 server 缓存着（`agenthub server test <id> --tools` 读的就是它），
-所以 `SetProfileTools` 可以在名字不在目录里时**告警**，而不是拒绝。用告警而非报错是因为缓存可能是冷的：
-一台从未连接过的 server 没有工具列表，在那里拒绝会挡掉「先写规则、后接服务器」这条合法路径。
-
-**验收。** 针对一台已有缓存的 server 写 `--only ghost_tool`，必须返回一条点名 `ghost_tool` 的告警，
-并且规则仍然落盘。
-
----
-
 ## 附：这些缺口是怎么发现的
 
 2026-07-27 一次会话中，接入两台真实 MCP 服务器（均走同一套企业 SSO OAuth）

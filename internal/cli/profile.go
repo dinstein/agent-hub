@@ -366,8 +366,9 @@ func (a *App) newProfileToolsCmd() *cobra.Command {
 			"  --all       drop the restriction\n\n" +
 			"Use the server's own tool names (search_repositories), not the longer\n" +
 			"github__search_repositories your client displays; 'agenthub server test\n" +
-			"<server> --tools' lists them. A name matching nothing is not an error,\n" +
-			"so check the result with 'agenthub profile ls'.",
+			"<server> --tools' lists them. A name the server does not have is stored\n" +
+			"anyway — its catalog may simply not have been fetched yet — but it is\n" +
+			"reported as a warning, because such a name lets nothing through.",
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			profileName, serverID := args[0], args[1]
@@ -384,6 +385,9 @@ func (a *App) newProfileToolsCmd() *cobra.Command {
 			if err != nil {
 				return opsError(err)
 			}
+			// After the write, never before it: the cross-check is advisory,
+			// and must not be able to decide whether the rule is stored.
+			warnings = append(warnings, a.unknownToolWarning(serverID, sel)...)
 			row := profileRow(res.Name, res.Profile, "")
 			return a.printer().Emit(ProfileChange{
 				Action: "tools updated", Name: profileName, Profile: &row,

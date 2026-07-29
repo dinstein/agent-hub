@@ -11,6 +11,7 @@ import (
 
 	"github.com/dinstein/agent-hub/api"
 	"github.com/dinstein/agent-hub/internal/confops"
+	"github.com/dinstein/agent-hub/internal/gateway"
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
@@ -93,6 +94,55 @@ func parseSelectorFlags(cmd *cobra.Command, only []string, all, none bool) (conf
 		return confops.ToolSelection{}, e
 	}
 	return sel, nil
+}
+
+// unknownToolWarning cross-checks an `--only` list against the tool catalog
+// agenthub last recorded for that server, and names the entries that are not
+// in it.
+//
+// It WARNS rather than refuses, and the difference matters in both
+// directions. An allow-list is an intersection, so a misspelled name lets
+// nothing through for that server: the failure is fail-closed and therefore
+// safe, but it is also completely invisible — the command reports success,
+// `profile ls` shows the rule exactly as typed, and the tool is simply
+// missing in the client, a symptom nobody traces back to a spelling mistake
+// in a command that said OK. Refusing instead would break the legitimate
+// case in the other direction: the cache is cold until a gateway has
+// connected once, so a rule written ahead of the first connection has
+// nothing to check against and must still be storable.
+//
+// Hence the three silences below — no `--only`, no readable cache, no
+// catalog for this server — which all mean "no opinion", never "no problem".
+func (a *App) unknownToolWarning(server string, sel confops.ToolSelection) []string {
+	if sel.Mode != confops.ToolSelectOnly || len(sel.Tools) == 0 {
+		return nil
+	}
+	cached, err := gateway.LoadToolCacheEntries(a.resolver, nil)
+	if err != nil {
+		return nil
+	}
+	defs := cached[server].Tools
+	if len(defs) == 0 {
+		return nil
+	}
+	known := make(map[string]bool, len(defs))
+	for _, d := range defs {
+		known[d.Name] = true
+	}
+	var absent []string
+	for _, name := range sel.Tools {
+		if !known[name] {
+			absent = append(absent, fmt.Sprintf("%q", name))
+		}
+	}
+	if len(absent) == 0 {
+		return nil
+	}
+	return []string{fmt.Sprintf(
+		"%s has no recorded tool named %s; the rule was stored, but an allow-list is an "+
+			"intersection, so a name matching nothing lets nothing through. Check the spelling "+
+			"with 'agenthub server inspect %s --tools'.",
+		server, strings.Join(absent, ", "), server)}
 }
 
 // describeSelector renders a selector for the human table.

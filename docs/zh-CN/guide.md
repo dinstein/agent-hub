@@ -82,6 +82,11 @@ agenthub client bind cursor research
 | `--none` | 一个都不给，但 server 仍然列出来 |
 | `--all` | 删掉这条规则（回到全部 tool） |
 
+要用 server 自己的 tool 名字，并且注意 `--only` 是一次**取交集**：写了一个这台 server 上没有的
+名字，这台 server 就一个 tool 都放不出来。规则仍然会被存下来——它的 catalog 可能只是还没被取过
+——但 agenthub 会拿这些名字去比对最近一次记下的 catalog，并对其中对不上的那些**发出警告**，好让
+拼错在敲下它的地方就说出来，而不是过后变成一份没人解释得清的空 tool 列表。
+
 **profile 不存在时 fail-closed。** 绑到一个不存在的名字上是被接受的，会给出警告，并把这个
 client 解析成一份**空**作用域——它什么都看不见。这是刻意的：删掉一个 profile 绝不能让引用过它的
 client 全部被静默放宽。如果某个 client 突然一个 tool 都看不见，先去

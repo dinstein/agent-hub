@@ -90,6 +90,13 @@ already running — agenthub recomputes and pushes `tools/list_changed`. Only
 | `--none` | none of them, server still listed |
 | `--all` | removes the rule (back to every tool) |
 
+Use the server's own tool names, and mind that `--only` is an **intersection**:
+a name the server does not have lets *nothing* through for that server. The
+rule is stored anyway — the catalog may simply not have been fetched yet — but
+agenthub cross-checks the names against the last catalog it recorded and
+**warns** about any that are not in it, so a typo says so where it was typed
+rather than as an unexplained empty tool list later.
+
 **A missing profile fails closed.** Binding to a name that does not exist is
 accepted, warns, and resolves that client to an *empty* scope — it sees
 nothing. That is deliberate: deleting a profile must not silently widen every
