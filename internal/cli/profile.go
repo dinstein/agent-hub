@@ -311,12 +311,12 @@ func (a *App) newProfileServerCmd() *cobra.Command {
 // newProfileServerEditCmd builds `profile server add|rm`; both edit the
 // same three-state list, so they share one implementation.
 func (a *App) newProfileServerEditCmd(add bool) *cobra.Command {
-	use, short := "rm <profile> <server-id>", "Take one server out of a profile"
+	use, short := "rm <profile> <server>", "Take one server out of a profile"
 	long := "Affects this profile only; the server stays registered and other profiles keep\n" +
 		"it. To take one away from everybody, use 'agenthub server disable'."
 	aliases := []string{"remove"}
 	if add {
-		use, short, aliases = "add <profile> <server-id>", "Put one server into a profile", nil
+		use, short, aliases = "add <profile> <server>", "Put one server into a profile", nil
 		long = "On a fresh profile, which so far includes everything, the first server you add\n" +
 			"becomes the only one it includes — so this can narrow what a bound client\n" +
 			"sees rather than widen it."
