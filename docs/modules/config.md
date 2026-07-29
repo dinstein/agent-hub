@@ -594,8 +594,8 @@ own mode. When the rendered result is byte-identical to the current content it r
 not write — repeated connects are idempotent. Directory fsync is best-effort, since a project directory may live on
 a filesystem that refuses it, and the rename there is still atomic regardless.
 
-**Only rewrite documents that round-trip losslessly.** TOML/YAML re-encoders drop comments, key order, and anchors;
-that is a config-destruction machine wearing a helpful hat. So those clients get detection plus one precise manual
+**Only rewrite documents that round-trip losslessly — and note that the rule is about RE-ENCODING.** TOML/YAML
+re-encoders drop comments, key order, and anchors; that is a config-destruction machine wearing a helpful hat. So those clients get detection plus one precise manual
 snippet, and `Connect` **fails loudly** with the snippet rather than half-working. `probeFormat.Disconnect`
 refuses in the same way: agenthub never wrote anything here, so there's nothing it can safely remove.
 
@@ -609,6 +609,20 @@ success nobody checked. Execution is refusable per invocation (`--manual`) or pe
 (`AGENTHUB_NO_CLIENT_CLI=1`), and the environment can only ever forbid it — a variable that could switch
 execution back on for a caller that passed `NoDelegate` would let a program run other programs behind its
 caller's back.
+
+**JSONC is spliced, not re-encoded.** Zed's `settings.json` ships with a comment header and VS Code's is JSONC by
+convention, which made the default install of both a client agenthub refused to touch. `jsonc.go` reads them with a
+comment-blanking pass — comments and trailing commas become spaces of the SAME LENGTH, so offsets in the blanked
+copy are offsets in the original — and writes by replacing the bytes of agenthub's own entry and nothing else. The
+user's comments, key order, indentation and trailing commas survive because they are never rewritten.
+
+**The safety does not come from the locator being right; it comes from proving the result.** `verifySplice` runs
+before anything reaches the disk: the edit must parse, must differ from the original in exactly the entries
+agenthub meant to change (deep-compared with those entries removed from both sides), and must carry byte-identical
+comments. Any doubt leaves the file untouched and returns the same `*ParseError`-with-snippet the client used to
+get. A shape the locator cannot walk — a section key that is not an object, a root that is not an object — is
+refused for the same reason rather than guessed at. Both hand-written passes are fuzzed (`FuzzBlankJSONC`,
+`FuzzSpliceEntryKeepsEverythingElse`).
 
 **That rule is about writing, and reading is a separate power.** A row may carry `readTable`, and codex does:
 `scanTOMLServers` reads `~/.codex/config.toml` well enough to answer "is our entry in here?" while `Connect` still

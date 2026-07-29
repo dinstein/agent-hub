@@ -157,7 +157,11 @@ agenthub client ls                  # 谁接上了，以及谁绑在哪个 profi
 
 `server test` 是这里唯一**证明**而不是**转述**的检查：它会真的建立一次连接，所以通过就意味着
 凭据、传输、server 本身此刻全都是好的。`server inspect --tools` 列的是上一次接触时记录下来的
-东西，所以它答得飞快，也因此可能是过期的。codex 是唯一一个 agenthub 不自己写的客户端——它的配置是 TOML，重编码会毁掉注释和排版。
+东西，所以它答得飞快，也因此可能是过期的。Zed 和 VS Code 的 settings 是 JSONC（带注释的 JSON），Zed 还自带一段注释头，所以以前这类客户端
+agenthub 是不碰的。现在它只改自己那条的字节：你的注释、键序、排版原样返回；而只要这次编辑有一点
+证明不了是对的，它就拒绝写，并告诉你该贴什么。
+
+codex 是唯一一个 agenthub 不自己写的客户端——它的配置是 TOML，重编码会毁掉注释和排版。
 `client connect codex` 改成替你跑 `codex mcp add`：动手前先备份，事后再读一遍文件确认。
 如果你不希望 agenthub 去运行别的程序，加 `--manual`（或设 `AGENTHUB_NO_CLIENT_CLI=1`），
 它会改成告诉你该跑什么。

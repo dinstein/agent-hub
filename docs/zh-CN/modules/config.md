@@ -517,6 +517,17 @@ git 工作树里，旁边掉一个 `.mcp.json.agenthub-backup` 会让每次 conn
 `AGENTHUB_NO_CLIENT_CLI=1`；而环境变量只能**禁止**、永远不能开启——一个能把执行重新打开的变量，等于让程序
 背着调用方去跑别的程序。
 
+**JSONC 是「拼接」，不是重编码。** Zed 的 `settings.json` 自带注释头，VS Code 的按惯例也是 JSONC，
+于是这两个客户端**默认装完的状态**就是 agenthub 不肯碰的状态。`jsonc.go` 用抹白的方式读它们——注释和尾逗号
+换成**等长**空白，所以抹白副本里的偏移就是原文里的偏移——写的时候只替换 agenthub 自己那条的字节，别的一律不动。
+用户的注释、键序、缩进、尾逗号能活下来，是因为它们压根没被重写过。
+
+**安全性不来自「定位器是对的」，而来自「结果被证明过」。** 落盘前先跑 `verifySplice`：结果必须能解析、
+必须只在 agenthub 打算改的那几条上和原文不同（两边都把那几条删掉再深比对）、注释必须逐字节相同。
+有任何疑问就让文件保持原样，并返回和以前一样的 `*ParseError` 带手工片段。定位器走不动的形状——section 键不是
+对象、根不是对象——同样是拒绝而不是猜。两个手写的扫描都有 fuzz（`FuzzBlankJSONC`、
+`FuzzSpliceEntryKeepsEverythingElse`）。
+
 **那条规矩管的是「写」，「读」是另一回事。** 表里的一行可以带 `readTable`，codex 就带了：
 `scanTOMLServers` 把 `~/.codex/config.toml` 读到足以回答「我们的条目在不在里面」，而 `Connect` 依然拒绝
 写它。不肯读换不来任何东西——它让 `client ls` 对一个明明已经接上的客户端只会说「?」，还让 doctor 对一个

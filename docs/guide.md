@@ -175,7 +175,13 @@ agenthub client ls                  # who is wired up, and who is on which profi
 it: it connects for real, so a pass means credentials, transport and the
 server itself all work right now. `server inspect --tools` lists what was
 recorded at the last contact, which is why it answers instantly and can be
-stale. Codex is the one client agenthub does not write itself — its config is TOML,
+stale. Zed and VS Code keep their settings as JSONC — JSON with comments — and Zed
+ships a comment header, so this used to be a client agenthub would not touch.
+It now edits only the bytes of its own entry: your comments, key order and
+formatting come back exactly as they were, and if anything about the edit
+cannot be proved correct it refuses and tells you what to paste instead.
+
+Codex is the one client agenthub does not write itself — its config is TOML,
 and re-encoding it would cost you the comments and layout. `client connect
 codex` runs `codex mcp add` for you instead, after backing the file up and
 before checking the result by reading it back. Pass `--manual` (or set

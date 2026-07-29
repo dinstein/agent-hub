@@ -118,7 +118,9 @@ FUZZ_TARGETS := \
 	./internal/mcp/transport:FuzzSSEScanner \
 	./internal/oauthflow:FuzzScanAuthParam \
 	./internal/shaping/toonenc:FuzzEncodeJSON \
-	./internal/clients:FuzzScanTOMLServers
+	./internal/clients:FuzzScanTOMLServers \
+	./internal/clients:FuzzBlankJSONC \
+	./internal/clients:FuzzSpliceEntryKeepsEverythingElse
 FUZZ ?=
 
 ##@ Meta

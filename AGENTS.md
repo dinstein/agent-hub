@@ -98,14 +98,16 @@ push, and `make ci-full` covers all of them:
 
   ```bash
   make fuzz FUZZ=FuzzParseMessage   # one target; FUZZTIME=60s by default
-  make fuzz                          # all five, back to back
+  make fuzz                          # all seven, back to back
   ```
 
-  The five targets each guard one path by which external bytes arrive: `FuzzParseMessage` (downstream
+  The seven targets each guard one path by which external bytes arrive: `FuzzParseMessage` (downstream
   JSON-RPC frames), `FuzzSSEScanner` (remote SSE streams, a hand-written line scanner — the least
   trustworthy of them), `FuzzScanAuthParam` (remote `WWW-Authenticate`, hand-written index-based
   scanning), `FuzzEncodeJSON` (downstream tool results, on the response path), and
-  `FuzzScanTOMLServers` (another application's config file, hand-written). They do not all live in
+  `FuzzScanTOMLServers` (another application's config file, hand-written), `FuzzBlankJSONC` and
+  `FuzzSpliceEntryKeepsEverythingElse` (the JSONC comment-blanking pass, and the splice that edits a
+  settings.json in place without re-encoding it). They do not all live in
   `internal/mcp`; the Makefile's `FUZZ_TARGETS` carries each one's package, so the target name alone
   is enough to run it.
   `make ci` runs only their seed corpora (fast); `-fuzz` must be enabled explicitly — keep it out of CI.
