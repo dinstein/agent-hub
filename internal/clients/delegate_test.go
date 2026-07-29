@@ -231,3 +231,57 @@ func TestNoClientCLIEnvForbidsDelegation(t *testing.T) {
 		t.Fatalf("connect = %v, want *UnsupportedError", err)
 	}
 }
+
+// TestDelegateErrorTellsTheOperatorWhatToDoNext renders the message rather
+// than inspecting the fields, because the message is what an operator
+// actually meets.
+//
+// Its two branches say materially different things about the same file, and
+// acting on the wrong one wastes real time: "codex failed" sends you to
+// codex's own output, while "codex succeeded and the entry still is not
+// there" sends you to the file. Nothing else in the suite renders either.
+func TestDelegateErrorTellsTheOperatorWhatToDoNext(t *testing.T) {
+	cmd := []string{"/usr/local/bin/codex", "mcp", "add", "agenthub", "--", "/bin/agenthub", "connect"}
+
+	t.Run("the delegate failed", func(t *testing.T) {
+		cause := errors.New("exit status 2")
+		de := &clients.DelegateError{
+			Client: "codex", Op: "connect", Command: cmd,
+			Output: "codex: unknown flag", Err: cause,
+		}
+		msg := de.Error()
+		// The exact command, so it can be re-run by hand. Joined with spaces
+		// because that is what a shell takes back — the argv is not shell
+		// quoted anywhere, so a copy-paste has to be what was executed.
+		if !strings.Contains(msg, strings.Join(cmd, " ")) {
+			t.Errorf("message does not name what was run:\n%s", msg)
+		}
+		if !strings.Contains(msg, "exit status 2") {
+			t.Errorf("message drops the cause:\n%s", msg)
+		}
+		if !strings.Contains(msg, "codex: unknown flag") {
+			t.Errorf("message drops the delegate's own output, the only explanation there is:\n%s", msg)
+		}
+		if strings.Contains(msg, "reported success") {
+			t.Errorf("a delegate that FAILED was described as having reported success:\n%s", msg)
+		}
+		// Unwrap, so a caller can still ask what the underlying failure was.
+		if !errors.Is(de, cause) {
+			t.Error("errors.Is cannot reach the cause through a DelegateError")
+		}
+	})
+
+	t.Run("the delegate lied", func(t *testing.T) {
+		de := &clients.DelegateError{Client: "codex", Op: "connect", Command: cmd}
+		msg := de.Error()
+		if !strings.Contains(msg, "reported success but the entry is not in the file") {
+			t.Errorf("a clean exit with no change must say so; got:\n%s", msg)
+		}
+		if strings.Contains(msg, "failed:") {
+			t.Errorf("a delegate that exited 0 was described as having failed:\n%s", msg)
+		}
+		if errors.Unwrap(de) != nil {
+			t.Error("there was no underlying error to unwrap")
+		}
+	})
+}
