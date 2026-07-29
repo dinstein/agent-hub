@@ -483,7 +483,7 @@ the truncated PATH we already had, never less. The captured result is cached wit
 ### Responsibility in one sentence
 
 Adapt AI client config file formats: detect where they're installed, write the agenthub gateway entry into them,
-safely take it back out, and import their existing MCP server definitions into the registry.
+safely take it back out, and report what is actually in them.
 
 ### Key types and entry points
 
@@ -495,9 +495,9 @@ shapes, and `probeFormat` covers the shapes we don't rewrite.
 `New(Options)` / `Default()`, with `Lookup(id)` / `IDs()` / `Formats()` as the query entry points. The table
 itself is the `specs` slice in `table.go`.
 
-Three action methods hang directly off `Table`: `Detect(ctx, baseDir)` enumerates the config files present on this
-machine, `Inspect(clientID, baseDir)` reads one client's config and lists its server entries, and
-`Import(clientID, baseDir, existing)` turns those entries into `registry.ServerEntry` proposals.
+Two action methods hang directly off `Table`: `Detect(ctx, baseDir)` enumerates the config files present on this
+machine (stat only), and `Inspect(clientID, baseDir)` opens one client's files and lists their server entries.
+`Inspection.ConnectState()` reduces the latter to the answer callers actually want.
 
 ### A shape-driven adapter table
 
@@ -604,21 +604,14 @@ basename (this is what makes `--path /tmp/x/settings.json` behave like a real se
 picking a different section), and finally a fallback to this client's primary location. The failure direction is:
 a path that doesn't match **never** guesses at another client's shape.
 
-**`Import` is a proposal, not a write.** Nothing lands in the registry; the caller decides. Entries that collide
-with an existing registry name go into `Conflicts` and **not** into `Entries` — an import never silently redefines a
-server the user is already governing. Locations are processed in table order (project before user), so on a name
-collision the project-level definition wins and the loser is reported as a "duplicate" rather than dropped. Entries
-pointing at agenthub's own gateway are skipped (importing one would point agenthub at itself).
-
-**`toServerEntry` has two failure directions.** An entry with neither a command nor a url is **rejected**, never
-given a default — a half-built server that only explodes at connect time is much harder to diagnose than an import
-that says so up front. Imported HTTP endpoints are always set to `registry.ProvenanceRemote`: provenance is a
-statement of trust, and an imported endpoint has made no such statement, so the default takes the value that keeps
-SSRF checks on, and only an explicit operator action can relax it.
-
-**`looksSecretBearing` is a warning, not a block.** A credential-looking key carrying a literal value (rather than
-a `${...}` placeholder) goes into `SecretWarnings`, for the caller to prompt the user toward
-`agenthub secret set`.
+**`ConnectState` fails loud, and that is the whole point of it.** "Is agenthub wired into this client?" has five
+answers, not two: `connected` (some location holds an entry agenthub itself wrote — decided by `Owned`, never by
+the entry's name), `not_connected` (every location was opened and understood, none had one), `denied`, `unreadable`
+(there, but agenthub refuses to interpret it), and `unknown` (nobody looked: a probe-only shape, or a caller that
+asked not to read). A positive finding wins outright; after that the loudest doubt wins, so a location agenthub
+could not see never degrades into "not connected". It returns the placements holding the entry alongside the state,
+because "connected in the user file while the project file still holds one" is exactly what a disconnect has to
+know about.
 
 ---
 

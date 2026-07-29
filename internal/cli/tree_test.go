@@ -89,7 +89,7 @@ func TestCommandTreeCoversDesign(t *testing.T) {
 		"agenthub profile server add", "agenthub profile server rm", "agenthub profile tools",
 		"agenthub profile discovery",
 		"agenthub client detect", "agenthub client inspect", "agenthub client connect",
-		"agenthub client disconnect", "agenthub client import",
+		"agenthub client disconnect",
 		"agenthub client ls", "agenthub client bind", "agenthub client unbind",
 		"agenthub session ls", "agenthub session show",
 		"agenthub session scope", "agenthub session kill",

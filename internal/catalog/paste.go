@@ -52,8 +52,8 @@ const (
 )
 
 // SourcePasted marks an entry that came from pasted client configuration.
-// It is deliberately distinct from clients.ImportSource ("imported:<client>"):
-// an import knows which client's file it read, a paste does not.
+// It records only that: the document was pasted, and unlike a file read
+// from a known client's configuration it carries no provenance of its own.
 const SourcePasted = "pasted"
 
 // Proposal is one server a pasted document proposes. It is a candidate, not

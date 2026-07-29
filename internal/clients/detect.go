@@ -38,8 +38,8 @@ type Detected struct {
 // STAT ONLY. This function never opens a file: on macOS,
 // reading another application's data directory triggers a TCC privacy
 // prompt, and a bulk scan that prompts a dozen times is worse than no scan
-// at all. Content reads are reserved for Inspect and Import, which are
-// per-client user actions.
+// at all. Content reads are reserved for Inspect, the per-client user
+// action.
 //
 // A location that does not exist is silently skipped — a machine with no
 // AI clients installed yields an empty slice, not a list of errors. A
@@ -344,33 +344,6 @@ func (f fields) boolean(key string) bool {
 		return false
 	}
 	return b
-}
-
-func (f fields) strings(key string) []string {
-	raw, ok := f[key]
-	if !ok {
-		return nil
-	}
-	var s []string
-	if json.Unmarshal(raw, &s) != nil {
-		return nil
-	}
-	return s
-}
-
-func (f fields) strMap(key string) map[string]string {
-	raw, ok := f[key]
-	if !ok {
-		return nil
-	}
-	var m map[string]string
-	if json.Unmarshal(raw, &m) != nil {
-		return nil
-	}
-	if len(m) == 0 {
-		return nil
-	}
-	return m
 }
 
 // urlOf accepts the three spellings clients use for a remote endpoint.

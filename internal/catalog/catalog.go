@@ -13,7 +13,7 @@ import (
 )
 
 // SourcePrefix is prepended to a catalog id to form ServerEntry.Source, the
-// same way internal/clients marks an imported entry (`imported:<client>`).
+// same way a pasted document marks its own (`pasted`).
 // It is how `server ls` explains where a definition came from and how a
 // frontend can tell a catalog-added server from a hand-typed one.
 const SourcePrefix = "catalog:"

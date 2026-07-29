@@ -65,7 +65,8 @@ agenthub profile tools research linear --only list_issues,get_issue
 agenthub client bind cursor research
 ```
 
-`agenthub client ls` 列出谁绑在哪个 profile 上。`agenthub client unbind cursor` 把它退回默认。
+`agenthub client ls` 列出谁绑在哪个 profile 上，以及 agenthub 到底有没有进它的配置。
+`agenthub client unbind cursor` 把它退回默认。
 
 有三个细节决定了这套东西的行为：
 
@@ -146,13 +147,14 @@ agenthub config set discovery full
 ```bash
 agenthub server test linear         # 真的连一次，看它怎么答
 agenthub server inspect linear --tools
-agenthub client ls                  # 谁绑在哪个 profile 上，也就是各自能看见什么
+agenthub client ls                  # 谁接上了，以及谁绑在哪个 profile 上
 ```
 
 `server test` 是这里唯一**证明**而不是**转述**的检查：它会真的建立一次连接，所以通过就意味着
 凭据、传输、server 本身此刻全都是好的。`server inspect --tools` 列的是上一次接触时记录下来的
-东西，所以它答得飞快，也因此可能是过期的。`client ls` 补上另一侧——它说的是一个 client
-**可以看见什么**，而不是它有没有被接上；后者要问 `client detect`。
+东西，所以它答得飞快，也因此可能是过期的。`client ls` 补上另一侧，每个客户端两个答案：CONNECTED 来自客户端自己的配置文件，
+PROFILE 是它**可以看见什么**。某一行给出的不是 yes/no 而是 `denied`、`unreadable`、`?` 时，
+`client inspect <id>` 会说清楚是哪个文件、为什么。
 
 写好的配置文件说明的只是意图。真正的确认是客户端自己：重启它，让它用一次某个 tool。
 

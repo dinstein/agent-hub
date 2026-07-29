@@ -49,8 +49,8 @@
 // Reading another application's configuration file can trigger a system
 // privacy prompt. Detect therefore only ever calls os.Stat on other
 // clients' files — never os.ReadFile. Content reads happen exclusively in
-// Inspect and Import, which are single-client user actions where a prompt
-// is expected and explainable. A denied stat/read is classified as
+// Inspect, the single-client user action where a prompt is expected and
+// explainable. A denied stat/read is classified as
 // *PermissionError carrying remediation text (ctlapi maps it to 403); it
 // is never folded into "not found", because "the file is not there" and
 // "you may not look at the file" call for opposite user actions.
@@ -164,9 +164,9 @@ type Format interface {
 	// Locations lists every configuration file this client may use,
 	// project placements first, resolved against baseDir and $HOME.
 	//
-	// This order is READ precedence (Import resolves a duplicate name in
-	// favour of the project-level definition), not write preference —
-	// DefaultPath decides where a connect goes.
+	// This order is READ precedence (a name defined in both files is
+	// reported as the project one), not write preference — DefaultPath
+	// decides where a connect goes.
 	Locations(baseDir string) []Location
 	// DefaultPath is the file targeted when the caller names neither a
 	// path nor a placement: the DefaultPlacement location, or the first
@@ -301,12 +301,6 @@ func Detect(ctx context.Context) []Detected { return Default().Detect(ctx, "") }
 // Inspect reads one client's configuration files. This is a user action:
 // unlike Detect it opens the files.
 func Inspect(clientID string) (Inspection, error) { return Default().Inspect(clientID, "") }
-
-// Import converts a client's existing server entries into registry
-// entries. existing names are reported as conflicts, never overwritten.
-func Import(clientID string, existing []string) (ImportResult, error) {
-	return Default().Import(clientID, "", existing)
-}
 
 // DisconnectDefault removes agenthub's entry from the client's default write
 // target and, ONLY when that file holds nothing agenthub owns, from whichever

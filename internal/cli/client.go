@@ -124,7 +124,6 @@ func (a *App) newClientCmd() *cobra.Command {
 		a.newClientLsCmd(), a.newClientDetectCmd(), a.newClientInspectCmd(),
 		a.newClientConnectCmd(), a.newClientDisconnectCmd(),
 		a.newClientBindCmd(), a.newClientUnbindCmd(),
-		a.newClientImportCmd(),
 	)
 	return cmd
 }

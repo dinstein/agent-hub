@@ -13,8 +13,8 @@ type clientSpec struct {
 	id   string
 	name string
 	// locs are candidate files, PROJECT PLACEMENTS FIRST. That order is
-	// read precedence (Import prefers the project-level definition of a
-	// duplicated name); the default WRITE target is chosen by placement,
+	// read precedence (a duplicated name is reported project-level first);
+	// the default WRITE target is chosen by placement,
 	// see defaultTarget.
 	locs []locSpec
 	// nonJSON marks a probe-only shape (ShapeTOML / ShapeYAML) or the

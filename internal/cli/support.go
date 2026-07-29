@@ -37,21 +37,6 @@ func (a *App) activeProfile() (string, error) {
 	return confops.ActiveProfile(store)
 }
 
-// mutate runs one registry read-modify-write under the cross-process lock
-// and folds healed-quarantine reports into warnings, which is the shape
-// every write command needs. It is Update plus the boilerplate that would
-// otherwise be copy-pasted into a dozen RunE bodies.
-func (a *App) mutate(ctx context.Context, fn func(tx *registry.Tx) error) ([]string, error) {
-	store, warnings, err := a.openStore()
-	if err != nil {
-		return warnings, err
-	}
-	uerr := store.Update(ctx, fn)
-	more, fatal := splitQuarantine(uerr)
-	warnings = append(warnings, more...)
-	return warnings, fatal
-}
-
 // requireDaemon is the exit-4 gate of docs/modules/controlplane.md's online/offline matrix:
 // commands whose subject is a daemon RUNTIME object (sessions, the event
 // stream, a live audit tail) must refuse with E_DAEMON_DOWN rather than

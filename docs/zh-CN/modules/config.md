@@ -411,7 +411,7 @@ store：`*Chain` 的 `Get` 会先查环境变量，那样一个环境变量就�
 ### 一句话职责
 
 适配 AI 客户端的配置文件格式：探测它们装在哪、把 agenthub 网关条目写进去、安全地摘出来，
-以及把它们已有的 MCP server 定义导入 registry。
+以及如实报告里面到底有什么。
 
 ### 关键类型与入口
 
@@ -422,9 +422,9 @@ store：`*Chain` 的 `Get` 会先查环境变量，那样一个环境变量就�
 `Table` 是绑定到一套环境（GOOS、HOME、备份目录）的适配表，`New(Options)` / `Default()` 构造，
 `Lookup(id)` / `IDs()` / `Formats()` 是查询入口。表本身是 `table.go` 里的 `specs` 切片。
 
-三个动作方法直接挂在 `Table` 上：`Detect(ctx, baseDir)` 枚举本机存在的配置文件，
-`Inspect(clientID, baseDir)` 读一个客户端的配置并列出它的 server 条目，
-`Import(clientID, baseDir, existing)` 把这些条目转成 `registry.ServerEntry` 提案。
+两个动作方法直接挂在 `Table` 上：`Detect(ctx, baseDir)` 只 stat，枚举本机存在的配置文件；
+`Inspect(clientID, baseDir)` 打开一个客户端的配置并列出它的 server 条目。
+`Inspection.ConnectState()` 把后者归约成调用方真正要的那个答案。
 
 ### 形态驱动的适配表
 
@@ -441,7 +441,7 @@ store：`*Chain` 的 `Get` 会先查环境变量，那样一个环境变量就�
 一共 12 行。加一个客户端是 `table.go` 里加一行，不是加一条代码路径。`Shape.Writable()` 只对两种 JSON
 形态返回 true。
 
-每行的 `locs` 按 **project 优先**排列，但那是**读优先级**（`Import` 遇到同名条目时 project 级的定义胜出），
+每行的 `locs` 按 **project 优先**排列，但那是**读优先级**（同名条目以 project 级的定义为准），
 **不是写偏好**——默认写入目标由 placement 决定，见下。`locSpec.home` 是一张 GOOS 到路径的映射，
 某个 GOOS 缺席就让该位置在那个平台上不可用——Windows 就是靠这个机制推迟到 M2 的，没有用 build tag。
 
@@ -468,8 +468,7 @@ project 级文件（`.mcp.json`、`.cursor/mcp.json`）本来就是要提交共�
 的调用不走这条路：明确的目标是指令，不是起点。
 
 **macOS TCC：`Detect` 只 stat，绝不 read。** 读另一个应用的数据目录会触发系统隐私弹窗，一次批量扫描
-弹十几次比不扫描更糟。内容读取只发生在 `Inspect` 与 `Import`，那是单客户端的用户动作，弹窗在那里是
-预期之内且可解释的。
+弹十几次比不扫描更糟。内容读取只发生在 `Inspect`，那是单客户端的用户动作，弹窗在那里是预期之内且可解释的。
 
 **「没有这个文件」与「不许你看这个文件」绝不合并。** 被拒的访问归类为 `*PermissionError`，带着可执行的
 补救文案，`HTTPStatus()` 返回 403 而不是 404。这两种情况要求的用户动作是相反的：前者意味着「客户端
@@ -514,18 +513,12 @@ git 工作树里，旁边掉一个 `.mcp.json.agenthub-backup` 会让每次 conn
 `--path /tmp/x/settings.json` 表现得像真的 settings.json 而不是静默挑了另一个 section 的原因），
 最后回退到本客户端的主位置。失败方向是：匹配不上的路径**绝不**去猜另一个客户端的形态。
 
-**`Import` 是提案，不是写入。** 什么都不落进 registry，由调用方决定。与既有 registry 名字冲突的条目
-进 `Conflicts` 而**不**进 `Entries`，导入绝不静默重定义用户已经在治理的 server。位置按表序处理
-（project 先于 user），所以同名时 project 级的定义胜出，落败的那个作为「重复」被报告而不是被丢掉。
-指向 agenthub 自己网关的条目会被跳过（导入它等于让 agenthub 指向自己）。
-
-**`toServerEntry` 的两条失败方向。** 既没有 command 也没有 url 的条目**被拒绝**，绝不给默认值——
-一个到连接时才炸的半成品 server 比一个当场说清楚的导入更难诊断。导入进来的 HTTP 端点一律设成
-`registry.ProvenanceRemote`：provenance 是一次信任声明，而被导入的端点没有做过这样的声明，
-默认取被筛查的那个值好让 SSRF 检查保持开启，只有操作者的显式动作才能放宽它。
-
-**`looksSecretBearing` 只是警告，不是拦截。** 名字像凭据的键上带着字面值（而不是 `${...}` 占位符）
-会进 `SecretWarnings`，由调用方提示用户改用 `agenthub secret set`。
+**`ConnectState` 向响的方向失败，这就是它存在的全部理由。**「agenthub 接进这个客户端了吗」有五个
+答案而不是两个：`connected`（某个位置有一条 agenthub 自己写的条目——由 `Owned` 判定，绝不看名字）、
+`not_connected`（每个位置都打开并读懂了，都没有）、`denied`、`unreadable`（文件在，但 agenthub 拒绝
+解释它）、`unknown`（没人看过：探针型形态，或调用方要求不读）。有正面证据直接胜出；此后是最响的疑问
+胜出，所以一个 agenthub 没能看见的位置绝不会退化成「没接」。它连同状态一起返回条目所在的 placement，
+因为「user 文件里接着、project 文件里还留着一条」正是 disconnect 必须知道的事。
 
 ---
 

@@ -317,7 +317,11 @@ because the dial carries `Spec.Docker` into the spawner instead of running the c
 endpoint used to refuse such entries fail-closed, back when the dial could not);
 client wiring resolves its write target as `path` > `placement` > the default
 user-level file, and a client lacking that placement gets a 400 refusal rather than a rewrite to a different
-location; `PATCH /v1/skills/{id}` exposes **only** the coarse library-level switch. `GET /v1/audit` and
+location; **`GET /v1/clients` stats and never opens a file** (one macOS privacy prompt per client on every page
+load is worse than no listing), so "is agenthub actually wired into this one?" lives at
+`GET /v1/clients/{id}/inspect` — one client, named by the caller, which is what makes the prompt belong to a
+click rather than to opening a page. One unreadable location there does not fail the request: it is reported with
+its error next to the locations that read fine, and forces the state to `denied` rather than `not_connected`; `PATCH /v1/skills/{id}` exposes **only** the coarse library-level switch. `GET /v1/audit` and
 `GET /v1/security` exist so frontends can backfill the two governance streams — the GUI is not allowed to touch
 the data directory itself. `POST /v1/parse/client-config` is read-only (it produces an entry **preview**), which
 is why it is not audited.

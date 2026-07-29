@@ -20,7 +20,7 @@ import (
 )
 
 // sourceManual marks entries created interactively via the CLI (flags or
-// pasted stdin JSON), as opposed to future sources like "imported:<client>".
+// pasted stdin JSON), as opposed to a catalog entry's "catalog:<id>".
 const sourceManual = "manual"
 
 // ServerRow is the per-server data structure both output modes render from.

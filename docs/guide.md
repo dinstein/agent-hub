@@ -71,8 +71,9 @@ agenthub profile tools research linear --only list_issues,get_issue
 agenthub client bind cursor research
 ```
 
-`agenthub client ls` shows who is on which profile. `agenthub client unbind
-cursor` returns it to the default.
+`agenthub client ls` shows who is on which profile, and whether agenthub is
+in their config at all. `agenthub client unbind cursor` returns it to the
+default.
 
 Three details that decide how this behaves:
 
@@ -160,15 +161,17 @@ None of it needs editing by hand — the commands above are what write it, and
 ```bash
 agenthub server test linear         # open a real connection and see what it answers
 agenthub server inspect linear --tools
-agenthub client ls                  # who is on which profile, and so what each sees
+agenthub client ls                  # who is wired up, and who is on which profile
 ```
 
 `server test` is the one check that proves something rather than reporting
 it: it connects for real, so a pass means credentials, transport and the
 server itself all work right now. `server inspect --tools` lists what was
 recorded at the last contact, which is why it answers instantly and can be
-stale. `client ls` closes the loop on the other side — it says what a client
-may see, not whether it is wired up, and `client detect` answers that.
+stale. `client ls` closes the loop on the other side, with both halves per client:
+CONNECTED comes from the client's own config file, and PROFILE is what it
+may see. When a row says something other than yes or no — `denied`,
+`unreadable`, `?` — `client inspect <id>` says which file and why.
 
 A written config file only shows intent. The confirmation is the client
 itself: restart it and ask it to use a tool.
