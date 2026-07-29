@@ -123,6 +123,9 @@ type ServerInspect struct {
 	// containerized entry. "Isolation a config claims must be delivered" is
 	// verified by reading it, and no other command prints it.
 	DockerRun []string `json:"docker_run,omitempty"`
+	// Visibility is who may reach this server, joined from the profile and
+	// client bindings (see servervisibility.go).
+	Visibility *ServerVisibility `json:"visibility,omitempty"`
 }
 
 // ServerLive is the daemon's view of one server.
@@ -172,6 +175,7 @@ func (i ServerInspect) Human(w io.Writer) error {
 	i.writeEnvAndHeaders(d)
 
 	i.writeCredentials(d)
+	i.writeVisibility(d)
 	i.writeStatus(d)
 	i.writeCatalog(d)
 	return d.err
@@ -623,6 +627,20 @@ func (a *App) newServerInspectCmd() *cobra.Command {
 					out.TraceLog = downstream.ServerLogPath(logsDir, id)
 				}
 			}
+			// Who may see it. The pieces are registry documents already in
+			// hand plus one state file; a state directory that will not
+			// resolve costs the section, not the report — an override count
+			// nobody can read must not take the server's description down
+			// with it.
+			active, aerr := a.activeProfile()
+			if aerr != nil {
+				warnings = append(warnings, "could not read the active profile: "+aerr.Error())
+			}
+			overrides, oerr := a.loadOverrides()
+			if oerr != nil {
+				warnings = append(warnings, "could not read the tool overrides: "+oerr.Error())
+			}
+			out.Visibility = serverVisibilityOf(id, snap, active, len(overrides.Overrides[id]))
 			if entry.Runtime == registry.RuntimeDocker {
 				line, derr := dockerRunLine(id, entry)
 				if derr != nil {

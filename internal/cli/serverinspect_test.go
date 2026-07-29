@@ -195,3 +195,91 @@ func TestHumanAgeAnswersTheQuestionItIsAskedFor(t *testing.T) {
 		}
 	}
 }
+
+// TestInspectAnswersWhoCanSeeTheServer covers the join no other command
+// makes. Every fact here was already on disk; getting to it meant reading
+// `profile ls` and `client ls` and intersecting them per server by hand,
+// which is exactly the arithmetic people get wrong when a client "cannot see
+// the tools" and everything else looks healthy.
+func TestInspectAnswersWhoCanSeeTheServer(t *testing.T) {
+	setDataDir(t)
+	mustRun(t, "", "server", "add", "fs", "--cmd", "srv")
+	mustRun(t, "", "server", "enable", "fs", "--no-probe")
+	mustRun(t, "", "profile", "create", "dev", "--servers", "fs")
+	mustRun(t, "", "profile", "create", "locked", "--servers", "other")
+	mustRun(t, "", "profile", "use", "dev")
+	mustRun(t, "", "client", "bind", "cursor", "locked")
+	mustRun(t, "", "client", "bind", "zed", "dev")
+
+	_, out, _ := runCLI(t, "", "server", "inspect", "fs")
+	for _, want := range []string{
+		"seen by", "zed (dev)", "hidden", "cursor (locked)",
+		`active profile "dev", which includes it`,
+		"dev (active)", "not in: locked",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("inspect does not report %q:\n%s", want, out)
+		}
+	}
+
+	var insp ServerInspect
+	decodeInto(t, mustRun(t, "", "server", "inspect", "fs", "--json"), &insp)
+	if insp.Visibility == nil || len(insp.Visibility.Clients) != 2 {
+		t.Fatalf("visibility = %+v", insp.Visibility)
+	}
+	for _, c := range insp.Visibility.Clients {
+		if want := c.Client == "zed"; c.Sees != want {
+			t.Errorf("client %s sees = %v, want %v", c.Client, c.Sees, want)
+		}
+	}
+}
+
+// TestInspectSaysADisabledServerReachesNobody: the global switch outranks
+// every profile, so a profile list that implies otherwise would be the more
+// prominent falsehood.
+func TestInspectSaysADisabledServerReachesNobody(t *testing.T) {
+	setDataDir(t)
+	mustRun(t, "", "server", "add", "fs", "--cmd", "srv")
+	mustRun(t, "", "client", "bind", "cursor", "dev")
+
+	_, out, _ := runCLI(t, "", "server", "inspect", "fs")
+	if !strings.Contains(out, "nobody — the server is disabled") {
+		t.Errorf("inspect does not report the global switch:\n%s", out)
+	}
+	if strings.Contains(out, "seen by    cursor") {
+		t.Errorf("a disabled server is reported as visible to a client:\n%s", out)
+	}
+}
+
+// TestInspectReportsABindingThatResolvesNowhere. A dangling profile
+// reference fail-closes to an EMPTY scope, and from the outside that looks
+// exactly like a deliberate exclusion — the two need different repairs.
+func TestInspectReportsABindingThatResolvesNowhere(t *testing.T) {
+	setDataDir(t)
+	mustRun(t, "", "server", "add", "fs", "--cmd", "srv")
+	mustRun(t, "", "server", "enable", "fs", "--no-probe")
+	mustRun(t, "", "client", "bind", "cursor", "ghost")
+
+	_, out, _ := runCLI(t, "", "server", "inspect", "fs")
+	if !strings.Contains(out, "cursor (ghost MISSING -> empty scope)") {
+		t.Errorf("inspect does not flag the dangling binding:\n%s", out)
+	}
+	if !strings.Contains(out, "no active profile") {
+		t.Errorf("inspect does not state what an unbound client gets:\n%s", out)
+	}
+}
+
+// TestInspectCountsTheLocalToolOverrides: what a client is shown differs
+// from what the downstream calls its own tools, and comparing this report
+// against a client's tool list without knowing that is a wild goose chase.
+func TestInspectCountsTheLocalToolOverrides(t *testing.T) {
+	setDataDir(t)
+	mustRun(t, "", "server", "add", "gh", "--cmd", "srv")
+	mustRun(t, "", "server", "enable", "gh", "--no-probe")
+	mustRun(t, "", "tool", "override", "gh", "list_prs", "--name", "prs")
+
+	_, out, _ := runCLI(t, "", "server", "inspect", "gh")
+	if !strings.Contains(out, "1 tool(s) are exposed under a local name") {
+		t.Errorf("inspect does not report the override:\n%s", out)
+	}
+}
