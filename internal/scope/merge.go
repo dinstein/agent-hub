@@ -2,7 +2,7 @@ package scope
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 
 	"github.com/dinstein/agent-hub/internal/router"
 )
@@ -97,7 +97,7 @@ func MergeWithDiagnostics(layers []ScopeLayer, cat router.Catalog, diags []Diagn
 				tools = append(tools, t)
 			}
 		}
-		sort.Strings(tools)
+		slices.Sort(tools)
 		servers[id] = ToolView{Tools: tools}
 	}
 

@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"hash"
 	"io"
-	"sort"
+	"slices"
 )
 
 // hashScope computes the content address of an EffectiveScope: SHA-256 over
@@ -81,6 +81,6 @@ func sortedKeys[V any](m map[string]V) []string {
 	for k := range m {
 		out = append(out, k)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
