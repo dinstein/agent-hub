@@ -165,8 +165,11 @@ Deletion paths:
 | Command | Effect |
 |---|---|
 | `auth logout <id>` | Deletes only `__oauth_state__` + `__http_auth__`; the registry entry stays |
-| `server rm <id>` | Deletes the registry entry **and wipes all of that server's credentials** (across scopes, across keys) |
-| `server rm <id> --keep-credentials` | Deletes only the registry entry; credentials are left untouched |
+| `server rm <id>` | Deletes the registry entry **and wipes all of that server's credentials** (across scopes, across keys), along with the rest of its footprint — see `confops.RemoveServer` |
+| `server disable <id>` | Keeps the entry AND the credentials; the server just stops being used |
+
+There is no `--keep-credentials`. Removing a server means removing what it was entitled to; wanting
+the definition gone but the tokens kept is what `server disable` is for.
 
 **Cleaning up by default is intentional**, and it fixes half of each of two problems:
 
@@ -186,6 +189,15 @@ warning names what was left behind and tells the operator to finish up with `aut
 Cleanup is scope-blind (it goes through `List` and filters the whole set by `ServerID`) rather than
 deleting just the two well-known keys — otherwise credentials under non-default scopes would be
 missed, and those are exactly the fuel for the same-name resurrection path above.
+
+**The one case that cannot be purged warns instead.** `secret set` writes to `secrets.enc` whenever
+`AGENTHUB_SECRET_KEY` is set, but `List` can only see that file when the same key is present in the
+process. Removing a server from a shell without it therefore enumerates nothing, deletes nothing,
+and — until `secrets.Chain.HasUnreadableEnc` existed — reported a clean purge over a surviving
+refresh token, feeding the resurrection path above. The predicate separates "nothing is stored" from
+"something may be stored that I cannot see"; the purge now warns and names the fix (re-run with the
+key set, or `auth logout <id>`). It answers TRUE on any doubt: a spurious warning costs nothing next
+to a silently retained credential.
 
 ## Security boundaries (don't loosen these in passing)
 

@@ -217,6 +217,21 @@ incident: the comment on `SpecFromEntry` claimed it was the sole translation poi
 hand-rolled its own Spec, and container isolation was silently dropped as a result. A parity test asserts
 that both paths produce **byte-for-byte identical** registry documents for the same operation.
 
+`RemoveServer` is that rule at its widest: it takes the whole footprint — credentials, profile membership
+and selectors, governance rules naming the server, integrity pins, approval records and grants,
+quarantine entries, tool overrides, the cached catalog. Logs are the deliberate exception; a log that
+forgot deleted servers would be worthless as evidence.
+
+The reason it goes that far is **not** that dangling references are dangerous — they resolve to the empty
+set, which is fail-closed. It is that all of those stores are keyed by **server id**, so re-adding the id
+inherits them: an integrity baseline, an "always allow" grant or a refresh token earned by a completely
+different server. A stale reference is inert; a stale grant is a live entitlement. Rewriting references
+is legitimate only because every one of them is **narrowing-only** — `Profile.Servers` is a three-state
+allow list, so an emptied one stays `[]` and is never collapsed to `nil`, which would flip "none" into
+"all". A field carrying exclusion semantics must never be rewritten here. Failure direction: the registry
+transaction commits first, then each cleanup runs independently and reports failure as a **warning**
+naming what survived — a locked keychain or state file must never make a server unremovable.
+
 **Optimistic locking, not last-writer-wins.** The file lock guarantees no torn writes, but **not no
 overwrites**: two people editing the same profile at once means the later write wins and the earlier
 person's change disappears silently. The GUI is a long-lived window whose page data may be minutes

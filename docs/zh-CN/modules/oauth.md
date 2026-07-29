@@ -154,8 +154,11 @@ RFC 9728 §7.6 说选择责任在客户端。我们的策略是「取第一个�
 | 命令 | 效果 |
 |---|---|
 | `auth logout <id>` | 只删 `__oauth_state__` + `__http_auth__`，注册表条目保留 |
-| `server rm <id>` | 删注册表条目**并清掉该 server 的全部凭据**（跨 scope、跨 key） |
-| `server rm <id> --keep-credentials` | 只删注册表条目，凭据原样保留 |
+| `server rm <id>` | 删注册表条目**并清掉该 server 的全部凭据**（跨 scope、跨 key），连同它其余的痕迹 —— 见 `confops.RemoveServer` |
+| `server disable <id>` | 条目和凭据都保留，只是这台 server 不再被使用 |
+
+没有 `--keep-credentials`。删掉一台 server 就意味着删掉它被授予的一切；
+想让定义消失但保住 token，那描述的是 `server disable`。
 
 **默认清理是有意的**，两个后果各修一半：
 
@@ -171,6 +174,14 @@ server 无论如何已经删了，warning 里点名哪些残留 + 让操作员�
 
 清理是 scope-blind 的（走 `List` 全量筛 `ServerID`），不是只删两个 well-known key ——
 否则非默认 scope 下的凭据会被漏掉，而那正好是上面同名复活路径的燃料。
+
+**唯一清不掉的情况改为报警。** 只要设了 `AGENTHUB_SECRET_KEY`，`secret set` 就写进
+`secrets.enc`；而 `List` 只有在同一个 key 在进程里时才看得见这个文件。于是在没有该变量的
+shell 里删 server，会枚举不到任何东西、删不掉任何东西 —— 在 `secrets.Chain.HasUnreadableEnc`
+出现之前，这条路径会在一个存活的 refresh token 之上报告「干净删除」，正好喂给上面那条复活路径。
+这个判断把「什么都没存」和「可能存了但我看不见」区分开，purge 现在会报 warning 并指明收尾方式
+（带着 key 重跑，或 `auth logout <id>`）。它在任何存疑时都答 TRUE：
+误报一次 warning 的代价，远小于静默留下一份凭据。
 
 ## 安全边界（不要顺手放宽）
 
