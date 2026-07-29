@@ -32,6 +32,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -385,12 +386,7 @@ func sortedMounts(in []Mount) []Mount {
 }
 
 func sortedKeys(m map[string]string) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	slices.Sort(out)
-	return out
+	return slices.Sorted(maps.Keys(m))
 }
 
 // dockerEnv builds the docker CLI's own environment: base, minus any name

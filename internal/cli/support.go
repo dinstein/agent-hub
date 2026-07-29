@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -234,12 +235,7 @@ func requireServer(snap *registry.Snapshot, id string) (registry.ServerEntry, er
 // sortedKeys returns a map's keys in ascending order (deterministic output
 // is a contract: both renderings and the golden tests depend on it).
 func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	slices.Sort(out)
-	return out
+	return slices.Sorted(maps.Keys(m))
 }
 
 // boolText renders a boolean for the human tables.

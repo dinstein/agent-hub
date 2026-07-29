@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"hash"
 	"io"
+	"maps"
 	"slices"
 )
 
@@ -77,10 +78,5 @@ func writeBool(h hash.Hash, v bool) {
 }
 
 func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	slices.Sort(out)
-	return out
+	return slices.Sorted(maps.Keys(m))
 }

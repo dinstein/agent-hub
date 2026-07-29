@@ -3,6 +3,7 @@ package confops
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 
@@ -144,10 +145,5 @@ func dedupSorted(in []string) []string {
 // a contract here: it decides the order of reported side effects (repointed
 // clients, dangling references) that callers render and tests pin.
 func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	slices.Sort(out)
-	return out
+	return slices.Sorted(maps.Keys(m))
 }
