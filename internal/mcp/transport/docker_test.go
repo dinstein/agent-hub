@@ -2,10 +2,12 @@ package transport
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fullDockerConfig is the "everything set" configuration whose argv is
@@ -69,6 +71,87 @@ func TestBuildDockerRunArgsIsolationDefaults(t *testing.T) {
 	}
 	if args[len(args)-1] != "alpine" {
 		t.Errorf("image must be the last operand when no command is given: %v", args)
+	}
+}
+
+// TestSpawnDockerCwdBecomesWorkdir pins the container reading of
+// StdioConfig.Cwd: "the directory the server runs in" is a path inside the
+// image, so it must land as --workdir on the run line.
+//
+// It used to be applied to the docker CLI process (cmd.Dir), which the
+// workload never sees: an entry asking for a working directory silently got
+// none. The recorded argv is the assertion, and the directory named here
+// does not exist on the host, so a regression to cmd.Dir cannot pass
+// quietly either — the spawn itself would fail.
+func TestSpawnDockerCwdBecomesWorkdir(t *testing.T) {
+	argv := recordedDockerArgv(t, StdioConfig{
+		Command: "server",
+		Cwd:     "/workspace/inside/the/image", // exists in the image, not here
+		Docker:  &DockerConfig{Image: "alpine:test"},
+	})
+	if !strings.Contains(argv, "--workdir /workspace/inside/the/image") {
+		t.Errorf("cwd did not become --workdir: %s", argv)
+	}
+}
+
+// TestSpawnDockerExplicitWorkdirWins: --workdir is the more specific
+// statement, so an explicit one is not overwritten by the entry's cwd.
+func TestSpawnDockerExplicitWorkdirWins(t *testing.T) {
+	argv := recordedDockerArgv(t, StdioConfig{
+		Command: "server",
+		Cwd:     "/from-cwd",
+		Docker:  &DockerConfig{Image: "alpine:test", Workdir: "/from-workdir"},
+	})
+	if !strings.Contains(argv, "--workdir /from-workdir") {
+		t.Errorf("explicit --workdir was not honored: %s", argv)
+	}
+	if strings.Contains(argv, "/from-cwd") {
+		t.Errorf("cwd overrode the explicit --workdir: %s", argv)
+	}
+}
+
+// recordedDockerArgv spawns cfg against a stand-in docker CLI that records
+// its argv, and returns that argv joined by spaces. cfg.Docker.Binary is
+// filled in by this helper.
+func recordedDockerArgv(t *testing.T, cfg StdioConfig) string {
+	t.Helper()
+	requirePOSIX(t)
+	dir := t.TempDir()
+	argvFile := filepath.Join(dir, "argv")
+	bin := filepath.Join(dir, "docker")
+	// Write to a temp file and rename: a reader polling for argvFile must
+	// never observe a half-written argv, which reads exactly like a missing
+	// flag and made this test flaky under the full suite's load.
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = rm ]; then exit 0; fi\n" +
+		"printf '%s\\n' \"$@\" > " + argvFile + ".tmp\n" +
+		"mv " + argvFile + ".tmp " + argvFile + "\n" +
+		"exit 0\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dc := *cfg.Docker
+	dc.Binary = bin
+	cfg.Docker = &dc
+
+	tr, err := SpawnStdio(cfg)
+	if err != nil {
+		t.Fatalf("SpawnStdio: %v", err)
+	}
+	defer func() { _ = tr.Close() }()
+
+	// The spawn returns once the process starts; the argv file lands a moment
+	// later.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		raw, readErr := os.ReadFile(argvFile)
+		if readErr == nil && len(raw) > 0 {
+			return strings.Join(strings.Split(strings.TrimSpace(string(raw)), "\n"), " ")
+		}
+		if time.Now().After(deadline) {
+			t.Fatal(fmt.Errorf("the stand-in docker CLI never recorded an argv at %s", argvFile))
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

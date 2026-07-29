@@ -257,7 +257,8 @@ func (a *App) newServerAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&cmdPath, "cmd", "", "program agenthub runs to start the server, e.g. npx")
 	cmd.Flags().StringSliceVar(&argv, "args", nil, "arguments for that program, comma-separated")
 	cmd.Flags().StringArrayVar(&envKV, "env", nil, "environment variable KEY=VALUE (repeatable); write ${SECRET_X} instead of a real secret")
-	cmd.Flags().StringVar(&cwd, "cwd", "", "directory the server is started in")
+	cmd.Flags().StringVar(&cwd, "cwd", "",
+		"directory the server is started in; for a container that is a path inside it, same as --container-workdir")
 	cmd.Flags().StringVar(&url, "url", "", "address of a server that already runs behind HTTP")
 	cmd.Flags().StringVar(&transportOpt, "transport", "", "how to reach it: stdio (assumed with --cmd), http or sse (assumed with --url)")
 	cmd.Flags().StringArrayVar(&headerKV, "header", nil, "HTTP header KEY=VALUE (repeatable); write ${SECRET_X} instead of a real secret")
@@ -276,7 +277,8 @@ func (a *App) newServerAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&docker.memory, "memory", "", "how much memory the container may use, e.g. 512m")
 	cmd.Flags().StringVar(&docker.cpus, "cpus", "", "how many CPUs the container may use, e.g. 1.5")
 	cmd.Flags().StringVar(&docker.user, "container-user", "", "user the container runs as")
-	cmd.Flags().StringVar(&docker.workdir, "container-workdir", "", "directory the container starts in")
+	cmd.Flags().StringVar(&docker.workdir, "container-workdir", "",
+		"directory the container starts in; wins over --cwd when both are given")
 	cmd.Flags().StringArrayVar(&docker.extra, "docker-arg", nil,
 		"extra argument for 'docker run' (repeatable); it may not undo the container's restrictions")
 	cmd.Flags().StringVar(&oauth.issuer, "oauth-issuer", "",

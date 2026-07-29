@@ -79,13 +79,22 @@ func dockerConfigFor(e registry.ServerEntry) *transport.DockerConfig {
 		return nil
 	}
 	d := e.Docker
+	// Workdir falls back to the entry's cwd: for a container that field names
+	// a directory inside the image, and SpawnDocker applies it as --workdir.
+	// Leaving it out here would still work (the spawner reads Spec.Cwd too)
+	// but would make this config disagree with the one confops renders for
+	// `server inspect`, and those two must stay identical.
+	workdir := d.Workdir
+	if workdir == "" {
+		workdir = e.Cwd
+	}
 	cfg := &transport.DockerConfig{
 		Image:        d.Image,
 		Network:      d.Network,
 		Memory:       d.Memory,
 		CPUs:         d.CPUs,
 		User:         d.User,
-		Workdir:      d.Workdir,
+		Workdir:      workdir,
 		ExtraRunArgs: slices.Clone(d.ExtraArgs),
 	}
 	for _, m := range d.Mounts {

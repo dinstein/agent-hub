@@ -63,6 +63,44 @@ func TestDockerRuntimeReachesTheSpec(t *testing.T) {
 	}
 }
 
+// TestEntryCwdBecomesTheContainerWorkdir: for a container entry, `cwd` names
+// a directory inside the image. It reaches the spawner as Workdir, so the
+// isolation story stays "what the config claims is delivered" — applying it
+// to the host process instead would drop it silently.
+func TestEntryCwdBecomesTheContainerWorkdir(t *testing.T) {
+	spec, err := SpecFromEntry("contained", registry.ServerEntry{
+		Command: "server",
+		Cwd:     "/workspace",
+		Runtime: registry.RuntimeDocker,
+		Docker:  &registry.DockerRuntime{Image: "example/mcp:1"},
+	})
+	if err != nil {
+		t.Fatalf("SpecFromEntry: %v", err)
+	}
+	if spec.Docker == nil {
+		t.Fatal("docker runtime produced a host spec")
+	}
+	if spec.Docker.Workdir != "/workspace" {
+		t.Errorf("Workdir = %q, want the entry's cwd", spec.Docker.Workdir)
+	}
+}
+
+// TestExplicitWorkdirBeatsCwd: --workdir is the more specific statement.
+func TestExplicitWorkdirBeatsCwd(t *testing.T) {
+	spec, err := SpecFromEntry("contained", registry.ServerEntry{
+		Command: "server",
+		Cwd:     "/from-cwd",
+		Runtime: registry.RuntimeDocker,
+		Docker:  &registry.DockerRuntime{Image: "example/mcp:1", Workdir: "/from-workdir"},
+	})
+	if err != nil {
+		t.Fatalf("SpecFromEntry: %v", err)
+	}
+	if spec.Docker.Workdir != "/from-workdir" {
+		t.Errorf("Workdir = %q, want the explicit one", spec.Docker.Workdir)
+	}
+}
+
 func TestHostRuntimeProducesNoDockerConfig(t *testing.T) {
 	spec, err := SpecFromEntry("plain", registry.ServerEntry{Command: "server"})
 	if err != nil {

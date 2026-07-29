@@ -160,6 +160,17 @@ func SpawnDocker(cfg StdioConfig) (Transport, error) {
 	}
 	dc := *cfg.Docker // copy: generated name/cidfile must not leak into the caller's config
 
+	// StdioConfig.Cwd means "the directory the server runs in". For a host
+	// spawn that is the child's working directory; for a container it is
+	// --workdir, because the child's directory is a path INSIDE the image.
+	// Applying it to the docker CLI process instead would be a silent no-op
+	// for the workload — the entry asks for a working directory and gets
+	// none, with nothing to notice. An explicit DockerConfig.Workdir is the
+	// more specific statement and wins.
+	if dc.Workdir == "" {
+		dc.Workdir = cfg.Cwd
+	}
+
 	bin, err := DockerBinary(dc.Binary)
 	if err != nil {
 		return nil, &Error{Class: ClassFatal, Err: err}
@@ -195,8 +206,11 @@ func SpawnDocker(cfg StdioConfig) (Transport, error) {
 		return nil, err
 	}
 
+	// Deliberately NOT cmd.Dir = cfg.Cwd: that directory was interpreted
+	// above as a path inside the container, and it need not exist on this
+	// host. The docker CLI is a control-plane client — where it runs from
+	// does not affect the workload — so it inherits the gateway's directory.
 	cmd := exec.Command(bin, args...)
-	cmd.Dir = cfg.Cwd
 	cmd.Env = env
 
 	cid := dc.CIDFile

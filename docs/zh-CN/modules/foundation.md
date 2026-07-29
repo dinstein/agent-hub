@@ -410,6 +410,11 @@ streamable-http 的 GET 通知流遇到同样情况则只是结束这条流（�
   自相矛盾的配置是 bug，不是 override。
 - **密钥不进 argv**：容器环境变量以 `-e NAME`（无值）形式传，值由 docker CLI 自身的环境继承。
   `ps(1)` 能看到 argv，看不到 CLI 的环境。
+- **`StdioConfig.Cwd` 变成 `--workdir`，而不是 CLI 进程的工作目录**。「服务器在哪个目录里跑」
+  对容器来说是**镜像内部**的路径，把它设到 docker CLI 上（`cmd.Dir`）对真正的工作负载是个静默空转——
+  条目声称要一个工作目录，容器却一个都没拿到，而且无从察觉。显式的 `DockerConfig.Workdir`
+  更具体，优先级更高。docker CLI 在这里只是控制面客户端，它从哪个目录启动不影响工作负载，
+  因此直接继承网关的目录即可。
 - **`BuildDockerRunArgs` 是纯函数且全序**：mounts 按 (target, source) 排序、env 按 name 排序，
   同一份配置永远产出同一条 argv，被 `testdata/docker_run_args.txt` golden 钉住。
 - **配置校验在启动任何进程之前**：镜像不得以 `-` 开头或含空白，容器名必须以 `agenthub-` 开头

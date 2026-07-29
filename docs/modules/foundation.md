@@ -486,6 +486,12 @@ automatically.
 - **Secrets never go in argv**: container environment variables are passed as `-e NAME` (no value),
   with values inherited from the docker CLI's own environment. `ps(1)` can see argv; it can't see the
   CLI's environment.
+- **`StdioConfig.Cwd` becomes `--workdir`, not the CLI process's directory.** "The directory the
+  server runs in" is a path inside the image, so applying it to the docker CLI (`cmd.Dir`) would be a
+  silent no-op for the workload — the entry asks for a working directory and the container gets none,
+  with nothing to notice. An explicit `DockerConfig.Workdir` is the more specific statement and wins.
+  The docker CLI is a control-plane client here; where it runs from does not affect the workload, so
+  it just inherits the gateway's directory.
 - **`BuildDockerRunArgs` is a pure function with total ordering**: mounts sorted by (target, source)
   and env sorted by name, so the same configuration always produces the same argv — pinned by the
   `testdata/docker_run_args.txt` golden file.

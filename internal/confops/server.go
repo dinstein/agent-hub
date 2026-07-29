@@ -235,7 +235,13 @@ func DockerConfigFor(id string, e registry.ServerEntry) transport.DockerConfig {
 	cfg.Memory = e.Docker.Memory
 	cfg.CPUs = e.Docker.CPUs
 	cfg.User = e.Docker.User
+	// The entry's cwd is a path inside the container, and SpawnDocker reads
+	// it as --workdir. Rendering it the same way here is what keeps the run
+	// line the operator is shown identical to the one that will be spawned.
 	cfg.Workdir = e.Docker.Workdir
+	if cfg.Workdir == "" {
+		cfg.Workdir = e.Cwd
+	}
 	cfg.ExtraRunArgs = e.Docker.ExtraArgs
 	for _, m := range e.Docker.Mounts {
 		cfg.Mounts = append(cfg.Mounts, transport.Mount{Source: m.Source, Target: m.Target, Write: m.Write})
