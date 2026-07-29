@@ -16,6 +16,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/httpbridge"
 	"github.com/dinstein/agent-hub/internal/integrity"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
+	"github.com/dinstein/agent-hub/internal/oauthlogin"
 	"github.com/dinstein/agent-hub/internal/platform"
 	"github.com/dinstein/agent-hub/internal/secrets"
 	"github.com/dinstein/agent-hub/internal/skills"
@@ -104,8 +105,10 @@ func nonRegistryDeps(cfg Config, dataDir string, vault secrets.Store, log *slog.
 		// rather than pretending the vault is empty.
 		deps.Secrets = chain
 	}
-	deps.OAuth = oauthflow.NewStore(vault)
+	oauthStore := oauthflow.NewStore(vault)
+	deps.OAuth = oauthStore
 	deps.TestDeps = testDeps(vault, coord)
+	deps.Logins = loginSessions(oauthStore, log)
 
 	if lib, err := skills.Open(filepath.Join(dataDir, "skills"), skills.Options{}); err != nil {
 		log.Warn("skills library unavailable; its endpoints stay off", "error", err)
@@ -123,6 +126,35 @@ func nonRegistryDeps(cfg Config, dataDir string, vault secrets.Store, log *slog.
 		deps.Executable = exe
 	}
 	return deps, tokens
+}
+
+// loginSessions builds the interactive-login manager behind
+// POST /v1/auth/{server}/login.
+//
+// The flow is constructed PER LOGIN because AllowLoopback is baked into the
+// oauthflow client's SSRF screen at construction time and follows the
+// server's own provenance. Sharing one client across every login would mean
+// screening them all against the loosest entry's rule — which is how one
+// server declared local quietly exempts the other twenty-nine.
+//
+// The store is the daemon's own, the same one auth status and logout read, so
+// a login lands where every other reader is already looking.
+func loginSessions(store *oauthflow.Store, log *slog.Logger) ctlapi.LoginSessions {
+	m, err := oauthlogin.New(oauthlogin.Config{
+		Flows: func(allowLoopback bool) oauthlogin.Flow {
+			return oauthflow.NewFlow(oauthflow.NewClient(oauthflow.Config{
+				AllowLoopback: allowLoopback,
+			}), store)
+		},
+	})
+	if err != nil {
+		// Never reached with a non-nil factory, but the endpoint staying off
+		// is the right failure: the rest of the auth group keeps working and
+		// the CLI's `auth login` is unaffected.
+		log.Warn("interactive login unavailable; its endpoints stay off", "error", err)
+		return nil
+	}
+	return m
 }
 
 // planeAuth builds the OAuth bearer source for the HTTP data plane's

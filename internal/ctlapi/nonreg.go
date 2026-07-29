@@ -144,6 +144,12 @@ type NonRegistryDeps struct {
 	// Refresher performs /v1/auth/{server}/refresh. Without it the refresh
 	// endpoint is unavailable while status and logout still work.
 	Refresher OAuthRefresher
+	// Logins runs the interactive login behind POST /v1/auth/{server}/login
+	// and /v1/logins/{id}. Without it those endpoints are unavailable and
+	// the rest of the auth group is unaffected — a daemon that cannot open a
+	// browser dance is still perfectly able to report and refresh what is
+	// already stored.
+	Logins LoginSessions
 	// Connect dials a downstream server for /v1/servers/{id}/test
 	// (nil = downstream.Connect).
 	Connect Connector
@@ -244,6 +250,29 @@ func (s *Server) routeNonRegistry(w http.ResponseWriter, r *http.Request) bool {
 			r.Method == http.MethodPost && d.Refresher != nil {
 			s.handleAuthRefresh(w, r, seg[0])
 			return true
+		}
+		if seg, ok := pathSegments(r, "/v1/auth/", 2); ok && seg[1] == "login" &&
+			r.Method == http.MethodPost {
+			// Reached even with d.Logins nil, so the answer is the explicit
+			// "this daemon cannot run an interactive login" plus the command
+			// that can, rather than a 404 indistinguishable from a typo.
+			s.handleAuthLoginStart(w, r, seg[0])
+			return true
+		}
+	}
+	// Login sessions are their OWN resource, not a sub-resource of a server:
+	// under /v1/auth/{server}/{id} a server called "logins" would decide
+	// which route won by the order these cases happen to be written in.
+	if d.Logins != nil {
+		if seg, ok := pathSegments(r, "/v1/logins/", 1); ok {
+			switch r.Method {
+			case http.MethodGet:
+				s.handleLoginGet(w, r, seg[0])
+				return true
+			case http.MethodDelete:
+				s.handleLoginCancel(w, r, seg[0])
+				return true
+			}
 		}
 	}
 	// Only the /test verb belongs to this file; /v1/servers itself is the
