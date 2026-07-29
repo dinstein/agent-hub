@@ -217,6 +217,75 @@ func (i *Inspection) noteErr(err error) {
 // Err returns the first per-file failure, or nil.
 func (i Inspection) Err() error { return i.firstE }
 
+// ConnectState is the answer to "is agenthub wired into this client?".
+//
+// The states beyond yes/no are the point of the type. Folding them into
+// "not connected" would be a lie in the one direction that costs the user a
+// wrong action: "you may not look", "this file is not mine to interpret"
+// and "it is not there" call for three different fixes.
+type ConnectState string
+
+const (
+	// ConnectedYes: some location carries an entry AGENTHUB ITSELF wrote
+	// (InspectedServer.Owned — ownership, never a name match).
+	ConnectedYes ConnectState = "connected"
+	// ConnectedNo: every location was read, none carried our entry.
+	ConnectedNo ConnectState = "not_connected"
+	// ConnectedDenied: a location exists and may not be read.
+	ConnectedDenied ConnectState = "denied"
+	// ConnectedUnreadable: a location exists and agenthub refuses to
+	// interpret it (unparseable, oversized).
+	ConnectedUnreadable ConnectState = "unreadable"
+	// ConnectedUnknown: a location exists and nothing was opened — a
+	// probe-only shape (the TOML/YAML clients, whose syntax is not ours to
+	// read).
+	ConnectedUnknown ConnectState = "unknown"
+)
+
+// ConnectState reduces an inspection to one answer, plus the placements
+// whose file carries the gateway entry.
+//
+// Precedence is deliberate. A positive finding wins outright: one readable
+// location holding our entry settles the question however the other
+// locations went. After that the LOUDEST doubt wins — denied over
+// unreadable over unopened — so a location agenthub could not see never
+// degrades into "not connected".
+//
+// Failure direction: fail-loud. Only a client whose every location was
+// opened and understood can be reported as not connected.
+func (i Inspection) ConnectState() (ConnectState, []Placement) {
+	var where []Placement
+	var denied, unreadable, unopened bool
+	for _, f := range i.Files {
+		switch {
+		case f.Connected:
+			where = append(where, f.Placement)
+		case f.Err != nil:
+			var perm *PermissionError
+			if errors.As(f.Err, &perm) {
+				denied = true
+				continue
+			}
+			unreadable = true
+		case f.Exists && !f.Parsed:
+			// There, but read by nobody: a probe-only shape.
+			unopened = true
+		}
+	}
+	switch {
+	case len(where) > 0:
+		return ConnectedYes, where
+	case denied:
+		return ConnectedDenied, nil
+	case unreadable:
+		return ConnectedUnreadable, nil
+	case unopened:
+		return ConnectedUnknown, nil
+	default:
+		return ConnectedNo, nil
+	}
+}
+
 // summarise renders a server map into a stable, sorted overview.
 func summarise(servers map[string]json.RawMessage, clientID string) []InspectedServer {
 	names := make([]string, 0, len(servers))

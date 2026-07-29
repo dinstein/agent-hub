@@ -274,3 +274,71 @@ func requireUnprivileged(t *testing.T) {
 		t.Skip("running as root: permission bits are not enforced")
 	}
 }
+
+// TestConnectStateReportsWhereAndFailsLoud pins the reduction Inspection ->
+// (state, placements): where the gateway entry is, and — the whole point of
+// the type — that a location agenthub could not read never comes out as
+// "not connected".
+func TestConnectStateReportsWhereAndFailsLoud(t *testing.T) {
+	e := newEnv(t, "darwin")
+
+	// Nothing on disk: knowably not connected.
+	insp, err := e.tbl.Inspect("cursor", e.project)
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+	if state, where := insp.ConnectState(); state != clients.ConnectedNo || len(where) != 0 {
+		t.Errorf("empty machine = (%q, %v), want not_connected", state, where)
+	}
+
+	// Connected in both of a client's placements: both are named, because
+	// "connected in one file while another still holds an entry" is the
+	// state a disconnect has to know about.
+	f := e.format(t, "cursor")
+	for _, p := range []clients.Placement{clients.Project, clients.User} {
+		if _, err := f.Connect(f.PathFor(e.project, p), entry("cursor")); err != nil {
+			t.Fatalf("connect %s: %v", p, err)
+		}
+	}
+	insp, err = e.tbl.Inspect("cursor", e.project)
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+	state, where := insp.ConnectState()
+	if state != clients.ConnectedYes || len(where) != 2 {
+		t.Fatalf("both placements = (%q, %v), want connected in two", state, where)
+	}
+	if where[0] != clients.Project || where[1] != clients.User {
+		t.Errorf("placements = %v, want the table's own order (project first)", where)
+	}
+
+	// A file we may not read is NOT evidence of absence.
+	requireUnprivileged(t)
+	e2 := newEnv(t, "darwin")
+	blocked := filepath.Join(e2.home, ".cursor", "mcp.json")
+	write(t, blocked, `{"mcpServers":{}}`)
+	if err := os.Chmod(blocked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blocked, 0o644) })
+	insp, _ = e2.tbl.Inspect("cursor", e2.project)
+	if state, _ := insp.ConnectState(); state != clients.ConnectedDenied {
+		t.Errorf("unreadable file = %q, want denied (never not_connected)", state)
+	}
+
+	// Neither is a file agenthub refuses to interpret.
+	e3 := newEnv(t, "darwin")
+	write(t, filepath.Join(e3.project, ".cursor", "mcp.json"), "{not json")
+	insp, _ = e3.tbl.Inspect("cursor", e3.project)
+	if state, _ := insp.ConnectState(); state != clients.ConnectedUnreadable {
+		t.Errorf("unparseable file = %q, want unreadable (never not_connected)", state)
+	}
+
+	// Nor a shape whose syntax is not ours to read.
+	e4 := newEnv(t, "darwin")
+	write(t, filepath.Join(e4.home, ".codex", "config.toml"), "[mcp_servers.x]\ncommand='y'\n")
+	insp, _ = e4.tbl.Inspect("codex", e4.project)
+	if state, _ := insp.ConnectState(); state != clients.ConnectedUnknown {
+		t.Errorf("probe-only client = %q, want unknown (never not_connected)", state)
+	}
+}
