@@ -1,5 +1,11 @@
 package clients
 
+import (
+	"encoding/json"
+	"slices"
+	"sort"
+)
+
 // probeFormat implements Format for the shapes agenthub deliberately does
 // not rewrite: TOML (codex), YAML (continue) and fileless remote clients
 // (open-webui).
@@ -46,27 +52,118 @@ func (f *probeFormat) ManualSnippet(entry Entry) string {
 	return f.spec.manual(f.spec, entry)
 }
 
-// Connect always refuses, carrying the snippet that does the job.
+// Connect refuses to write — but a client whose file agenthub can READ is
+// answered from it first. An entry that is already there and already points
+// at this binary means the requested state holds, and reporting that as a
+// failure would send the user to hand-edit a file that needs no editing.
+// This is the same "already up to date" the writable clients report.
 func (f *probeFormat) Connect(path string, entry Entry) (Result, error) {
-	return Result{}, f.unsupported("connect", path, entry)
+	path = f.resolvePath(path)
+	if name, found, ok := f.ownedEntry(path); ok && found != nil {
+		if found.command == entry.Command && slices.Equal(found.args, entry.Args) {
+			return Result{Path: path, Changed: false}, nil
+		}
+		return Result{}, f.refuse("connect", path, entry, name)
+	}
+	return Result{}, f.refuse("connect", path, entry, "")
 }
 
-// Disconnect always refuses: agenthub never wrote anything here, so there
-// is nothing it may safely remove.
+// Disconnect refuses to write, and says how to take the entry out — which
+// is a different instruction from how to put one in.
+//
+// When the file is readable it also answers the question first: nothing of
+// agenthub's in there is *NotConnectedError, exactly as it is for a client
+// agenthub can rewrite. "There is nothing to remove" and "I am not allowed
+// to remove it" are different answers and the caller acts on them
+// differently.
 func (f *probeFormat) Disconnect(path string) (Result, error) {
-	return Result{}, f.unsupported("disconnect",
-		path, Entry{Command: "agenthub", Args: []string{"connect", "--client", f.spec.id}})
+	path = f.resolvePath(path)
+	name, found, ok := f.ownedEntry(path)
+	switch {
+	case ok && found == nil:
+		return Result{}, &NotConnectedError{Path: path}
+	case ok:
+		return Result{}, f.refuse("disconnect", path, Entry{}, name)
+	}
+	return Result{}, f.refuse("disconnect", path, Entry{}, "")
 }
 
-func (f *probeFormat) unsupported(op, path string, entry Entry) *UnsupportedError {
+// orEntryName falls back to the name agenthub would have used.
+func orEntryName(name string) string {
+	if name == "" {
+		return entryName
+	}
+	return name
+}
+
+func (f *probeFormat) resolvePath(path string) string {
 	if path == "" {
-		path = f.DefaultPath("")
+		return f.DefaultPath("")
+	}
+	return path
+}
+
+// ownedEntry looks for agenthub's own entry in a probe-only file.
+//
+// ok is false when nothing was read — a shape with no reader, an
+// unreadable or unmodelled file. Callers MUST NOT treat that as absence:
+// it is why the answer is three-valued and not a bool.
+func (f *probeFormat) ownedEntry(path string) (name string, entry *tomlEntry, ok bool) {
+	if f.spec.readTable == "" || path == "" {
+		return "", nil, false
+	}
+	data, err := readLimited(path)
+	if err != nil {
+		return "", nil, false
+	}
+	entries, scanned := scanTOMLServers(data, f.spec.readTable)
+	if !scanned {
+		return "", nil, false
+	}
+	names := make([]string, 0, len(entries))
+	for n := range entries {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		e := entries[n]
+		raw, err := json.Marshal(struct {
+			Args []string `json:"args"`
+		}{Args: e.args})
+		if err != nil || !ownedBy(raw, f.spec.id) {
+			continue
+		}
+		return n, &e, true
+	}
+	return "", nil, true
+}
+
+// refuse builds the refusal for one operation. The snippet is the whole
+// value of it, and it is op-specific: telling someone how to ADD the entry
+// when they asked to remove it is worse than saying nothing, because it
+// reads like an answer.
+//
+// existing names the entry already in the file, when one was found.
+func (f *probeFormat) refuse(op, path string, entry Entry, existing string) *UnsupportedError {
+	snippet := f.spec.note + "\n\n"
+	if op == "disconnect" {
+		if f.spec.removal != nil {
+			snippet += f.spec.removal(f.spec, orEntryName(existing))
+		} else {
+			snippet += "Remove agenthub's entry from " + path + " by hand.\n"
+		}
+	} else {
+		if existing != "" {
+			snippet += "# an agenthub entry is already there as \"" + existing +
+				"\" and points somewhere else; replace it with:\n"
+		}
+		snippet += f.ManualSnippet(entry)
 	}
 	return &UnsupportedError{
 		Client:  f.spec.id,
 		Op:      op,
 		Shape:   f.spec.shape(),
 		Path:    path,
-		Snippet: f.spec.note + "\n\n" + f.ManualSnippet(entry),
+		Snippet: snippet,
 	}
 }

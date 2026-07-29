@@ -35,6 +35,10 @@ type clientSpec struct {
 	// manual renders the fragment a user pastes by hand. nil means "use
 	// the generic JSON snippet".
 	manual func(spec *clientSpec, e Entry) string
+	// removal renders how to take the entry back OUT, named for the entry
+	// actually found in the file. A disconnect that answered with the add
+	// snippet would read like an instruction and be the wrong one.
+	removal func(spec *clientSpec, name string) string
 }
 
 // locSpec describes where one configuration file lives and where inside it
@@ -171,8 +175,9 @@ var specs = []clientSpec{
 		readTable: "mcp_servers",
 		note: "Codex stores MCP servers in TOML. agenthub reads that file but will not " +
 			"rewrite it: re-encoding would cost you its comments and layout. Codex's own " +
-			"CLI writes it correctly — or add the entry by hand.",
-		manual: tomlSnippet,
+			"CLI edits it correctly — or edit it by hand.",
+		manual:  tomlSnippet,
+		removal: tomlRemoval,
 	},
 	{
 		id:      "continue",
@@ -183,8 +188,9 @@ var specs = []clientSpec{
 			{placement: User, home: sameOnAll(".continue", "config.yaml")},
 		},
 		note: "Continue stores MCP servers in YAML. agenthub detects the file and reads nothing else; " +
-			"add the entry below by hand.",
-		manual: yamlSnippet,
+			"edit it by hand.",
+		manual:  yamlSnippet,
+		removal: yamlRemoval,
 	},
 	{
 		id:      "open-webui",
@@ -355,6 +361,19 @@ func yamlSnippet(s *clientSpec, e Entry) string {
 		fmt.Fprintf(&b, "      - %q\n", a)
 	}
 	return b.String()
+}
+
+// tomlRemoval renders how to take the codex entry out again.
+func tomlRemoval(s *clientSpec, name string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "codex mcp remove %s\n", name)
+	fmt.Fprintf(&b, "\n# or, by hand: delete the [mcp_servers.%s] table.\n", name)
+	return b.String()
+}
+
+// yamlRemoval renders how to take the continue entry out again.
+func yamlRemoval(s *clientSpec, name string) string {
+	return "# delete the mcpServers entry named \"" + name + "\" by hand.\n"
 }
 
 // remoteSnippet renders instructions for a client with no local file.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dinstein/agent-hub/internal/clients"
@@ -382,5 +383,74 @@ func TestConnectStateReportsWhereAndFailsLoud(t *testing.T) {
 	insp, _ = e6.tbl.Inspect("codex", e6.project)
 	if state, _ := insp.ConnectState(); state != clients.ConnectedUnknown {
 		t.Errorf("unmodelled TOML = %q, want unknown (never not_connected)", state)
+	}
+}
+
+// TestProbeOpsAnswerFromTheFileTheyWillNotWrite: a client agenthub reads
+// but does not rewrite still gets real answers out of connect and
+// disconnect — including the one that was plainly wrong, disconnect
+// replying with the instructions for ADDING an entry.
+func TestProbeOpsAnswerFromTheFileTheyWillNotWrite(t *testing.T) {
+	e := newEnv(t, "darwin")
+	cfg := filepath.Join(e.home, ".codex", "config.toml")
+	f := e.format(t, "codex")
+	ours := entry("codex")
+
+	// Nothing of ours in the file: there is nothing to remove, which is a
+	// different answer from "I am not allowed to remove it".
+	write(t, cfg, "[mcp_servers.linear]\ncommand = \"npx\"\n")
+	var nc *clients.NotConnectedError
+	if _, err := f.Disconnect(cfg); !errors.As(err, &nc) {
+		t.Fatalf("disconnect with nothing of ours = %v, want *NotConnectedError", err)
+	}
+
+	// Our entry, under a name the user chose. Disconnect must refuse to
+	// write, and hand over the removal — naming the entry that is actually
+	// there, not the name agenthub would have used.
+	write(t, cfg, "[mcp_servers.hub]\ncommand = \""+ours.Command+"\"\n"+
+		"args = [\"connect\", \"--client\", \"codex\"]\n")
+	var unsupported *clients.UnsupportedError
+	_, err := f.Disconnect(cfg)
+	if !errors.As(err, &unsupported) {
+		t.Fatalf("disconnect = %v, want *UnsupportedError", err)
+	}
+	if !strings.Contains(unsupported.Snippet, "codex mcp remove hub") {
+		t.Errorf("removal snippet = %q, want it to name the entry that is there", unsupported.Snippet)
+	}
+	if strings.Contains(unsupported.Snippet, "mcp add") {
+		t.Errorf("a disconnect answered with the ADD instructions: %q", unsupported.Snippet)
+	}
+
+	// The requested state already holds: report it, do not send the user to
+	// hand-edit a file that needs no editing.
+	write(t, cfg, "[mcp_servers.agenthub]\ncommand = \""+ours.Command+"\"\n"+
+		"args = [\"connect\", \"--client\", \"codex\"]\n")
+	res, err := f.Connect(cfg, ours)
+	if err != nil {
+		t.Fatalf("connect on an already-correct file = %v, want the up-to-date result", err)
+	}
+	if res.Changed {
+		t.Errorf("connect reported a change to a file it cannot write: %+v", res)
+	}
+
+	// The entry is there but points elsewhere: refuse, and say which one.
+	write(t, cfg, "[mcp_servers.hub]\ncommand = \"/old/agenthub\"\n"+
+		"args = [\"connect\", \"--client\", \"codex\"]\n")
+	if _, err := f.Connect(cfg, ours); !errors.As(err, &unsupported) {
+		t.Fatalf("connect over a stale entry = %v, want *UnsupportedError", err)
+	} else if !strings.Contains(unsupported.Snippet, "\"hub\"") {
+		t.Errorf("snippet = %q, want the existing entry named", unsupported.Snippet)
+	}
+
+	// A shape with no reader keeps the old behaviour: refuse both ways
+	// without pretending to know what is in the file.
+	yf := e.format(t, "continue")
+	ypath := filepath.Join(e.home, ".continue", "config.yaml")
+	write(t, ypath, "mcpServers:\n  - name: agenthub\n")
+	if _, err := yf.Disconnect(ypath); !errors.As(err, &unsupported) {
+		t.Fatalf("continue disconnect = %v, want *UnsupportedError", err)
+	}
+	if strings.Contains(unsupported.Snippet, "mcpServers:\n  - name") {
+		t.Errorf("continue disconnect answered with the ADD snippet: %q", unsupported.Snippet)
 	}
 }
