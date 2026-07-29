@@ -17,12 +17,14 @@ because it fails after the user has pasted it somewhere that matters.
 ## Before anything else
 
 ```bash
-agenthub doctor              # what is installed, where its data lives, what is broken
 agenthub server ls           # what is already configured
 agenthub client detect       # which AI clients exist on this machine
 ```
 
-`doctor --fix` performs safe repairs only.
+That is the whole orientation. `agenthub doctor` exists, but run it **when
+something is actually wrong** (§8) — it probes every configured server and
+the ambient client configs, so leading with it spends real time and prints a
+wall of findings before there is a problem to match them against.
 
 ### Always use `--json`, and branch on the exit code
 
@@ -52,20 +54,25 @@ disabling the control that produced it is not a fix.
 
 ## 1. Add a server
 
-Try these **in order**. The first that fits is the least that can go wrong.
+### a. From the server's URL or command — the normal case
 
-### a. From the curated catalog — always try this first
+Most MCP servers are a URL. Add it directly:
 
 ```bash
-agenthub catalog search github          # or: agenthub catalog ls
-agenthub catalog show filesystem        # description, target, params, the exact add line
-agenthub catalog add fetch              # entries that need nothing: one command, done
-agenthub catalog add filesystem --param directory=/Users/me/projects
-agenthub catalog add github --name gh   # --name when the default id collides
+agenthub server add remote --url https://mcp.example.com/mcp
+agenthub server add local-dev --url http://127.0.0.1:3000/mcp --local
+
+# stdio (a process on this machine)
+agenthub server add my-server --cmd npx --args "-y,@scope/mcp-server"
 ```
 
-`catalog show` prints the add command with its parameters filled as
-`<placeholders>`. Read it rather than composing your own.
+`--local` is required for a literal loopback URL and allows **only** that; it
+never opens up RFC1918 addresses. Other useful flags: `--env KEY=VALUE`,
+`--header KEY=VALUE` (both repeatable), `--cwd`, `--transport`, and the
+`--oauth-*` pins in §3.
+
+If the server needs authorization, add it first and then §3 — `server add`
+does not need the credential up front.
 
 ### b. From a config the user already has
 
@@ -86,21 +93,22 @@ To adopt everything a client already has:
 agenthub client import cursor           # source becomes imported:cursor
 ```
 
-### c. By hand
+### c. From the curated catalog — a shortcut, not the main road
+
+The catalog holds a small hand-maintained set. It is worth a look when the
+user names a well-known server and you would otherwise be guessing at its
+package name or parameters; for anything else, go back to (a).
 
 ```bash
-# stdio (a process on this machine)
-agenthub server add my-server --cmd npx --args "-y,@scope/mcp-server"
-
-# HTTP
-agenthub server add remote --url https://mcp.example.com/mcp
-agenthub server add local-dev --url http://127.0.0.1:3000/mcp --local
+agenthub catalog search github          # or: agenthub catalog ls
+agenthub catalog show filesystem        # description, target, params, the exact add line
+agenthub catalog add filesystem --param directory=/Users/me/projects
+agenthub catalog add github --name gh   # --name when the default id collides
 ```
 
-`--local` is required for a literal loopback URL and allows **only** that; it
-never opens up RFC1918 addresses. Other useful flags: `--env KEY=VALUE`,
-`--header KEY=VALUE` (both repeatable), `--cwd`, `--transport`, and the
-`--oauth-*` pins in §3.
+`catalog show` prints the add command with its parameters filled as
+`<placeholders>`. Read it rather than composing your own. A miss here means
+nothing is wrong — most servers are simply not in it.
 
 ### Container isolation
 
@@ -113,7 +121,11 @@ agenthub server add sketchy --runtime docker --image ghcr.io/x/server:tag \
 degrades to running on the host. Default network is `none`; mounts are
 read-only unless you write `:rw`.
 
-## 2. Credentials
+## 2. Credentials — only for servers that take an API key
+
+Skip this section unless the server authenticates with a key you have in
+hand. OAuth servers are §3, and they store their own credentials; a server
+that needs nothing needs nothing here.
 
 The registry is plain configuration and must never hold a secret. Put a
 **reference** in the definition and the value in the vault:
@@ -213,7 +225,7 @@ Default is every enabled server. Narrow with a profile, then bind clients:
 
 ```bash
 agenthub profile create research
-agenthub profile server research add brave
+agenthub profile server add research brave                # <profile> then <server>
 agenthub profile tools research brave --only search       # or --all / --none
 agenthub profile discovery research lazy                  # or grouped / full / -
 agenthub client bind cursor research
@@ -223,11 +235,36 @@ agenthub client unbind cursor                             # back to the active p
 
 All narrowing lives on the **profile**; a client only selects one. There is no
 `agenthub scope` group, and a client binding never carries servers or tools of
-its own.
+its own. Two clients that need different surfaces get two profiles.
 
-Layers **intersect** for security fields: a narrower layer can only take
+A binding takes effect on **sessions that are already running** — the gateway
+recomputes and pushes `tools/list_changed`. Rebinding needs no client restart
+(unlike `client connect`, which edits the client's own file).
+
+Binding to a profile that does not exist is accepted, warns, and fail-closes
+that client to an **empty** scope. If a client suddenly sees nothing, check
+`agenthub client ls` for a `MISSING` marker before suspecting the servers.
+
+The layers **intersect** for security fields: a narrower layer can only take
 capability away, never add it. If a tool is unexpectedly missing, look for a
 narrowing layer before suspecting the server.
+
+### Discovery: how the surface is presented
+
+`profile discovery` changes how tools are *surfaced*, never which tools are in
+the set. Pick by size, not by preference:
+
+| mode | what `tools/list` returns | use when |
+|---|---|---|
+| `full` | every visible tool, one entry each | small surfaces. This is the default when nothing sets a mode |
+| `grouped` | one aggregate entry per server, plus `call_tool` last | a mid-sized set: the client reads per-server entries first, then dispatches |
+| `lazy` | the meta-tools (`search_tools` / `describe_tool` / `call_tool` / …) plus any pinned tools | large surfaces — the client's context holds a handful of names instead of hundreds |
+| `-` | clears the profile's override | fall back to the global default (`agenthub config set discovery`) |
+
+Visibility is decided by the **scope**, never by the mode: `lazy` hides names
+from the initial list, it does not take capability away. Narrowing is §6's
+job. An unrecognised value degrades to `full` rather than erroring, which is
+why `profile discovery` rejects a typo at write time.
 
 Kill switches, which apply everywhere regardless of profile:
 

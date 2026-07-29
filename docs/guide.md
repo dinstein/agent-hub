@@ -1,0 +1,179 @@
+# Using agenthub
+
+This is the user-facing guide: what the three concepts are, how they fit
+together, and the decisions you actually have to make. The other documents in
+`docs/` are for people changing agenthub's code; this one is for people using
+it.
+
+## The shape of it
+
+Three nouns, one sentence each:
+
+- **Server** — a downstream MCP server you registered. The set of *enabled*
+  servers is everything agenthub could offer anyone.
+- **Profile** — a named subset of that: which servers, which of their tools,
+  and how the result is presented.
+- **Client** — an AI application (Claude Code, Cursor, Codex, …). A client is
+  **bound** to one profile, and that binding is the entire answer to what it
+  can see.
+
+```
+servers (enabled)          ← the maximum: everything that exists
+   └── profile             ← a subset you named
+         └── client        ← bound to exactly one profile
+```
+
+Two things follow from this that are worth stating outright:
+
+**A client never narrows on its own.** It selects a profile; it does not add
+rules on top of one. If two clients need different surfaces, they get two
+profiles. This is why "which profile is this client on" is a complete answer
+rather than half of one.
+
+**Narrowing only narrows.** A profile can only take capability away from the
+enabled set — it can never grant a server that is disabled, or a tool that
+does not exist. `agenthub server disable` is therefore an unconditional kill
+switch: no profile can bring it back.
+
+## The everyday path
+
+```bash
+# 1. register a server
+agenthub server add linear --url https://mcp.linear.app/mcp
+
+# 2. authorize it, if it needs that
+agenthub auth login linear
+
+# 3. prove it actually works, before any client depends on it
+agenthub server test linear
+
+# 4. connect a client — once, ever
+agenthub client connect claude-code --dry-run   # look first
+agenthub client connect claude-code
+```
+
+That is the whole loop for a first server. Step 4 happens **once per client**:
+the entry it writes runs `agenthub connect --client claude-code`, so every
+server you add later is picked up without touching the client's config again.
+
+With no profile in play, a client sees every enabled server. For many setups
+that is the right answer and you can stop here.
+
+## Profiles: when you want less than everything
+
+```bash
+agenthub profile create research
+agenthub profile server add research linear      # <profile> then <server>
+agenthub profile tools research linear --only list_issues,get_issue
+agenthub client bind cursor research
+```
+
+`agenthub client ls` shows who is on which profile. `agenthub client unbind
+cursor` returns it to the default.
+
+Three details that decide how this behaves:
+
+**Rebinding is live.** Changing a binding takes effect on sessions that are
+already running — agenthub recomputes and pushes `tools/list_changed`. Only
+`client connect` (which edits the client's own file) needs a restart.
+
+**Tool selection is three-state, and the empty state is closed:**
+
+| you write | it means |
+|---|---|
+| no rule for that server | every tool of it |
+| `--only a,b` | exactly those two |
+| `--none` | none of them, server still listed |
+| `--all` | removes the rule (back to every tool) |
+
+**A missing profile fails closed.** Binding to a name that does not exist is
+accepted, warns, and resolves that client to an *empty* scope — it sees
+nothing. That is deliberate: deleting a profile must not silently widen every
+client that referenced it. If a client suddenly sees no tools, check
+`agenthub client ls` for a `MISSING` marker first.
+
+### The default profile
+
+A client with no binding follows the **globally active profile**:
+
+```bash
+agenthub profile use research     # every unbound client now follows it
+agenthub profile use -            # clear it: unbound clients see every enabled server
+```
+
+With nothing active, "unbound" means "everything enabled". There is no
+separate default-profile object to manage — the absence of narrowing is the
+default.
+
+## Discovery: how the surface is presented
+
+`discovery` decides how many tool names a client is shown, not which tools it
+may call. It is a property of the profile, because it describes that
+profile's tool set:
+
+```bash
+agenthub profile discovery research lazy      # or grouped / full / -
+```
+
+| mode | what `tools/list` returns | use when |
+|---|---|---|
+| `full` | every visible tool, one entry each | small surfaces. The default when nothing sets a mode |
+| `grouped` | one aggregate entry per server, then `call_tool` | a mid-sized set — the client reads per-server entries, then dispatches |
+| `lazy` | the meta-tools (`status`, `search_tools`, `describe_tool`, `call_tool`, `fetch_result`) plus any pinned tools | large surfaces — the client holds a handful of names instead of hundreds |
+| `-` | clears the profile's override | fall back to `agenthub config set discovery` |
+
+The reason to care is context, not security. Forty servers in `full` mode
+means a tool list the client re-reads on every turn; `lazy` turns that into
+five names plus a search. Visibility is unchanged either way — a tool hidden
+from the initial list is still callable if it is in scope, and a tool out of
+scope is not callable no matter which mode you pick.
+
+## Sessions: temporary changes
+
+A live session can be narrowed without touching any configuration:
+
+```bash
+agenthub session ls
+agenthub session scope <sid> --disable-server linear
+```
+
+These edits are **volatile**: they live in memory and die with the session.
+There is no way to persist them, on purpose — a permanent change belongs in
+the profile, where you can see it later. Going the other way (widening a live
+session) is not something the session can do to itself: it files a
+TTL-bounded grant that a human approves with `agenthub grant approve`.
+
+## Where things live
+
+| what | where |
+|---|---|
+| server definitions | `servers.json` |
+| profiles (servers, tools, discovery) | `profiles.json` |
+| client → profile bindings | `clients.json` |
+| global switches, active profile | `governance.json` |
+| credentials | the OS keychain / vault — **never** the registry |
+
+`agenthub doctor` reports on all of it, and is the right first move when
+something is wrong. It is not a routine step: it probes every configured
+server, so run it when you have a symptom, not before.
+
+## Verifying it end to end
+
+```bash
+agenthub tool ls        # the aggregated catalog a client will see
+agenthub audit          # calls that actually arrived
+```
+
+`audit` is the only honest proof. A written config file shows intent; an
+audit line shows a call that reached the gateway. After restarting the client
+and asking it to use a tool, a new audit line is the confirmation.
+
+## Common surprises
+
+| symptom | likely cause |
+|---|---|
+| client sees no tools at all | bound to a profile that does not exist (`client ls` shows `MISSING`), or it was never restarted after `client connect` |
+| a tool disappeared | a profile's `--only` list, `agenthub tool disable`, or drift quarantine — check before suspecting the server |
+| a server works in `server test` but not in the client | the client has not been restarted, or its profile does not include that server |
+| `client connect` seems to do nothing | it edits a file; the client reads that file at startup |
+| a legacy `projects` block in `clients.json` | per-project bindings were retired. The block is preserved but inert, and `doctor` warns about it — it used to narrow, so leaving it does not restrict anything now |

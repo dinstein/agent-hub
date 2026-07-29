@@ -4,6 +4,7 @@
 
 | What you want to do | Read this |
 |---|---|
+| **Use** agenthub: what a server / profile / client is, how to wire them up, how discovery modes differ | [guide.md](guide.md) |
 | Understand how the system is carved up and how the processes are laid out | [architecture.md](architecture.md) |
 | Learn what each package is responsible for | [architecture.md §3 Core module map](architecture.md#3-core-module-map) |
 | Work out how a given flow actually behaves at runtime | [flows.md](flows.md) |
@@ -19,6 +20,7 @@
 
 | File | Contents |
 |---|---|
+| [guide.md](guide.md) | The user-facing guide: the server / profile / client model, the everyday setup path, profiles and three-state tool selection, the three discovery modes and when each is right, volatile session edits, and the surprises that account for most "it stopped working" reports |
 | [architecture.md](architecture.md) | Architecture overview: the dual-mode process model, core module map, layering and dependency constraints, what a single call passes through, the three data flows, the two planes of scope, the three lines of defense, on-disk layout |
 | [flows.md](flows.md) | Sequence diagrams and failure branches for seven key flows: gateway startup, a lazy call, HITL approval, config writes, config hot reload, OAuth, derived instances |
 | [modules/](modules/) | Per-package docs: responsibilities, key types, **invariants and failure directions**. Five documents organized by layer, plus dedicated write-ups for OAuth and the GUI |
