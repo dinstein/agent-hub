@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/guard/spawnguard"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -260,6 +261,70 @@ func TestDockerConfigForMapsEveryField(t *testing.T) {
 		got.ServerID != want.ServerID || len(got.Mounts) != 1 || got.Mounts[0] != want.Mounts[0] ||
 		len(got.ExtraRunArgs) != 1 || got.Env["T"] != "1" {
 		t.Fatalf("dockerConfigFor = %+v, want %+v", got, want)
+	}
+}
+
+// TestCwdRendersAsWorkdirInTheRunLine: an entry's cwd names a directory
+// inside the container, so the run line the operator is SHOWN must already
+// carry it as --workdir — this is the same line the spawn guard screens and
+// the spawner runs.
+func TestCwdRendersAsWorkdirInTheRunLine(t *testing.T) {
+	e := registry.ServerEntry{
+		Command: "server",
+		Cwd:     "/workspace",
+		Runtime: registry.RuntimeDocker,
+		Docker:  &registry.DockerRuntime{Image: "img"},
+	}
+	line, err := dockerRunLine("id", e)
+	if err != nil {
+		t.Fatalf("dockerRunLine: %v", err)
+	}
+	if !strings.Contains(strings.Join(line, " "), "--workdir /workspace") {
+		t.Errorf("cwd is missing from the rendered run line: %v", line)
+	}
+}
+
+// TestRenderedRunLineMatchesTheDialedOne is the anti-drift check between the
+// two translators: confops renders what `server inspect` prints and what the
+// guard screens, internal/downstream builds what actually gets spawned. They
+// are in packages that cannot import each other, so nothing but a test keeps
+// them honest — and a divergence here means the operator is shown a command
+// that is not the one that runs.
+func TestRenderedRunLineMatchesTheDialedOne(t *testing.T) {
+	e := registry.ServerEntry{
+		Command: "server",
+		Args:    []string{"--stdio"},
+		Cwd:     "/workspace",
+		Runtime: registry.RuntimeDocker,
+		Docker: &registry.DockerRuntime{
+			Image: "img", Network: "bridge", Memory: "1g", CPUs: "2", User: "u",
+			Mounts:    []registry.DockerMount{{Source: "/s", Target: "/t"}},
+			ExtraArgs: []string{"--read-only"},
+		},
+	}
+	shown, err := dockerRunLine("id", e)
+	if err != nil {
+		t.Fatalf("dockerRunLine: %v", err)
+	}
+	spec, err := downstream.SpecFromEntry("id", e)
+	if err != nil {
+		t.Fatalf("SpecFromEntry: %v", err)
+	}
+	if spec.Docker == nil {
+		t.Fatal("docker entry produced a host spec")
+	}
+	// Name and cidfile are generated per spawn, so compare the config the
+	// argv is a pure function of, with those two neutralized.
+	dialed := *spec.Docker
+	dialed.ServerID = "id"
+	dialed.Env = e.Env
+	dialedLine, err := transport.BuildDockerRunArgs(dialed, e.Command, e.Args)
+	if err != nil {
+		t.Fatalf("BuildDockerRunArgs: %v", err)
+	}
+	if strings.Join(shown, " ") != strings.Join(dialedLine, " ") {
+		t.Errorf("the run line shown differs from the one dialed:\n shown:  %v\n dialed: %v",
+			shown, dialedLine)
 	}
 }
 
