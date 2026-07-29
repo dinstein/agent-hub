@@ -94,12 +94,15 @@ func TestResolveAutoMissOnTupleChange(t *testing.T) {
 		t.Errorf("overlay narrowing not applied: %v", c.Servers)
 	}
 
-	// Root moved.
+	// Root moved: a HIT, not a miss. No persisted layer reads the root since
+	// the per-project layer was retired, so keying on it would split one
+	// client's cache across every directory it reports from while never
+	// changing the answer.
 	k := key1()
 	k.Root = "/some/proj"
 	d, _ := r.Resolve(ctx, k)
-	if d == c {
-		t.Error("root change must recompute")
+	if d != c {
+		t.Error("root is not part of the key: a root change must serve the cached scope")
 	}
 }
 

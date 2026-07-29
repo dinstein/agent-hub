@@ -19,7 +19,12 @@ const (
 	EvRegistryChanged EventKind = iota
 	// EvOverlayChanged: one session's overlay mutated — drop that session only.
 	EvOverlayChanged
-	// EvRootChanged: roots/list_changed for one session — drop that session only.
+	// EvRootChanged: roots/list_changed for one session — drop that session
+	// only. Since the per-project layer was retired no persisted layer reads
+	// the root, so this can no longer change a resolution; it is kept because
+	// dropping one session's entry is cheap and the alternative (having
+	// callers decide which notices matter) is how a stale scope gets served
+	// the next time something does depend on the root.
 	EvRootChanged
 	// EvCatalogChanged: downstream tool set changed — drop ALL. The catalog
 	// is NOT part of the cache key tuple, so this event is the only thing
@@ -74,8 +79,15 @@ type Sources struct {
 }
 
 // CachedResolver caches one EffectiveScope per session, validated by the
-// tuple (registryGeneration, overlayVersion, normalizedRoot) — docs/architecture.md §7
-// . Cache values are immutable *EffectiveScope, safe to share.
+// tuple (clientID, registryGeneration, overlayVersion) — docs/architecture.md
+// §7. Cache values are immutable *EffectiveScope, safe to share.
+//
+// The session's root is deliberately NOT part of the key. It was, while the
+// per-project layer keyed on it; with that layer retired no persisted layer
+// reads the root, so keeping it would split one client's cache across every
+// directory it happens to report from — more misses for a value that cannot
+// change the answer. The root still reaches internal/downstream, which
+// derives per-root server instances from it.
 type CachedResolver struct {
 	src Sources
 
@@ -87,7 +99,6 @@ type cacheEntry struct {
 	clientID   string
 	generation uint64
 	overlayVer uint64
-	root       string
 	scope      *EffectiveScope
 }
 
@@ -122,22 +133,17 @@ func (r *CachedResolver) Resolve(ctx context.Context, key SessionKey) (*Effectiv
 	if ov != nil {
 		overlayVer = ov.Version
 	}
-	root := NormalizePath(key.Root)
-
 	r.mu.Lock()
 	if e, ok := r.cache[key.SessionID]; ok &&
 		e.clientID == key.ClientID &&
 		e.generation == snap.Generation &&
-		e.overlayVer == overlayVer &&
-		e.root == root {
+		e.overlayVer == overlayVer {
 		r.mu.Unlock()
 		return e.scope, nil
 	}
 	r.mu.Unlock()
 
-	nkey := key
-	nkey.Root = root
-	layers, diags := FromRegistry(snap, nkey)
+	layers, diags := FromRegistry(snap, key)
 	if ov != nil {
 		layers = append(layers, ov.Layer(fmt.Sprintf("session:%s", key.SessionID)))
 	}
@@ -159,7 +165,6 @@ func (r *CachedResolver) Resolve(ctx context.Context, key SessionKey) (*Effectiv
 		clientID:   key.ClientID,
 		generation: snap.Generation,
 		overlayVer: overlayVer,
-		root:       root,
 		scope:      es,
 	}
 	r.mu.Unlock()
