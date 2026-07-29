@@ -3,7 +3,7 @@ package discovery
 import (
 	"bytes"
 	"encoding/json"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -375,7 +375,7 @@ func TestNameKindString(t *testing.T) {
 
 func sorted(in ...string) []string {
 	out := append([]string(nil), in...)
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

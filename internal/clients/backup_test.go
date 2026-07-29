@@ -5,7 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/dinstein/agent-hub/internal/clients"
@@ -94,7 +94,7 @@ func TestBackupRotation(t *testing.T) {
 	// Names are fixed-width timestamps: sorted order is chronological, and
 	// the survivors must be the newest ones — the last backup taken is the
 	// state right before the final write, i.e. the connected file.
-	sort.Strings(got)
+	slices.Sort(got)
 	if newest := read(t, got[len(got)-1]); !contains(newest, `"agenthub"`) {
 		t.Errorf("newest surviving backup is not the most recent state:\n%s", newest)
 	}

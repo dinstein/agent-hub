@@ -5,7 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/dinstein/agent-hub/internal/confops"
@@ -229,6 +229,6 @@ func sortedNames(m map[string][]byte) []string {
 	for k := range m {
 		out = append(out, k)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }

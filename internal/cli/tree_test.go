@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -120,7 +120,7 @@ func TestCommandTreeCoversDesign(t *testing.T) {
 		}
 	}
 	if len(missing) > 0 {
-		sort.Strings(missing)
+		slices.Sort(missing)
 		t.Errorf("command tree is missing %d command(s):\n  %s", len(missing), strings.Join(missing, "\n  "))
 	}
 }
@@ -141,7 +141,7 @@ func TestEveryCommandHasJSON(t *testing.T) {
 		}
 	})
 	if len(offenders) > 0 {
-		sort.Strings(offenders)
+		slices.Sort(offenders)
 		t.Errorf("commands without --json:\n  %s", strings.Join(offenders, "\n  "))
 	}
 }
@@ -313,7 +313,7 @@ func TestListingsComeFirstInTheirGroup(t *testing.T) {
 		}
 	})
 	if len(offenders) > 0 {
-		sort.Strings(offenders)
+		slices.Sort(offenders)
 		t.Errorf("groups whose 'ls' is not listed first:\n  %s", strings.Join(offenders, "\n  "))
 	}
 }
@@ -340,12 +340,12 @@ func TestEveryTopLevelCommandIsGrouped(t *testing.T) {
 		}
 	}
 	if len(ungrouped) > 0 {
-		sort.Strings(ungrouped)
+		slices.Sort(ungrouped)
 		t.Errorf("top-level commands with no GroupID (they land in \"Additional Commands\"):\n  %s",
 			strings.Join(ungrouped, "\n  "))
 	}
 	if len(unknown) > 0 {
-		sort.Strings(unknown)
+		slices.Sort(unknown)
 		t.Errorf("top-level commands whose GroupID is not a declared group:\n  %s",
 			strings.Join(unknown, "\n  "))
 	}
@@ -366,7 +366,7 @@ func TestEveryCommandHasShortHelp(t *testing.T) {
 		}
 	})
 	if len(offenders) > 0 {
-		sort.Strings(offenders)
+		slices.Sort(offenders)
 		t.Errorf("commands without a Short description:\n  %s", strings.Join(offenders, "\n  "))
 	}
 }
