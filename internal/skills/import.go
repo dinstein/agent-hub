@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -8,7 +9,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"cmp"
 	"path/filepath"
 	"slices"
 	"strings"
