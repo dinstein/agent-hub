@@ -509,6 +509,14 @@ git 工作树里，旁边掉一个 `.mcp.json.agenthub-backup` 会让每次 conn
 而不是做一半。`probeFormat.Disconnect` 同样拒绝：agenthub 从没在这里写过东西，也就没有什么是它
 可以安全移除的。
 
+**委托：agenthub 不重编码文档，而是去请拥有这个格式的工具动手。** 表的一行可以带 `delegate`（codex 带了），
+`Connect`/`Disconnect` 于是直接跑 `codex mcp add|remove`，而不是印一段建议——什么都没改的 connect 不叫 connect。
+三条性质让它是「委托」而不是「甩手」：动手前先**备份**，和 agenthub 自己写文件时一模一样；事后**重新读文件核实**，
+所以一个退出码为 0 却什么都没写的 CLI 在这里是失败而绝不是 connect；委托对象不存在、失败、或没做出要的状态时
+**退回到给指令**，而不是报一个没人核实过的成功。执行是可以拒绝的：单次用 `--manual`，整机用
+`AGENTHUB_NO_CLIENT_CLI=1`；而环境变量只能**禁止**、永远不能开启——一个能把执行重新打开的变量，等于让程序
+背着调用方去跑别的程序。
+
 **那条规矩管的是「写」，「读」是另一回事。** 表里的一行可以带 `readTable`，codex 就带了：
 `scanTOMLServers` 把 `~/.codex/config.toml` 读到足以回答「我们的条目在不在里面」，而 `Connect` 依然拒绝
 写它。不肯读换不来任何东西——它让 `client ls` 对一个明明已经接上的客户端只会说「?」，还让 doctor 对一个

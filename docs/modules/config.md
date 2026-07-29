@@ -599,6 +599,17 @@ that is a config-destruction machine wearing a helpful hat. So those clients get
 snippet, and `Connect` **fails loudly** with the snippet rather than half-working. `probeFormat.Disconnect`
 refuses in the same way: agenthub never wrote anything here, so there's nothing it can safely remove.
 
+**Delegation: agenthub does not re-encode the document, it asks the tool that owns the format.** A row may
+carry a `delegate` (codex does), and `Connect`/`Disconnect` then run `codex mcp add|remove` instead of printing
+advice — because a connect that changes nothing is not a connect. Three properties make that delegation rather
+than a shrug: the file is **backed up first**, exactly as agenthub's own writes are; the result is **verified by
+re-reading it**, so a CLI that exits 0 having written nothing is a failure and never a connect; and a delegate
+that is absent, fails, or leaves the wrong state **falls back to the instructions** rather than reporting a
+success nobody checked. Execution is refusable per invocation (`--manual`) or per machine
+(`AGENTHUB_NO_CLIENT_CLI=1`), and the environment can only ever forbid it — a variable that could switch
+execution back on for a caller that passed `NoDelegate` would let a program run other programs behind its
+caller's back.
+
 **That rule is about writing, and reading is a separate power.** A row may carry `readTable`, and codex does:
 `scanTOMLServers` reads `~/.codex/config.toml` well enough to answer "is our entry in here?" while `Connect` still
 refuses it. Refusing to read bought nothing — it made `client ls` say "?" for a client that was plainly connected,

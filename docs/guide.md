@@ -175,7 +175,14 @@ agenthub client ls                  # who is wired up, and who is on which profi
 it: it connects for real, so a pass means credentials, transport and the
 server itself all work right now. `server inspect --tools` lists what was
 recorded at the last contact, which is why it answers instantly and can be
-stale. `client ls` closes the loop on the other side, with both halves per client:
+stale. Codex is the one client agenthub does not write itself — its config is TOML,
+and re-encoding it would cost you the comments and layout. `client connect
+codex` runs `codex mcp add` for you instead, after backing the file up and
+before checking the result by reading it back. Pass `--manual` (or set
+`AGENTHUB_NO_CLIENT_CLI=1`) if you would rather agenthub never ran another
+program, and it prints what to run instead.
+
+`client ls` closes the loop on the other side, with both halves per client:
 CONNECTED comes from the client's own config file, and PROFILE is what it
 may see. When a row says something other than yes or no — `denied`,
 `unreadable`, `?` — `client inspect <id>` says which file and why.

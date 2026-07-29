@@ -315,6 +315,9 @@ self-tests. A few rules only visible here: **verifying that a credential works i
 not part of the secrets face**; `POST /v1/servers/{id}/test` **probes a docker-runtime entry as a container**,
 because the dial carries `Spec.Docker` into the spawner instead of running the command on the host (this
 endpoint used to refuse such entries fail-closed, back when the dial could not);
+`POST /v1/clients/{id}/connect` may RUN that client's own configuration CLI for a format agenthub will not
+rewrite (codex), backing the file up first and verifying the result by re-reading it — set
+`AGENTHUB_NO_CLIENT_CLI=1` on the daemon to forbid that;
 client wiring resolves its write target as `path` > `placement` > the default
 user-level file, and a client lacking that placement gets a 400 refusal rather than a rewrite to a different
 location; **`GET /v1/clients` stats and never opens a file** (one macOS privacy prompt per client on every page
