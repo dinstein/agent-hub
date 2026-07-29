@@ -589,6 +589,31 @@ func SetServerEnabled(
 	return ServerResult{Result: res, Servers: []ServerSpec{spec}}, nil
 }
 
+// SetServerTrace flips a server's frame-trace switch. It is a separate call
+// from UpdateServer because turning a trace on is not a change to what the
+// server IS — the definition, and therefore the connection, is untouched, so
+// a running gateway picks it up through the ordinary registry watch without
+// reconnecting.
+func SetServerTrace(
+	ctx context.Context, st *registry.Store, id string, on bool, pre Precondition,
+) (ServerResult, error) {
+	var spec ServerSpec
+	res, err := apply(ctx, st, pre, func(tx *registry.Tx) error {
+		doc, ok := tx.Servers.V.Servers[id]
+		if !ok {
+			return serverNotFound(id)
+		}
+		doc.V.Trace = on
+		tx.Servers.V.Servers[id] = doc
+		spec = ServerSpec{ID: id, Entry: doc.V}
+		return nil
+	})
+	if err != nil {
+		return ServerResult{Result: res}, err
+	}
+	return ServerResult{Result: res, Servers: []ServerSpec{spec}}, nil
+}
+
 // serverNotFound is the shared "no such server" refusal. Every reference to
 // a server id is checked against the registry so a typo becomes a refusal
 // instead of a ghost entry that silently narrows nothing.

@@ -48,6 +48,10 @@ type ServerRow struct {
 	Docker  *registry.DockerRuntime `json:"docker,omitempty"`
 	Enabled bool                    `json:"enabled"`
 	Source  string                  `json:"source,omitempty"`
+	// Trace mirrors the entry's frame-log switch, omitted when off so the
+	// --json output of an untraced entry is byte-identical to what it always
+	// was.
+	Trace bool `json:"trace,omitempty"`
 }
 
 // target is the connection target column: the command line for stdio, the
@@ -76,12 +80,42 @@ func (l ServerList) Human(w io.Writer) error {
 	}
 	// Writes to a tabwriter only fail at Flush, which is where the error is
 	// surfaced.
-	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tTRANSPORT\tENABLED\tSOURCE\tTARGET")
+	// The TRACE column appears only when something is being traced. A trace
+	// is a temporary debugging state that writes raw payloads to disk, so it
+	// has to be visible in the listing an operator already reads — but a
+	// column that says "off" on every row for the rest of time teaches
+	// readers to stop seeing it, which is the opposite of the point.
+	traced := false
 	for _, r := range l {
+		if r.Trace {
+			traced = true
+			break
+		}
+	}
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	head := "ID\tTRANSPORT\tENABLED\tSOURCE\tTARGET"
+	if traced {
+		head = "ID\tTRANSPORT\tENABLED\tTRACE\tSOURCE\tTARGET"
+	}
+	_, _ = fmt.Fprintln(tw, head)
+	for _, r := range l {
+		if traced {
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%t\t%s\t%s\t%s\n",
+				r.ID, r.Transport, r.Enabled, traceMark(r.Trace), r.Source, r.target())
+			continue
+		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%t\t%s\t%s\n", r.ID, r.Transport, r.Enabled, r.Source, r.target())
 	}
 	return tw.Flush()
+}
+
+// traceMark renders the TRACE cell. "on" is spelled out and off is a dash,
+// so the eye lands on the rows that are recording rather than on the rest.
+func traceMark(on bool) string {
+	if on {
+		return "on"
+	}
+	return "-"
 }
 
 // AddedServers is the `server add` result.
@@ -133,7 +167,7 @@ func (a *App) newServerCmd() *cobra.Command {
 	cmd.AddCommand(
 		a.newServerLsCmd(), a.newServerInspectCmd(), a.newServerAddCmd(), a.newServerRmCmd(),
 		a.newServerToggleCmd(true), a.newServerToggleCmd(false),
-		a.newServerTestCmd(), a.newServerLogsCmd(),
+		a.newServerTestCmd(), a.newServerTraceCmd(), a.newServerLogsCmd(),
 	)
 	return cmd
 }
@@ -555,6 +589,7 @@ func rowFor(name string, e registry.ServerEntry) ServerRow {
 		Docker:     e.Docker,
 		Enabled:    e.Enabled,
 		Source:     e.Source,
+		Trace:      e.Trace,
 	}
 }
 

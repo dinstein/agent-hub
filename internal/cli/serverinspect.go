@@ -220,6 +220,89 @@ func (a *App) newServerToggleCmd(enable bool) *cobra.Command {
 	return cmd
 }
 
+// ServerTrace is the `server trace` result.
+type ServerTrace struct {
+	ID      string `json:"id"`
+	Trace   bool   `json:"trace"`
+	Changed bool   `json:"changed"`
+	// Path is where the frames land, printed even when switching off so the
+	// operator knows which file still holds what was already captured.
+	Path string `json:"path"`
+}
+
+// Human renders the switch and the file behind it.
+func (s ServerTrace) Human(w io.Writer) error {
+	state := "off"
+	if s.Trace {
+		state = "on"
+	}
+	if _, err := fmt.Fprintf(w, "%s: trace %s\n  %s\n", s.ID, state, s.Path); err != nil {
+		return err
+	}
+	if !s.Trace {
+		return nil
+	}
+	_, err := fmt.Fprintf(w, "  frames are recorded before redaction; read them with "+
+		"'agenthub server logs %s'\n", s.ID)
+	return err
+}
+
+// newServerTraceCmd builds `server trace <id> on|off`.
+//
+// It is its own command rather than a flag on enable/disable because it
+// answers a different question — enable decides whether a server is IN
+// SERVICE, trace decides whether its wire is recorded — and folding them
+// would make one of the two invisible in the other's help text.
+//
+// The warning about redaction is in the command's own Long text, not only in
+// the docs: this is the one switch in the CLI that writes downstream results
+// to disk verbatim, and a person turning it on is exactly the person who has
+// not read the module documentation.
+func (a *App) newServerTraceCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "trace <id> <on|off>",
+		Short: "Record the JSON-RPC frames exchanged with one server, for debugging",
+		Long: "Writes every request and response between agenthub and this server to\n" +
+			"<data>/logs/server-<id>.log, which 'agenthub server logs' reads back.\n\n" +
+			"Frames are captured at the connection, BEFORE any redaction, so the file\n" +
+			"holds whatever the server actually returned — turn it on to diagnose\n" +
+			"something, and off again afterwards. It is off by default, per server, and\n" +
+			"a running client picks the change up without being restarted.",
+		Args: exactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			var on bool
+			switch args[1] {
+			case "on":
+				on = true
+			case "off":
+				on = false
+			default:
+				e := Usagef("trace takes 'on' or 'off', not %q", args[1])
+				e.Hint = "see 'agenthub server trace --help'"
+				return e
+			}
+			store, warnings, err := a.opsStore()
+			if err != nil {
+				return err
+			}
+			res, err := confops.SetServerTrace(cmd.Context(), store, id, on, noPrecondition)
+			warnings = append(warnings, res.Warnings...)
+			if err != nil {
+				return opsError(err)
+			}
+			logsDir, err := a.resolver.LogsDir()
+			if err != nil {
+				return err
+			}
+			return a.printer().Emit(ServerTrace{
+				ID: id, Trace: on, Changed: res.Changed,
+				Path: downstream.ServerLogPath(logsDir, id),
+			}, warnings...)
+		},
+	}
+}
+
 // probeForEnable connects to id once and classifies the outcome. It never
 // returns an error: every result is descriptive, because the enable it
 // accompanies has already happened.

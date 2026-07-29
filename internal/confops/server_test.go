@@ -560,6 +560,47 @@ func TestSetServerEnabled(t *testing.T) {
 	}
 }
 
+// The trace switch is per server, persists, and refuses an unknown id the
+// same way every other server reference does. A typo that silently created a
+// traced ghost would leave an operator waiting on frames from a name nothing
+// ever dials.
+func TestSetServerTrace(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	seedServers(t, st, "a")
+
+	if st.Snapshot().Servers.V.Servers["a"].V.Trace {
+		t.Fatal("a freshly seeded server is already traced; capture must be opt-in")
+	}
+
+	res, err := SetServerTrace(ctx, st, "a", true, Precondition{})
+	if err != nil {
+		t.Fatalf("trace on: %v", err)
+	}
+	if !res.Servers[0].Entry.Trace {
+		t.Error("the returned entry is not traced")
+	}
+	if !st.Snapshot().Servers.V.Servers["a"].V.Trace {
+		t.Error("the stored entry is not traced")
+	}
+	// Tracing must not disturb what the server IS. That the definition is
+	// untouched is exactly what lets a running gateway pick the flip up
+	// without reconnecting.
+	if !st.Snapshot().Servers.V.Servers["a"].V.Enabled {
+		t.Error("turning a trace on changed the enable flag")
+	}
+
+	_, err = SetServerTrace(ctx, st, "ghost", true, Precondition{})
+	wantErrorKind(t, err, KindNotFound, CodeServerNotFound)
+
+	gen := st.Snapshot().Generation
+	_, err = SetServerTrace(ctx, st, "a", false, Precondition{Generation: gen - 1})
+	wantStale(t, err, gen)
+	if !st.Snapshot().Servers.V.Servers["a"].V.Trace {
+		t.Error("a stale trace flip was applied anyway")
+	}
+}
+
 // TestValidateOAuthHint pins the screen every writer of a login hint goes
 // through — CLI flags, pasted JSON and the control plane all reach it via
 // ValidateServerSpec, so a pin that discovery could never use is refused

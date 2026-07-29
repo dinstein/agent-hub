@@ -182,6 +182,22 @@ type ServerEntry struct {
 	Docker  *DockerRuntime `json:"docker,omitempty"`
 	Enabled bool           `json:"enabled"`
 	Source  string         `json:"source,omitempty"` // where the entry came from (cli/import/…)
+	// Trace records every JSON-RPC frame exchanged with this server to
+	// <data>/logs/server-<id>.log, which `agenthub server logs` reads back.
+	// Absent (false) is the default: payload capture is opt-in, per server.
+	//
+	// It is a CONNECTION-plane field, sitting beside Derive and Runtime, and
+	// deliberately NOT a profile or client field. One connection is shared by
+	// every session reaching this server (Derive "none"), so a per-client
+	// switch could not deliver what its name promises: it would have to split
+	// connections for the sake of a debugging feature, or record the frames
+	// of clients that never asked for it. An isolation a field cannot honor
+	// is refused here rather than approximated.
+	//
+	// The capture point is the downstream boundary, which is BEFORE leakguard
+	// redacts anything, so a trace holds raw results. That is the cost of
+	// turning it on, and the reason it stays off until someone says otherwise.
+	Trace bool `json:"trace,omitempty"`
 }
 
 // Provenance values of ServerEntry.Provenance.

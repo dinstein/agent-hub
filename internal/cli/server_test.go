@@ -421,3 +421,59 @@ func TestServerAddOAuthFlagsRejectStdin(t *testing.T) {
 		t.Fatalf("exit = %d, want %d\n%s", code, ExitUsage, out)
 	}
 }
+
+// The trace switch round-trips through the CLI, and the listing surfaces it.
+// A trace writes raw downstream payloads to disk, so "I forgot it was on"
+// has to be answerable from the listing an operator already reads.
+func TestServerTraceRoundTrip(t *testing.T) {
+	setDataDir(t)
+	mustRun(t, "", "server", "add", "fake", "--cmd", "fake-mcp")
+
+	// Off by default, and the column is absent while nothing is traced.
+	out := mustRun(t, "", "server", "ls")
+	if strings.Contains(out, "TRACE") {
+		t.Errorf("the TRACE column is shown when nothing is traced:\n%s", out)
+	}
+
+	var row struct {
+		Trace bool   `json:"trace"`
+		Path  string `json:"path"`
+	}
+	decodeInto(t, mustRun(t, "", "server", "trace", "fake", "on", "--json"), &row)
+	if !row.Trace {
+		t.Error("trace on did not report the switch as on")
+	}
+	if !strings.HasSuffix(row.Path, "server-fake.log") {
+		t.Errorf("path = %q, want the per-server log the reader looks for", row.Path)
+	}
+
+	// Now it shows, so a forgotten trace is visible where servers are listed.
+	out = mustRun(t, "", "server", "ls")
+	if !strings.Contains(out, "TRACE") {
+		t.Errorf("a traced server does not show the TRACE column:\n%s", out)
+	}
+
+	decodeInto(t, mustRun(t, "", "server", "trace", "fake", "off", "--json"), &row)
+	if row.Trace {
+		t.Error("trace off did not report the switch as off")
+	}
+	if out = mustRun(t, "", "server", "ls"); strings.Contains(out, "TRACE") {
+		t.Errorf("the column outlived the last trace:\n%s", out)
+	}
+}
+
+// A misspelled state is a usage error, never a silent "off". Guessing here
+// would quietly leave a server untraced while the operator believes it is
+// recording, which is the one failure this command cannot afford.
+func TestServerTraceRejectsUnknownState(t *testing.T) {
+	setDataDir(t)
+	mustRun(t, "", "server", "add", "fake", "--cmd", "fake-mcp")
+	for _, bad := range []string{"true", "yes", "1", "ON"} {
+		if code, out, _ := runCLI(t, "", "server", "trace", "fake", bad); code != ExitUsage {
+			t.Errorf("state %q: exit = %d, want %d\n%s", bad, code, ExitUsage, out)
+		}
+	}
+	if code, out, _ := runCLI(t, "", "server", "trace", "ghost", "on"); code != ExitNotFound {
+		t.Errorf("tracing an unknown server: exit = %d, want %d\n%s", code, ExitNotFound, out)
+	}
+}
