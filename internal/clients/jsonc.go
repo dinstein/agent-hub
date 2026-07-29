@@ -480,50 +480,39 @@ func verifySplice(before, after []byte, section []string, changed []string) erro
 // holds nothing but those entries. A section that appeared with anything
 // else inside it is a change nobody asked for, and saying so here is what
 // stops "we created the object" from becoming a place to hide one.
+// The walk keeps the LEAF SECTION'S PARENT rather than only the leaf,
+// because dropping a created section whole means deleting a key out of the
+// object above it.
 func dropChanged(doc any, section, changed []string) error {
-	m, ok := doc.(map[string]any)
+	parent, ok := doc.(map[string]any)
 	if !ok {
 		return errors.New("clients: document root is not an object")
 	}
 	for i, key := range section {
-		next, found := m[key]
+		next, found := parent[key]
 		if !found {
-			return nil // absent here; the other side is checked below
+			return nil // absent on this side; the other side is checked too
 		}
-		child, ok := next.(map[string]any)
-		if !ok {
+		child, isObject := next.(map[string]any)
+		if !isObject {
 			return fmt.Errorf("clients: %q is not an object", key)
 		}
 		if i == len(section)-1 {
-			m = child
-			break
-		}
-		m = child
-	}
-	if len(section) > 0 {
-		// Walk again to the parent so a created section can be dropped whole.
-		parent, _ := doc.(map[string]any)
-		for _, key := range section[:len(section)-1] {
-			child, ok := parent[key].(map[string]any)
-			if !ok {
-				return nil
-			}
-			parent = child
-		}
-		leafKey := section[len(section)-1]
-		if leaf, ok := parent[leafKey].(map[string]any); ok {
 			for _, name := range changed {
-				delete(leaf, name)
+				delete(child, name)
 			}
-			if len(leaf) == 0 {
-				delete(parent, leafKey)
+			// Nothing but those entries was in it, so the section itself is
+			// something this edit created and has to take away again.
+			if len(child) == 0 {
+				delete(parent, key)
 			}
 			return nil
 		}
-		return nil
+		parent = child
 	}
+	// No section at all: the entries sit at the document root.
 	for _, name := range changed {
-		delete(m, name)
+		delete(parent, name)
 	}
 	return nil
 }
