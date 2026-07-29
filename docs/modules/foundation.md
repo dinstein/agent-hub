@@ -510,6 +510,13 @@ automatically.
 - `DockerVersion` and `StrayContainers` are doctor-facing probes: the first proves the daemon
   responds, the second lists any leftover containers by the `agenthub.managed=true` label (there
   shouldn't be any on the normal path — if there are, a gateway was `kill -9`ed).
+- **The unit tests here drive a shell stand-in for the docker CLI**, which pins the argv exactly but
+  can never prove a container ran. The one test that does is `TestDockerRuntimeDownstream` in
+  `test/e2e/`: it mounts the downstream binary at a path that exists ONLY inside the container, so a
+  regression that loses the runtime dimension and spawns on the host cannot answer at all. Verified
+  falsifiable — stubbing out the `spec.Docker != nil` branch in `dialStdio` fails it with
+  `fork/exec /opt/fakemcp: no such file or directory`. It skips itself when docker is absent or the
+  daemon does not answer, so it stays green on a machine without Docker.
 
 ### One diagram: two failure models
 

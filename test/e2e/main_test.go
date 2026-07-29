@@ -26,6 +26,10 @@ import (
 var (
 	agenthubBin string
 	fakemcpBin  string
+	// repoRootDir is the resolved repository root, kept for the cases that
+	// need to run `go build` again themselves (the docker case cross-builds
+	// the downstream for the container's architecture).
+	repoRootDir string
 )
 
 func TestMain(m *testing.M) {
@@ -38,6 +42,7 @@ func runMain(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "e2e: resolve repo root: %v\n", err)
 		return 1
 	}
+	repoRootDir = root
 	dir, err := os.MkdirTemp("", "agenthub-e2e-")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "e2e: temp dir: %v\n", err)

@@ -427,6 +427,12 @@ streamable-http 的 GET 通知流遇到同样情况则只是结束这条流（�
   再把它所在目录 prepend 进子进程 PATH（凭据 helper 就在它旁边）。
 - `DockerVersion` 与 `StrayContainers` 是 doctor 面的探针：前者证明 daemon 应答，
   后者按 `agenthub.managed=true` 标签列出所有残留容器（正常路径不该有，有就是网关被 kill -9 过）。
+- **这里的单测全部用一个 shell 假冒的 docker CLI**：argv 钉得很死，但永远证明不了容器真的跑起来了。
+  真正证明这件事的是 `test/e2e/` 的 `TestDockerRuntimeDownstream`——它把下游二进制挂在一个
+  **只在容器里存在**的路径上，所以一旦回归成宿主机 spawn，那个进程根本无法应答。
+  可证伪性已验证：把 `dialStdio` 里的 `spec.Docker != nil` 分支短路掉，它会以
+  `fork/exec /opt/fakemcp: no such file or directory` 失败。docker 缺失或 daemon 不应答时自动 skip，
+  所以没装 Docker 的机器上依然是绿的。
 
 ### 一张图：两种失败模型
 

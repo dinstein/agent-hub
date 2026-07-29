@@ -1,7 +1,9 @@
 package e2e_test
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,6 +90,123 @@ func TestRealNpxFilesystemServer(t *testing.T) {
 	}
 	t.Logf("fs__list_directory answered: %s", text)
 	c.close()
+}
+
+// TestDockerRuntimeDownstream is the container-isolation acceptance case:
+// a `runtime: docker` downstream spawned as a real container by a real
+// gateway, its tool called end to end.
+//
+// Every other docker test in the tree drives a shell stand-in for the docker
+// CLI, which pins the argv but can never prove a container ran. This one
+// closes that gap, and it is the regression test for a specific way the
+// feature can rot: if the connection layer ever loses the runtime dimension
+// again, the entry spawns ON THE HOST and the isolation is silently gone.
+//
+// That failure is caught structurally rather than by inspection. The
+// downstream binary is mounted at a path that exists ONLY inside the
+// container, so a host spawn cannot answer at all — a passing tool call is
+// itself the proof the container ran.
+func TestDockerRuntimeDownstream(t *testing.T) {
+	if os.Getenv("AGENTHUB_E2E_SKIP_DOCKER") == "1" {
+		t.Skip("AGENTHUB_E2E_SKIP_DOCKER=1")
+	}
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("docker not found in PATH")
+	}
+	// A daemon that does not answer is a skip, not a failure: the suite must
+	// stay green on a machine with the CLI but no running Docker.
+	arch, err := dockerServerArch(t)
+	if err != nil {
+		t.Skipf("docker daemon does not answer: %v", err)
+	}
+
+	// fakemcp is built for the CONTAINER's os/arch, not the host's: on macOS
+	// the daemon runs linux, so the host binary would not execute.
+	mountDir := t.TempDir()
+	guest := filepath.Join(mountDir, "fakemcp")
+	build := exec.Command("go", "build", "-o", guest, "./internal/testutil/fakemcp/cmd/fakemcp")
+	build.Dir = repoRootDir
+	build.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+arch, "CGO_ENABLED=0")
+	if combined, buildErr := build.CombinedOutput(); buildErr != nil {
+		t.Fatalf("cross-build fakemcp for linux/%s: %v\n%s", arch, buildErr, combined)
+	}
+
+	// Pull up front so the image download cannot be mistaken for a slow
+	// handshake: after this, a downstream that does not appear is a bug and
+	// not a cold cache.
+	pull, cancelPull := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancelPull()
+	if combined, pullErr := exec.CommandContext(pull, "docker", "pull", dockerE2EImage).
+		CombinedOutput(); pullErr != nil {
+		t.Skipf("cannot pull %s (no registry access?): %v\n%s", dockerE2EImage, pullErr, combined)
+	}
+
+	dataDir := t.TempDir()
+	// alpine only has to provide a filesystem: fakemcp is static.
+	runAgenthub(t, dataDir, "", "server", "add", "boxed", "--json",
+		"--cmd", "/opt/fakemcp",
+		"--image", dockerE2EImage,
+		"--mount", guest+":/opt/fakemcp:ro")
+	enableServer(t, dataDir, "boxed")
+
+	c := startGateway(t, dataDir, "e2e-docker")
+	c.initialize()
+	// The image is pulled BEFORE the gateway starts (see above), so the
+	// generous npx-style budget is not needed here: a host-spawn regression
+	// fails immediately, and waiting two minutes to report it only makes the
+	// diagnosis slower.
+	c.waitForTool("boxed__echo", 60*time.Second)
+
+	res := c.callTool("boxed__echo", map[string]any{"marker": "docker-runtime-e2e"}, 60*time.Second)
+	text := c.textContent(res)
+	if !strings.Contains(text, "docker-runtime-e2e") {
+		c.fatalf("echo result does not contain the marker: %q", text)
+	}
+	t.Logf("boxed__echo answered from inside a container: %s", text)
+	c.close()
+
+	// --rm plus Close must leave nothing behind; a leak here is what
+	// `agenthub doctor` reports as a stray container.
+	if out := dockerManagedContainers(t); out != "" {
+		t.Errorf("managed containers outlived the gateway:\n%s", out)
+	}
+}
+
+// dockerE2EImage is the container the docker-runtime case runs in. It needs
+// nothing but a filesystem, because the downstream is a static binary
+// mounted in from the host.
+const dockerE2EImage = "alpine:3"
+
+// dockerServerArch returns the DAEMON's architecture (not the host's), which
+// is what the downstream binary must be built for.
+func dockerServerArch(t *testing.T) (string, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", "version", "--format", "{{.Server.Arch}}").Output()
+	if err != nil {
+		return "", err
+	}
+	arch := strings.TrimSpace(string(out))
+	if arch == "" {
+		return "", fmt.Errorf("empty server arch")
+	}
+	return arch, nil
+}
+
+// dockerManagedContainers lists the containers agenthub labels as its own.
+func dockerManagedContainers(t *testing.T) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", "ps", "-a",
+		"--filter", "label=agenthub.managed=true",
+		"--format", "{{.Names}}\t{{.Status}}").Output()
+	if err != nil {
+		t.Logf("docker ps: %v", err) // diagnosis only; not the assertion
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // TestClientConnectWritesConfig covers the CLI leg end to end with the real
