@@ -955,7 +955,8 @@ package's source.
 
 ### Invariants and failure directions
 
-**Compile-time constraint: `cmd/agenthub-gui` (including `services` and `internal/healthgen`) never imports `internal/*`**,
+**Compile-time constraint: `cmd/agenthub-gui` (including its own `services` and `internal/healthgen` subpackages) never
+imports the top-level `internal/*`**,
 and may only talk to the daemon through the public `api` package, exactly like any third-party integration. It also never
 reads or writes the data directory and never speaks MCP. The corollary is that **every single thing the GUI can do has a
 control plane endpoint, and is therefore something the CLI can do too** — so "the GUI is optional" is a compile-time property
@@ -1032,7 +1033,8 @@ Three ways to drive it: `Serve(ctx, in, out, errOut, script)` is the interpreter
 driver (a pair of OS pipes rather than `io.Pipe` — kernel buffering preserves the non-blocking best-effort writes of a real
 transport, such as a `notifications/cancelled` the server deliberately emits while sleeping); and `MaybeServe()` +
 `(*Script).StdioConfig()` is the subprocess driver, re-execing the current test binary. There is also a standalone
-`cmd/fakemcp` binary for spawn tests that want a dedicated executable rather than the TestMain re-entry pattern.
+`internal/testutil/fakemcp/cmd/fakemcp` binary for spawn tests that want a dedicated executable rather than the
+TestMain re-entry pattern.
 
 ### Invariants and failure directions
 

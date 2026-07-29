@@ -451,7 +451,8 @@ dev packages, which the Linux CI runner lacks. All Wails code sits behind `//go:
 separately with `make gui`.
 
 CI coverage comes in two layers. The untagged half (the `services` service body, the golden test in
-`internal/healthgen`) is already inside `make test`'s `go test ./...` and runs on both matrix legs; the
+`cmd/agenthub-gui/internal/healthgen`) is already inside `make test`'s `go test ./...` and runs on both
+matrix legs; the
 `wails`-tagged shell and the frontend are covered by a **separate `gui` job** (`make gui-frontend-ci` +
 `make gui-go` + `make gui-vet`), which runs on a macOS runner — on Linux, `-tags wails` fails in
 the cgo preamble (`pkg-config: gtk4 webkitgtk-6.0`) before even `go vet` can pass, whereas the macOS

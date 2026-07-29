@@ -830,8 +830,8 @@ JSON 模式下把这个值原样 marshal 成信封的 `data` 字段，人类模�
 
 ### 不变量与失败方向
 
-**编译期约束：`cmd/agenthub-gui`（含 `services`、`internal/healthgen`）绝不 import
-`internal/*`**，只能通过公共 `api` 包跟 daemon 说话，跟任何第三方集成一样。它也绝不读写数据
+**编译期约束：`cmd/agenthub-gui`（含它自己的 `services`、`internal/healthgen` 子包）绝不 import
+顶层的 `internal/*`**，只能通过公共 `api` 包跟 daemon 说话，跟任何第三方集成一样。它也绝不读写数据
 目录、绝不说 MCP。推论是**GUI 能做的每一件事都有控制面端点，也就都是 CLI 能做的事**——
 "GUI 可选"因此是编译期性质而非口头承诺。这条由 depguard 强制、由 `internal/depguardtest` 的
 两个失败用例（api 一个、gui 一个）证明。
@@ -904,8 +904,8 @@ CI 变红，而不是发出一个把未知状态渲染成空白的前端。
 三个驱动方式：`Serve(ctx, in, out, errOut, script)` 是解释器本体；`Connect(script)` 是进程内
 驱动（一对 OS 管道，不是 `io.Pipe`——内核缓冲能保住真实传输那种非阻塞尽力而为的写，比如服务器
 故意在睡觉时发出的 `notifications/cancelled`）；`MaybeServe()` + `(*Script).StdioConfig()`
-是子进程驱动，把当前测试二进制重新 exec 一遍。还有一个独立的 `cmd/fakemcp` 二进制，供那些想要
-专用可执行文件而非 TestMain 重入模式的 spawn 测试用。
+是子进程驱动，把当前测试二进制重新 exec 一遍。还有一个独立的 `internal/testutil/fakemcp/cmd/fakemcp`
+二进制，供那些想要专用可执行文件而非 TestMain 重入模式的 spawn 测试用。
 
 ### 不变量与失败方向
 

@@ -396,7 +396,7 @@ generation 单调计数 + 事件推送，mtime 不参与语义。
 GUI（`cmd/agenthub-gui`）默认**不参与**构建：链接 webview 需要 GTK/WebKit 开发包，
 Linux CI runner 上没有。Wails 代码全部在 `//go:build wails` 之后，用 `make gui` 单独构建。
 
-CI 覆盖分两层：不带标签的那一半（`services` 服务体、`internal/healthgen` 的 golden）
+CI 覆盖分两层：不带标签的那一半（`services` 服务体、`cmd/agenthub-gui/internal/healthgen` 的 golden）
 本来就在 `make test` 的 `go test ./...` 里，双矩阵都跑；带 `wails` 标签的壳与前端由
 **独立的 `gui` job** 覆盖（`make gui-frontend-ci` + `make gui-go` + `make gui-vet`），
 跑在 macos runner 上——Linux 上 `-tags wails` 会在 cgo 前导（`pkg-config: gtk4
