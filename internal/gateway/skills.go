@@ -133,6 +133,12 @@ func (g *gateway) downstreamDeps() downstream.Deps {
 		Log:            g.log,
 		Dial:           g.cfg.Dial,
 		ConnectTimeout: g.cfg.ConnectTimeout,
+		// Per server rather than one log on the shared Deps: a ServerLog
+		// carries the id it was opened with, so a single shared one would
+		// file every server's frames under whichever server opened it.
+		// traceLogs owns the id → log mapping and the registry-driven
+		// enabled state.
+		TraceFor: g.traces.logFor,
 		// Without a resolver every ${SECRET_X} placeholder is a dial error
 		// (downstream.ErrNoResolver, fail-closed) — which is exactly what
 		// used to happen here: the gateway is the path that serves real

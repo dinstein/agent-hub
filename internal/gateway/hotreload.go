@@ -69,6 +69,11 @@ func (g *gateway) onRegistryChange(kind registry.DocKind) {
 	}
 	adopted, aerr := g.applier.Apply(snap.Generation, func() error {
 		g.snap.Store(snap)
+		// Inside the apply, so the trace state and the config it came from
+		// can never disagree. It is what makes `server trace <id> on` reach
+		// a client that is already running: the flip is a change to the
+		// entry, not to the connection, so nothing reconnects.
+		g.traces.apply(snap)
 		return nil
 	})
 	if aerr != nil {

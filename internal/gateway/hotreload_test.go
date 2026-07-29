@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -355,4 +356,71 @@ func TestGovernanceBlockOnInjectionHotReload(t *testing.T) {
 	if strings.Contains(string(res.Content), "ignore all previous instructions") {
 		t.Fatal("hostile payload leaked through block mode")
 	}
+}
+
+// TestHotReloadServerTraceFlip: turning a server's trace on reaches a gateway
+// that is ALREADY RUNNING, without reconnecting it.
+//
+// The no-reconnect half is the point. Server.trace is captured once at
+// Connect, so the only way a later flip can take effect is if the connect
+// handed out a real (disabled) log to enable in place — which is why
+// traceLogs opens a log for every server rather than only for traced ones.
+// A test that merely checked "frames appear" would pass just as well against
+// an implementation that silently redialed, and redialing to start logging
+// would restart the very server being debugged.
+func TestHotReloadServerTraceFlip(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	resolver := testResolver(dir)
+	seedRegistry(t, resolver, "alpha")
+	dials := newDialCounter(scriptedDial(map[string]*fakemcp.Script{
+		"alpha": fakemcp.Minimal("echo"),
+	}))
+	_, c, _ := startGateway(t, Config{ClientID: "hot", Resolver: resolver, Dial: dials.fn})
+	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
+	waitForTools(t, c, "alpha__echo")
+
+	logsDir, err := resolver.LogsDir()
+	if err != nil {
+		t.Fatalf("LogsDir: %v", err)
+	}
+	path := downstream.ServerLogPath(logsDir, "alpha")
+
+	// Untraced: a call must leave nothing behind.
+	callToolOK(t, c, "alpha__echo")
+	if n := fileSize(t, path); n != 0 {
+		t.Fatalf("trace log holds %d bytes while tracing is off", n)
+	}
+
+	ext := externalRegistry(t, resolver)
+	updateRegistry(t, ext, func(tx *registry.Tx) {
+		doc := tx.Servers.V.Servers["alpha"]
+		doc.V.Trace = true
+		tx.Servers.V.Servers["alpha"] = doc
+	})
+
+	// The flip is observable only through what the next call records, so
+	// call until frames appear rather than guessing at the watch latency.
+	waitFor(t, "frames after the trace flip", func() bool {
+		callToolOK(t, c, "alpha__echo")
+		return fileSize(t, path) > 0
+	})
+
+	if got := dials.count("alpha"); got != 1 {
+		t.Errorf("alpha dialed %d times, want 1: enabling a trace must not reconnect the server", got)
+	}
+}
+
+// fileSize reports a file's size, treating "not created yet" as zero — the
+// writer only creates the file when it has something to write.
+func fileSize(t *testing.T, path string) int64 {
+	t.Helper()
+	fi, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return 0
+	}
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	return fi.Size()
 }

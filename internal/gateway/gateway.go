@@ -204,6 +204,10 @@ type gateway struct {
 	// savings appends the token-savings estimates (nil when the stream could
 	// not be opened; accounting never blocks serving).
 	savings *audit.SavingsStream
+	// traces owns the per-server JSON-RPC frame logs (trace.go). nil when
+	// the logs directory could not be resolved, which disables tracing and
+	// nothing else.
+	traces *traceLogs
 
 	// Quota plane (internal/ratelimit, ratelimit.go): rlStore owns the
 	// counter file SHARED with every other gateway process and the daemon;
@@ -349,6 +353,9 @@ func newGateway(cfg Config) (*gateway, error) {
 	}
 	g.roots = &clientRoots{g: g}
 	g.savings = openSavings(resolver, log)
+	// Before the pool: poolOptions closes over downstreamDeps, which reads
+	// g.traces to build TraceFor.
+	g.traces = newTraceLogs(resolver, log)
 	g.pool = downstream.NewPool(g.poolOptions())
 
 	// Tool cache first: it is what makes "answer before downstreams are
@@ -531,6 +538,10 @@ func (g *gateway) loadRegistry(resolver *platform.Resolver) (specs []downstream.
 	g.store = store
 	snap := store.Snapshot()
 	g.snap.Store(snap)
+	// Before connectAll, so a server whose entry says trace records its
+	// handshake too — the frames of a connection that fails to come up are
+	// the ones worth having.
+	g.traces.apply(snap)
 	g.applier.MarkApplied(snap.Generation)
 	specs = g.specsFromSnapshot(snap)
 	g.log.Info("registry loaded", logx.Rev(snap.Generation), "enabled_servers", len(specs))
@@ -634,6 +645,10 @@ func (g *gateway) shutdown() {
 	if g.savings != nil {
 		_ = g.savings.Close() // flushes queued records
 	}
+	// After the connections: a server closing may still emit frames, and a
+	// trace that stops one step early loses exactly the shutdown it was
+	// opened to explain.
+	g.traces.close()
 	if g.logClose != nil {
 		_ = g.logClose()
 	}
