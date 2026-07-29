@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -88,10 +89,8 @@ func goSources(t *testing.T, root string) map[string]string {
 			return err
 		}
 		if d.IsDir() {
-			for _, s := range skip {
-				if d.Name() == s {
-					return filepath.SkipDir
-				}
+			if slices.Contains(skip, d.Name()) {
+				return filepath.SkipDir
 			}
 			return nil
 		}
