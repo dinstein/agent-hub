@@ -451,11 +451,12 @@ func indentJSON(v any, indent string) (string, error) {
 //   - its comments are byte-identical, which is the thing the whole "do not
 //     rewrite what you cannot round-trip" rule was protecting.
 func verifySplice(before, after []byte, section []string, changed []string) error {
-	var b, a any
-	if err := json.Unmarshal(blankJSONC(before), &b); err != nil {
+	b, err := decodeExact(blankJSONC(before))
+	if err != nil {
 		return fmt.Errorf("clients: the document was not parseable to begin with: %w", err)
 	}
-	if err := json.Unmarshal(blankJSONC(after), &a); err != nil {
+	a, err := decodeExact(blankJSONC(after))
+	if err != nil {
 		return fmt.Errorf("clients: the edit did not produce a parseable document: %w", err)
 	}
 	if err := dropChanged(b, section, changed); err != nil {
@@ -471,6 +472,41 @@ func verifySplice(before, after []byte, section []string, changed []string) erro
 		return errors.New("clients: the edit did not preserve the file's comments")
 	}
 	return nil
+}
+
+// decodeExact parses a document for COMPARISON, keeping every number as the
+// digits that were written.
+//
+// The default `any` decoding turns numbers into float64, and that is the
+// wrong tool for proving two documents are the same in two separate ways.
+//
+// It rounds, so distinct values collide: 10000000000000000001 and
+// 10000000000000000002 both become 1e19, and an edit that changed one into
+// the other would pass a check whose entire job is to notice. Nothing in a
+// settings file is likely to be that number — but "unlikely" is not the
+// standard a verification step gets held to, because it is the only thing
+// standing between a locator bug and the user's file.
+//
+// And it OVERFLOWS, so a document agenthub can read becomes one it refuses
+// to write: read() keeps values as json.RawMessage and never looks inside a
+// number, so a value beyond float64's range parses there and then failed
+// here, costing the user a refusal on a file that was fine. A fuzz run found
+// that one; testdata carries the input.
+//
+// json.Number is exactly the middle ground: no arithmetic, no rounding, and
+// two numbers are equal when they were written the same way.
+func decodeExact(data []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, err
+	}
+	// A second value after the first is trailing junk, not a document.
+	if dec.More() {
+		return nil, errors.New("trailing data after the top-level value")
+	}
+	return v, nil
 }
 
 // dropChanged removes the entries an edit was allowed to touch, so that what

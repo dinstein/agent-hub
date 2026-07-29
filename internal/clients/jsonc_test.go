@@ -81,3 +81,46 @@ func TestBlankJSONCLeavesStringsAlone(t *testing.T) {
 		t.Errorf("length changed: %d -> %d", len(src), len(out))
 	}
 }
+
+// TestVerifySpliceComparesNumbersExactly guards the two ways float64 was the
+// wrong tool for proving two documents are the same.
+//
+// The collision half is the one that matters: the check exists to notice an
+// edit that touched something it should not have, and under float64 two
+// distinct integers become the same value, so the corruption it was built to
+// catch would have compared equal. The overflow half is milder — a document
+// read() accepts becoming one the writer refuses — but it is what a fuzz run
+// actually found, and testdata carries the input.
+func TestVerifySpliceComparesNumbersExactly(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a changed value that rounds the same is still a change", func(t *testing.T) {
+		// Both of these are 1e19 as a float64.
+		before := []byte(`{"mcpServers": {}, "other": 10000000000000000001}`)
+		after := []byte(`{"mcpServers": {"agenthub": {"command": "x"}}, "other": 10000000000000000002}`)
+		if err := verifySplice(before, after, []string{"mcpServers"}, []string{"agenthub"}); err == nil {
+			t.Error("an edit that rewrote a foreign number was accepted because it rounds the same")
+		}
+	})
+
+	t.Run("a number beyond float64 is not a reason to refuse", func(t *testing.T) {
+		big := strings.Repeat("9", 400)
+		before := []byte(`{"mcpServers": {}, "other": ` + big + `}`)
+		after, err := spliceEntry(before, []string{"mcpServers"}, "agenthub",
+			map[string]any{"command": "x"})
+		if err != nil {
+			t.Fatalf("splice: %v", err)
+		}
+		if err := verifySplice(before, after, []string{"mcpServers"}, []string{"agenthub"}); err != nil {
+			t.Errorf("a correct splice was refused over a number nobody edited: %v", err)
+		}
+	})
+
+	t.Run("an untouched big number still compares equal to itself", func(t *testing.T) {
+		big := strings.Repeat("7", 400)
+		doc := []byte(`{"mcpServers": {"agenthub": {"command": "x"}}, "other": ` + big + `}`)
+		if err := verifySplice(doc, doc, []string{"mcpServers"}, []string{"agenthub"}); err != nil {
+			t.Errorf("a document compared unequal to itself: %v", err)
+		}
+	})
+}
