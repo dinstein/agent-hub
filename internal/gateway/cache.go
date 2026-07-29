@@ -236,6 +236,12 @@ func (c *toolCache) loadEntries() map[string]ToolCacheEntry {
 
 // write atomically persists one server's tool list. It returns
 // errCacheSealed, having written nothing, once the gateway has shut down.
+//
+// The ladder deliberately stops at rename: no fsync of the file, and none of
+// the parent directory. A reader still sees either the old entry or the whole
+// new one, which is all the atomicity a cache owes; durability it does not,
+// because an entry lost to a crash costs one re-fetch from the downstream, and
+// two fsyncs per server on every tools/list is the wrong price for that.
 func (c *toolCache) write(serverID string, tools []mcp.ToolDef) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

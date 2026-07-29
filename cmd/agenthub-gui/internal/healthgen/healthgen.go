@@ -209,6 +209,11 @@ func Generate(apiDir string) ([]byte, error) {
 // directories as needed. The write is atomic (temp file in the destination
 // directory, then rename) so an interrupted run never leaves a half-written
 // file that the frontend build would happily compile.
+//
+// It stops there — no fsync of the file or of the parent directory. Durability
+// is not a property a generated file needs: the output is reproduced by `make
+// generate` from the api package, so the answer to losing it in a crash is to
+// run the generator again.
 func WriteFile(apiDir, out string) error {
 	data, err := Generate(apiDir)
 	if err != nil {
