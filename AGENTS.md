@@ -130,9 +130,22 @@ what the failures look like, and what the correct behavior is.
   git worktree remove ../agent-hub-<topic> && git branch -d <topic>
   ```
 
-- **`make ci-full` runs after the rebase, not before it.** A rebase replays your commits onto code you
-  have never tested against, so a green run on the old base says nothing about the tree that is about
-  to land. This is the whole cost of the rebase rule, and skipping it is how `main` goes red.
+- **`make ci-full` runs after the rebase, not before it, and after `go clean -testcache`.** A rebase
+  replays your commits onto code you have never tested against, so a green run on the old base says
+  nothing about the tree that is about to land. This is the whole cost of the rebase rule, and
+  skipping it is how `main` goes red.
+
+  The cache defeats that rule silently, which is why the clean is part of it. `test/e2e` builds the
+  binary under test inside `TestMain`, so a change to `cmd/agenthub` on the new base is not part of
+  the key Go caches the result under: the suite reports `ok (cached)` for a tree it never ran
+  against. A landing run that prints `(cached)` on most packages has verified almost nothing —
+  count the lines if you are unsure:
+
+  ```bash
+  go clean -testcache
+  XDG_RUNTIME_DIR=/tmp/fake-xdg-e2e make ci-full 2>&1 | tee ci.log
+  grep -c '(cached)' ci.log        # want 0 on a landing run
+  ```
 - **`--ff-only` is the enforcement, not a formality.** If it refuses, either the rebase did not happen
   or `origin/main` moved again — rebase again. Never reach for a plain `git merge` to get past it.
 - Pull with `git pull --rebase` so an out-of-date `main` does not grow a merge commit of its own.
