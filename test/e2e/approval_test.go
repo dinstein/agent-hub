@@ -79,6 +79,7 @@ func setupHITL(t *testing.T) *hitlEnv {
 		t.Fatal(err)
 	}
 	runAgenthub(t, dataDir, "", "server", "add", "fake", "--cmd", fakemcpBin, "--args", scriptPath)
+	enableServer(t, dataDir, "fake")
 
 	h := &hitlEnv{dataDir: dataDir, socket: socket, env: env}
 	runAgenthubEnv(t, env, "", "daemon", "start")

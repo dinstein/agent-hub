@@ -85,10 +85,17 @@ type AddedServers struct {
 	Added []ServerRow `json:"added"`
 }
 
-// Human renders one "added:" line per entry (docs/modules/controlplane.md example).
+// Human renders one "added:" line per entry (docs/modules/controlplane.md example),
+// then names the step that puts the server into service. An entry nobody is
+// told to enable is indistinguishable from one that was never added.
 func (a AddedServers) Human(w io.Writer) error {
 	for _, r := range a.Added {
-		if _, err := fmt.Fprintf(w, "added: %s (%s, source=%s)\n", r.ID, r.Transport, r.Source); err != nil {
+		if _, err := fmt.Fprintf(w, "added: %s (%s, source=%s, disabled)\n", r.ID, r.Transport, r.Source); err != nil {
+			return err
+		}
+	}
+	for _, r := range a.Added {
+		if _, err := fmt.Fprintf(w, "next: agenthub server enable %s\n", r.ID); err != nil {
 			return err
 		}
 	}
@@ -136,10 +143,30 @@ func (a *App) newServerAddCmd() *cobra.Command {
 		docker       dockerFlags
 		oauth        oauthFlags
 	)
+	// `add` writes the definition and nothing else: no connection, no probe,
+	// no enable. The entry lands DISABLED and `server enable` is the second,
+	// separate step (which is where the probe lives).
+	//
+	// Two operations rather than one because they answer different
+	// questions. `add` records what a server IS — pure configuration, no
+	// network, deterministic, safe to script against a downstream that is
+	// currently unreachable. `enable` declares the operator wants to USE it,
+	// which is the only point at which "can we actually reach it?" is worth
+	// asking. Folding the two together made `enabled` mean both "the user
+	// wants this" and "it answered a probe", and a downstream that was
+	// merely deploying at add time then looked like a server that had never
+	// been added.
+	//
+	// Callers that want the one-shot experience compose the two: the GUI
+	// does exactly that, and `catalog add` names the enable in its
+	// NextSteps. Composition belongs to the caller; the primitives stay
+	// separate.
 	cmd := &cobra.Command{
 		Use:   "add [<name>]",
-		Short: "Add a downstream MCP server (flags or pasted JSON via --stdin)",
-		Args:  rangeArgs(0, 1),
+		Short: "Add a downstream MCP server, disabled (flags or pasted JSON via --stdin)",
+		Long: "Writes the server definition only — no connection is made and the entry is left DISABLED.\n" +
+			"Run 'agenthub server enable <id>' to probe it and put it into service.",
+		Args: rangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := ""
 			if len(args) == 1 {
@@ -333,7 +360,10 @@ func entryFromFlags(cmd *cobra.Command, f addFlags) (registry.ServerEntry, error
 		}
 	}
 
-	entry := registry.ServerEntry{Transport: kind, Enabled: true, Source: sourceManual}
+	// Enabled is false: `add` writes configuration and touches nothing else
+	// (see the newServerAddCmd header). `server enable` is the step that
+	// probes and puts the server into service.
+	entry := registry.ServerEntry{Transport: kind, Enabled: false, Source: sourceManual}
 	// Login hints are transport-independent — attached before the transport
 	// split so an stdio entry that proxies to a remote authorization server
 	// keeps them too, exactly like the pasted-JSON path does.
@@ -599,7 +629,9 @@ func normalizeStdin(data []byte, nameArg string) ([]namedEntry, error) {
 		case "streamable-http", "streamableHttp", "http-stream":
 			kind = registry.TransportHTTP
 		}
-		entry := registry.ServerEntry{Transport: kind, Enabled: true, Source: sourceManual}
+		// Enabled is false for the same reason as the flags path: `add` is
+		// configuration only, `enable` puts the server into service.
+		entry := registry.ServerEntry{Transport: kind, Enabled: false, Source: sourceManual}
 		// Login hints are transport-independent: carried over before the
 		// transport switch so an stdio entry that proxies to a remote AS
 		// keeps them too.

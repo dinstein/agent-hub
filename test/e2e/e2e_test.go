@@ -18,6 +18,7 @@ import (
 func TestFakeDownstreamRoundTrip(t *testing.T) {
 	dataDir := t.TempDir()
 	out, _ := runAgenthub(t, dataDir, "", "server", "add", "fake", "--cmd", fakemcpBin, "--json")
+	enableServer(t, dataDir, "fake")
 	if !strings.Contains(out, `"ok":true`) {
 		t.Fatalf("server add envelope: %s", out)
 	}
@@ -70,6 +71,7 @@ func TestRealNpxFilesystemServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	runAgenthub(t, dataDir, string(spec), "server", "add", "--stdin")
+	enableServer(t, dataDir, "fs")
 
 	c := startGateway(t, dataDir, "e2e-npx")
 	c.initialize()

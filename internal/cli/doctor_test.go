@@ -117,6 +117,9 @@ func TestDoctorJSONAfterWrite(t *testing.T) {
 	if code, _, _ := runCLI(t, "", "server", "add", "x", "--cmd", "foo"); code != ExitOK {
 		t.Fatalf("add failed")
 	}
+	if code, _, stderr := runCLI(t, "", "server", "enable", "x", "--no-probe"); code != ExitOK {
+		t.Fatalf("server enable: %s", stderr)
+	}
 	// The server points at a command that does not exist, so the handshake
 	// check fails on purpose: exit 1 with the report intact.
 	code, out, _ := runCLI(t, "", "doctor", "--json")
@@ -129,9 +132,12 @@ func TestDoctorJSONAfterWrite(t *testing.T) {
 	}
 	report := decodeDoctor(t, env)
 
+	// Two writes: `server add` records the definition and `server enable`
+	// puts it into service. They are separate operations and each bumps the
+	// generation.
 	meta := findCheck(t, report, "registry:meta")
-	if meta.Status != StatusOK || meta.Detail != "generation 1" {
-		t.Errorf("meta check = %+v, want ok / generation 1", meta)
+	if meta.Status != StatusOK || meta.Detail != "generation 2" {
+		t.Errorf("meta check = %+v, want ok / generation 2", meta)
 	}
 	if servers := findCheck(t, report, "registry:servers"); servers.Status != StatusOK {
 		t.Errorf("servers check = %+v", servers)
@@ -153,6 +159,9 @@ func TestDoctorDisabledServerIsNotProbed(t *testing.T) {
 	isolateHome(t)
 	if code, _, _ := runCLI(t, "", "server", "add", "x", "--cmd", "foo"); code != ExitOK {
 		t.Fatalf("add failed")
+	}
+	if code, _, stderr := runCLI(t, "", "server", "enable", "x", "--no-probe"); code != ExitOK {
+		t.Fatalf("server enable: %s", stderr)
 	}
 	if code, _, _ := runCLI(t, "", "server", "disable", "x"); code != ExitOK {
 		t.Fatalf("disable failed")
@@ -224,6 +233,9 @@ func TestDoctorColdCacheIsNotAFailure(t *testing.T) {
 	isolateHome(t)
 	if code, _, _ := runCLI(t, "", "server", "add", "x", "--cmd", "foo"); code != ExitOK {
 		t.Fatalf("add failed")
+	}
+	if code, _, stderr := runCLI(t, "", "server", "enable", "x", "--no-probe"); code != ExitOK {
+		t.Fatalf("server enable: %s", stderr)
 	}
 	cacheDir := filepath.Join(dir, "cache", "tools")
 	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
@@ -312,6 +324,9 @@ func TestDoctorHumanAndJSONSameSource(t *testing.T) {
 	isolateHome(t)
 	if code, _, _ := runCLI(t, "", "server", "add", "x", "--cmd", "foo"); code != ExitOK {
 		t.Fatalf("add failed")
+	}
+	if code, _, stderr := runCLI(t, "", "server", "enable", "x", "--no-probe"); code != ExitOK {
+		t.Fatalf("server enable: %s", stderr)
 	}
 	app := &App{
 		version:  "test",

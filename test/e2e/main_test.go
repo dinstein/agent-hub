@@ -99,6 +99,19 @@ func runAgenthub(t *testing.T, dataDir, stdin string, args ...string) (stdout, s
 	return runAgenthubEnv(t, testEnv(dataDir), stdin, args...)
 }
 
+// enableServer puts an added server into service. `server add` writes the
+// definition only and leaves the entry disabled, so every fixture that
+// expects its tools to show up needs this second step.
+//
+// --no-probe because these fixtures are not reachable until the gateway
+// spawns them: probing here would add a guaranteed-failing dial to every
+// setup. A test that means to exercise the probe calls `server enable`
+// itself.
+func enableServer(t *testing.T, dataDir, id string) {
+	t.Helper()
+	runAgenthub(t, dataDir, "", "server", "enable", id, "--no-probe")
+}
+
 // runAgenthubEnv is runAgenthub with an explicit child environment (tests
 // that pin AGENTHUB_SOCKET build it via testEnv + append).
 func runAgenthubEnv(t *testing.T, env []string, stdin string, args ...string) (stdout, stderr string) {

@@ -103,16 +103,16 @@ func runScriptThroughConfops(t *testing.T, dataDir string) {
 	_, err = confops.AddServer(ctx, st, confops.ServerSpec{ID: "github", Entry: registry.ServerEntry{
 		Transport: registry.TransportStdio,
 		Command:   "gh-mcp", Args: []string{"-y", "pkg"},
-		Env: map[string]string{"TOKEN": "${SECRET_GH}"}, Enabled: true, Source: sourceManual,
+		Env: map[string]string{"TOKEN": "${SECRET_GH}"}, Source: sourceManual,
 	}}, no)
 	must("add github", err)
 	_, err = confops.AddServer(ctx, st, confops.ServerSpec{ID: "linear", Entry: registry.ServerEntry{
-		Transport: registry.TransportStdio, Command: "linear-mcp", Enabled: true, Source: sourceManual,
+		Transport: registry.TransportStdio, Command: "linear-mcp", Source: sourceManual,
 	}}, no)
 	must("add linear", err)
 	_, err = confops.AddServer(ctx, st, confops.ServerSpec{ID: "remote", Entry: registry.ServerEntry{
 		Transport: registry.TransportHTTP, URL: "https://example.com/mcp",
-		Enabled: true, Source: sourceManual,
+		Source: sourceManual,
 	}}, no)
 	must("add remote", err)
 	_, err = confops.SetServerEnabled(ctx, st, "linear", false, no)

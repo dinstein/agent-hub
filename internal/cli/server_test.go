@@ -33,7 +33,7 @@ func TestServerRoundtrip(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("add exit = %d, stderr: %s", code, stderr)
 	}
-	if !strings.Contains(out, "added: github (stdio, source=manual)") {
+	if !strings.Contains(out, "added: github (stdio, source=manual, disabled)") {
 		t.Errorf("add output = %q", out)
 	}
 
@@ -58,7 +58,7 @@ func TestServerRoundtrip(t *testing.T) {
 	if r.ID != "github" || r.Transport != "stdio" || r.Command != "npx" ||
 		len(r.Args) != 2 || r.Args[0] != "-y" || r.Args[1] != "@modelcontextprotocol/server-github" ||
 		r.Env["GITHUB_TOKEN"] != "${SECRET_GITHUB_TOKEN}" || r.Env["LOG_LEVEL"] != "debug" ||
-		r.Cwd != "/tmp" || !r.Enabled || r.Source != "manual" {
+		r.Cwd != "/tmp" || r.Enabled || r.Source != "manual" {
 		t.Errorf("row = %+v", r)
 	}
 
@@ -155,8 +155,8 @@ func TestServerAddStdinWrapper(t *testing.T) {
 		t.Fatalf("exit = %d, stderr: %s", code, stderr)
 	}
 	// Deterministic (sorted) order.
-	if !strings.Contains(out, "added: gh (stdio, source=manual)") ||
-		!strings.Contains(out, "added: linear (stdio, source=manual)") {
+	if !strings.Contains(out, "added: gh (stdio, source=manual, disabled)") ||
+		!strings.Contains(out, "added: linear (stdio, source=manual, disabled)") {
 		t.Errorf("output = %q", out)
 	}
 
@@ -177,7 +177,7 @@ func TestServerAddStdinSingleEntry(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit = %d, stderr: %s", code, stderr)
 	}
-	if !strings.Contains(out, "added: xsrv (stdio, source=manual)") {
+	if !strings.Contains(out, "added: xsrv (stdio, source=manual, disabled)") {
 		t.Errorf("output = %q", out)
 	}
 }

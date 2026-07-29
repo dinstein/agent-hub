@@ -20,7 +20,9 @@ func TestProfileSwitchHotReload(t *testing.T) {
 	// Two downstream servers, one tool each, so a profile switch moves the
 	// visible surface in both directions.
 	runAgenthub(t, dataDir, "", "server", "add", "alpha", "--cmd", fakemcpBin, "--json")
+	enableServer(t, dataDir, "alpha")
 	runAgenthub(t, dataDir, "", "server", "add", "beta", "--cmd", fakemcpBin, "--json")
+	enableServer(t, dataDir, "beta")
 
 	runAgenthub(t, dataDir, "", "profile", "create", "onlyalpha", "--servers", "alpha")
 	runAgenthub(t, dataDir, "", "profile", "create", "onlybeta", "--servers", "beta")
@@ -82,7 +84,9 @@ func TestClientBindHotReload(t *testing.T) {
 	dataDir := t.TempDir()
 
 	runAgenthub(t, dataDir, "", "server", "add", "alpha", "--cmd", fakemcpBin, "--json")
+	enableServer(t, dataDir, "alpha")
 	runAgenthub(t, dataDir, "", "server", "add", "beta", "--cmd", fakemcpBin, "--json")
+	enableServer(t, dataDir, "beta")
 	runAgenthub(t, dataDir, "", "profile", "create", "onlyalpha", "--servers", "alpha")
 	runAgenthub(t, dataDir, "", "profile", "create", "onlybeta", "--servers", "beta")
 	runAgenthub(t, dataDir, "", "client", "bind", "boundclient", "onlyalpha")
@@ -110,6 +114,7 @@ func TestProfileToolSelectorHotReload(t *testing.T) {
 	script := filepath.Join(t.TempDir(), "two.json")
 	writeScript(t, script, "read_thing", "write_thing")
 	runAgenthub(t, dataDir, "", "server", "add", "alpha", "--cmd", fakemcpBin, "--args", script, "--json")
+	enableServer(t, dataDir, "alpha")
 
 	runAgenthub(t, dataDir, "", "profile", "create", "narrow", "--servers", "alpha")
 	runAgenthub(t, dataDir, "", "profile", "use", "narrow")

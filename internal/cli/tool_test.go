@@ -36,6 +36,10 @@ func seedCatalog(t *testing.T) string {
 	dir := setDataDir(t)
 	runCLI(t, "", "server", "add", "fs", "--cmd", "fs-server")
 	runCLI(t, "", "server", "add", "git", "--cmd", "git-server")
+	// `add` records the definition; `enable` is what puts a server into the
+	// catalog a client sees.
+	runCLI(t, "", "server", "enable", "fs", "--no-probe")
+	runCLI(t, "", "server", "enable", "git", "--no-probe")
 
 	seedToolCache(t, dir, "fs", []map[string]any{
 		{"name": "read_file", "description": "Read a file from disk and return its contents.",

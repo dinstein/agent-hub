@@ -217,6 +217,9 @@ func TestToolQuarantine(t *testing.T) {
 func TestServerEnableDisableAndInspect(t *testing.T) {
 	dir := setDataDir(t)
 	mustRun(t, "", "server", "add", "github", "--cmd", "gh-mcp", "--env", "TOKEN=${GITHUB_TOKEN}")
+	// `add` leaves the entry disabled; this test is about the toggle, so put
+	// it into service first and let disable be the state change it asserts.
+	mustRun(t, "", "server", "enable", "github", "--no-probe")
 	seedGovCache(t, dir, "github", toolDef("list_prs", "List pull requests"))
 
 	var toggle ServerToggle
@@ -229,8 +232,10 @@ func TestServerEnableDisableAndInspect(t *testing.T) {
 	if again.Changed {
 		t.Errorf("re-disabling reported a change: %+v", again)
 	}
+	// --no-probe: this asserts the toggle, not the reachability check, and
+	// the probe emits NDJSON progress lines ahead of the result envelope.
 	var back ServerToggle
-	decodeInto(t, mustRun(t, "", "server", "enable", "github", "--json"), &back)
+	decodeInto(t, mustRun(t, "", "server", "enable", "github", "--json", "--no-probe"), &back)
 	if !back.Enabled || !back.Changed {
 		t.Errorf("enable = %+v", back)
 	}

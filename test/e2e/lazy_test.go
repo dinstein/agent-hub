@@ -45,6 +45,7 @@ func writeGovernance(t *testing.T, dataDir string, doc map[string]any) {
 func TestLazyDiscoveryFullChain(t *testing.T) {
 	dataDir := t.TempDir()
 	out, _ := runAgenthub(t, dataDir, "", "server", "add", "fake", "--cmd", fakemcpBin, "--json")
+	enableServer(t, dataDir, "fake")
 	if !strings.Contains(out, `"ok":true`) {
 		t.Fatalf("server add envelope: %s", out)
 	}

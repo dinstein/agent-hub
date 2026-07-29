@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,9 +10,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dinstein/agent-hub/internal/cli/output"
 	"github.com/dinstein/agent-hub/internal/confops"
+	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/gateway"
 	"github.com/dinstein/agent-hub/internal/mcp"
+	"github.com/dinstein/agent-hub/internal/mcp/transport"
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
@@ -31,20 +35,50 @@ type ServerToggle struct {
 	ID      string `json:"id"`
 	Enabled bool   `json:"enabled"`
 	Changed bool   `json:"changed"`
+	// Probe is the `enable` reachability check. Absent on disable, on
+	// --no-probe, and for entries the CLI cannot dial (docker). It is
+	// descriptive only: the enable happened regardless of what it says.
+	Probe *ProbeResult `json:"probe,omitempty"`
 }
 
-// Human renders the toggle.
+// ProbeResult is one connection attempt made on behalf of `server enable`.
+// Reachable and NeedsAuth are distinct because they call for different
+// next steps, and neither is an error: the server IS enabled either way.
+type ProbeResult struct {
+	Reachable bool `json:"reachable"`
+	// NeedsAuth is a live 401, never configuration (the same distinction
+	// ServerRow documents about its own absent NeedsAuth field).
+	NeedsAuth bool   `json:"needsAuth,omitempty"`
+	Tools     int    `json:"tools,omitempty"`
+	Detail    string `json:"detail,omitempty"`
+}
+
+// Human renders the toggle, then whatever the probe found.
 func (t ServerToggle) Human(w io.Writer) error {
 	state := "disabled"
 	if t.Enabled {
 		state = "enabled"
 	}
 	if !t.Changed {
-		_, err := fmt.Fprintf(w, "%s already %s\n", t.ID, state)
+		if _, err := fmt.Fprintf(w, "%s already %s\n", t.ID, state); err != nil {
+			return err
+		}
+	} else if _, err := fmt.Fprintf(w, "%s: %s\n", t.ID, state); err != nil {
 		return err
 	}
-	_, err := fmt.Fprintf(w, "%s: %s\n", t.ID, state)
-	return err
+	switch {
+	case t.Probe == nil:
+		return nil
+	case t.Probe.Reachable:
+		_, err := fmt.Fprintf(w, "  reachable, %d tool(s)\n", t.Probe.Tools)
+		return err
+	case t.Probe.NeedsAuth:
+		_, err := fmt.Fprintf(w, "  needs authorization: run 'agenthub auth login %s'\n", t.ID)
+		return err
+	default:
+		_, err := fmt.Fprintf(w, "  not reachable right now: %s\n", oneLine(t.Probe.Detail, descriptionColumnBytes))
+		return err
+	}
 }
 
 // ServerInspect is the `server inspect` result.
@@ -136,12 +170,21 @@ func (i ServerInspect) Human(w io.Writer) error {
 }
 
 // newServerToggleCmd builds `server enable` / `server disable`.
+//
+// `enable` is where the connection probe lives, because it is the step that
+// declares the operator wants to USE the server (`add` only records what it
+// is). The probe REPORTS, it does not veto: the enable is what was asked
+// for and it always happens. A server that needs a login is enabled and
+// says so — refusing would strand an entry the user explicitly enabled, and
+// a downstream that is merely down right now must not become a
+// configuration change.
 func (a *App) newServerToggleCmd(enable bool) *cobra.Command {
 	verb, short := "disable", "Disable a server globally (removes it from every profile's effective set)"
 	if enable {
-		verb, short = "enable", "Enable a server globally"
+		verb, short = "enable", "Enable a server globally (probes it and reports what it needs)"
 	}
-	return &cobra.Command{
+	var noProbe bool
+	cmd := &cobra.Command{
 		Use:   verb + " <id>",
 		Short: short,
 		Args:  exactArgs(1),
@@ -156,9 +199,61 @@ func (a *App) newServerToggleCmd(enable bool) *cobra.Command {
 			if err != nil {
 				return opsError(err)
 			}
-			return a.printer().Emit(ServerToggle{ID: id, Enabled: enable, Changed: res.Changed}, warnings...)
+			out := ServerToggle{ID: id, Enabled: enable, Changed: res.Changed}
+			if enable && !noProbe {
+				out.Probe = a.probeForEnable(cmd.Context(), id, a.printer())
+			}
+			return a.printer().Emit(out, warnings...)
 		},
 	}
+	if enable {
+		cmd.Flags().BoolVar(&noProbe, "no-probe", false,
+			"enable without connecting first (skips the reachability and login check)")
+	}
+	return cmd
+}
+
+// probeForEnable connects to id once and classifies the outcome. It never
+// returns an error: every result is descriptive, because the enable it
+// accompanies has already happened.
+//
+// Docker entries are skipped rather than guessed at — the CLI has no
+// container probe wired (errDockerProbeUnwired), and reporting "unreachable"
+// for something never dialed would be a lie.
+func (a *App) probeForEnable(ctx context.Context, id string, p *output.Printer) *ProbeResult {
+	entry, _, err := a.serverEntry(id)
+	if err != nil || entry.IsDocker() {
+		return nil
+	}
+	spec, err := downstream.SpecFromEntry(id, entry)
+	if err != nil {
+		return nil
+	}
+	deps, err := a.newOAuthDeps(entry.Provenance == registry.ProvenanceLocal)
+	if err != nil {
+		return nil
+	}
+	ddeps := downstream.Deps{Secrets: deps.chain.Resolver()}
+	if spec.IsHTTP() {
+		ddeps.Auth = deps.tokenSource(id)
+	}
+	p.Progress(output.ProgressEvent{
+		Event:   "probing",
+		Message: fmt.Sprintf("checking %s…", id),
+		Fields:  map[string]any{"server": id},
+	})
+	srv, err := downstream.Connect(ctx, spec, ddeps)
+	if err == nil {
+		defer srv.Close()
+		return &ProbeResult{Reachable: true, Tools: len(srv.Tools())}
+	}
+	// By status, not by substring — the same reasoning as testConnectError:
+	// a proxy's 502 whose body quotes an upstream 401 must not be reported
+	// as "you need to log in".
+	if transport.IsAuthStatus(err) {
+		return &ProbeResult{NeedsAuth: true, Detail: err.Error()}
+	}
+	return &ProbeResult{Detail: err.Error()}
 }
 
 func (a *App) newServerInspectCmd() *cobra.Command {

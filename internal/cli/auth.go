@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dinstein/agent-hub/internal/cli/output"
+	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 	"github.com/dinstein/agent-hub/internal/registry"
 )
@@ -44,12 +45,54 @@ type AuthLoginResult struct {
 	// provider issued no expiry at all ("never expires", docs/modules/oauth.md).
 	ExpiresIn  int64 `json:"expiresIn"`
 	HasRefresh bool  `json:"hasRefreshToken"`
+	// Enabled reports whether this login also put a disabled server into
+	// service. False means it was already enabled, is not in the registry,
+	// or the enable failed (see warnings) — the credential is stored either
+	// way.
+	Enabled bool `json:"enabled"`
 }
 
 // Human renders the login confirmation.
 func (r AuthLoginResult) Human(w io.Writer) error {
-	_, err := fmt.Fprintf(w, "authenticated: %s (%s)%s\n", r.Server, r.Mode, expiryPhrase(r.ExpiresAt, r.ExpiresIn))
-	return err
+	if _, err := fmt.Fprintf(w, "authenticated: %s (%s)%s\n", r.Server, r.Mode, expiryPhrase(r.ExpiresAt, r.ExpiresIn)); err != nil {
+		return err
+	}
+	if r.Enabled {
+		_, err := fmt.Fprintf(w, "%s: enabled\n", r.Server)
+		return err
+	}
+	return nil
+}
+
+// enableAfterLogin completes what `server add` deliberately left undone: the
+// entry was written disabled because no credential existed, and one now
+// does.
+//
+// Failure direction: FAIL-OPEN. The credential is already stored — the
+// irreversible half succeeded — so a failed enable is a warning, never a
+// failed login. An already-enabled server is left alone and reports false:
+// nothing changed.
+func (a *App) enableAfterLogin(ctx context.Context, serverID string) (bool, []string) {
+	store, warnings, err := a.opsStore()
+	if err != nil {
+		return false, append(warnings,
+			"credential stored, but the registry could not be reached to enable "+serverID+": "+err.Error())
+	}
+	doc, ok := store.Snapshot().Servers.V.Servers[serverID]
+	if !ok {
+		// Authorizing an id that is not in the registry is legitimate
+		// (--issuer against a bare name); there is nothing to enable.
+		return false, warnings
+	}
+	if doc.V.Enabled {
+		return false, warnings
+	}
+	if _, err := confops.SetServerEnabled(ctx, store, serverID, true, noPrecondition); err != nil {
+		return false, append(warnings,
+			"credential stored, but "+serverID+" is still disabled: "+err.Error()+
+				"; enable it with 'agenthub server enable "+serverID+"'")
+	}
+	return true, warnings
 }
 
 // AuthStatusRow is one server's authorization state.
@@ -249,6 +292,13 @@ func (a *App) newAuthLoginCmd() *cobra.Command {
 			if err != nil {
 				return authError(err)
 			}
+			// The credential now exists, which is the thing that was missing
+			// when `server add` left the entry disabled. Completing that
+			// second step here is why the two commands can stay separate
+			// without making the OAuth path a three-command ritual.
+			enabled, ewarn := a.enableAfterLogin(cmd.Context(), serverID)
+			warnings = append(warnings, ewarn...)
+
 			now := time.Now()
 			return p.Emit(AuthLoginResult{
 				Server:     serverID,
@@ -259,6 +309,7 @@ func (a *App) newAuthLoginCmd() *cobra.Command {
 				ExpiresAt:  res.State.ExpiresAt,
 				ExpiresIn:  secondsUntil(res.State.ExpiresAt, now),
 				HasRefresh: res.State.RefreshToken != "",
+				Enabled:    enabled,
 			}, warnings...)
 		},
 	}

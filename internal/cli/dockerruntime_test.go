@@ -333,6 +333,9 @@ func TestDoctorReportsDockerRuntimeHonestly(t *testing.T) {
 		"--cmd", "node", "--image", "alpine:3"); code != ExitOK {
 		t.Fatalf("add failed: %s", stderr)
 	}
+	if code, _, stderr := runCLI(t, "", "server", "enable", "boxed", "--no-probe"); code != ExitOK {
+		t.Fatalf("enable failed: %s", stderr)
+	}
 
 	code, out, _ := runCLI(t, "", "doctor", "--json")
 	if code != ExitOK {
@@ -363,6 +366,9 @@ func TestDoctorFailsAnInvalidDockerEntryOnDisk(t *testing.T) {
 	if code, _, stderr := runCLI(t, "", "server", "add", "boxed",
 		"--cmd", "node", "--image", "alpine:3"); code != ExitOK {
 		t.Fatalf("add failed: %s", stderr)
+	}
+	if code, _, stderr := runCLI(t, "", "server", "enable", "boxed", "--no-probe"); code != ExitOK {
+		t.Fatalf("enable failed: %s", stderr)
 	}
 
 	// Drop the image: "runtime: docker" with nothing to run is precisely the
