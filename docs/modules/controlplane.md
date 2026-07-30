@@ -13,8 +13,7 @@ plus peer credentials, with no tokens. `internal/confops` is **the only implemen
 writes**: the CLI and the control plane both call it, so there is exactly one copy of the rules.
 `internal/catalog` answers "what should I add next" — a curated catalog and paste parsing, both of
 which produce only **proposals** and never write to disk. `internal/daemon` does assembly only: it
-wires the registry, the event bus, the session manager, the approval broker, and the OAuth refresh
-coordinator into `ctlapi`, then writes the readiness handshake file `run/daemon.json`.
+wires the registry, the event bus, the session manager and the OAuth refresh coordinator into `ctlapi`, then writes the readiness handshake file `run/daemon.json`.
 `internal/httpbridge` is the other face — the data plane's MCP Streamable HTTP entry point plus the
 tiered agent token credential layer; it shares a process with the control plane but not its
 authentication model. `internal/cli` is the command tree and `internal/cli/output` is its only
@@ -29,13 +28,12 @@ processes.
 flowchart LR
     GUI["cmd/agenthub-gui<br/>services.Hub"] -->|"api only"| API["api<br/>DTO + Go client"]
     CLI["internal/cli"] --> API
-    CLI -->|"ctlapi wire format<br/>approvals / grants"| CTL
     API -->|"REST + SSE over UDS"| CTL["internal/ctlapi<br/>peer-cred auth"]
     CLI & CTL -->|"every semantic write"| OPS["internal/confops<br/>validate + semantics + write"]
     CAT["internal/catalog<br/>curated catalog / paste parsing"] -.->|"proposals, no disk writes"| OPS
     OPS --> REG
     CTL --> DAEMON["internal/daemon<br/>assembly + daemon.json"]
-    DAEMON --> REG["registry / event / session<br/>approval / audit / oauthflow"]
+    DAEMON --> REG["registry / event / session<br/>oauthflow"]
     AGENT["remote agent"] -->|"MCP Streamable HTTP<br/>Bearer agt_…"| HB["internal/httpbridge"]
     HB -->|"CallerTier"| PIPE["internal/pipeline"]
 ```
@@ -60,7 +58,7 @@ integrations talk to the daemon through it.
 `Client` is the only entry point, constructed with `New(socketPath)`, `Default()`, or
 `DialOrStart(ctx)`. It swaps `http.Client`'s `DialContext` for a `unix` dialer and uses a fake host
 `http://agenthub` in URLs, since the hostname is never resolved. All capabilities hang off six typed
-services: `Servers`, `Sessions`, `Events`, `Approvals`, `Skills`, `Audit`. **There is no raw request
+services: `Servers`, `Sessions`, `Events`, `Skills`. **There is no raw request
 escape hatch** — deliberately: anything a frontend can do necessarily corresponds to an endpoint, and
 therefore is necessarily something the CLI can do too, so "the GUI is optional" is structural rather
 than a promise.
@@ -70,7 +68,7 @@ than a promise.
 process exits before becoming ready, what is returned is its real error plus a tail of stderr, not a
 "timeout" — a lesson taken from the reference implementation `desktop.rs`.
 
-`Health`, `Server`, `SessionInfo`, `Event`, and `Approval` are DTOs; `Error`/`ErrorBody` are errors;
+`Health`, `Server`, `SessionInfo` and `Event` are DTOs; `Error`/`ErrorBody` are errors;
 `ComputeHealth`'s input constants (`HealthLevel*`, `AdminState*`, `Action*`) are frozen here, and the
 GUI's TypeScript constants are generated from this package's source by `healthgen`.
 
@@ -90,12 +88,9 @@ status code < 400, `data` non-empty and decodable into the target. Failing any o
 success. Server error bodies are passed through verbatim, never rewritten.
 
 **`X-Request-Id` is generated per request** (overridable with `WithRequestID` to propagate across
-processes), echoed on the response, carried into error bodies, and recorded in audit, so
-`Error.RequestID` can be fed straight into `agenthub audit tail --request-id`.
+processes), echoed on the response and carried into error bodies, so one id follows a failure across
+every surface that reports it.
 
-**Approval arguments have a hard line.** `Approval.Args` appears only on SSE `pending` frames; the REST
-list always strips it, and audit records only ever carry `ArgsHash`. Frontends display them and drop
-them: no persistence, no logging.
 
 **Only `DecisionApproved` permits execution.** Empty, unknown, and any other decision are all
 rejections.
@@ -107,7 +102,7 @@ which a goroutine maintains it: any stream error triggers exponential-backoff re
 means "the subscription ended". A single frame that fails JSON parsing is skipped rather than fatal —
 the stream is still usable, and consumers were always going to realign by re-reading state.
 
-**The forward contract.** `AuditService.Tail`'s `/v1/audit` has landed; `SkillsService.List`'s
+**The forward contract.** `SkillsService.List`'s
 `/v1/skills` **still does not exist** (there is no such entry in `ctlapi`'s route table). Calls get
 `E_NOT_FOUND`, and frontends should render that as "unavailable on this daemon" rather than an error.
 The Activity view's live data comes from the `activity` SSE topic; tail is only backfill.
@@ -120,16 +115,14 @@ the end of the stream is discarded and never delivered as a truncated event.
 
 ## internal/ctlapi
 
-**Responsibility in one sentence**: the control plane server — expose the daemon's state and governance
-actions over REST + SSE on a Unix domain socket only this user can connect to, and record every write
-in audit.
+**Responsibility in one sentence**: the control plane server — expose the daemon's state and the
+configuration write surface over REST + SSE on a Unix domain socket only this user can connect to.
 
 ### Key types and entry points
 
 `Listen(socketPath)` handles binding and authentication, `NewServer(Options)` handles assembly, and
 `Serve/Shutdown/Close` handle the lifecycle. In `Options`, `Registry`, `Sessions`, and `Bus` are
-required and the rest have defaults; a nil `Audit` disables auditing (tests only — the daemon must wire
-it), and a nil `Approvals` makes every approval endpoint return 404.
+required and the rest have defaults.
 
 Routing is a **hand-written switch**, not `http.ServeMux`. The reason is in the comment on `route`:
 ServeMux emits its own 405s and 301s, and the shape of those responses leaks whether a route exists;
@@ -137,13 +130,12 @@ hand-written dispatch makes every miss — unknown path, wrong method, unknown r
 same `writeNotFound`.
 
 `ComputeHealth(HealthInput) api.Health` is the pure function behind the Health display contract.
-`gatewayLink` implements `session.ControlLink` and is the overlay push channel to stdio gateways.
-`grantManager` is the volatile table of human authorizations.
+`gatewayLink` implements `session.ControlLink` and is the notification channel to stdio gateways.
 
 ### The routing surface
 
 The naming convention is `/v1/<resource>`, with the last path segment being the id; everything passes
-through the X-Request-Id middleware, audit (`actor="gui"|"cli"`), and the unified 404. Write endpoints
+through the X-Request-Id middleware and the unified 404. Write endpoints
 all accept a `Precondition` and return **409 + the current generation** on conflict. The route table
 itself is in `server.go` (`grep '"/v1/'` is authoritative).
 
@@ -155,11 +147,8 @@ there is no value field; it isn't "left blank", it **doesn't exist in the type**
 **An agent token's plaintext appears exactly once** (in the creation response); every read thereafter
 gives only the prefix and metadata.
 
-**Dangerous operations must be distinguishable.** Deleting a server or clearing a scope binding are
-recoverable routine operations and need only a confirmation; but **loosening a governance switch**
-(`denyDestructive` from true to false, turning off `blockOnInjection`) must be called out separately with
-its consequences spelled out — those switches merge under "tighten only", and this is the only place
-that can loosen them.
+**Dangerous operations must be distinguishable.** Deleting a server or clearing a client's binding are
+recoverable routine operations and need only a confirmation.
 
 **No polling after a write.** A write bumps the generation, the watcher publishes an event on the bus,
 and the control plane pushes it to the frontend over SSE. A frontend's own writes travel the same loop,
@@ -230,10 +219,10 @@ it has (mid-SSE-stream, say), `panic(http.ErrAbortHandler)` and drop the connect
 half a body, which would parse as a truncated success.
 
 **The 404 text is unified and frozen byte for byte.** `notFoundMessage = "not found"`, and unknown routes,
-unknown sessions, unknown tokens, and unknown grants all share one `(code, message, hint)`, differing only in
+unknown sessions and unknown tokens all share one `(code, message, hint)`, differing only in
 request id. Tests assert it byte for byte.
 
-**Path matching runs on EscapedPath.** `sessionPathID`, `gatewayPath`, `approvalsToken`, and `grantsPathID` all
+**Path matching runs on EscapedPath.** `sessionPathID` and `gatewayPath` both
 do prefix/suffix matching on the escaped path first, reject segments containing `/`, and only then
 `PathUnescape` the single segment — so an id containing `%2F` cannot smuggle in extra path segments.
 
@@ -241,7 +230,7 @@ do prefix/suffix matching on the escaped path first, reject segments containing 
 
 ```mermaid
 flowchart TD
-    A["1. AdminState<br/>disabled / quarantined"] -->|"no hit"| B["2. missing secret"]
+    A["1. AdminState<br/>disabled"] -->|"no hit"| B["2. missing secret"]
     A -->|"hit"| A1["level=healthy<br/>(deliberately off ≠ broken)"]
     B -->|"no hit"| C["3. OAuth misconfiguration"]
     B -->|"hit"| B1["unhealthy + set_secret"]
@@ -260,10 +249,9 @@ flowchart TD
     G -->|"conn = unknown"| G2["healthy / \"not observed\"<br/>(nobody is watching, not nothing is wrong)"]
 ```
 
-Four points worth recording separately: `disabled`/`quarantined` **deliberately keep `level=healthy`** (turning
-something off on purpose is not a fault); quarantine **overrides the registry's enabled flag** inside
-`serverList`; and an unrecognized connection state **fails toward visibility** (report unhealthy + view_logs)
-rather than defaulting to healthy. The frontend only renders, and must not re-derive the state from other fields.
+Two points worth recording separately: `disabled` **deliberately keeps `level=healthy`** (turning something off on
+purpose is not a fault), and an unrecognized connection state **fails toward visibility** (report unhealthy +
+view_logs) rather than defaulting to healthy. The frontend only renders, and must not re-derive the state from other fields.
 
 The fourth is **the fork between `unknown` and `connected` on rung 7**. Once the state source was wired up,
 `unknown` acquired a precise meaning: **no gateway currently holds a connection to this server** (nobody is using
@@ -292,46 +280,15 @@ or with an unparseable id, gets **no history replay**; instead the server sends 
 stateful topic (servers, sessions), forcing the client to re-read. An unknown `?topics=` value is a client error
 and returns 400 outright — it never silently pushes nothing.
 
-**Subscribing to the approvals topic = registering as an approval frontend.** This bridge registers with the broker
-**before** writing response headers, so a subscriber that is already connected is never invisible to the broker's
-Unreachable determination. `pending` frames carry `ArgsJSON` — an authenticated socket is the only place argument
-bytes are allowed to flow; `GET /v1/approvals` list responses always strip it.
+**The gateway link is one-way.** It carries registry-change notifications to the gateway, which re-reads the
+registry itself rather than trusting the frame. There used to be an ack protocol here, because the daemon pushed
+authoritative scope overlays and could not record one the gateway had not applied; with nothing to push there is
+nothing to correlate, and `GatewayAck`, the pending table and the ack endpoint went with the overlays.
 
-**The gateway link is push-then-commit.** `gatewayLink.PushOverlay` enqueues the overlay frame and then **blocks
-waiting for an ack**: link closed, ctx ended, ack timeout, gateway nack — **every outcome except a positive ack
-returns an error**, so `SessionManager.Mutate` commits nothing. The daemon and the gateway cannot diverge. The link
-is single-use: a second attach returns 409, and re-registering yields a brand-new session. A session that hasn't
-attached a link within 30s of registering is declared dead by a watchdog and closed (stdio sessions are not TTL-
-reaped, otherwise a crash between register and link would leak a session forever). When the link drops, the session
-closes — the overlay's authority dies with the old identity.
-
-**The scope endpoint only narrows.** `handleSetScope` commits through `SessionManager.Mutate`, with the tightening
-check living in `internal/session`; any loosening (including a `Reset` that would undo an existing narrowing)
-returns 403 `E_TIGHTEN_ONLY`. `applyNarrow` by construction produces only narrowing edits, with `Mutate` as a second
-layer — **this function shapes, Mutate enforces**. The `Discovery` field lives in `ScopeNarrowWire` rather than the
-public `api.ScopeNarrow`, because it is an experience field rather than a narrowing and shouldn't be mixed into a
-DTO whose contract says "narrow-only"; an unknown discovery value is **rejected rather than silently ignored**
-(silently keeping the old value would leave the operator believing the override applied).
-
-**Grants are the only sanctioned loosening path, and they are volatile.** On approval, `handleGrantDecide` calls
-`Mutate` with `session.WithHumanGrant()`, and the grant flips to approved only after the commit succeeds; a failure
-keeps it pending (retryable) unless the session is already gone. `grantUndo` records exactly "what was added" and
-rolls back element by element at TTL expiry, and **the rollback path carries no human-grant flag** — so even a buggy
-undo can only tighten, never loosen. The whole table is purely in memory (`grantManager`) and vanishes on daemon
-restart: a resurrected loosening is a security incident. TTL is capped at 24h and defaults to 1h. `tools` must name
-tools explicitly, with no whole-server loosening — a whole-server grant would need "restore the previous selector"
-semantics, and that revert would race the agent's own narrowing, whereas element-level undo can be proven to only
-tighten.
-
-**First approval decision wins.** Latecomers get 409 `E_ALREADY_DECIDED` (the body says who decided first, which for
-a script is idempotence rather than failure); a timeout or a vanished asker is 410 `E_EXPIRED` (a late approval never
-executes); and a drifted tool definition is 409 `E_STALE`. A timeout **emits no resolved event** — the frontend holds
-the deadline and expires the card itself.
-
-**Every control plane write goes into audit.** Scope changes, session kills, gateway registration, approvals
-ask/decide, and grants request/decide/expire each get a record, all carrying a `RequestID`, with arguments appearing
-only as an `ArgsHash`. If hashing fails, the record is written with an `"unhashable"` marker rather than dropping the
-audit line.
+The link is single-use: a second attach returns 409, and re-registering yields a brand-new session. A session that
+hasn't attached a link within 30s of registering is declared dead by a watchdog and closed (stdio sessions are not
+TTL-reaped, otherwise a crash between register and link would leak a session forever). When the link drops, the
+session closes.
 
 ### The two faces of the handler set
 
@@ -339,7 +296,7 @@ audit line.
 the CLI calls `internal/confops` in-process, the GUI goes through these routes, and both land on the same
 implementation. `GET|PUT /v1/scope/{client}` handles a client's static binding — *which profile it is on*,
 the only thing a client entry holds — and **must not be confused with `POST /v1/sessions/{id}/scope`**,
-which changes one session's volatile overlay.
+which is read-only.
 
 `PUT /v1/scope/{client}` accepts a `profile` and nothing else, but the retired `servers` / `tools` /
 `discovery` fields are still **declared** on the wire type so that a request carrying one gets a **400
@@ -368,17 +325,16 @@ its error next to the locations that read fine, and forces the state to `denied`
 That listing also reports **both** every client agenthub knows about and the subset it will not write itself, and
 it reports them separately on purpose: the first is what answers "why is my client missing", so it cannot be
 filtered down — and a frontend given only that list labels it "writable", which is what the GUI did, above rows
-carrying their own read-only badge. `PATCH /v1/skills/{id}` exposes **only** the coarse library-level switch. `GET /v1/audit` and
-`GET /v1/security` exist so frontends can backfill the two governance streams — the GUI is not allowed to touch
-the data directory itself. `POST /v1/parse/client-config` is read-only (it produces an entry **preview**), which
-is why it is not audited.
+carrying their own read-only badge. `PATCH /v1/skills/{id}` exposes **only** the coarse library-level switch.
+`POST /v1/parse/client-config` is read-only: it produces an entry **preview** and writes nothing.
 
 ---
 
 ## internal/confops
 
 **Responsibility in one sentence**: the single implementation of **every semantic write** against the config
-registry — adding a server, renaming a profile, binding a client, flipping a governance switch, disabling a tool.
+registry — adding a server, renaming a profile, binding a client, flipping a governance value, setting a
+server's tool allow list.
 
 ### Why it exists
 
@@ -409,9 +365,8 @@ document just re-read from disk) → return a `Result` carrying the post-commit 
 comparing and writing. `Precondition{}` (generation 0) means no check, which is what the CLI's non-interactive path
 uses, so CLI behavior is unchanged.
 
-**Operations whose subject isn't the registry can only do weak checks.** The active-profile marker, integrity's two
-stores, and the tool override file each have their own lock, and the registry's generation can advance between
-comparison and write. `checkSnapshot` is therefore **advisory**: it catches "the operator's view is stale", not
+**Operations whose subject isn't the registry can only do weak checks.** Such a store has its own lock, and the
+registry's generation can advance between comparison and write. `checkSnapshot` is therefore **advisory**: it catches "the operator's view is stale", not
 "nothing moved under my feet". The difference is expressed in the types; don't treat them as the same guarantee.
 
 **Validation rejects rather than normalizes.** An unknown transport, an unknown runtime, an unparseable boolean —
@@ -491,34 +446,28 @@ that was alive at the moment of writing — this replaces the TOCTOU-prone "prob
 write goes through a temp file in the same directory + chmod 0600 + rename, so readers only ever see the old file or
 a complete new one.
 
-**Four dependencies, four failure directions, each with a reason.** A registry that won't open is fatal (the daemon
-*is* the coordination plane, unlike a gateway which can serve the data plane while impaired), but a document that was
-quarantined and self-healed is only a warning. An audit stream that won't open is fatal — **no audit, no daemon**. An
-approval allowlist that won't open only degrades: **a broker without an allowlist sends every gated call to a human,
-which is the safe direction**; conversely, refusing to start the broker would turn every gated call into an
-unapprovable Unreachable rejection. A JSON log file that won't open degrades to plain text — a daemon that can't write
-logs should still coordinate. A registry watch that can't be established also only degrades: external changes are seen
+**Dependencies, and the failure direction of each.** A registry that won't open is fatal (the daemon *is* the
+coordination plane, unlike a gateway which can serve the data plane while impaired), but a document that was
+quarantined and self-healed is only a warning. A JSON log file that won't open degrades to plain text — a daemon
+that can't write logs should still coordinate. A registry watch that can't be established also only degrades: external changes are seen
 on the next explicit reload.
 
 **Graceful shutdown has two phases.** After the ctx ends, first `srv.Shutdown(grace)` (stop accepting, drain in-flight
 requests), and once grace is spent, `srv.Close()` forcibly closes the rest — long-lived SSE links never drain on their
 own. Then cleanup: close the watcher, stop the background ctx, best-effort remove the socket, remove `daemon.json`.
-Internal goroutines (session reaper, watch pump, grant forget, refresher) run on a **separate background ctx** so they
+Internal goroutines (session reaper, watch pump, refresher) run on a **separate background ctx** so they
 survive the drain phase and stop only at cleanup.
 
 **The stdio gateway depends on nothing here.** The package comment states it outright: a dead daemon (even `kill -9`)
-costs only coordination — the session list, dynamic overlays, HITL, centralized refresh; the gateway falls back to
-static scope and re-registers with backoff.
+costs only coordination — the session list, the event stream, centralized refresh. A stdio gateway's scope comes
+entirely from the registry files, so a dead daemon changes nothing about what a client sees; the gateway simply
+re-registers with backoff.
 
 **The registry watch's adoption test is monotonic.** A watch event is only a notification; on receipt it re-`Reload`s
 and uses `registry.Applier` to decide adoption by "the generation I read ≥ the one I already applied", and only on
 adoption does it publish two things on the bus: `ctlapi.TopicRegistry` (forwarded to every gateway link) and
 `server.registry` (driving the frontend's `servers` topic, with the payload lazily rebuilt on the ctlapi side). A
 failed reload keeps the old snapshot.
-
-**Session-scoped remember grants die with the session.** `forgetSessionGrants` subscribes to `session.TopicClosed` and
-calls `broker.ForgetSession` the moment a session closes. Failure direction: forgetting too much only costs one extra
-approval.
 
 **Three decisions about proactive OAuth refresh** (the file comment gives the "seemingly more obvious wrong
 alternative" for each):
@@ -634,8 +583,8 @@ would let two concurrent `token create` calls both win. Write-back uses the full
 directory → chmod 0600 → write → fsync → rename → fsync parent directory. A missing file is an empty store (first run),
 but **a malformed file is an error**: silently treating a corrupt credential store as "no tokens" would make bind
 authorization fail open. `MaxTokens = 64` is not resource protection but governance protection — an unbounded credential
-list is a list nobody audits. Records are **retained** after revocation (the name stays taken and the row keeps appearing
-in `token ls`), so an operator reading an audit record can still resolve the name back to exactly one credential.
+list is a list nobody reads. Records are **retained** after revocation (the name stays taken and the row keeps
+appearing in `token ls`), so a name always resolves back to exactly one credential.
 
 **Session binding is fail-closed and validates the whole identity.** `Caller.Identity()` composes kind, token name, tier,
 allowlist, and profile into a fingerprint; a session freezes the fingerprint at creation and **compares the whole thing on
@@ -655,8 +604,8 @@ both failing is a hard error.
 
 **Tiers are only minted here, not enforced here.** `Caller.Tier` flows into `pipeline.CallRequest.CallerTier`, and the
 actual comparison (against the tier derived from tool annotations) happens in the token tier gate in `internal/pipeline` —
-the second of the defenses (scope → token tier → precheck → HITL). `Profile` is the **sixth constraint source** for the
-scope intersection (chapter 4 owns the other five).
+the second of the two defence lines (scope → token tier). `Profile` joins the scope intersection as an ordinary
+layer, and like every other layer it can only tighten.
 
 `AddrIsLoopback` is **exported** because the assembler needs the very same predicate to decide whether explicit
 remote confirmation is required — two implementations of "is this loopback" would eventually disagree, and the
@@ -703,7 +652,7 @@ human-facing hint all at once. The four constructors `Usagef`/`NotFoundf`/`Daemo
 categories in the frozen table. `silentExitError` is for commands that already rendered their result through the output
 layer (doctor's per-item status), preventing Main from printing a second error.
 
-`ctlClient` is raw control plane access, serving the two faces the typed `api` client doesn't cover (approvals, grants). It
+`ctlClient` is raw control plane access, for the faces the typed `api` client does not cover. It
 speaks the same envelope over the same UDS, but its wire DTOs come straight from `internal/ctlapi` — the CLI is inside the
 module and isn't constrained the way the public `api` package is.
 
@@ -719,8 +668,8 @@ module and isn't constrained the way the public `api` package is.
 | 3 | Resource not found | server/profile/secret/skill/session/tool |
 | 4 | Daemon offline but the command requires it | `DaemonDownf` |
 | 5 | Authentication/authorization failure | OAuth flows |
-| 6 | Rejected by governance policy | HITL deny, quarantine, `E_STALE` |
-| 7 | Lock contention timeout, or a state file corrupt and **unable to self-heal** | Any of the four locks with a timeout ladder — registry, integrity, skills, the HTTP-bridge token store (seven packages take a cross-process flock, but the other three cannot time out, so contention there never reaches a user this way); plus `registry.UnreadableError`, the integrity and skills corrupt-state paths, and `confops.KindState` |
+| 6 | Rejected by configuration | a call the effective scope does not permit, a credential tier that does not cover the tool |
+| 7 | Lock contention timeout, or a state file corrupt and **unable to self-heal** | The locks with a timeout ladder — registry, skills, the HTTP-bridge token store; plus `registry.UnreadableError`, the skills corrupt-state path, and `confops.KindState` |
 
 **"A cobra parse error = exit 2" is guaranteed by construction, not by convention.** The root sets
 `SetFlagErrorFunc`, funneling every flag parse error into `Usagef`; `exactArgs`/`noArgs`/`rangeArgs` are typed replacements
@@ -748,8 +697,8 @@ and unable to self-heal".
 
 **The command tree's shape is pinned by tests** (`tree_test.go`) rather than by review: every command in the tree must exist
 and be spelled consistently; resource groups must be **singular canonical name + plural cobra alias** (server/servers,
-profile/profiles, client/clients, session/sessions, tool/tools, skill/skills, secret/secrets, approval/approvals,
-grant/grants) and the alias must actually resolve; list subcommands are always called `ls` (`list`/`dump`/`ls-all` are all
+profile/profiles, client/clients, session/sessions, tool/tools, skill/skills, secret/secrets) and the alias must
+actually resolve; list subcommands are always called `ls` (`list`/`dump`/`ls-all` are all
 violations); and **every command must be able to take `--json`** (it is a persistent flag on the root, and what this test
 really asserts is that no command shadows or removes it). Action/streaming groups (daemon, auth, audit, activity,
 events, config, doctor, connect) keep their names and get no plural alias. There is no `scope` group: binding a
@@ -768,13 +717,8 @@ object that is never persisted), and offline is exit 4 rather **than** an invent
 online (the stream *is* the daemon), and offline is exit 4 rather than printing an empty stream that looks like "nothing
 happened". `audit tail -f` likewise: with no daemon no new records are being appended, and following would pretend to work
 forever. Conversely, `activity` is a pure read of an append-only file and **works offline** — the numbers describe things that
-already happened, and whether the daemon is up cannot change history; the `tool` group's governance actions are all offline-
-capable too, because "disable a suspicious server's tools without having to start it first" is the entire point of a kill
-switch.
-
-**Losing a race is not an error.** When `approval approve|deny` gets 409 `E_ALREADY_DECIDED` it returns **success**, marking
-only `AlreadyDecided: true` in the result (the idempotence contract); grants behave the same. `E_STALE` maps to exit 6
-(rejected by governance) and `E_EXPIRED` maps to exit 1.
+already happened, and whether the daemon is up cannot change history; `tool allow` is offline-capable too, because
+choosing what a server offers must not require starting it first.
 
 **Credentials are never printed, and that is guaranteed at the type level.** The `secret` group's result types **have no value
 field at all**, `ls` renders only key names and backends, and `auth status` reports only issuer/expiry/mode/whether a refresh
@@ -887,14 +831,6 @@ running doctor **afterward** to figure out where their config went is the reason
 files and points at `backups/` — reporting bad news without a next step is the same as not reporting it. It is completely silent
 when nothing has been set aside; the warning persists until the operator deals with the file, which is exactly what makes it
 actionable rather than long-term noise.
-
-**`approval watch` is a live approval frontend while it runs.** The moment it subscribes to the `approvals` topic, the broker's
-`FrontendCount` goes above 0, so gated calls reach a human rather than failing with Unreachable. It is line-oriented
-(`a <n> [session|forever]` / `d <n>` / `ls` / `q`), deliberately avoiding a raw terminal library. SSE reconnects replay the
-backlog, and `watchState.add` deduplicates by token to keep the numbering stable. EOF on stdin only stops the reader — a headless
-watch with no terminal (spawned specifically as an approval frontend) keeps its subscription. In `--json` mode it degenerates into
-a raw event stream (one JSON per line) with no envelope, because the envelope convention doesn't suit an unbounded interactive
-stream; scripts should make decisions with `approval approve|deny`.
 
 **`session ls -f` polls rather than using SSE**: the list is small, and polling won't quietly hang on a half-open stream the way a
 subscription can.
@@ -1068,9 +1004,6 @@ transport-level failure clears the client and makes the next call re-dial.
 per-server endpoint: the list payload and the `servers` SSE payload are the same bytes, so Health has exactly one source and
 no second endpoint that could drift.
 
-**The approval argument red line holds on this bridge too.** `pending` frames carry call arguments through the pump, **in
-memory only** — never logged, never persisted anywhere, and the frontend drops them once the card disappears.
-
 **The event bridge doesn't retry the inner layer.** The api client brings its own `Last-Event-ID` reconnection, so `pump`
 only needs to retry the initial `Subscribe`. `EventPrefix = "agenthub:"` namespaces every event sent to the webview, so page
 code cannot collide with Wails' own event names.
@@ -1204,8 +1137,11 @@ the outside.
 | `main_test.go` | Compiling the two binaries, constructing an isolated subprocess environment, CLI invocation helpers |
 | `e2e_test.go` | The full chain against the fake downstream (register → initialize → tools/list → tools/call → clean EOF); the real npx filesystem server (the acceptance criterion case) |
 | `mcpclient_test.go` | The hand-written stdio client, reverse RPC replies, retry semantics, stderr tail and SIGQUIT stack dumps |
-| `approval_test.go` | The M1-C approval loop: a real daemon + a real `approval watch` frontend + a real gateway; the call executes after approval, fails with the HITL gate code after denial, and **after `kill -9`ing the daemon, gated calls fail closed (`E_HITL_UNAVAILABLE`) while ungated calls keep working** |
-| `daemonrestart_test.go` | After a daemon restart the gateway re-registers on the 30s ladder and the overlay is discarded (volatility); self-skips under `-short` |
+| `daemonrestart_test.go` | A `kill -9`ed daemon leaves the data plane untouched; after a restart the gateway re-registers on the 30s ladder, and `session kill` proves the new registration is a live handle rather than a remembered row; self-skips under `-short` |
+| `serverlifecycle_test.go` | add → ls → inspect → enable (with the probe) → disable → rm, and an unreachable probe that reports rather than vetoes |
+| `serverlive_test.go` | `server trace` engaging and releasing under a client that is never restarted, frames carrying the call argument verbatim, and `server disable` withdrawing a tool from a live session |
+| `profile_test.go` | Membership edits moving a live surface in both directions, a rename repointing bindings, and a deleted profile failing closed to an empty scope rather than widening |
+| `clientwiring_test.go` | `client detect` stats while `client inspect` reads, connect/disconnect leaving a foreign MCP entry untouched, and `client unbind` widening what a live session sees |
 | `httpserver_test.go` | The full chain against a streamable-http downstream, the downstream seeing a bearer resolved from the vault, and **a loopback URL being rejected at add time without `--local` provenance** (the fail-closed half) |
 | `lazy_test.go` | The lazy mode acceptance path: the frozen meta-tool `tools/list`, a `search_tools` hit, the truncation trailer, savings.jsonl landing on disk |
 | `profilehotreload_test.go` | Switching the active profile under a live gateway: registry watch → snapshot swap → scope invalidation → `notifications/tools/list_changed`, with no restart |
