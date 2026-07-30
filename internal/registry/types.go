@@ -471,6 +471,14 @@ type GovernanceDoc struct {
 	// (true), false is an explicit opt-out into the compatibility shape for
 	// clients whose tool-allowlist UI cannot handle per-tool entries.
 	// Read it through IntentVariantsEnabled, never directly.
+	//
+	// NOT WIRED, IN BOTH DIRECTIONS. Nothing writes it — there is no
+	// `agenthub config` key and no control-plane route, so the only way to
+	// set it is editing governance.json by hand — and the stdio gateway
+	// never carries the resolved value into discovery.Options, so setting
+	// it changes nothing today. `internal/discovery` implements and tests
+	// the behaviour; only the assembly is missing (docs/architecture.md §8
+	// and the unwired-faces appendix in docs/modules/dataplane.md).
 	IntentVariants *bool `json:"intentVariants,omitempty"`
 	// RateLimits is the cooperative call quota rule set (internal/ratelimit).
 	// Absent = no quotas at all; the package is opt-in like every other M2
