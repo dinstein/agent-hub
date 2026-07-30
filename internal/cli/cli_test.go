@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dinstein/agent-hub/internal/platform"
 )
 
@@ -127,6 +129,13 @@ func TestUsageErrorsExit2(t *testing.T) {
 	}{
 		{"unknown command", []string{"bogus"}},
 		{"unknown subcommand", []string{"server", "bogus"}},
+		// Asking for HELP about a name that does not exist. cobra answers a
+		// help flag before RunE, so these used to print the group's page and
+		// exit 0 — the same answer a real subcommand gives, which is what made
+		// `secret get` look like a command that exists.
+		{"unknown subcommand with --help", []string{"secret", "get", "--help"}},
+		{"unknown subcommand with -h", []string{"server", "bogus", "-h"}},
+		{"unknown nested subcommand with --help", []string{"profile", "server", "bogus", "--help"}},
 		{"unknown flag", []string{"server", "ls", "--nope"}},
 		{"rm missing arg", []string{"server", "rm"}},
 		{"rm extra args", []string{"server", "rm", "a", "b"}},
@@ -193,5 +202,51 @@ func TestGroupAliases(t *testing.T) {
 	code, _, _ = runCLI(t, "", "clients", "connect", "claude-code", "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("clients connect exit = %d", code)
+	}
+}
+
+// TestHelpForEveryRealCommandStillExits0 is the other direction of the
+// unknown-subcommand-with-help refusal, and the one that matters more: the
+// check runs before cobra sees the args, so an over-broad version of it would
+// refuse `--help` on real commands — turning a fix for one misleading page
+// into a CLI whose help does not work.
+//
+// It walks the whole tree rather than sampling, because the failure would be
+// per-command: a group whose args are shaped unlike the others is exactly what
+// would slip through a handful of cases written by hand.
+func TestHelpForEveryRealCommandStillExits0(t *testing.T) {
+	setDataDir(t)
+	app := &App{version: "1.2.3-test"}
+	checked := 0
+	var walk func(cmd *cobra.Command, path []string)
+	walk = func(cmd *cobra.Command, path []string) {
+		if len(path) > 0 {
+			checked++
+			for _, flag := range []string{"--help", "-h"} {
+				args := append(append([]string{}, path...), flag)
+				code, out, stderr := runCLI(t, "", args...)
+				if code != ExitOK {
+					t.Errorf("agenthub %s: exit %d, want 0\nstderr: %s",
+						strings.Join(args, " "), code, stderr)
+				}
+				if !strings.Contains(out, "Usage:") {
+					t.Errorf("agenthub %s printed no usage block:\n%s",
+						strings.Join(args, " "), out)
+				}
+			}
+		}
+		for _, sub := range cmd.Commands() {
+			if sub.Name() == "help" {
+				continue // cobra's own, and it takes a command name as an arg
+			}
+			walk(sub, append(append([]string{}, path...), sub.Name()))
+		}
+	}
+	walk(app.newRoot(), nil)
+	// A walk that visited nothing passes every assertion inside it. The tree
+	// is ~90 commands; the floor only has to be high enough that an empty or
+	// top-level-only traversal cannot masquerade as a clean run.
+	if checked < 50 {
+		t.Fatalf("walked %d commands; the traversal is not reaching the tree", checked)
 	}
 }

@@ -724,6 +724,15 @@ for cobra's same-named validators; and every group uses `Args: cobra.ArbitraryAr
 subcommand name lands in a typed usage error rather than cobra's own untyped "unknown command". `SilenceUsage` and
 `SilenceErrors` are both on, because Main owns error reporting exclusively.
 
+`groupRunE` had one hole, and Main closes it before `Execute`. cobra answers a help flag *before* RunE, so
+`agenthub secret get --help` printed the `secret` group's page and exited 0 — the same answer a real subcommand
+gives, which is what made a nonexistent `secret get` look like one that exists (stored credential values have no
+read path at all, so that page contradicted a design rule rather than merely a fact).
+`helpForUnknownSubcommand` resolves the args with `root.Find` and refuses a leftover non-flag token on a command
+that HAS subcommands. It is scoped to exactly that hole — without a help flag RunE already answers, and a leaf
+command is entitled to positional args — and `TestHelpForEveryRealCommandStillExits0` walks the whole tree in the
+other direction, because a check running before cobra is one that could break `--help` everywhere.
+
 **"Already-healed quarantine" degrades to a warning and doesn't consume exit 7.** `splitQuarantine` separates
 `registry.UnreadableError` (a document that couldn't be read but was quarantined and reset to defaults, with the store still
 fully usable) out of the fatal errors and turns it into warnings on the success envelope. Exit 7 is reserved for "corrupt

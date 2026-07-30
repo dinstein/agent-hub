@@ -25,6 +25,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -114,7 +115,12 @@ func Main(opts Options) int {
 	root.SetOut(app.stdout)
 	root.SetErr(app.stderr)
 
-	err := root.ExecuteContext(context.Background())
+	// Before cobra gets to answer a help flag, because answering it is the
+	// bug (see helpForUnknownSubcommand).
+	err := helpForUnknownSubcommand(root, opts.Args)
+	if err == nil {
+		err = root.ExecuteContext(context.Background())
+	}
 	code := ExitCodeFor(err)
 	if err == nil {
 		return code
@@ -329,6 +335,47 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 	e := Usagef("unknown command %q for %q", args[0], cmd.CommandPath())
 	e.Hint = helpHint(cmd)
 	return e
+}
+
+// helpForUnknownSubcommand closes the one hole in "an unknown command is
+// exit 2", which is otherwise guaranteed by construction (groupRunE).
+//
+// `agenthub secret get` is refused, correctly. `agenthub secret get --help`
+// was not: cobra answers a help flag before RunE ever runs, so it printed the
+// `secret` group's help page and exited 0. Which is the worst possible answer,
+// because it is indistinguishable from the answer a REAL subcommand gives —
+// a reader checking whether `secret get` exists gets a help page and a zero
+// status, and concludes it does. It does not, and cannot: stored credential
+// values have no read path at all, by design. The one command that would have
+// contradicted that design was documented into existence by its own help.
+//
+// Scoped to exactly that hole. Without a help flag the RunE path already
+// answers, and a command with no subcommands is entitled to positional args —
+// only a group, asked for help about a name it does not have, is answered here.
+func helpForUnknownSubcommand(root *cobra.Command, args []string) error {
+	target, rest, err := root.Find(args)
+	if err != nil || target == nil || !target.HasSubCommands() {
+		return nil
+	}
+	if !slices.ContainsFunc(rest, isHelpFlag) {
+		return nil
+	}
+	for _, arg := range rest {
+		// A leftover non-flag token on a group can only be a name it does
+		// not have: had it been a subcommand, Find would have descended.
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		e := Usagef("unknown command %q for %q", arg, target.CommandPath())
+		e.Hint = helpHint(target)
+		return e
+	}
+	return nil
+}
+
+// isHelpFlag reports whether arg asks for help.
+func isHelpFlag(arg string) bool {
+	return arg == "-h" || arg == "--help" || strings.HasPrefix(arg, "--help=")
 }
 
 // helpHint is the standard hint attached to usage errors.

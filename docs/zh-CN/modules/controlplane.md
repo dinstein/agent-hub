@@ -633,6 +633,15 @@ Main 再打印第二遍错误。
 让未匹配的子命令名落进类型化的 usage 错误，而不是 cobra 自己那句无类型的 "unknown command"。
 `SilenceUsage`/`SilenceErrors` 都开着，因为 Main 独占错误报告。
 
+`groupRunE` 漏了一个口子，Main 在 `Execute` 之前把它堵上。cobra 在 RunE 之前就答复 help flag，
+于是 `agenthub secret get --help` 打印 `secret` 组的帮助页并退出 0——跟一个真实子命令给出的答复
+一模一样，这才让根本不存在的 `secret get` 看起来像存在（凭据值压根没有读取路径，所以那一页
+否定的是一条设计规则，而不只是一个事实）。`helpForUnknownSubcommand` 用 `root.Find` 解析参数，
+对**有子命令**的命令上残留的非 flag token 予以拒绝。它的作用范围就精确等于这个口子——没有
+help flag 时 RunE 本来就会答复，而叶子命令有权接收位置参数——另一个方向由
+`TestHelpForEveryRealCommandStillExits0` 遍历整棵树守住，因为一个跑在 cobra 之前的检查，
+是有能力把所有地方的 `--help` 一起弄坏的。
+
 **"已自愈的隔离"降级成 warning，不占用退出 7。** `splitQuarantine` 把
 `registry.UnreadableError`（文档读不了但已隔离 + 重置为默认，store 仍完全可用）从致命错误里
 分出来，变成成功信封上的 warnings。退出 7 留给"损坏且无法自愈"。
