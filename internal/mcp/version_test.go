@@ -43,6 +43,38 @@ func TestNegotiateVersion(t *testing.T) {
 	}
 }
 
+func TestNegotiateHighest(t *testing.T) {
+	tests := []struct {
+		name    string
+		server  []string
+		want    string
+		wantErr bool
+	}{
+		{name: "picks 2026 over 2025", server: []string{"2025-11-25", "2026-07-28"}, want: "2026-07-28"},
+		{name: "legacy only", server: []string{"2025-11-25"}, want: "2025-11-25"},
+		{name: "ignores unknown newer", server: []string{"2099-01-01", "2025-06-18"}, want: "2025-06-18"},
+		{name: "no overlap", server: []string{"2024-11-05", "2099-01-01"}, wantErr: true},
+		{name: "empty list", server: nil, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NegotiateHighest(tt.server)
+			if tt.wantErr {
+				if !errors.Is(err, ErrUnsupportedVersion) {
+					t.Fatalf("err = %v, want ErrUnsupportedVersion", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("negotiated %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestProtocolVersionConsistency checks that ProtocolVersion appears in
 // SupportedVersions and that NegotiateVersion accepts it.
 // SupportedVersions[0] is the highest version this facade supports, which

@@ -85,6 +85,192 @@ func TestInitializeNegotiation(t *testing.T) {
 	}
 }
 
+func TestHandshakeDiscover2026(t *testing.T) {
+	c, p := newPipeConn(t, mcp.MaxFrameSize)
+	paramsSeen := make(chan mcp.DiscoverParams, 1)
+	afterMethod := make(chan string, 1)
+	go func() {
+		req := p.nextRequest()
+		if req.Method != mcp.MethodDiscover {
+			p.t.Errorf("first request %q, want server/discover", req.Method)
+		}
+		var dp mcp.DiscoverParams
+		if err := json.Unmarshal(req.Params, &dp); err != nil {
+			p.t.Errorf("decode discover params: %v", err)
+		}
+		paramsSeen <- dp
+		result, _ := json.Marshal(mcp.DiscoverResult{
+			ResultType:       mcp.ResultTypeComplete,
+			ProtocolVersions: []string{"2026-07-28", "2025-11-25"},
+			Capabilities:     json.RawMessage(`{"tools":{"listChanged":true}}`),
+			ServerInfo:       mcp.Implementation{Name: "stub2026", Version: "1"},
+		})
+		p.writeFrame(mcp.NewResponse(req.ID, result))
+		// The stateless path must not send notifications/initialized: the
+		// next frame after the handshake has to be the follow-up request.
+		next := p.nextRequest()
+		afterMethod <- next.Method
+		p.writeFrame(mcp.NewResponse(next.ID, json.RawMessage(`{"tools":[]}`)))
+	}()
+
+	res, err := Handshake(testCtx(t), c, mcp.Implementation{Name: "agenthub", Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dp := <-paramsSeen
+	if dp.Meta == nil {
+		t.Fatal("discover request carried no _meta")
+	}
+	if dp.Meta.ProtocolVersion != mcp.Version2026 {
+		t.Fatalf("_meta protocolVersion %q, want %q", dp.Meta.ProtocolVersion, mcp.Version2026)
+	}
+	if dp.Meta.ClientInfo == nil || dp.Meta.ClientInfo.Name != "agenthub" {
+		t.Fatalf("_meta clientInfo %+v", dp.Meta.ClientInfo)
+	}
+	if res.Version != mcp.Version2026 {
+		t.Fatalf("negotiated %q, want %q", res.Version, mcp.Version2026)
+	}
+	if res.ServerInfo.Name != "stub2026" {
+		t.Fatalf("serverInfo %+v", res.ServerInfo)
+	}
+	if _, err := c.Call(testCtx(t), mcp.MethodToolsList, nil); err != nil {
+		t.Fatal(err)
+	}
+	if m := <-afterMethod; m != mcp.MethodToolsList {
+		t.Fatalf("frame after handshake was %q, want %q (stateless path must not send notifications/initialized)", m, mcp.MethodToolsList)
+	}
+}
+
+func TestHandshakeFallbackToInitialize(t *testing.T) {
+	tests := []struct {
+		name  string
+		reply func(p *fakePeer, req *mcp.Request)
+	}{
+		{name: "method not found", reply: func(p *fakePeer, req *mcp.Request) {
+			p.writeFrame(mcp.NewErrorResponse(req.ID, &mcp.Error{
+				Code: mcp.CodeMethodNotFound, Message: "method not found",
+			}))
+		}},
+		// Some pre-2026 servers reject any request before initialize with a
+		// generic error instead of method-not-found; any JSON-RPC error
+		// reply proves the server is alive and old.
+		{name: "pre-initialize rejection", reply: func(p *fakePeer, req *mcp.Request) {
+			p.writeFrame(mcp.NewErrorResponse(req.ID, &mcp.Error{
+				Code: mcp.CodeInvalidRequest, Message: "received request before initialization was complete",
+			}))
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, p := newPipeConn(t, mcp.MaxFrameSize)
+			gotInitialized := make(chan bool, 1)
+			go func() {
+				tt.reply(p, p.nextRequest())
+				req := p.nextRequest()
+				if req.Method != mcp.MethodInitialize {
+					p.t.Errorf("fallback request %q, want initialize", req.Method)
+				}
+				result, _ := json.Marshal(mcp.InitializeResult{
+					ProtocolVersion: mcp.Version2025,
+					Capabilities:    json.RawMessage(`{}`),
+					ServerInfo:      mcp.Implementation{Name: "legacy", Version: "0"},
+					Instructions:    "be nice",
+				})
+				p.writeFrame(mcp.NewResponse(req.ID, result))
+				n, ok := p.next().(*mcp.Notification)
+				gotInitialized <- ok && n.Method == mcp.NotificationInitialized
+			}()
+
+			res, err := Handshake(testCtx(t), c, mcp.Implementation{Name: "agenthub", Version: "test"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Version != mcp.Version2025 {
+				t.Fatalf("negotiated %q, want %q", res.Version, mcp.Version2025)
+			}
+			if res.ServerInfo.Name != "legacy" || res.Instructions != "be nice" {
+				t.Fatalf("result %+v", res)
+			}
+			if !<-gotInitialized {
+				t.Fatal("server never received notifications/initialized")
+			}
+		})
+	}
+}
+
+func TestHandshakeDiscoverNegotiatesLegacy(t *testing.T) {
+	// A server may implement server/discover yet only offer pre-2026
+	// versions; those still require the stateful initialize handshake.
+	c, p := newPipeConn(t, mcp.MaxFrameSize)
+	gotInitialized := make(chan bool, 1)
+	go func() {
+		req := p.nextRequest()
+		result, _ := json.Marshal(mcp.DiscoverResult{
+			ProtocolVersions: []string{"2025-11-25", "2025-06-18"},
+			ServerInfo:       mcp.Implementation{Name: "mixed", Version: "1"},
+		})
+		p.writeFrame(mcp.NewResponse(req.ID, result))
+		req = p.nextRequest()
+		if req.Method != mcp.MethodInitialize {
+			p.t.Errorf("second request %q, want initialize", req.Method)
+		}
+		initResult, _ := json.Marshal(mcp.InitializeResult{
+			ProtocolVersion: mcp.Version2025,
+			Capabilities:    json.RawMessage(`{}`),
+			ServerInfo:      mcp.Implementation{Name: "mixed", Version: "1"},
+		})
+		p.writeFrame(mcp.NewResponse(req.ID, initResult))
+		n, ok := p.next().(*mcp.Notification)
+		gotInitialized <- ok && n.Method == mcp.NotificationInitialized
+	}()
+
+	res, err := Handshake(testCtx(t), c, mcp.Implementation{Name: "agenthub", Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Version != mcp.Version2025 {
+		t.Fatalf("negotiated %q, want %q", res.Version, mcp.Version2025)
+	}
+	if !<-gotInitialized {
+		t.Fatal("server never received notifications/initialized")
+	}
+}
+
+func TestHandshakeDiscoverNoMutualVersion(t *testing.T) {
+	c, p := newPipeConn(t, mcp.MaxFrameSize)
+	go func() {
+		req := p.nextRequest()
+		result, _ := json.Marshal(mcp.DiscoverResult{
+			ProtocolVersions: []string{"2099-01-01"},
+			ServerInfo:       mcp.Implementation{Name: "future", Version: "9"},
+		})
+		p.writeFrame(mcp.NewResponse(req.ID, result))
+	}()
+	_, err := Handshake(testCtx(t), c, mcp.Implementation{Name: "agenthub", Version: "test"})
+	if !errors.Is(err, mcp.ErrUnsupportedVersion) {
+		t.Fatalf("err = %v, want ErrUnsupportedVersion", err)
+	}
+	var te *Error
+	if !errors.As(err, &te) || te.Class != ClassFatal {
+		t.Fatalf("err = %v, want ClassFatal (handshake failure must not trip the breaker)", err)
+	}
+}
+
+func TestHandshakeConnectionFailurePropagates(t *testing.T) {
+	// A dead connection is not an old server: no initialize fallback, the
+	// error must reach the circuit breaker unchanged.
+	c, p := newPipeConn(t, mcp.MaxFrameSize)
+	go func() {
+		p.nextRequest()
+		_ = p.w.Close() // connection drops before any reply
+	}()
+	_, err := Handshake(testCtx(t), c, mcp.Implementation{Name: "agenthub", Version: "test"})
+	var te *Error
+	if !errors.As(err, &te) || te.Class != ClassUnavailable {
+		t.Fatalf("err = %v, want ClassUnavailable", err)
+	}
+}
+
 func TestInitializeMalformedResult(t *testing.T) {
 	c, p := newPipeConn(t, mcp.MaxFrameSize)
 	go func() {

@@ -3,6 +3,7 @@ package mcp
 import (
 	"errors"
 	"fmt"
+	"slices"
 )
 
 // Named version constants. Use these in version-conditional code paths rather
@@ -49,4 +50,19 @@ func NegotiateVersion(serverVersion string) (string, error) {
 	}
 	return "", fmt.Errorf("%w: server offered %q, supported: %v",
 		ErrUnsupportedVersion, serverVersion, SupportedVersions)
+}
+
+// NegotiateHighest picks the newest version in SupportedVersions that the
+// server also advertises. It is the multi-version counterpart of
+// NegotiateVersion, used with the protocolVersions list a server/discover
+// result carries (MCP 2026-07-28). On failure the returned error satisfies
+// errors.Is(err, ErrUnsupportedVersion).
+func NegotiateHighest(serverVersions []string) (string, error) {
+	for _, v := range SupportedVersions {
+		if slices.Contains(serverVersions, v) {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("%w: server offered %v, supported: %v",
+		ErrUnsupportedVersion, serverVersions, SupportedVersions)
 }

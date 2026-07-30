@@ -211,8 +211,12 @@ type InputRequest struct {
 type InputResponses map[string]json.RawMessage
 
 // DiscoverParams is the "server/discover" request payload (MCP 2026-07-28).
-// Currently empty; reserved for future fields.
-type DiscoverParams struct{}
+// Meta carries the required per-request protocol metadata — discover is
+// itself a stateless request, so it declares the client's version and
+// capabilities like any other. No other fields exist yet.
+type DiscoverParams struct {
+	Meta *RequestMeta `json:"_meta,omitempty"`
+}
 
 // DiscoverResult is the "server/discover" response payload. It advertises
 // the server's supported protocol versions (newest first), capabilities, and
