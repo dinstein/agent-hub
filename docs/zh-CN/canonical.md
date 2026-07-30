@@ -84,7 +84,7 @@ github.com/dinstein/agent-hub
 │   └── testutil/fakemcp/    # 可编程 fake 下游（所有测试的地基）
 ├── test/e2e/                # 端到端回归：真实进程、真实 npx 下游
 ├── test/concurrency/        # 跨进程并发不变量
-├── test/buildrules/         # 证明 Makefile 自己的清单和代码树没有脱节
+├── test/buildrules/         # 证明 Go 构建之外的那些规则和代码树没有脱节
 └── go.mod
 ```
 

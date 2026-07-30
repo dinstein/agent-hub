@@ -108,11 +108,16 @@ $(block linux amd64)
 
   def caveats
     <<~EOS
-      Add a downstream MCP server, then point an AI client at the gateway
-      (that second step edits the client's own config, so look at it first):
+      Add a downstream MCP server, switch it on, then point an AI client at the
+      gateway (that last step edits the client's own config, so look at it first):
 
         agenthub server add linear --url https://mcp.linear.app/mcp
+        agenthub auth login linear     # signs in, and switches the server on
         agenthub server test linear
+
+      'add' only writes the definition down: the entry stays off until something
+      puts it into service. For a server that needs no account, that second line
+      is 'agenthub server enable <id>' instead of the login.
 
         agenthub client detect
         agenthub client connect claude-code --dry-run
