@@ -112,9 +112,13 @@ func (c *clientRoots) Cached() ([]mcp.Root, bool) {
 }
 
 // fetchFromClient performs the actual capability check and reverse RPC.
+// A stateless (2026-07-28) session is never asked, whatever its declared
+// capabilities: that protocol removed server-initiated requests, so a
+// roots/list sent to such a client is a wire error, not a question. Roots
+// for stateless sessions come from configuration alone.
 func (c *clientRoots) fetchFromClient(ctx context.Context) ([]mcp.Root, error) {
 	c.g.mu.Lock()
-	supported := c.g.clientCaps.Roots != nil
+	supported := c.g.clientCaps.Roots != nil && !c.g.stateless
 	c.g.mu.Unlock()
 	if !supported {
 		return nil, nil
