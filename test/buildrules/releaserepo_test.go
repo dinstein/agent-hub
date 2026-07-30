@@ -90,6 +90,72 @@ func TestReleaseWorkflowUploadsWhereTheFormulaPoints(t *testing.T) {
 	}
 }
 
+// TestBothReleasePathsSyncTheTapThroughOneScript keeps the tap's contents from
+// being decided twice.
+//
+// Two files go to the tap and they are not independent — the formula installs a
+// binary, the skill tells an AI client how to drive that binary — so which
+// files travel, and that they travel as one commit, is scripts/tap-sync.sh's
+// single answer. A caller that inlines its own `cp` instead still commits,
+// still pushes and still goes green; what it does is leave whichever file it
+// forgot at the previous release, and the tap then serves documentation for a
+// CLI it no longer installs.
+func TestBothReleasePathsSyncTheTapThroughOneScript(t *testing.T) {
+	root := repoRoot(t)
+
+	sync := filepath.Join(root, "scripts", "tap-sync.sh")
+	info, err := os.Stat(sync)
+	if err != nil {
+		t.Fatalf("scripts/tap-sync.sh: %v", err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Error("scripts/tap-sync.sh is not executable; both callers invoke it directly")
+	}
+
+	for _, caller := range []string{
+		filepath.Join(".github", "workflows", "release.yml"),
+		filepath.Join("scripts", "release-local.sh"),
+	} {
+		data, err := os.ReadFile(filepath.Join(root, caller))
+		if err != nil {
+			t.Fatalf("reading %s: %v", caller, err)
+		}
+		if !regexp.MustCompile(`tap-sync\.sh\s`).Match(data) {
+			t.Errorf("%s updates the tap without calling scripts/tap-sync.sh.\n"+
+				"The other release path does, so the two now disagree about which files "+
+				"reach the tap — and the one that was forgotten is invisible: the push "+
+				"succeeds and the stale copy stays.", caller)
+		}
+	}
+}
+
+// TestTheSkillTapSyncPublishesIsInTheTree pins the file tap-sync.sh reads.
+//
+// The skill used to be maintained in the tap and is now generated into it from
+// here, which means its absence is only discovered at the moment of a release —
+// after the artifacts are built and, in the workflow's ordering, after the
+// Release itself has been published. tap-sync.sh does fail hard on it rather
+// than shipping a stale copy, so the cost is a red job on an already-published
+// release; this check moves it to `make test`.
+//
+// The frontmatter half is not cosmetic: a SKILL.md whose first line is not
+// `---` has no frontmatter as far as a client's parser is concerned, and the
+// whole file silently stops being a skill.
+func TestTheSkillTapSyncPublishesIsInTheTree(t *testing.T) {
+	path := filepath.Join(repoRoot(t), "skills", "agenthub", "SKILL.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("skills/agenthub/SKILL.md: %v; scripts/tap-sync.sh reads it on every release", err)
+	}
+	if !regexp.MustCompile(`\A---\n`).Match(data) {
+		t.Error("skills/agenthub/SKILL.md does not open with YAML frontmatter; " +
+			"a client will not load it as a skill")
+	}
+	if !regexp.MustCompile(`(?m)^name:\s*\S`).Match(data) {
+		t.Error("skills/agenthub/SKILL.md declares no `name:` in its frontmatter")
+	}
+}
+
 // releaseWorkflow returns .github/workflows/release.yml with YAML comments
 // stripped, so prose about a setting is not mistaken for the setting.
 func releaseWorkflow(t *testing.T) []byte {

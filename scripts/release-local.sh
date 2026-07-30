@@ -14,8 +14,9 @@
 # WHY THIS EXISTS. The release workflow is the normal path and this is not a
 # replacement for it. It is the way to ship while GitHub Actions cannot run —
 # which is the situation this was written in. Both call
-# scripts/build-release-artifacts.sh, so the bytes are the same either way;
-# what differs is only who runs it.
+# scripts/build-release-artifacts.sh to produce the bytes and
+# scripts/tap-sync.sh to deliver the tap's files, so both the artifacts and the
+# tap commit are the same either way; what differs is only who runs it.
 #
 # WHAT IT NEEDS
 #   gh, authenticated with contents:write on the source repo and on the tap
@@ -94,7 +95,7 @@ if [ "$push" != "--push" ]; then
 	echo "would create release ${tag} on ${repo} with:"
 	find dist -maxdepth 1 \( -name '*.tar.gz' -o -name 'checksums-cli.txt' \) -exec echo '  {}' \;
 	if [ -n "$tap" ]; then
-		echo "would push Formula/agenthub.rb to ${tap}"
+		echo "would push Formula/agenthub.rb and skills/agenthub/SKILL.md to ${tap}"
 	else
 		echo "HOMEBREW_TAP_REPO unset: the tap step would be skipped"
 	fi
@@ -125,18 +126,9 @@ echo "==> updating the tap ${tap}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 gh repo clone "$tap" "$work/tap" -- --depth 1
-mkdir -p "$work/tap/Formula"
-cp dist/agenthub.rb "$work/tap/Formula/agenthub.rb"
-(
-	cd "$work/tap"
-	if git diff --quiet -- Formula/agenthub.rb; then
-		echo "formula already matches ${tag}; nothing to push"
-		exit 0
-	fi
-	git add Formula/agenthub.rb
-	git commit -m "agenthub ${tag}"
-	git push
-)
+# Which files go to the tap is decided in exactly one place, shared with the
+# release workflow — see the header of tap-sync.sh.
+scripts/tap-sync.sh "$work/tap" "$tag" dist/agenthub.rb
 
 echo
 echo "done. verify from a clean machine:"

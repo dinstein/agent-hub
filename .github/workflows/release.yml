@@ -175,7 +175,8 @@ jobs:
 
             Verify downloads against `checksums-*.txt`.
 
-  # Updates the Homebrew tap.
+  # Updates the Homebrew tap: the formula, and the skill that documents the CLI
+  # the formula installs.
   #
   # A separate job on purpose. By the time it runs the Release is complete and
   # correct; a tap push that fails must not retract or re-cut it. It goes red
@@ -219,16 +220,7 @@ jobs:
         run: |
           set -euo pipefail
           git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${TAP}.git" tap
-          mkdir -p tap/Formula
-          cp out/agenthub.rb tap/Formula/agenthub.rb
-          cd tap
-          # Re-running a release must not produce an empty commit.
-          if git diff --quiet -- Formula/agenthub.rb; then
-            echo "formula already matches ${GITHUB_REF_NAME}; nothing to push"
-            exit 0
-          fi
-          git config user.name "agenthub release"
-          git config user.email "noreply@github.com"
-          git add Formula/agenthub.rb
-          git commit -m "agenthub ${GITHUB_REF_NAME}"
-          git push
+          # Which files go to the tap, and that they arrive as one commit, is
+          # decided in one place shared with the local release path — see the
+          # header of scripts/tap-sync.sh.
+          scripts/tap-sync.sh tap "${GITHUB_REF_NAME}" out/agenthub.rb
