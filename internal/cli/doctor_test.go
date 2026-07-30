@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -149,6 +150,62 @@ func TestDoctorJSONAfterWrite(t *testing.T) {
 	srv := findCheck(t, report, "server:x")
 	if srv.Status != StatusFail || srv.Fix == "" {
 		t.Errorf("server:x = %+v, want fail with a suggested fix", srv)
+	}
+}
+
+// TestDoctorProbesEveryServerInSortedOrder covers the concurrent fan-out in
+// checkServers, which is invisible to every other doctor test: they configure
+// at most one server, and one goroutine cannot race, drop a result or reorder
+// anything.
+//
+// Two properties, and the second is the one worth the test. Completeness — a
+// slot left unwritten is a zero-valued DoctorCheck with an empty Name, so a
+// dropped result shows up as a missing `server:<id>` rather than as a wrong
+// status. And ORDER: results come back in whatever order the handshakes time
+// out in, and are placed by index precisely so the report does not reorder
+// between runs. Diffing today's doctor output against yesterday's is most of
+// what the command is for, and a report that shuffles its own lines makes that
+// useless while every individual line stays correct.
+//
+// Run under -race this also exercises the concurrent writes themselves; the
+// mixed enabled/disabled set matters there, because disabled entries fill
+// their slot on the calling goroutine while the others are in flight.
+func TestDoctorProbesEveryServerInSortedOrder(t *testing.T) {
+	setDataDir(t)
+	isolateHome(t)
+	// More entries than maxServerProbes, so the semaphore actually queues
+	// rather than letting every probe start at once.
+	ids := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"}
+	for i, id := range ids {
+		if code, _, stderr := runCLI(t, "", "server", "add", id, "--cmd", "no-such-binary-"+id); code != ExitOK {
+			t.Fatalf("server add %s: %s", id, stderr)
+		}
+		// Leave every third one disabled: those fill their slot without a
+		// goroutine, so the two paths have to agree on placement.
+		if i%3 == 2 {
+			continue
+		}
+		if code, _, stderr := runCLI(t, "", "server", "enable", id, "--no-probe"); code != ExitOK {
+			t.Fatalf("server enable %s: %s", id, stderr)
+		}
+	}
+
+	// Every enabled entry names a binary that does not exist, so each probe
+	// fails fast rather than sitting on handshakeTimeout — this stays a unit
+	// test, not an 88-second one.
+	_, out, _ := runCLI(t, "", "doctor", "--json")
+	report := decodeDoctor(t, decodeEnvelope(t, out))
+
+	var got []string
+	for _, c := range report.Checks {
+		if strings.HasPrefix(c.Name, "server:") {
+			got = append(got, strings.TrimPrefix(c.Name, "server:"))
+		}
+	}
+	if !slices.Equal(got, ids) {
+		t.Errorf("server checks = %v, want %v (sorted, one per configured server).\n"+
+			"A missing id means a result slot was never written; a reordered one means the "+
+			"report no longer diffs against a previous run.", got, ids)
 	}
 }
 

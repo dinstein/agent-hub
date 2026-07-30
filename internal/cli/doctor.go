@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -552,11 +553,37 @@ func (d *doctorRun) checkActiveProfile() {
 	d.add("active-profile", StatusOK, active)
 }
 
+// maxServerProbes bounds how many handshakes run at once.
+//
+// The probes are pure waiting — a spawned child or a socket — so the limit is
+// not about CPU. It is about what the probes DO: each stdio entry forks a
+// process (a container, for a docker entry), and a machine with thirty
+// servers configured must not have thirty subprocesses in flight because
+// somebody ran a diagnostic. Eight keeps the wall clock near one timeout for
+// any realistic registry while leaving the box usable.
+const maxServerProbes = 8
+
 // checkServers times a handshake against every ENABLED server.
 //
 // The cold-cache carve-out is the important part: a stdio server launched
 // through npx/uvx spends its first run downloading a package, and reporting
 // that as a broken server is the classic false positive.
+//
+// The probes run CONCURRENTLY, bounded by maxServerProbes. Each one is a real
+// handshake — spawn the child, initialize, list tools, close — capped at
+// handshakeTimeout, so a serial loop cost 8s per unreachable server and a
+// registry with five broken entries took most of a minute with the CPU idle.
+// Order is NOT the order they finish: every result is written to its own slot
+// in a pre-sized slice, indexed by position in the sorted id list, and only
+// appended to d.checks once they are all in. A report whose lines reorder
+// between runs cannot be diffed against the last one, which is most of what
+// people do with doctor output.
+//
+// This is also why checkOneServer RETURNS its check rather than calling
+// d.add: d.checks is an append-shared slice whose elements are handed out as
+// pointers, so concurrent adds would race on both the backing array and those
+// pointers. Keeping the concurrent phase free of d.add makes that
+// unrepresentable rather than merely avoided.
 func (d *doctorRun) checkServers(ctx context.Context) {
 	cached, cacheErr := gateway.LoadToolCache(d.app.resolver, nil)
 	if cacheErr != nil {
@@ -564,16 +591,33 @@ func (d *doctorRun) checkServers(ctx context.Context) {
 	}
 	cacheAge := d.app.toolCacheAge()
 
+	ids := sortedKeys(d.cfg.servers)
+	results := make([]DoctorCheck, len(ids))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxServerProbes)
 	enabled := 0
-	for _, id := range sortedKeys(d.cfg.servers) {
+	for i, id := range ids {
 		entry := d.cfg.servers[id].V
 		if !entry.Enabled {
-			d.add("server:"+id, StatusOK, "disabled (intentionally off is not broken)")
+			results[i] = DoctorCheck{
+				Name:   "server:" + id,
+				Status: StatusOK,
+				Detail: "disabled (intentionally off is not broken)",
+			}
 			continue
 		}
 		enabled++
-		d.checkOneServer(ctx, id, entry, cached[id], cacheAge)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			results[i] = d.checkOneServer(ctx, id, entry, cached[id], cacheAge)
+		}()
 	}
+	wg.Wait()
+	d.checks = append(d.checks, results...)
+
 	d.checkDockerRuntime(ctx)
 	if enabled == 0 {
 		d.add("servers", StatusWarn, "no enabled servers configured").Fix =
@@ -581,20 +625,26 @@ func (d *doctorRun) checkServers(ctx context.Context) {
 	}
 }
 
+// checkOneServer probes one server and RETURNS its check.
+//
+// Returning rather than calling d.add is what makes the fan-out in
+// checkServers safe: this runs on its own goroutine, and d.add both appends
+// to a shared slice and hands back a pointer into its backing array.
 func (d *doctorRun) checkOneServer(
 	ctx context.Context, id string, entry registry.ServerEntry,
 	cachedTools []mcp.ToolDef, cacheAge time.Duration,
-) {
-	name := "server:" + id
+) DoctorCheck {
+	c := DoctorCheck{Name: "server:" + id}
 	// A container entry is handshaked like any other (the dial spawns the
 	// container, not the host command), but an invalid `docker run` line is
 	// worth catching before the dial: the spawn failure it produces names the
 	// symptom, and this names the flag to fix.
 	if entry.IsDocker() {
 		if err := validateDockerEntry(id, entry); err != nil {
-			d.add(name, StatusFail, "docker runtime configuration is invalid: "+err.Error()).Fix =
-				"agenthub server rm " + id + "   (then re-add it with corrected --image/--mount flags)"
-			return
+			c.Status = StatusFail
+			c.Detail = "docker runtime configuration is invalid: " + err.Error()
+			c.Fix = "agenthub server rm " + id + "   (then re-add it with corrected --image/--mount flags)"
+			return c
 		}
 	}
 	start := time.Now()
@@ -602,20 +652,26 @@ func (d *doctorRun) checkOneServer(
 	elapsed := time.Since(start).Round(time.Millisecond)
 	switch {
 	case err == nil:
-		d.add(name, StatusOK, fmt.Sprintf("handshake %s in %s, %d tool(s)", protocol, elapsed, tools))
+		c.Status = StatusOK
+		c.Detail = fmt.Sprintf("handshake %s in %s, %d tool(s)", protocol, elapsed, tools)
 	case len(cachedTools) == 0 && cacheAge >= 0 && cacheAge < coldCacheGrace:
 		// Cold launcher cache: the package is most likely still downloading.
-		d.add(name, StatusWarn, fmt.Sprintf(
+		c.Status = StatusWarn
+		c.Detail = fmt.Sprintf(
 			"no handshake yet and the tool cache is still cold (%s old) — the launcher is probably still installing: %v",
-			cacheAge.Round(time.Second), err))
+			cacheAge.Round(time.Second), err)
 	case len(cachedTools) > 0:
-		d.add(name, StatusFail, fmt.Sprintf(
+		c.Status = StatusFail
+		c.Detail = fmt.Sprintf(
 			"handshake failed after %s (%d tool(s) cached from an earlier run): %v",
-			elapsed, len(cachedTools), err)).Fix = "agenthub server test " + id
+			elapsed, len(cachedTools), err)
+		c.Fix = "agenthub server test " + id
 	default:
-		d.add(name, StatusFail, fmt.Sprintf("handshake failed after %s: %v", elapsed, err)).Fix =
-			"agenthub server test " + id
+		c.Status = StatusFail
+		c.Detail = fmt.Sprintf("handshake failed after %s: %v", elapsed, err)
+		c.Fix = "agenthub server test " + id
 	}
+	return c
 }
 
 // checkDockerRuntime reports on the container runtime, but only when a
