@@ -1,13 +1,13 @@
 ---
 name: agenthub
-description: Drive the agenthub CLI to give an AI client MCP tools - add a server (curated catalog, pasted config, or by hand), store its credentials, run its OAuth login, test it for real, connect it to Claude Code / Cursor / Codex / VS Code / Zed, narrow what each client may see, and diagnose one a client cannot reach or that answers wrongly. Use whenever the task involves adding, authorizing, testing, wiring up, or troubleshooting an MCP server.
+description: Drive the agenthub CLI to give an AI client MCP tools - add a server (curated catalog, pasted config, or by hand), store its credentials, run its OAuth login, test it for real, connect it to Claude Code / Cursor / Codex / VS Code / Zed, narrow what each client may see, and diagnose the installation with doctor when a client cannot reach a server or it answers wrongly. Use whenever the task involves adding, authorizing, testing, wiring up, or troubleshooting an MCP server.
 ---
 
 # agenthub
 
 One gateway between every AI client and every MCP server. Wire a client up **once**; add, authorize, and narrow servers here afterwards without touching the client again.
 
-**Never guess a flag** — `agenthub <group> --help` decides. This file covers exactly what a release advertises: `server`, `auth`, `secret`, `catalog`, `profile`, `client`.
+**Never guess a flag** — `agenthub <group> --help` decides. This file covers exactly what a release advertises: `server`, `auth`, `secret`, `catalog`, `profile`, `client`, `doctor`.
 
 The path is always: **add → (credential) → enable → test → connect → narrow**.
 
@@ -19,7 +19,7 @@ agenthub client ls           # wired clients, their profiles
 agenthub client detect       # all known clients, config paths, writability
 ```
 
-Pass `--json` globally. Envelope: `{"ok":true,"data":…}` or `{"ok":false,"error":{"code":"E_…","message":"…","hint":"…"}}`. **Branch on exit code:**
+Pass `--json` globally. Envelope: `{"ok":true,"data":…}` or `{"ok":false,"error":{"code":"E_…","message":"…","hint":"…"}}`. Commands that stream progress (`auth login`, `doctor`) emit NDJSON — progress events first, **envelope last**; take the last line. **Branch on exit code:**
 
 | code | meaning |
 |---|---|
@@ -171,20 +171,31 @@ On a small surface where tools seem missing, check if the client is in `lazy` mo
 ## 7. Diagnose
 
 ```bash
+agenthub doctor                         # the whole installation, every check
 agenthub server inspect brave --tools   # recorded state, offline (the cache)
 agenthub server test brave --tools      # live answer today
 ```
 
-`server inspect` always prints a **visibility** section — the first command for "enabled, credential stored, client still sees nothing". Lists which profiles include and exclude the server, bound clients that can and cannot reach it, what an unbound client gets, and local tool-override count.
+**`doctor` when you do not yet know which part is broken; `server test <id>` when you do.** Doctor checks directories, the registry documents, every enabled server's handshake, the credential vault, the skill library, and each client's configuration — so it is the right first command for a vague report ("it stopped working") and the wrong one for "does brave connect".
+
+- **Exit 1 means at least one check failed**, not that doctor failed. The report is on stdout either way; read the `fail` lines.
+- **`--json` emits NDJSON**: progress events first, then the result envelope as the **last line**. Take the last line as the result; do not parse the whole stream as one object.
+- Progress goes to **stderr** in human mode, so `agenthub doctor > out.txt` still captures only the report.
+- **It is read-only without `--fix`.** With `--fix` it performs only safe repairs (recreating a missing directory, repointing a stale client entry); anything destructive is printed as a command for the user to run, never executed.
+- Probing every enabled server takes **up to 8s each**, 8 at a time — a run with many servers is slow on purpose, not hung. The progress lines name each server as its probe finishes.
 
 | symptom | look here |
 |---|---|
+| "it stopped working", cause unknown | `doctor` — then follow the failing check |
 | server will not connect | `server test <id>` — real error plus child's stderr tail |
 | a server you added is invisible | `add` leaves it DISABLED — `server enable <id>` |
 | a tool vanished | `server inspect <id>` visibility (§6) |
 | client sees nothing | `server inspect` first; did the user restart the client? |
+| a client points at an old binary | `doctor` reports it; `--fix` repoints it |
 | exit 4 | that command needs a running daemon; nothing on this path does |
 | exit 6 | governance denied it — report it, do not retry |
+
+`server inspect` always prints a **visibility** section — the first command for "enabled, credential stored, client still sees nothing". Lists which profiles include and exclude the server, bound clients that can and cannot reach it, what an unbound client gets, and local tool-override count.
 
 ## 8. Wire trace
 
