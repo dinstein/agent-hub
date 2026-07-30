@@ -154,6 +154,16 @@ func TestTheSkillTapSyncPublishesIsInTheTree(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^name:\s*\S`).Match(data) {
 		t.Error("skills/agenthub/SKILL.md declares no `name:` in its frontmatter")
 	}
+	// `version:` is injected by tap-sync.sh at generation time and must NOT
+	// appear in the source. A source file that carried it would produce a
+	// generated copy with two version lines — the hand-written one, then the
+	// generated one — and a YAML parser that picks the second would report a
+	// version that disagreed with the release.
+	if regexp.MustCompile(`(?m)^version:\s*\S`).Match(data) {
+		t.Error("skills/agenthub/SKILL.md has a `version:` field in the source; " +
+			"remove it — tap-sync.sh injects the correct release version at generation " +
+			"time, so a hand-maintained one would produce two version fields in the tap's copy")
+	}
 }
 
 // releaseWorkflow returns .github/workflows/release.yml with YAML comments

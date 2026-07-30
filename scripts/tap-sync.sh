@@ -87,8 +87,16 @@ head -1 "$skill" | grep -qx -- '---' || {
 mkdir -p "$tap/skills/agenthub"
 # NR>1 so the opening delimiter is not mistaken for the closing one; the flag
 # makes it fire exactly once, on the close.
-awk -v banner="$banner" '
-	NR > 1 && !done && /^---$/ { print; print ""; print banner; done = 1; next }
+#
+# `version:` is injected into the frontmatter, not the body: it is metadata
+# about THIS copy — which CLI release it was generated for — not a fact about
+# the skill document itself. The source file has no version field, and adding
+# one there would require someone to keep it in sync manually; generating it
+# here means it is always right for free. Placing it last, just before the
+# closing delimiter, keeps the two human-maintained fields (name, description)
+# at the top where they are read first.
+awk -v banner="$banner" -v ver="$tag" '
+	NR > 1 && !done && /^---$/ { print "version: " ver; print; print ""; print banner; done = 1; next }
 	{ print }
 ' "$skill" > "$tap/skills/agenthub/SKILL.md"
 
