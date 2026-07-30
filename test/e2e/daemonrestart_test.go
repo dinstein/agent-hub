@@ -16,11 +16,6 @@ import (
 //
 //	A.3 #2 "gateway degradation / re-registration path" — after a daemon kill -9 AND a restart, the
 //	       gateway re-registers and receives a BRAND NEW session identity.
-//	A.3 #4 "overlay vanishes on both sides after a daemon restart" — the session overlay is
-//	       authority the daemon holds; when the daemon dies, the overlay must
-//	       vanish on BOTH sides. The gateway falls back to its static scope
-//	       (visible immediately, without waiting for the daemon), and the
-//	       restarted daemon must not resurrect it.
 //
 // The gateway re-registers on a 30s ladder (docs/architecture.md §2), so this test is
 // slow by construction and skips itself in -short mode.
@@ -29,9 +24,9 @@ const (
 	// relinkBudget is how long the gateway may take to notice the restarted
 	// daemon: two re-register intervals plus slack.
 	relinkBudget = 75 * time.Second
-	// overlayBudget is how long a scope narrowing may take to reach the
-	// gateway (a push + ack round trip on a live link).
-	overlayBudget = 20 * time.Second
+	// killBudget is how long the daemon may take to drop a killed session
+	// from its table.
+	killBudget = 20 * time.Second
 )
 
 // sessionRow is the slice of api.SessionInfo this test reads.
@@ -99,7 +94,7 @@ func waitTools(t *testing.T, c *gatewayClient, budget time.Duration, what string
 
 func hasTool(tools []string, name string) bool { return slices.Contains(tools, name) }
 
-func TestDaemonRestartReregistersAndDropsOverlay(t *testing.T) {
+func TestDaemonRestartReregistersTheGateway(t *testing.T) {
 	if testing.Short() {
 		t.Skip("daemon restart e2e skipped in -short mode (30s re-register ladder)")
 	}
@@ -135,23 +130,14 @@ func TestDaemonRestartReregistersAndDropsOverlay(t *testing.T) {
 		t.Fatalf("fresh session already carries an overlay: %+v", first)
 	}
 
-	// --- narrow the live session: the overlay hides the tool on both sides.
-	runAgenthubEnv(t, env, "", "session", "scope", first.ID, "--disable-server", "fake")
-	waitTools(t, c, overlayBudget, "fake__echo hidden by the overlay",
-		func(tools []string) bool { return !hasTool(tools, "fake__echo") })
-	narrowed := waitSession(t, env, "e2e-restart", overlayBudget,
-		func(r sessionRow) bool { return r.ID == first.ID && r.OverlaySummary != "" })
-	t.Logf("overlay in force: %q", narrowed.OverlaySummary)
-
-	// --- kill -9: the overlay's authority died with the daemon, so the
-	// gateway must WIDEN back to its static scope on its own. This is the
-	// half that must not wait for the daemon to come back.
+	// --- kill -9. The data plane must not notice: a stdio session's scope
+	// comes from the registry files, not from the daemon, so a gateway whose
+	// daemon died keeps serving exactly what it served before.
 	h.killDaemonStrict(t, true)
 	h.assertSocketRefuses(t)
-	waitTools(t, c, 30*time.Second, "fake__echo visible again after the daemon died",
+	waitTools(t, c, 30*time.Second, "fake__echo still visible after the daemon died",
 		func(tools []string) bool { return hasTool(tools, "fake__echo") })
 
-	// The data plane is untouched by the daemon's death (A.3 #2).
 	res := c.callTool("fake__echo", map[string]any{"marker": "orphaned"}, 30*time.Second)
 	if text := c.textContent(res); !strings.Contains(text, "orphaned") {
 		c.fatalf("call after daemon kill = %q", text)
@@ -167,24 +153,22 @@ func TestDaemonRestartReregistersAndDropsOverlay(t *testing.T) {
 	fresh := waitSession(t, env, "e2e-restart", relinkBudget,
 		func(r sessionRow) bool { return r.ID != "" })
 
-	// The overlay must NOT come back: a session grant dies with its session
-	// (docs/architecture.md §2), and nothing on disk may resurrect it.
-	if fresh.OverlaySummary != "" {
-		t.Fatalf("the restarted daemon resurrected an overlay: %+v", fresh)
-	}
-	// ... and the gateway still shows the widened surface.
 	waitTools(t, c, 30*time.Second, "fake__echo still visible after re-registration",
 		func(tools []string) bool { return hasTool(tools, "fake__echo") })
 
-	// The registration is genuinely NEW, not a stale row: the human-facing id
+	// The registration is genuinely NEW, not a stale row. The human-facing id
 	// is "client:seq" (ruling #7) and a fresh daemon restarts the sequence at
-	// 1, so identity freshness cannot be proven from the string. It is proven
-	// by BEHAVIOUR instead — a narrowing filed against the new id has to take
-	// effect on the gateway, which is only possible over a live, freshly
-	// authorized link.
-	runAgenthubEnv(t, env, "", "session", "scope", fresh.ID, "--disable-server", "fake")
-	waitTools(t, c, overlayBudget, "fake__echo hidden again over the re-established link",
-		func(tools []string) bool { return !hasTool(tools, "fake__echo") })
+	// 1, so freshness cannot be read off the string. It is proven by
+	// BEHAVIOUR: `session kill` reaches into the daemon's live handle on this
+	// gateway, and a row the daemon merely remembered could not be killed.
+	runAgenthubEnv(t, env, "", "session", "kill", fresh.ID)
+	deadline := time.Now().Add(killBudget)
+	for len(listSessions(t, env, "e2e-restart")) != 0 {
+		if !time.Now().Before(deadline) {
+			t.Fatalf("session %s survived `session kill`", fresh.ID)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 
 	c.close()
 }

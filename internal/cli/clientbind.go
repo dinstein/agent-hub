@@ -417,12 +417,3 @@ func (a *App) newClientUnbindCmd() *cobra.Command {
 		},
 	}
 }
-
-// validateDiscovery rejects an unknown discovery mode at the moment the
-// operator can still fix it, instead of letting the resolver silently fall
-// back to a default the operator did not ask for. The mode set itself is
-// confops' to define, so `profile discovery`, `session scope` and `config set
-// discovery` cannot accept three different vocabularies.
-func validateDiscovery(mode string) error {
-	return opsError(confops.ValidateDiscovery(mode))
-}

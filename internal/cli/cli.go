@@ -225,7 +225,7 @@ func (a *App) newRoot() *cobra.Command {
 	// savings.jsonl, which is why neither belongs above. Order is read-then-
 	// write within each pair, decide -> inspect -> repair across them.
 	addGroupedHidden(root, a.reducedHelp, groupManage,
-		a.newGrantCmd(), a.newConfigCmd(),
+		a.newConfigCmd(),
 		a.newToolCmd(), a.newAuditCmd(), a.newActivityCmd(),
 		a.newSkillCmd())
 	// `doctor` is VISIBLE, in a shipped build too, and it is alone.

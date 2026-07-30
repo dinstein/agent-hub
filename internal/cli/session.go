@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -138,40 +137,6 @@ func (d SessionDetail) Human(w io.Writer) error {
 	return nil
 }
 
-// SessionScopeResult is the `session scope` result.
-type SessionScopeResult struct {
-	SessionID string `json:"session_id"`
-	// Applied lists the runtime overlay edits that took effect. They are
-	// volatile by construction: the overlay dies with the session, and the
-	// way to make a surface permanent is to edit the profile.
-	Applied []string `json:"applied,omitempty"`
-	// GrantID is set when a widening request was filed instead of applied:
-	// agents and operators may only NARROW at runtime; widening is a human
-	// grant with a TTL (A.1 #8).
-	GrantID string `json:"grant_id,omitempty"`
-	Note    string `json:"note,omitempty"`
-}
-
-// Human renders the outcome.
-func (r SessionScopeResult) Human(w io.Writer) error {
-	for _, s := range r.Applied {
-		if _, err := fmt.Fprintf(w, "session %s: %s\n", r.SessionID, s); err != nil {
-			return err
-		}
-	}
-	if r.GrantID != "" {
-		if _, err := fmt.Fprintf(w, "widen request filed: grant %s (decide with 'agenthub grant approve %s')\n",
-			r.GrantID, r.GrantID); err != nil {
-			return err
-		}
-	}
-	if r.Note != "" {
-		_, err := fmt.Fprintf(w, "note: %s\n", r.Note)
-		return err
-	}
-	return nil
-}
-
 // SessionKillResult is the `session kill` result.
 type SessionKillResult struct {
 	SessionID string `json:"session_id"`
@@ -193,7 +158,7 @@ func (a *App) newSessionCmd() *cobra.Command {
 		Args:    cobra.ArbitraryArgs,
 		RunE:    groupRunE,
 	}
-	cmd.AddCommand(a.newSessionLsCmd(), a.newSessionShowCmd(), a.newSessionScopeCmd(), a.newSessionKillCmd())
+	cmd.AddCommand(a.newSessionLsCmd(), a.newSessionShowCmd(), a.newSessionKillCmd())
 	return cmd
 }
 
@@ -392,157 +357,6 @@ func (a *App) resolveSessionScope(row SessionRow) (SessionDetail, []string, erro
 	return detail, warnings, nil
 }
 
-// sessionScopeFlags groups the frozen session-level flags (canonical.md §3).
-type sessionScopeFlags struct {
-	enableServer  []string
-	disableServer []string
-	tools         []string
-	discovery     string
-	reset         bool
-	ttl           time.Duration
-	reason        string
-}
-
-func (a *App) newSessionScopeCmd() *cobra.Command {
-	var f sessionScopeFlags
-	cmd := &cobra.Command{
-		Use: "scope <sid> [--disable-server s] [--tools s:t1,t2] [--discovery m] " +
-			"[--enable-server s] [--reset]",
-		Short: "Adjust a live session's scope (narrowing is applied; widening files a grant)",
-		Long: "Adjust one live session's scope overlay.\n\n" +
-			"Narrowing (--disable-server, --tools, --reset) and the experience field\n" +
-			"--discovery are applied straight to the volatile overlay.\n\n" +
-			"--enable-server WIDENS, which no runtime path may do on its own (A.1 #8):\n" +
-			"it files a TTL-bounded grant that a human approves with 'agenthub grant\n" +
-			"approve'. Name the tools to widen with --tools <server>:<tool>,...\n\n" +
-			"Every edit here is VOLATILE: it lives on the session overlay and dies\n" +
-			"with the session. To change what a client sees permanently, edit its\n" +
-			"profile ('agenthub profile server') or bind it to another one.",
-		Args: exactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.runSessionScope(cmd, args[0], f)
-		},
-	}
-	cmd.Flags().StringArrayVar(&f.enableServer, "enable-server", nil,
-		"file a widen request for this server (needs --tools <server>:<tool>,...)")
-	cmd.Flags().StringArrayVar(&f.disableServer, "disable-server", nil, "hide this server from the session")
-	cmd.Flags().StringArrayVar(&f.tools, "tools", nil, "narrow one server's tools: <server>:<tool>[,<tool>] (repeatable)")
-	cmd.Flags().StringVar(&f.discovery, "discovery", "", "discovery mode for this session: lazy, grouped or full")
-	cmd.Flags().BoolVar(&f.reset, "reset", false, "drop the overlay and restore the static scope baseline")
-	cmd.Flags().DurationVar(&f.ttl, "ttl", 0, "widen-request lifetime after approval (default 1h)")
-	cmd.Flags().StringVar(&f.reason, "reason", "", "reason recorded on a widen request")
-	return cmd
-}
-
-func (a *App) runSessionScope(cmd *cobra.Command, sid string, f sessionScopeFlags) error {
-	if len(f.enableServer) == 0 && len(f.disableServer) == 0 && len(f.tools) == 0 &&
-		f.discovery == "" && !f.reset {
-		e := Usagef("nothing to change: pass --enable-server/--disable-server/--tools/--discovery/--reset")
-		e.Hint = helpHint(cmd)
-		return e
-	}
-	if f.discovery != "" {
-		if err := validateDiscovery(f.discovery); err != nil {
-			return err
-		}
-	}
-	toolSpecs, err := parseToolSpecs(f.tools)
-	if err != nil {
-		return err
-	}
-	ctl, _, err := a.requireDaemon(cmd.Context())
-	if err != nil {
-		return err
-	}
-
-	res := SessionScopeResult{SessionID: sid}
-	// Widening first: if a widen request is refused there is no point
-	// applying the narrowings that were meant to accompany it.
-	if len(f.enableServer) > 0 {
-		id, err := a.fileWidenGrant(cmd, ctl, sid, f, toolSpecs)
-		if err != nil {
-			return err
-		}
-		res.GrantID = id
-	}
-
-	if body, ok := scopeNarrowBody(f, toolSpecs); ok {
-		if err := ctl.do(cmd.Context(), http.MethodPost,
-			"/v1/sessions/"+escapePathSegment(sid)+"/scope", body, nil); err != nil {
-			return classifyScopeError(err)
-		}
-		res.Applied = describeScopeEdits(body)
-	}
-
-	if res.GrantID == "" && len(res.Applied) == 0 {
-		res.Note = "nothing changed"
-	}
-	return a.printer().Emit(res)
-}
-
-// scopeNarrowBody builds the narrowing request from the flags, reporting
-// ok=false when they amount to no narrowing at all — which is not the same as
-// "no narrowing flags were passed": --tools naming only servers that
-// --enable-server also names leaves nothing behind once the filter below runs.
-//
-// That filter is the subtle part. A tool spec for a server being WIDENED is
-// the widen request's payload — the list of tools the grant should open. Sent
-// here it would mean the opposite edit: restrict that server to exactly those
-// tools, applied immediately and without the approval the widen path exists to
-// require. Narrowing and widening share one --tools flag, so this is where the
-// two readings are separated.
-func scopeNarrowBody(f sessionScopeFlags, toolSpecs map[string][]string) (ctlapi.ScopeNarrowWire, bool) {
-	// DisableServers and Reset live on the embedded api.ScopeNarrow, so they
-	// cannot be set in the composite literal.
-	body := ctlapi.ScopeNarrowWire{Discovery: f.discovery}
-	body.DisableServers = f.disableServer
-	body.Reset = f.reset
-	for id, tools := range toolSpecs {
-		if slices.Contains(f.enableServer, id) {
-			continue
-		}
-		if body.Tools == nil {
-			body.Tools = map[string][]string{}
-		}
-		body.Tools[id] = tools
-	}
-	ok := body.Reset || len(body.DisableServers) > 0 || len(body.Tools) > 0 || body.Discovery != ""
-	return body, ok
-}
-
-// fileWidenGrant turns --enable-server into a pending grant. Tools must be
-// named explicitly: the daemon's undo of an expired grant is element-wise,
-// which is what makes the revert provably tightening (ctlapi/grants.go).
-func (a *App) fileWidenGrant(
-	cmd *cobra.Command, ctl *ctlClient, sid string,
-	f sessionScopeFlags, toolSpecs map[string][]string,
-) (string, error) {
-	if len(f.enableServer) > 1 {
-		e := Usagef("--enable-server takes one server per invocation (each widen request is decided on its own)")
-		e.Hint = helpHint(cmd)
-		return "", e
-	}
-	server := f.enableServer[0]
-	tools := toolSpecs[server]
-	if len(tools) == 0 {
-		e := Usagef("--enable-server %s needs the tools to widen: --tools %s:<tool>[,<tool>]", server, server)
-		e.Hint = helpHint(cmd)
-		return "", e
-	}
-	var out ctlapi.GrantWire
-	err := ctl.do(cmd.Context(), http.MethodPost, "/v1/grants", ctlapi.GrantRequestWire{
-		SessionID:  sid,
-		Server:     server,
-		Tools:      tools,
-		Reason:     f.reason,
-		TTLSeconds: int64(f.ttl / time.Second),
-	}, &out)
-	if err != nil {
-		return "", classifyScopeError(err)
-	}
-	return out.ID, nil
-}
-
 func (a *App) newSessionKillCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "kill <sid>",
@@ -564,30 +378,6 @@ func (a *App) newSessionKillCmd() *cobra.Command {
 			})
 		},
 	}
-}
-
-// describeScopeEdits renders what was applied, from the very body that was
-// sent (one source, so the report can never claim an edit that was not
-// actually requested).
-func describeScopeEdits(body ctlapi.ScopeNarrowWire) []string {
-	var out []string
-	if body.Reset {
-		out = append(out, "overlay reset to the static baseline")
-	}
-	for _, id := range body.DisableServers {
-		out = append(out, "server "+id+" hidden")
-	}
-	for _, id := range sortedKeys(body.Tools) {
-		if len(body.Tools[id]) == 0 {
-			out = append(out, "server "+id+" tools blocked")
-			continue
-		}
-		out = append(out, "server "+id+" narrowed to "+strings.Join(body.Tools[id], ","))
-	}
-	if body.Discovery != "" {
-		out = append(out, "discovery set to "+body.Discovery)
-	}
-	return out
 }
 
 // classifyScopeError maps control-plane failures onto the frozen exit-code

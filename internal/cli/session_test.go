@@ -23,7 +23,6 @@ func TestOnlineOnlyCommandsExit4(t *testing.T) {
 		{"session", "ls"},
 		{"session", "ls", "-f"},
 		{"session", "show", "claude-code:1"},
-		{"session", "scope", "claude-code:1", "--disable-server", "github"},
 		{"session", "kill", "claude-code:1"},
 		{"events"},
 		{"events", "--follow"},
@@ -62,28 +61,6 @@ func TestOnlineOnlyCommandsJSONEnvelope(t *testing.T) {
 	}
 }
 
-// TestSessionScopeUsageErrors: the flag validation happens BEFORE the
-// daemon is contacted, so a malformed invocation is exit 2 even offline —
-// a user error must not be reported as an infrastructure problem.
-func TestSessionScopeUsageErrors(t *testing.T) {
-	cases := [][]string{
-		{"session", "scope", "sid"},
-		{"session", "scope", "sid", "--discovery", "bogus"},
-		{"session", "scope", "sid", "--tools", "no-colon"},
-	}
-	for _, args := range cases {
-		t.Run(strings.Join(args, "_"), func(t *testing.T) {
-			setDataDir(t)
-			pointSocketAtNothing(t)
-			if code, _, stderr := runCLI(t, "", args...); code != ExitUsage {
-				t.Errorf("exit = %d, want %d (%s)", code, ExitUsage, stderr)
-			}
-		})
-	}
-}
-
-// TestEventsRejectsUnknownTopic: an unknown topic is caught locally so the
-// user is not left staring at a stream that will never deliver anything.
 func TestEventsRejectsUnknownTopic(t *testing.T) {
 	setDataDir(t)
 	pointSocketAtNothing(t)
@@ -145,92 +122,6 @@ func TestParseToolSpecs(t *testing.T) {
 						t.Fatalf("%q = %v, want %v", k, have, want)
 					}
 				}
-			}
-		})
-	}
-}
-
-// TestScopeNarrowBodySeparatesWideningFromNarrowing pins the rule that makes
-// one --tools flag safe to share between two opposite edits.
-//
-// `--enable-server x --tools x:read` means "file a grant to OPEN x's read
-// tool". If that spec also reached the narrowing request it would mean
-// "restrict x to exactly read" — applied immediately, with no approval, which
-// is the authority the widen path exists to withhold. Servers not being
-// widened must still narrow normally in the same invocation.
-func TestScopeNarrowBodySeparatesWideningFromNarrowing(t *testing.T) {
-	tests := []struct {
-		name      string
-		flags     sessionScopeFlags
-		specs     map[string][]string
-		wantOK    bool
-		wantTools map[string][]string
-	}{
-		{
-			name:   "tools for a widened server are not a narrowing",
-			flags:  sessionScopeFlags{enableServer: []string{"x"}},
-			specs:  map[string][]string{"x": {"read"}},
-			wantOK: false,
-		},
-		{
-			name:      "tools for another server still narrow",
-			flags:     sessionScopeFlags{enableServer: []string{"x"}},
-			specs:     map[string][]string{"x": {"read"}, "y": {"list"}},
-			wantOK:    true,
-			wantTools: map[string][]string{"y": {"list"}},
-		},
-		{
-			name:      "plain narrowing is untouched",
-			flags:     sessionScopeFlags{},
-			specs:     map[string][]string{"y": {"list"}},
-			wantOK:    true,
-			wantTools: map[string][]string{"y": {"list"}},
-		},
-		{
-			name:   "no flags at all is not a request",
-			flags:  sessionScopeFlags{},
-			wantOK: false,
-		},
-		{
-			name:   "reset alone is a request",
-			flags:  sessionScopeFlags{reset: true},
-			wantOK: true,
-		},
-		{
-			name:   "discovery alone is a request",
-			flags:  sessionScopeFlags{discovery: "lazy"},
-			wantOK: true,
-		},
-		{
-			name:   "disable-server alone is a request",
-			flags:  sessionScopeFlags{disableServer: []string{"z"}},
-			wantOK: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			body, ok := scopeNarrowBody(tt.flags, tt.specs)
-			if ok != tt.wantOK {
-				t.Fatalf("ok = %v, want %v (body %+v)", ok, tt.wantOK, body)
-			}
-			if len(body.Tools) != len(tt.wantTools) {
-				t.Fatalf("tools = %v, want %v", body.Tools, tt.wantTools)
-			}
-			for id, want := range tt.wantTools {
-				got, present := body.Tools[id]
-				if !present || len(got) != len(want) {
-					t.Fatalf("tools[%s] = %v, want %v", id, got, want)
-				}
-				for i := range want {
-					if got[i] != want[i] {
-						t.Fatalf("tools[%s] = %v, want %v", id, got, want)
-					}
-				}
-			}
-			// An empty map and a nil map serialize differently; a widened-only
-			// spec must leave the field absent, not present-and-empty.
-			if !tt.wantOK && body.Tools != nil {
-				t.Errorf("Tools = %v, want nil when there is nothing to narrow", body.Tools)
 			}
 		})
 	}
