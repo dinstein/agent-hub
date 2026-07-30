@@ -135,22 +135,8 @@ func (a *Admission) Wrap(call pipeline.CallFunc) pipeline.CallFunc {
 	}
 }
 
-// WrapArgs is Wrap for the argument-parameterized (self-heal) form. It
-// shares the admission with Wrap, so a healed retry is not charged again.
-func (a *Admission) WrapArgs(call pipeline.CallWithArgs) pipeline.CallWithArgs {
-	if call == nil {
-		return nil
-	}
-	return func(ctx context.Context, args json.RawMessage) (*mcp.CallResult, error) {
-		if err := a.check(); err != nil {
-			return nil, err
-		}
-		return call(ctx, args)
-	}
-}
-
-// Guard wraps both call fields of req in one admission. It is the sanctioned
-// one-line wiring for an assembling gateway:
+// Guard wraps req's call in an admission. It is the sanctioned one-line
+// wiring for an assembling gateway:
 //
 //	lim.Guard(ratelimit.Key{Client: id, Server: route.ServerID, Tool: route.RawTool}, &req)
 //
@@ -159,7 +145,5 @@ func (l *Limiter) Guard(key Key, req *pipeline.CallRequest) {
 	if !l.Enabled() || req == nil {
 		return
 	}
-	adm := l.Admit(key)
-	req.Call = adm.Wrap(req.Call)
-	req.CallWithArgs = adm.WrapArgs(req.CallWithArgs)
+	req.Call = l.Admit(key).Wrap(req.Call)
 }

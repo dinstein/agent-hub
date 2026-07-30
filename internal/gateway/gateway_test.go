@@ -427,7 +427,7 @@ func TestStartupSequenceAndFullCallPath(t *testing.T) {
 		}
 	}
 	for _, stage := range []string{
-		pipeline.GateScope, pipeline.GateTokenTier, pipeline.GatePrecheck,
+		pipeline.GateScope, pipeline.GateTokenTier,
 		pipeline.StageDefendAndShape,
 	} {
 		if _, ok := g.pipe.Counters()[stage]; !ok {

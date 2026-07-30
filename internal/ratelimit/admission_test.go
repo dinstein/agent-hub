@@ -89,30 +89,6 @@ func TestDeniedCallSpendsNoToken(t *testing.T) {
 	}
 }
 
-// The 7.2 self-heal re-issues the same call with repaired arguments. One
-// agent intent must cost one token.
-func TestSelfHealRetryIsChargedOnce(t *testing.T) {
-	tl := newTestLimiter(t, Config{Rules: []Rule{{Limit: 1, Window: Duration(time.Minute)}}})
-	adm := tl.Admit(Key{Client: "c", Server: "gh", Tool: "search"})
-
-	first := adm.Wrap(func(context.Context) (*mcp.CallResult, error) { return okResult(), nil })
-	retry := adm.WrapArgs(func(context.Context, json.RawMessage) (*mcp.CallResult, error) { return okResult(), nil })
-
-	if _, err := first(context.Background()); err != nil {
-		t.Fatalf("first attempt: %v", err)
-	}
-	if _, err := retry(context.Background(), json.RawMessage(`{}`)); err != nil {
-		t.Fatalf("healed retry must reuse the admission, got %v", err)
-	}
-	// A second, independent request must now be rejected: exactly one token
-	// was spent by the attempt + retry pair.
-	next := tl.Admit(Key{Client: "c", Server: "gh", Tool: "search"}).
-		Wrap(func(context.Context) (*mcp.CallResult, error) { return okResult(), nil })
-	if _, err := next(context.Background()); err == nil {
-		t.Fatal("the limit of 1 was already spent; the next request must be rejected")
-	}
-}
-
 // The rejection must present as BOTH a pipeline rejection (for classifiers)
 // and a JSON-RPC error carrying the retry hint (for the client), so the
 // existing gateway error mapping needs no change.

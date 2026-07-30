@@ -5,17 +5,12 @@
 // nowhere else, so the governance gates cannot fork. The gate chain order is
 // frozen by docs/architecture.md §9:
 //
-//	scope gate → token tier gate → argument precheck
+//	scope gate → token tier gate
 //
 // then the downstream call, then the defend_and_shape hook (injection scan,
 // leakguard, then budget-shape through Options.ResultShaper). Success and
 // error branches share defend_and_shape (docs/flows.md: a malicious server
 // must not bypass scanning by answering with a JSON-RPC error).
-//
-// The argument precheck additionally REPAIRS what the schema itself makes
-// provably repairable before rejecting (7.2 self-heal, selfheal.go), and a
-// downstream rejection that carries its own inputSchema earns exactly one
-// repaired retry between the call and defend_and_shape.
 //
 // M1.5 state: every gate is real. The token tier gate enforces
 // CallRequest.CallerTier (minted by internal/httpbridge's agent tokens)
@@ -71,13 +66,6 @@ type CallRequest struct {
 	CallerTier CallerTier
 	// Call executes the downstream call once the gates allow it.
 	Call CallFunc
-	// CallWithArgs is the argument-parameterized form of Call. Setting it
-	// ENABLES the 7.2 argument self-heal (see selfheal.go): the pipeline
-	// can only re-issue a call whose arguments it controls. When both are
-	// set, Call performs the first attempt and CallWithArgs the healed
-	// retry; when only Call is set, an invalid_params answer is delivered
-	// unchanged.
-	CallWithArgs CallWithArgs
 }
 
 // Gate is one pre-call governance check. Gates run in chain order; the
@@ -123,10 +111,6 @@ type Counter interface {
 type Pipeline struct {
 	gates  []Gate
 	shaper Shaper
-	// onSelfHeal audits the 7.2 argument self-heal. nil = not wired (the
-	// heal still happens; it is simply unaudited, which the assembling
-	// gateway must not ship — see Options.OnSelfHeal).
-	onSelfHeal SelfHealFunc
 }
 
 // Options injects the live governance inputs of the production gate chain.
@@ -172,13 +156,6 @@ type Options struct {
 	// retains the remainder for fetch_result. nil = no shaping (results are
 	// delivered whole — the M0/M1-A..C behaviour).
 	ResultShaper ShapeFunc
-
-	// OnSelfHeal audits the 7.2 argument self-heal: one event per repaired
-	// call, carrying field NAMES and repair kinds only (never values). The
-	// standard wiring forwards it to the audit security stream. nil leaves
-	// the heal unaudited — acceptable in tests, never in an assembly that
-	// sets CallRequest.CallWithArgs.
-	OnSelfHeal SelfHealFunc
 }
 
 // New returns the production pipeline with the frozen gate chain
@@ -188,7 +165,6 @@ func New(opts Options) *Pipeline {
 		gates: []Gate{
 			&scopeGate{scopeOf: opts.Scope},
 			&tokenTierGate{},
-			&precheckGate{onSelfHeal: opts.OnSelfHeal},
 		},
 		shaper: &defendAndShape{
 			scanner:     opts.Scanner,
@@ -198,7 +174,6 @@ func New(opts Options) *Pipeline {
 			onLeak:      opts.OnLeak,
 			shape:       opts.ResultShaper,
 		},
-		onSelfHeal: opts.OnSelfHeal,
 	}
 }
 
@@ -236,18 +211,13 @@ func (p *Pipeline) Counters() map[string]uint64 {
 }
 
 // Execute runs one call through the pipeline: gates in chain order (first
-// rejection short-circuits with its error), the downstream call, at most one
-// argument self-heal retry (docs/modules/dataplane.md), then defend_and_shape over both the
-// success and the error branch.
+// rejection short-circuits with its error), the downstream call, then
+// defend_and_shape over the success and the error branch.
 //
-// Ordering invariant: defend_and_shape runs EXACTLY ONCE, over the FINAL
-// outcome. Scanning and budgeting an intermediate invalid_params answer that
-// is about to be superseded would double-charge the shaping cursor and could
-// leave a truncation banner pointing at a result nobody receives — which is
-// the boundary the self-heal and the shaping seam share.
+// Ordering invariant: defend_and_shape runs EXACTLY ONCE, over the outcome.
 func (p *Pipeline) Execute(ctx context.Context, req CallRequest) (*mcp.CallResult, error) {
-	if req.Call == nil && req.CallWithArgs == nil {
-		return nil, fmt.Errorf("pipeline: CallRequest needs Call or CallWithArgs (exposed %q)", req.Exposed)
+	if req.Call == nil {
+		return nil, fmt.Errorf("pipeline: CallRequest needs Call (exposed %q)", req.Exposed)
 	}
 	for _, g := range p.gates {
 		if err := g.Check(ctx, &req); err != nil {
@@ -256,22 +226,9 @@ func (p *Pipeline) Execute(ctx context.Context, req CallRequest) (*mcp.CallResul
 			return nil, err
 		}
 	}
-	res, callErr := p.callOnce(ctx, &req)
-	if ctx.Err() == nil {
-		res, callErr = p.selfHeal(ctx, &req, res, callErr)
-	}
+	res, callErr := req.Call(ctx)
 	if p.shaper != nil {
 		res, callErr = p.shaper.Shape(ctx, &req, res, callErr)
 	}
 	return res, callErr
-}
-
-// callOnce performs the first downstream attempt, preferring the legacy
-// closure so an assembly that sets both keeps its existing first-attempt
-// behaviour byte for byte.
-func (p *Pipeline) callOnce(ctx context.Context, req *CallRequest) (*mcp.CallResult, error) {
-	if req.Call != nil {
-		return req.Call(ctx)
-	}
-	return req.CallWithArgs(ctx, req.Args)
 }
