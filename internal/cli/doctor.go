@@ -18,6 +18,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dinstein/agent-hub/internal/cli/output"
 	"github.com/dinstein/agent-hub/internal/clients"
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/gateway"
@@ -148,6 +149,52 @@ type doctorRun struct {
 	fix    bool
 	cfg    doctorConfig
 	checks []DoctorCheck
+	// printer is where progress goes. Progress is a STREAM and the report is
+	// a VALUE (the invariant internal/cli/auth.go states): under --json these
+	// are NDJSON lines before the envelope, and in human mode they go to
+	// stderr, so `agenthub doctor --json | jq` and a plain terminal run both
+	// keep stdout to the report alone.
+	printer *output.Printer
+	// progressMu guards printer during the concurrent probe phase. Progress
+	// lines are the one thing that phase writes anywhere shared, and two
+	// goroutines formatting into the same writer would interleave mid-line.
+	progressMu sync.Mutex
+}
+
+// phase announces a group of checks about to run.
+//
+// Doctor's per-check output all arrives at the end, because a check's status
+// is not known until it is done. Without this, the whole command is silent
+// for however long the slowest phase takes — and the slowest phase is the
+// server probes, which are bounded by handshakeTimeout per server and can
+// legitimately take ten seconds with nothing wrong. Silence for that long
+// reads as a hang, and the natural response to an apparent hang is ^C, which
+// throws away the report that was seconds from being printed.
+func (d *doctorRun) phase(event, message string) {
+	d.progressMu.Lock()
+	defer d.progressMu.Unlock()
+	d.printer.Progress(output.ProgressEvent{Event: event, Message: message})
+}
+
+// probed reports one finished server probe, as it finishes.
+//
+// This is the phase line's counterpart for the only phase long enough to need
+// one. It is emitted from the probe goroutines, hence the lock, and it is
+// deliberately NOT the check's final rendering: the report still prints every
+// server line in sorted order at the end. What this adds is that the user can
+// see WHICH server the run is currently waiting on, which is the question a
+// slow doctor run actually raises.
+func (d *doctorRun) probed(c DoctorCheck) {
+	d.progressMu.Lock()
+	defer d.progressMu.Unlock()
+	d.printer.Progress(output.ProgressEvent{
+		Event:   "server_probed",
+		Message: fmt.Sprintf("  %s: %s", c.Name, c.Detail),
+		Fields: map[string]any{
+			"server": strings.TrimPrefix(c.Name, "server:"),
+			"status": c.Status,
+		},
+	})
 }
 
 // doctorConfig is the registry content as read from disk WITHOUT opening
@@ -206,8 +253,9 @@ func (d *doctorRun) add(name, status, detail string) *DoctorCheck {
 }
 
 func (a *App) runDoctor(ctx context.Context, fix bool) DoctorReport {
-	d := &doctorRun{app: a, fix: fix}
+	d := &doctorRun{app: a, fix: fix, printer: a.printer()}
 
+	d.phase("checking_local_state", "checking directories and registry...")
 	dirs := d.checkDirectories()
 	// Read the configuration WITHOUT registry.Open: opening the store
 	// creates the directory, the five documents and a lock file, which
@@ -217,9 +265,11 @@ func (a *App) runDoctor(ctx context.Context, fix bool) DoctorReport {
 	d.checkSocket(ctx)
 	d.checkRegistry(dirs.registry)
 	d.checkServers(ctx)
+	d.phase("checking_stores", "checking vault, integrity and skills...")
 	d.checkVault(ctx)
 	d.checkIntegrity(ctx, dirs.state)
 	d.checkSkills(ctx, dirs.data)
+	d.phase("checking_clients", "checking client configurations...")
 	d.checkClientDrift(ctx)
 	d.checkPath()
 
@@ -593,12 +643,11 @@ func (d *doctorRun) checkServers(ctx context.Context) {
 
 	ids := sortedKeys(d.cfg.servers)
 	results := make([]DoctorCheck, len(ids))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, maxServerProbes)
-	enabled := 0
+	// Settled first, so the phase line below can carry the count. The
+	// disabled entries need no probe and are not worth announcing.
+	var probe []int
 	for i, id := range ids {
-		entry := d.cfg.servers[id].V
-		if !entry.Enabled {
+		if entry := d.cfg.servers[id].V; !entry.Enabled {
 			results[i] = DoctorCheck{
 				Name:   "server:" + id,
 				Status: StatusOK,
@@ -606,13 +655,31 @@ func (d *doctorRun) checkServers(ctx context.Context) {
 			}
 			continue
 		}
-		enabled++
+		probe = append(probe, i)
+	}
+	enabled := len(probe)
+	if enabled > 0 {
+		// Announced BEFORE the first probe starts, because this is the phase
+		// that makes people wait: each one is a real handshake capped at
+		// handshakeTimeout, and the count is the user's only cue for how long
+		// that is going to be for them.
+		d.phase("probing_servers", fmt.Sprintf(
+			"probing %s (up to %s each)...", plural(enabled, "server", "servers"), handshakeTimeout))
+	}
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxServerProbes)
+	for _, i := range probe {
+		id := ids[i]
+		entry := d.cfg.servers[id].V
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			results[i] = d.checkOneServer(ctx, id, entry, cached[id], cacheAge)
+			c := d.checkOneServer(ctx, id, entry, cached[id], cacheAge)
+			results[i] = c
+			d.probed(c)
 		}()
 	}
 	wg.Wait()

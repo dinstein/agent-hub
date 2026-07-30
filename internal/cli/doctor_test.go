@@ -24,6 +24,18 @@ func decodeDoctor(t *testing.T, env envelope) DoctorReport {
 	return report
 }
 
+// doctorEnvelope pulls the result envelope out of a `doctor --json` stdout.
+//
+// Under --json the progress events are NDJSON lines preceding the envelope,
+// which is always the LAST line — the same shape `auth login --json` has. So
+// the whole of stdout is not itself an envelope and must not be handed to
+// decodeEnvelope directly.
+func doctorEnvelope(t *testing.T, out string) envelope {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	return decodeEnvelope(t, lines[len(lines)-1])
+}
+
 func findCheck(t *testing.T, r DoctorReport, name string) DoctorCheck {
 	t.Helper()
 	for _, c := range r.Checks {
@@ -99,7 +111,7 @@ func TestDoctorFixCreatesDirectories(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit = %d\n%s", code, out)
 	}
-	report := decodeDoctor(t, decodeEnvelope(t, out))
+	report := decodeDoctor(t, doctorEnvelope(t, out))
 	if report.Summary.Fixed == 0 {
 		t.Fatalf("--fix reported no repairs: %+v", report.Summary)
 	}
@@ -127,7 +139,7 @@ func TestDoctorJSONAfterWrite(t *testing.T) {
 	if code != ExitGeneral {
 		t.Fatalf("exit = %d, want 1 (server:x cannot hand shake)\n%s", code, out)
 	}
-	env := decodeEnvelope(t, out)
+	env := doctorEnvelope(t, out)
 	if !env.OK {
 		t.Fatalf("envelope = %s", out)
 	}
@@ -150,6 +162,100 @@ func TestDoctorJSONAfterWrite(t *testing.T) {
 	srv := findCheck(t, report, "server:x")
 	if srv.Status != StatusFail || srv.Fix == "" {
 		t.Errorf("server:x = %+v, want fail with a suggested fix", srv)
+	}
+}
+
+// TestDoctorProgressGoesToStderrNotStdout pins the split doctor shares with
+// `auth login`: progress is a STREAM, the report is a VALUE.
+//
+// The whole point of the progress lines is that a run with several servers
+// spends seconds in the probe phase with nothing to show yet. That is only
+// worth having if it costs nothing downstream — so stdout in human mode must
+// still be the report and nothing else, or `agenthub doctor > report.txt`
+// starts collecting chatter.
+func TestDoctorProgressGoesToStderrNotStdout(t *testing.T) {
+	setDataDir(t)
+	isolateHome(t)
+	if code, _, stderr := runCLI(t, "", "server", "add", "x", "--cmd", "no-such-binary"); code != ExitOK {
+		t.Fatalf("server add: %s", stderr)
+	}
+	if code, _, stderr := runCLI(t, "", "server", "enable", "x", "--no-probe"); code != ExitOK {
+		t.Fatalf("server enable: %s", stderr)
+	}
+
+	_, out, stderr := runCLI(t, "", "doctor")
+	// Every progress line this command emits, and none of them may appear on
+	// stdout. Spelled out rather than derived, so a new one added without a
+	// thought for the stream/value split fails here.
+	for _, line := range []string{
+		"checking directories and registry...",
+		"probing 1 server",
+		"checking vault, integrity and skills...",
+		"checking client configurations...",
+	} {
+		if !strings.Contains(stderr, line) {
+			t.Errorf("stderr is missing the %q progress line:\n%s", line, stderr)
+		}
+		if strings.Contains(out, line) {
+			t.Errorf("progress line %q leaked onto stdout, which must carry the report alone:\n%s", line, out)
+		}
+	}
+}
+
+// TestDoctorJSONProgressPrecedesTheEnvelope pins the NDJSON contract: under
+// --json the progress events are lines on STDOUT before the envelope, and the
+// envelope is always the last line.
+//
+// A consumer reading line by line has to be able to take the last line as the
+// result. If a progress event were ever emitted after it — say by a check
+// added below the report assembly — every such consumer would break, and the
+// human mode would look completely fine.
+func TestDoctorJSONProgressPrecedesTheEnvelope(t *testing.T) {
+	setDataDir(t)
+	isolateHome(t)
+	if code, _, stderr := runCLI(t, "", "server", "add", "x", "--cmd", "no-such-binary"); code != ExitOK {
+		t.Fatalf("server add: %s", stderr)
+	}
+	if code, _, stderr := runCLI(t, "", "server", "enable", "x", "--no-probe"); code != ExitOK {
+		t.Fatalf("server enable: %s", stderr)
+	}
+
+	_, out, _ := runCLI(t, "", "doctor", "--json")
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected progress lines before the envelope, got:\n%s", out)
+	}
+	var sawProbe bool
+	for _, line := range lines[:len(lines)-1] {
+		var ev struct {
+			Event  string `json:"event"`
+			Server string `json:"server"`
+			Status string `json:"status"`
+			OK     *bool  `json:"ok"`
+		}
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("progress line is not JSON: %v\n%s", err, line)
+		}
+		if ev.OK != nil {
+			t.Fatalf("the envelope is not the last line; it appeared at:\n%s", line)
+		}
+		if ev.Event == "" {
+			t.Errorf("progress line carries no event name:\n%s", line)
+		}
+		if ev.Event == "server_probed" {
+			sawProbe = true
+			if ev.Server != "x" || ev.Status != StatusFail {
+				t.Errorf("server_probed = %+v, want server x / status fail", ev)
+			}
+		}
+	}
+	if !sawProbe {
+		t.Error("no server_probed event: the per-server line is what tells a slow run which server it is waiting on")
+	}
+	// And the last line really is the report.
+	report := decodeDoctor(t, doctorEnvelope(t, out))
+	if len(report.Checks) == 0 {
+		t.Error("the final line decoded as an envelope but carried no checks")
 	}
 }
 
@@ -194,7 +300,7 @@ func TestDoctorProbesEveryServerInSortedOrder(t *testing.T) {
 	// fails fast rather than sitting on handshakeTimeout — this stays a unit
 	// test, not an 88-second one.
 	_, out, _ := runCLI(t, "", "doctor", "--json")
-	report := decodeDoctor(t, decodeEnvelope(t, out))
+	report := decodeDoctor(t, doctorEnvelope(t, out))
 
 	var got []string
 	for _, c := range report.Checks {
@@ -227,7 +333,7 @@ func TestDoctorDisabledServerIsNotProbed(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit = %d, want 0\n%s", code, out)
 	}
-	report := decodeDoctor(t, decodeEnvelope(t, out))
+	report := decodeDoctor(t, doctorEnvelope(t, out))
 	srv := findCheck(t, report, "server:x")
 	if srv.Status != StatusOK || !strings.Contains(srv.Detail, "disabled") {
 		t.Errorf("server:x = %+v, want ok/disabled", srv)
@@ -274,7 +380,7 @@ func TestDoctorDanglingActiveProfile(t *testing.T) {
 	if code != ExitGeneral {
 		t.Fatalf("exit = %d, want 1\n%s", code, out)
 	}
-	report := decodeDoctor(t, decodeEnvelope(t, out))
+	report := decodeDoctor(t, doctorEnvelope(t, out))
 	c := findCheck(t, report, "active-profile")
 	if c.Status != StatusFail || !strings.Contains(c.Detail, "EMPTY scope") {
 		t.Errorf("active-profile = %+v, want a loud fail", c)
@@ -305,7 +411,7 @@ func TestDoctorColdCacheIsNotAFailure(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit = %d, want 0 (a cold cache must not fail)\n%s", code, out)
 	}
-	report := decodeDoctor(t, decodeEnvelope(t, out))
+	report := decodeDoctor(t, doctorEnvelope(t, out))
 	c := findCheck(t, report, "server:x")
 	if c.Status != StatusWarn || !strings.Contains(c.Detail, "still installing") {
 		t.Errorf("server:x = %+v, want a 'still installing' warn", c)
@@ -328,7 +434,7 @@ func TestDoctorCorruptOverrideStoreFails(t *testing.T) {
 	if code != ExitGeneral {
 		t.Fatalf("exit = %d, want 1\n%s", code, out)
 	}
-	report := decodeDoctor(t, decodeEnvelope(t, out))
+	report := decodeDoctor(t, doctorEnvelope(t, out))
 	if c := findCheck(t, report, "integrity:overrides"); c.Status != StatusFail {
 		t.Errorf("integrity:overrides = %+v, want fail", c)
 	}
@@ -349,7 +455,7 @@ func TestDoctorFailingCheckExit1(t *testing.T) {
 	if code != ExitGeneral {
 		t.Fatalf("exit = %d, want 1\n%s", code, out)
 	}
-	env := decodeEnvelope(t, out)
+	env := doctorEnvelope(t, out)
 	// The report itself succeeded: envelope stays ok:true; the findings and
 	// the exit code carry the failure (a second error envelope would corrupt
 	// single-line JSON consumption).
@@ -430,7 +536,7 @@ func TestDoctorPreviousShutdown(t *testing.T) {
 		setDataDir(t)
 		isolateHome(t)
 		_, out, _ := runCLI(t, "", "doctor", "--json")
-		c := findCheck(t, decodeDoctor(t, decodeEnvelope(t, out)), "previous-shutdown")
+		c := findCheck(t, decodeDoctor(t, doctorEnvelope(t, out)), "previous-shutdown")
 		if c.Status != StatusOK || !strings.Contains(c.Detail, "unknown") {
 			t.Fatalf("check = %+v, want ok/unknown on a fresh directory", c)
 		}
@@ -448,7 +554,7 @@ func TestDoctorPreviousShutdown(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, out, _ := runCLI(t, "", "doctor", "--json")
-		c := findCheck(t, decodeDoctor(t, decodeEnvelope(t, out)), "previous-shutdown")
+		c := findCheck(t, decodeDoctor(t, doctorEnvelope(t, out)), "previous-shutdown")
 		if c.Status != StatusOK || c.Detail != "clean" {
 			t.Fatalf("check = %+v, want ok/clean", c)
 		}
@@ -463,7 +569,7 @@ func TestDoctorPreviousShutdown(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, out, _ := runCLI(t, "", "doctor", "--json")
-		c := findCheck(t, decodeDoctor(t, decodeEnvelope(t, out)), "previous-shutdown")
+		c := findCheck(t, decodeDoctor(t, doctorEnvelope(t, out)), "previous-shutdown")
 		if c.Status != StatusWarn {
 			t.Fatalf("check = %+v, want warn (an unclean exit is survivable, not broken)", c)
 		}
@@ -500,7 +606,7 @@ func TestDoctorWarnsAboutRetiredProjectBindings(t *testing.T) {
 	// client configuration too, so unrelated findings decide it. What this
 	// test owns is the status of its own check.
 	_, out, _ := runCLI(t, "", "doctor", "--json")
-	check := findCheck(t, decodeDoctor(t, decodeEnvelope(t, out)), "scope:projects")
+	check := findCheck(t, decodeDoctor(t, doctorEnvelope(t, out)), "scope:projects")
 	if check.Status != StatusWarn {
 		t.Fatalf("status = %q, want warn — a retired rule that still LOOKS applied is a "+
 			"silent widening, and reporting it as ok is how an operator never learns: %+v",
@@ -525,7 +631,7 @@ func TestDoctorSaysNothingAboutAbsentProjectBindings(t *testing.T) {
 	setDataDir(t)
 	isolateHome(t)
 	_, out, _ := runCLI(t, "", "doctor", "--json")
-	if hasCheck(decodeDoctor(t, decodeEnvelope(t, out)), "scope:projects") {
+	if hasCheck(decodeDoctor(t, doctorEnvelope(t, out)), "scope:projects") {
 		t.Error("doctor reported scope:projects with no project bindings configured")
 	}
 }
@@ -564,7 +670,7 @@ func TestDoctorReportsQuarantinedRegistryDocs(t *testing.T) {
 	}
 
 	_, out, _ := runCLI(t, "", "doctor", "--json")
-	check := findCheck(t, decodeDoctor(t, decodeEnvelope(t, out)), "registry:quarantined")
+	check := findCheck(t, decodeDoctor(t, doctorEnvelope(t, out)), "registry:quarantined")
 	if check.Status != StatusWarn {
 		t.Fatalf("status = %q, want warn: %+v", check.Status, check)
 	}
@@ -579,7 +685,7 @@ func TestDoctorReportsQuarantinedRegistryDocs(t *testing.T) {
 
 	// The per-document check still reports the RESET file as readable, which
 	// is precisely why this separate finding has to exist.
-	doc := findCheck(t, decodeDoctor(t, decodeEnvelope(t, out)), "registry:servers")
+	doc := findCheck(t, decodeDoctor(t, doctorEnvelope(t, out)), "registry:servers")
 	if doc.Status != StatusOK {
 		t.Errorf("registry:servers = %q; the premise of this test is that the reset file reads fine", doc.Status)
 	}
@@ -595,7 +701,7 @@ func TestDoctorSilentWithoutQuarantinedDocs(t *testing.T) {
 		t.Fatalf("server add: %s", stderr)
 	}
 	_, out, _ := runCLI(t, "", "doctor", "--json")
-	if hasCheck(decodeDoctor(t, decodeEnvelope(t, out)), "registry:quarantined") {
+	if hasCheck(decodeDoctor(t, doctorEnvelope(t, out)), "registry:quarantined") {
 		t.Error("doctor reported registry:quarantined with an intact registry")
 	}
 }
@@ -621,8 +727,7 @@ func TestDoctorNeverClaimsAbsenceFromAFileItCannotRead(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(blocked, 0o644) })
 
-	var report DoctorReport
-	decodeInto(t, mustRun(t, "", "doctor", "--json"), &report)
+	report := decodeDoctor(t, doctorEnvelope(t, mustRun(t, "", "doctor", "--json")))
 	checks := map[string]DoctorCheck{}
 	for _, c := range report.Checks {
 		checks[c.Name] = c
@@ -657,8 +762,7 @@ func TestDoctorReadsCodexTOML(t *testing.T) {
 		"[mcp_servers.agenthub]\ncommand = \"/bin/sh\"\n"+
 			"args = [\"connect\", \"--client\", \"codex\"]\n")
 
-	var report DoctorReport
-	decodeInto(t, mustRun(t, "", "doctor", "--json"), &report)
+	report := decodeDoctor(t, doctorEnvelope(t, mustRun(t, "", "doctor", "--json")))
 	for _, c := range report.Checks {
 		if c.Name != "client:codex" {
 			continue

@@ -418,7 +418,7 @@ func TestDoctorHandshakesADockerEntry(t *testing.T) {
 	if code == ExitOK {
 		t.Fatalf("doctor reported no failure for an unresolvable image\n%s", out)
 	}
-	check := findCheck(t, decodeDoctor(t, decodeEnvelope(t, out)), "server:boxed")
+	check := findCheck(t, decodeDoctor(t, doctorEnvelope(t, out)), "server:boxed")
 	if check.Status != StatusFail {
 		t.Fatalf("status = %q, want fail (the handshake was attempted and could not succeed): %+v",
 			check.Status, check)
@@ -477,7 +477,7 @@ func TestDoctorFailsAnInvalidDockerEntryOnDisk(t *testing.T) {
 	if code == ExitOK {
 		t.Fatalf("doctor passed an unrunnable docker entry:\n%s", out)
 	}
-	check := findCheck(t, decodeDoctor(t, decodeEnvelope(t, out)), "server:boxed")
+	check := findCheck(t, decodeDoctor(t, doctorEnvelope(t, out)), "server:boxed")
 	if check.Status != StatusFail {
 		t.Fatalf("status = %q, want fail: %+v", check.Status, check)
 	}
