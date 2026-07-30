@@ -181,7 +181,21 @@ type ServerEntry struct {
 	// RuntimeDocker, ignored otherwise.
 	Docker  *DockerRuntime `json:"docker,omitempty"`
 	Enabled bool           `json:"enabled"`
-	Source  string         `json:"source,omitempty"` // where the entry came from (cli/import/…)
+	// Tools is the GLOBAL tool allow list for this server: nil exposes every
+	// tool the server offers, [...] exposes exactly those, [] exposes none.
+	// Keyed by ORIGINAL tool names, like every selector here.
+	//
+	// It sits on the server rather than in a separate state file because it
+	// answers the same question `Enabled` does — what this machine offers at
+	// all, before any profile narrows it — and because one document means
+	// one watch: a change here reaches a running gateway through the
+	// registry reload that already exists.
+	//
+	// The same nil-vs-empty rule as ToolSelector.Allow applies, and for the
+	// same reason: omitzero keeps an empty list on disk, because dropping it
+	// would turn expose-nothing into expose-everything.
+	Tools  []string `json:"tools,omitzero"`
+	Source string   `json:"source,omitempty"` // where the entry came from (cli/import/…)
 	// Trace records every JSON-RPC frame exchanged with this server to
 	// <data>/logs/server-<id>.log, which `agenthub server logs` reads back.
 	// Absent (false) is the default: payload capture is opt-in, per server.

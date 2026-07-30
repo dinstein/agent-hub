@@ -43,6 +43,15 @@ func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diag
 		// The ONLY place DenyDestructive enters the chain: governance.json.
 		gl.Approval.DenyDestructive = boolPtr(true)
 	}
+	// Server layer: the per-server tool allow lists from servers.json. It is
+	// a layer rather than a filter applied elsewhere so that the global rule
+	// and a profile's rule intersect through the SAME Merge — one place
+	// decides what a session sees, and adding a second narrowing mechanism
+	// beside it is how the two drift apart.
+	if sl, ok := serverToolsLayer(snap); ok {
+		layers = append(layers, sl)
+	}
+
 	layers = append(layers, gl)
 
 	// Client entry (may be absent: an unbound client follows the active
@@ -204,3 +213,26 @@ func cloneBool(in *bool) *bool {
 }
 
 func boolPtr(v bool) *bool { return &v }
+
+// serverToolsLayer builds the global per-server tool allow lists. It returns
+// ok=false when no server carries one, so the common case adds no layer at
+// all rather than an inert map.
+func serverToolsLayer(snap *registry.Snapshot) (ScopeLayer, bool) {
+	if snap == nil {
+		return ScopeLayer{}, false
+	}
+	var sel map[string]*ToolSelector
+	for id, doc := range snap.Servers.V.Servers {
+		if doc.V.Tools == nil {
+			continue // no rule: the server's full tool set
+		}
+		if sel == nil {
+			sel = map[string]*ToolSelector{}
+		}
+		sel[id] = &ToolSelector{Allow: cloneStrings(doc.V.Tools)}
+	}
+	if sel == nil {
+		return ScopeLayer{}, false
+	}
+	return ScopeLayer{Kind: LayerGlobal, Origin: "servers.json", Tools: sel}, true
+}

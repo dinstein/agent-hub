@@ -259,3 +259,43 @@ func TestRouterCatalogNormalization(t *testing.T) {
 		t.Fatalf("NewCatalog must sort+dedup, got %v", got)
 	}
 }
+
+// TestServerToolAllowListReachesTheScope covers the global per-server allow
+// list in all three of its states, including the one that fails open when a
+// re-implementation collapses nil and empty: a server with `tools: []` must
+// expose NOTHING, not everything.
+func TestServerToolAllowListReachesTheScope(t *testing.T) {
+	cases := []struct {
+		name  string
+		tools []string
+		want  []string
+	}{
+		{"no rule exposes the whole server", nil, []string{"delete", "read", "write"}},
+		{"a subset exposes exactly that subset", []string{"read"}, []string{"read"}},
+		{"an empty list exposes nothing", []string{}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			snap := emptySnap()
+			snap.Servers.V.Servers["fs"] = doc(registry.ServerEntry{Enabled: true, Tools: tc.tools})
+			layers, _ := FromRegistry(snap, SessionKey{ClientID: "c", SessionID: "c:1"})
+			es, err := Merge(layers, testCatalog())
+			if err != nil {
+				t.Fatal(err)
+			}
+			view, ok := es.Servers["fs"]
+			if !ok {
+				t.Fatalf("server fs is not in the scope at all: %+v", es.Servers)
+			}
+			got := view.Tools
+			if len(got) != len(tc.want) {
+				t.Fatalf("tools = %v, want %v", got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Fatalf("tools = %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}
