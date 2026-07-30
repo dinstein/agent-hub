@@ -19,9 +19,14 @@ The packages collaborate in layers rather than as peers:
   answers "is this tool definition still the one I recognize", the latter "does a human consent to
   this particular call". The two are deliberately orthogonal and never write to each other's
   storage.
-- `internal/audit` is everyone's exit. The write discipline of the four streams (single-line
-  `O_APPEND` writes, a cross-process dedup window) is a concurrency-correctness dependency, not a
-  belt-and-braces measure.
+- `internal/audit` is everyone's exit. Its write discipline is a concurrency-correctness dependency,
+  not a belt-and-braces measure — but it is **not uniform across the four streams**, and reading it
+  as uniform is how an in-memory ring comes to be treated as durable. Three are on disk
+  (`audit.jsonl`, `security.jsonl`, `savings.jsonl`) and share one `Writer`: single-line `O_APPEND`
+  writes, so a record is one `write(2)` and concurrent appenders cannot tear each other's lines. The
+  cross-process dedup window belongs to `security` alone — severity is part of its key. The fourth,
+  `InspectRing`, is a mutex-guarded in-memory ring with no file, no lock and no dedup; it is off by
+  default and its contents do not outlive the process.
 - `internal/oauthflow` is the only credential-acquisition path, and it in turn consumes
   `internal/guard/netguard`'s predicates.
 
