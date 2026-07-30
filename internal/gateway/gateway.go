@@ -295,6 +295,11 @@ type gateway struct {
 	pendingRPC  map[string]chan *mcp.Response // reverse RPC id → reply channel
 	clientCaps  mcp.ClientCapabilities
 	initialized bool // upstream sent notifications/initialized
+	// stateless marks a 2026-07-28 session: some request carried the
+	// per-request _meta, so there was no initialize and there will be no
+	// notifications/initialized. Once set it never clears — a session
+	// cannot downgrade back to the handshake it skipped.
+	stateless bool
 
 	handlers sync.WaitGroup // per-request tools/call handler goroutines
 }

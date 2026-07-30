@@ -29,9 +29,14 @@ const (
 // downstream never blocks the protocol channel (and stays cancellable via
 // notifications/cancelled).
 func (g *gateway) handleRequest(req *mcp.Request) {
+	if !g.acceptRequestMeta(req) {
+		return // rejected with CodeUnsupportedProtocolVersion, reply sent
+	}
 	switch req.Method {
 	case mcp.MethodInitialize:
 		g.handleInitialize(req)
+	case mcp.MethodDiscover:
+		g.handleDiscover(req)
 	case mcp.MethodPing:
 		g.reply(mcp.NewResponse(req.ID, json.RawMessage(`{}`)))
 	case mcp.MethodToolsList:
@@ -117,8 +122,14 @@ func (g *gateway) handleInitialize(req *mcp.Request) {
 	}
 	// Version negotiation: echo the client's version when we support it,
 	// otherwise answer with our own default and let the client decide.
+	//
+	// initialize can only ever negotiate the STATEFUL protocol family:
+	// 2026-07-28's handshake is server/discover, so a client declaring it
+	// HERE is answered with the default instead — echoing 2026 would
+	// promise per-request _meta semantics on a session that just used the
+	// handshake 2026 removed.
 	version := mcp.ProtocolVersion
-	if slices.Contains(mcp.SupportedVersions, p.ProtocolVersion) {
+	if p.ProtocolVersion != mcp.Version2026 && slices.Contains(mcp.SupportedVersions, p.ProtocolVersion) {
 		version = p.ProtocolVersion
 	}
 	g.mu.Lock()
@@ -147,6 +158,93 @@ func (g *gateway) serverVersion() string {
 	return "0.0.0-dev"
 }
 
+// handleDiscover answers the 2026-07-28 stateless handshake probe. Like
+// initialize it answers immediately, before any downstream is connected.
+// The version list is everything this facade speaks: a client that picks
+// ≤ 2025-11-25 from it follows up with the stateful initialize handshake,
+// exactly as agenthub's own downstream client does.
+func (g *gateway) handleDiscover(req *mcp.Request) {
+	res := mcp.DiscoverResult{
+		ResultType:       mcp.ResultTypeComplete,
+		ProtocolVersions: mcp.SupportedVersions,
+		Capabilities:     json.RawMessage(`{"tools":{"listChanged":true}}`),
+		ServerInfo:       mcp.Implementation{Name: serverName, Version: g.serverVersion()},
+	}
+	raw, err := json.Marshal(res)
+	if err != nil {
+		g.reply(mcp.NewErrorResponse(req.ID, &mcp.Error{Code: mcp.CodeInternalError, Message: err.Error()}))
+		return
+	}
+	g.log.Info("answered server/discover", "versions", mcp.SupportedVersions)
+	g.reply(mcp.NewResponse(req.ID, raw))
+}
+
+// acceptRequestMeta inspects the per-request _meta a 2026-07-28 client
+// carries (stateless protocol). Absence is fine — a stateful session has
+// no _meta on its requests. Presence switches the session into stateless
+// mode: the declared capabilities replace the initialize-time slot, and the
+// session counts as initialized, because there will never be a
+// notifications/initialized. A declared version this gateway cannot serve
+// statelessly is rejected with CodeUnsupportedProtocolVersion rather than
+// answered — answering would promise semantics the session does not have
+// (fail closed).
+//
+// Reports whether dispatch should proceed; false means the rejection was
+// already sent.
+func (g *gateway) acceptRequestMeta(req *mcp.Request) bool {
+	if len(req.Params) == 0 {
+		return true
+	}
+	var probe struct {
+		Meta *mcp.RequestMeta `json:"_meta"`
+	}
+	if err := json.Unmarshal(req.Params, &probe); err != nil || probe.Meta == nil ||
+		probe.Meta.ProtocolVersion == "" {
+		return true // no protocol _meta; params may not even be an object
+	}
+	if probe.Meta.ProtocolVersion != mcp.Version2026 {
+		g.reply(mcp.NewErrorResponse(req.ID, &mcp.Error{
+			Code: mcp.CodeUnsupportedProtocolVersion,
+			Message: fmt.Sprintf(
+				"per-request _meta declares protocol %q; this gateway serves %q statelessly — earlier versions use the initialize handshake",
+				probe.Meta.ProtocolVersion, mcp.Version2026),
+		}))
+		return false
+	}
+	g.mu.Lock()
+	first := !g.stateless
+	g.stateless = true
+	g.clientCaps = probe.Meta.ClientCapabilities
+	wasInitialized := g.initialized
+	g.initialized = true
+	g.mu.Unlock()
+	if first {
+		g.log.Info("stateless upstream session", "client", clientName(probe.Meta.ClientInfo))
+	}
+	if first && !wasInitialized {
+		// The first stateless request plays the role notifications/initialized
+		// plays on the stateful path: deferred change signals may flow now.
+		// No roots prefetch — 2026-07-28 removed server-initiated RPCs, so
+		// the client can never be asked (see clientRoots.fetchFromClient).
+		go g.refreshScopeAndNotify()
+	}
+	return true
+}
+
+func clientName(info *mcp.Implementation) string {
+	if info == nil {
+		return ""
+	}
+	return info.Name
+}
+
+// statelessSession reports whether this session negotiated 2026-07-28.
+func (g *gateway) statelessSession() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.stateless
+}
+
 // handleToolsList answers from the current exposure surface: the current
 // catalog — the live router when ready, the cache-built one otherwise —
 // projected through the session's effective scope and rendered in the
@@ -155,8 +253,23 @@ func (g *gateway) serverVersion() string {
 // The router is never rebuilt for a scope or mode change: visibility is a
 // query-time projection (docs/architecture.md §7 invariant 2), and the mode only
 // decides how many of the visible names are printed.
+// listTTLMs is the freshness hint stamped on 2026-07-28 tools/list answers.
+// Deliberately short: the surface changes with profile bindings and
+// downstream list_changed at any moment, and the listChanged notification —
+// not the TTL — is the real invalidation signal.
+const listTTLMs int64 = 60_000
+
 func (g *gateway) handleToolsList(req *mcp.Request) {
-	raw, err := json.Marshal(mcp.ListToolsResult{Tools: g.currentSurface().List()})
+	res := mcp.ListToolsResult{Tools: g.currentSurface().List()}
+	if g.statelessSession() {
+		// 2026-07-28 requires resultType and the freshness hints on every
+		// list result. cacheScope is private: the surface is a per-session
+		// scope projection, never shareable across callers.
+		ttl := listTTLMs
+		res.ResultType = mcp.ResultTypeComplete
+		res.CacheableResult = mcp.CacheableResult{TtlMs: &ttl, CacheScope: "private"}
+	}
+	raw, err := json.Marshal(res)
 	if err != nil {
 		g.reply(mcp.NewErrorResponse(req.ID, &mcp.Error{Code: mcp.CodeInternalError, Message: err.Error()}))
 		return
@@ -371,12 +484,10 @@ func (g *gateway) runCall(ctx context.Context, req *mcp.Request, t callTarget, a
 		g.reply(mcp.NewErrorResponse(req.ID, callError(err)))
 		return
 	}
-	raw, merr := json.Marshal(res)
-	if merr != nil {
-		g.reply(mcp.NewErrorResponse(req.ID, &mcp.Error{Code: mcp.CodeInternalError, Message: merr.Error()}))
-		return
-	}
-	g.reply(mcp.NewResponse(req.ID, raw))
+	// replyResult owns the marshal so resultType normalization (session
+	// generation, not downstream generation) has exactly one enforcement
+	// point for every result-shaped answer.
+	g.replyResult(req.ID, res)
 }
 
 // callError maps a pipeline/downstream failure to the upstream JSON-RPC
@@ -405,6 +516,17 @@ func (g *gateway) replyResult(id mcp.ID, res *mcp.CallResult) {
 			Code: mcp.CodeInternalError, Message: "agenthub produced no result",
 		}))
 		return
+	}
+	// Normalize resultType to the SESSION's protocol generation, not the
+	// downstream's: a 2026 session must always see one, a stateful session
+	// must never see the member a 2026 downstream happened to include
+	// (docs/mcp-2026-07-28.md §7.5).
+	if g.statelessSession() {
+		if res.ResultType == "" {
+			res.ResultType = mcp.ResultTypeComplete
+		}
+	} else {
+		res.ResultType = ""
 	}
 	raw, err := json.Marshal(res)
 	if err != nil {
