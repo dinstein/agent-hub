@@ -30,7 +30,12 @@ fi
 
 tag="$1"
 sums="$2"
-repo="${HOMEBREW_SOURCE_REPO:-dinstein/agent-hub}"
+# The repo whose Releases hold the artifacts — see release-local.sh, and keep
+# the default identical to the one there. The two scripts read the same variable
+# independently: if they disagree, this one writes URLs into the formula that
+# point somewhere the other never uploaded, and nobody finds out until a
+# `brew install` on someone else's machine 404s.
+repo="${HOMEBREW_SOURCE_REPO:-dinstein/homebrew-agenthub}"
 
 if [ ! -r "$sums" ]; then
 	echo "$0: cannot read checksums file: $sums" >&2

@@ -23,7 +23,13 @@
 #
 # Environment:
 #   HOMEBREW_TAP_REPO   owner/homebrew-<name>. Unset skips the tap step.
-#   HOMEBREW_SOURCE_REPO  owner/repo the formula points at (default dinstein/agent-hub)
+#   HOMEBREW_SOURCE_REPO  the repo whose Releases HOLD THE ARTIFACTS, which is
+#       what the formula's download URLs point at. Defaults to the tap, because
+#       that is where they go: dinstein/agent-hub is private and has never held
+#       a release, and `brew install` must be able to fetch the tarball without
+#       credentials. It used to default to dinstein/agent-hub, so every release
+#       had to remember to override it — and forgetting produced a formula whose
+#       URLs 404 for everyone but the person who published it.
 
 set -euo pipefail
 
@@ -42,7 +48,7 @@ v*) ;;
 	;;
 esac
 
-repo="${HOMEBREW_SOURCE_REPO:-dinstein/agent-hub}"
+repo="${HOMEBREW_SOURCE_REPO:-dinstein/homebrew-agenthub}"
 tap="${HOMEBREW_TAP_REPO:-}"
 version="${tag#v}"
 here="$(cd "$(dirname "$0")/.." && pwd)"
@@ -58,8 +64,13 @@ if [ "$version" != "$file_version" ]; then
 	exit 1
 fi
 
-if gh release view "$tag" >/dev/null 2>&1; then
-	echo "$0: release ${tag} already exists" >&2
+# --repo, or this guard asks the wrong repository and can never fire: releases
+# live in $repo, and the directory this runs in is the source tree, which holds
+# none. Without it the check passed on a tag that already existed, and the run
+# got as far as pushing the tag before `gh release create` refused — leaving a
+# tag published for a release that does not exist.
+if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+	echo "$0: release ${tag} already exists on ${repo}" >&2
 	echo "$0: releases are not overwritten; bump VERSION for the next one" >&2
 	exit 1
 fi
