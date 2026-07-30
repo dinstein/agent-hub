@@ -18,8 +18,17 @@ The one source of the version number is the `VERSION` file at the repository roo
 ```
 
 At build time it's injected into the binary via `-ldflags -X main.version=` and also written into the
-`.app`'s `Info.plist` (`CFBundleShortVersionString`). **Change it in one place, three places agree** —
-the binary's self-report, the app's About panel, and the Release title never contradict each other.
+`.app`'s `Info.plist` (`CFBundleShortVersionString`). **Change it in one place and three DERIVED
+places agree** — the binary's self-report, the app's About panel, and the Release title never
+contradict each other.
+
+**Two places do not derive, and a release commit has to edit them by hand**: the version badge at the
+top of `README.md` and of `README.zh-CN.md`. They are static shields.io image URLs with the number
+written into the path, so nothing recomputes them and nothing renders them differently when they are
+wrong. They went unedited through seven consecutive releases — `git log -L12,12:README.md` shows the
+badge jumping 0.8.0 → 0.13.0 — while five of those release commits touched `VERSION` and nothing else.
+`TestReadmeBadgesMatchVERSION` now fails on exactly that, so the sentence above cannot quietly become
+true again by everyone believing it.
 
 When releasing, the tag must match `VERSION` (with a `v` prefix): `VERSION=0.1.0` ⇒ tag `v0.1.0`.
 CI verifies this and fails outright on a mismatch — a shipped artifact whose version doesn't line up is
