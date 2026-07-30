@@ -7,7 +7,7 @@ description: Drive the agenthub CLI to give an AI client MCP tools - add a serve
 
 One gateway between every AI client and every MCP server. Wire a client up **once**; add, authorize, and narrow servers here afterwards without touching the client again.
 
-**Never guess a flag** — `agenthub <group> --help` decides. This file covers what a release advertises (`server`, `auth`, `secret`, `catalog`, `profile`, `client`) plus the diagnostic surface (`audit`, `session`, `tool`, `doctor`).
+**Never guess a flag** — `agenthub <group> --help` decides. This file covers exactly what a release advertises: `server`, `auth`, `secret`, `catalog`, `profile`, `client`.
 
 The path is always: **add → (credential) → enable → test → connect → narrow**.
 
@@ -27,7 +27,7 @@ Pass `--json` globally. Envelope: `{"ok":true,"data":…}` or `{"ok":false,"erro
 | 1 | generic (downstream, network, internal) |
 | 2 | usage error |
 | 3 | not found |
-| 4 | daemon offline — `agenthub daemon start` |
+| 4 | that command needs a running daemon; nothing on this path does |
 | 5 | auth failure → `agenthub auth login <server>` |
 | 6 | refused by governance — **report and stop; not a bug to route around** |
 | 7 | lock held or state corrupt — retry once, never delete state |
@@ -181,17 +181,12 @@ agenthub server test brave --tools      # live answer today
 |---|---|
 | server will not connect | `server test <id>` — real error plus child's stderr tail |
 | a server you added is invisible | `add` leaves it DISABLED — `server enable <id>` |
-| a tool vanished | `server inspect <id>` visibility (§6), then quarantine |
+| a tool vanished | `server inspect <id>` visibility (§6) |
 | client sees nothing | `server inspect` first; did the user restart the client? |
-| exit 4 | that command needs a running daemon — `agenthub daemon start` |
+| exit 4 | that command needs a running daemon; nothing on this path does |
 | exit 6 | governance denied it — report it, do not retry |
 
-```bash
-agenthub doctor                 # install integrity, data dirs, socket, per-server handshake; exit 0 without daemon
-agenthub doctor --fix           # safe self-repair (missing dirs, stale client entries)
-```
-
-## 8. Wire trace and audit
+## 8. Wire trace
 
 **Wire trace** — for when `server test` passes but a tool misbehaves inside the client:
 
@@ -207,40 +202,6 @@ agenthub server trace linear off    # turn off when done
 - Takes effect immediately — no client restart or server reconnect needed.
 - `server ls` grows a `TRACE` column while any trace is on.
 - Correct-looking frames plus a misbehaving client → the problem is above this layer (§6 narrowing, client restart).
-
-**Audit log** — governance decisions across all sessions; does not need the daemon:
-
-```bash
-agenthub audit tail                         # last 50 decisions
-agenthub audit tail -f --errors             # follow, denied/failed only
-agenthub audit tail --server linear --held  # calls waiting on human approval
-agenthub audit export --csv out.csv         # full export; --errors / --held / --server / --client to filter
-```
-
-Records what was decided (allowed / denied / held), which client and server, and a hash of the call args — args are never stored in full. `--all-segments` includes rotated log files.
-
-**Live sessions** — requires the daemon (exit 4 if offline):
-
-```bash
-agenthub session ls              # live sessions; -f re-renders as they change
-agenthub session show <sid>      # scope resolution, effective surface, diagnostics
-agenthub session scope <sid> <profile>   # adjust scope of a running session
-agenthub session kill <sid>      # force-disconnect
-```
-
-**Tool catalog** — does not need the daemon:
-
-```bash
-agenthub tool ls                         # all cached tools
-agenthub tool ls brave                   # one server
-agenthub tool ls --search "file read"    # ranked by keyword (same ranker as lazy-mode search_tools)
-agenthub tool disable <server>__<tool>   # switch off for every client
-agenthub tool enable  <server>__<tool>
-agenthub tool quarantine ls              # tools fingerprint-blocked by governance
-agenthub tool quarantine release <name>  # release and rebaseline
-```
-
-Never split an exposed name on `__` — a server id or tool name may contain it. Take the server from `server ls` and the tool from `server test --tools`.
 
 ## Non-negotiable
 
