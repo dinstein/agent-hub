@@ -8,7 +8,7 @@
 //     rev) as exported constants plus attr constructors.
 //   - Secret scrubbing as a slog.Handler middleware (see scrub.go).
 //
-// Invariants (canonical.md §2, docs/modules/foundation.md):
+// Invariants (canonical.md §2 rule 4, docs/modules/foundation.md):
 //   - Zero business dependencies: standard library only (depguard-enforced).
 //   - Scrubbing is unconditional. AGENTHUB_DEBUG=1 raises verbosity but
 //     never bypasses redaction — secrets, tokens and credentials must not

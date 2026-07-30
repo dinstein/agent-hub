@@ -39,7 +39,7 @@ func TestFakeDaemonProcess(t *testing.T) {
 	})
 	go http.Serve(ln, mux) //nolint:errcheck // process is killed by the parent
 	// Readiness handshake: write daemon.json only after bind, as the real
-	// daemon does (docs/canonical.md §2).
+	// daemon does (docs/architecture.md §10).
 	info, _ := json.Marshal(daemonInfo{Endpoint: sock, Pid: os.Getpid(), Version: "0.0.0-fake"})
 	if err := os.WriteFile(filepath.Join(runDir, "daemon.json"), info, 0o600); err != nil {
 		t.Fatalf("fake daemon: writing daemon.json: %v", err)

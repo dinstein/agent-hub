@@ -6,11 +6,12 @@
 > Windows machine**, let alone inside an MSIX container. Behavior that contradicts this document should
 > be treated as an expected unknown, not a regression.
 
-Source of the decision: canonical.md §7 — "M1 covers macOS + Linux only; Windows (named pipes / SDDL /
-MSIX escape) is deferred to M2, with **the seams confined to `internal/platform`**" — plus A.3 #3,
-"needs real-world testing in both multi-user Windows and MSIX container environments." We have no such
-test environment on hand, so what M2 delivers is "implemented, and explicitly marked untested," not
-"supported."
+Two decisions produced this state. The platform work was deferred with **its seams confined to
+`internal/platform`**, so nothing outside that package branches on Windows; and the honest grading is
+registered as a capability boundary in [canonical.md §4](canonical.md#4-known-capability-boundaries),
+which says the same thing in one row. What is missing is not code but a machine: real-world testing
+needs both a multi-user Windows host and an MSIX container, and there is no such environment on hand.
+So what exists is "implemented, and explicitly marked untested" — never "supported."
 
 ---
 

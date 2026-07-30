@@ -229,7 +229,8 @@ func writeStale(w http.ResponseWriter, current uint64, reqID string) {
 
 // adminAudit is one configuration write as the audit stream records it.
 //
-// canonical.md §4: every control-plane WRITE is audited, failures included —
+// docs/modules/controlplane.md: every control-plane WRITE is audited, failures
+// included —
 // an attempt that was refused is exactly the line an operator looks for.
 type adminAudit struct {
 	// action is the frozen verb, e.g. "servers/add:github". It lands in the

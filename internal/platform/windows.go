@@ -205,7 +205,7 @@ func (r *Resolver) windowsCtlEndpoint() (string, error) {
 		return "", err
 	}
 	// Spelled out rather than built from dirName: the pipe name is a frozen
-	// identifier (canonical.md §2) and must not move when the data directory
+	// identifier (canonical.md §1) and must not move when the data directory
 	// is renamed. Deriving it from dirName once meant a directory rename
 	// silently became a protocol rename.
 	return `\\.\pipe\agenthub-ctl-` + sha8(sid), nil

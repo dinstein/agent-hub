@@ -33,7 +33,7 @@ type StartOptions struct {
 }
 
 // daemonInfo mirrors run/daemon.json, the daemon's readiness handshake
-// file (written atomically after bind, docs/canonical.md §2): actual endpoint +
+// file (written atomically after bind, docs/architecture.md §10): actual endpoint +
 // pid + version. Reading it replaces "probe the port then spawn" TOCTOU
 // schemes.
 type daemonInfo struct {

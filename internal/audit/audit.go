@@ -1,5 +1,5 @@
-// Package audit implements the four governance streams (docs/architecture.md §10,
-// §2.4, canonical.md §2):
+// Package audit implements the four governance streams (docs/architecture.md §6
+// observability flow, docs/modules/security.md):
 //
 //   - audit.jsonl    — one record per tool-call decision. Never contains
 //     call arguments or results: the Record type has no fields for them,

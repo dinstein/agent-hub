@@ -1,5 +1,5 @@
 // Package spawnguard checks downstream spawn command lines before the
-// process is started (docs/canonical.md §2 / A.2).
+// process is started (docs/modules/security.md, internal/guard/spawnguard).
 //
 // Positioning — ANTI-SMUGGLING, NOT A SANDBOX: the guard catches command
 // shapes that smuggle arbitrary code execution through an innocuous-looking

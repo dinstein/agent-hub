@@ -1,5 +1,5 @@
-// Package event is the in-process event bus of the daemon (canonical.md §2
-// "internal/event") plus the event mergers: a 50ms window
+// Package event is the in-process event bus of the daemon
+// (docs/modules/config.md, internal/event) plus the event mergers: a 50ms window
 // coalescer for change storms and a 750ms "settled" debouncer for scan-style
 // event streams. Standard library only — this package sits below every
 // business package and must stay dependency-free.

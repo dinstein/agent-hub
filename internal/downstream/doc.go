@@ -3,7 +3,7 @@
 // breaker, retry semantics, and tool-list caching (docs/architecture.md §2,
 // task M0-7).
 //
-// Concurrency model (frozen in canonical.md §5): every server has exactly
+// Concurrency model (docs/modules/dataplane.md): every server has exactly
 // one owner goroutine consuming a calls channel of capacity 1 —
 // serialization by communication, not by mutex. Callers block in Call; the
 // owner performs the transport round trip, so a sleeping retry or a slow

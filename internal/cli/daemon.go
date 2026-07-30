@@ -198,7 +198,7 @@ func (a *App) runDaemonForeground(ctx context.Context, http httpFlags) error {
 
 // startDaemonBackground forks `<self> daemon start --foreground` into its
 // own session and polls run/daemon.json + ping until ready (the readiness
-// handshake of docs/canonical.md §2: no port-probe TOCTOU). Idempotent: a live
+// handshake of docs/architecture.md §10: no port-probe TOCTOU). Idempotent: a live
 // daemon yields AlreadyRunning instead of an error.
 func (a *App) startDaemonBackground(ctx context.Context, http httpFlags) (DaemonStatus, error) {
 	socket, runDir, logsDir, err := a.daemonPaths()

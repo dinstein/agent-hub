@@ -1,5 +1,5 @@
-// Package daemon assembles the coordination daemon (canonical.md §2:
-// "daemon assembly" — assembly only, no business logic of its own): event bus +
+// Package daemon assembles the coordination daemon (docs/modules/controlplane.md:
+// assembly only, no business logic of its own): event bus +
 // session manager + control-plane server (internal/ctlapi) + registry watch
 // + the gateway-reported runtime state aggregator, plus the run/daemon.json
 // readiness handshake.
@@ -62,8 +62,9 @@ const (
 const DefaultShutdownGrace = 5 * time.Second
 
 // Info mirrors run/daemon.json: the actual endpoint the daemon serves on,
-// its pid and version. CLI/GUI/gateways read it to connect (docs/canonical.md §2;
-// api.DialOrStart holds the reader-side copy of this shape).
+// its pid and version. CLI/GUI/gateways read it to connect
+// (docs/architecture.md §10; api.DialOrStart holds the reader-side copy of
+// this shape).
 type Info struct {
 	Endpoint string `json:"endpoint"`
 	Pid      int    `json:"pid"`
@@ -314,7 +315,7 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	// Readiness handshake: written atomically only after the successful
-	// bind above (docs/canonical.md §2 — replaces probe-then-spawn TOCTOU).
+	// bind above (docs/architecture.md §10 — replaces probe-then-spawn TOCTOU).
 	info := Info{Endpoint: socket, Pid: os.Getpid(), Version: cfg.Version}
 	infoPath := filepath.Join(runDir, InfoFileName)
 	if err := writeInfoFile(infoPath, info); err != nil {

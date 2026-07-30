@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Session bounds (docs/canonical.md §2: "TTL + capacity cap").
+// Session bounds: TTL plus a capacity cap (docs/modules/controlplane.md).
 const (
 	// SessionIDBytes is the entropy of one session id. The HTTP side uses a
 	// random token rather than the human-readable `client:seq` of the stdio

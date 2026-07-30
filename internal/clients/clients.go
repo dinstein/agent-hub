@@ -1,5 +1,5 @@
-// Package clients adapts AI client configuration formats (canonical.md §2:
-// "20+ client config adapters (Format-driven)"; docs/canonical.md §2 clients.rs row).
+// Package clients adapts AI client configuration formats
+// (docs/modules/config.md, "A shape-driven adapter table").
 //
 // # Shape, not vendor
 //
@@ -29,8 +29,7 @@
 //     passthrough via json.RawMessage at every level of the key path).
 //   - An existing file that fails to parse aborts the operation with
 //     *ParseError. agenthub never overwrites configuration it cannot read
-//     — the whole-app-state rule (docs/canonical.md §2): parse failure must
-//     error, not destroy. JSONC (comments) counts as unparseable, and the
+//     — parse failure must error, not destroy (docs/modules/config.md). JSONC (comments) counts as unparseable, and the
 //     error carries a manual snippet so the user is not stranded.
 //   - Files larger than MaxConfigSize (64 MiB) are refused with
 //     *TooLargeError, before any read: a client config that big is a

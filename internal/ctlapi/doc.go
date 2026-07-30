@@ -41,7 +41,8 @@
 // Every request carries an X-Request-Id (echo-or-generate; the response
 // header is set before the handler runs so even a panic cannot lose it),
 // error bodies carry it too, and every control-plane WRITE is appended to
-// the audit stream with the same id (canonical.md §4).
+// the audit stream with the same id (the X-Request-Id ruling is canonical.md
+// §4; auditing every write is docs/modules/controlplane.md).
 //
 // Constraints:
 //

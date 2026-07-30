@@ -3,7 +3,7 @@
 //	/ 7.2 — full, grouped and lazy — plus the lexical ranker, the
 //
 // SearchGuard state machine, the search-trace record and the pinned-tool
-// seam (canonical.md §2: internal/discovery).
+// seam (docs/modules/dataplane.md, internal/discovery).
 //
 // Three invariants hold across the whole package:
 //

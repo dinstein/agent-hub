@@ -119,7 +119,8 @@ func (a *App) newClientCmd() *cobra.Command {
 		Args: cobra.ArbitraryArgs,
 		RunE: groupRunE,
 	}
-	// Read before write (canonical.md §3), so `ls` leads.
+	// Read before write, so `ls` leads (pinned by TestListingsComeFirstInTheirGroup;
+	// canonical.md §3 only freezes `ls` as the spelling).
 	cmd.AddCommand(
 		a.newClientLsCmd(), a.newClientDetectCmd(), a.newClientInspectCmd(),
 		a.newClientConnectCmd(), a.newClientDisconnectCmd(),
