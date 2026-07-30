@@ -1,0 +1,180 @@
+# Windows packaging: the resource-compiled .exe pair, in one portable zip.
+#
+# WHY THERE IS NO INSTALLER. What has to be true for the GUI to find its daemon
+# is the layout contract in ../Taskfile.common.yml — the two binaries in one
+# directory — and a zip satisfies it by construction. An unsigned NSIS or MSI
+# installer would add a SmartScreen prompt that is scarier than the one a zip
+# gets, a second thing to keep in step with the layout, and a codesigning
+# certificate this project does not have. When there is a certificate, the
+# installer is worth revisiting; until then it would be ceremony around the same
+# two files.
+#
+# WHY THIS CROSS-COMPILES, unlike the macOS package. On darwin the webview is
+# Objective-C, so packaging needs cgo, a Mac, and lipo. Windows' webview is
+# WebView2, loaded at runtime through COM by pure Go — wails v3 needs no cgo
+# here at all — so the entire artifact builds on any host, and this Taskfile is
+# therefore NOT restricted with `platforms:`. That is what lets a maintainer on
+# a Mac rehearse the release the workflow will cut.
+#
+# What no host can do is RUN it. Nothing in this project has ever executed on
+# Windows (docs/windows.md); the zip is built, its layout is asserted, and its
+# behavior is unverified.
+#
+# WEBVIEW2. The GUI needs the Microsoft Edge WebView2 runtime, which ships with
+# Windows 11 and reaches most Windows 10 machines through Edge, but is not
+# guaranteed. It is not bundled: the bootstrapper is a 1.5MB downloader that
+# belongs to an installer, and there is no installer (above). The README beside
+# the binaries says so, because the failure without it is a window that opens
+# blank.
+
+version: "3"
+
+vars:
+  # The zip's single root directory. Unzipping produces AgentHub/ rather than
+  # spraying two .exe files into whatever folder the user was in — and it keeps
+  # the two binaries siblings, which is the layout contract, not a preference.
+  STAGE_ROOT: "{{.DIST}}/win"
+
+tasks:
+  # The .syso is the icon, the manifest and the version resource, compiled into
+  # one object the Go linker picks up automatically.
+  #
+  # It is generated INTO the GUI's package directory and deleted afterwards.
+  # Both halves matter: the Go toolchain only links a .syso that sits in the
+  # package being built, and a leftover one is a file `git diff --quiet` sees —
+  # which is how scripts/build-release-artifacts.sh refuses to build (it will
+  # not stamp a hash onto a dirty tree). The name carries _windows_<arch>, so
+  # even while it exists a host build ignores it.
+  resources:
+    internal: true
+    requires:
+      vars: [ARCH]
+    cmds:
+      # info.json is templated for the same reason Info.plist is: `fixed` holds
+      # FILEVERSION, which Windows requires to be four numbers, so the -<hash>
+      # suffix can only live in the string table. See the file's own comment.
+      - mkdir -p {{.DIST}}
+      - >-
+        sed -e 's|{{"{{"}}\.Version{{"}}"}}|{{.VERSION}}|g'
+        -e 's|{{"{{"}}\.ShortVersion{{"}}"}}|{{.RELEASE_VERSION}}|g'
+        build/windows/info.json > {{.DIST}}/info-{{.ARCH}}.json
+      - >-
+        wails3 generate syso
+        -arch {{.ARCH}}
+        -icon build/windows/icon.ico
+        -manifest build/windows/agenthub.exe.manifest
+        -info {{.DIST}}/info-{{.ARCH}}.json
+        -out {{.GUI_PKG}}/wails_windows_{{.ARCH}}.syso
+
+  build:
+    desc: Cross-compile the GUI and CLI for Windows into the staging directory
+    requires:
+      vars: [ARCH]
+    deps: [":common:frontend"]
+    cmds:
+      - task: resources
+        vars: {ARCH: "{{.ARCH}}"}
+      - rm -rf {{.STAGE}}
+      - mkdir -p {{.STAGE}}
+      # -H windowsgui is the flag whose absence is most visible: without it the
+      # binary is a console application, and double-clicking the GUI opens a
+      # black cmd window behind it that stays for the life of the app.
+      #
+      # main.channel=release for the same reason the .app sets it: a build
+      # without it resolves the DEVELOPMENT data directory and the development
+      # control pipe, so a shipped copy would look freshly installed on every
+      # launch and would not see the daemon its own CLI started.
+      - >-
+        GOOS=windows GOARCH={{.ARCH}} CGO_ENABLED=0
+        go build -tags wails
+        -ldflags "-H windowsgui -X main.version={{.VERSION}} -X main.channel=release"
+        -o {{.STAGE}}/{{.GUI_BIN}}.exe {{.GUI_PKG}}
+      # The CLI, beside it — the layout contract. NOT -H windowsgui: this one is
+      # a console program, and hiding its console would silence every command a
+      # user runs in a terminal.
+      - >-
+        GOOS=windows GOARCH={{.ARCH}} CGO_ENABLED=0
+        go build
+        -ldflags "-X main.version={{.VERSION}} -X main.channel=release"
+        -o {{.STAGE}}/{{.CLI_BIN}}.exe ./cmd/agenthub
+      - cp {{.DIST}}/README-windows.txt {{.STAGE}}/README.txt
+      # Delete the .syso before anything else can mistake the tree for dirty.
+      - rm -f {{.GUI_PKG}}/wails_windows_{{.ARCH}}.syso
+      - rm -f {{.DIST}}/info-{{.ARCH}}.json
+    vars:
+      STAGE: "{{.STAGE_ROOT}}-{{.ARCH}}/{{.APP_NAME}}"
+
+  readme:
+    internal: true
+    cmds:
+      - mkdir -p {{.DIST}}
+      - |
+        cat > {{.DIST}}/README-windows.txt <<'EOF'
+        AgentHub {{.VERSION}} — Windows (experimental)
+
+        WHAT IS IN HERE
+          agenthub-gui.exe   the desktop app
+          agenthub.exe       the CLI and the daemon; every AI client talks to this
+
+        KEEP THEM TOGETHER. The GUI starts the daemon by looking for agenthub.exe
+        beside itself. Move one without the other and the GUI reports that it
+        cannot reach a daemon, describing a launch that never happened.
+
+        RUNNING IT
+          Unblock the download first: right-click each .exe, Properties, tick
+          Unblock. These binaries are NOT code-signed, so Windows SmartScreen
+          will warn on first run ("Windows protected your PC" -> More info ->
+          Run anyway).
+
+          Then double-click agenthub-gui.exe, or run `agenthub.exe --help`.
+
+        REQUIREMENTS
+          The Microsoft Edge WebView2 runtime, which Windows 11 already has and
+          most Windows 10 machines get through Edge. If the app window opens
+          blank, install "Evergreen WebView2 Runtime" from Microsoft and restart.
+
+        EXPERIMENTAL, AND SPECIFICALLY WHAT THAT MEANS
+          Every line of the Windows support cross-compiles, is unit tested
+          through injected seams on macOS and Linux, and has never RUN on a
+          Windows machine — not the named pipe the GUI and CLI talk over, not
+          the file locks that keep two processes out of one config, not the
+          MSIX-container path detection. Treat surprises as expected and report
+          them: https://github.com/dinstein/agent-hub/issues
+
+        Data lives in %APPDATA%\AgentHub. `agenthub.exe doctor` prints every
+        path this build resolved.
+        EOF
+
+  zip:
+    desc: Package one architecture into a portable zip
+    requires:
+      vars: [ARCH]
+    deps: [readme]
+    cmds:
+      - task: build
+        vars: {ARCH: "{{.ARCH}}"}
+      - rm -f {{.ZIP}}
+      # Two spellings of one command, because this Taskfile is host-agnostic and
+      # the zip tool is not: `zip` is absent on a bare Windows and
+      # Compress-Archive is absent everywhere else.
+      - cmd: cd {{.STAGE_ROOT}}-{{.ARCH}} && zip -r -q ../../{{.ZIP}} {{.APP_NAME}}
+        platforms: [linux, darwin]
+      - cmd: powershell -NoProfile -Command "Compress-Archive -Path '{{.STAGE_ROOT}}-{{.ARCH}}/{{.APP_NAME}}' -DestinationPath '{{.ZIP}}' -Force"
+        platforms: [windows]
+      - rm -rf {{.STAGE_ROOT}}-{{.ARCH}}
+      - echo "built {{.ZIP}}"
+    vars:
+      ZIP: "{{.DIST}}/{{.APP_NAME}}-{{.VERSION}}-windows-{{.ARCH}}.zip"
+
+  package:
+    desc: Full Windows release build (one zip per architecture)
+    cmds:
+      - task: zip
+        vars: {ARCH: amd64}
+      # arm64 is not speculative padding. It is the only Windows a maintainer of
+      # this project can plausibly get their hands on — a VM on an Apple Silicon
+      # Mac — and it costs one more pure-Go cross-compile. The first person to
+      # verify any of this will need it.
+      - task: zip
+        vars: {ARCH: arm64}
+      - rm -f {{.DIST}}/README-windows.txt

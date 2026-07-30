@@ -1,0 +1,35 @@
+{
+	"_comment": [
+		"Version resource compiled into agenthub-gui.exe by `wails3 generate syso`.",
+		"Templated at package time by build/windows/Taskfile.yml, the same way",
+		"build/darwin/Info.plist is: {{.ShortVersion}} is the plain x.y.z and",
+		"{{.Version}} carries the build hash too.",
+		"",
+		"The split is not cosmetic and is the same one macOS forces. `fixed`",
+		"holds FILEVERSION/PRODUCTVERSION, which Windows requires to be four",
+		"NUMBERS — anything else is silently truncated or rejected, so the",
+		"-<hash> suffix cannot go there. The string table below is free text, so",
+		"that is where the full build identity lives, and it is the one a user",
+		"reads off the file's Properties dialog when reporting a bug.",
+		"",
+		"This is what fills in the Details tab of Properties. An unsigned",
+		"executable with no version resource at all is what SmartScreen and every",
+		"corporate allowlist treat with the most suspicion."
+	],
+	"fixed": {
+		"file_version": "{{.ShortVersion}}.0",
+		"product_version": "{{.ShortVersion}}.0"
+	},
+	"info": {
+		"0000": {
+			"ProductName": "AgentHub",
+			"ProductVersion": "{{.Version}}",
+			"FileVersion": "{{.Version}}",
+			"FileDescription": "AgentHub — one configuration and one set of credentials for every AI client",
+			"InternalName": "agenthub-gui",
+			"OriginalFilename": "agenthub-gui.exe",
+			"CompanyName": "AgentHub",
+			"LegalCopyright": "MIT licensed"
+		}
+	}
+}

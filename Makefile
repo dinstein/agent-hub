@@ -395,9 +395,18 @@ gui-clean: ## Remove the bundle, node_modules and the GUI binary
 # neither can be quietly taken back. The dry-run-unless---push shape is the
 # safety, and a make target is how a flag like that gets passed by accident.
 
-.PHONY: release-macos release-cli
+.PHONY: release-macos release-windows release-cli
 release-macos: ## Build the macOS DMG: universal, CLI inside the bundle
 	wails3 task darwin:package
+
+# The Windows zip cross-compiles on any host (WebView2 is runtime COM, no cgo)
+# so this does not need a Windows machine — a maintainer on macOS can rehearse
+# the same artifact the release workflow cuts. The output lands in dist/.
+#
+# Note: wails3 must be on $PATH (`go install github.com/wailsapp/wails/v3/cmd/wails3@latest`)
+# because the task uses `wails3 generate syso` to embed the icon and manifest.
+release-windows: ## Build the Windows portable zip (cross-compiles on any host)
+	wails3 task windows:package
 
 # The same script the release workflow runs, so the bytes do not depend on who
 # built them. Writes dist/; the script refuses a dirty tree.

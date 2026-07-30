@@ -39,11 +39,12 @@ includes:
   darwin:
     taskfile: ./build/darwin/Taskfile.yml
     platforms: [darwin]
-  # Not yet implemented — see build/README.md for what each one owes the
-  # layout contract before it can be enabled.
-  # windows:
-  #   taskfile: ./build/windows/Taskfile.yml
-  #   platforms: [windows]
+  # Windows is enabled. Its Taskfile intentionally has NO `platforms:` guard:
+  # the build cross-compiles on any host (no cgo, WebView2 is runtime COM), so
+  # a maintainer on macOS can rehearse the release the workflow will cut.
+  # See build/windows/Taskfile.yml header for why that is not true for Linux.
+  windows:
+    taskfile: ./build/windows/Taskfile.yml
   # linux:
   #   taskfile: ./build/linux/Taskfile.yml
   #   platforms: [linux]

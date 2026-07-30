@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  The application manifest compiled into agenthub-gui.exe by `wails3 generate
+  syso`. Three things here are load-bearing; the rest is boilerplate Windows
+  expects to find.
+
+  dpiAware / dpiAwareness — without these the process is DPI-unaware and
+  Windows scales its window as a bitmap. On any high-DPI display (which is most
+  laptops) the whole UI renders blurry, and the report that arrives is "the
+  fonts look wrong", not "the manifest is missing".
+
+  requestedExecutionLevel asInvoker — no elevation, ever. agenthub is a
+  per-user tool: its data directory is under %APPDATA% and its control pipe
+  grants exactly one SID. An elevated GUI would create both as a DIFFERENT
+  user, so the elevated instance and the normal one would not see each other's
+  configuration. Stating asInvoker also stops Windows' installer heuristics
+  from prompting for elevation on its own.
+
+  Microsoft.Windows.Common-Controls 6.0.0.0 — the v6 comctl32, which is what
+  makes native dialogs (the file picker the GUI opens) look like this decade.
+-->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
+    <assemblyIdentity type="win32" name="dev.agenthub.gui" version="1.0.0.0" processorArchitecture="*"/>
+    <dependency>
+        <dependentAssembly>
+            <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+        </dependentAssembly>
+    </dependency>
+    <asmv3:application>
+        <asmv3:windowsSettings>
+            <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+            <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">permonitorv2,permonitor</dpiAwareness>
+        </asmv3:windowsSettings>
+    </asmv3:application>
+    <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+        <security>
+            <requestedPrivileges>
+                <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+            </requestedPrivileges>
+        </security>
+    </trustInfo>
+</assembly>
