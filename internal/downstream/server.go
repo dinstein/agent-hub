@@ -12,6 +12,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
+	"github.com/dinstein/agent-hub/internal/mrtr"
 )
 
 // clientInfo is what agenthub declares as clientInfo when initializing a
@@ -84,7 +85,10 @@ type Server struct {
 	// so backoff cannot be defeated"). Only Reconnect — an explicit user action —
 	// zeroes it.
 	reconnects atomic.Uint64
-	reconnect  RetryConfig
+
+	// inputID numbers the synthesized MRTR peer requests (never on the wire).
+	inputID   atomic.Int64
+	reconnect RetryConfig
 
 	// mu guards the mutable connection state below. The owner goroutine is
 	// the only writer of tr/tools after Connect returns; Close and the
@@ -202,24 +206,100 @@ func (s *Server) OnPeerRequest(h transport.PeerHandler) {
 	}
 }
 
+// maxInputRounds bounds the MRTR retry loop. Each round is one full
+// input-collection pass (potentially involving a human), so a server that
+// keeps answering input_required past this is not converging — the call
+// fails rather than looping at the server's pleasure.
+const maxInputRounds = 4
+
 // Call invokes tool with args on this server. It is safe for concurrent
 // use; calls execute serially in arrival order. Cancellation of ctx returns
 // immediately — forwarding notifications/cancelled downstream is handled by
 // the transport layer.
+//
+// A 2026-07-28 server may answer input_required (MRTR): the retry loop
+// lives HERE, below the pipeline, so callers only ever see a complete
+// result — gates ran once on the original call and are never re-entered by
+// a retry. Each round re-enters the owner queue and the breaker gate
+// separately, so a slow input collection (a human, on the other end of
+// roots/elicitation) never blocks other calls to this server.
 func (s *Server) Call(ctx context.Context, tool string, args json.RawMessage) (*mcp.CallResult, error) {
-	params, err := json.Marshal(mcp.CallToolParams{Name: tool, Arguments: args})
-	if err != nil {
-		return nil, fmt.Errorf("downstream %q: encode tools/call params: %w", s.spec.ID, err)
+	p := mcp.CallToolParams{Name: tool, Arguments: args}
+	for round := 0; ; round++ {
+		params, err := json.Marshal(p)
+		if err != nil {
+			return nil, fmt.Errorf("downstream %q: encode tools/call params: %w", s.spec.ID, err)
+		}
+		raw, err := s.enqueue(ctx, kindCall, mcp.MethodToolsCall, params)
+		if err != nil {
+			return nil, err
+		}
+		ir, isInputRequired, err := decodeInputRequired(raw)
+		if err != nil {
+			return nil, fmt.Errorf("downstream %q: decode tools/call result: %w", s.spec.ID, err)
+		}
+		if !isInputRequired {
+			var res mcp.CallResult
+			if err := json.Unmarshal(raw, &res); err != nil {
+				return nil, fmt.Errorf("downstream %q: decode tools/call result: %w", s.spec.ID, err)
+			}
+			return &res, nil
+		}
+		if round >= maxInputRounds {
+			return nil, fmt.Errorf("downstream %q: tools/call %q still input_required after %d rounds",
+				s.spec.ID, tool, maxInputRounds)
+		}
+		responses, err := s.resolveInputs(ctx, ir.InputRequests)
+		if err != nil {
+			return nil, fmt.Errorf("downstream %q: tools/call %q input round %d: %w",
+				s.spec.ID, tool, round+1, err)
+		}
+		// The retry re-issues the ORIGINAL params plus the collected
+		// responses and the requestState echoed verbatim; the transport
+		// assigns the new JSON-RPC id the spec requires.
+		p.InputResponses = responses
+		p.RequestState = ir.RequestState
 	}
-	raw, err := s.enqueue(ctx, kindCall, mcp.MethodToolsCall, params)
-	if err != nil {
-		return nil, err
+}
+
+// decodeInputRequired peeks at a tools/call result's resultType. Servers
+// speaking ≤ 2025-11-25 omit the field, which reads as complete.
+func decodeInputRequired(raw json.RawMessage) (*mcp.InputRequiredResult, bool, error) {
+	var probe struct {
+		ResultType string `json:"resultType"`
 	}
-	var res mcp.CallResult
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return nil, fmt.Errorf("downstream %q: decode tools/call result: %w", s.spec.ID, err)
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return nil, false, err
 	}
-	return &res, nil
+	if probe.ResultType != mcp.ResultTypeInputRequired {
+		return nil, false, nil
+	}
+	var ir mcp.InputRequiredResult
+	if err := json.Unmarshal(raw, &ir); err != nil {
+		return nil, false, err
+	}
+	return &ir, true, nil
+}
+
+// resolveInputs answers one MRTR round through the same peer-handler seam
+// the legacy reverse-RPC path uses, so both protocol generations serve
+// roots/list — and reject everything unimplemented — identically. The
+// synthesized request ids never touch the wire; they exist because the
+// PeerHandler contract answers a *mcp.Request.
+func (s *Server) resolveInputs(ctx context.Context, reqs mcp.InputRequests) (mcp.InputResponses, error) {
+	return mrtr.Resolve(ctx, reqs, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+		resp, err := s.forwardPeer(ctx, mcp.NewRequest(mcp.NewIntID(s.inputID.Add(1)), method, params))
+		if err != nil {
+			return nil, err
+		}
+		if resp == nil {
+			return nil, fmt.Errorf("peer handler returned no response for %q", method)
+		}
+		if resp.Error != nil {
+			return nil, resp.Error
+		}
+		return resp.Result, nil
+	})
 }
 
 // RefreshTools re-queries tools/list on the live connection and replaces

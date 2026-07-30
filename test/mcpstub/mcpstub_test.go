@@ -51,8 +51,8 @@ func TestDownstreamSpeaks2026(t *testing.T) {
 	}
 
 	tools := srv.Tools()
-	if len(tools) != 1 || tools[0].Name != "echo" {
-		t.Fatalf("tools = %+v, want the one echo tool", tools)
+	if len(tools) != 2 || tools[0].Name != "echo" || tools[1].Name != "confirm" {
+		t.Fatalf("tools = %+v, want echo and confirm", tools)
 	}
 
 	res, err := srv.Call(testCtx(t), "echo", json.RawMessage(`{"s":"hi"}`))
@@ -76,5 +76,29 @@ func TestDownstreamSpeaks2026(t *testing.T) {
 	}
 	if n := stub.Calls(mcp.NotificationInitialized); n != 0 {
 		t.Fatalf("notifications/initialized sent %d times on the 2026 path, want 0", n)
+	}
+
+	// MRTR: the confirm tool answers input_required once; the stub rejects a
+	// retry whose requestState is not echoed verbatim or whose responses are
+	// incomplete, so success here proves the whole coordinator loop.
+	srv.OnPeerRequest(func(_ context.Context, req *mcp.Request) (*mcp.Response, error) {
+		if req.Method != mcp.MethodRootsList {
+			return mcp.NewErrorResponse(req.ID, &mcp.Error{
+				Code: mcp.CodeMethodNotFound, Message: "unhandled " + req.Method,
+			}), nil
+		}
+		raw, _ := json.Marshal(mcp.ListRootsResult{Roots: []mcp.Root{{URI: "file:///workspace"}}})
+		return mcp.NewResponse(req.ID, raw), nil
+	})
+	callsBefore := stub.Calls(mcp.MethodToolsCall)
+	cres, err := srv.Call(testCtx(t), "confirm", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("call confirm: %v", err)
+	}
+	if cres.IsError || !strings.Contains(string(cres.Content), "confirmed with 1 root(s)") {
+		t.Fatalf("confirm result: isError=%v content=%s", cres.IsError, cres.Content)
+	}
+	if got := stub.Calls(mcp.MethodToolsCall) - callsBefore; got != 2 {
+		t.Fatalf("confirm took %d tools/call round trips, want 2 (original + retry)", got)
 	}
 }

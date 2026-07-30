@@ -23,12 +23,13 @@ import (
 type scriptedTransport struct {
 	mu     sync.Mutex
 	calls  map[string]int
+	params map[string][]json.RawMessage
 	answer func(method string, n int) (json.RawMessage, error)
 	closed bool
 	stderr string
 }
 
-func (t *scriptedTransport) Call(ctx context.Context, method string, _ any) (json.RawMessage, error) {
+func (t *scriptedTransport) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	t.mu.Lock()
 	if t.closed {
 		t.mu.Unlock()
@@ -36,9 +37,12 @@ func (t *scriptedTransport) Call(ctx context.Context, method string, _ any) (jso
 	}
 	if t.calls == nil {
 		t.calls = map[string]int{}
+		t.params = map[string][]json.RawMessage{}
 	}
 	t.calls[method]++
 	n := t.calls[method]
+	raw, _ := json.Marshal(params) // json.RawMessage passes through verbatim
+	t.params[method] = append(t.params[method], raw)
 	answer := t.answer
 	t.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -51,6 +55,16 @@ func (t *scriptedTransport) count(method string) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.calls[method]
+}
+
+// paramsOf returns the params of the n-th (1-based) call of method.
+func (t *scriptedTransport) paramsOf(method string, n int) json.RawMessage {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if n < 1 || n > len(t.params[method]) {
+		return nil
+	}
+	return t.params[method][n-1]
 }
 
 func (t *scriptedTransport) Notify(context.Context, string, any) error { return nil }
