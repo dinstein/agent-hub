@@ -504,3 +504,44 @@ func TestClientInspectPassesTheBaseDir(t *testing.T) {
 		t.Errorf("Inspect(%q, %q), want (cursor, /tmp/some/project)", fake.inspected, fake.inspectBase)
 	}
 }
+
+// TestClientsListNamesTheClientsItWillNotWrite pins the control plane's answer
+// to the CLI's. Both report every supported client — that is what makes "why
+// is my client missing" answerable from one listing — so both also have to say
+// which of them agenthub does not write itself, or a frontend rendering the
+// list is left to label it, and the label it reaches for is "writable".
+//
+// It runs against the REAL adapter table: a hand-written expectation here
+// would pass while the two surfaces disagreed, which is the only failure worth
+// catching.
+func TestClientsListNamesTheClientsItWillNotWrite(t *testing.T) {
+	table := clients.New(clients.Options{
+		Home: t.TempDir(), BackupDir: filepath.Join(t.TempDir(), "b"),
+	})
+	env := nrStart(t, func(d *NonRegistryDeps) { d.Clients = table })
+
+	status, body := nrDo(t, env.sock, http.MethodGet, "/v1/clients", nil)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d: %s", status, body)
+	}
+	var out ClientsWire
+	nrData(t, body, &out)
+
+	var want []string
+	for _, id := range table.IDs() {
+		if f, ok := table.Lookup(id); ok && !f.Writable() {
+			want = append(want, id)
+		}
+	}
+	if len(want) == 0 {
+		t.Fatal("no read-only client shapes left; this test has nothing to hold")
+	}
+	if !slices.Equal(out.Indirect, want) {
+		t.Errorf("indirect = %v, want %v", out.Indirect, want)
+	}
+	for _, id := range out.Indirect {
+		if !slices.Contains(out.Supported, id) {
+			t.Errorf("%q is indirect but missing from supported %v", id, out.Supported)
+		}
+	}
+}

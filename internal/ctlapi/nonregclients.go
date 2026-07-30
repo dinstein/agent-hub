@@ -41,9 +41,18 @@ type ClientWire struct {
 // ClientsWire is the answer to GET /v1/clients.
 type ClientsWire struct {
 	Found []ClientWire `json:"found"`
-	// Supported lists every client agenthub can write directly, so the
-	// answer to "why is my client missing" ships with the listing.
+	// Supported lists every client agenthub knows about — deliberately not
+	// the writable subset, so "why is my client missing" is answered by the
+	// same listing. It must never be presented as the writable set: three of
+	// these are read-only shapes, and a frontend labelling the whole list
+	// "writable" contradicts the Writable field on the rows beside it.
 	Supported []string `json:"supported"`
+	// Indirect names the supported clients agenthub does not write itself
+	// (TOML, YAML, and the fileless remote shape), where a connect delegates
+	// to the client's own CLI or hands back a snippet. Every id here is also
+	// in Supported. Same split the CLI's `client detect` reports — the two
+	// must not disagree about the same client.
+	Indirect []string `json:"indirect,omitempty"`
 }
 
 // ClientEntryWire is the MCP server entry agenthub writes into a client
@@ -97,7 +106,21 @@ type ClientDisconnectWire struct {
 func (s *Server) handleClientsList(w http.ResponseWriter, r *http.Request) {
 	d := &s.opts.NonRegistry
 	found := d.Clients.Detect(r.Context(), d.ClientBaseDir)
-	out := ClientsWire{Found: make([]ClientWire, 0, len(found)), Supported: d.Clients.IDs()}
+	// Derived from IDs + Lookup, the two the adapter already exposes: this
+	// answer has to agree with `client detect`'s, and the only way to be sure
+	// is to ask the same table Connect will ask.
+	ids := d.Clients.IDs()
+	var indirect []string
+	for _, id := range ids {
+		if f, ok := d.Clients.Lookup(id); ok && !f.Writable() {
+			indirect = append(indirect, id)
+		}
+	}
+	out := ClientsWire{
+		Found:     make([]ClientWire, 0, len(found)),
+		Supported: ids,
+		Indirect:  indirect,
+	}
 	for _, f := range found {
 		out.Found = append(out.Found, ClientWire{
 			Client:      f.Client,

@@ -40,9 +40,17 @@ type ClientDetected struct {
 // ClientDetectResult is the answer to Detect.
 type ClientDetectResult struct {
 	Found []ClientDetected `json:"found"`
-	// Supported lists every client agenthub can write directly, so the
-	// answer to "why is my client missing" ships with the listing.
+	// Supported lists every client agenthub knows about — deliberately not
+	// the writable subset, so "why is my client missing" is answered by the
+	// same listing. Do not render it as the set agenthub can write: some of
+	// these keep their configuration in a format it will not rewrite, and
+	// Indirect names exactly those. Labelling the whole list "writable"
+	// contradicts the Writable field on the rows beside it.
 	Supported []string `json:"supported"`
+	// Indirect names the supported clients agenthub does not write itself,
+	// where a connect delegates to the client's own CLI or hands back a
+	// snippet to paste. Every id here is also in Supported.
+	Indirect []string `json:"indirect,omitempty"`
 }
 
 // GatewayEntry is the MCP server entry agenthub writes into a client

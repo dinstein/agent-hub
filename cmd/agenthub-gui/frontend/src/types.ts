@@ -701,7 +701,13 @@ export interface ClientDetected {
 
 export interface ClientDetectResult {
   found: ClientDetected[];
+  /** Every client agenthub knows about — NOT the writable subset. Presenting
+   *  it as the set agenthub can write contradicts the `writable` field on the
+   *  rows beside it; `indirect` names the difference. */
   supported: string[];
+  /** The supported clients agenthub does not write itself: connect delegates
+   *  to the client's own CLI, or hands back a snippet to paste. */
+  indirect?: string[];
 }
 
 export interface GatewayEntry {

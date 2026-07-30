@@ -180,12 +180,34 @@ export function clientsPage(): Page {
     ];
   }
 
+  // supportedHint renders the line under the table. It used to read
+  // "Directly supported: <every id>", which named codex, continue and
+  // open-webui as directly handled while their own rows carried a "read-only"
+  // badge — and then told the reader that "anything else" needs wiring by
+  // hand, when two of the three listed do. The read-only ones are now named
+  // as such, from the same answer the badges come from.
+  function supportedHint(d: ClientDetectResult): Node {
+    const indirect = d.indirect ?? [];
+    const parts = [`Supported: ${d.supported.join(", ") || "—"}.`];
+    if (indirect.length > 0) {
+      parts.push(
+        `agenthub does not write these itself: ${indirect.join(", ")} — Connect says what to do instead.`,
+      );
+    }
+    parts.push("Any other MCP client can still point at agenthub by hand.");
+    return el("p", { class: "hint", text: parts.join(" ") });
+  }
+
   async function draw(): Promise<void> {
     if (!root) return;
     let err: unknown = null;
     try {
       const answer = await hub.detectClients();
-      detected = { found: answer.found ?? [], supported: answer.supported ?? [] };
+      detected = {
+        found: answer.found ?? [],
+        supported: answer.supported ?? [],
+        indirect: answer.indirect ?? [],
+      };
     } catch (e) {
       err = e;
       detected = null;
@@ -203,12 +225,7 @@ export function clientsPage(): Page {
           : (detected?.found ?? []).length === 0
             ? empty("No client configuration found on this machine.")
             : table(["Client", "Configuration", "Access", "Actions"], (detected?.found ?? []).map(row)),
-        detected
-          ? el("p", {
-              class: "hint",
-              text: `Directly supported: ${detected.supported.join(", ") || "—"}. Anything else can still point at agenthub by hand.`,
-            })
-          : null,
+        detected ? supportedHint(detected) : null,
         el("p", {
           class: "hint",
           text: "Detection reads file metadata only. The contents are opened by connect and disconnect, where a permission prompt is expected.",
