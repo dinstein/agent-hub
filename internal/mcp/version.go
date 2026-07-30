@@ -17,11 +17,15 @@ const (
 	Version2025 = "2025-11-25"
 )
 
-// ProtocolVersion is the MCP protocol version this client declares during
-// handshake (canonical.md §5b). Pinned at 2025-11-25 while the 2026-07-28
-// transport changes (stateless _meta, server/discover, MRTR) are being
-// implemented; flipped to Version2026 as the final commit of Phase 1 — see
-// docs/mcp-2026-07-28.md.
+// ProtocolVersion is the version declared where the STATEFUL (≤ 2025-11-25)
+// protocol needs one: the legacy initialize handshake, the exposure side's
+// default answer, and the HTTP header before negotiation. It stays at
+// Version2025 deliberately — every context that reads it is definitionally
+// pre-2026 (the legacy path only runs once server/discover has failed), and
+// the 2026-07-28 declaration travels per-request in _meta instead, built by
+// transport.BuildRequestMeta from Version2026 directly. See
+// docs/mcp-2026-07-28.md §6.1 for the resolution of the original
+// "flip this constant" plan.
 const ProtocolVersion = Version2025
 
 // SupportedVersions lists every protocol version this facade accepts from a
