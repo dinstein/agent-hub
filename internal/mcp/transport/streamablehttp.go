@@ -263,7 +263,11 @@ func (t *streamableHTTP) post(ctx context.Context, body []byte, method, name str
 	}
 	req.Header.Set(headerContentType, mediaJSON)
 	req.Header.Set(headerAccept, mediaJSON+", "+mediaSSE)
-	if t.currentMeta() != nil && method != "" {
+	// server/discover is itself a 2026-shaped request — it goes out before
+	// any version is negotiated, and a strict stateless server rejects a
+	// POST without Mcp-Method (-32020). Everything else gains the headers
+	// only once 2026 is negotiated, keeping pre-2026 traffic byte-identical.
+	if method != "" && (t.currentMeta() != nil || method == mcp.MethodDiscover) {
 		req.Header.Set(headerMcpMethod, method)
 		if name != "" {
 			req.Header.Set(headerMcpName, name)

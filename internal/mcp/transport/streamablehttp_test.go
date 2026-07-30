@@ -173,11 +173,12 @@ func TestStreamableHTTP2026Handshake(t *testing.T) {
 	if res.Version != mcp.Version2026 {
 		t.Fatalf("negotiated %q, want %q", res.Version, mcp.Version2026)
 	}
-	// The discover POST itself must not carry Mcp-Method: the header set
-	// only turns on once 2026 is negotiated (the recorded first request
-	// pins the pre-negotiation state).
-	if got := fs.recorded()[0].Header[headerMcpMethod]; got != "" {
-		t.Fatalf("discover POST carried Mcp-Method %q before negotiation", got)
+	// The discover POST is itself a 2026-shaped request and must carry
+	// Mcp-Method even though nothing is negotiated yet — a strict stateless
+	// server rejects it with -32020 otherwise, which would masquerade as
+	// "old server" and silently divert every 2026 server to the legacy path.
+	if got := fs.recorded()[0].Header[headerMcpMethod]; got != mcp.MethodDiscover {
+		t.Fatalf("discover POST Mcp-Method = %q, want %q", got, mcp.MethodDiscover)
 	}
 	if _, err := tr.Call(testCtx(t), mcp.MethodToolsCall, mcp.CallToolParams{
 		Name: "echo", Arguments: json.RawMessage(`{"s":"hi"}`),
