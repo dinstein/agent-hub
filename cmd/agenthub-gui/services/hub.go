@@ -523,21 +523,6 @@ func (h *Hub) ListSkills(ctx context.Context) ([]api.Skill, error) {
 	})
 }
 
-// AuditTail returns the tail of the call ledger (hashes and metadata only,
-// never arguments).
-func (h *Hub) AuditTail(ctx context.Context, limit int) ([]api.AuditRecord, error) {
-	return call(ctx, h, func(c *api.Client) ([]api.AuditRecord, error) {
-		return c.Audit.Tail(ctx, limit)
-	})
-}
-
-// SecurityTail returns the tail of the security event stream.
-func (h *Hub) SecurityTail(ctx context.Context, limit int) ([]api.SecurityEvent, error) {
-	return call(ctx, h, func(c *api.Client) ([]api.SecurityEvent, error) {
-		return c.Audit.TailSecurity(ctx, limit)
-	})
-}
-
 // ErrorKindConflict is the `kind` MarshalError stamps on a lost
 // optimistic-concurrency check, and the ONLY error a page answers by
 // re-reading and re-applying the user's intent rather than by reporting a

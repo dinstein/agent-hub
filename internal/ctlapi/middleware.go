@@ -27,15 +27,6 @@ func requestIDFrom(ctx context.Context) string {
 	return id
 }
 
-// actorFrom returns the validated actor stamped by the middleware.
-func actorFrom(ctx context.Context) string {
-	a, _ := ctx.Value(ctxActor).(string)
-	if a == "" {
-		a = "cli"
-	}
-	return a
-}
-
 // validRequestID bounds what we echo back: header values are attacker-ish
 // input even on a same-uid socket, and the id lands in response headers,
 // error bodies and audit lines. Anything unverifiable is REPLACED with a

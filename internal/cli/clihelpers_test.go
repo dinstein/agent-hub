@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 )
 
@@ -89,55 +88,6 @@ func TestBinaryExistsDistinguishesAPathFromAPathLookup(t *testing.T) {
 	}
 	if binaryExists("definitely-not-a-real-binary-xyz") {
 		t.Error("an unknown bare name reported present")
-	}
-}
-
-// TestFileSizeAndAuditSegments cover the audit rotation helpers: a missing
-// file is size 0 rather than an error, and only ROTATED segments are listed —
-// the live file is handled separately, so including it would double-count.
-func TestFileSizeAndAuditSegments(t *testing.T) {
-	dir := t.TempDir()
-
-	if got := fileSize(filepath.Join(dir, "absent")); got != 0 {
-		t.Errorf("missing file size = %d, want 0", got)
-	}
-	f := filepath.Join(dir, "some.jsonl")
-	if err := os.WriteFile(f, []byte("hello"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := fileSize(f); got != 5 {
-		t.Errorf("file size = %d, want 5", got)
-	}
-
-	if got := auditSegments(dir); len(got) != 0 {
-		t.Errorf("segments in a directory with none = %v", got)
-	}
-
-	ext := filepath.Ext(audit.AuditFileName)
-	base := strings.TrimSuffix(audit.AuditFileName, ext)
-	for _, name := range []string{
-		base + "-2" + ext,
-		base + "-1" + ext,
-		audit.AuditFileName, // the LIVE file, which is not a segment
-		"unrelated.jsonl",
-	} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("{}\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	segs := auditSegments(dir)
-	if len(segs) != 2 {
-		t.Fatalf("segments = %v, want only the two rotated files", segs)
-	}
-	// Sorted, so an export reads segments oldest-name-first deterministically.
-	if filepath.Base(segs[0]) != base+"-1"+ext || filepath.Base(segs[1]) != base+"-2"+ext {
-		t.Errorf("segments = %v, want them sorted", segs)
-	}
-	for _, s := range segs {
-		if filepath.Base(s) == audit.AuditFileName {
-			t.Error("the live audit file was listed as a rotated segment")
-		}
 	}
 }
 

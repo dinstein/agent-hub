@@ -23,7 +23,6 @@
 //	GET /v1/config, PUT /v1/config/{key}                      governance switches
 //	GET /v1/tools, PUT /v1/tools/{server}/{tool}              kill switch + local override
 //	GET /v1/quarantine, DELETE /v1/quarantine/{exposed}       isolation set and release
-//	GET /v1/audit, GET /v1/security                           JSONL stream tails (auditread.go)
 //
 // Every write there takes an optional expected_generation and answers a
 // lost compare-and-swap with 409 + CodeStalePrecondition carrying the

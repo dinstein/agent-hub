@@ -136,11 +136,9 @@ func (s *Server) handleAuthRefresh(w http.ResponseWriter, r *http.Request, serve
 			"this daemon has no refresh coordinator", "status and logout still work", reqID)
 		return
 	}
-	start := time.Now()
 	st, _, err := ref.Refresh(r.Context(), server)
 	superseded := errors.Is(err, oauthflow.ErrRefreshSuperseded)
 	ok := err == nil || superseded
-	s.auditNonReg(r, server, "auth/refresh", "", ok, time.Since(start))
 	switch {
 	case ok:
 	case errors.Is(err, oauthflow.ErrNoState):
@@ -174,9 +172,7 @@ func (s *Server) handleAuthRefresh(w http.ResponseWriter, r *http.Request, serve
 // they cannot observe without a second round trip.
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request, server string) {
 	reqID := requestIDFrom(r.Context())
-	start := time.Now()
 	err := s.opts.NonRegistry.OAuth.Clear(r.Context(), server)
-	s.auditNonReg(r, server, "auth/logout", "", err == nil, time.Since(start))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, CodeInternal,
 			"removing the stored credentials of "+server+" failed: "+err.Error(), "", reqID)

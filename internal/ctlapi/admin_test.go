@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/event"
 	"github.com/dinstein/agent-hub/internal/integrity"
@@ -117,17 +116,6 @@ func stdioEntry() map[string]any {
 	return map[string]any{"transport": "stdio", "command": "fake", "enabled": true}
 }
 
-// findAudit returns the records whose Tool field has the given prefix.
-func findAudit(recs []audit.Record, prefix string) []audit.Record {
-	var out []audit.Record
-	for _, r := range recs {
-		if len(r.Tool) >= len(prefix) && r.Tool[:len(prefix)] == prefix {
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
 // TestAdminErrorCodeContract pins the cross-package agreement stated in
 // admin.go: the wire code for a lost compare-and-swap is the SAME string
 // confops freezes, so the CLI's envelope and the control plane's error body
@@ -197,27 +185,6 @@ func TestServerCreateReadPatchDelete(t *testing.T) {
 	if _, ok := env.reg.Snapshot().Servers.V.Servers["github"]; ok {
 		t.Error("server still in registry after delete")
 	}
-
-	// Every write is audited with the GUI actor and the request id.
-	recs := env.aud.records()
-	for _, want := range []string{"servers/add:github", "servers/update:github", "servers/remove:github"} {
-		found := findAudit(recs, want)
-		if len(found) != 1 {
-			t.Fatalf("want exactly one %q record, got %d of %+v", want, len(found), recs)
-		}
-		if found[0].Actor != "gui" {
-			t.Errorf("%s actor = %q, want gui", want, found[0].Actor)
-		}
-		if found[0].Decision != audit.DecisionAllowed {
-			t.Errorf("%s decision = %q", want, found[0].Decision)
-		}
-		if found[0].RequestID == "" {
-			t.Errorf("%s has no request id", want)
-		}
-		if found[0].Server != "github" {
-			t.Errorf("%s server = %q", want, found[0].Server)
-		}
-	}
 }
 
 // A patch that mentions a map field REPLACES it. Merging would make a leaked
@@ -256,13 +223,6 @@ func TestServerCreateValidationFailures(t *testing.T) {
 	doAdmin(t, env.sock, http.MethodPost, "/v1/servers", map[string]any{"id": "dup", "entry": stdioEntry()})
 	doAdmin(t, env.sock, http.MethodPost, "/v1/servers", map[string]any{"id": "dup", "entry": stdioEntry()}).
 		wantErr(t, http.StatusConflict, confops.CodeServerExists)
-
-	// A refused write is audited too — a denied attempt is exactly the line
-	// an operator looks for.
-	denied := findAudit(env.aud.records(), "servers/add:bad")
-	if len(denied) != 1 || denied[0].Decision != audit.DecisionDenied {
-		t.Fatalf("want one denied record, got %+v", denied)
-	}
 }
 
 // A PATCH on a server nobody registered is the uniform 404, byte-identical
@@ -581,14 +541,6 @@ func TestScopeBinding(t *testing.T) {
 	// Clearing it twice is a miss, not a cheerful success.
 	doAdmin(t, env.sock, http.MethodDelete, "/v1/scope/cursor", nil).
 		wantErr(t, http.StatusNotFound, CodeNotFound)
-
-	// Three successful writes above: the initial bind, the rebind, and the
-	// rebind back. Requests refused for carrying a retired field never reach
-	// the store, so they are not among them.
-	recs := findAudit(env.aud.records(), "scope/set:cursor")
-	if len(recs) != 3 || recs[0].Client != "cursor" {
-		t.Fatalf("scope writes not audited with the client: %+v", recs)
-	}
 }
 
 func TestScopeRejectsUnknownValues(t *testing.T) {
@@ -658,10 +610,6 @@ func TestGovernanceListAndSet(t *testing.T) {
 	}
 	if env.reg.Snapshot().Governance.V.BlockOnInjection {
 		t.Error("switch not relaxed")
-	}
-	relaxed := findAudit(env.aud.records(), "config/set:blockOnInjection=true->false")
-	if len(relaxed) != 1 || relaxed[0].Actor != "gui" {
-		t.Fatalf("the relaxation is not in the audit stream with both values: %+v", env.aud.records())
 	}
 
 	// An unparseable value leaves the switch untouched: a typo must never

@@ -48,10 +48,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/discovery"
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/guard/injection"
+	"github.com/dinstein/agent-hub/internal/jsonl"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/pipeline"
@@ -59,6 +59,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/ratelimit"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/router"
+	"github.com/dinstein/agent-hub/internal/savings"
 	"github.com/dinstein/agent-hub/internal/scope"
 	"github.com/dinstein/agent-hub/internal/secrets"
 	"github.com/dinstein/agent-hub/internal/shaping"
@@ -207,7 +208,7 @@ type gateway struct {
 	owner shaping.Owner
 	// savings appends the token-savings estimates (nil when the stream could
 	// not be opened; accounting never blocks serving).
-	savings *audit.SavingsStream
+	savings *savings.Stream
 	// traces owns the per-server JSON-RPC frame logs (trace.go). nil when
 	// the logs directory could not be resolved, which disables tracing and
 	// nothing else.
@@ -524,14 +525,14 @@ func buildLogger(cfg Config, resolver *platform.Resolver) (*slog.Logger, func() 
 // openSavings opens the savings stream (<data>/logs/savings.jsonl). Every
 // failure degrades to nil — a gateway that cannot write its accounting
 // records must still serve tools.
-func openSavings(resolver *platform.Resolver, log *slog.Logger) *audit.SavingsStream {
+func openSavings(resolver *platform.Resolver, log *slog.Logger) *savings.Stream {
 	dir, err := resolver.LogsDir()
 	if err == nil {
 		err = platform.EnsureDir(dir)
 	}
 	if err == nil {
-		var st *audit.SavingsStream
-		if st, err = audit.NewSavingsStream(filepath.Join(dir, audit.SavingsFileName), audit.WriterOptions{}); err == nil {
+		var st *savings.Stream
+		if st, err = savings.NewStream(filepath.Join(dir, savings.FileName), jsonl.WriterOptions{}); err == nil {
 			return st
 		}
 	}

@@ -6,7 +6,7 @@
 //
 // Lifecycle (docs/architecture.md §2):
 //
-//  1. resolve paths, open logging, registry, audit streams;
+//  1. resolve paths, open logging and the registry;
 //  2. bind the control socket (ctlapi.Listen — fails with ErrAlreadyRunning
 //     when a live daemon owns it);
 //  3. atomically write run/daemon.json (endpoint + pid + version, 0600) —
@@ -35,7 +35,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/event"
@@ -190,15 +189,6 @@ func Run(ctx context.Context, cfg Config) error {
 		log.Warn("registry opened with quarantined documents", "error", oerr)
 	}
 
-	// Governance streams: the control plane must always audit (ctlapi
-	// tolerates a nil Auditor for tests only). Fail-closed: no audit sink,
-	// no daemon.
-	streams, err := audit.Open(logsDir, audit.Options{})
-	if err != nil {
-		return fmt.Errorf("daemon: %w", err)
-	}
-	defer func() { _ = streams.Close() }()
-
 	bus := event.NewBus()
 	mgr := session.NewMemoryManager(session.Options{Bus: bus})
 
@@ -246,7 +236,6 @@ func Run(ctx context.Context, cfg Config) error {
 		Bus:               bus,
 		States:            states,
 		ServerReports:     states,
-		Audit:             streams.Audit,
 		Logger:            log,
 		LinkAttachTimeout: cfg.LinkAttachTimeout,
 		NonRegistry:       nonReg,

@@ -98,9 +98,6 @@ func TestServerTestConnects(t *testing.T) {
 	if c.gotSpec.ID != "github" || c.gotSpec.Command != "fake" {
 		t.Errorf("spec = %+v", c.gotSpec)
 	}
-	if recs := nrFindAudit(env, "servers/test"); len(recs) != 1 || recs[0].Server != "github" {
-		t.Errorf("audit = %+v", recs)
-	}
 }
 
 func TestServerTestCallsTool(t *testing.T) {
@@ -214,9 +211,6 @@ func TestServerTestCallTransportFailure(t *testing.T) {
 	if !conn.closed {
 		t.Errorf("the connection leaked on the failure path")
 	}
-	if recs := nrFindAudit(env, "servers/test"); len(recs) != 1 || recs[0].Decision != "denied" {
-		t.Errorf("audit = %+v", recs)
-	}
 }
 
 func TestServerTestConnectFailure(t *testing.T) {
@@ -241,9 +235,6 @@ func TestServerTestConnectFailure(t *testing.T) {
 	// The auth hint is the one case where the fix is a login, so it is named.
 	if !nrContains(body, "login") {
 		t.Errorf("a 401 must hint at re-authorizing: %s", body)
-	}
-	if recs := nrFindAudit(env, "servers/test"); len(recs) != 1 || recs[0].Decision != "denied" {
-		t.Errorf("audit = %+v", recs)
 	}
 }
 

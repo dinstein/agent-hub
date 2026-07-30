@@ -13,7 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dinstein/agent-hub/internal/audit"
+	"github.com/dinstein/agent-hub/internal/savings"
 )
 
 // `activity` is the savings/search-trace projection of savings.jsonl: how
@@ -51,6 +51,10 @@ type ActivityReport struct {
 }
 
 // Human renders the aggregation.
+// maxJSONLLine bounds one JSONL line while reading. The writer bounds what
+// it appends, so a longer line means a foreign or corrupt file.
+const maxJSONLLine = 1 << 20
+
 func (r ActivityReport) Human(w io.Writer) error {
 	if r.Total.Calls == 0 {
 		_, err := fmt.Fprintln(w, "no activity recorded yet")
@@ -103,7 +107,7 @@ func (a *App) newActivityCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			path := filepath.Join(logsDir, audit.SavingsFileName)
+			path := filepath.Join(logsDir, savings.FileName)
 			var cutoff time.Time
 			if since > 0 {
 				cutoff = time.Now().Add(-since)
@@ -148,13 +152,13 @@ func readActivity(path string, cutoff time.Time) (ActivityReport, error) {
 	byMode := map[string]*ActivityBucket{}
 	byServer := map[string]*ActivityBucket{}
 	sc := bufio.NewScanner(file)
-	sc.Buffer(make([]byte, 0, 64<<10), auditMaxLine)
+	sc.Buffer(make([]byte, 0, 64<<10), maxJSONLLine)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" {
 			continue
 		}
-		var rec audit.SavingsRecord
+		var rec savings.Record
 		if json.Unmarshal([]byte(line), &rec) != nil {
 			report.Skipped++
 			continue
@@ -200,7 +204,7 @@ func readActivity(path string, cutoff time.Time) (ActivityReport, error) {
 	return report, nil
 }
 
-func add(b *ActivityBucket, rec audit.SavingsRecord) {
+func add(b *ActivityBucket, rec savings.Record) {
 	b.Calls++
 	b.Baseline += rec.BaselineTokens
 	b.Actual += rec.ActualTokens

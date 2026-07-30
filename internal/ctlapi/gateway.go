@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/event"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/session"
@@ -250,33 +249,11 @@ func (s *Server) handleGatewayRegister(w http.ResponseWriter, r *http.Request) {
 		s.opts.Sessions.Close(sess.ID)
 	})
 
-	s.auditGatewayRegister(r, hello, sid, body)
 	s.log.Info("ctlapi: gateway registered",
 		"session", sid, "client", hello.ClientID,
 		"gateway_pid", hello.Pid, "scope_hash", hello.ScopeHash)
 
 	writeOK(w, http.StatusOK, GatewayRegistered{SessionID: sid})
-}
-
-// auditGatewayRegister records the registration (canonical.md 1.6: every
-// control-plane action is audited).
-func (s *Server) auditGatewayRegister(r *http.Request, hello GatewayHelloWire, sid string, body []byte) {
-	if s.opts.Audit == nil {
-		return
-	}
-	hash, err := audit.ArgsHash(body)
-	if err != nil {
-		hash = "unhashable"
-	}
-	s.opts.Audit.Append(audit.Record{
-		Actor:     actorFrom(r.Context()),
-		Client:    hello.ClientID,
-		Session:   sid,
-		Tool:      "gateway/register",
-		ArgsHash:  hash,
-		Decision:  audit.DecisionAllowed,
-		RequestID: requestIDFrom(r.Context()),
-	})
 }
 
 // handleGatewayLink implements GET /v1/gateway/{sid}/link: the long-lived

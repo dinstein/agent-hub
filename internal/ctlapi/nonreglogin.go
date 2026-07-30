@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 	"github.com/dinstein/agent-hub/internal/oauthlogin"
@@ -194,9 +193,7 @@ func (s *Server) handleAuthLoginStart(w http.ResponseWriter, r *http.Request, se
 		req.CallbackPort = st.CallbackPort
 	}
 
-	start := time.Now()
 	sess, err := logins.Start(req)
-	s.auditNonReg(r, server, "auth/login", "", err == nil, time.Since(start))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, CodeInternal,
 			"starting a login for "+server+" failed: "+err.Error(), "", reqID)
@@ -231,6 +228,5 @@ func (s *Server) handleLoginCancel(w http.ResponseWriter, r *http.Request, id st
 		writeNotFound(w, r)
 		return
 	}
-	s.auditNonReg(r, sess.Server, "auth/login-cancel", "", true, 0)
 	writeOK(w, http.StatusOK, loginWire(sess))
 }

@@ -226,7 +226,7 @@ func (a *App) newRoot() *cobra.Command {
 	// write within each pair, decide -> inspect -> repair across them.
 	addGroupedHidden(root, a.reducedHelp, groupManage,
 		a.newConfigCmd(),
-		a.newToolCmd(), a.newAuditCmd(), a.newActivityCmd(),
+		a.newToolCmd(), a.newActivityCmd(),
 		a.newSkillCmd())
 	// `doctor` is VISIBLE, in a shipped build too, and it is alone.
 	//

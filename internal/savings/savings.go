@@ -1,13 +1,27 @@
-package audit
+// Package savings is the token-savings ledger: one JSONL line per shaped or
+// discovery-assisted interaction, aggregated by `agenthub activity`.
+//
+// It is accounting, not governance. Nothing here decides anything about a
+// call — it records what a call cost against what it would have cost — which
+// is why it outlived the governance streams it used to sit beside.
+//
+// Dependency budget: standard library plus internal/jsonl.
+package savings
 
-import "time"
+import (
+	"time"
 
-// SavingsRecord is one savings.jsonl line: a token-savings estimate for
-// one shaped/discovery-assisted interaction, aggregated later by the
-// `agenthub activity` command.
+	"github.com/dinstein/agent-hub/internal/jsonl"
+)
+
+// FileName is the ledger's file name under <data>/logs.
+const FileName = "savings.jsonl"
+
+// Record is one savings.jsonl line: a token-savings estimate for one
+// shaped/discovery-assisted interaction.
 //
 // Field order is frozen (golden-tested).
-type SavingsRecord struct {
+type Record struct {
 	// TS is the record time (UTC).
 	TS time.Time `json:"ts"`
 	// Client and Session identify who saved (optional, for grouping).
@@ -28,33 +42,33 @@ type SavingsRecord struct {
 	SavedTokens int64 `json:"savedTokens"`
 }
 
-// SavingsStream appends SavingsRecords to savings.jsonl.
-type SavingsStream struct {
-	w     *Writer
+// Stream appends Records to savings.jsonl.
+type Stream struct {
+	w     *jsonl.Writer
 	clock func() time.Time
 }
 
-// NewSavingsStream opens (creating if needed) the savings stream at path.
-func NewSavingsStream(path string, opts WriterOptions) (*SavingsStream, error) {
-	w, err := NewWriter(path, opts)
+// NewStream opens (creating if needed) the savings stream at path.
+func NewStream(path string, opts jsonl.WriterOptions) (*Stream, error) {
+	w, err := jsonl.NewWriter(path, opts)
 	if err != nil {
 		return nil, err
 	}
-	return &SavingsStream{w: w, clock: w.clock}, nil
+	return &Stream{w: w, clock: w.Clock()}, nil
 }
 
 // Append enqueues one record. A zero TS is filled with the stream clock;
 // TS is normalized to UTC. Never blocks (drops on backpressure).
-func (s *SavingsStream) Append(r SavingsRecord) {
+func (s *Stream) Append(r Record) {
 	if r.TS.IsZero() {
 		r.TS = s.clock()
 	}
 	r.TS = r.TS.UTC()
-	s.w.AppendLine(marshalLine(r))
+	s.w.AppendLine(jsonl.MarshalLine(r))
 }
 
 // Dropped reports records discarded by writer backpressure.
-func (s *SavingsStream) Dropped() uint64 { return s.w.Dropped() }
+func (s *Stream) Dropped() uint64 { return s.w.Dropped() }
 
 // Close flushes and closes the underlying writer.
-func (s *SavingsStream) Close() error { return s.w.Close() }
+func (s *Stream) Close() error { return s.w.Close() }

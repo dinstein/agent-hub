@@ -44,9 +44,6 @@ func TestTokenCreateShowsValueExactlyOnce(t *testing.T) {
 	if nrContains(revoked, nrTokenValue) {
 		t.Fatalf("the revoke response leaked the plaintext: %s", revoked)
 	}
-	if nrContains(nrAuditJSON(t, env), nrTokenValue) {
-		t.Fatalf("the audit stream leaked the plaintext")
-	}
 
 	// And the listing row has no field that could hold one.
 	var rows []map[string]any
@@ -193,9 +190,6 @@ func TestTokenRevokeUnknownIs404(t *testing.T) {
 	}
 	if code := nrErrCode(t, body); code != CodeNotFound {
 		t.Errorf("code = %s", code)
-	}
-	if recs := nrFindAudit(env, "tokens/revoke"); len(recs) != 1 || recs[0].Decision != "denied" {
-		t.Errorf("audit = %+v", recs)
 	}
 }
 

@@ -845,7 +845,7 @@ by construction aligned with the client connection and nothing needs to outlive 
 daemon's HTTP face — cursors must survive a daemon restart within the session TTL).
 
 `Savings` / `EstimateSavings` provide token savings estimates, with fields corresponding one-to-one to
-`audit.SavingsRecord`, but this package **deliberately does not import** `internal/audit` (shaping is on the data path and
+`savings.Record`, but this package **deliberately does not import** `internal/savings` (shaping is on the data path and
 must not drag an audit writer in with it); the caller copies the fields across.
 
 ### Invariants and failure directions

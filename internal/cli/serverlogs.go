@@ -14,8 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/downstream"
+	"github.com/dinstein/agent-hub/internal/jsonl"
 )
 
 // `server logs` is the reader half of the per-server trace log written by
@@ -260,7 +260,7 @@ func readTraceFrom(path string, offset int64) ([]downstream.TraceFrame, int, err
 		// so it unmarshals into TraceFrame without error and yields a zero
 		// value — a blank row claiming nothing happened, in place of the one
 		// frame big enough to be worth reading.
-		if m, ok := audit.DecodeOversize([]byte(line)); ok {
+		if m, ok := jsonl.DecodeOversize([]byte(line)); ok {
 			frames = append(frames, oversizeFrame(m))
 			continue
 		}
@@ -295,11 +295,11 @@ func dashInt(n int) string {
 // Recovering them by parsing text is ugly, and it is worth it — "the 64 KB
 // tools/list response was dropped" is a different diagnosis from "something
 // was dropped", and the trace was opened to make exactly that distinction.
-func oversizeFrame(m audit.OversizeMarker) downstream.TraceFrame {
+func oversizeFrame(m jsonl.OversizeMarker) downstream.TraceFrame {
 	f := downstream.TraceFrame{
 		Bytes: m.OrigBytes,
 		Error: fmt.Sprintf("frame dropped: its line exceeded the %d-byte bound (%d bytes)",
-			audit.DefaultMaxLineBytes, m.OrigBytes),
+			jsonl.DefaultMaxLineBytes, m.OrigBytes),
 		Truncated: true,
 	}
 	if ts, err := time.Parse(time.RFC3339Nano, m.TS); err == nil {
@@ -329,4 +329,19 @@ func fieldFromPrefix(prefix, key string) string {
 		return ""
 	}
 	return rest[:j]
+}
+
+// fileSize is the size of path, or 0 when it cannot be stat'ed.
+func fileSize(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
+}
+
+// fileExists reports whether path is present.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

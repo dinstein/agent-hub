@@ -3,7 +3,6 @@ package ctlapi
 import (
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -84,12 +83,8 @@ func (s *Server) handleServerCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	start := time.Now()
 	res, err := confops.AddServer(r.Context(), s.opts.Registry,
 		confops.ServerSpec{ID: req.ID, Entry: req.Entry}, pre)
-	s.auditAdmin(r, adminAudit{
-		action: "servers/add:" + req.ID, server: req.ID, body: body, err: err, dur: time.Since(start),
-	})
 	if err != nil {
 		s.writeOpsError(w, r, err)
 		return
@@ -146,12 +141,8 @@ func (s *Server) handleServerPatch(w http.ResponseWriter, r *http.Request, id st
 		writeErr(w, http.StatusBadRequest, CodeBadRequest, "decoding entry patch: "+err.Error(), "", reqID)
 		return
 	}
-	start := time.Now()
 	res, err := confops.UpdateServer(r.Context(), s.opts.Registry,
 		confops.ServerSpec{ID: id, Entry: next}, pre)
-	s.auditAdmin(r, adminAudit{
-		action: "servers/update:" + id, server: id, body: body, err: err, dur: time.Since(start),
-	})
 	if err != nil {
 		s.writeOpsError(w, r, err)
 		return
@@ -215,11 +206,7 @@ func (s *Server) handleServerDelete(w http.ResponseWriter, r *http.Request, id s
 	if s.opts.NonRegistry.Secrets != nil {
 		opts.Credentials = s.opts.NonRegistry.Secrets
 	}
-	start := time.Now()
 	res, err := confops.RemoveServer(r.Context(), s.opts.Registry, id, pre, opts)
-	s.auditAdmin(r, adminAudit{
-		action: "servers/remove:" + id, server: id, body: body, err: err, dur: time.Since(start),
-	})
 	if err != nil {
 		s.writeOpsError(w, r, err)
 		return

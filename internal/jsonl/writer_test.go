@@ -1,4 +1,4 @@
-package audit
+package jsonl
 
 import (
 	"bufio"
@@ -165,7 +165,7 @@ func TestWriterRotation(t *testing.T) {
 	const n = 200
 	pad := strings.Repeat("y", 80)
 	for i := 0; i < n; i++ {
-		w.AppendLine(marshalLine(appendLine{Proc: "p", Seq: i, Pad: pad}))
+		w.AppendLine(MarshalLine(appendLine{Proc: "p", Seq: i, Pad: pad}))
 	}
 	if err := w.Close(); err != nil {
 		t.Fatal(err)

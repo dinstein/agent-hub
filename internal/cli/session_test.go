@@ -26,7 +26,6 @@ func TestOnlineOnlyCommandsExit4(t *testing.T) {
 		{"session", "kill", "claude-code:1"},
 		{"events"},
 		{"events", "--follow"},
-		{"audit", "tail", "-f"},
 	}
 	for _, args := range cases {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {

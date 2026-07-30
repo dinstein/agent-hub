@@ -50,15 +50,6 @@ func TestKillSession(t *testing.T) {
 		t.Errorf("session survived the kill: %+v", list)
 	}
 
-	var audited bool
-	for _, r := range env.aud.records() {
-		if r.Tool == "sessions/kill" && r.Session == string(s.ID) && r.Client == "cursor" {
-			audited = true
-		}
-	}
-	if !audited {
-		t.Errorf("kill was not audited: %+v", env.aud.records())
-	}
 }
 
 // TestKillUnknownSessionIs404 pins the anti-probing rule: an unknown id

@@ -112,39 +112,6 @@ func nrErrCode(t *testing.T, raw []byte) string {
 	return env.Error.Code
 }
 
-// nrAuditJSON renders every captured audit record as JSON, for the leak
-// assertions ("the sentinel appears nowhere, including in the audit line").
-func nrAuditJSON(t *testing.T, env *testEnv) []byte {
-	t.Helper()
-	b, err := json.Marshal(env.aud.records())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
-}
-
-// nrFindAudit returns the captured records whose Tool matches.
-func nrFindAudit(env *testEnv, tool string) []auditLite {
-	var out []auditLite
-	for _, r := range env.aud.records() {
-		if r.Tool == tool {
-			out = append(out, auditLite{
-				Tool: r.Tool, Server: r.Server, Decision: string(r.Decision),
-				ArgsHash: r.ArgsHash, Actor: r.Actor,
-			})
-		}
-	}
-	return out
-}
-
-type auditLite struct {
-	Tool     string
-	Server   string
-	Decision string
-	ArgsHash string
-	Actor    string
-}
-
 // ---------------------------------------------------------------- fakes
 
 // nrVault is a SecretVault that records writes without a real backend.

@@ -101,20 +101,11 @@ func (s *Server) handleQuarantineRelease(w http.ResponseWriter, r *http.Request,
 		s.writeOpsError(w, r, err)
 		return
 	}
-	start := time.Now()
 	entry, found, err := store.Release(r.Context(), exposed)
-	action := "quarantine/release:" + exposed
 	if err == nil && !found {
-		s.auditAdmin(r, adminAudit{
-			action: action, server: entry.Server, body: body,
-			err: errNotQuarantined, dur: time.Since(start),
-		})
 		writeNotFound(w, r)
 		return
 	}
-	s.auditAdmin(r, adminAudit{
-		action: action, server: entry.Server, body: body, err: err, dur: time.Since(start),
-	})
 	if err != nil {
 		s.writeOpsError(w, r, err)
 		return
@@ -126,12 +117,6 @@ func (s *Server) handleQuarantineRelease(w http.ResponseWriter, r *http.Request,
 		Released:        true,
 	})
 }
-
-// errNotQuarantined marks the audited refusal of a release that named
-// nothing. It never reaches the wire (the response is the uniform 404); it
-// exists so the audit line records a DENIED decision rather than an allowed
-// one for an operation that did nothing.
-var errNotQuarantined = integrity.ErrNotFound
 
 // quarantineStore opens the quarantine store, answering the uniform 404 when
 // no state directory was injected.

@@ -877,30 +877,6 @@ export interface ApprovalDecision {
   remember_error?: string;
 }
 
-export interface AuditRecord {
-  ts: string;
-  actor: string;
-  client: string;
-  session: string;
-  server: string;
-  tool: string;
-  argsHash: string;
-  decision: string;
-  durMs: number;
-  requestID: string;
-}
-
-export interface SecurityEvent {
-  ts: string;
-  event: string;
-  severity: string;
-  server?: string;
-  tool?: string;
-  client?: string;
-  detail?: string;
-  requestID?: string;
-}
-
 /** Daemon connection state (services.Status). */
 export interface Status {
   connected: boolean;

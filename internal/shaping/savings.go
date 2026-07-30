@@ -8,12 +8,12 @@ package shaping
 // would make historical savings records incomparable).
 const BytesPerToken = 4
 
-// SavingsMode is the audit.SavingsRecord.Mode value for result shaping.
+// SavingsMode is the savings.Record.Mode value for result shaping.
 // The caller writes the record; this package only supplies the numbers.
 const SavingsMode = "shaping"
 
 // Savings is the token-savings estimate for one shaped result. It maps
-// field-for-field onto audit.SavingsRecord — this package deliberately does
+// field-for-field onto savings.Record — this package deliberately does
 // NOT import internal/audit (shaping is on the data path and must not drag
 // the audit writer along); the caller copies the fields across.
 type Savings struct {

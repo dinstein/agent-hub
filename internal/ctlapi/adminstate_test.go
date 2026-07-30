@@ -1,14 +1,9 @@
 package ctlapi
 
 import (
-	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 	"testing"
-	"time"
 
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/integrity"
 )
@@ -98,18 +93,6 @@ func TestToolKillSwitchAndOverride(t *testing.T) {
 	rec := toolRecord(t, stateDir, "github", "read_file")
 	if rec.Disabled || rec.Status != integrity.StatePending {
 		t.Fatalf("record = %+v", rec)
-	}
-
-	recs := env.aud.records()
-	for _, want := range []string{
-		"tools/disable:github/read_file",
-		"tools/override:github/read_file",
-		"tools/enable:github/read_file",
-		"tools/override-clear:github/read_file",
-	} {
-		if len(findAudit(recs, want)) != 1 {
-			t.Errorf("missing audit record %q in %+v", want, recs)
-		}
 	}
 }
 
@@ -212,14 +195,6 @@ func TestQuarantineListAndRelease(t *testing.T) {
 	// "released" and leave the real isolation in place.
 	doAdmin(t, env.sock, http.MethodDelete, "/v1/quarantine/github__read_file", nil).
 		wantErr(t, http.StatusNotFound, CodeNotFound)
-
-	recs := findAudit(env.aud.records(), "quarantine/release:github__read_file")
-	if len(recs) != 2 {
-		t.Fatalf("want two audited attempts, got %+v", recs)
-	}
-	if recs[0].Decision != audit.DecisionAllowed || recs[1].Decision != audit.DecisionDenied {
-		t.Errorf("decisions = %q, %q", recs[0].Decision, recs[1].Decision)
-	}
 }
 
 // The quarantine store is not the registry, so its guard is the WEAK form —
@@ -237,136 +212,5 @@ func TestQuarantineReleaseHonoursPrecondition(t *testing.T) {
 	res.wantErr(t, http.StatusConflict, CodeStalePrecondition)
 	if snap, _ := store.Snapshot(t.Context()); len(snap) != 1 {
 		t.Error("a refused release must not have removed the entry")
-	}
-}
-
-// writeStream materializes a JSONL governance stream.
-func writeStream(t *testing.T, logsDir, name string, lines ...string) {
-	t.Helper()
-	if err := os.MkdirAll(logsDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	var buf []byte
-	for _, l := range lines {
-		buf = append(buf, l...)
-		buf = append(buf, '\n')
-	}
-	if err := os.WriteFile(filepath.Join(logsDir, name), buf, 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func recordLine(t *testing.T, r audit.Record) string {
-	t.Helper()
-	b, err := json.Marshal(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
-}
-
-func TestAuditTail(t *testing.T) {
-	env, _, logsDir := adminServer(t, nil)
-	now := time.Now().UTC()
-	lines := make([]string, 0, 5)
-	for i := range 5 {
-		lines = append(lines, recordLine(t, audit.Record{
-			TS: now, Actor: "cli", Server: "github", Tool: string(rune('a' + i)),
-			Decision: audit.DecisionAllowed, ArgsHash: "h", RequestID: "r",
-		}))
-	}
-	// A torn last line from a crashed writer must not make the log
-	// unreadable — it is skipped, not fatal.
-	lines = append(lines, `{"ts":"2026-`)
-	writeStream(t, logsDir, audit.AuditFileName, lines...)
-
-	var all []audit.Record
-	doAdmin(t, env.sock, http.MethodGet, "/v1/audit", nil).decode(t, &all)
-	if len(all) != 5 {
-		t.Fatalf("got %d records", len(all))
-	}
-	if all[0].Tool != "a" || all[4].Tool != "e" {
-		t.Errorf("order is not oldest-first: %v", all)
-	}
-	// The args red line: the record type has no field for arguments, so
-	// there is nothing here to leak.
-	if all[0].ArgsHash != "h" {
-		t.Errorf("argsHash lost: %+v", all[0])
-	}
-
-	var tail []audit.Record
-	doAdmin(t, env.sock, http.MethodGet, "/v1/audit?limit=2", nil).decode(t, &tail)
-	if len(tail) != 2 || tail[0].Tool != "d" || tail[1].Tool != "e" {
-		t.Fatalf("tail = %+v", tail)
-	}
-
-	doAdmin(t, env.sock, http.MethodGet, "/v1/audit?limit=-1", nil).
-		wantErr(t, http.StatusBadRequest, CodeBadRequest)
-	doAdmin(t, env.sock, http.MethodGet, "/v1/audit?stream=savings", nil).
-		wantErr(t, http.StatusBadRequest, CodeBadRequest)
-}
-
-func TestSecurityTail(t *testing.T) {
-	env, _, logsDir := adminServer(t, nil)
-	ev := audit.SecurityEvent{
-		TS: time.Now().UTC(), Event: "injection.blocked", Severity: audit.SeverityCritical,
-		Server: "github", Tool: "read_file", Detail: "pattern 3",
-	}
-	b, err := json.Marshal(ev)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeStream(t, logsDir, audit.SecurityFileName, string(b))
-
-	// Both spellings the api client uses reach the same implementation.
-	for _, path := range []string{"/v1/security", "/v1/audit?stream=security"} {
-		var out []audit.SecurityEvent
-		doAdmin(t, env.sock, http.MethodGet, path, nil).decode(t, &out)
-		if len(out) != 1 || out[0].Event != "injection.blocked" || out[0].Severity != audit.SeverityCritical {
-			t.Fatalf("%s: %+v", path, out)
-		}
-	}
-}
-
-// A stream that has never been written is an EMPTY tail, not an error: the
-// daemon may simply not have logged anything yet.
-func TestAuditTailOnMissingFileIsEmpty(t *testing.T) {
-	env, _, _ := adminServer(t, nil)
-	var out []audit.Record
-	res := doAdmin(t, env.sock, http.MethodGet, "/v1/audit", nil)
-	res.decode(t, &out)
-	if len(out) != 0 {
-		t.Fatalf("out = %+v", out)
-	}
-	if string(res.Data) != "[]" {
-		t.Errorf("data = %s, want an empty array (a frontend must not decode null)", res.Data)
-	}
-}
-
-// Without a logs directory the two routes answer the uniform 404 — the same
-// "unavailable on this daemon" shape a frontend already handles, never an
-// empty list that would read as "nothing was logged".
-func TestAuditTailNeedsALogsDir(t *testing.T) {
-	_, env := startServer(t, func(o *Options) { o.LogsDir = "" })
-	doAdmin(t, env.sock, http.MethodGet, "/v1/audit", nil).
-		wantErr(t, http.StatusNotFound, CodeNotFound)
-	doAdmin(t, env.sock, http.MethodGet, "/v1/security", nil).
-		wantErr(t, http.StatusNotFound, CodeNotFound)
-}
-
-// The tail is bounded on the server: a client-side clamp is not a trusted
-// bound.
-func TestAuditTailClampsLimit(t *testing.T) {
-	env, _, logsDir := adminServer(t, nil)
-	lines := make([]string, 0, maxAuditTail+10)
-	for i := range maxAuditTail + 10 {
-		lines = append(lines, recordLine(t, audit.Record{Tool: string(rune('a' + i%26))}))
-	}
-	writeStream(t, logsDir, audit.AuditFileName, lines...)
-
-	var out []audit.Record
-	doAdmin(t, env.sock, http.MethodGet, "/v1/audit?limit=99999", nil).decode(t, &out)
-	if len(out) != maxAuditTail {
-		t.Fatalf("got %d records, want the %d ceiling", len(out), maxAuditTail)
 	}
 }

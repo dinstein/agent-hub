@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dinstein/agent-hub/internal/audit"
+	"github.com/dinstein/agent-hub/internal/jsonl"
 )
 
 // TestServerLogsRendersAnOversizeMarker: a marker must read as "this frame
@@ -84,7 +84,7 @@ func TestServerLogsStillCountsGarbage(t *testing.T) {
 func TestDecodeOversizeRejectsAPlainRecord(t *testing.T) {
 	t.Parallel()
 	plain := `{"ts":"2026-07-29T14:56:19.5Z","server":"linear","dir":"out","method":"tools/list","bytes":0,"pid":13146}`
-	if _, ok := audit.DecodeOversize([]byte(plain)); ok {
+	if _, ok := jsonl.DecodeOversize([]byte(plain)); ok {
 		t.Error("a normal frame was taken for an oversize marker")
 	}
 }

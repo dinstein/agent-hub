@@ -24,7 +24,7 @@ import { clear, el, emptyState, errorHeadline, loadingState, section } from "../
 import type { Page } from "../page";
 import { failureBox, noticeSlot } from "../page";
 import { button, controls, copyButton } from "../ui";
-import type { AuditRecord, CallError, ClientDetected, Server } from "../types";
+import type { CallError, ClientDetected, Server, SessionInfo } from "../types";
 import { ErrCode } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -97,15 +97,13 @@ function markSeen(): void {
  *   - the call ledger is empty, i.e. no client has ever reached the gateway.
  *
  * Fail direction: FAIL-CLOSED toward "not new". Any failure to read either
- * signal answers false, so an unreachable daemon or a daemon assembled
- * without the audit endpoint leaves the user on the page they asked for.
+ * signal answers false, so an unreachable daemon leaves the user on the page
+ * they asked for.
  */
 async function probeFresh(): Promise<boolean> {
   try {
     const servers = await hub.listServers();
-    if (servers.length > 0) return false;
-    const tail = await hub.auditTail(1);
-    return tail.length === 0;
+    return servers.length === 0;
   } catch {
     return false;
   }
@@ -222,16 +220,14 @@ const VERIFY_PROMPT =
  *  sits watching a spinner wondering whether it is stuck. */
 const VERIFY_TIMEOUT_MS = 75_000;
 const VERIFY_INTERVAL_MS = 2_000;
-/** How much ledger to compare. The tail is the window; a call that arrives
- *  while more than this many others do is still found, because they all
- *  arrived after the baseline. */
-const VERIFY_TAIL = 50;
-
-/** A stable identity for a ledger record. requestID is the real key; the
- *  fallback exists so a daemon that leaves it empty still gets a usable
- *  comparison instead of matching everything against everything. */
-function recordKey(r: AuditRecord): string {
-  return r.requestID || `${r.ts}|${r.session}|${r.server}|${r.tool}|${r.argsHash}`;
+/** What the step watches for. A client that opens a session has completed
+ *  the whole chain up to the gateway: it found the configuration, spawned
+ *  agenthub, and handshaked. It is a weaker claim than "a tool call
+ *  arrived" — the call ledger that used to back that claim went with the
+ *  governance streams — so the wording below claims exactly this and no
+ *  more. */
+function sessionKey(s: SessionInfo): string {
+  return s.id;
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +257,7 @@ export function onboardingPage(): Page {
   let verifyDeadline = 0;
   let verifyBaseline: Set<string> | null = null;
   let verifyState: "idle" | "waiting" | "found" | "timeout" | "unavailable" = "idle";
-  let verifyFound: AuditRecord | null = null;
+  let verifyFound: SessionInfo | null = null;
   let verifyProblem = "";
 
   function stopVerify(): void {
@@ -593,8 +589,8 @@ export function onboardingPage(): Page {
     verifyFound = null;
     verifyProblem = "";
     try {
-      const tail = await hub.auditTail(VERIFY_TAIL);
-      verifyBaseline = new Set(tail.map(recordKey));
+      const open = await hub.listSessions();
+      verifyBaseline = new Set(open.map(sessionKey));
     } catch (err) {
       // Without a baseline there is no way to tell a NEW call from an old
       // one, and claiming success on a record that was already there would be
@@ -613,9 +609,9 @@ export function onboardingPage(): Page {
 
   async function pollVerify(): Promise<void> {
     if (disposed || verifyState !== "waiting" || !verifyBaseline) return;
-    let tail: AuditRecord[];
+    let open: SessionInfo[];
     try {
-      tail = await hub.auditTail(VERIFY_TAIL);
+      open = await hub.listSessions();
     } catch {
       // A transient read failure is not evidence of anything. Keep waiting;
       // the deadline below still bounds the wait.
@@ -626,7 +622,7 @@ export function onboardingPage(): Page {
       }
       return;
     }
-    const fresh = tail.find((r) => !verifyBaseline?.has(recordKey(r)));
+    const fresh = open.find((sess) => !verifyBaseline?.has(sessionKey(sess)));
     if (fresh) {
       stopVerify();
       verifyFound = fresh;
@@ -668,11 +664,11 @@ export function onboardingPage(): Page {
   function drawVerify(): void {
     clear(verifyBox);
     const inner: (Node | null)[] = [
-      el("h3", { text: "Did a call actually arrive?" }),
+      el("h3", { text: "Did the client actually connect?" }),
       el("p", {
         text:
           "Paste this into the client you connected, then come back to this window. Nothing is claimed " +
-          "here until a call from that client shows up in the ledger.",
+          "here until that client opens a session against agenthub.",
       }),
       el("div", { class: "cli-hint" }, [
         el("span", { class: "meta", text: "❝" }),
@@ -686,10 +682,10 @@ export function onboardingPage(): Page {
       const left = Math.max(0, Math.round((verifyDeadline - Date.now()) / 1000));
       inner.push(
         el("div", { class: "notice" }, [
-          el("div", { text: `Watching the call ledger… ${left}s left.` }),
+          el("div", { text: `Watching for a new session… ${left}s left.` }),
           el("div", {
             class: "warn-line",
-            text: "Only calls that arrive from now on count — anything already in the ledger was recorded before you started.",
+            text: "Only sessions opened from now on count — anything already connected was there before you started.",
           }),
         ]),
         controls(
@@ -704,33 +700,33 @@ export function onboardingPage(): Page {
       inner.push(
         el("div", { class: "notice" }, [
           el("div", {}, [
-            el("span", { class: "badge badge-healthy", text: "arrived" }),
+            el("span", { class: "badge badge-healthy", text: "connected" }),
             el("span", {
-              text: `  A call just reached agenthub: ${verifyFound.server}/${verifyFound.tool}`,
+              text: `  A client just opened a session: ${verifyFound.client_id || verifyFound.id}`,
             }),
           ]),
           el("div", {
             class: "warn-line",
-            text: `From ${verifyFound.client || "an unnamed client"} · decision ${verifyFound.decision} · ${verifyFound.durMs} ms.`,
+            text: `Origin ${verifyFound.origin}${verifyFound.profile_name ? ` · profile ${verifyFound.profile_name}` : ""}.`,
           }),
         ]),
         el("p", {
           class: "hint",
-          text: "That is the whole chain proved end to end: client → gateway → governance → downstream server → back.",
+          text: "The client found its configuration, spawned agenthub and handshaked. What it may then see is decided by its profile.",
         }),
-        controls(el("a", { class: "btn", href: "#/audit", text: "See it in the ledger" })),
+        controls(el("a", { class: "btn", href: "#/sessions", text: "See it in Sessions" })),
       );
     } else if (verifyState === "timeout") {
       inner.push(verifyTroubleshooting());
     } else if (verifyState === "unavailable") {
       inner.push(
         el("div", { class: "notice notice-warn" }, [
-          el("div", { text: "This check cannot run: the call ledger could not be read." }),
+          el("div", { text: "This check cannot run: the session list could not be read." }),
           el("div", { class: "warn-line", text: verifyProblem }),
           el("div", {
             class: "warn-line",
             text:
-              "Without a starting point there is no way to tell a new call from an old one, and saying " +
+              "Without a starting point there is no way to tell a new session from an old one, and saying " +
               "“it works” on that basis would be a guess.",
           }),
         ]),

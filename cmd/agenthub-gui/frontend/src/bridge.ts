@@ -20,7 +20,6 @@
 
 import { Browser, Call, Clipboard, Events } from "@wailsio/runtime";
 import type {
-  AuditRecord,
   AuthLoggedOut,
   AuthLogin,
   AuthRefreshed,
@@ -46,7 +45,6 @@ import type {
   ScopeWrite,
   SecretChange,
   SecretRef,
-  SecurityEvent,
   Server,
   ServerDetail,
   ServerSetEdit,
@@ -252,11 +250,9 @@ export const hub = {
    *  keeps it. */
   cancelLogin: (id: string) => call<AuthLogin>("AuthLoginCancel", id),
 
-  // -- sessions / approvals / audit -----------------------------------------
+  // -- sessions ---------------------------------------------------------------
   listSessions: () => call<SessionInfo[]>("ListSessions"),
   /** Narrow-only: the daemon rejects anything that would widen scope. */
-  auditTail: (limit: number) => call<AuditRecord[]>("AuditTail", limit),
-  securityTail: (limit: number) => call<SecurityEvent[]>("SecurityTail", limit),
 };
 
 /** Tools of one server, with an empty list for a daemon that serves no tool

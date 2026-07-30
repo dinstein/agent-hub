@@ -9,36 +9,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/dinstein/agent-hub/api"
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/event"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/session"
 )
-
-// capAuditor captures audit records for assertions.
-type capAuditor struct {
-	mu   sync.Mutex
-	recs []audit.Record
-}
-
-func (c *capAuditor) Append(r audit.Record) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.recs = append(c.recs, r)
-}
-
-func (c *capAuditor) records() []audit.Record {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	out := make([]audit.Record, len(c.recs))
-	copy(out, c.recs)
-	return out
-}
 
 // fakeStates is a ServerStateSource backed by a map.
 type fakeStates map[string]ServerRuntime
@@ -52,7 +30,6 @@ type testEnv struct {
 	reg  *registry.Store
 	mgr  *session.MemoryManager
 	bus  *event.Bus
-	aud  *capAuditor
 	srv  *Server
 	sock string
 }
@@ -71,14 +48,12 @@ func startServer(t *testing.T, mutate func(*Options)) (*api.Client, *testEnv) {
 	}
 	bus := event.NewBus()
 	mgr := session.NewMemoryManager(session.Options{Bus: bus})
-	aud := &capAuditor{}
 
 	opts := Options{
 		Version:   "test-1.0",
 		Registry:  reg,
 		Sessions:  mgr,
 		Bus:       bus,
-		Audit:     aud,
 		KeepAlive: -1, // no keep-alives in tests
 	}
 	if mutate != nil {
@@ -103,7 +78,7 @@ func startServer(t *testing.T, mutate func(*Options)) (*api.Client, *testEnv) {
 
 	client := api.New(sock)
 	t.Cleanup(client.Close)
-	return client, &testEnv{reg: reg, mgr: mgr, bus: bus, aud: aud, srv: srv, sock: sock}
+	return client, &testEnv{reg: reg, mgr: mgr, bus: bus, srv: srv, sock: sock}
 }
 
 // rawClient returns a plain *http.Client over the UDS for wire-level
@@ -355,48 +330,6 @@ func TestAPIVersionRejected(t *testing.T) {
 	b, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(b), CodeAPIVersion) {
 		t.Errorf("body = %s", b)
-	}
-}
-
-func TestActorHeaderValidation(t *testing.T) {
-	_, env := startServer(t, nil)
-	hc := rawClient(env.sock)
-
-	// A fresh session per call: kill is the audited write this exercises, and
-	// killing the same session twice would only be audited once.
-	post := func(actor string) {
-		t.Helper()
-		s := openSession(t, env.mgr, "cursor")
-		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-			"http://agenthub/v1/sessions/"+string(s.ID)+"/kill",
-			strings.NewReader(`{}`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if actor != "" {
-			req.Header.Set(HeaderActor, actor)
-		}
-		resp, err := hc.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_ = resp.Body.Close()
-	}
-
-	post("gui")
-	post("gateway:cursor:1")
-	post("../../etc/passwd") // invalid -> "cli"
-	post("")                 // absent -> "cli"
-
-	recs := env.aud.records()
-	if len(recs) != 4 {
-		t.Fatalf("records = %d", len(recs))
-	}
-	want := []string{"gui", "gateway:cursor:1", "cli", "cli"}
-	for i, r := range recs {
-		if r.Actor != want[i] {
-			t.Errorf("rec[%d].Actor = %q, want %q", i, r.Actor, want[i])
-		}
 	}
 }
 

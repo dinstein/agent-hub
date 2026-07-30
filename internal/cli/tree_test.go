@@ -52,7 +52,7 @@ var withheldGroups = []*cobra.Group{groupDaemon, groupManage}
 // fails, or the user's next move after a failed handshake is unspoken.
 var withheldCommands = []string{
 	"daemon", "session", "events", "token",
-	"config", "tool", "audit", "activity",
+	"config", "tool", "activity",
 	"skill",
 }
 
@@ -102,7 +102,6 @@ func TestCommandTreeCoversDesign(t *testing.T) {
 		"agenthub tool ls", "agenthub tool disable", "agenthub tool enable",
 		"agenthub tool override", "agenthub tool pin",
 		"agenthub tool quarantine ls", "agenthub tool quarantine release",
-		"agenthub audit tail", "agenthub audit export",
 		"agenthub activity",
 		"agenthub skill ls", "agenthub skill inspect", "agenthub skill add",
 		"agenthub skill rm", "agenthub skill enable", "agenthub skill disable",
@@ -146,7 +145,7 @@ func TestEveryCommandHasJSON(t *testing.T) {
 }
 
 // TestResourceGroupsAreSingularWithPluralAlias pins the naming rule for the
-// resource groups. The action/stream groups (daemon, scope, auth, audit,
+// resource groups. The action/stream groups (daemon, scope, auth,
 // activity, events, config, doctor, connect) keep their names unchanged and
 // are deliberately NOT in this list.
 func TestResourceGroupsAreSingularWithPluralAlias(t *testing.T) {
@@ -204,7 +203,7 @@ func TestListingsAreNamedLs(t *testing.T) {
 func TestEveryGroupShowsHelpOnBareInvocation(t *testing.T) {
 	groups := []string{
 		"server", "profile", "client", "session", "secret", "token",
-		"tool", "skill", "config", "audit", "daemon", "auth",
+		"tool", "skill", "config", "daemon", "auth",
 	}
 	for _, g := range groups {
 		t.Run(g, func(t *testing.T) {
@@ -248,7 +247,7 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		// sits with the daemon rather than with the other governance verbs.
 		{"daemon", []string{"daemon", "session", "events", "token"}},
 		{"manage", []string{
-			"config", "tool", "audit", "activity",
+			"config", "tool", "activity",
 			"skill",
 		}},
 		// One member, and visible even in a shipped build: Setup and Wire up
@@ -444,7 +443,7 @@ func TestHiddenCommandsStillRun(t *testing.T) {
 	root := newReleaseTestRoot(t)
 	for _, path := range [][]string{
 		{"tool", "ls"}, {"token"},
-		{"audit", "tail"}, {"config", "ls"},
+		{"config", "ls"},
 		{"daemon", "status"}, {"session", "ls"}, {"events"}, {"activity"}, {"doctor"},
 	} {
 		cmd, _, err := root.Find(path)

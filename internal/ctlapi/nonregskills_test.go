@@ -108,9 +108,6 @@ func TestSkillPatchEnableDisable(t *testing.T) {
 	if !lib.enabled["writer"] {
 		t.Errorf("Enable was not called")
 	}
-	if recs := nrFindAudit(env, "skills/enable"); len(recs) != 1 || recs[0].Decision != "allowed" {
-		t.Errorf("audit = %+v", recs)
-	}
 
 	off := false
 	status, body = nrDo(t, env.sock, http.MethodPatch, "/v1/skills/writer",
@@ -120,9 +117,6 @@ func TestSkillPatchEnableDisable(t *testing.T) {
 	}
 	if lib.enabled["writer"] {
 		t.Errorf("Disable was not called")
-	}
-	if recs := nrFindAudit(env, "skills/disable"); len(recs) != 1 {
-		t.Errorf("audit = %+v", recs)
 	}
 }
 
@@ -175,9 +169,6 @@ func TestSkillInstall(t *testing.T) {
 	if lib.lastReq.SkillID != "writer" || lib.lastReq.ProjectRoot != "/tmp/p" {
 		t.Errorf("request = %+v", lib.lastReq)
 	}
-	if recs := nrFindAudit(env, "skills/install"); len(recs) != 1 || recs[0].ArgsHash == "" {
-		t.Errorf("audit = %+v", recs)
-	}
 }
 
 func TestSkillInstallRequiresClient(t *testing.T) {
@@ -208,9 +199,6 @@ func TestSkillInstallRefusalIs409(t *testing.T) {
 		}
 		if code := nrErrCode(t, body); code != CodeConflict {
 			t.Errorf("%v: code = %s", err, code)
-		}
-		if recs := nrFindAudit(env, "skills/install"); len(recs) != 1 || recs[0].Decision != "denied" {
-			t.Errorf("%v: audit = %+v", err, recs)
 		}
 	}
 }

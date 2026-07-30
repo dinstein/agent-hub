@@ -3,7 +3,6 @@ package ctlapi
 import (
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -134,11 +133,7 @@ func (s *Server) handleScopePut(w http.ResponseWriter, r *http.Request, client s
 			Name: req.Profile.Name,
 		}
 	}
-	start := time.Now()
 	res, err := confops.SetClientBinding(r.Context(), s.opts.Registry, client, binding, pre)
-	s.auditAdmin(r, adminAudit{
-		action: "scope/set:" + client, client: client, body: body, err: err, dur: time.Since(start),
-	})
 	if err != nil {
 		s.writeOpsError(w, r, err)
 		return
@@ -165,11 +160,7 @@ func (s *Server) handleScopeDelete(w http.ResponseWriter, r *http.Request, clien
 	if !ok {
 		return
 	}
-	start := time.Now()
 	res, err := confops.ClearClientBinding(r.Context(), s.opts.Registry, client, pre)
-	s.auditAdmin(r, adminAudit{
-		action: "scope/clear:" + client, client: client, body: body, err: err, dur: time.Since(start),
-	})
 	if err != nil {
 		s.writeOpsError(w, r, err)
 		return

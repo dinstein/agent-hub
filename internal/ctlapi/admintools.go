@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"net/http"
 	"slices"
-	"time"
 
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/integrity"
@@ -174,17 +173,8 @@ func (s *Server) handleToolSet(w http.ResponseWriter, r *http.Request, server, t
 	// lands followed by a failed override leaves the tool off, which is the
 	// safe residue; the reverse order could leave it renamed and callable.
 	applyEnabled := func() bool {
-		start := time.Now()
 		res, err := confops.SetToolEnabled(r.Context(), s.opts.Registry, opt,
 			server, tool, *req.Enabled, s.opts.ToolLookup, pre)
-		verb := "tools/disable:"
-		if *req.Enabled {
-			verb = "tools/enable:"
-		}
-		s.auditAdmin(r, adminAudit{
-			action: verb + server + "/" + tool, server: server,
-			body: body, err: err, dur: time.Since(start),
-		})
 		if err != nil {
 			s.writeOpsError(w, r, err)
 			return false
@@ -195,18 +185,10 @@ func (s *Server) handleToolSet(w http.ResponseWriter, r *http.Request, server, t
 		return true
 	}
 	applyOverride := func() bool {
-		start := time.Now()
 		res, err := confops.SetToolOverride(r.Context(), s.opts.Registry, opt.Dir, server, tool,
 			confops.ToolOverrideEdit{
 				Name: req.OverrideName, Description: req.OverrideDescription, Clear: req.ClearOverride,
 			}, pre)
-		action := "tools/override:" + server + "/" + tool
-		if req.ClearOverride {
-			action = "tools/override-clear:" + server + "/" + tool
-		}
-		s.auditAdmin(r, adminAudit{
-			action: action, server: server, body: body, err: err, dur: time.Since(start),
-		})
 		if err != nil {
 			s.writeOpsError(w, r, err)
 			return false

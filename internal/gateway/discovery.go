@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/discovery"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/pipeline"
+	"github.com/dinstein/agent-hub/internal/savings"
 	"github.com/dinstein/agent-hub/internal/shaping"
 )
 
@@ -260,7 +260,7 @@ func (g *gateway) recordSavings(serverID string, s shaping.Savings) {
 	if g.savings == nil {
 		return
 	}
-	g.savings.Append(audit.SavingsRecord{
+	g.savings.Append(savings.Record{
 		Client:         g.cfg.ClientID,
 		Session:        string(g.owner),
 		Server:         serverID,

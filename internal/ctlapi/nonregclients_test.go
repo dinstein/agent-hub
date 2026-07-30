@@ -162,9 +162,6 @@ func TestClientConnect(t *testing.T) {
 	if f.gotPath != f.defaultPath {
 		t.Errorf("wrote to %q", f.gotPath)
 	}
-	if recs := nrFindAudit(env, "clients/connect"); len(recs) != 1 || recs[0].Decision != "allowed" {
-		t.Errorf("audit = %+v", recs)
-	}
 }
 
 // TestClientConnectDryRunWritesNothing: a preview is a read, so it neither
@@ -185,9 +182,6 @@ func TestClientConnectDryRunWritesNothing(t *testing.T) {
 	}
 	if f.gotPath != "" {
 		t.Errorf("a dry run reached the writer (%q)", f.gotPath)
-	}
-	if recs := nrFindAudit(env, "clients/connect"); len(recs) != 0 {
-		t.Errorf("a dry run was audited as a write: %+v", recs)
 	}
 }
 
@@ -300,9 +294,6 @@ func TestClientDisconnect(t *testing.T) {
 	}
 	if f.gotPath != "/tmp/other" {
 		t.Errorf("path override ignored: %q", f.gotPath)
-	}
-	if recs := nrFindAudit(env, "clients/disconnect"); len(recs) != 1 {
-		t.Errorf("audit = %+v", recs)
 	}
 }
 

@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/dinstein/agent-hub/internal/audit"
+	"github.com/dinstein/agent-hub/internal/jsonl"
 )
 
 // Per-server trace log (canonical.md §6 "one log file per server"):
@@ -23,7 +23,7 @@ import (
 // also where the frame is still whole (params in, raw result out).
 //
 // Multi-writer discipline is inherited, not reinvented: the file is an
-// audit.Writer, so it is O_APPEND with one write(2) per bounded line and
+// jsonl.Writer, so it is O_APPEND with one write(2) per bounded line and
 // rename-based rotation — N gateways plus the daemon may hold the same
 // server's log open at once (docs/architecture.md §10).
 const (
@@ -33,15 +33,20 @@ const (
 	serverLogExt = ".log"
 	// tracePayloadCap is the FIRST, cheap cut of a recorded payload: it caps
 	// how much of a body is worth keeping at all. It matches
-	// audit.InspectMaxBody deliberately — both answer the same question, and
+	// tracePayloadCapBytes deliberately — both answer the same question, and
 	// two different answers would mean whichever stream you happened to read
 	// told you a different story about the same frame.
 	//
 	// It is NOT what keeps the line writable. See traceLineBudget.
-	tracePayloadCap = audit.InspectMaxBody
+	tracePayloadCap = tracePayloadCapBytes
+	// tracePayloadCapBytes bounds one recorded payload. It is the same 4 KiB
+	// the retired inspect ring used, for the same reason: enough of a frame
+	// to diagnose it, little enough that one hostile result cannot fill a
+	// disk.
+	tracePayloadCapBytes = 4096
 
 	// traceLineBudget bounds the SERIALIZED line, which is the bound that
-	// actually exists: audit.Writer replaces an over-long line with a marker
+	// actually exists: jsonl.Writer replaces an over-long line with a marker
 	// and drops the record.
 	//
 	// Capping the raw payload cannot honour it, and quietly did not. A
@@ -61,8 +66,8 @@ const (
 	//
 	// So the payload is fitted to the serialized size instead (see append),
 	// which yields the largest body that can actually be written and never
-	// produces a marker. -1 leaves room for the newline audit.Writer adds.
-	traceLineBudget = audit.DefaultMaxLineBytes - 1
+	// produces a marker. -1 leaves room for the newline jsonl.Writer adds.
+	traceLineBudget = jsonl.DefaultMaxLineBytes - 1
 )
 
 // TraceDir names the direction of a logged frame.
@@ -117,7 +122,7 @@ type TraceFrame struct {
 // nil *ServerLog is, and does nothing — callers never need a nil check.
 type ServerLog struct {
 	serverID string
-	w        *audit.Writer
+	w        *jsonl.Writer
 	on       atomic.Bool
 }
 
@@ -172,7 +177,7 @@ func OpenServerLog(logsDir, serverID string, enabled bool) (*ServerLog, error) {
 	if serverID == "" {
 		return nil, fmt.Errorf("downstream: server log needs a server id")
 	}
-	w, err := audit.NewWriter(ServerLogPath(logsDir, serverID), audit.WriterOptions{})
+	w, err := jsonl.NewWriter(ServerLogPath(logsDir, serverID), jsonl.WriterOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("downstream: open server log: %w", err)
 	}
@@ -232,7 +237,7 @@ func (l *ServerLog) in(inst, method string, raw json.RawMessage, err error, dur 
 }
 
 // append fills the shared fields, applies the payload cap and enqueues the
-// line. It never blocks (audit.Writer drops on backpressure) — a trace log
+// line. It never blocks (jsonl.Writer drops on backpressure) — a trace log
 // must not be able to stall a tool call.
 func (l *ServerLog) append(f TraceFrame, payload json.RawMessage) {
 	f.TS = time.Now().UTC()

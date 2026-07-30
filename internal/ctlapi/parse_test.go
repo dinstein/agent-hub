@@ -124,9 +124,6 @@ func TestParseWritesNothing(t *testing.T) {
 	if len(env.reg.Snapshot().Servers.V.Servers) != 0 {
 		t.Error("parsing added a server")
 	}
-	if recs := findAudit(env.aud.records(), "parse"); len(recs) != 0 {
-		t.Errorf("a read was audited: %+v", recs)
-	}
 }
 
 func TestParseReportsWarningsAndSkips(t *testing.T) {

@@ -3,7 +3,6 @@ package ctlapi
 import (
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/dinstein/agent-hub/api"
 	"github.com/dinstein/agent-hub/internal/skills"
@@ -85,11 +84,6 @@ func (s *Server) handleSkillPatch(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 
-	tool := "skills/disable"
-	if *req.Enabled {
-		tool = "skills/enable"
-	}
-	start := time.Now()
 	var (
 		sk  *skills.Skill
 		err error
@@ -99,7 +93,6 @@ func (s *Server) handleSkillPatch(w http.ResponseWriter, r *http.Request, id str
 	} else {
 		sk, err = s.opts.NonRegistry.Skills.Disable(r.Context(), id)
 	}
-	s.auditNonReg(r, skills.ProviderID, tool, hashBody([]byte(id)), err == nil, time.Since(start))
 	if err != nil {
 		s.writeSkillsError(w, r, err)
 		return
@@ -124,7 +117,6 @@ func (s *Server) handleSkillInstall(w http.ResponseWriter, r *http.Request, id s
 		return
 	}
 
-	start := time.Now()
 	st, err := s.opts.NonRegistry.Skills.InstallTo(r.Context(), skills.InstallRequest{
 		SkillID:     id,
 		ClientID:    req.ClientID,
@@ -133,8 +125,6 @@ func (s *Server) handleSkillInstall(w http.ResponseWriter, r *http.Request, id s
 		Dir:         req.Dir,
 		AllowDrift:  req.AllowDrift,
 	})
-	s.auditNonReg(r, skills.ProviderID, "skills/install",
-		hashBody([]byte(id+"\x00"+req.ClientID+"\x00"+req.Scope)), err == nil, time.Since(start))
 	if err != nil {
 		s.writeSkillsError(w, r, err)
 		return

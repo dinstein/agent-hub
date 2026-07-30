@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/catalog"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -124,18 +123,6 @@ func TestCatalogAddOneClick(t *testing.T) {
 	if len(added.NextSteps) != 0 {
 		t.Errorf("next steps = %v, want none for a credential-free entry", added.NextSteps)
 	}
-
-	// Audited under the catalog verb, with the server it created.
-	recs := findAudit(env.aud.records(), "catalog/add:fetch")
-	if len(recs) != 1 {
-		t.Fatalf("want one audit record, got %d", len(recs))
-	}
-	if recs[0].Server != "fetch" || recs[0].Actor != "gui" || recs[0].RequestID == "" {
-		t.Errorf("audit record = %+v", recs[0])
-	}
-	if recs[0].Decision != audit.DecisionAllowed {
-		t.Errorf("decision = %q", recs[0].Decision)
-	}
 }
 
 // The configuring path: parameters are substituted, the name may be
@@ -236,16 +223,6 @@ func TestCatalogAddFailureModes(t *testing.T) {
 	doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/fetch/add", nil)
 	dup := doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/fetch/add", nil)
 	dup.wantErr(t, http.StatusConflict, confops.CodeServerExists)
-	// A refused write is audited too.
-	var denied bool
-	for _, r := range findAudit(env.aud.records(), "catalog/add:fetch") {
-		if r.Decision == audit.DecisionDenied {
-			denied = true
-		}
-	}
-	if !denied {
-		t.Error("the refused add was not audited")
-	}
 
 	// A stale precondition is the ordinary 409 with the current generation.
 	stale := doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/memory/add", map[string]any{

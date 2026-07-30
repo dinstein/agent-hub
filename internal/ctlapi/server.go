@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/api"
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/event"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -80,13 +79,6 @@ type ServerStateSource interface {
 	ServerRuntime(id string) (ServerRuntime, bool)
 }
 
-// Auditor records control-plane actions. *audit.AuditStream satisfies it;
-// tests inject a capture. A nil Auditor disables auditing (tests only —
-// the daemon must always wire one).
-type Auditor interface {
-	Append(audit.Record)
-}
-
 // Options carries the Server's injected dependencies. Registry, Sessions
 // and Bus are required; the rest defaults sensibly. The daemon assembles a
 // full set in its own milestone task.
@@ -106,8 +98,6 @@ type Options struct {
 	// injects ONE *GatewayStates as both this and States; keeping the two
 	// fields apart keeps the read side free of the writer's identity.
 	ServerReports ServerStateSink
-	// Audit receives one record per control-plane write (nil = disabled).
-	Audit Auditor
 	// Logger receives server-side diagnostics (nil = discard).
 	Logger *slog.Logger
 	// CoalesceWindow overrides the servers-topic coalescing window
@@ -307,16 +297,6 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	case "/v1/quarantine":
 		if r.Method == http.MethodGet {
 			s.handleQuarantineList(w, r)
-			return
-		}
-	case "/v1/audit":
-		if r.Method == http.MethodGet {
-			s.handleAuditTail(w, r, r.URL.Query().Get("stream"))
-			return
-		}
-	case "/v1/security":
-		if r.Method == http.MethodGet {
-			s.handleAuditTail(w, r, api.AuditStreamSecurity)
 			return
 		}
 	case "/v1/sessions":

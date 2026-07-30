@@ -8,7 +8,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/dinstein/agent-hub/internal/audit"
+	"github.com/dinstein/agent-hub/internal/jsonl"
 )
 
 // readTraceLines returns every line of a trace file.
@@ -38,7 +38,7 @@ func readTraceLines(t *testing.T, path string) []string {
 //
 // The payload cap and the writer's line bound were both 4096, which cannot
 // work: a payload cut to 4096 raw bytes serializes to far more once escaped
-// into a JSON string, so the line exceeded the bound and audit.Writer
+// into a JSON string, so the line exceeded the bound and jsonl.Writer
 // replaced the whole record with a marker. A real 64 KB tools/list response
 // produced no frame at all — and `server logs` rendered the marker as a
 // blank row, so nothing said so.
@@ -72,7 +72,7 @@ func TestTraceKeepsLargeFramesInsteadOfDroppingThem(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("wrote %d lines, want 1", len(lines))
 	}
-	if _, isMarker := audit.DecodeOversize([]byte(lines[0])); isMarker {
+	if _, isMarker := jsonl.DecodeOversize([]byte(lines[0])); isMarker {
 		t.Fatal("the frame was replaced by an oversize marker: a large body must be truncated, not dropped")
 	}
 
@@ -95,8 +95,8 @@ func TestTraceKeepsLargeFramesInsteadOfDroppingThem(t *testing.T) {
 	if !utf8.ValidString(f.Payload) {
 		t.Error("the payload was cut mid-rune")
 	}
-	if got := len(lines[0]) + 1; got > audit.DefaultMaxLineBytes {
-		t.Errorf("line is %d bytes, over the %d bound", got, audit.DefaultMaxLineBytes)
+	if got := len(lines[0]) + 1; got > jsonl.DefaultMaxLineBytes {
+		t.Errorf("line is %d bytes, over the %d bound", got, jsonl.DefaultMaxLineBytes)
 	}
 }
 
@@ -119,11 +119,11 @@ func TestTraceFitsEveryFrameUnderTheLineBound(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 	for i, line := range readTraceLines(t, ServerLogPath(dir, "sweep")) {
-		if _, isMarker := audit.DecodeOversize([]byte(line)); isMarker {
+		if _, isMarker := jsonl.DecodeOversize([]byte(line)); isMarker {
 			t.Fatalf("line %d became an oversize marker", i)
 		}
-		if got := len(line) + 1; got > audit.DefaultMaxLineBytes {
-			t.Fatalf("line %d is %d bytes, over the %d bound", i, got, audit.DefaultMaxLineBytes)
+		if got := len(line) + 1; got > jsonl.DefaultMaxLineBytes {
+			t.Fatalf("line %d is %d bytes, over the %d bound", i, got, jsonl.DefaultMaxLineBytes)
 		}
 	}
 }

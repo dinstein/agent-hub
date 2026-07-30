@@ -114,12 +114,7 @@ func (s *Server) handleTokenCreate(w http.ResponseWriter, r *http.Request) {
 		spec.ExpiresAt = time.Now().Add(time.Duration(req.ExpiresInSeconds) * time.Second)
 	}
 
-	start := time.Now()
 	tok, value, err := s.opts.NonRegistry.Tokens.Create(r.Context(), spec)
-	// The audit line binds the token's NAME and grade, never its value:
-	// hashing the plaintext would store a verifier for a live credential.
-	s.auditNonReg(r, "", "tokens/create",
-		hashBody([]byte(req.Name+"\x00"+string(want))), err == nil, time.Since(start))
 	if err != nil {
 		s.writeTokenError(w, r, err)
 		return
@@ -132,9 +127,7 @@ func (s *Server) handleTokenCreate(w http.ResponseWriter, r *http.Request) {
 
 // handleTokenRevoke implements DELETE /v1/tokens/{name}.
 func (s *Server) handleTokenRevoke(w http.ResponseWriter, r *http.Request, name string) {
-	start := time.Now()
 	tok, err := s.opts.NonRegistry.Tokens.Revoke(r.Context(), name, time.Now())
-	s.auditNonReg(r, "", "tokens/revoke", hashBody([]byte(name)), err == nil, time.Since(start))
 	if err != nil {
 		s.writeTokenError(w, r, err)
 		return

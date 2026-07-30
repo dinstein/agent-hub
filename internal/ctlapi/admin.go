@@ -8,9 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/event"
 	"github.com/dinstein/agent-hub/internal/integrity"
@@ -46,20 +44,6 @@ import (
 // It is the same string internal/confops freezes; adminErrorCodeContract
 // asserts the two agree.
 const CodeStalePrecondition = "E_STALE_PRECONDITION"
-
-// maxAuditTail bounds one /v1/audit or /v1/security read, and
-// defaultAuditTail is what an unspecified limit selects. The api client
-// clamps to the same ceiling; the server clamps again because a client is
-// not a trusted bound.
-const (
-	defaultAuditTail = 50
-	maxAuditTail     = 1000
-)
-
-// auditValueLimit truncates the old/new values recorded for a governance
-// write. The audit line must stay a line: a result-budget value is short,
-// but the field is operator input and nothing else bounds it.
-const auditValueLimit = 64
 
 // pathSegments matches prefix on the ESCAPED path and returns exactly want
 // unescaped segments.
@@ -225,68 +209,6 @@ func writeStale(w http.ResponseWriter, current uint64, reqID string) {
 	writeErrGen(w, http.StatusConflict, CodeStalePrecondition,
 		fmt.Sprintf("the configuration changed since it was read (it is now at generation %d)", current),
 		"re-read the configuration and retry against the current generation", reqID, current)
-}
-
-// adminAudit is one configuration write as the audit stream records it.
-//
-// docs/modules/controlplane.md: every control-plane WRITE is audited, failures
-// included —
-// an attempt that was refused is exactly the line an operator looks for.
-type adminAudit struct {
-	// action is the frozen verb, e.g. "servers/add:github". It lands in the
-	// record's Tool field, which is where the control plane has always put
-	// its action names ("sessions/scope", "grants/decide:<id>").
-	action string
-	server string
-	client string
-	// body binds the record to the exact request via ArgsHash. Argument
-	// BYTES never enter the stream — the record type has no field for them.
-	body []byte
-	err  error
-	dur  time.Duration
-}
-
-func (s *Server) auditAdmin(r *http.Request, a adminAudit) {
-	if s.opts.Audit == nil {
-		return
-	}
-	decision := audit.DecisionAllowed
-	if a.err != nil {
-		decision = audit.DecisionDenied
-	}
-	hash := ""
-	if len(a.body) > 0 {
-		h, err := audit.ArgsHash(a.body)
-		if err != nil {
-			// Recorded rather than dropped: a line without a hash is still
-			// evidence, a missing line is not.
-			h = "unhashable"
-		}
-		hash = h
-	}
-	s.opts.Audit.Append(audit.Record{
-		Actor:     actorFrom(r.Context()),
-		Client:    a.client,
-		Server:    a.server,
-		Tool:      a.action,
-		ArgsHash:  hash,
-		Decision:  decision,
-		DurMs:     a.dur.Milliseconds(),
-		RequestID: requestIDFrom(r.Context()),
-	})
-}
-
-// auditValue renders one governance value for an audit line: single-line and
-// bounded, so a pasted blob cannot smear one record across the file.
-func auditValue(v string) string {
-	if v == "" {
-		return "<unset>"
-	}
-	v = strings.ReplaceAll(strings.ReplaceAll(v, "\n", " "), "\r", " ")
-	if len(v) > auditValueLimit {
-		v = v[:auditValueLimit] + "…"
-	}
-	return v
 }
 
 // publishRegistryChange announces a write this process just made.

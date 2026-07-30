@@ -156,7 +156,6 @@ func (s *Server) handleServerTest(w http.ResponseWriter, r *http.Request, id str
 	start := time.Now()
 	conn, err := connect(r.Context(), spec, deps)
 	if err != nil {
-		s.auditNonReg(r, id, "servers/test", "", false, time.Since(start))
 		writeErr(w, http.StatusInternalServerError, CodeInternal,
 			fmt.Sprintf("server %q did not connect: %v", id, err),
 			connectHint(err), reqID)
@@ -199,7 +198,6 @@ func (s *Server) handleServerTest(w http.ResponseWriter, r *http.Request, id str
 		callStart := time.Now()
 		res, cerr := conn.Call(r.Context(), req.Tool, req.Args)
 		if cerr != nil {
-			s.auditNonReg(r, id, "servers/test", hashBody([]byte(req.Tool)), false, time.Since(start))
 			writeErr(w, http.StatusInternalServerError, CodeInternal,
 				fmt.Sprintf("server %q: calling %q failed: %v", id, req.Tool, cerr), "", reqID)
 			return
@@ -211,7 +209,6 @@ func (s *Server) handleServerTest(w http.ResponseWriter, r *http.Request, id str
 			Millis:  time.Since(callStart).Milliseconds(),
 		}
 	}
-	s.auditNonReg(r, id, "servers/test", hashBody([]byte(req.Tool)), true, time.Since(start))
 	writeOK(w, http.StatusOK, out)
 }
 

@@ -1257,14 +1257,13 @@ dependency**, not insurance. So every mechanism must have a test that runs **rea
 even with flock removed, because each store's internal Go mutex would still serialize them — such a test proves nothing.
 
 Each mechanism's "other half" lives in its own package: `internal/registry` tests generation monotonicity under concurrent
-`Update`, `internal/integrity` tests pin writes across concurrent processes (`CheckServer`), and `internal/audit` tests `O_APPEND`
-single-line writes and the security event deduplication window. **This package fills in the quarantine file lock, plus interleaving
-across the pins and quarantine stores.**
+`Update`, `internal/integrity` tests pin writes across concurrent processes (`CheckServer`), and `internal/jsonl` tests `O_APPEND`
+single-line writes. **This package fills in the quarantine file lock, plus interleaving across the pins and quarantine stores.**
 
 ### Invariants and failure directions
 
 **The helper protocol**: the test binary re-execs **itself** through the `AGENTHUB_CONCURRENCY_HELPER` environment variable to run
-a named helper (the same pattern as `internal/registry` and `internal/audit`). Each helper writes one observation per line to stdout
+a named helper (the same pattern as `internal/registry` and `internal/jsonl`). Each helper writes one observation per line to stdout
 and exits non-zero on any error.
 
 `helperQuarantine` has each worker add n entries unique to itself, printing the observed total entry count after every Add: **if the

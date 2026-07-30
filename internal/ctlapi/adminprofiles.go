@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"net/http"
 	"slices"
-	"time"
 
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -129,11 +128,7 @@ func (s *Server) handleProfileCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	start := time.Now()
 	res, err := confops.CreateProfile(r.Context(), s.opts.Registry, req.Name, req.Servers, pre)
-	s.auditAdmin(r, adminAudit{
-		action: "profiles/create:" + req.Name, body: body, err: err, dur: time.Since(start),
-	})
 	if err != nil {
 		s.writeOpsError(w, r, err)
 		return
@@ -171,25 +166,19 @@ func (s *Server) handleProfilePatch(w http.ResponseWriter, r *http.Request, name
 	}
 
 	var (
-		res    confops.ProfileResult
-		err    error
-		action string
-		start  = time.Now()
+		res confops.ProfileResult
+		err error
 	)
 	switch {
 	case req.Rename != "":
-		action = "profiles/rename:" + name + "->" + req.Rename
 		res, err = confops.RenameProfile(r.Context(), s.opts.Registry, name, req.Rename, pre)
 	case req.Servers != nil:
-		action = "profiles/servers:" + name
 		res, err = confops.SetProfileServers(r.Context(), s.opts.Registry, name,
 			confops.ServerSelection{Mode: serverSetMode(req.Servers.Mode), Servers: req.Servers.Servers}, pre)
 	case req.Tools != nil:
-		action = "profiles/tools:" + name + "/" + req.Tools.Server
 		res, err = confops.SetProfileTools(r.Context(), s.opts.Registry, name, req.Tools.Server,
 			req.Tools.selection(), pre)
 	default:
-		action = "profiles/active:" + name
 		target := name
 		if !*req.Active {
 			// active:false clears the marker rather than pointing it
@@ -202,7 +191,6 @@ func (s *Server) handleProfilePatch(w http.ResponseWriter, r *http.Request, name
 		}
 		res, err = confops.SetActiveProfile(r.Context(), s.opts.Registry, target, pre)
 	}
-	s.auditAdmin(r, adminAudit{action: action, body: body, err: err, dur: time.Since(start)})
 	if err != nil {
 		s.writeOpsError(w, r, err)
 		return
@@ -225,11 +213,7 @@ func (s *Server) handleProfileDelete(w http.ResponseWriter, r *http.Request, nam
 	if !ok {
 		return
 	}
-	start := time.Now()
 	res, err := confops.RemoveProfile(r.Context(), s.opts.Registry, name, pre)
-	s.auditAdmin(r, adminAudit{
-		action: "profiles/remove:" + name, body: body, err: err, dur: time.Since(start),
-	})
 	if err != nil {
 		s.writeOpsError(w, r, err)
 		return

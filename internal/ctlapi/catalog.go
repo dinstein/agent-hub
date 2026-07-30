@@ -3,7 +3,6 @@ package ctlapi
 import (
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/dinstein/agent-hub/internal/catalog"
 	"github.com/dinstein/agent-hub/internal/confops"
@@ -140,12 +139,8 @@ func (s *Server) handleCatalogAdd(w http.ResponseWriter, r *http.Request, catalo
 		return
 	}
 
-	start := time.Now()
 	res, err := confops.AddServer(r.Context(), s.opts.Registry,
 		confops.ServerSpec{ID: name, Entry: entry}, pre)
-	s.auditAdmin(r, adminAudit{
-		action: "catalog/add:" + catalogID, server: name, body: body, err: err, dur: time.Since(start),
-	})
 	if err != nil {
 		s.writeOpsError(w, r, err)
 		return

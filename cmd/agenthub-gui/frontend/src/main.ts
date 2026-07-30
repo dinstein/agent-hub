@@ -12,7 +12,6 @@ import { clear, loadingState } from "./dom";
 import type { Page } from "./page";
 import { failureBox } from "./page";
 import { initTheme } from "./ui";
-import { auditPage } from "./pages/audit";
 import { authPage } from "./pages/auth";
 import { catalogPage } from "./pages/catalog";
 import { clientsPage } from "./pages/clients";
@@ -45,7 +44,6 @@ type Route =
   | "tokens"
   | "clients"
   | "auth"
-  | "audit"
   | "settings";
 
 const ROUTES: Record<Route, () => Page> = {
@@ -63,7 +61,6 @@ const ROUTES: Record<Route, () => Page> = {
   tokens: tokensPage,
   clients: clientsPage,
   auth: authPage,
-  audit: auditPage,
   settings: settingsPage,
 };
 

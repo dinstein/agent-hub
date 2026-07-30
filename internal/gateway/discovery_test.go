@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/discovery"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/registry"
+	"github.com/dinstein/agent-hub/internal/savings"
 	"github.com/dinstein/agent-hub/internal/testutil/fakemcp"
 )
 
@@ -320,8 +320,8 @@ func TestResultShapingAndFetchResult(t *testing.T) {
 	}
 
 	// The saving is accounted for.
-	savingsPath := filepath.Join(dir, "logs", audit.SavingsFileName)
-	var rec audit.SavingsRecord
+	savingsPath := filepath.Join(dir, "logs", savings.FileName)
+	var rec savings.Record
 	waitFor(t, "a savings.jsonl record", func() bool {
 		data, err := os.ReadFile(savingsPath)
 		if err != nil || len(data) == 0 {

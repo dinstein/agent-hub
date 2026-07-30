@@ -1,14 +1,43 @@
-package audit
+package savings
 
 import (
+	"bufio"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/dinstein/agent-hub/internal/jsonl"
 )
 
+// fakeClock is a manually advanced clock.
+type fakeClock struct{ now time.Time }
+
+func (c *fakeClock) Now() time.Time { return c.now }
+
+// readLines reads one JSONL file back as lines.
+func readLines(t *testing.T, path string) [][]byte {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	var out [][]byte
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 64<<10), 1<<20)
+	for sc.Scan() {
+		out = append(out, append([]byte(nil), sc.Bytes()...))
+	}
+	if err := sc.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 func TestSavingsRecordGolden(t *testing.T) {
-	r := SavingsRecord{
+	r := Record{
 		TS:             time.Date(2026, 7, 26, 12, 0, 0, 123456789, time.UTC),
 		Client:         "claude-code",
 		Session:        "sess-1",
@@ -30,7 +59,7 @@ func TestSavingsRecordGolden(t *testing.T) {
 	}
 
 	// Optional grouping fields drop out; the token fields always appear.
-	minimal, err := json.Marshal(SavingsRecord{
+	minimal, err := json.Marshal(Record{
 		TS:   time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC),
 		Mode: "shaping",
 	})
@@ -44,50 +73,26 @@ func TestSavingsRecordGolden(t *testing.T) {
 	}
 }
 
-func TestSavingsStreamEndToEnd(t *testing.T) {
+func TestStreamEndToEnd(t *testing.T) {
 	dir := t.TempDir()
 	clk := &fakeClock{now: time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)}
-	s, err := NewSavingsStream(filepath.Join(dir, SavingsFileName), WriterOptions{Clock: clk.Now})
+	s, err := NewStream(filepath.Join(dir, FileName), jsonl.WriterOptions{Clock: clk.Now})
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Append(SavingsRecord{Mode: "grouped", BaselineTokens: 100, ActualTokens: 40, SavedTokens: 60})
+	s.Append(Record{Mode: "grouped", BaselineTokens: 100, ActualTokens: 40, SavedTokens: 60})
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	lines := readLines(t, filepath.Join(dir, SavingsFileName))
+	lines := readLines(t, filepath.Join(dir, FileName))
 	if len(lines) != 1 {
 		t.Fatalf("got %d lines, want 1", len(lines))
 	}
-	var r SavingsRecord
+	var r Record
 	if err := json.Unmarshal(lines[0], &r); err != nil {
 		t.Fatal(err)
 	}
 	if !r.TS.Equal(clk.now) || r.SavedTokens != 60 {
 		t.Errorf("round-trip mismatch: %+v", r)
-	}
-}
-
-func TestStreamsOpenClose(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "logs")
-	st, err := Open(dir, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	st.Audit.Append(Record{Actor: "client", Decision: DecisionAllowed})
-	st.Savings.Append(SavingsRecord{Mode: "shaping"})
-	if !st.Security.Emit(SecurityEvent{Event: "e.one", Severity: SeverityInfo}) {
-		t.Error("first security emit must pass")
-	}
-	if st.Inspect.Enabled() {
-		t.Error("inspect must start disabled")
-	}
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range []string{AuditFileName, SecurityFileName, SavingsFileName} {
-		if got := len(readLines(t, filepath.Join(dir, f))); got != 1 {
-			t.Errorf("%s has %d lines, want 1", f, got)
-		}
 	}
 }

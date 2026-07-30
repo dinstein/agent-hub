@@ -18,14 +18,6 @@ The packages collaborate in layers rather than as peers:
 - `internal/integrity` is the stateful governance surface: it answers "is this tool definition still
   the one I recognize". It never writes to another governance store's
   storage.
-- `internal/audit` is everyone's exit. Its write discipline is a concurrency-correctness dependency,
-  not a belt-and-braces measure — but it is **not uniform across the four streams**, and reading it
-  as uniform is how an in-memory ring comes to be treated as durable. Three are on disk
-  (`audit.jsonl`, `security.jsonl`, `savings.jsonl`) and share one `Writer`: single-line `O_APPEND`
-  writes, so a record is one `write(2)` and concurrent appenders cannot tear each other's lines. The
-  cross-process dedup window belongs to `security` alone — severity is part of its key. The fourth,
-  `InspectRing`, is a mutex-guarded in-memory ring with no file, no lock and no dedup; it is off by
-  default and its contents do not outlive the process.
 - `internal/oauthflow` is the only credential-acquisition path, and it in turn consumes
   `internal/guard/netguard`'s predicates.
 
@@ -563,68 +555,6 @@ entry, without going through `CheckServer`. In other words, the **automatic** dr
 auto-quarantine chain is fully implemented at the storage layer with cross-process tests, but is not
 yet wired into the gateway's catalog refresh path; today the quarantine set can only be written by
 the CLI/daemon, and once written the gateway honors it immediately.
-
----
-
-## internal/audit
-
-**One-line responsibility**: implement the four governance streams (audit / security / savings /
-inspect) and carry the write discipline required when multiple processes append to the same set of
-JSONL files concurrently.
-
-`ArgsHash(raw)`/`CanonicalJSON(raw)` are the argument-binding primitives shared by approval and
-audit.
-
-### Invariants and failure directions
-
-- **An audit record cannot carry arguments or results, at the type level.** `Record` simply has no
-  such field, only `ArgsHash`; `SecurityEvent.Detail` is a short reason code or summary, not content.
-  This is a type-level guarantee, not a runtime filter. `Record`'s field order is frozen: golden
-  tests assert the serialized byte layout, the columns of `agenthub audit export --csv` derive from
-  it, and no field carries `omitempty`, guaranteeing every line has the same shape.
-- **Multi-writer discipline (a concurrency-correctness dependency, not insurance)**: files are opened
-  `O_APPEND|O_CREATE|O_WRONLY` 0600; one record is exactly one `write(2)`, one whole line, terminated
-  by `\n`; line length is bounded by `MaxLineBytes` (4096 by default = Linux's `PIPE_BUF`), and within
-  that bound concurrent appends can interleave lines but never tear one.
-- **An oversized record becomes a bounded oversize marker** rather than being written and tearing the
-  whole stream: `{"ts":…,"oversize":true,"origBytes":N,"prefix":"…"}`, with a prefix budget of
-  `maxLine/8` raw bytes (JSON escaping can inflate by up to 6×); the original record is not written.
-- **Rotation is by rename, never read-back-and-truncate.** `maybeRotate` renames the active file to a
-  segment file carrying a timestamp and pid (the pid suffix keeps two processes rotating in the same
-  instant from colliding), and losing the rename race (ENOENT) is acceptable; another process holding
-  the renamed segment keeps appending without data loss, and on its next write `ensureCurrent` notices
-  via `os.SameFile` that the inode changed and re-attaches to the new active file. On a write failure
-  it reopens and retries **once**; a second failure increments a counter and drops the line.
-- **`AppendLine` never blocks.** All in-process appends go through one writer goroutine behind a
-  buffered channel (1024 by default); overflow is dropped and counted (`Dropped()`) — audit pressure
-  must never stall the data plane. `Sync` is a barrier used only by tests and shutdown. Appends after
-  `Close` also count as drops, and `Close` is idempotent.
-- **Security dedup fails open.** Each dedup key has a marker file under `security-dedup/` whose mtime
-  is the last emission time, and the check-and-refresh happens as a unit under an exclusive flock on
-  `security-dedup/lock`. **Any** lock or filesystem error returns "emit", so we may duplicate but
-  never swallow — dedup is a noise reducer, not a gate. **Severity is part of the dedup key**: the
-  same event escalating to a higher severity is a new signal and must not be suppressed by an earlier
-  lower-severity record. A marker whose mtime is in the future (clock rollback, restored backup) is
-  refreshed and emitted as normal, avoiding indefinite suppression. Markers older than twice the
-  window are cleaned up inside the lock.
-- **CSV export fails closed.** Any cell starting with `=`, `+`, `-`, `@`, a tab, or a carriage return
-  is prefixed with a single quote (`SanitizeCSVCell`), headers included. The cost of an unnecessary
-  quote is a negative number displaying as `'-5` (cosmetic); the cost of missing one is code
-  execution in the user's spreadsheet software.
-- **The inspect ring fails closed with respect to data retention**: disabled by default, `Add` is a
-  no-op while disabled, and **the buffer is cleared immediately on disable**, so no payload survives
-  an inspect session. Capacity is 50, and anything over 4096 bytes is byte-truncated, repaired into
-  valid UTF-8 with `strings.ToValidUTF8`, and marked. `Seq` increases monotonically and is preserved
-  across ring eviction so ctlapi's polling can detect gaps. It's the only type in this package that
-  carries a body, and that is precisely why it never persists to disk.
-- **`CanonicalJSON` canonicalizes layout, not values**: object keys sorted bytewise, no extraneous
-  whitespace, numbers preserved verbatim via `json.Number` (`1`, `1.0`, `1e0` stay distinct), strings
-  re-escaped by `encoding/json`. Empty input canonicalizes to `null`, giving "call with no arguments"
-  a deterministic hash constant; non-whitespace content after the document is an error.
-- **Dependency budget**: standard library plus the zero-dependency bases `internal/platform` and
-  `internal/logx`.
-- On non-darwin/linux platforms `flock` is a no-op and dedup degrades to best-effort — it can only
-  duplicate, never wrongly suppress, which matches `shouldEmit`'s direction.
 
 ---
 

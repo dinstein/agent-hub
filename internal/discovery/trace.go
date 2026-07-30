@@ -1,7 +1,7 @@
 package discovery
 
 // Trace is one searchtrace record (docs/flows.md: "persist searchtrace (tool
-// names only)"). It is the structure the gateway hands to internal/audit.
+// names only)"). It is the structure the gateway hands to internal/savings.
 //
 // PRIVACY INVARIANT — the reason this type exists at all: a search query is
 // agent-authored free text and may carry secrets, file paths or an injected

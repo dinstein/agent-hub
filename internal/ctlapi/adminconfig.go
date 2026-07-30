@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -90,19 +89,7 @@ func (s *Server) handleConfigSet(w http.ResponseWriter, r *http.Request, key str
 			"send value as a JSON string, boolean or number", reqID)
 		return
 	}
-	start := time.Now()
 	res, serr := confops.SetGovernance(r.Context(), s.opts.Registry, key, value, pre)
-	// A successful write records the key and BOTH values — that line is the
-	// answer to "when did blockOnInjection go off, and from what". A refused
-	// one records the key alone: nothing moved, and the attempted value is
-	// still bound to the record through the body hash.
-	// The CANONICAL key name is recorded, not the alias the caller happened
-	// to type: one key must read as one key in the audit stream.
-	action := "config/set:" + key
-	if serr == nil {
-		action = "config/set:" + res.Key + "=" + auditValue(res.Previous) + "->" + auditValue(res.Value)
-	}
-	s.auditAdmin(r, adminAudit{action: action, body: body, err: serr, dur: time.Since(start)})
 	if serr != nil {
 		s.writeOpsError(w, r, serr)
 		return

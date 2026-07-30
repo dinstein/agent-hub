@@ -7,10 +7,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/dinstein/agent-hub/api"
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/session"
 )
 
@@ -146,9 +144,7 @@ func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 	clientID := sess.ClientID
-	start := time.Now()
 	s.opts.Sessions.Close(session.SessionID(id))
-	s.auditKill(r, id, clientID, time.Since(start))
 	writeOK(w, http.StatusOK, KillResult{SessionID: id, ClientID: clientID, Killed: true})
 }
 
@@ -157,24 +153,6 @@ type KillResult struct {
 	SessionID string `json:"session_id"`
 	ClientID  string `json:"client_id,omitempty"`
 	Killed    bool   `json:"killed"`
-}
-
-// auditKill records the control-plane write. Killing a session is a
-// governance action (it revokes a live agent's whole connection), so it is
-// audited on the same stream as scope mutations.
-func (s *Server) auditKill(r *http.Request, sessionID, clientID string, dur time.Duration) {
-	if s.opts.Audit == nil {
-		return
-	}
-	s.opts.Audit.Append(audit.Record{
-		Actor:     actorFrom(r.Context()),
-		Client:    clientID,
-		Session:   sessionID,
-		Tool:      "sessions/kill",
-		Decision:  audit.DecisionAllowed,
-		DurMs:     dur.Milliseconds(),
-		RequestID: requestIDFrom(r.Context()),
-	})
 }
 
 // readBody reads a bounded request body (limit maxBodyBytes; exceeding it

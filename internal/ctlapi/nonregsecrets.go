@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
@@ -128,9 +127,7 @@ func (s *Server) handleSecretPut(w http.ResponseWriter, r *http.Request, server,
 		return
 	}
 
-	start := time.Now()
 	err := s.opts.NonRegistry.Secrets.Set(r.Context(), ref, req.Value)
-	s.auditNonReg(r, server, "secrets/set", "", err == nil, time.Since(start))
 	if err != nil {
 		// Fixed message on purpose (see the file header): the underlying
 		// error is diagnostics for the daemon log, never response bytes.
@@ -158,9 +155,7 @@ func (s *Server) handleSecretDelete(w http.ResponseWriter, r *http.Request, serv
 		writeErr(w, http.StatusBadRequest, CodeBadRequest, err.Error(), "", reqID)
 		return
 	}
-	start := time.Now()
 	err := s.opts.NonRegistry.Secrets.Delete(r.Context(), ref)
-	s.auditNonReg(r, server, "secrets/rm", "", err == nil, time.Since(start))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, CodeInternal,
 			"removing the credential failed: "+err.Error(), "", reqID)

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/clients"
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/httpbridge"
@@ -297,44 +296,6 @@ func decodeBody(r *http.Request, v any) error {
 		return nil
 	}
 	return json.Unmarshal(body, v)
-}
-
-// auditNonReg records one non-registry control-plane write.
-//
-// argsHash is passed explicitly (rather than derived from the body here)
-// because the secrets path MUST pass "": a hash binds a record to its
-// arguments, and for a credential write the argument IS the credential.
-// A SHA-256 of a low-entropy secret is an offline-crackable copy of it, so
-// the audit line for a secret write names the reference — server, key,
-// operation — and nothing else.
-func (s *Server) auditNonReg(r *http.Request, server, tool, argsHash string, allowed bool, dur time.Duration) {
-	if s.opts.Audit == nil {
-		return
-	}
-	decision := audit.DecisionAllowed
-	if !allowed {
-		decision = audit.DecisionDenied
-	}
-	s.opts.Audit.Append(audit.Record{
-		Actor:     actorFrom(r.Context()),
-		Server:    server,
-		Tool:      tool,
-		ArgsHash:  argsHash,
-		Decision:  decision,
-		DurMs:     dur.Milliseconds(),
-		RequestID: requestIDFrom(r.Context()),
-	})
-}
-
-// hashBody returns the audit ArgsHash of a request body. A body that cannot
-// be hashed is recorded as "unhashable" rather than dropping the audit line
-// (handlers.go's auditScope rule).
-func hashBody(body []byte) string {
-	h, err := audit.ArgsHash(body)
-	if err != nil {
-		return "unhashable"
-	}
-	return h
 }
 
 // SetRefresher installs the OAuth refresh coordinator after construction.

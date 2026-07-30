@@ -144,27 +144,13 @@ func TestSecretPutNeverEchoesTheValue(t *testing.T) {
 
 	_, list := nrDo(t, env.sock, http.MethodGet, "/v1/secrets", nil)
 	_, one := nrDo(t, env.sock, http.MethodGet, "/v1/secrets?server=github", nil)
-	audit := nrAuditJSON(t, env)
 
 	for name, blob := range map[string][]byte{
-		"put response": put, "list response": list, "filtered list": one, "audit stream": audit,
+		"put response": put, "list response": list, "filtered list": one,
 	} {
 		if nrContains(blob, nrSentinel) {
 			t.Errorf("%s leaked the credential: %s", name, blob)
 		}
-	}
-
-	// The audit line names the reference and carries NO args hash: a hash of
-	// a low-entropy secret is an offline-crackable copy of it.
-	recs := nrFindAudit(env, "secrets/set")
-	if len(recs) != 1 {
-		t.Fatalf("audit records = %+v", recs)
-	}
-	if recs[0].Server != "github" || recs[0].Decision != "allowed" {
-		t.Errorf("audit = %+v", recs[0])
-	}
-	if recs[0].ArgsHash != "" {
-		t.Errorf("audit carries an args hash %q; the argument is the credential", recs[0].ArgsHash)
 	}
 }
 
@@ -182,13 +168,6 @@ func TestSecretPutFailureNeverEchoesTheValue(t *testing.T) {
 	}
 	if nrContains(body, nrSentinel) {
 		t.Fatalf("the failure envelope leaked the credential: %s", body)
-	}
-	if nrContains(nrAuditJSON(t, env), nrSentinel) {
-		t.Fatalf("the audit stream leaked the credential")
-	}
-	recs := nrFindAudit(env, "secrets/set")
-	if len(recs) != 1 || recs[0].Decision != "denied" {
-		t.Errorf("a failed write must be audited as denied: %+v", recs)
 	}
 }
 
@@ -270,9 +249,6 @@ func TestSecretDelete(t *testing.T) {
 	if status != http.StatusOK {
 		t.Errorf("second delete status = %d, want 200", status)
 	}
-	if recs := nrFindAudit(env, "secrets/rm"); len(recs) != 2 {
-		t.Errorf("both deletes must be audited: %+v", recs)
-	}
 }
 
 func TestSecretDeleteFailure(t *testing.T) {
@@ -283,10 +259,6 @@ func TestSecretDeleteFailure(t *testing.T) {
 	status, body := nrDo(t, env.sock, http.MethodDelete, "/v1/secrets/github/TOKEN", nil)
 	if status != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500: %s", status, body)
-	}
-	recs := nrFindAudit(env, "secrets/rm")
-	if len(recs) != 1 || recs[0].Decision != "denied" {
-		t.Errorf("audit = %+v", recs)
 	}
 }
 

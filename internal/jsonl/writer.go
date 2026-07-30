@@ -1,4 +1,4 @@
-package audit
+package jsonl
 
 import (
 	"encoding/json"
@@ -200,6 +200,10 @@ func (w *Writer) Dropped() uint64 { return w.dropped.Load() }
 // reopen-and-retry).
 func (w *Writer) WriteErrors() uint64 { return w.writeErrors.Load() }
 
+// Clock returns the writer's time source, so a stream layered on top of a
+// Writer stamps its records from the same clock the writer rotates by.
+func (w *Writer) Clock() func() time.Time { return w.clock }
+
 // Path returns the active file path.
 func (w *Writer) Path() string { return w.path }
 
@@ -382,7 +386,11 @@ func (w *Writer) oversizeMarker(orig []byte) []byte {
 // marshalLine serializes a record struct for AppendLine. Marshal failures
 // are unreachable for the package's plain record types; should one occur,
 // a diagnostic line is emitted instead of silently losing the append.
-func marshalLine(v any) []byte {
+// MarshalLine encodes one record as a single JSON line. A value that cannot
+// be marshalled becomes a marshalError line rather than a dropped record: a
+// stream that silently loses entries is worse than one that says it could
+// not encode them.
+func MarshalLine(v any) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {
 		b, _ = json.Marshal(map[string]string{"marshalError": err.Error()})

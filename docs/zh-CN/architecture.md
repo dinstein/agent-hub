@@ -137,7 +137,7 @@ flowchart TD
         LOGX["internal/logx<br/>slog + 不可绕过 scrubbing"]
         GUARD["internal/guard/*<br/>injection/spawn/net/leak"]
         REG["internal/registry<br/>配置真源 + generation"]
-        AUD["internal/audit<br/>三条审计流"]
+        AUD["internal/savings<br/>token 节省账本"]
         EVT["internal/event"]
         TIER["internal/tier<br/>操作等级词汇表"]
     end

@@ -402,37 +402,6 @@ func TestNonRegistryWireShapes(t *testing.T) {
 	})
 }
 
-// TestAuditStreamsAreSeparateRoutes: the two ledgers are two routes, not one
-// route with a selector. It also pins the client-side clamp of the limit.
-func TestAuditStreamsAreSeparateRoutes(t *testing.T) {
-	runWireCases(t, []wireCase{
-		{
-			name:   "audit_tail",
-			call:   func(c *Client) error { _, err := c.Audit.Tail(context.Background(), 20); return err },
-			method: "GET", path: "/v1/audit", query: "limit=20",
-			data: json.RawMessage(`[]`),
-		},
-		{
-			name:   "audit_tail_default_limit",
-			call:   func(c *Client) error { _, err := c.Audit.Tail(context.Background(), 0); return err },
-			method: "GET", path: "/v1/audit",
-			data: json.RawMessage(`[]`),
-		},
-		{
-			name:   "audit_tail_is_clamped",
-			call:   func(c *Client) error { _, err := c.Audit.Tail(context.Background(), 1_000_000); return err },
-			method: "GET", path: "/v1/audit", query: "limit=1000",
-			data: json.RawMessage(`[]`),
-		},
-		{
-			name:   "security_tail",
-			call:   func(c *Client) error { _, err := c.Audit.TailSecurity(context.Background(), 5); return err },
-			method: "GET", path: "/v1/security", query: "limit=5",
-			data: json.RawMessage(`[]`),
-		},
-	})
-}
-
 // TestResponseDecoding pins the decode half: every listing and every write
 // answer lands in the right fields, with the daemon's own JSON as input.
 func TestResponseDecoding(t *testing.T) {

@@ -149,7 +149,7 @@ flowchart TD
         LOGX["internal/logx<br/>slog + unbypassable scrubbing"]
         GUARD["internal/guard/*<br/>injection/spawn/net/leak"]
         REG["internal/registry<br/>config source of truth + generation"]
-        AUD["internal/audit<br/>three audit streams"]
+        AUD["internal/savings<br/>token-savings ledger"]
         EVT["internal/event"]
         TIER["internal/tier<br/>operation tier vocabulary"]
     end

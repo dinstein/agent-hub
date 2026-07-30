@@ -74,7 +74,7 @@ the rule unprovable.
 |---|---|
 | `internal/controlapi`, `internal/control` | `internal/ctlapi` (DTOs and client live in the public `api` package) |
 | `internal/vault` | `internal/secrets` |
-| `internal/secure/{integrity,injection,ssrf,audit}` | `internal/guard/*` plus sibling `internal/audit`, `internal/integrity` |
+| `internal/secure/{integrity,injection,ssrf,audit}` | `internal/guard/*` plus sibling `internal/integrity` |
 | `internal/gatewaymode` | `internal/gateway` |
 | `internal/downstream/transport` | `internal/mcp/transport` |
 | `package skill` | `package skills` |

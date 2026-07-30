@@ -277,60 +277,6 @@ func TestServerHealthSelectsByID(t *testing.T) {
 		t.Error("ServerHealth on an unknown server: want error, got nil")
 	}
 }
-
-func TestSkillsAndAuditReportNotImplementedDistinctly(t *testing.T) {
-	mux := pingMux(t)
-	// Nothing is registered for /v1/skills and /v1/audit: this daemon does
-	// not serve them yet. The failure must be a code the UI can turn into
-	// "unavailable", never an empty list.
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		writeErr(t, w, http.StatusNotFound, api.ErrCodeNotFound, "unknown endpoint")
-	})
-	h, _ := newHub(t, newFakeDaemon(t, mux), nil)
-
-	if _, err := h.ListSkills(t.Context()); !api.IsCode(err, api.ErrCodeNotFound) {
-		t.Errorf("ListSkills: want E_NOT_FOUND, got %v", err)
-	}
-	if _, err := h.AuditTail(t.Context(), 50); !api.IsCode(err, api.ErrCodeNotFound) {
-		t.Errorf("AuditTail: want E_NOT_FOUND, got %v", err)
-	}
-	if _, err := h.SecurityTail(t.Context(), 50); !api.IsCode(err, api.ErrCodeNotFound) {
-		t.Errorf("SecurityTail: want E_NOT_FOUND, got %v", err)
-	}
-}
-
-// TestAuditTailClampsAndTagsStream: the two ledgers are two ROUTES
-// (/v1/audit and /v1/security), not one route with a stream selector — a
-// mis-spelled selector that silently returned the wrong stream would be a
-// governance surface reading the wrong ledger. The client-side clamp of the
-// limit is pinned here too.
-func TestAuditTailClampsAndTagsStream(t *testing.T) {
-	got := make(chan string, 4)
-	mux := pingMux(t)
-	mux.HandleFunc("GET /v1/audit", func(w http.ResponseWriter, r *http.Request) {
-		got <- "audit?" + r.URL.RawQuery
-		writeOK(t, w, []api.AuditRecord{})
-	})
-	mux.HandleFunc("GET /v1/security", func(w http.ResponseWriter, r *http.Request) {
-		got <- "security?" + r.URL.RawQuery
-		writeOK(t, w, []api.SecurityEvent{})
-	})
-	h, _ := newHub(t, newFakeDaemon(t, mux), nil)
-
-	if _, err := h.AuditTail(t.Context(), 100000); err != nil {
-		t.Fatalf("AuditTail: %v", err)
-	}
-	if q := <-got; q != "audit?limit=1000" {
-		t.Errorf("query = %q", q)
-	}
-	if _, err := h.SecurityTail(t.Context(), 0); err != nil {
-		t.Fatalf("SecurityTail: %v", err)
-	}
-	if q := <-got; q != "security?" {
-		t.Errorf("query = %q", q)
-	}
-}
-
 func TestOfflineFailsLoudlyAndNeverSpawnsPerCall(t *testing.T) {
 	rec := &recorder{}
 	dl := &testDialer{err: errors.New("connect: no such file or directory")}

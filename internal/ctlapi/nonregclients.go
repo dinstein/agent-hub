@@ -272,9 +272,7 @@ func (s *Server) handleClientConnect(w http.ResponseWriter, r *http.Request, id 
 		writeErr(w, http.StatusBadRequest, CodeBadRequest, terr.msg, terr.hint, reqID)
 		return
 	}
-	start := time.Now()
 	res, err := format.Connect(target, entry)
-	s.auditNonReg(r, "", "clients/connect", hashBody([]byte(id)), err == nil, time.Since(start))
 	if err != nil {
 		s.writeClientsError(w, r, err)
 		return
@@ -301,7 +299,6 @@ func (s *Server) handleClientDisconnect(w http.ResponseWriter, r *http.Request, 
 		writeErr(w, http.StatusBadRequest, CodeBadRequest, terr.msg, terr.hint, requestIDFrom(r.Context()))
 		return
 	}
-	start := time.Now()
 	// With no target named, also look at the client's other location: an
 	// entry written before the default write target moved to the user level
 	// is still on disk, and answering 404 at a file that plainly holds it is
@@ -314,7 +311,6 @@ func (s *Server) handleClientDisconnect(w http.ResponseWriter, r *http.Request, 
 	} else {
 		res, err = format.Disconnect(target)
 	}
-	s.auditNonReg(r, "", "clients/disconnect", hashBody([]byte(id)), err == nil, time.Since(start))
 	if err != nil {
 		s.writeClientsError(w, r, err)
 		return

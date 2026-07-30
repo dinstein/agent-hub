@@ -132,9 +132,6 @@ func TestAuthRefresh(t *testing.T) {
 	if len(ref.calls) != 1 || ref.calls[0] != "github" {
 		t.Errorf("calls = %+v", ref.calls)
 	}
-	if recs := nrFindAudit(env, "auth/refresh"); len(recs) != 1 || recs[0].Server != "github" {
-		t.Errorf("audit = %+v", recs)
-	}
 }
 
 // TestAuthRefreshSupersededIsSuccess: another writer got there first and this
@@ -157,9 +154,6 @@ func TestAuthRefreshSupersededIsSuccess(t *testing.T) {
 	nrData(t, body, &out)
 	if !out.Superseded || out.ExpiresIn <= 0 {
 		t.Errorf("out = %+v", out)
-	}
-	if recs := nrFindAudit(env, "auth/refresh"); len(recs) != 1 || recs[0].Decision != "allowed" {
-		t.Errorf("a superseded refresh must audit as allowed: %+v", recs)
 	}
 }
 
@@ -189,9 +183,6 @@ func TestAuthRefreshFailure(t *testing.T) {
 	status, body := nrDo(t, env.sock, http.MethodPost, "/v1/auth/github/refresh", nil)
 	if status != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500: %s", status, body)
-	}
-	if recs := nrFindAudit(env, "auth/refresh"); len(recs) != 1 || recs[0].Decision != "denied" {
-		t.Errorf("audit = %+v", recs)
 	}
 }
 
@@ -227,9 +218,6 @@ func TestAuthLogoutIsIdempotent(t *testing.T) {
 	if len(store.cleared) != 2 {
 		t.Errorf("cleared = %+v", store.cleared)
 	}
-	if recs := nrFindAudit(env, "auth/logout"); len(recs) != 2 {
-		t.Errorf("audit = %+v", recs)
-	}
 }
 
 func TestAuthLogoutFailure(t *testing.T) {
@@ -240,9 +228,6 @@ func TestAuthLogoutFailure(t *testing.T) {
 	status, body := nrDo(t, env.sock, http.MethodDelete, "/v1/auth/github", nil)
 	if status != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500: %s", status, body)
-	}
-	if recs := nrFindAudit(env, "auth/logout"); len(recs) != 1 || recs[0].Decision != "denied" {
-		t.Errorf("audit = %+v", recs)
 	}
 }
 

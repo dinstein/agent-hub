@@ -1,27 +1,25 @@
-package audit
+package jsonl
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"testing"
-	"time"
 )
 
-// Cross-process acceptance tests re-exec this test binary as helper
+// The cross-process acceptance test re-execs this test binary as helper
 // processes (same pattern as internal/registry): TestMain diverts to a
-// helper before m.Run when the mode env is set.
+// helper before m.Run when the mode env is set. Goroutines would not do —
+// the O_APPEND discipline is what this proves, and in one process the
+// writer mutex would hide its absence.
 
 const (
-	helperModeEnv   = "AGENTHUB_AUDIT_TEST_HELPER"
-	helperPathEnv   = "AGENTHUB_AUDIT_TEST_PATH"
-	helperIDEnv     = "AGENTHUB_AUDIT_TEST_ID"
-	helperNEnv      = "AGENTHUB_AUDIT_TEST_N"
-	helperMaxEnv    = "AGENTHUB_AUDIT_TEST_MAXBYTES"
-	helperDirEnv    = "AGENTHUB_AUDIT_TEST_DIR"
-	helperWindowEnv = "AGENTHUB_AUDIT_TEST_WINDOW"
+	helperModeEnv = "AGENTHUB_JSONL_TEST_HELPER"
+	helperPathEnv = "AGENTHUB_JSONL_TEST_PATH"
+	helperIDEnv   = "AGENTHUB_JSONL_TEST_ID"
+	helperNEnv    = "AGENTHUB_JSONL_TEST_N"
+	helperMaxEnv  = "AGENTHUB_JSONL_TEST_MAXBYTES"
 )
 
 func TestMain(m *testing.M) {
@@ -30,8 +28,6 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	case "append":
 		helperAppend()
-	case "security":
-		helperSecurity()
 	default:
 		fmt.Fprintln(os.Stderr, "unknown helper mode")
 		os.Exit(2)
@@ -87,39 +83,6 @@ func helperAppend() {
 	}
 	if e := w.WriteErrors(); e != 0 {
 		helperFail(fmt.Errorf("helper hit %d write errors", e))
-	}
-	os.Exit(0)
-}
-
-// helperSecurity emits the same event n times; cross-process dedup must
-// collapse all emissions from all helpers into a single line.
-func helperSecurity() {
-	dir := os.Getenv(helperDirEnv)
-	n, err := strconv.Atoi(os.Getenv(helperNEnv))
-	if err != nil || dir == "" {
-		helperFail(fmt.Errorf("bad helper env (dir=%q n=%v)", dir, err))
-	}
-	window, err := time.ParseDuration(os.Getenv(helperWindowEnv))
-	if err != nil {
-		helperFail(err)
-	}
-	s, err := NewSecurityStream(filepath.Join(dir, SecurityFileName), SecurityOptions{
-		Window:   window,
-		DedupDir: filepath.Join(dir, DedupDirName),
-	})
-	if err != nil {
-		helperFail(err)
-	}
-	for range n {
-		s.Emit(SecurityEvent{
-			Event:    "injection.blocked",
-			Severity: SeverityCritical,
-			Server:   "srv",
-			Tool:     "tool",
-		})
-	}
-	if err := s.Close(); err != nil {
-		helperFail(err)
 	}
 	os.Exit(0)
 }
