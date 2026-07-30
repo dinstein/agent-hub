@@ -451,10 +451,7 @@ type ClientsDoc struct {
 // DenyDestructive/BlockOnInjection are never agent-writable (enforced at the
 // ctlapi surface, M1).
 type GovernanceDoc struct {
-	DenyDestructive  bool   `json:"denyDestructive,omitempty"`
-	BlockOnInjection bool   `json:"blockOnInjection,omitempty"`
-	HumanApproval    bool   `json:"humanApproval,omitempty"`
-	Discovery        string `json:"discovery,omitempty"` // global default discovery mode
+	Discovery string `json:"discovery,omitempty"` // global default discovery mode
 	// ActiveProfile is the globally active profile name, the fallback every
 	// client that does not name one follows (docs/architecture.md §7). "" = none, so
 	// followActive applies no profile narrowing at all.

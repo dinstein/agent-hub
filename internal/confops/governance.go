@@ -39,45 +39,6 @@ func (k GovernanceKey) Get(g registry.GovernanceDoc) string { return k.get(g) }
 // governanceKeys is the frozen key table.
 var governanceKeys = []GovernanceKey{
 	{
-		Name: "denyDestructive", Aliases: []string{"deny_destructive"}, Kind: "bool",
-		Doc: "refuse destructive tool calls outright (never agent-writable)",
-		get: func(g registry.GovernanceDoc) string { return strconv.FormatBool(g.DenyDestructive) },
-		set: func(g *registry.GovernanceDoc, raw string) error {
-			v, err := parseConfigBool(raw)
-			if err != nil {
-				return err
-			}
-			g.DenyDestructive = v
-			return nil
-		},
-	},
-	{
-		Name: "blockOnInjection", Aliases: []string{"block_on_injection"}, Kind: "bool",
-		Doc: "block a call whose payload trips the injection guard (never agent-writable)",
-		get: func(g registry.GovernanceDoc) string { return strconv.FormatBool(g.BlockOnInjection) },
-		set: func(g *registry.GovernanceDoc, raw string) error {
-			v, err := parseConfigBool(raw)
-			if err != nil {
-				return err
-			}
-			g.BlockOnInjection = v
-			return nil
-		},
-	},
-	{
-		Name: "humanApproval", Aliases: []string{"human_approval"}, Kind: "bool",
-		Doc: "require a human decision for every tool call (HITL)",
-		get: func(g registry.GovernanceDoc) string { return strconv.FormatBool(g.HumanApproval) },
-		set: func(g *registry.GovernanceDoc, raw string) error {
-			v, err := parseConfigBool(raw)
-			if err != nil {
-				return err
-			}
-			g.HumanApproval = v
-			return nil
-		},
-	},
-	{
 		Name: "discovery", Aliases: []string{"discovery_mode"}, Kind: "enum",
 		Doc: "default discovery mode: lazy, grouped or full",
 		get: func(g registry.GovernanceDoc) string { return g.Discovery },
@@ -265,15 +226,4 @@ func setBudget(g *registry.GovernanceDoc, id, raw string) error {
 	}
 	g.ResultBudget[id] = registry.Doc[registry.Budget]{V: registry.Budget{Bytes: n, Forced: forced}}
 	return nil
-}
-
-// parseConfigBool accepts the usual spellings and refuses everything else.
-func parseConfigBool(raw string) (bool, error) {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "true", "yes", "on", "1":
-		return true, nil
-	case "false", "no", "off", "0":
-		return false, nil
-	}
-	return false, usagef("expected a boolean (true/false), got %q", raw)
 }

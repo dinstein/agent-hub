@@ -58,7 +58,6 @@ func runScriptThroughCLI(t *testing.T) {
 	mustRun(t, "", "profile", "rename", "work", "work2")
 	mustRun(t, "", "profile", "use", "work2")
 
-	mustRun(t, "", "config", "set", "block_on_injection", "true")
 	mustRun(t, "", "config", "set", "resultBudget.*", "65536")
 	mustRun(t, "", "config", "set", "resultBudget.github", "1024!")
 
@@ -141,7 +140,6 @@ func runScriptThroughConfops(t *testing.T, dataDir string) {
 	_, err = confops.SetActiveProfile(ctx, st, "work2", no)
 	must("profile use", err)
 
-	_, err = confops.SetGovernance(ctx, st, "block_on_injection", "true", no)
 	must("config set bool", err)
 	_, err = confops.SetGovernance(ctx, st, confops.ResultBudgetPrefix+"*", "65536", no)
 	must("config set budget", err)

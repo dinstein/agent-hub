@@ -7,8 +7,8 @@
 //
 //	scope gate → token tier gate
 //
-// then the downstream call, then the defend_and_shape hook (injection scan,
-// leakguard, then budget-shape through Options.ResultShaper). Success and
+// then the downstream call, then the shaping hook (budget-shape through
+// Options.ResultShaper). Success and
 // error branches share defend_and_shape (docs/flows.md: a malicious server
 // must not bypass scanning by answering with a JSON-RPC error).
 //
@@ -29,8 +29,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/dinstein/agent-hub/internal/guard/injection"
-	"github.com/dinstein/agent-hub/internal/guard/leakguard"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/scope"
 )
@@ -126,32 +124,6 @@ type Options struct {
 	// with no registry there is also no governance config to enforce).
 	Scope func() *scope.EffectiveScope
 
-	// Scanner runs the injection scan inside defend_and_shape. nil
-	// disables scanning (M0-compat pass-through).
-	Scanner *injection.Scanner
-
-	// InjectionPolicy returns the current enforcement policy (label by
-	// default, block opt-in, per-server exemptions — docs/flows.md). nil =
-	// zero Policy (label mode, nobody exempt).
-	InjectionPolicy func() injection.Policy
-
-	// LeakScanner runs the sensitive-data scan inside defend_and_shape,
-	// between the injection verdict and shaping (docs/modules/security.md, leak.go).
-	// nil disables the stage (M0/M1-compat pass-through).
-	LeakScanner *leakguard.Scanner
-
-	// LeakPolicy returns the current disposition, governance key
-	// `leakguard: off | audit | inline`. nil = the zero Policy, which is
-	// AUDIT — ruling #17 makes the zero-latency audit hook the default-on
-	// half and inline rewriting the explicitly-chosen half.
-	LeakPolicy func() leakguard.Policy
-
-	// OnLeak receives one LeakEvent per call with findings, carrying
-	// content-free records only. It runs OFF the call path (own goroutine,
-	// cancellation-free context). nil means audit-mode scanning is skipped
-	// entirely — with no consumer there is nothing to compute.
-	OnLeak LeakFunc
-
 	// ResultShaper bounds the delivered result to the caller's budget and
 	// retains the remainder for fetch_result. nil = no shaping (results are
 	// delivered whole — the M0/M1-A..C behaviour).
@@ -166,14 +138,7 @@ func New(opts Options) *Pipeline {
 			&scopeGate{scopeOf: opts.Scope},
 			&tokenTierGate{},
 		},
-		shaper: &defendAndShape{
-			scanner:     opts.Scanner,
-			policy:      opts.InjectionPolicy,
-			leakScanner: opts.LeakScanner,
-			leakPolicy:  opts.LeakPolicy,
-			onLeak:      opts.OnLeak,
-			shape:       opts.ResultShaper,
-		},
+		shaper: &shapeStage{shape: opts.ResultShaper},
 	}
 }
 

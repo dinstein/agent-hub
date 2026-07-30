@@ -11,21 +11,21 @@ import (
 func TestConfigGetSetLs(t *testing.T) {
 	dir := setDataDir(t)
 
-	// Unset switches read as their zero value, not as an error.
+	// An unset key reads as its zero value, not as an error.
 	var entry ConfigEntry
-	decodeInto(t, mustRun(t, "", "config", "get", "blockOnInjection", "--json"), &entry)
-	if entry.Value != "false" {
-		t.Errorf("unset bool = %q, want false", entry.Value)
+	decodeInto(t, mustRun(t, "", "config", "get", "discovery", "--json"), &entry)
+	if entry.Value != "" {
+		t.Errorf("unset key = %q, want empty", entry.Value)
 	}
 
 	var set ConfigSetResult
-	decodeInto(t, mustRun(t, "", "config", "set", "block_on_injection", "true", "--json"), &set)
-	if !set.Changed || set.Value != "true" || set.Key != "blockOnInjection" {
+	decodeInto(t, mustRun(t, "", "config", "set", "discovery_mode", "lazy", "--json"), &set)
+	if !set.Changed || set.Value != "lazy" || set.Key != "discovery" {
 		t.Errorf("set via snake_case alias = %+v, want the canonical key and a change", set)
 	}
 	// Idempotent re-set reports no change.
 	var again ConfigSetResult
-	decodeInto(t, mustRun(t, "", "config", "set", "blockOnInjection", "on", "--json"), &again)
+	decodeInto(t, mustRun(t, "", "config", "set", "discovery", "lazy", "--json"), &again)
 	if again.Changed {
 		t.Errorf("re-setting the same value reported a change: %+v", again)
 	}
@@ -39,7 +39,7 @@ func TestConfigGetSetLs(t *testing.T) {
 	if err := json.Unmarshal(raw, &gov); err != nil {
 		t.Fatal(err)
 	}
-	if gov["blockOnInjection"] != true {
+	if gov["discovery"] != "lazy" {
 		t.Errorf("governance.json = %s", raw)
 	}
 
@@ -48,7 +48,7 @@ func TestConfigGetSetLs(t *testing.T) {
 	if code, _, _ := runCLI(t, "", "config", "set", "discovery", "bogus"); code != ExitUsage {
 		t.Errorf("bad enum exit = %d, want %d", code, ExitUsage)
 	}
-	if code, _, _ := runCLI(t, "", "config", "set", "humanApproval", "maybe"); code != ExitUsage {
+	if code, _, _ := runCLI(t, "", "config", "set", "discovery", "maybe"); code != ExitUsage {
 		t.Errorf("bad bool exit = %d, want %d", code, ExitUsage)
 	}
 	if code, _, stderr := runCLI(t, "", "config", "get", "nope"); code != ExitUsage {
@@ -62,12 +62,12 @@ func TestConfigGetSetLs(t *testing.T) {
 	for _, e := range list.Entries {
 		seen[e.Key] = e.Value
 	}
-	for _, want := range []string{"denyDestructive", "blockOnInjection", "humanApproval", "discovery"} {
+	for _, want := range []string{"discovery"} {
 		if _, ok := seen[want]; !ok {
 			t.Errorf("config ls is missing %q: %+v", want, list.Entries)
 		}
 	}
-	if seen["discovery"] != "grouped" || seen["blockOnInjection"] != "true" {
+	if seen["discovery"] != "grouped" {
 		t.Errorf("config ls values = %v", seen)
 	}
 }

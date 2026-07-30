@@ -10,7 +10,6 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/pipeline"
-	"github.com/dinstein/agent-hub/internal/scope"
 )
 
 // ToolTier is the derivation the token tier gate, the intent variants and
@@ -124,7 +123,7 @@ func TestDefenceLinesAreDistinguishable(t *testing.T) {
 	// Line 1: the tool is not visible at all. Scope wins even though the
 	// caller's tier would also fail — the chain short-circuits in order.
 	visibleNothing := pipeline.New(pipeline.Options{
-		Scope: scopeOf(scopeWith(nil, scope.EffectiveApproval{DenyDestructive: true})),
+		Scope: scopeOf(scopeWith(nil)),
 	})
 	_, err := execute(t, visibleNothing, pipeline.CallRequest{
 		Exposed: "srv__rm", ServerID: srv, RawTool: tool,
@@ -135,7 +134,7 @@ func TestDefenceLinesAreDistinguishable(t *testing.T) {
 	// Line 2: visible, but the credential does not reach this tier. The HITL
 	// switches are also set; the machine decision must come first (#16).
 	visible := pipeline.New(pipeline.Options{
-		Scope: scopeOf(scopeWith([]string{tool}, scope.EffectiveApproval{DenyDestructive: true})),
+		Scope: scopeOf(scopeWith([]string{tool})),
 	})
 	_, err = execute(t, visible, pipeline.CallRequest{
 		Exposed: "srv__rm", ServerID: srv, RawTool: tool,
@@ -145,7 +144,7 @@ func TestDefenceLinesAreDistinguishable(t *testing.T) {
 
 	// Both lines open: the call runs.
 	permissive := pipeline.New(pipeline.Options{
-		Scope: scopeOf(scopeWith([]string{tool}, scope.EffectiveApproval{})),
+		Scope: scopeOf(scopeWith([]string{tool})),
 	})
 	if _, err := execute(t, permissive, pipeline.CallRequest{
 		Exposed: "srv__rm", ServerID: srv, RawTool: tool,

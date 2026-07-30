@@ -79,7 +79,7 @@ func TestWatchExternalWriteEmitsKindedEvent(t *testing.T) {
 
 	// A different document must surface with its own Kind.
 	err := writer.Update(context.Background(), func(tx *Tx) error {
-		tx.Governance.V.DenyDestructive = true
+		tx.Governance.V.Discovery = "lazy"
 		return nil
 	})
 	if err != nil {

@@ -108,7 +108,6 @@ func TestGovernanceRoundTripGolden(t *testing.T) {
 }
 `
 	writeDocAndRoundTrip(t, DocGovernance, input, func(tx *Tx) error {
-		tx.Governance.V.HumanApproval = true // edit a known field
 		return nil
 	})
 }

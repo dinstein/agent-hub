@@ -16,14 +16,14 @@ func TestGovernanceKeyTableIsShared(t *testing.T) {
 	if GovernanceKeys()[0].Name == "tampered" {
 		t.Error("GovernanceKeys returned the live table")
 	}
-	for _, want := range []string{"denyDestructive", "blockOnInjection", "humanApproval", "discovery"} {
+	for _, want := range []string{"discovery"} {
 		if _, ok := LookupGovernanceKey(want); !ok {
 			t.Errorf("key %q is missing", want)
 		}
 	}
 	// snake_case aliases resolve to the canonical key.
-	k, ok := LookupGovernanceKey("block_on_injection")
-	if !ok || k.Name != "blockOnInjection" {
+	k, ok := LookupGovernanceKey("discovery_mode")
+	if !ok || k.Name != "discovery" {
 		t.Errorf("alias resolved to %+v", k)
 	}
 }
@@ -32,24 +32,21 @@ func TestSetGovernance(t *testing.T) {
 	ctx := context.Background()
 	st := newStore(t)
 
-	// An unset switch reads as its zero value, not as an error.
-	entry, err := GetGovernance(st.Snapshot().Governance.V, "blockOnInjection")
-	if err != nil || entry.Value != "false" {
-		t.Fatalf("unset bool = %+v, %v", entry, err)
+	// An unset key reads as its zero value, not as an error.
+	entry, err := GetGovernance(st.Snapshot().Governance.V, "discovery")
+	if err != nil || entry.Value != "" {
+		t.Fatalf("unset key = %+v, %v", entry, err)
 	}
 
-	res, err := SetGovernance(ctx, st, "block_on_injection", "true", Precondition{})
+	res, err := SetGovernance(ctx, st, "discovery_mode", "lazy", Precondition{})
 	if err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	if res.Key != "blockOnInjection" || res.Value != "true" || !res.Changed {
+	if res.Key != "discovery" || res.Value != "lazy" || !res.Changed {
 		t.Fatalf("result = %+v", res)
 	}
-	if !st.Snapshot().Governance.V.BlockOnInjection {
-		t.Error("the value never reached governance.json")
-	}
 
-	again, err := SetGovernance(ctx, st, "blockOnInjection", "on", Precondition{})
+	again, err := SetGovernance(ctx, st, "discovery", "lazy", Precondition{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,9 +60,9 @@ func TestSetGovernanceValidation(t *testing.T) {
 	st := newStore(t)
 
 	// Failure direction: a typo must never read as "off".
-	_, err := SetGovernance(ctx, st, "humanApproval", "maybe", Precondition{})
+	_, err := SetGovernance(ctx, st, "discovery", "maybe", Precondition{})
 	wantErrorKind(t, err, KindUsage, CodeUsage)
-	if st.Snapshot().Governance.V.HumanApproval {
+	if st.Snapshot().Governance.V.Discovery == "maybe" {
 		t.Error("a rejected value was applied")
 	}
 
@@ -79,7 +76,7 @@ func TestSetGovernanceValidation(t *testing.T) {
 	wantErrorKind(t, err, KindUsage, CodeConfigKeyUnknown)
 
 	e, _ := AsError(UnknownGovernanceKey("colour"))
-	if !strings.Contains(e.Hint, "denyDestructive") || !strings.Contains(e.Hint, ResultBudgetPrefix) {
+	if !strings.Contains(e.Hint, "discovery") || !strings.Contains(e.Hint, ResultBudgetPrefix) {
 		t.Errorf("hint = %q, want the full key list", e.Hint)
 	}
 }
@@ -127,7 +124,7 @@ func TestSetGovernanceResultBudget(t *testing.T) {
 func TestSetGovernancePreconditionConflict(t *testing.T) {
 	ctx := context.Background()
 	st := newStore(t)
-	if _, err := SetGovernance(ctx, st, "humanApproval", "true", Precondition{}); err != nil {
+	if _, err := SetGovernance(ctx, st, "discovery", "full", Precondition{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := SetGovernance(ctx, st, "discovery", "lazy", Precondition{}); err != nil {
@@ -135,9 +132,9 @@ func TestSetGovernancePreconditionConflict(t *testing.T) {
 	}
 	gen := st.Snapshot().Generation
 
-	_, err := SetGovernance(ctx, st, "denyDestructive", "true", Precondition{Generation: gen - 1})
+	_, err := SetGovernance(ctx, st, "discovery", "full", Precondition{Generation: gen - 1})
 	wantStale(t, err, gen)
-	if st.Snapshot().Governance.V.DenyDestructive {
+	if st.Snapshot().Governance.V.Discovery == "full" {
 		t.Error("a stale set was applied anyway")
 	}
 }

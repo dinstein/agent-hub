@@ -9,36 +9,14 @@
 // confirmation states what stops being enforced and requires an explicit
 // acknowledgement before it will fire (docs/modules/controlplane.md).
 //
-// The safety-key list is restated client-side (types.isSafetyKey) rather than
-// read off the wire: the daemon does not label its keys, and deriving the
-// warning from a field that may be absent would make the loud path the one
-// that can silently go quiet.
 
 import { hub } from "../bridge";
 import { clear, el, section, table } from "../dom";
 import type { Page } from "../page";
 import { failureBox, noticeSlot, runWrite } from "../page";
-import { button, confirmAction, field, selectInput, textInput } from "../ui";
+import { button, field, selectInput, textInput } from "../ui";
 import type { GovernanceList, GovernanceValue } from "../types";
-import { DiscoveryModes, GovernanceKind, ResultBudgetPrefix, isSafetyKey, relaxesSafety } from "../types";
-
-/** What stops being enforced, per gate. Shown in the confirmation of a
- *  relaxing write — an operator turning one off is entitled to read the
- *  consequence rather than remember it. */
-const RELAX_CONSEQUENCES: Record<string, string[]> = {
-  denyDestructive: [
-    "Destructive tool calls stop being refused outright.",
-    "No lower layer can restore this: the merge is tighten-only, so every client and session inherits the relaxed setting.",
-  ],
-  blockOnInjection: [
-    "A call whose payload trips the prompt-injection guard is no longer blocked.",
-    "Detection keeps running and keeps writing security events — only the block goes away, so the damage is visible afterwards but not prevented.",
-  ],
-  humanApproval: [
-    "Tool calls stop waiting for a human decision.",
-    "Calls that would have queued for approval now execute unattended.",
-  ],
-};
+import { DiscoveryModes, GovernanceKind, ResultBudgetPrefix } from "../types";
 
 function valueEditor(entry: GovernanceValue): { node: HTMLElement; value(): string } {
   if (entry.kind === GovernanceKind.Bool) {
@@ -75,19 +53,6 @@ export function configPage(): Page {
       slot.say(`${entry.key} is already "${next || "unset"}".`);
       return;
     }
-    if (relaxesSafety(entry.key, entry.value, next)) {
-      const ok = await confirmAction({
-        title: `Turn off ${entry.key}?`,
-        body: "This weakens enforcement for every client and every session of this hub.",
-        consequences: RELAX_CONSEQUENCES[entry.key] ?? [
-          "This gate stops being enforced everywhere.",
-        ],
-        confirmLabel: `Turn ${entry.key} off`,
-        acknowledge: "I understand that calls allowed while this is off cannot be taken back.",
-        danger: true,
-      });
-      if (!ok) return;
-    }
     // Tightening needs no ceremony: it is the direction the merge already
     // favours, and it is reversible from this same page.
     await runWrite(
@@ -122,32 +87,14 @@ export function configPage(): Page {
 
   function row(entry: GovernanceValue): (Node | string)[] {
     const editor = valueEditor(entry);
-    const safety = isSafetyKey(entry.key);
-    const enforced = entry.value === "true";
-    const save = button("Apply", safety && enforced ? "btn btn-deny" : "btn", () =>
-      void apply(entry, editor.value()),
-    );
+    const save = button("Apply", "btn", () => void apply(entry, editor.value()));
     return [
       el("div", {}, [
         el("strong", { text: entry.key }),
-        safety
-          ? el("div", { class: "badge badge-unhealthy", text: "safety gate" })
-          : null,
         entry.doc ? el("div", { class: "muted", text: entry.doc }) : null,
       ]),
-      el("span", {
-        class: safety && !enforced ? "badge badge-unhealthy" : "mono",
-        text: entry.value || "unset",
-      }),
-      el("div", { class: "action" }, [
-        editor.node,
-        safety && enforced
-          ? el("span", {
-              class: "hint danger-hint",
-              text: "Turning this off weakens enforcement for every client and session, and this page is the only place it can be turned off at all.",
-            })
-          : null,
-      ]),
+      el("span", { class: "mono", text: entry.value || "unset" }),
+      el("div", { class: "action" }, [editor.node]),
       save,
     ];
   }

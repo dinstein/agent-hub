@@ -60,27 +60,6 @@ const (
 	DiscoveryFull    DiscoveryMode = "full"
 )
 
-// ApprovalPolicy carries the per-layer approval switches. Pointer
-// three-state: nil = no intervention. Merge direction is boolean OR across
-// layers — any layer requiring approval wins (tighten-only, fail-closed: a
-// false can never switch off a true from another layer).
-//
-// Two switches, at opposite ends: HumanApproval asks about every call,
-// DenyDestructive refuses destructive ones without asking. There used to be a
-// middle one (ConfirmDestructive: ask only about destructive calls), settable
-// only from the client layer; it was removed with that layer rather than left
-// as a field the HITL gate reads and nothing can set.
-type ApprovalPolicy struct {
-	HumanApproval *bool
-	// DenyDestructive is settable ONLY by the global governance layer
-	// (governance.json) — it is NEVER agent-writable. Two mechanisms enforce
-	// this: (1) the session-layer input type Overlay deliberately has no such
-	// field, so no overlay can ever carry it; (2) FromRegistry populates it
-	// exclusively on the LayerGlobal layer (registry.ApprovalPolicy, the
-	// on-disk type, does not even model the field).
-	DenyDestructive *bool
-}
-
 // ScopeLayer is one layer's contribution to the merge (docs/architecture.md §7).
 type ScopeLayer struct {
 	Kind   LayerKind
@@ -100,8 +79,6 @@ type ScopeLayer struct {
 	// ResultBudget maps serverID or "*" to a budget (experience field;
 	// Forced entries merge tighten-only via min).
 	ResultBudget map[string]*Budget
-
-	Approval ApprovalPolicy
 }
 
 // ToolView is the final visible ORIGINAL tool set of one server. Tools is
@@ -109,13 +86,6 @@ type ScopeLayer struct {
 // is visible but all of its tools are blocked.
 type ToolView struct {
 	Tools []string
-}
-
-// EffectiveApproval is the folded approval outcome: pointers collapsed to
-// concrete booleans by OR across layers.
-type EffectiveApproval struct {
-	HumanApproval   bool
-	DenyDestructive bool
 }
 
 // Diagnostic is a non-fatal resolution warning (e.g. a dangling profile
@@ -137,7 +107,6 @@ type EffectiveScope struct {
 	Servers    map[string]ToolView // final visible server -> visible original tool set
 	Discovery  DiscoveryMode       // "" when no layer set one (caller applies its default)
 	Budgets    map[string]int      // serverID or "*" -> effective byte budget
-	Approval   EffectiveApproval
 	Diags      []Diagnostic
 	Hash       [32]byte
 }

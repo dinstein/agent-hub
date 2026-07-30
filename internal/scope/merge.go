@@ -142,18 +142,10 @@ func MergeWithDiagnostics(layers []ScopeLayer, cat router.Catalog, diags []Diagn
 		budgets[k] = v
 	}
 
-	// Approval: boolean OR — tighten-only, fail-closed.
-	var ap EffectiveApproval
-	for _, l := range layers {
-		orInto(&ap.HumanApproval, l.Approval.HumanApproval)
-		orInto(&ap.DenyDestructive, l.Approval.DenyDestructive)
-	}
-
 	es := &EffectiveScope{
 		Servers:   servers,
 		Discovery: disc,
 		Budgets:   budgets,
-		Approval:  ap,
 		Diags:     cloneDiags(diags),
 	}
 	es.Hash = hashScope(es)
@@ -170,15 +162,6 @@ func Changed(prev, next *EffectiveScope) bool {
 	}
 	return prev.Hash != next.Hash
 }
-
-// orInto ORs a three-state pointer into dst: nil = no intervention; only a
-// true can flip dst (tighten-only — false never loosens; fail-closed).
-func orInto(dst *bool, src *bool) {
-	if src != nil && *src {
-		*dst = true
-	}
-}
-
 func cloneDiags(in []Diagnostic) []Diagnostic {
 	if len(in) == 0 {
 		return nil

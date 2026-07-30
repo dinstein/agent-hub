@@ -243,7 +243,7 @@ func TestAdminUnknownResourcesAreUniform404(t *testing.T) {
 		{http.MethodDelete, "/v1/scope/ghost", nil},
 		{http.MethodDelete, "/v1/quarantine/ghost", nil},
 		{http.MethodPut, "/v1/servers/ghost", map[string]any{}},
-		{http.MethodGet, "/v1/config/denyDestructive", nil},
+		{http.MethodGet, "/v1/config/discovery", nil},
 	}
 	for _, tc := range cases {
 		got := doAdmin(t, env.sock, tc.method, tc.path, tc.body)
@@ -583,9 +583,8 @@ func TestGovernanceListAndSet(t *testing.T) {
 		}
 	}
 
-	// A JSON boolean and the string spelling mean the same thing.
-	res := doAdmin(t, env.sock, http.MethodPut, "/v1/config/blockOnInjection",
-		map[string]any{"value": true})
+	res := doAdmin(t, env.sock, http.MethodPut, "/v1/config/discovery",
+		map[string]any{"value": "lazy"})
 	var cw struct {
 		Key      string `json:"key"`
 		Value    string `json:"value"`
@@ -593,33 +592,33 @@ func TestGovernanceListAndSet(t *testing.T) {
 		Changed  bool   `json:"changed"`
 	}
 	res.decode(t, &cw)
-	if cw.Key != "blockOnInjection" || cw.Value != "true" || cw.Previous != "false" || !cw.Changed {
+	if cw.Key != "discovery" || cw.Value != "lazy" || !cw.Changed {
 		t.Fatalf("set result = %+v", cw)
 	}
-	if !env.reg.Snapshot().Governance.V.BlockOnInjection {
-		t.Error("switch not written")
+	if env.reg.Snapshot().Governance.V.Discovery != "lazy" {
+		t.Error("key not written")
 	}
 
-	// Relaxing a governance switch is ALLOWED here — this is the only place
-	// that can — but it must be recorded with the key and both values.
-	res = doAdmin(t, env.sock, http.MethodPut, "/v1/config/block_on_injection",
-		map[string]any{"value": "false"})
+	// Relaxing a governance value is ALLOWED here — this is the only place
+	// that can.
+	res = doAdmin(t, env.sock, http.MethodPut, "/v1/config/discovery_mode",
+		map[string]any{"value": "full"})
 	if res.status != http.StatusOK {
 		t.Fatalf("relax: %d %s", res.status, res.raw)
 	}
-	if env.reg.Snapshot().Governance.V.BlockOnInjection {
-		t.Error("switch not relaxed")
+	if env.reg.Snapshot().Governance.V.Discovery != "full" {
+		t.Error("key not relaxed")
 	}
 
 	// An unparseable value leaves the switch untouched: a typo must never
 	// read as "false" and silently turn a gate off.
-	doAdmin(t, env.sock, http.MethodPut, "/v1/config/denyDestructive",
+	doAdmin(t, env.sock, http.MethodPut, "/v1/config/discovery",
 		map[string]any{"value": "maybe"}).
 		wantErr(t, http.StatusBadRequest, confops.CodeUsage)
 	doAdmin(t, env.sock, http.MethodPut, "/v1/config/nonsense",
 		map[string]any{"value": "true"}).
 		wantErr(t, http.StatusBadRequest, confops.CodeConfigKeyUnknown)
-	doAdmin(t, env.sock, http.MethodPut, "/v1/config/denyDestructive",
+	doAdmin(t, env.sock, http.MethodPut, "/v1/config/discovery",
 		map[string]any{"value": map[string]any{"nested": true}}).
 		wantErr(t, http.StatusBadRequest, CodeBadRequest)
 
@@ -636,10 +635,10 @@ func TestGovernanceListAndSet(t *testing.T) {
 func TestGovernanceSetHonoursPrecondition(t *testing.T) {
 	env, _, _ := adminServer(t, nil)
 	current := env.reg.Snapshot().Generation
-	doAdmin(t, env.sock, http.MethodPut, "/v1/config/humanApproval", map[string]any{
-		"value": true, "expected_generation": current + 5,
+	doAdmin(t, env.sock, http.MethodPut, "/v1/config/discovery", map[string]any{
+		"value": "grouped", "expected_generation": current + 5,
 	}).wantErr(t, http.StatusConflict, CodeStalePrecondition)
-	if env.reg.Snapshot().Governance.V.HumanApproval {
+	if env.reg.Snapshot().Governance.V.Discovery == "grouped" {
 		t.Error("a stale governance write must not land")
 	}
 }

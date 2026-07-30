@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"github.com/dinstein/agent-hub/internal/guard/injection"
 	"github.com/dinstein/agent-hub/internal/router"
 	"github.com/dinstein/agent-hub/internal/scope"
 )
@@ -87,20 +86,6 @@ func catalogFromRouter(rt *router.Router) router.Catalog {
 // predicate the pipeline's scope gate enforces on the execute path. The
 // router itself is NOT rebuilt and no downstream connection is touched
 // (docs/architecture.md §7 invariant 2 — visibility is a query-time projection).
-
-// injectionPolicy derives the defend_and_shape enforcement policy from the
-// applied governance document: label by default, block when
-// governance.blockOnInjection is set (docs/flows.md).
-func (g *gateway) injectionPolicy() injection.Policy {
-	var pol injection.Policy // zero value = label mode, nobody exempt
-	if snap := g.snap.Load(); snap != nil && snap.Governance.V.BlockOnInjection {
-		pol.Mode = injection.ModeBlock
-	}
-	// Per-server exemptions are explicit operator configuration; the
-	// registry schema has no field for them yet — none are granted until
-	// it does (the closed direction: no exemption by default).
-	return pol
-}
 
 // refreshScopeAndNotify recomputes the effective scope and pushes
 // tools/list_changed iff the CONTENT hash moved (docs/architecture.md §7: only a

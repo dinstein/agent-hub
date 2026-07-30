@@ -50,7 +50,6 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/discovery"
 	"github.com/dinstein/agent-hub/internal/downstream"
-	"github.com/dinstein/agent-hub/internal/guard/injection"
 	"github.com/dinstein/agent-hub/internal/jsonl"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
@@ -441,9 +440,7 @@ func newGateway(cfg Config) (*gateway, error) {
 	// The pipeline reads the SAME effective-scope pointer the tools/list
 	// projection uses (docs/architecture.md §7: one visibility source, two readers).
 	g.pipe = pipeline.New(pipeline.Options{
-		Scope:           scopeFn,
-		Scanner:         injection.NewDefault(),
-		InjectionPolicy: g.injectionPolicy,
+		Scope: scopeFn,
 		// Shaping runs inside the pipeline, not around it: every execute path
 		// (direct tools/call, lazy call_tool) is budgeted by the same rule
 		// because there is only one place it is applied.

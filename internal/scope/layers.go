@@ -36,13 +36,6 @@ func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diag
 		gl.Discovery = &d
 	}
 	gl.ResultBudget = budgetsFromDocs(g.ResultBudget)
-	if g.HumanApproval {
-		gl.Approval.HumanApproval = boolPtr(true)
-	}
-	if g.DenyDestructive {
-		// The ONLY place DenyDestructive enters the chain: governance.json.
-		gl.Approval.DenyDestructive = boolPtr(true)
-	}
 	// Server layer: the per-server tool allow lists from servers.json. It is
 	// a layer rather than a filter applied elsewhere so that the global rule
 	// and a profile's rule intersect through the SAME Merge — one place
@@ -203,16 +196,6 @@ func cloneStrings(in []string) []string {
 	copy(out, in)
 	return out
 }
-
-func cloneBool(in *bool) *bool {
-	if in == nil {
-		return nil
-	}
-	v := *in
-	return &v
-}
-
-func boolPtr(v bool) *bool { return &v }
 
 // serverToolsLayer builds the global per-server tool allow lists. It returns
 // ok=false when no server carries one, so the common case adds no layer at

@@ -48,21 +48,13 @@ func TestFromRegistryEmptySnapshot(t *testing.T) {
 func TestFromRegistryGovernance(t *testing.T) {
 	snap := emptySnap()
 	snap.Governance = doc(registry.GovernanceDoc{
-		DenyDestructive: true,
-		HumanApproval:   true,
-		Discovery:       "grouped",
-		ResultBudget:    map[string]registry.Doc[registry.Budget]{"*": doc(registry.Budget{Bytes: 1024, Forced: true})},
+		Discovery:    "grouped",
+		ResultBudget: map[string]registry.Doc[registry.Budget]{"*": doc(registry.Budget{Bytes: 1024, Forced: true})},
 	})
 	layers, _ := FromRegistry(snap, SessionKey{ClientID: "x"})
 	gl := layerOfKind(t, layers, LayerGlobal)
 	if gl.Discovery == nil || *gl.Discovery != DiscoveryGrouped {
 		t.Errorf("discovery not mapped: %v", gl.Discovery)
-	}
-	if gl.Approval.DenyDestructive == nil || !*gl.Approval.DenyDestructive {
-		t.Error("DenyDestructive not mapped onto the global layer")
-	}
-	if gl.Approval.HumanApproval == nil || !*gl.Approval.HumanApproval {
-		t.Error("HumanApproval not mapped")
 	}
 	if b := gl.ResultBudget["*"]; b == nil || b.Bytes != 1024 || !b.Forced {
 		t.Errorf("budget not mapped: %+v", b)

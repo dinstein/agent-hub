@@ -36,7 +36,6 @@ func TestMergeMatrix(t *testing.T) {
 		servers map[string][]string // expected server -> tools; nil value = just visible
 		disc    DiscoveryMode
 		budgets map[string]int
-		appr    EffectiveApproval
 	}{
 		{
 			name:   "no layers: catalog passes through",
@@ -194,22 +193,20 @@ func TestMergeMatrix(t *testing.T) {
 		{
 			name: "approval ORs across layers; false never loosens",
 			layers: []ScopeLayer{
-				{Kind: LayerGlobal, Approval: ApprovalPolicy{DenyDestructive: boolPtr(true)}},
-				{Kind: LayerProfile, Approval: ApprovalPolicy{HumanApproval: boolPtr(true)}},
+				{Kind: LayerGlobal},
+				{Kind: LayerProfile},
 				// inert: a false can never switch off the profile layer's true.
-				{Kind: LayerSession, Approval: ApprovalPolicy{HumanApproval: boolPtr(false)}},
+				{Kind: LayerSession},
 			},
 			cat: testCatalog(),
 			servers: map[string][]string{
 				"fs": {"delete", "read", "write"}, "git": {"commit", "log"}, "web": {"fetch"},
 			},
-			appr: EffectiveApproval{HumanApproval: true, DenyDestructive: true},
 		},
 		{
 			name: "all three layers combined",
 			layers: []ScopeLayer{
-				{Kind: LayerGlobal, Discovery: discPtr(DiscoveryFull),
-					Approval: ApprovalPolicy{DenyDestructive: boolPtr(true)}},
+				{Kind: LayerGlobal, Discovery: discPtr(DiscoveryFull)},
 				{Kind: LayerProfile, Servers: []string{"fs", "git"},
 					Tools: map[string]*ToolSelector{"fs": {Allow: []string{"read", "write", "delete"}}}},
 				{Kind: LayerProfile, Discovery: discPtr(DiscoveryGrouped), Servers: []string{"fs"},
@@ -220,7 +217,6 @@ func TestMergeMatrix(t *testing.T) {
 			cat:     testCatalog(),
 			servers: map[string][]string{"fs": {"read"}},
 			disc:    DiscoveryGrouped,
-			appr:    EffectiveApproval{DenyDestructive: true},
 		},
 		{
 			name:    "empty catalog resolves to zero servers (closed direction)",
@@ -251,9 +247,6 @@ func TestMergeMatrix(t *testing.T) {
 			if tc.budgets != nil && !reflect.DeepEqual(es.Budgets, tc.budgets) {
 				t.Errorf("budgets = %v, want %v", es.Budgets, tc.budgets)
 			}
-			if es.Approval != tc.appr {
-				t.Errorf("approval = %+v, want %+v", es.Approval, tc.appr)
-			}
 		})
 	}
 }
@@ -270,8 +263,7 @@ func TestMergePurity(t *testing.T) {
 		{Kind: LayerProfile, Servers: []string{"fs", "git"},
 			Tools:        map[string]*ToolSelector{"fs": {Allow: []string{"read", "write"}}},
 			ResultBudget: map[string]*Budget{"*": {Bytes: 500, Forced: true}},
-			Discovery:    discPtr(DiscoveryLazy),
-			Approval:     ApprovalPolicy{HumanApproval: boolPtr(true)}},
+			Discovery:    discPtr(DiscoveryLazy)},
 		{Kind: LayerSession, Servers: []string{"fs"}},
 	}
 	cat := testCatalog()
@@ -355,8 +347,6 @@ func deepCopyLayers(in []ScopeLayer) []ScopeLayer {
 				cp.ResultBudget[k] = &b
 			}
 		}
-		cp.Approval.HumanApproval = cloneBool(l.Approval.HumanApproval)
-		cp.Approval.DenyDestructive = cloneBool(l.Approval.DenyDestructive)
 		out[i] = cp
 	}
 	return out

@@ -42,8 +42,6 @@ func hashScope(es *EffectiveScope) [32]byte {
 	}
 
 	writeStr(h, "approval")
-	writeBool(h, es.Approval.HumanApproval)
-	writeBool(h, es.Approval.DenyDestructive)
 
 	writeStr(h, "diags")
 	writeUint(h, uint64(len(es.Diags)))
@@ -68,15 +66,6 @@ func writeUint(h hash.Hash, v uint64) {
 	binary.LittleEndian.PutUint64(b[:], v)
 	_, _ = h.Write(b[:])
 }
-
-func writeBool(h hash.Hash, v bool) {
-	if v {
-		_, _ = h.Write([]byte{1})
-	} else {
-		_, _ = h.Write([]byte{0})
-	}
-}
-
 func sortedKeys[V any](m map[string]V) []string {
 	return slices.Sorted(maps.Keys(m))
 }

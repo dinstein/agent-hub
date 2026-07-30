@@ -471,32 +471,6 @@ export interface ConfigWrite extends WriteResult {
 /** api.ResultBudgetPrefix — the dynamic `resultBudget.<serverID|*>` family. */
 export const ResultBudgetPrefix = "resultBudget.";
 
-/**
- * The governance switches whose "off" position WEAKENS enforcement (mirrors
- * api.IsSafetyKey). Restated here on purpose: the wire carries no "this is a
- * safety gate" flag, and deriving the warning from a field the daemon may
- * omit would make the loud path the one that can silently go quiet.
- */
-const SAFETY_KEYS = new Set([
-  "denyDestructive",
-  "blockOnInjection",
-  "humanApproval",
-  "deny_destructive",
-  "block_on_injection",
-  "human_approval",
-]);
-
-/** True when relaxing this key weakens a safety gate. */
-export function isSafetyKey(key: string): boolean {
-  return SAFETY_KEYS.has(key);
-}
-
-/** True when this write moves a safety gate in the LOOSE direction, i.e. the
- *  one case that has to be marked red and confirmed separately. */
-export function relaxesSafety(key: string, from: string, to: string): boolean {
-  return isSafetyKey(key) && from === "true" && to !== "true";
-}
-
 // ---------------------------------------------------------------------------
 // Tool-level governance and the integrity quarantine
 // ---------------------------------------------------------------------------

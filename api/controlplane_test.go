@@ -351,25 +351,6 @@ func TestNonRegistryWireShapes(t *testing.T) {
 	})
 }
 
-// TestIsSafetyKey: the "you are about to weaken a gate" warning is derived
-// client-side, so it still fires against a daemon that omits the flag.
-func TestIsSafetyKey(t *testing.T) {
-	for _, k := range []string{
-		"denyDestructive", "deny_destructive",
-		"blockOnInjection", "block_on_injection",
-		"humanApproval", "human_approval",
-	} {
-		if !IsSafetyKey(k) {
-			t.Errorf("%q must be flagged as a safety gate", k)
-		}
-	}
-	for _, k := range []string{"discovery", "resultBudget.*", ""} {
-		if IsSafetyKey(k) {
-			t.Errorf("%q is not a safety gate", k)
-		}
-	}
-}
-
 // TestUnavailableEndpointIsNotFound: a daemon that does not serve one of
 // these routes yet answers the uniform 404. A frontend must render
 // "unavailable on this daemon", which is what IsCode is for.

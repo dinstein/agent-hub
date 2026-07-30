@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"slices"
 )
 
 // Governance key kinds, as reported by GovernanceKey.Kind.
@@ -22,31 +21,6 @@ const (
 // `resultBudget.<serverID|*>`, whose value is a byte budget.
 const ResultBudgetPrefix = "resultBudget."
 
-// safetyKeys are the governance switches whose "off" position WEAKENS
-// enforcement. They merge tighten-only downward (boolean OR), so this
-// surface is the only place they can ever be relaxed.
-//
-// The list is restated client-side on purpose: the wire carries no "this is
-// a safety gate" flag, and a frontend must still be able to mark "you are
-// about to turn one off". Deriving the warning from a field the server may
-// omit would make the loud path the one that can silently go quiet.
-var safetyKeys = []string{"denyDestructive", "blockOnInjection", "humanApproval"}
-
-// IsSafetyKey reports whether relaxing key weakens a safety gate, so a
-// frontend can demand a deliberate confirmation for it. Both the canonical
-// camelCase name and the snake_case alias are recognised.
-func IsSafetyKey(key string) bool {
-	if slices.Contains(safetyKeys, key) {
-		return true
-	}
-	// Accept the snake_case aliases the daemon also takes.
-	switch key {
-	case "deny_destructive", "block_on_injection", "human_approval":
-		return true
-	}
-	return false
-}
-
 // GovernanceKey describes one settable governance field: the key table is
 // frozen server-side and get/set/list all read the SAME table, because a key
 // whose listing and whose setter disagree is a switch nobody can trust.
@@ -58,13 +32,6 @@ type GovernanceKey struct {
 	// Doc is the one-line human explanation.
 	Doc string `json:"doc,omitempty"`
 }
-
-// Safety reports whether relaxing this key weakens a safety gate. It is
-// derived client-side (IsSafetyKey) rather than read off the wire, so the
-// "you are about to turn a gate off" confirmation still fires against a
-// daemon that does not label its keys — the loud path must not be the one
-// that can silently go quiet.
-func (k GovernanceKey) Safety() bool { return IsSafetyKey(k.Key) }
 
 // GovernanceValue is one key with its current value.
 //
