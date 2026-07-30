@@ -302,6 +302,13 @@ func classifyTokenError(err error) error {
 		}
 	case errors.Is(err, httpbridge.ErrInvalidName), errors.Is(err, httpbridge.ErrInvalidTier):
 		return &Error{Code: CodeUsage, ExitCode: ExitUsage, Message: err.Error(), Err: err}
+	case errors.Is(err, httpbridge.ErrLockTimeout):
+		return &Error{
+			Code: CodeLockTimeout, ExitCode: ExitLocked,
+			Message: err.Error(),
+			Hint:    "another agenthub process holds the token-store lock; retry in a moment",
+			Err:     err,
+		}
 	default:
 		return err
 	}

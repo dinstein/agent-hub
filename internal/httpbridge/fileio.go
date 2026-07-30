@@ -25,6 +25,10 @@ const lockPollInterval = 5 * time.Millisecond
 type fileLock struct{ f *os.File }
 
 // acquireLock takes an exclusive flock on path, polling until timeout.
+//
+// On timeout it returns *LockTimeoutError (errors.Is(_, ErrLockTimeout)), the
+// same typed shape registry, integrity and skills return, so the CLI can map
+// contention on the token store to exit 7 like contention anywhere else.
 func acquireLock(ctx context.Context, path string, timeout time.Duration) (*fileLock, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
@@ -46,7 +50,7 @@ func acquireLock(ctx context.Context, path string, timeout time.Duration) (*file
 		}
 		if time.Now().After(deadline) {
 			_ = f.Close()
-			return nil, fmt.Errorf("httpbridge: timed out waiting for %s after %s", path, timeout)
+			return nil, &LockTimeoutError{Path: path, Timeout: timeout}
 		}
 		time.Sleep(lockPollInterval)
 	}

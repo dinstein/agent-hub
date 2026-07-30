@@ -62,7 +62,28 @@ var (
 	ErrInvalidTier = errors.New("httpbridge: invalid token tier")
 	// ErrAlreadyRevoked means the token was revoked before this call.
 	ErrAlreadyRevoked = errors.New("httpbridge: token is already revoked")
+	// ErrLockTimeout is the sentinel matched by errors.Is when the
+	// cross-process token-store lock could not be acquired within the
+	// configured timeout. The CLI maps it to exit code 7, the same as its
+	// registry, integrity and skills counterparts: "another process holds the
+	// lock, retry" is one answer to an operator regardless of which store was
+	// busy.
+	ErrLockTimeout = errors.New("httpbridge: lock acquisition timed out")
 )
+
+// LockTimeoutError is the typed form of a lock-acquisition timeout, carrying
+// the lock path and the timeout that elapsed.
+type LockTimeoutError struct {
+	Path    string        // lock file path
+	Timeout time.Duration // configured timeout that elapsed
+}
+
+func (e *LockTimeoutError) Error() string {
+	return fmt.Sprintf("httpbridge: timed out after %s waiting for lock %s", e.Timeout, e.Path)
+}
+
+// Is makes errors.Is(err, ErrLockTimeout) succeed.
+func (e *LockTimeoutError) Is(target error) bool { return target == ErrLockTimeout }
 
 // tokensFile is the on-disk document. It is a plain envelope rather than a
 // registry Doc[T]: the token list is a security artefact written by exactly
