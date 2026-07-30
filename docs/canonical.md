@@ -396,3 +396,48 @@ none gets silently reopened, and the numbering is cited from code.
    request anywhere in `internal/*` to an agenthub-owned domain or version manifest. Network egress
    falls into exactly three categories — downstream MCP servers, OAuth authorization servers, and
    endpoints the user configured explicitly. **Adding a fourth violates this decision.**
+
+---
+
+## 8. Historical ruling ids
+
+Around sixty comments cite a ruling by a number from the original design document — `ruling #8`,
+`A.1 #8`, `A.6 #5`. **That document is not in this repository**, so until this table existed those
+citations resolved to nothing: a reader met an id that looked authoritative, had no way to look it up,
+and could only guess whether the rule still held.
+
+They are kept rather than deleted because the ids are *stable* and the rules are *live*. A ruling
+number does not move when a section is renumbered or a paragraph rewritten, which is exactly the
+property a citation wants — it just needs somewhere to resolve. This table is that somewhere, and it is
+the reason each id may still be written.
+
+**`A.6 #N` is `§7 #N`.** The appendix's six open questions are the six decision records above, in the
+same order, so `A.6 #3` and "§7 item 3" name one ruling. Prefer the `§7` spelling in new comments.
+
+Two conventions, so this table cannot quietly rot: the bare `#N` and the `A.x #N` spellings of one
+ruling are one row, and **a number not listed here may not be cited** —
+`TestHistoricalRulingIdsResolve` fails on an unregistered id. Milestone *task* numbers (`M0-7`,
+`M1-3`) are not rulings and are not citable at all: they named a unit of work in a plan that is also
+absent, they carry no rule, and the module doc for the package says everything the task number was
+standing in for.
+
+| Cited as | What it ruled | Where the rule lives now |
+|---|---|---|
+| `#6`, `A.1 #6` | Session overlays and human grants are **never persisted**; they die with the daemon, and a resurrected widening would be a security incident | architecture.md §7; modules/config.md |
+| `#7`, `A.1 #7` | Two id shapes on purpose: the human `client:seq` for the CLI, a random token for the protocol — CLI ids are for typing, protocol ids are for not guessing | modules/config.md |
+| `#8`, `A.1 #8` | A runtime path may only **tighten** scope; widening requires an explicit human grant with a TTL | architecture.md §7; modules/config.md |
+| `#16` | The machine tier gate runs **before** HITL: a call a read-only credential may not make is not worth a human's attention | architecture.md §5 (frozen gate order); modules/dataplane.md |
+| `#17` | The leak-scan **audit** hook is default-on precisely because it is free (`off｜audit｜inline`, audit by default) | modules/dataplane.md; modules/security.md |
+| `#18` | Lazy mode's `call_tool` may split into read/write/destructive **intent variants**, and compatibility mode stays byte-identical to the pre-variant surface | architecture.md §8; modules/dataplane.md |
+| `#27` | **Determinism is the contract**: goldens pin the wire shape; fix the code, never the golden | §6 |
+| `#29` | Legacy HTTP+SSE is a **read-side** transport only, never offered on the exposure side | §5b |
+| `#32` | `internal/mcp` is standard-library only — one first-party protocol facade | §2 rule 2 |
+| `A.2 #9` | The manual paste loop, for providers that cannot reach a loopback redirect | modules/oauth.md |
+| `A.2 #10` | Refresh is serialized: daemon singleflight online, a file lock offline | modules/oauth.md |
+| `A.3 #1` | Quarantine and pin writes take a **cross-process file lock**, proven by an N-process acceptance test | §6; modules/security.md |
+| `A.3 #2` | `kill -9` on the daemon: the stdio data plane is untouched, gateways re-register, HITL fails closed | §6; flows.md |
+| `A.3 #4` | A daemon restart makes the session overlay vanish on **both** sides — the observable half of `#6` | modules/config.md |
+| `A.3 #5` | skills materialization is **client-granular**, never per-session | §4 |
+| `A.5 #23` | Windows is confined to a seam inside `internal/platform`; nothing outside it branches on the platform | §4; windows.md |
+| `A.5 #26` | The **composite vault key** `(serverID, scopeName)` from day one | §4 ("never retrofitted", item 1) |
+| `A.5 #30` | The roots **migration seam** (`RootSource`), in place before upstream deprecation | §5b (deprecation table) |
