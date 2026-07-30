@@ -40,8 +40,8 @@ hands each client exactly the surface you decided it should see.
 
 > **Status: feature-complete against its design.** CI is green across both matrices, and end-to-end
 > acceptance passes with real Claude Code calling real downstream MCP servers through the gateway.
-> macOS and Linux are verified; Windows is **experimental** — all runtime gaps filled, never run on
-> real hardware ([details](#platforms)).
+> macOS and Linux are verified; Windows is **experimental** — platform layer filled in, two commands
+> still unimplemented, never run on real hardware ([details](#platforms)).
 
 ## Quickstart
 
@@ -87,7 +87,7 @@ again. Full walkthrough — profiles, narrowing, the whole model — in [docs/gu
 | [docs/flows.md](docs/flows.md) | Sequence diagrams and failure branches for seven key flows |
 | [docs/modules/](docs/modules/) | Per-package documentation: responsibilities, key types, invariants and failure directions |
 | [docs/canonical.md](docs/canonical.md) | The single source of truth for architectural conventions: frozen identifiers, package layout, dependency constraints, command naming rules, and every decision record |
-| [docs/windows.md](docs/windows.md) | Windows status: what is implemented (all runtime gaps filled), what remains, and acceptance criteria |
+| [docs/windows.md](docs/windows.md) | Windows status: what is implemented, what still does not work, and acceptance criteria |
 
 Chinese translations cover the product surface — this README, [docs/zh-CN/guide.md](docs/zh-CN/guide.md)
 and [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md). The rest is English only, because those

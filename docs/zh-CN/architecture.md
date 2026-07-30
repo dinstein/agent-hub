@@ -396,7 +396,7 @@ generation 单调计数 + 事件推送，mtime 不参与语义。
 |---|---|
 | macOS | 完整支持，CI 覆盖 |
 | Linux | 完整支持，CI 覆盖 |
-| Windows | **实验性**：运行时缺口已全部补上——文件锁（`LockFileEx`）、named pipe 监听器（SDDL 收口）、api 拨号、GUI 通道接线、便携 zip 打包——但**从未在真实 Windows 机器上跑过任何一行**。见 [windows.md](../windows.md) |
+| Windows | **实验性**：平台层已补齐——文件锁（`LockFileEx`）、named pipe 监听器（SDDL 收口）、api 拨号、GUI 通道接线、便携 zip 打包——但这层之上 `daemon stop` 与 `client connect` 的用户级路径尚未实现，且**从未在真实 Windows 机器上跑过任何一行**。见 [windows.md](../windows.md) |
 
 GUI（`cmd/agenthub-gui`）默认**不参与**构建：链接 webview 需要 GTK/WebKit 开发包，
 Linux CI runner 上没有。Wails 代码全部在 `//go:build wails` 之后，用 `make gui` 单独构建。
@@ -420,9 +420,11 @@ webkitgtk-6.0`）就失败，连 `go vet` 都过不去，而 macOS runner 自带
 |---|---|---|
 | `integrity` 的 drift 分级 | 完整（指纹、分级） | 网关用 integrity 算 HITL 的活定义指纹，并在聚合期兑现 disable 与 quarantine（`internal/gateway/toolpolicy.go`）；**自动漂移检测尚未接进数据面**——隔离集要靠 CLI/daemon 写入 |
 
-以下是**有意为之**的边界，不属于待办：Windows 只做到交叉编译门禁（无真机验证）、
-GUI 不参与默认构建、skills 物化只到 client 粒度、TOON 无解码器、teams 未实现。
-详见 [canonical.md](../canonical.md) §4「已知的能力边界」。
+以下是**有意为之**的边界，不属于待办：GUI 不参与默认构建、skills 物化只到 client 粒度、
+TOON 无解码器、teams 未实现。详见 [canonical.md](../canonical.md) §4「已知的能力边界」。
+
+Windows 不属于这一类。它的平台层已实现、但从未在真机上跑过，而这层之上还有两处完全不能用——
+哪些是哪些，只有 [windows.md](../windows.md) 一处在追踪。
 
 已确认存在、已定位到行、但尚未修复的缺口，记在拥有它的那个包的 [modules/](../modules/) 文档里——
 贴着它所描述的代码，而不是另立一份清单。

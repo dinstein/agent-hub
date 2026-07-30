@@ -37,8 +37,8 @@ Claude Code · Cursor · Codex · Open WebUI · 以及另外 8 种
 - **可选 GUI `agenthub-gui`** —— Wails3，仅消费控制面 API；它没有任何 CLI 没有的能力
 
 > **状态：功能相对设计已完整。** CI 双矩阵全绿，真实 Claude Code 经网关调用真实下游 MCP server
-> 的端到端验收通过。macOS + Linux 已验证；Windows 为**实验性**——运行时缺口已全部补上，
-> 但从未在真实机器上跑过（[详见](#平台)）。
+> 的端到端验收通过。macOS + Linux 已验证；Windows 为**实验性**——平台层已补齐，
+> 尚有两个命令未实现，且从未在真实机器上跑过（[详见](#平台)）。
 
 ## 快速开始
 
@@ -84,7 +84,7 @@ agenthub client connect claude-code
 | [docs/flows.md](docs/flows.md) | 七个关键流程的时序图与失败分支（英文） |
 | [docs/modules/](docs/modules/) | 逐包文档：职责、关键类型、不变量与失败方向（英文） |
 | [docs/canonical.md](docs/canonical.md) | 架构约定的唯一真源：冻结标识符、依赖约束、命令名规则、全部裁决记录（英文） |
-| [docs/windows.md](docs/windows.md) | Windows 现状：已实现什么（运行时缺口已补齐）、还剩什么、验收标准（英文） |
+| [docs/windows.md](docs/windows.md) | Windows 现状：已实现什么、还有什么完全不能用、验收标准（英文） |
 
 中文只覆盖上面两篇——讲产品怎么用、怎么切分的那一层。其余几篇跟着代码一起变，一份中文镜像
 就是每次改行为都要记得同步的第二个文件，而忘掉同步的那一份看上去和最新的一模一样。
