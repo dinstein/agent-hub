@@ -43,9 +43,8 @@ var numberedItem = regexp.MustCompile(`^\s*([0-9]+)\. `)
 // Semantic drift stays a review question; say so rather than implying a
 // guarantee that is not here.
 //
-// Old-numbering references of the form "ruling #8", "A.6 #3" or "task M0-5"
-// are also out of scope: they name a design document the repository does not
-// contain, so there is nothing to resolve them against.
+// Historical ruling ids ("ruling #8", "A.6 #3") are checked separately, by
+// TestHistoricalRulingIdsResolve, against the registry in canonical.md §8.
 func TestCanonicalCitationsResolve(t *testing.T) {
 	root := repoRoot(t)
 	sections := canonicalSections(t, root)
