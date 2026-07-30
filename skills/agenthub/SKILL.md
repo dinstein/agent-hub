@@ -1,94 +1,68 @@
 ---
 name: agenthub
-description: Drive the agenthub CLI to give an AI client MCP tools - add a server (curated catalog, pasted config, or by hand), store its credentials, run its OAuth login, test it for real, connect it to Claude Code / Cursor / Codex / VS Code / Zed, narrow what each client may see, and record the JSON-RPC wire when one misbehaves. Use whenever the task involves adding, authorizing, testing, or wiring up an MCP server, or diagnosing one a client cannot reach or that answers wrongly.
+description: Drive the agenthub CLI to give an AI client MCP tools - add a server (curated catalog, pasted config, or by hand), store its credentials, run its OAuth login, test it for real, connect it to Claude Code / Cursor / Codex / VS Code / Zed, narrow what each client may see, and diagnose one a client cannot reach or that answers wrongly. Use whenever the task involves adding, authorizing, testing, wiring up, or troubleshooting an MCP server.
 ---
 
 # agenthub
 
-One gateway between every AI client and every MCP server. A client is wired up
-**once**, against agenthub; servers are added, authorized and narrowed here
-afterwards without touching the client again.
+One gateway between every AI client and every MCP server. Wire a client up **once**; add, authorize, and narrow servers here afterwards without touching the client again.
 
-**Never guess a flag** — `agenthub <group> --help` is authoritative; this file
-may lag the binary. It covers only the groups a release advertises (`server`,
-`auth`, `secret`, `catalog`, `profile`, `client`), plus `agenthub connect`,
-which a client's config runs and you never type.
+**Never guess a flag** — `agenthub <group> --help` decides. This file covers what a release advertises (`server`, `auth`, `secret`, `catalog`, `profile`, `client`) plus the diagnostic surface (`audit`, `session`, `tool`, `doctor`).
 
 The path is always: **add → (credential) → enable → test → connect → narrow**.
 
-## Orientation, and reading output
+## Reading output
 
 ```bash
-agenthub server ls           # what is configured
-agenthub client ls           # which clients are wired up, and on which profile
-agenthub client detect       # ids, config paths, writability
+agenthub server ls           # configured servers
+agenthub client ls           # wired clients, their profiles
+agenthub client detect       # all known clients, config paths, writability
 ```
 
-Pass `--json` (global). The envelope is stable — `{"ok":true,"data":[],"warnings":[]}`
-or `{"ok":false,"error":{"code":"E_…","message":"…","hint":"…"}}`. **Branch on the
-exit code, never on prose:**
+Pass `--json` globally. Envelope: `{"ok":true,"data":…}` or `{"ok":false,"error":{"code":"E_…","message":"…","hint":"…"}}`. **Branch on exit code:**
 
 | code | meaning |
 |---|---|
 | 0 | success |
 | 1 | generic (downstream, network, internal) |
-| 2 | usage error — re-read `--help` |
-| 3 | not found (server / profile / secret / skill) |
-| 4 | the daemon is offline and this command needs it |
+| 2 | usage error |
+| 3 | not found |
+| 4 | daemon offline — `agenthub daemon start` |
 | 5 | auth failure → `agenthub auth login <server>` |
-| 6 | refused by governance (HITL deny, quarantine) — **report it and stop; not a bug to route around** |
-| 7 | a cross-process lock is held, or stored state is corrupt. Which store is in the message, not the code. Retry once, then say so — never delete state to clear it |
+| 6 | refused by governance — **report and stop; not a bug to route around** |
+| 7 | lock held or state corrupt — retry once, never delete state |
 
 ## 1. Add a server
 
-**`server add` only writes the definition — the entry lands DISABLED.**
-`server enable <id>` puts it into service and runs the connection probe (the
-only step needing the network); it enables **either way** and reports what the
-probe found, so a server needing a login is enabled and says so. `--no-probe`
-skips the dial. `catalog add` and `auth login` enable for you.
+**`server add` only writes the definition — the entry lands DISABLED.** `server enable <id>` puts it into service and runs a probe. `catalog add` and `auth login` enable automatically.
 
 ```bash
 agenthub server add remote --url https://mcp.example.com/mcp
-agenthub server add local-dev --url http://127.0.0.1:3000/mcp --local
+agenthub server add local-dev --url http://127.0.0.1:3000/mcp --local   # loopback only
 agenthub server add my-server --cmd npx --args "-y,@scope/mcp-server"   # stdio
 agenthub server enable <id>
 ```
 
-`--local` is required for a literal loopback URL and allows **only** that —
-never RFC1918. Also `--env KEY=VALUE`, `--header KEY=VALUE` (repeatable),
-`--cwd`, `--transport`, and the `--oauth-*` pins (§3). A server needing
-authorization goes straight to §3 — no credential up front, and `auth login`
-enables it.
+Also: `--env KEY=VALUE`, `--header KEY=VALUE`, `--cwd`, `--transport`, `--oauth-*` pins. `--no-probe` skips the dial.
 
-**A config the user pasted** (an `mcpServers` block, a `claude mcp add-json`
-line, another client's config) goes in whole rather than translated by hand:
+**Pasted config** (an `mcpServers` block, another client's JSON):
 
 ```bash
 echo "$JSON" | agenthub server add my-server --stdin
 ```
 
-Unknown keys are **rejected**, not dropped: an error means the paste really
-holds something agenthub does not model — read it, do not strip fields to make
-it pass. To adopt what a client already has, read it with
-`agenthub client inspect <id>` and paste the entries back; there is no bulk
-import.
+Unknown keys are **rejected**, not dropped — read the error rather than stripping fields.
 
-**The catalog** is a small hand-maintained set — worth a look when the user
-names a well-known server and you would otherwise guess at its package name; a
-miss means nothing is wrong.
+**Catalog** — curated set; worth checking when the user names a well-known server:
 
 ```bash
-agenthub catalog search github          # or: catalog ls
-agenthub catalog show filesystem        # prints the exact add line, params as <placeholders>
+agenthub catalog search github
+agenthub catalog show filesystem        # prints the exact add line
 agenthub catalog add fetch              # added AND enabled
 agenthub catalog add filesystem --param directory=/Users/me/projects
-agenthub catalog add github --name gh   # when the default id collides
 ```
 
-**Container isolation** is honoured or the command **fails** — never a quiet
-degrade to the host. Default network `none`; mounts read-only unless `:rw`.
-`server inspect <id>` prints `spawns`, the exact `docker run` argv, when the
-isolation matters.
+**Container isolation** is honoured or the command **fails** — never a silent degrade:
 
 ```bash
 agenthub server add sketchy --runtime docker --image ghcr.io/x/server:tag \
@@ -97,61 +71,50 @@ agenthub server add sketchy --runtime docker --image ghcr.io/x/server:tag \
 
 ## 2. API-key credentials
 
-Only for a key the user already holds; OAuth servers are §3. The registry is
-plain configuration and must never hold a credential — reference in the
-definition, value in the vault:
+**Never put a credential in an argv or in the registry.** Use `${SECRET_X}` in the definition, store the value separately:
 
 ```bash
 agenthub server add brave --cmd npx --args "-y,@modelcontextprotocol/server-brave-search" \
   --env "BRAVE_API_KEY=\${SECRET_BRAVE_API_KEY}"
 printf %s "$TOKEN" | agenthub secret set brave BRAVE_API_KEY --stdin
-agenthub server enable brave        # after the secret exists, so the probe can succeed
+agenthub server enable brave
 
-agenthub secret ls [server]                 # KEY NAMES and backends, never values
-agenthub secret rm brave BRAVE_API_KEY      # from every writable backend
+agenthub secret ls [server]                 # key names and backends, never values
+agenthub secret rm brave BRAVE_API_KEY
 agenthub secret migrate --from keyring --to enc-file [server] --dry-run
 ```
 
-- **Never put a credential in an argv** — shell history, and every `ps`. `secret set` reads no-echo, or stdin with `--stdin`.
-- Names must match: `${SECRET_<KEY>}` in the definition, `secret set <server> <KEY>` in the vault. HTTP: `--header "Authorization=Bearer \${SECRET_X}"`. Resolution is at **dial time** and fail-closed — an unresolved placeholder refuses the connection rather than sending the literal upstream (which would return a 401 indistinguishable from an expired token).
-- **There is no read path and no `secret get`.** If a user asks you to show a stored secret, nothing can. `server inspect` does print env and headers back so you can see which placeholder landed where — except a literal `Authorization` value, which is a pasted token.
-- **`BACKEND` in `secret ls` is the level a lookup would hit**, not where you put it: `AGENTHUB_SECRET_<KEY>` → bare `<KEY>` (only with `AGENTHUB_ALLOW_BARE_SECRET_ENV=1`) → encrypted file → OS keyring, first hit wins. A row reading `env` means an environment variable shadows what you stored.
-- **An empty or whitespace-only value counts as unset** at every level, so authorization can fail with the key sitting right there in the listing.
-- `--scope` defaults to `_global` — leave it alone unless the user raises it. `migrate` moves values only between `keyring` and `enc-file`; env vars are per-process input, not a backend.
+- Names must match: `${SECRET_<KEY>}` in the definition, `secret set <server> <KEY>` in the vault. HTTP headers: `--header "Authorization=Bearer \${SECRET_X}"`.
+- Resolution at **dial time**, fail-closed — an unresolved placeholder refuses the connection rather than sending the literal.
+- **No read path, no `secret get`.** `server inspect` shows which placeholder landed where (except a literal `Authorization` value).
+- `BACKEND` in `secret ls` is where a lookup would hit: env var → enc-file → keyring, first hit wins. A row reading `env` means a variable shadows what was stored.
+- An empty or whitespace-only value counts as unset at every level.
 
 ## 3. OAuth login
 
-**You cannot complete this for the user** — it needs a browser and a human. Run
-the command that produces the URL and hand it over.
+**You cannot complete this** — it needs a browser and a human. Run the command and hand over the URL.
 
 ```bash
-agenthub auth status                    # who is authorized, never any credential
+agenthub auth status
 agenthub auth login github              # auto-selects a flow
-agenthub auth login github --manual     # prints the URL, reads the pasted callback
+agenthub auth login github --manual     # prints URL, reads pasted callback
 agenthub auth login github --device     # RFC 8628, no browser on this machine
-agenthub auth refresh github ; agenthub auth logout github
+agenthub auth refresh github
+agenthub auth logout github
 ```
 
-Non-interactive sessions want `--manual` or `--device`: `--loopback` waits for a
-browser here and times out (180s). When discovery fails, pin what the provider
-does not advertise (`--issuer`, `--scopes`, `--redirect-uri`,
-`--authorization-endpoint`), or store the pins on the entry with
-`server add --oauth-issuer` / `--oauth-scope` / `--oauth-resource-metadata`.
-A successful login also **enables** the server; exit 5 later means expired —
-log in again.
+Non-interactive sessions: `--manual` or `--device`. When discovery fails, pin with `--issuer`, `--scopes`, `--authorization-endpoint`, or store pins with `server add --oauth-*`. A successful login also **enables** the server.
 
-## 4. Test, before wiring anything to a client
+## 4. Test before wiring
 
 ```bash
-agenthub server test brave                       # connect, list tool names
-agenthub server test brave --tools               # with compact signatures
-agenthub server test brave --schema search       # one tool's input schema
-agenthub server test brave --tool search --args '{"query":"hello"}'   # a REAL call
+agenthub server test brave                               # connect, list tool names
+agenthub server test brave --tools                       # with compact signatures
+agenthub server test brave --schema search               # one tool's input schema
+agenthub server test brave --tool search --args '{"query":"hello"}'   # real call
 ```
 
-`--tool` really invokes it: read-only tools freely, anything that writes only
-when asked. `--timeout` defaults to 120s because a cold `npx`/`uvx` cache is
-genuinely that slow — an apparent hang on first run usually is not one.
+`--tool` really invokes the tool — read-only freely, anything that writes only when asked. `--timeout` defaults to 120s because cold `npx`/`uvx` caches are genuinely that slow.
 
 ## 5. Connect the client
 
@@ -161,141 +124,128 @@ agenthub client connect claude-code
 agenthub client disconnect claude-code
 ```
 
-- `--dry-run` prints the JSON that would be merged **and the file it lands in**. Show both — this edits a file the user owns.
-- **Writes the user-level file by default** (`~/.claude.json`, `~/.cursor/mcp.json`, …), because the entry carries this machine's absolute agenthub path and project files get committed. `--placement project` only when the user asks for one tree, and say the path is machine-specific. To show a client less, use a profile (§6) — never the file location.
-- The entry runs `agenthub connect --client <id>`, so **servers added later need no client changes.** Never edit client configs per server.
+- `--dry-run` prints the JSON that would be merged **and the file it lands in**.
+- Writes the **user-level** file by default; `--placement project` only when explicitly asked (path is machine-specific, file gets committed).
+- The entry runs `agenthub connect --client <id>` — **servers added later need no client changes.**
 - **The client must be restarted** — an unrestarted client looks exactly like a broken gateway.
-- `disconnect` with no target clears the user-level file and, only if nothing of ours is there, the project-level one.
 
-**Writability is decided by format, not contents.** The two JSON shapes are
-written — including a JSONC/comment-header `settings.json` (Zed, VS Code), which
-is spliced into the existing bytes so comments, key order and indentation
-survive, and a splice that cannot be placed becomes a refusal, never a mangled
-file. TOML, YAML and the fileless remote shape are not written: `codex`,
-`continue`, `open-webui`, and nothing else. (`client detect` lists those three
-under the table, plus **every** client agenthub knows about — which is what
-answers "why is my client missing".)
+**Writability by format:** JSON and JSONC/comment-header files (VS Code settings.json, Zed) are written — JSONC is spliced to preserve comments, key order, and indentation. TOML, YAML, and fileless shapes are not written: `codex`, `continue`, `open-webui`. For those, the **real `client connect`** (not `--dry-run`) exits 1 and prints the fragment in the client's own format.
 
-For those, the **real `client connect <id>`** gets you the snippet, **not
-`--dry-run`** (which always renders JSON `mcpServers` — the wrong syntax for
-TOML or YAML). The real command writes nothing, exits 1
-(`E_CLIENT_UNSUPPORTED`) and prints the fragment in that client's own format
-(the `hint` under `--json`). Except:
+Exceptions:
+- **codex** actually succeeds: runs `codex mcp add`; needs `codex` on PATH, else exits 1 and prints what to run. `--manual` or `AGENTHUB_NO_CLIENT_CLI=1` prints instructions instead.
+- **open-webui**: no file; you get an HTTP endpoint to register on its side.
+- **continue**: neither read nor written; entry goes in by hand.
 
-- **codex** actually succeeds: connect runs `codex mcp add` (backup first, read back after), disconnect runs `codex mcp remove` and names the entry actually in the file. Needs `codex` on PATH, else it refuses — exit 1, `E_GENERAL`, never a silent no-op — and prints what to run. `--manual`, or `AGENTHUB_NO_CLIENT_CLI=1` machine-wide, gets instructions instead of agenthub executing another program.
-- **open-webui** has no file: it consumes MCP over HTTP, so you get an endpoint to register on its side.
-- **continue** (YAML) is neither read nor written — `client ls` says `?`, and the entry goes in by hand.
-
-Never hand-edit a format around a refusal without saying so.
-
-**Reading `client ls` — `CONNECTED` literally:** `yes`/`no` are answers;
-`denied`, `unreadable`, `?` mean agenthub could not read the file, could not
-parse it, or does not parse that format, and none is fixed by connecting again —
-`client inspect <id>` says which file and why. `unreadable` means it fails to
-parse **even with comments blanked out**: real syntax damage, fixed in the file.
-For codex, `?` means the TOML is shaped in a way agenthub does not model, not
-that the entry is missing. `--stat-only` avoids the reads (no macOS privacy
-prompt) and answers `?` for everything; `--all` lists every supported client.
+`CONNECTED` in `client ls`: `yes`/`no` are definitive; `denied`/`unreadable`/`?` means agenthub could not read or parse the file — `client inspect <id>` says which file and why. `--stat-only` skips reads (no macOS privacy prompt).
 
 ## 6. Narrow what each client sees
 
-Default is every enabled server. All narrowing lives on the **profile**; a
-client only selects one, and never carries servers or tools of its own. Two
-clients needing different surfaces get two profiles. There is no `agenthub
-scope` group.
+Default is every enabled server. Narrowing lives on the **profile**; a client selects one and never carries servers or tools of its own.
 
 ```bash
 agenthub profile create research
-agenthub profile server add research brave                # <profile> then <server>
-agenthub profile tools research brave --only search       # or --all / --none
-agenthub profile discovery research lazy                  # or grouped / full / -
-agenthub client bind cursor research
+agenthub profile server add research brave
+agenthub profile tools research brave --only search      # or --all / --none
+agenthub profile discovery research lazy                 # or grouped / full / -
+agenthub client bind cursor research                     # takes effect on running sessions
 agenthub client unbind cursor
-agenthub profile use research     # the fallback every UNBOUND client gets ("-" clears it)
+agenthub profile use research    # fallback for every unbound client ("-" clears it)
 ```
 
-- `profile tools` takes the server's **own** names (`search`), not the `brave__search` a client displays — get them from `server test <id> --tools`.
-- A misspelled name is **stored and only warned about** (the rule must be writable before anything has connected). `--only` is an intersection, so one typo lets **nothing** through while the command still says OK. No warning is not verification either: a server whose catalog was never fetched has nothing to check against. `server test --tools` first is what makes the check real.
-- Bindings take effect on **running sessions** — the gateway pushes `tools/list_changed`, so no client restart (unlike `connect`, which edits the client's file).
-- Binding to a nonexistent profile is accepted, warns, and **fail-closes to an empty scope**. A client seeing nothing → check `client ls` for `MISSING` before suspecting servers.
-- Layers **intersect**: a narrower layer only takes capability away. A missing tool is a narrowing layer before it is a server problem.
+- `profile tools` takes the server's **own** names (`search`), not the exposed `brave__search`. Get names from `server test <id> --tools`.
+- A misspelled name is stored and only warned about. `--only` is an intersection — one typo lets **nothing** through. `server test --tools` first is what makes the check real.
+- Binding to a nonexistent profile is accepted and **fail-closes to an empty scope**. Client seeing nothing → check `client ls` for `MISSING` before suspecting servers.
 
-**Discovery** changes how tools are surfaced, never which are in the set —
-visibility is the scope's job. An unrecognised value degrades to the default,
-which is why `profile discovery` rejects typos at write time.
+**Discovery** changes how tools are surfaced, not which are in scope:
 
-| mode | `tools/list` returns | use when |
-|---|---|---|
-| `full` | every visible tool, one entry each | small surfaces, or a client that filters itself — ask for it explicitly |
-| `grouped` | one aggregate entry per server, plus `call_tool` last | mid-sized: read per-server entries, then dispatch |
-| `lazy` | meta-tools (`search_tools` / `describe_tool` / `call_tool` / …) plus pinned tools | large surfaces. **The default when nothing sets a mode** |
-| `-` | clears the profile's override | fall back to the global default |
+| mode | `tools/list` returns |
+|---|---|
+| `lazy` | meta-tools (`search_tools` / `describe_tool` / `call_tool` / …) — **default** |
+| `grouped` | one aggregate entry per server plus `call_tool` |
+| `full` | every visible tool individually |
 
-So an unconfigured client gets `lazy` and finds tools via `search_tools` rather
-than a handed list. On a small surface, put it on a profile with `full` instead
-of concluding the tool is missing.
+On a small surface where tools seem missing, check if the client is in `lazy` mode — tools are found via `search_tools`, not a handed list.
 
-**`agenthub server disable <id>`** is the kill switch above every profile: no
-profile can put it back, and nothing needs to have connected first.
-**"Remove it" almost always means `disable`, not `rm`.** `server rm` deletes the
-whole footprint without asking twice — credential, profile membership,
-governance rules, integrity baselines, approval grants, cached tool list (audit
-records survive). Secrets cannot be read back, so a login destroyed here is
-destroyed. Say what `rm` takes before running it; the command will not.
+**`server disable <id>`** is the kill switch above every profile. **Prefer `disable` over `rm`** — `server rm` destroys the whole footprint (credential, profile membership, baselines, cached tool list; audit records survive) without confirmation. Secrets cannot be read back.
 
-## 7. Verify, and diagnose
+## 7. Diagnose
 
 ```bash
-agenthub server inspect brave --tools   # what is recorded, offline (the cache)
-agenthub server test brave --tools      # what it answers today, live
+agenthub server inspect brave --tools   # recorded state, offline (the cache)
+agenthub server test brave --tools      # live answer today
 ```
 
-When the two disagree, `test` is the truth and the cache is stale. **Neither
-proves a client is using any of it** — the confirmation is the client itself,
-restarted, calling a tool and getting an answer. Exposed names are
-`<server>__<tool>`, but **never split on `__`**: an id or a tool name may contain
-it. Take the server from the listing and the tool from `test --tools`.
-
-`server inspect` always prints a **visibility** section — the first command for
-"enabled, credential stored, client still shows nothing". It names the profiles
-that include the server (with tool selectors) and those that **exclude** it, the
-bound clients that can and cannot reach it, what an **unbound** client gets, and
-the count of local tool overrides. Three states need different repairs:
-**disabled** reaches nobody whatever the profiles say; excluded is one
-`profile server add` away; a binding to a deleted profile fail-closes to an
-**empty** scope, indistinguishable from deliberate exclusion. It is computed from
-the registry alone — no client file opened, no daemon needed, so it answers on
-the broken machine — and it is an **upper bound**: a live session can hold less.
+`server inspect` always prints a **visibility** section — the first command for "enabled, credential stored, client still sees nothing". Lists which profiles include and exclude the server, bound clients that can and cannot reach it, what an unbound client gets, and local tool-override count.
 
 | symptom | look here |
 |---|---|
-| server will not connect | `server test <id>` — it prints the real error and the child's stderr tail |
+| server will not connect | `server test <id>` — real error plus child's stderr tail |
 | a server you added is invisible | `add` leaves it DISABLED — `server enable <id>` |
-| a tool vanished | `server inspect <id>` visibility (§6 narrowing), then a quarantine, before the server |
-| client sees nothing | `server inspect <id>` first; then: did the user restart it? `client detect` to confirm the entry is in the file |
-| exit 4 | that command wanted a daemon. Nothing on the path above does — re-read what you ran |
-| connects, but answers wrongly | record the wire, below |
-
-**Recording the wire** — once `server test` passes and it still misbehaves inside
-the client, the question is what it actually said:
+| a tool vanished | `server inspect <id>` visibility (§6), then quarantine |
+| client sees nothing | `server inspect` first; did the user restart the client? |
+| exit 4 | that command needs a running daemon — `agenthub daemon start` |
+| exit 6 | governance denied it — report it, do not retry |
 
 ```bash
-agenthub server trace linear on      # off by default, per server
-# the user reproduces the problem in their client
-agenthub server logs linear          # -f to follow; --limit 0 for all; --json for full payloads
-agenthub server trace linear off     # once you have the answer
+agenthub doctor                 # install integrity, data dirs, socket, per-server handshake; exit 0 without daemon
+agenthub doctor --fix           # safe self-repair (missing dirs, stale client entries)
 ```
 
-- **`logs` only reads; `trace` fills the file.** An empty log means nothing was recorded, **not** that the server sat idle. Default is the last 100 frames, and the human table truncates DETAIL.
-- Takes effect immediately, without restarting the client or reconnecting the server — you read the same connection that is misbehaving.
-- **Frames are captured before redaction**, verbatim in `<data>/logs/server-<id>.log` (the path `trace` prints). Read it; never paste one wholesale into a chat, an issue or a commit — and turn the trace off when done. Nothing expires it; `server ls` grows a `TRACE` column while any is on.
-- There is no per-client or per-profile trace: one connection is shared by every session, so narrower recording is refused rather than approximated.
-- A trace is the wire, not agenthub's reasoning. Correct-looking frames plus a misbehaving client means the problem is above this layer — §6.
+## 8. Wire trace and audit
+
+**Wire trace** — for when `server test` passes but a tool misbehaves inside the client:
+
+```bash
+agenthub server trace linear on     # off by default, per server
+# user reproduces the problem in their client
+agenthub server logs linear         # last 100 frames; -f to follow; --limit 0 for all
+agenthub server trace linear off    # turn off when done
+```
+
+- `logs` reads; `trace` fills the file. An empty log means nothing was recorded, not that the server was idle.
+- Frames are captured **before any redaction**, verbatim in `<data>/logs/server-<id>.log`. Read the file; never paste it wholesale into a chat or commit.
+- Takes effect immediately — no client restart or server reconnect needed.
+- `server ls` grows a `TRACE` column while any trace is on.
+- Correct-looking frames plus a misbehaving client → the problem is above this layer (§6 narrowing, client restart).
+
+**Audit log** — governance decisions across all sessions; does not need the daemon:
+
+```bash
+agenthub audit tail                         # last 50 decisions
+agenthub audit tail -f --errors             # follow, denied/failed only
+agenthub audit tail --server linear --held  # calls waiting on human approval
+agenthub audit export --csv out.csv         # full export; --errors / --held / --server / --client to filter
+```
+
+Records what was decided (allowed / denied / held), which client and server, and a hash of the call args — args are never stored in full. `--all-segments` includes rotated log files.
+
+**Live sessions** — requires the daemon (exit 4 if offline):
+
+```bash
+agenthub session ls              # live sessions; -f re-renders as they change
+agenthub session show <sid>      # scope resolution, effective surface, diagnostics
+agenthub session scope <sid> <profile>   # adjust scope of a running session
+agenthub session kill <sid>      # force-disconnect
+```
+
+**Tool catalog** — does not need the daemon:
+
+```bash
+agenthub tool ls                         # all cached tools
+agenthub tool ls brave                   # one server
+agenthub tool ls --search "file read"    # ranked by keyword (same ranker as lazy-mode search_tools)
+agenthub tool disable <server>__<tool>   # switch off for every client
+agenthub tool enable  <server>__<tool>
+agenthub tool quarantine ls              # tools fingerprint-blocked by governance
+agenthub tool quarantine release <name>  # release and rebaseline
+```
+
+Never split an exposed name on `__` — a server id or tool name may contain it. Take the server from `server ls` and the tool from `server test --tools`.
 
 ## Non-negotiable
 
 - **No credential in an argv or in the registry** — `secret set --stdin`, `${SECRET_X}` in the definition.
 - **No invented command or flag** — `--help` decides.
 - **Exit 6 is an answer, not an obstacle.** Report it.
-- **`--dry-run` shown before editing a client's config**, and **`server test` before `client connect`** — otherwise the user debugs it inside their client, where the error is least legible.
-- **Say when a step needs a human** (the OAuth browser, the client restart). Claiming an unverifiable success is worse than reporting the handoff.
+- **`--dry-run` before editing a client's config; `server test` before `client connect`.**
+- **Say when a step needs a human** (OAuth browser, client restart).
