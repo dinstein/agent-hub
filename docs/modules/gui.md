@@ -217,7 +217,7 @@ zero runtime dependency).
 
 | File | Contents |
 |---|---|
-| `main.ts` | Entry point: theme bootstrap, routing, sidebar, SSE subscription |
+| `main.ts` | Entry point: routing, sidebar, SSE subscription. **No theme code** — it cannot have any and still work, see below |
 | `bridge.ts` | The only seam with the Go side: `Call.ByName(<Go FQN>)` + `Events.On` (no `wails3 generate bindings`), plus `openExternal` — the HOST browser, never this webview |
 | `page.ts` | The `Page` contract, `failureBox` / `failureState`, `CONFLICT_MESSAGE`, `noticeSlot` |
 | `dom.ts` | Dependency-free DOM construction: `el` / `table` / `emptyState` (three kinds) / `chip` (returns null for 0) / `errorHeadline` / time formatting |
@@ -227,6 +227,20 @@ zero runtime dependency).
 | `pages/*.ts` | One page per resource, 17 pages |
 | `style.css` | Semantic color variables, focus ring, the three widget classes, light/dark |
 
-Dark mode is applied by an inline bootstrap script in `index.html` that stamps the theme class before
-the first frame (to prevent a white flash), with light / dark / system states — about 20 lines of
-vanilla JS plus two sets of CSS variables.
+Dark mode is applied by an inline bootstrap script in `index.html` — about 20 lines of vanilla JS,
+plus two sets of CSS variables. It is inline, and in `index.html` rather than in `main.ts`, for the
+one reason that decides everything else about it: the bundle loads too late. A theme applied after
+the first frame is a white flash in a desktop window, which reads as a broken app rather than a slow
+one, so the only place the decision can be made is before the module graph exists.
+
+It stamps two **attributes**, not a class — nothing in this codebase keys on a theme class, and
+`style.css` selects on `:root[data-theme="dark"]`:
+
+| Attribute | Value | Read by |
+|---|---|---|
+| `data-theme` | the RESOLVED answer, `light` or `dark` | `style.css` |
+| `data-theme-mode` | the CHOICE, `light` / `dark` / `system` | the Settings page, so "which of the three is selected" has no second source of truth |
+
+`system` is also the default when nothing is stored. Every storage access is wrapped in `try`/`catch`
+— `localStorage` throws in some embedded webview configurations, and a theme preference must never be
+what stops the app from starting.
