@@ -125,8 +125,8 @@ func TestTableCoversTheEcosystem(t *testing.T) {
 
 // TestLocationsResolvePerPlatform: the same row yields different user
 // paths per OS, project paths come first, and an OS absent from the row's
-// table (Windows, deferred to M2) drops the user location instead of
-// inventing one.
+// table (Windows, unfilled) drops the user location instead of inventing
+// one.
 func TestLocationsResolvePerPlatform(t *testing.T) {
 	for _, tc := range []struct {
 		goos string

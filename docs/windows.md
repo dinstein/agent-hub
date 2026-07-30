@@ -71,10 +71,34 @@ directory mode. Explicitly tightening the data directory's ACL is an open item (
 
 ---
 
-## 2. Open items (no longer blockers for first use)
+## 2. Open items
 
-These are polish items, not prerequisites. The daemon starts, the CLI works, and the GUI finds its
-daemon — none of the items below change that.
+The daemon starts, the CLI runs, and the GUI finds its daemon. The first two items below are holes in
+that rather than polish — `daemon stop` and `client connect` each reach an unimplemented branch — and
+the three after them are polish.
+
+### `daemon stop` has no Windows implementation
+
+`internal/cli/daemonproc_stub.go` (`//go:build !unix`) answers `ErrUnsupportedPlatform` for both
+`daemonSignalStop` and `daemonKillGroup`, and `daemonAlive` answers false. So a Windows daemon can be
+started and cannot be stopped by `agenthub daemon stop`, with or without `--force`; the user is left
+killing the process by hand. What it needs is a Job Object, which is also what
+`detachProcessGroup` would use — the two are one piece of work, and neither can be verified from here.
+
+The failure is at least loud: the operation reports unsupported rather than reporting success and
+signalling nothing.
+
+### No client has a user-level location on Windows
+
+`internal/clients/table.go` keys each client's user-level config path by GOOS, and `sameOnAll` /
+`perOS` only ever populate `darwin` and `linux`. A GOOS absent from that map makes the location
+unavailable rather than guessed, so on Windows `resolve` drops every user placement and returns only
+the project-relative ones. `agenthub client connect claude-desktop` therefore finds nothing to write
+for any client whose config is user-level only.
+
+The dropping is deliberate and the right direction — inventing `%APPDATA%\Claude\...` and writing to
+it unverified is worse than finding nothing. Filling the table in is the work, and it needs a real
+machine to confirm each client's actual path.
 
 ### Tighten the data directory's ACL
 

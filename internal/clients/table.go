@@ -55,8 +55,10 @@ type locSpec struct {
 	// (placement == Project).
 	rel []string
 	// home maps GOOS to a path relative to $HOME (placement == User).
-	// A GOOS absent from the map makes the location unavailable there —
-	// that is how Windows stays deferred to M2 without a build tag.
+	// A GOOS absent from the map makes the location unavailable there,
+	// rather than guessed — which is how Windows stays unfilled without a
+	// build tag, and why nothing invents a %APPDATA% path it cannot verify.
+	// See docs/windows.md.
 	home map[string][]string
 }
 
@@ -232,7 +234,7 @@ func (s *clientSpec) shape() Shape {
 }
 
 // resolve turns the spec's locations into concrete paths. User placements
-// whose GOOS is absent from the table (Windows, M2) and, when $HOME is not
+// whose GOOS is absent from the table (Windows, unfilled) and, when $HOME is not
 // resolvable, all user placements, are dropped — the caller still gets the
 // project ones.
 func (s *clientSpec) resolve(t *Table, baseDir string) []Location {
