@@ -194,6 +194,31 @@ shell 里删 server，会枚举不到任何东西、删不掉任何东西 ——
 （带着 key 重跑，或 `auth logout <id>`）。它在任何存疑时都答 TRUE：
 误报一次 warning 的代价，远小于静默留下一份凭据。
 
+### 谁在刷新，又留下什么日志
+
+能续期 token 的进程有两个，其中只有一个会**提前**续：
+
+| 进程 | 触发方式 | 串行化 |
+|---|---|---|
+| daemon（`internal/daemon/oauth.go`） | 主动：每 ≤60s 扫一轮，续掉所有已进入 `expires_at` 宽限期的 token | offline 路径（文件锁）+ 额外一层进程内 singleflight |
+| stdio gateway（`internal/gateway/auth.go`） | 只被动：下游返回 401/403，刷新一次、重放一次 | offline 路径 —— `<secrets>/<server>.refresh.lock`，拿锁后重读 `expires_at` |
+
+**daemon 没跑时就完全没有主动刷新**：过期 token 只能靠下游拒绝来发现；对 `initialize` 握手来说，
+这意味着「连接」本身就是触发续期的那次请求。不声明 `expires_in` 的 server 则永远走这条路。
+
+两个进程打的是同样四条消息，一次 grep 通吃：
+
+| 消息 | 级别 | 含义 |
+|---|---|---|
+| `refreshing a downstream access token` | DEBUG | 仅 gateway；用来区分「卡在兄弟锁上」和「压根没试」 |
+| `access token refreshed` | INFO | `superseded=true` 表示别的写入方先完成了 —— 是锁在起作用，不是刷了两次 |
+| `token cannot be refreshed without a new login` | WARN | 死路；只有 `agenthub auth login` 能修 |
+| `access token refresh failed; …` | WARN | 可恢复；daemon 会附带 `retry_in`，gateway 则等下一个 401 |
+
+gateway 这几行是**必需的而非装饰**：`internal/downstream` 的 round tripper 会**故意丢弃**刷新错误、
+把下游原始的 401 交回去（它的 `WWW-Authenticate` 是更好的诊断信息），
+所以少了这些日志，一次失败的 offline 续期将不会被记录在任何地方。
+
 ## 安全边界（不要顺手放宽）
 
 - **`overlay` 永不落盘**同理，`--authorization-endpoint` 的 pin 是 **fail-closed** 的：

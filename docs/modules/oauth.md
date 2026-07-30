@@ -213,6 +213,33 @@ refresh token, feeding the resurrection path above. The predicate separates "not
 key set, or `auth logout <id>`). It answers TRUE on any doubt: a spurious warning costs nothing next
 to a silently retained credential.
 
+### Who refreshes, and what it logs
+
+Two processes can renew a token, and only one of them renews *early*:
+
+| Process | Trigger | Serialization |
+|---|---|---|
+| daemon (`internal/daemon/oauth.go`) | proactive: a scan every ≤60s renews anything within the grace of `expires_at` | offline path (file lock) + an extra in-process singleflight |
+| stdio gateway (`internal/gateway/auth.go`) | passive only: a 401/403 from the downstream, refresh once and replay once | offline path — `<secrets>/<server>.refresh.lock`, then a re-read of `expires_at` |
+
+With **no daemon running there is no proactive refresh at all**: an expired token is discovered by
+the downstream rejecting it, which for the `initialize` handshake means the connect itself is what
+triggers the renewal. Servers that advertise no `expires_in` live on this path permanently.
+
+Both processes log the same four messages, so one grep covers either:
+
+| Message | Level | Meaning |
+|---|---|---|
+| `refreshing a downstream access token` | DEBUG | gateway only; separates "hung on the sibling lock" from "never attempted" |
+| `access token refreshed` | INFO | `superseded=true` means another writer got there first — the lock working, not a double refresh |
+| `token cannot be refreshed without a new login` | WARN | dead end; only `agenthub auth login` fixes it |
+| `access token refresh failed; …` | WARN | transient; the daemon adds `retry_in`, the gateway waits for the next 401 |
+
+The gateway's lines are load-bearing rather than decorative: `internal/downstream`'s round tripper
+deliberately **discards** a refresh error and returns the downstream's original 401 (its
+`WWW-Authenticate` is the better diagnostic), so without them a failed offline renewal would be
+recorded nowhere at all.
+
 ## Security boundaries (don't loosen these in passing)
 
 - Just like **`overlay` never persists to disk**, the `--authorization-endpoint` pin is

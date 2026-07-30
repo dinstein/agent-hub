@@ -354,7 +354,7 @@ func newGateway(cfg Config) (*gateway, error) {
 				// because the TokenSource factory closes over them: the round
 				// trippers must read the SAME counters credwatch.go bumps.
 				epochs = newCredEpochs()
-				cfg.Auth = vaultAuth(chain, dir, epochs)
+				cfg.Auth = vaultAuth(chain, dir, epochs, log)
 			}
 		}
 	}
