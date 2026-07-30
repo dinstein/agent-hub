@@ -38,6 +38,11 @@ type AuthServerMetadata struct {
 	ResponseTypesSupported            []string `json:"response_types_supported"`
 	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported"`
 	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
+	// AuthorizationResponseIssParameterSupported is the RFC 9207 signal: an
+	// AS that sets it promises an iss parameter on every authorization
+	// response, which lets the client treat a MISSING iss as an attack
+	// rather than as an old server (see validateIss).
+	AuthorizationResponseIssParameterSupported bool `json:"authorization_response_iss_parameter_supported"`
 
 	// SourceURL records which candidate produced this document. It is not
 	// a protocol member; it exists so diagnostics can say *which* of the

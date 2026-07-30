@@ -38,6 +38,11 @@ var (
 	// callback from somebody else's session).
 	ErrStateMismatch = errors.New("oauthflow: state mismatch")
 
+	// ErrIssuerMismatch reports an authorization response whose iss
+	// parameter (RFC 9207) does not identify the authorization server this
+	// flow discovered — the mix-up attack shape. The code is never redeemed.
+	ErrIssuerMismatch = errors.New("oauthflow: authorization response issuer mismatch")
+
 	// ErrRedirect reports a 3xx on a request that carries credentials.
 	// Zero redirects is a hard rule, not a limit.
 	ErrRedirect = errors.New("oauthflow: credential request was redirected")

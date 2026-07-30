@@ -120,7 +120,7 @@ func TestParseManualCallbackMatrix(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			code, err := ParseManualCallback(tc.input, want)
+			code, _, err := ParseManualCallback(tc.input, want)
 			switch {
 			case tc.wantCode != "":
 				if err != nil {
@@ -148,7 +148,7 @@ func TestParseManualCallbackMatrix(t *testing.T) {
 // TestManualStateMismatchIsLoud: the error must name the remedy, because a
 // state mismatch in manual mode is almost always "pasted the wrong tab".
 func TestManualStateMismatchIsLoud(t *testing.T) {
-	_, err := ParseManualCallback("http://127.0.0.1:1/cb?code=c&state=other", "mine")
+	_, _, err := ParseManualCallback("http://127.0.0.1:1/cb?code=c&state=other", "mine")
 	var fe *FlowError
 	if !errors.As(err, &fe) {
 		t.Fatalf("not a FlowError: %v", err)
@@ -164,7 +164,7 @@ func TestManualStateMismatchIsLoud(t *testing.T) {
 // TestManualBareCodeSkipsStateCheck documents the deliberate asymmetry: a
 // bare code carries no state to check, and PKCE is what protects it.
 func TestManualBareCodeSkipsStateCheck(t *testing.T) {
-	code, err := ParseManualCallback("XYZ-987", "any-state-at-all")
+	code, _, err := ParseManualCallback("XYZ-987", "any-state-at-all")
 	if err != nil {
 		t.Fatal(err)
 	}

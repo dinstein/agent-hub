@@ -77,6 +77,12 @@ type fakeAS struct {
 	// scopes_supported. nil keeps the default; an empty non-nil slice omits
 	// the member entirely.
 	prmScopes []string
+	// RFC 9207: by default the fake AS is conformant — it advertises
+	// authorization_response_iss_parameter_supported and sends the correct
+	// iss on every callback, so every loopback test exercises the strict
+	// validation path. The two knobs below produce the attack shapes.
+	issOverride string // sent as iss instead of the real issuer when set
+	omitIss     bool   // send no iss at all (support still advertised)
 
 	// --- observations ---------------------------------------------------
 	hits          []string
@@ -131,6 +137,7 @@ func (f *fakeAS) metadata() *AuthServerMetadata {
 		AuthorizationEndpoint:         f.srv.URL + "/authorize" + f.authorizeSuffix,
 		TokenEndpoint:                 f.srv.URL + "/token",
 		CodeChallengeMethodsSupported: []string{"S256"},
+		AuthorizationResponseIssParameterSupported: true,
 	}
 	if !f.noRegistration {
 		md.RegistrationEndpoint = f.srv.URL + "/register"
@@ -410,6 +417,13 @@ func (f *fakeAS) browserFor(t *testing.T) BrowserOpener {
 		cbq := cb.Query()
 		cbq.Set("code", code)
 		cbq.Set("state", q.Get("state"))
+		if !f.omitIss {
+			iss := f.issuer()
+			if f.issOverride != "" {
+				iss = f.issOverride
+			}
+			cbq.Set("iss", iss)
+		}
 		cb.RawQuery = cbq.Encode()
 		go func() {
 			resp, err := http.Get(cb.String()) //nolint:noctx // test browser stand-in

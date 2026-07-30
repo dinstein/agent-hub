@@ -366,6 +366,11 @@ func (f *Flow) loginLoopback(ctx context.Context, req LoginRequest, disc *Discov
 	if err != nil {
 		return nil, withServer(err, req.ServerID)
 	}
+	// RFC 9207: the callback arrived intact from the browser, so an AS that
+	// advertises the iss parameter must have delivered it (fail closed).
+	if err := validateIss(disc.Metadata, res.Iss, true); err != nil {
+		return nil, withServer(err, req.ServerID)
+	}
 	tok, err := f.Client.Exchange(ctx, ExchangeRequest{
 		TokenEndpoint: disc.Metadata.TokenEndpoint,
 		ClientID:      creds.ClientID,
@@ -431,8 +436,13 @@ func (f *Flow) loginManual(ctx context.Context, req LoginRequest, disc *Discover
 	if err != nil {
 		return nil, withServer(newFlowError(ErrorTypeAuthorization, err), req.ServerID)
 	}
-	code, err := ParseManualCallback(pasted, state)
+	code, iss, err := ParseManualCallback(pasted, state)
 	if err != nil {
+		return nil, withServer(err, req.ServerID)
+	}
+	// RFC 9207, manual leniency: a paste may have been hand-trimmed to a
+	// bare code, so only a PRESENT iss is checked (see validateIss).
+	if err := validateIss(disc.Metadata, iss, false); err != nil {
 		return nil, withServer(err, req.ServerID)
 	}
 	tok, err := f.Client.Exchange(ctx, ExchangeRequest{

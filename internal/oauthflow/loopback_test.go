@@ -75,7 +75,7 @@ func TestLoopbackAcceptsMatchingCallback(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		hit(t, base, "code=the-code&state=st-1")
 	}()
-	code, err := ln.Wait(context.Background(), "st-1", 5*time.Second)
+	code, _, err := ln.Wait(context.Background(), "st-1", 5*time.Second)
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestLoopbackIgnoresStrayRequests(t *testing.T) {
 		hit(t, base, "nonsense=1")
 		hit(t, base, "code=real&state=st-1")
 	}()
-	code, err := ln.Wait(context.Background(), "st-1", 5*time.Second)
+	code, _, err := ln.Wait(context.Background(), "st-1", 5*time.Second)
 	if err != nil {
 		t.Fatalf("stray requests ended the flow: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestLoopbackRejectsStateMismatch(t *testing.T) {
 				time.Sleep(20 * time.Millisecond)
 				hit(t, base, q)
 			}()
-			_, err = ln.Wait(context.Background(), "st-1", 5*time.Second)
+			_, _, err = ln.Wait(context.Background(), "st-1", 5*time.Second)
 			if !errors.Is(err, ErrStateMismatch) {
 				t.Fatalf("err = %v, want ErrStateMismatch", err)
 			}
@@ -142,7 +142,7 @@ func TestLoopbackSurfacesAuthorizationServerError(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		hit(t, base, "error=access_denied&error_description=nope&state=st-1")
 	}()
-	_, err = ln.Wait(context.Background(), "st-1", 5*time.Second)
+	_, _, err = ln.Wait(context.Background(), "st-1", 5*time.Second)
 	if !errors.Is(err, ErrAuthorizationDenied) {
 		t.Fatalf("err = %v, want ErrAuthorizationDenied", err)
 	}
@@ -154,7 +154,7 @@ func TestLoopbackTimesOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := time.Now()
-	_, err = ln.Wait(context.Background(), "st-1", 80*time.Millisecond)
+	_, _, err = ln.Wait(context.Background(), "st-1", 80*time.Millisecond)
 	if !errors.Is(err, ErrTimeout) {
 		t.Fatalf("err = %v, want ErrTimeout", err)
 	}
@@ -175,7 +175,7 @@ func TestLoopbackReleasesPortAfterWait(t *testing.T) {
 		t.Fatal(err)
 	}
 	port := ln.Port()
-	_, _ = ln.Wait(context.Background(), "st", 30*time.Millisecond)
+	_, _, _ = ln.Wait(context.Background(), "st", 30*time.Millisecond)
 	again, err := ListenOnPort(port)
 	if err != nil {
 		t.Fatalf("port %d was not released: %v", port, err)
@@ -280,7 +280,7 @@ func TestLoopbackWaitNeedsState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ln.Wait(context.Background(), "  ", time.Second); err == nil {
+	if _, _, err := ln.Wait(context.Background(), "  ", time.Second); err == nil {
 		t.Fatal("waiting without a state must be refused")
 	}
 }

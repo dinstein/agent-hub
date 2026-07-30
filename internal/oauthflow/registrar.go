@@ -97,10 +97,14 @@ type dcrPayload struct {
 	GrantTypes              []string `json:"grant_types"`
 	ResponseTypes           []string `json:"response_types"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
-	Scope                   string   `json:"scope,omitempty"`
-	SoftwareID              string   `json:"software_id,omitempty"`
-	SoftwareVersion         string   `json:"software_version,omitempty"`
-	ClientURI               string   `json:"client_uri,omitempty"`
+	// ApplicationType is pinned to "native": agenthub is a local process
+	// redeeming codes on loopback redirect URIs, which is exactly RFC 7591's
+	// native profile — and MCP 2026-07-28 makes the member required.
+	ApplicationType string `json:"application_type"`
+	Scope           string `json:"scope,omitempty"`
+	SoftwareID      string `json:"software_id,omitempty"`
+	SoftwareVersion string `json:"software_version,omitempty"`
+	ClientURI       string `json:"client_uri,omitempty"`
 }
 
 // Register performs the RFC 7591 POST.
@@ -141,6 +145,7 @@ func (r *dcrRegistrar) Register(ctx context.Context, md *AuthServerMetadata, req
 		ResponseTypes: defaultStrings(req.ResponseTypes, []string{"code"}),
 		// Pinned, never negotiated: agenthub is a public client.
 		TokenEndpointAuthMethod: TokenEndpointAuthNone,
+		ApplicationType:         "native",
 		Scope:                   strings.Join(req.Scopes, " "),
 		SoftwareID:              req.SoftwareID,
 		SoftwareVersion:         req.SoftwareVersion,

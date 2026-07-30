@@ -153,6 +153,7 @@ func (l *LoopbackListener) Close() error {
 // callbackResult is one accepted callback.
 type callbackResult struct {
 	code string
+	iss  string // RFC 9207 iss parameter, "" when absent
 	err  error
 }
 
@@ -217,13 +218,13 @@ func (l *LoopbackListener) Serve(state string) error {
 //   - Anything else — a favicon fetch, a browser probe, a bare GET / — is
 //     ignored: answered 204 and not treated as the callback. Stray requests
 //     to a loopback port are routine and must not end the flow.
-func (l *LoopbackListener) Wait(ctx context.Context, state string, timeout time.Duration) (string, error) {
+func (l *LoopbackListener) Wait(ctx context.Context, state string, timeout time.Duration) (code, iss string, err error) {
 	if timeout <= 0 {
 		timeout = LoopbackTimeout
 	}
 	if err := l.Serve(state); err != nil {
 		_ = l.Close()
-		return "", err
+		return "", "", err
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -251,22 +252,22 @@ func (l *LoopbackListener) Wait(ctx context.Context, state string, timeout time.
 
 	select {
 	case r := <-results:
-		return r.code, r.err
+		return r.code, r.iss, r.err
 	case err := <-serveErr:
 		serveErrConsumed = true
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return "", newFlowError(ErrorTypeAuthorization, fmt.Errorf("oauthflow: callback server: %w", err))
+			return "", "", newFlowError(ErrorTypeAuthorization, fmt.Errorf("oauthflow: callback server: %w", err))
 		}
-		return "", newFlowError(ErrorTypeAuthorization,
+		return "", "", newFlowError(ErrorTypeAuthorization,
 			fmt.Errorf("%w: callback listener closed before a callback arrived", ErrTimeout))
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			e := newFlowError(ErrorTypeAuthorization,
 				fmt.Errorf("%w: no callback within %s", ErrTimeout, timeout))
 			e.Suggestion = "complete the consent screen in the browser, or use `--manual` if this host cannot open one"
-			return "", e
+			return "", "", e
 		}
-		return "", newFlowError(ErrorTypeAuthorization, ctx.Err())
+		return "", "", newFlowError(ErrorTypeAuthorization, ctx.Err())
 	}
 }
 
@@ -298,7 +299,7 @@ func (l *LoopbackListener) handle(w http.ResponseWriter, r *http.Request, wantSt
 	default:
 		writeCallbackPage(w, http.StatusOK, "Authorized",
 			"agenthub received the authorization code. You can close this tab and return to the terminal.")
-		deliver(callbackResult{code: code})
+		deliver(callbackResult{code: code, iss: q.Get("iss")})
 	}
 }
 
@@ -359,6 +360,9 @@ type LoopbackResult struct {
 	Code        string
 	RedirectURI string
 	Port        int
+	// Iss is the RFC 9207 iss authorization-response parameter, "" when the
+	// AS sent none. The login flow validates it before redeeming Code.
+	Iss string
 }
 
 // Run executes the loopback mode. The caller supplies build, which turns
@@ -399,11 +403,11 @@ func (f *LoopbackFlow) Run(ctx context.Context, state string, build func(redirec
 		e.Suggestion = "no browser on this host; re-run with `--manual` or `--device`"
 		return nil, e
 	}
-	code, err := ln.Wait(ctx, state, f.Timeout)
+	code, iss, err := ln.Wait(ctx, state, f.Timeout)
 	if err != nil {
 		return nil, err
 	}
-	return &LoopbackResult{Code: code, RedirectURI: redirect, Port: ln.port}, nil
+	return &LoopbackResult{Code: code, RedirectURI: redirect, Port: ln.port, Iss: iss}, nil
 }
 
 // ParseLoopbackRedirectURI splits a pinned redirect URI into the host, port

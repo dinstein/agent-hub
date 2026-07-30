@@ -22,7 +22,8 @@ substantially relative to `2025-06-18`, and the gap table below is aligned to it
 | RFC 9728 Protected Resource Metadata | `ProtectedResourceCandidates`, `WWW-Authenticate` | ✅ Includes the origin-root fallback |
 | RFC 8707 Resource Indicators | `resource` parameter, sent on both authorize and token | ✅ `canonicalResource` |
 | RFC 7636 PKCE | S256 mandatory | ✅ S256 only, `plain` is rejected outright |
-| RFC 7591 DCR | `NewDCRRegistrar` | ✅ But upstream has downgraded it to MAY |
+| RFC 7591 DCR | `NewDCRRegistrar` | ✅ But upstream has downgraded it to MAY; `application_type` pinned to `"native"` (required by MCP 2026-07-28) |
+| RFC 9207 `iss` response parameter | `validateIss`, before every code redemption | ✅ Fail closed: a mismatch always refuses; a MISSING `iss` refuses on the loopback path when the AS advertises support (manual paste is lenient — a hand-trimmed bare code loses the parameter) |
 | RFC 8628 Device Flow | `StartDevice` / `DevicePoller` | ✅ Not required by MCP; we support it anyway |
 | RFC 6750 §3 `scope` challenge | The `scope` parameter in a 401 | ✅ Priority level 1 |
 | draft-ietf-oauth-client-id-metadata-document-00 (CIMD) | `NewClientIDMetadataRegistrar` | ⚠️ Seam only, `Register` returns `ErrNotImplemented` |

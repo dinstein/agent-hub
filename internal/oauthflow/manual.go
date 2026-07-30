@@ -80,21 +80,23 @@ const ManualRedirectURI = "http://127.0.0.1:8642" + DefaultCallbackPath
 // Failure direction: an `error` parameter in the pasted URL is surfaced as
 // the AS's own denial, and anything yielding no code is
 // ErrMalformedCallback — never an empty code handed onward.
-func ParseManualCallback(input, wantState string) (string, error) {
+func ParseManualCallback(input, wantState string) (code, iss string, err error) {
 	s := cleanPastedInput(input)
 	if s == "" {
-		return "", newFlowError(ErrorTypeAuthorization,
+		return "", "", newFlowError(ErrorTypeAuthorization,
 			fmt.Errorf("%w: nothing pasted", ErrMalformedCallback))
 	}
 	q, isQuery := pastedQuery(s)
 	if !isQuery {
 		// Bare code. Reject anything containing whitespace or an obvious
-		// URL fragment: that is a mangled paste, not a code.
+		// URL fragment: that is a mangled paste, not a code. A bare code
+		// carries no iss (RFC 9207): the user stripped the URL by hand, so
+		// its absence is expected, not suspicious.
 		if strings.ContainsAny(s, " \t\n\r") || strings.Contains(s, "://") {
-			return "", newFlowError(ErrorTypeAuthorization,
+			return "", "", newFlowError(ErrorTypeAuthorization,
 				fmt.Errorf("%w: input is neither a callback URL nor a bare code", ErrMalformedCallback))
 		}
-		return s, nil
+		return s, "", nil
 	}
 	if e := q.Get("error"); e != "" {
 		te := &TokenError{Code: e, Description: q.Get("error_description"), URI: q.Get("error_uri")}
@@ -102,20 +104,20 @@ func ParseManualCallback(input, wantState string) (string, error) {
 		if e == errAccessDenied {
 			fe.Err = fmt.Errorf("%w: %v", ErrAuthorizationDenied, te)
 		}
-		return "", fe
+		return "", "", fe
 	}
-	code := q.Get("code")
+	code = q.Get("code")
 	if code == "" {
-		return "", newFlowError(ErrorTypeAuthorization,
+		return "", "", newFlowError(ErrorTypeAuthorization,
 			fmt.Errorf("%w: pasted URL has no code parameter", ErrMalformedCallback))
 	}
 	if got := q.Get("state"); got != wantState {
 		e := newFlowError(ErrorTypeAuthorization,
 			fmt.Errorf("%w: pasted callback belongs to a different authorization request", ErrStateMismatch))
 		e.Suggestion = "paste the URL from the browser tab this login opened, not from an earlier attempt"
-		return "", e
+		return "", "", e
 	}
-	return code, nil
+	return code, q.Get("iss"), nil
 }
 
 // cleanPastedInput strips the decorations terminals, mail clients and chat
