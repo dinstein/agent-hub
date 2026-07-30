@@ -13,6 +13,12 @@ const (
 	MethodToolsCall = "tools/call"
 	MethodRootsList = "roots/list"
 
+	// MethodSamplingCreate and MethodElicitationCreate name server-initiated
+	// requests: reverse RPCs on ≤ 2025-11-25, InputRequest methods inside an
+	// InputRequiredResult on 2026-07-28 (MRTR).
+	MethodSamplingCreate    = "sampling/createMessage"
+	MethodElicitationCreate = "elicitation/create"
+
 	// MethodDiscover is the server/discover RPC introduced in MCP 2026-07-28.
 	// Servers MUST implement it; clients MAY call it before any other request
 	// to negotiate the highest mutually supported protocol version.
@@ -157,9 +163,17 @@ type ListToolsResult struct {
 // CallToolParams is the "tools/call" request payload. Arguments are raw:
 // the gateway routes them untouched from upstream client to downstream
 // server.
+//
+// RequestState and InputResponses only appear on an MRTR retry
+// (MCP 2026-07-28): RequestState is the opaque blob echoed VERBATIM from
+// the InputRequiredResult (never inspected, never modified — servers own
+// its integrity), and InputResponses carries the collected answers keyed
+// like the originating inputRequests.
 type CallToolParams struct {
-	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments,omitempty"`
+	Name           string          `json:"name"`
+	Arguments      json.RawMessage `json:"arguments,omitempty"`
+	RequestState   string          `json:"requestState,omitempty"`
+	InputResponses InputResponses  `json:"inputResponses,omitempty"`
 }
 
 // CallResult is the "tools/call" complete response payload. Content (and
