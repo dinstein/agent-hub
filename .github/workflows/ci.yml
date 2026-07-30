@@ -40,6 +40,14 @@ jobs:
         run: make ci-depguard-proof
       - name: Lint
         run: make lint
+      # There is no Windows runner here and nothing in this project has ever
+      # executed on Windows. This step is the whole of what stands between that
+      # and a Windows build quietly rotting — which is what was happening:
+      # README.md, docs/architecture.md and docs/windows.md all claimed CI
+      # gated on GOOS=windows, and nothing anywhere did. It costs seconds, so
+      # it runs on both matrix legs rather than being pinned to one.
+      - name: Cross-compile and vet for Windows
+        run: make cross-windows
 
   # The GUI job is SEPARATE from `ci` on purpose: "the GUI is optional by
   # construction" is a compile-time property (canonical.md §7 item 3), so it
@@ -80,3 +88,10 @@ jobs:
       # vetting different things.
       - name: Vet the Wails-tagged code
         run: make gui-vet
+      # The Windows GUI, cross-compiled here rather than in the `ci` job
+      # because it needs the bundle two steps up. It is the shipped artifact's
+      # compile check: the release workflow packages this same binary, and
+      # wails v3's Windows backend is pure Go, so this runner produces exactly
+      # what a Windows one would.
+      - name: Cross-compile the Wails-tagged GUI for Windows
+        run: make cross-windows-gui

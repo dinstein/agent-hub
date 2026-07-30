@@ -175,6 +175,42 @@ tidy: ## go mod tidy
 generate: ## Regenerate the api → TypeScript health constants
 	$(GO) generate ./...
 
+# The Windows gate. There is no Windows machine and no Windows runner in this
+# project's loop: nothing here has ever EXECUTED there, and this target does not
+# change that. What it does is make the claim the documentation has always made
+# — "Windows cross-compiles and CI gates on it" — true. It was not: no
+# GOOS=windows anything ran anywhere, in the Makefile or in either workflow,
+# while README.md, docs/architecture.md and docs/windows.md all said it did.
+#
+# vet, not just build. Build alone misses most of what a Windows port gets
+# wrong: the Windows halves of internal/platform, api and internal/ctlapi are
+# syscall plumbing that compiles and can still be nonsense — an unsafe.Pointer
+# to the wrong struct, a printf verb for a uintptr — and vet is the only reader
+# they have.
+#
+# test/e2e is excluded, and that is a real limitation rather than a formality:
+# the suite dials unix sockets and kills daemons by pid throughout, so it does
+# not compile for GOOS=windows and would prove nothing there if it did. Windows
+# behavior is covered by unit tests through injected seams (a fake SID, a fake
+# package identity, a forced goos) and by nothing else.
+.PHONY: cross-windows cross-windows-gui
+cross-windows: ## GOOS=windows build + vet of everything but the unix-only e2e suite
+	GOOS=windows $(GO) build ./...
+	GOOS=windows $(GO) vet $$($(GO) list ./... | grep -v '/test/e2e')
+
+# Separate from cross-windows because it needs the frontend bundle: gui_main.go
+# embeds frontend/dist, so this cannot even LOAD the package until gui-frontend
+# has run once. Hence its place in the CI workflow's gui job, and its ordering
+# after gui-frontend-ci in ci-full.
+#
+# This is the half `make gui-vet` cannot reach for another platform, and Windows
+# is where wails v3 diverges most from the macOS build this project develops
+# against: the webview is WebView2 and the backend is pure Go, so unlike darwin
+# it cross-compiles with no cgo at all — which is what makes it cheap enough to
+# gate on every push instead of discovering it at release time.
+cross-windows-gui: ## GOOS=windows build of the wails-tagged GUI
+	GOOS=windows $(GO) build -tags wails -o /dev/null ./$(GUI_DIR)
+
 .PHONY: e2e e2e-ci
 e2e: ## The end-to-end suite alone, in this machine's environment
 	$(GO) test ./test/e2e/ -count=1
@@ -204,9 +240,11 @@ ci: build test lint ## Build + test + lint: the pure check, no GUI, no artifacts
 #      repairs a package-lock.json that disagrees with package.json. CI runs
 #      `npm ci`, which refuses. Only gui-frontend-ci reproduces that.
 #
-# The last three are the workflow's gui job, same targets in the same order, so
-# the correspondence stays checkable by eye.
-ci-full: ci ci-depguard-proof gui-frontend-ci gui-go gui-vet ## Everything the CI workflow runs; use before pushing
+# The last four are the workflow's gui job, same targets in the same order, so
+# the correspondence stays checkable by eye. cross-windows sits with the `ci`
+# job's targets and cross-windows-gui with the gui job's, for the reason its
+# comment gives: one needs the frontend bundle and the other does not.
+ci-full: ci ci-depguard-proof cross-windows gui-frontend-ci gui-go gui-vet cross-windows-gui ## Everything the CI workflow runs; use before pushing
 
 # Landing a branch, as one command. `make ci-full` is necessary and not
 # sufficient, for two reasons AGENTS.md spells out and that are easy to perform

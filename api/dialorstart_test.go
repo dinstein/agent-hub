@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -84,7 +83,15 @@ func killDaemonFromInfo(t *testing.T, path string) {
 	if err != nil || info.Pid == 0 {
 		return // never started; nothing to kill
 	}
-	_ = syscall.Kill(info.Pid, syscall.SIGKILL)
+	// os.FindProcess + Kill rather than syscall.Kill(pid, SIGKILL): the two are
+	// the same call on Unix, and this one also compiles for GOOS=windows, which
+	// `make cross-windows` vets. syscall.Kill does not exist there, so one line
+	// of test cleanup used to fail the whole package's cross-platform vet.
+	p, err := os.FindProcess(info.Pid)
+	if err != nil {
+		return
+	}
+	_ = p.Kill()
 }
 
 func TestDialOrStartAlreadyRunningSkipsExec(t *testing.T) {
