@@ -121,11 +121,9 @@ type ScopeWrite struct {
 
 // ScopeService manages the persistent per-client scope binding.
 //
-// This is the CONFIGURATION layer, not the session overlay: it is persisted,
-// it may widen as well as narrow (it is an operator surface), and it takes
-// effect for every future session of that client. The agent-reachable,
-// narrow-only, volatile overlay is Sessions.SetScope — a different surface
-// on purpose (ruling #8).
+// It is persisted operator configuration: it may widen as well as narrow,
+// and it takes effect for every future session of that client. There is no
+// runtime counterpart — a live session's surface cannot be changed.
 type ScopeService struct{ c *Client }
 
 // Get returns one client's persistent binding.

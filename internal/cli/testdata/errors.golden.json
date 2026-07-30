@@ -107,36 +107,30 @@
     "name": "17-E_STATE_CORRUPT",
     "code": "E_STATE_CORRUPT",
     "exitCode": 7,
-    "message": "the integrity state file is corrupt"
+    "message": "the state file is corrupt"
   },
   {
-    "name": "18-E_TIGHTEN_ONLY",
-    "code": "E_TIGHTEN_ONLY",
-    "exitCode": 6,
-    "message": "this operation may only tighten scope; widening needs an approved grant"
-  },
-  {
-    "name": "19-E_CONFIG_KEY_UNKNOWN",
+    "name": "18-E_CONFIG_KEY_UNKNOWN",
     "code": "E_CONFIG_KEY_UNKNOWN",
     "exitCode": 2,
     "message": "unknown config key \"colour\""
   },
   {
-    "name": "20-E_LOCK_TIMEOUT",
+    "name": "19-E_LOCK_TIMEOUT",
     "code": "E_LOCK_TIMEOUT",
     "exitCode": 7,
     "message": "registry: lock acquisition timed out",
     "hint": "another agenthub process holds the registry lock; retry in a moment"
   },
   {
-    "name": "21-E_REGISTRY_CORRUPT",
+    "name": "20-E_REGISTRY_CORRUPT",
     "code": "E_REGISTRY_CORRUPT",
     "exitCode": 7,
     "message": "registry: /data/registry/servers.json is unreadable (quarantined to /data/registry/servers.json.unreadable-20260726T120000.000000000Z): invalid character '}' looking for beginning of object key string",
     "hint": "the unreadable file was quarantined, not destroyed; inspect it and re-run"
   },
   {
-    "name": "22-E_GENERAL",
+    "name": "21-E_GENERAL",
     "code": "E_GENERAL",
     "exitCode": 1,
     "message": "an unclassified failure"

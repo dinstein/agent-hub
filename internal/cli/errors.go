@@ -49,7 +49,6 @@ const (
 	CodeSecretNotFound       = "E_SECRET_NOT_FOUND"
 	CodeConfigKeyUnknown     = "E_CONFIG_KEY_UNKNOWN"
 	CodeStateCorrupt         = "E_STATE_CORRUPT"
-	CodeTightenOnly          = "E_TIGHTEN_ONLY"
 )
 
 // Error is the typed CLI error: it carries the stable machine code for the

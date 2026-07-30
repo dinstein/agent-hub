@@ -22,7 +22,7 @@ import (
 )
 
 // The `session` group is the runtime view of live connections. Sessions are
-// daemon objects that are never persisted (A.1 #6), so EVERY subcommand
+// daemon objects that are never persisted, so EVERY subcommand
 // here requires the daemon: offline it is exit 4 (E_DAEMON_DOWN), never an
 // invented offline answer (docs/modules/controlplane.md online/offline matrix).
 
@@ -391,12 +391,6 @@ func classifyScopeError(err error) error {
 		e := NotFoundf(CodeSessionNotFound, "%s", ce.Message)
 		e.Hint = "run 'agenthub session ls' to see live sessions"
 		return e
-	case http.StatusForbidden:
-		return &Error{
-			Code: CodeTightenOnly, ExitCode: ExitDenied,
-			Message: ce.Message,
-			Hint:    "runtime scope may only narrow; widen with 'agenthub session scope --enable-server' (files a grant)",
-		}
 	}
 	return &Error{Code: ce.Code, ExitCode: ExitGeneral, Message: ce.Message, Hint: ce.Hint}
 }

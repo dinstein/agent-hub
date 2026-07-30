@@ -132,7 +132,7 @@ func TestDefenceLinesAreDistinguishable(t *testing.T) {
 	wantBlocked(t, err, pipeline.GateScope, pipeline.CodeScopeDenied)
 
 	// Line 2: visible, but the credential does not reach this tier. The HITL
-	// switches are also set; the machine decision must come first (#16).
+	// The tier decision is made from the credential and the annotations alone.
 	visible := pipeline.New(pipeline.Options{
 		Scope: scopeOf(scopeWith([]string{tool})),
 	})

@@ -10,11 +10,10 @@ flows see [architecture.md §6](architecture.md#6-three-data-flows).
 |---|---|---|
 | 1 | [Gateway startup](#1-gateway-startup-answer-with-whatever-you-have) | Cache answers first, downstreams arrive later, `list_changed` catches up |
 | 2 | [A complete call in lazy mode](#2-a-complete-call-in-lazy-mode) | search → describe → call → paginate |
-| 3 | [HITL approval](#3-hitl-approval-three-fail-closed-points) | Nothing but `Approved` lets the call through |
-| 4 | [Config writes](#4-config-writes-five-writers-and-an-optimistic-lock) | Semantic writes have one implementation; conflicts return 409 |
-| 5 | [Config hot reload](#5-config-hot-reload-two-things-to-get-right) | Events are only notifications; the generation criterion is `≥` |
-| 6 | [Headless OAuth and refresh](#6-headless-oauth-and-refresh) | Three callback modes; write state before token |
-| 7 | [Derived downstream instances](#7-derived-downstream-instances) | Touches only the connection plane, never visibility |
+| 3 | [Config writes](#3-config-writes-five-writers-and-an-optimistic-lock) | Semantic writes have one implementation; conflicts return 409 |
+| 4 | [Config hot reload](#4-config-hot-reload-two-things-to-get-right) | Events are only notifications; the generation criterion is `≥` |
+| 5 | [Headless OAuth and refresh](#5-headless-oauth-and-refresh) | Three callback modes; write state before token |
+| 6 | [Derived downstream instances](#6-derived-downstream-instances) | Touches only the connection plane, never visibility |
 
 ---
 
@@ -43,10 +42,10 @@ sequenceDiagram
     G--)C: notifications/tools/list_changed
     alt daemon present
         G->>D: POST /v1/gateway/register
-        D-->>G: SessionID + current overlay
-        Note over G,D: long-lived connection: overlay pushes / registry events / approval Asks
+        D-->>G: SessionID
+        Note over G,D: long-lived connection: registry change notifications
     else daemon absent
-        G->>G: run standalone; HITL fails closed; reconnect with backoff
+        G->>G: run standalone (scope comes from the registry files); reconnect with backoff
     end
 ```
 
@@ -92,14 +91,13 @@ sequenceDiagram
     A->>G: call_tool{tool, arguments}
     G->>G: router.RouteOf, sole provenance
     G->>P: Execute (same entry point as a direct call)
-    P->>P: scope → token tier → argument pre-validation → HITL
+    P->>P: scope → token tier
     alt any gate refuses
         P-->>A: isError + a distinguishable refusal code
     else allowed
         P->>DS: tools/call (inside the circuit breaker + retry policy)
         DS-->>P: result or JSON-RPC error
-        P->>P: defend_and_shape: injection → leakguard → shaping
-        P->>P: audit append (argsHash only)
+        P->>P: shaping: budget + fetch_result cursor
         P-->>A: result (with a cursor when over budget)
     end
     A->>G: fetch_result{cursor}
@@ -121,60 +119,7 @@ identical** copy — a differentiated error would leak "this cursor exists but i
 
 ---
 
-## 3. HITL approval: three fail-closed points
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant A as Agent
-    participant G as gateway
-    participant B as broker inside the daemon
-    participant F as frontend (CLI / GUI / any)
-    participant DS as downstream
-
-    A->>G: tools/call (destructive)
-    G->>G: scope / token / pre-validation passed
-    G->>B: POST /v1/approvals/ask<br/>{argsHash, live definition fingerprint, deadline}
-    alt no frontend subscribed
-        B-->>G: Unreachable
-        G-->>A: refuse (E_HITL_UNAVAILABLE)
-    else a frontend is present
-        B--)F: SSE push of the pending card (args pass through memory only)
-        alt fingerprint hits the remember=forever allowlist
-            B-->>G: Approved
-        else human decision
-            F->>B: approve / deny (first response wins, repeats are idempotent)
-            B->>B: verify the fingerprint still matches the live definition
-            alt the definition has drifted
-                B-->>G: Stale
-            else
-                B-->>G: Approved / Denied
-            end
-        end
-        alt deadline reached
-            B-->>G: Timedout
-        end
-    end
-    opt only when Approved
-        G->>DS: tools/call
-    end
-```
-
-**Nothing but `Approved` lets the call through**: denied, timed out, broker unreachable, stale — four
-results with different meanings and identical consequences. After the daemon is `kill -9`'d, the moment
-the gateway's approval-bearing connection drops it cancels in-flight requests and returns Unreachable
-immediately — a call that's "waiting for a human to decide" must never hang forever because there's
-nobody left to wait for.
-
-**What's approved is what runs.** The request carries a canonical JSON hash of the arguments, binding
-approval and execution to the same arguments; it also carries a fingerprint of the live tool definition,
-so once a downstream quietly changes a tool's semantics, an earlier approval goes `Stale` rather than
-being reused. The raw arguments only ever flow through memory and the SSE channel; they are never
-persisted to disk.
-
----
-
-## 4. Config writes: five writers and an optimistic lock
+## 3. Config writes: five writers and an optimistic lock
 
 The registry has five writers: N gateways, the daemon, the CLI, the GUI, and eventually third parties.
 That's what determines the shape of the write path.
@@ -217,15 +162,14 @@ incident: the comment on `SpecFromEntry` claimed it was the sole translation poi
 hand-rolled its own Spec, and container isolation was silently dropped as a result. A parity test asserts
 that both paths produce **byte-for-byte identical** registry documents for the same operation.
 
-`RemoveServer` is that rule at its widest: it takes the whole footprint — credentials, profile membership
-and selectors, governance rules naming the server, integrity pins, approval records and grants,
-quarantine entries, tool overrides, the cached catalog. Logs are the deliberate exception; a log that
-forgot deleted servers would be worthless as evidence.
+`RemoveServer` is that rule at its widest: it takes the whole footprint — credentials, profile
+membership and selectors, governance rules naming the server, the cached catalog. Logs are the
+deliberate exception; a log that forgot deleted servers would be worthless as evidence.
 
 The reason it goes that far is **not** that dangling references are dangerous — they resolve to the empty
 set, which is fail-closed. It is that all of those stores are keyed by **server id**, so re-adding the id
-inherits them: an integrity baseline, an "always allow" grant or a refresh token earned by a completely
-different server. A stale reference is inert; a stale grant is a live entitlement. Rewriting references
+inherits them: a refresh token earned by a completely different server is the clearest case. A stale
+reference is inert; a stale credential is a live entitlement. Rewriting references
 is legitimate only because every one of them is **narrowing-only** — `Profile.Servers` is a three-state
 allow list, so an emptied one stays `[]` and is never collapsed to `nil`, which would flip "none" into
 "all". A field carrying exclusion semantics must never be rewritten here. Failure direction: the registry
@@ -246,7 +190,7 @@ for.
 
 ---
 
-## 5. Config hot reload: two things to get right
+## 4. Config hot reload: two things to get right
 
 ```mermaid
 sequenceDiagram
@@ -294,7 +238,7 @@ which is the precondition for per-session dynamic scope without restarting proce
 
 ---
 
-## 6. Headless OAuth and refresh
+## 5. Headless OAuth and refresh
 
 ```mermaid
 sequenceDiagram
@@ -344,7 +288,7 @@ process, abandon this refresh, so a one-shot refresh token isn't spent twice.
 
 ---
 
-## 7. Derived downstream instances
+## 6. Derived downstream instances
 
 ```mermaid
 sequenceDiagram

@@ -1,13 +1,20 @@
 # Security and governance layer
 
-This layer is AgentHub's "don't trust the downstream" implementation. It assumes a downstream MCP
-server may be hostile, compromised, or simply sloppy, and therefore places an independent check in
-every direction of the data plane: content coming in (prompt injection), content going out
-(credential leaks), how processes are started (command smuggling), where outbound connections go
-(SSRF), changes to tool definitions (rug-pull), calls that need a human nod (HITL approval), and a
-trail of all of it (the four audit streams). `internal/oauthflow` belongs to this layer because it's
-the only component that deliberately sends credentials out to the public internet, and every one of
-its constraints is a security constraint rather than a protocol one.
+This layer answers two questions, and deliberately no longer answers a third.
+
+It answers **how a process is started** (command smuggling) and **where an outbound connection may
+go** (SSRF). Both are decided from the request itself, before anything is contacted, and both refuse
+regardless of who asked — they are not permissions, and no configuration grants an exemption from
+them. `internal/oauthflow` belongs here because it is the only component that deliberately sends
+credentials to the public internet, and every one of its constraints is a security constraint rather
+than a protocol one.
+
+It no longer inspects **what a downstream returned**. Earlier versions scanned results for prompt
+injection and for leaked credentials, fingerprinted tool definitions to grade drift, and queued calls
+for a human decision. All of it was removed: what a client may reach is decided in advance by
+configuration, and a stage that reads a result in order to relabel or withhold it is the opposite of
+that model. The history is worth keeping in mind when reading old commits, but nothing in the tree
+does it today.
 
 The packages collaborate in layers rather than as peers:
 
@@ -21,27 +28,13 @@ The packages collaborate in layers rather than as peers:
 ```mermaid
 flowchart LR
     subgraph base["internal/guard/* — pure decisions, zero business dependencies"]
-        INJ[injection<br/>inbound]
-        LEAK[leakguard<br/>outbound]
         NET[netguard<br/>destination]
         SPAWN[spawnguard<br/>how it starts]
     end
-    subgraph governance["stateful governance surface"]
-        INT[integrity<br/>fingerprint / drift / approval state machine]
-        APV[approval<br/>HITL broker + allowlist]
-    end
     OAUTH[oauthflow<br/>credential acquisition]
-    AUD[(audit<br/>four streams)]
 
-    INJ --> AUD
-    LEAK --> AUD
     NET --> OAUTH
-    NET --> LEAK
-    SPAWN --> AUD
-    INT -- Fingerprint --> APV
-    APV --> AUD
-    INT --> AUD
-    OAUTH --> AUD
+    SPAWN --> DOWN[downstream spawn]
 ```
 
 Documenting the failure direction is a uniform convention in this layer: every exported symbol's doc
@@ -50,9 +43,9 @@ the signature.
 
 | Direction | Meaning | Typical examples |
 |---|---|---|
-| fail-open | If we can't decide, let it through | All detectors (injection / leakguard / spawnguard shape checks), audit dedup |
-| fail-closed | If we can't decide, refuse | `netguard.HostIsPrivate`, integrity storage corruption, everything non-Approved in approval |
-| fail-to-false | If we can't decide, don't grant trust | `netguard.HostIsDefinitelyPrivate`, leakguard's validators |
+| fail-open | If we can't decide, let it through | spawnguard's shape checks |
+| fail-closed | If we can't decide, refuse | `netguard.HostIsPrivate` |
+| fail-to-false | If we can't decide, don't grant trust | `netguard.HostIsDefinitelyPrivate` |
 
 The distinction between the three is not a matter of style: the same "I'm not sure" has to produce
 opposite answers depending on whether it's used to refuse or to grant trust, and netguard's paired
@@ -72,69 +65,10 @@ and `*netguard.BlockedError` — implements `Unwrap() error { return guard.ErrBl
 human-readable reason stay on the subpackages' concrete types; the sentinel only answers "was this
 blocked by a guard".
 
-Note that not every subpackage produces errors: `injection` and `leakguard` are detectors that never
+Note that not every subpackage produces errors: some are detectors that never
 return an error while scanning — they return an `Action` — so they're outside the `ErrBlocked`
 system. `guard.ErrBlocked` covers "refusing an action" (starting a process, dialing a connection),
 not "labeling a piece of content".
-
----
-
-## internal/guard/injection
-
-**One-line responsibility**: detect prompt-injection payloads in downstream tool results with a rule
-table before they enter the agent context, and decide per policy whether to label or reject.
-
-### Invariants and failure directions
-
-- **Both the success and error branches must go through `ScanResult` (#421).** The reason the API
-  takes a flat `[]string` rather than an `mcp.CallResult` is precisely so "text a tool returned
-  successfully" and "the JSON-RPC error message a tool returned" share one shape, closing the
-  "hostile server smuggles injection through the error branch" path.
-- **Failing open is an explicit trade-off.** Scanning never fails: base64 we can't decode, phrasings
-  that dodge the rule table, and content past the window all pass through unchanged. When content
-  exceeds `2*WindowBytes` (32 KiB by default) only the head and tail windows are scanned; the middle
-  is explicitly given up in exchange for bounded work.
-- **The zero-value policy never blocks.** `ModeLabel` is `Mode`'s zero value, so a `Policy` nobody
-  configured only labels. Exemptions have to be an explicitly configured list of server IDs; the
-  scanner never infers them. `Severity`'s zero value is invalid, so an uninitialized `Rule` errors
-  during `compileRules` rather than being silently scanned as low.
-- **Rules match against normalized text; base64 is discovered in the original.** `normalizeContent`
-  is the NFKC approximation the standard library can reach: strip zero-width/bidi-control/variation
-  selectors/soft hyphens, strip combining marks (Mn), fold full-width ASCII,
-  **fold Cyrillic/Greek homoglyphs back to ASCII**, collapse whitespace runs to a single space, and
-  lowercase everything. Custom rules therefore have to be written in lowercase, single-space form.
-  Base64 scanning has to run before normalization because base64 is case-sensitive — the ordering in
-  `scanChunk` must not be swapped.
-- **Homoglyph folding closes the last "ASCII payload in disguise" technique.** Zero-width
-  interleaving, diacritic disguises, and full-width variants were already blocked, but swapping a
-  Latin `o` for Cyrillic `U+043E` bypassed entire segments — **one keystroke from the attacker and
-  every phrase rule goes blind at once**. That's the same class as the techniques already covered;
-  it doesn't belong in the documented fail-open bucket of "phrasings the rule table doesn't know".
-  Folding happens **after** lowercasing, so lowercase entries in the table cover both cases (Cyrillic
-  `В` is lowercased to `в` first, then folded) — which is also where the awkward-looking `в→b` and
-  `н→h` entries come from: they resemble the **uppercase** forms (В/B, Н/H), and that's exactly the
-  pair an attacker would use. This is not the full Unicode confusables set (TR39 is a large table and
-  `x/text` is out of reach for a zero-dependency base); we take only the subset that maps to ASCII
-  letters, which is all English phrase rules need. False positives aren't merely "unlikely", they're
-  **impossible to construct**: the rules are multi-word English phrases, so foreign-language text
-  would have to be deliberately assembled into one to match, and CJK has no ASCII homoglyphs at all.
-- **`normText`'s offset mapping has hard invariants**: `len(offs) == len(text)+1` and
-  `offs[len(text)] == len(original)`. Mapping a match `[s,e)` back to the original as
-  `[offs[s], offs[e])` is approximate (stripped characters get absorbed into the span), and that's
-  explicitly accepted: spans locate a payload, they aren't used to cut an exact quotation.
-- **Nested base64 has a depth cap** (3 by default, negative disables it); a decode result must be
-  valid UTF-8 and ≥90% printable before scanning continues, and spans from deep hits are always
-  anchored to the outermost blob's range in the original text.
-- **Deterministic output is a contract**: `dedupSort` sorts and dedups by
-  `(segment, start, end, depth, rule)`, golden tests depend on that ordering, and a rule ID is
-  treated as ABI once it lands in an audit record.
-
-| File | Contents |
-|---|---|
-| `injection.go` | `Scanner`/`Finding`/`Config`, window splitting, rule matching, nested base64 scanning, dedup and sorting |
-| `policy.go` | `Mode`/`Action`/`Policy`/`Result` and the sole entry point `ScanResult` |
-| `rules.go` | `Severity`, `Rule` compilation, the built-in rule table `DefaultRules` |
-| `normalize.go` | Normalization and offset mapping via `normText`, the invisible-character table, rune boundary helpers |
 
 ---
 
@@ -318,111 +252,15 @@ if it can't parse an IP literal it refuses rather than guesses, and refusals ret
   paired with `DialControl`. `oauthflow.Client` uses them exactly that way: `checkURL` screens the
   URL's host before the request, and `dialControl` on the transport screens the actual IP at dial
   time.
-- `HostIsDefinitelyPrivate`'s only caller today is `leakguard.isInternalHost`, choosing between the
-  `credential-url` and `internal-credential-url` rules at the same severity — the one place in the
-  package where uncertainty carries no security cost.
+- `HostIsDefinitelyPrivate` has **no caller in the tree today**. Its only consumer was the retired
+  leak scanner, which used it to pick between two rules of equal severity — the one place where
+  uncertainty carried no security cost. It is kept because the pairing is the point: a predicate that
+  refuses on doubt and one that withholds trust on doubt are different functions, and collapsing them
+  is the mistake the pair exists to prevent.
 
 | File | Contents |
 |---|---|
 | `netguard.go` | `AddrIsPrivate`/`HostIsPrivate`/`HostIsDefinitelyPrivate`/`DialControl`, the non-public prefix table, `BlockedError` |
-
----
-
-## internal/guard/leakguard
-
-**One-line responsibility**: detect sensitive data flowing outward in downstream tool results
-(credentials, private keys, personal information), and decide per governance tier whether to only
-record an audit entry or to redact in place on the call path.
-
-### Two dispositions and a confidence hierarchy
-
-`injection` guards the inbound direction; `leakguard` guards the outbound one. Per ruling #17 there
-are only two dispositions:
-
-- **AUDIT (on by default)**: the scan runs off the call path, and only a sanitized record — rule ID,
-  severity, position, length — enters the audit stream; **matched content never does**. Zero added
-  call latency.
-- **INLINE (off by default, must be configured explicitly)**: the scan runs on the call path, and
-  every qualifying span is replaced with `[REDACTED:<ruleID>]` before the result reaches the agent.
-  Rewriting results carries semantic risk, so it must be chosen and can never be inherited.
-
-The rule table is organized by confidence: high-confidence rules key off a credential's own structure
-(PEM headers, the `ghp_` prefix, a JWT header that decodes to an `alg`, a card number that passes
-Luhn) and may redact in place; entropy heuristics are a low-confidence signal, carry `SeverityLow`,
-and have `Redaction` permanently set to `RedactNone`, so no policy configuration can make them
-rewrite a result.
-
-**agenthub's own agent token needs a named rule (`agenthub-agent-token`), because the entropy
-heuristic is structurally blind to it**: the token body is 64 hex characters, and hex tops out at
-4.0 bits/char of information — below the 4.5 threshold. That exclusion is itself correct (a digest
-isn't a secret, and reporting every SHA would drown the signal), but it is blind to
-**hex-encoded credentials** — and agenthub's token happens to be exactly that.
-
-The leak path isn't agenthub printing the token itself, it's **a downstream tool handing it back**: a
-tool that reads a file, greps a repo, or dumps environment variables will emit verbatim whatever the
-operator left in `.env` or a shell profile.
-
-The `agt_` prefix is a **second copy** inside leakguard (`internal/guard/*` is a zero-business-
-dependency base and cannot import `internal/httpbridge`). The two copies are pinned together by
-`TestMintedTokenIsDetectedAsALeak`: it **actually mints a token** on the httpbridge side and hands it
-to leakguard to scan, so changing `mint()` and forgetting the rule fails immediately, rather than
-letting the guard keep passing its own tests while failing to recognize the very thing it exists for.
-This is the same arrangement as `api.DefaultSocketPath` ≡ `platform.CtlSocketPath`.
-
-### Invariants and failure directions
-
-- **`Preview` is computed from `(rule, length)` alone; this is the package's central red line.**
-  Evidence fields get rendered into terminals, the GUI, logs, and audit records, so the moment one
-  might carry matched bytes, all of those surfaces become places where secrets land. `newFinding` is
-  the only `Finding` constructor, so no new rule, validator, or caller can route around it to leak
-  content; the format is pinned by golden tests and the invariant by property tests.
-- **`AuditRecord` contains no content, no preview, and no excerpt** — only rule, severity, segment
-  index, start/end, and length. The whole point of the async audit hook is to make leaks
-  investigable without the audit chain becoming a second copy of the leak.
-- **`Mode`'s zero value is `ModeAudit`**, and `ParseMode("")` also returns audit rather than off; an
-  unrecognized value returns an **error** while still returning `ModeAudit` — a typo in the config
-  must never silently disable the guard, and a caller that ignored the error is still auditing.
-- **Two independent reasons keep entropy heuristics from rewriting results**: the `RedactNone` policy,
-  and `MinRedactSeverity` defaulting to medium, which keeps `SeverityLow` off the rewrite path. The
-  redundancy is intentional — either one failing alone still can't turn a heuristic into a mutation.
-- **Matching runs on the raw text, with no normalization.** The opposite of injection: secrets are
-  case- and alphabet-sensitive, and normalization would destroy the structure high-confidence rules
-  depend on.
-- **Overlap resolution runs on the full match range (`fullStart`/`fullEnd`), not the redaction
-  range.** Two distinct secrets don't overlap in the text, so an overlap can only mean two rules
-  describe the same bytes (`authorization-header` vs `bearer-token`, an entropy signal vs a vendor
-  rule, the tail of a connection string vs the email/password rules). The retention rule is "higher
-  severity wins, then longer, then earlier, then rule ID lexicographically", and output is ordered by
-  `(segment, start, end, rule)` — the order is a contract, and because full ranges are mutually
-  non-overlapping, redaction ranges necessarily are too, which is exactly `Redact`'s precondition.
-- **`Redact` does not trust the spans it's handed**: a start that goes backwards, an out-of-range
-  span, or an empty span is skipped rather than believed. A guard that panics on a hostile payload is
-  a denial-of-service entry point.
-- **Validators always fail to false**: input that can't be decoded, computed, or classified isn't
-  reported. The one exception is `isInternalHost`, which merely picks between two rules of identical
-  severity and redaction for the audit label, where uncertainty costs nothing.
-- **`compileRules` fails at construction time, not in production**: empty ID, duplicate ID, an ID
-  occupying the reserved `EntropyRuleID`, out-of-range severity/redaction, a missing Regex, and
-  `RedactSecret` without a `(?P<secret>…)` capture group — that last one, if let through, would make
-  a rule silently redact the whole match instead of just the secret.
-- **Work is bounded**: 32 KiB head and tail windows by default (giving up the middle is an explicit
-  fail-open, and also why "inline is a mitigation, not a guarantee"), at most 50 findings per `Scan`,
-  a per-rule raw match cap of `4 × MaxFindings`, and a maximum entropy candidate length of 512 bytes.
-  `Result.Truncated` only means the report was truncated; **rewriting is never truncated** — every
-  segment is still rewritten in full.
-- **All three gates on the entropy heuristic are required**: length ≥ `EntropyMinLen` (32 by
-  default), Shannon entropy ≥ the threshold (4.5 bits/char by default — a hex digest tops out at 4.0
-  and is therefore structurally excluded, because a digest isn't a secret), and ≥ 3 character
-  classes.
-
-| File | Contents |
-|---|---|
-| `leakguard.go` | `Scanner`/`Finding`/`Config`, window splitting, match evaluation, overlap resolution and output ordering |
-| `policy.go` | `Mode`/`ParseMode`/`Policy`/`Action`/`Result`, the `ScanResult` entry point, `AuditRecord` and `Records` |
-| `rules.go` | `Severity`/`Redaction`/`Match`/`Rule` compilation, the built-in high-confidence rule table `DefaultRules` |
-| `validate.go` | False-positive gates: placeholder recognition, password shapes, JWT header decoding, Luhn and issuer prefixes, internal-host classification |
-| `entropy.go` | The reserved rule ID `EntropyRuleID`, candidate splitting, Shannon entropy and character-class counting |
-| `redact.go` | `Label`, the pure `preview` function, `Redact` and its precondition checks |
 
 ---
 

@@ -223,7 +223,7 @@ func (h *Hub) GetScope(ctx context.Context, client string) (api.ScopeDetail, err
 //
 // This is the CONFIGURATION layer and it may widen as well as narrow: it is
 // an operator surface. The agent-reachable overlay is SetSessionScope, which
-// is narrow-only, volatile and a different surface on purpose (ruling #8).
+// is a different surface on purpose.
 func (h *Hub) SetScope(
 	ctx context.Context, client string, binding api.ClientBinding, expectedGeneration uint64,
 ) (api.ScopeWrite, error) {

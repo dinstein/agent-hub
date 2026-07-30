@@ -5,10 +5,9 @@
 // Identity ruling (A.1 #7): short IDs "client:seq" for humans, a random
 // 128-bit token on the protocol side of HTTP sessions.
 //
-// Tighten-only ruling (A.1 #8): agent-reachable mutation paths may only
-// narrow; any loosening requires the human-grant flag (WithHumanGrant). The
-// validation lives here; the approval flow that decides when the flag may
-// be passed is M1-C.
+// A session is identity and liveness only. What it may see is resolved from
+// the registry every time it is asked, so there is nothing here to mutate
+// and no way for a live session's surface to be changed.
 package session
 
 import (

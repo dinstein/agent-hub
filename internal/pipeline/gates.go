@@ -118,8 +118,8 @@ func (g *scopeGate) Check(_ context.Context, req *CallRequest) error {
 // annotation-derived tier (ToolTier)?
 //
 // It is the MACHINE half of the layered governance and therefore runs before
-// the HITL gate (ruling #16): a call a read-only credential may not make is
-// not worth a human's attention.
+// the downstream call: a call a read-only credential may not make must not
+// reach the server at all.
 //
 // Two failure directions, both closed:
 //   - a tool whose annotations are absent/unparsable classifies as

@@ -30,8 +30,6 @@ const (
 	CodeBadRequest = "E_BAD_REQUEST"
 	// CodeAPIVersion rejects an incompatible X-Agenthub-Api-Version.
 	CodeAPIVersion = "E_API_VERSION"
-	// CodeTightenOnly rejects a scope mutation that would widen (A.1 #8).
-	CodeTightenOnly = "E_TIGHTEN_ONLY"
 	// CodeConflict rejects a second attach on a single-shot gateway link.
 	CodeConflict = "E_CONFLICT"
 	// CodeInternal is the generic 500 (including recovered panics).

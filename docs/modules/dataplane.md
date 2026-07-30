@@ -369,12 +369,12 @@ rejection code (`E_SCOPE_DENIED`, `E_TOKEN_TIER_DENIED`, `E_ARGS_INVALID`, `E_HI
 
 ### Invariants and failure directions
 
-**The gate chain order is frozen: `scope → token_tier → precheck → hitl`.** A test pins it down. The first error
-short-circuits, and the call never reaches downstream at all. The reasoning behind the order: token tier is the
-**machine**-decidable half, and a call a read-only credential should never have made isn't worth a human's
-attention, so it comes before HITL (ruling #16).
+**The gate chain order is frozen: `scope → token_tier`.** A test pins it down. The first error short-circuits, and
+the call never reaches downstream at all. Both gates decide from configuration alone — what an operator wrote down
+before the client connected — and neither reads the call's arguments. An earlier chain had two more stages, an
+argument pre-validator and a human approval gate; both were removed, and nothing replaced them.
 
-**The concrete behavior and failure direction of the four gates:**
+**The concrete behavior and failure direction of the two gates:**
 
 - `scopeGate`: `ScopeAllows(es, serverID, rawTool)` — this function is **shared** by the gateway's `tools/list`
   projection and by this gate, so "can be listed" and "can be called" cannot disagree. A `nil es`, an invisible
@@ -441,13 +441,6 @@ banner pointing at a result nobody will receive.
 **Label mode passes the error branch through.** Rewriting a JSON-RPC error would destroy the typed downstream error
 (code pass-through), and label is advisory by definition — block mode is the enforcement path. Likewise
 `labeledResult` delivers content verbatim when it isn't an insertable JSON array.
-
-**leakguard's two directions are opposite.** Detection is fail-open (an unmatched secret is delivered), disposition is
-fail-closed (in inline mode a payload that cannot be rewritten is **withheld** rather than delivered unredacted).
-Audit-mode scanning runs entirely **off** the call path (its own goroutine plus `context.WithoutCancel`), which is why
-ruling #17 dares to make it on by default — it is free; with no `OnLeak` consumer, the audit scan simply doesn't run.
-Non-text content blocks (images, audio, embedded resources) are not scanned, a **deliberate** fail-open gap documented
-in a comment so that it stays a decision rather than an oversight.
 
 **`ToolTier` and `DefaultDestructive` deliberately answer `{}` differently**; both gates run, in fixed order, and
 neither weakens the other. The reasoning belongs to the tier vocabulary — see

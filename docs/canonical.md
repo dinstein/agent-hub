@@ -80,7 +80,6 @@ the rule unprovable.
 | `package skill` | `package skills` |
 | the execute pipeline living inside `internal/gateway` | a standalone `internal/pipeline`; `gateway`/`daemon` only do assembly |
 | `catalog.Snapshot` (tool catalog snapshot) | `router.Catalog`; `internal/catalog` is the curated *server* catalog |
-| `session.ScopeOverlay` | `*scope.Overlay` (fields follow `ScopeLayer` in `internal/scope`) |
 
 ### Hard dependency-direction constraints (enforced at compile time by depguard)
 
@@ -110,8 +109,8 @@ the change is sealed inside one package, rather than borrowing one now.
 ## 3. Command naming rules
 
 - **Resource groups are singular as the canonical name, with the plural as a cobra alias**:
-  `server` / `profile` / `client` / `session` / `tool` / `skill` / `secret` / `approval` / `grant`
-- **Action/flow groups stay as they are**: `daemon`, `connect`, `auth`, `audit`, `activity`, `events`,
+  `server` / `profile` / `client` / `session` / `tool` / `skill` / `secret`
+- **Action/flow groups stay as they are**: `daemon`, `connect`, `auth`, `activity`, `events`,
   `config`, `doctor`. The OAuth group is **`auth`**, not `oauth`
 - List subcommands are always `ls`, and **every command supports `--json`**, with human and machine
   output rendered from the same data structure
@@ -120,9 +119,9 @@ the change is sealed inside one package, rather than borrowing one now.
   `client` (`client bind <client> <profile>` / `client unbind` / `client ls`). The retired group maps
   one-to-one: `scope set --client X --profile P` → `client bind X P`, `scope clear --client X` →
   `client unbind X`, `scope ls` → `client ls`
-- Session-level flags are uniform: `--enable-server` / `--disable-server` / `--tools s:t1,t2` /
-  `--discovery` / `--reset`. **There is no `--persist`**: a session overlay is volatile by
-  construction, and the way to make a surface permanent is to edit the profile
+- **A live session cannot be renarrowed.** What a client sees is decided before it connects, so
+  `session` is a read-and-terminate group (`ls` / `show` / `kill`) and the way to change a surface is
+  to edit the profile
 - The `client` group is `ls | detect | inspect | connect | disconnect | bind | unbind`. `detect` stats
   and `inspect` reads — that is the whole distinction (macOS TCC, see `internal/clients`); `ls` gives
   the connect and the bind answers per client. There is no `import`: a client's existing servers are
@@ -295,10 +294,8 @@ Three classes of test have been in CI from day one:
 1. **Golden tests** — the signature grammar, search ordering, error copy. **Determinism is the
    contract**: agents key retry logic and prompts off exact wording, so error text and ordering are
    frozen artifacts, not cosmetics.
-2. **Cross-process concurrency tests** — single-line `O_APPEND` writes, file locks on pins and
-   quarantine, monotonic generations.
-3. **Daemon `kill -9` injection tests** — the stdio data plane is unaffected, HITL really does fail
-   closed.
+2. **Cross-process concurrency tests** — single-line `O_APPEND` writes, monotonic generations.
+3. **Daemon `kill -9` injection tests** — the stdio data plane is unaffected.
 
 ---
 
@@ -317,9 +314,7 @@ none gets silently reopened, and the numbering is cited from code.
    `DefaultConnectTimeout` at 120s), and eager connect spends that in the gateway's startup window
    where `tools/list` is already answered from cache and the agent never blocks — lazy connect moves it
    into the middle of the first `tools/call`, where it reads as an unexplainable hang inside an agent
-   turn and races the client's own timeout. **It conflicts with fail-closed gating**: approval state
-   and integrity fingerprints are computed from the `tools/list` of a *live* connection, so a lazily
-   connected server means a window where the agent sees tools whose fingerprints were never validated.
+   turn and races the client's own timeout.
 
    The escape hatch stays open — the seam is `downstream.Deps.Dial` plus the tool cache — and the
    trigger should be measured process/memory cost, not a derivation.
@@ -359,8 +354,8 @@ none gets silently reopened, and the numbering is cited from code.
    (`testdata/signatures.golden`). Two ordering invariants that are *not* local to those packages, and
    so live here: `shaping.ShapeResult` **re-encodes first and applies the budget second** (the budget
    is spent on the cheaper representation, and the truncation trailer is therefore always last), and
-   re-encoding sits on the delivery path **after** the pipeline's injection and leak scans — which is
-   what makes "leakguard scans pre-encoding text" structurally true rather than merely intended.
+   re-encoding sits at the very end of the delivery path, so nothing downstream of it can invalidate
+   the budget the truncation trailer describes.
 
    Two-stage describe is part of the same ruling: the meta-tools are **five, in a frozen order**
    (`status, search_tools, describe_tool, call_tool, fetch_result`); `describe_tool`'s visibility
@@ -423,11 +418,7 @@ standing in for.
 
 | Cited as | What it ruled | Where the rule lives now |
 |---|---|---|
-| `#6`, `A.1 #6` | Session overlays and human grants are **never persisted**; they die with the daemon, and a resurrected widening would be a security incident | architecture.md §7; modules/config.md |
 | `#7`, `A.1 #7` | Two id shapes on purpose: the human `client:seq` for the CLI, a random token for the protocol — CLI ids are for typing, protocol ids are for not guessing | modules/config.md |
-| `#8`, `A.1 #8` | A runtime path may only **tighten** scope; widening requires an explicit human grant with a TTL | architecture.md §7; modules/config.md |
-| `#16` | The machine tier gate runs **before** HITL: a call a read-only credential may not make is not worth a human's attention | architecture.md §5 (frozen gate order); modules/dataplane.md |
-| `#17` | The leak-scan **audit** hook is default-on precisely because it is free (`off｜audit｜inline`, audit by default) | modules/dataplane.md; modules/security.md |
 | `#18` | Lazy mode's `call_tool` may split into read/write/destructive **intent variants**, and compatibility mode stays byte-identical to the pre-variant surface | architecture.md §8; modules/dataplane.md |
 | `#27` | **Determinism is the contract**: goldens pin the wire shape; fix the code, never the golden | §6 |
 | `#29` | Legacy HTTP+SSE is a **read-side** transport only, never offered on the exposure side | §5b |

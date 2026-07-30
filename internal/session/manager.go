@@ -48,15 +48,10 @@ const (
 var (
 	// ErrNotFound: no live session with that ID.
 	ErrNotFound = errors.New("session: not found")
-	// ErrLoosening: the mutation loosens a security field without the
-	// human-grant flag (A.1 #8). The error text lists every violation.
-	ErrLoosening = errors.New("session: overlay mutation loosens scope without human grant")
 )
 
 // SessionManager is the daemon-side session registry contract (docs/architecture.md §7
 // ). Deviations from the sketch there, both deliberate:
-//   - Mutate takes a ctx (the stdio path blocks on a gateway ack) and
-//     variadic options carrying the human-grant flag (A.1 #8).
 //   - Touch is exposed for the HTTP bridge (LastSeen refresh).
 type SessionManager interface {
 	// Register admits a stdio gateway dialing in over the control socket.
@@ -89,8 +84,8 @@ type Options struct {
 	Rand io.Reader
 }
 
-// MemoryManager is the in-memory SessionManager implementation. Overlays
-// live only here — never on disk (A.1 #6); losing the process loses them.
+// MemoryManager is the in-memory SessionManager implementation. A session
+// lives only here — never on disk; losing the process loses it.
 type MemoryManager struct {
 	bus          *event.Bus
 	httpTTL      time.Duration

@@ -21,9 +21,6 @@ const (
 	ErrCodeBadRequest = "E_BAD_REQUEST"
 	// ErrCodeAPIVersion: the daemon refuses this client's APIVersion.
 	ErrCodeAPIVersion = "E_API_VERSION"
-	// ErrCodeTightenOnly: a scope mutation would have widened visibility.
-	// The public scope API is narrow-only (ruling #8).
-	ErrCodeTightenOnly = "E_TIGHTEN_ONLY"
 	// ErrCodeConflict: a concurrent change lost a compare-and-swap.
 	ErrCodeConflict = "E_CONFLICT"
 	// ErrCodeStalePrecondition: a write carried an expectedGeneration that

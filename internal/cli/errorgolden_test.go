@@ -69,9 +69,7 @@ func errorCorpus() []error {
 		&Error{Code: CodeClientUnsupported, ExitCode: ExitGeneral, Message: `client "emacs" is not supported`},
 		&Error{Code: CodeClientNotConnected, ExitCode: ExitGeneral, Message: `client "cursor" is not connected`},
 		&Error{Code: CodeNotImplemented, ExitCode: ExitGeneral, Message: "not implemented in this milestone"},
-		&Error{Code: CodeStateCorrupt, ExitCode: ExitLocked, Message: "the integrity state file is corrupt"},
-		&Error{Code: CodeTightenOnly, ExitCode: ExitDenied,
-			Message: "this operation may only tighten scope; widening needs an approved grant"},
+		&Error{Code: CodeStateCorrupt, ExitCode: ExitLocked, Message: "the state file is corrupt"},
 		&Error{Code: CodeConfigKeyUnknown, ExitCode: ExitUsage, Message: `unknown config key "colour"`},
 		registry.ErrLockTimeout,
 		quarantined,
@@ -132,7 +130,7 @@ func TestErrorGoldenCoversEveryCode(t *testing.T) {
 		CodeRegistryCorrupt, CodeInvalidJSON, CodeUnsupportedTransport, CodeClientUnsupported,
 		CodeClientNotConnected, CodeNotImplemented, CodeProfileNotFound, CodeProfileExists,
 		CodeSessionNotFound, CodeToolNotFound, CodeSkillNotFound, CodeSkillExists,
-		CodeSecretNotFound, CodeConfigKeyUnknown, CodeStateCorrupt, CodeTightenOnly,
+		CodeSecretNotFound, CodeConfigKeyUnknown, CodeStateCorrupt,
 	}
 	covered := map[string]bool{}
 	for _, err := range errorCorpus() {

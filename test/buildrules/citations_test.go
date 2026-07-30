@@ -43,7 +43,7 @@ var numberedItem = regexp.MustCompile(`^\s*([0-9]+)\. `)
 // Semantic drift stays a review question; say so rather than implying a
 // guarantee that is not here.
 //
-// Historical ruling ids ("ruling #8", "A.6 #3") are checked separately, by
+// Historical ruling ids ("ruling #7", "A.6 #3") are checked separately, by
 // TestHistoricalRulingIdsResolve, against the registry in canonical.md §8.
 func TestCanonicalCitationsResolve(t *testing.T) {
 	root := repoRoot(t)
