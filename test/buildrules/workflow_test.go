@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -50,7 +49,7 @@ func TestCIWorkflowRunsNothingCIFullSkips(t *testing.T) {
 	if len(invoked) == 0 {
 		t.Fatal("the workflow invokes no make targets; the parse is broken, not the workflow")
 	}
-	sort.Strings(invoked)
+	slices.Sort(invoked)
 
 	for _, target := range invoked {
 		if !slices.Contains(covered, target) {
@@ -141,6 +140,6 @@ func targetClosure(t *testing.T, makefile, name string) []string {
 		}
 	}
 	walk(name)
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
