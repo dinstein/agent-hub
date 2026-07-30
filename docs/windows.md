@@ -103,8 +103,19 @@ compete for the same `\\.\pipe\agenthub-ctl-<sha8(SID)>` — the data directorie
 channel, but the endpoint isn't. Channel separation on Unix is transmitted via "the endpoint is
 `<run>/ctl.sock` → the run directory follows the data directory," and since the Windows endpoint isn't a
 filesystem path, that chain simply doesn't exist there.
-For the details and for "why you can't just splice the channel into the existing pipe name," see the
-third entry in [backlog.md](backlog.md).
+
+Mind the trap a previous attempt fell into. The pipe name is a **frozen identifier** (canonical.md
+§1/§2), so the release name can't move; and it **must not** be derived from `dirName` — that was tried
+once, and the result was that "rename the data directory" silently became "rename the protocol." The
+correct shape is to give the dev channel **a second, equally frozen** name (for example
+`agenthub-ctl-dev-<sha8(SID)>`) rather than splicing the channel into the existing name's derivation.
+That requires the Resolver to know the build channel, i.e. exactly the "decide by build channel" the
+Unix side deliberately avoids — unavoidable here, because there is no environment variable to carry it.
+
+Do it alongside the named pipe listener once real hardware is available: adding a new frozen identifier
+on a platform that has never been run is freezing an unverifiable guess into the ABI. To verify, flip
+the windows row of `TestDevResolverSeparatesFromRelease` to `endpointSeparates: true` and require it to
+pass.
 
 ### Other to-dos
 

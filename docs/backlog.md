@@ -15,94 +15,33 @@ one covers cross-platform, scattered gaps already pinned to a line.
 
 ## Gap index
 
-### 1. `internal/daemon` HTTP data-plane tests time out intermittently under heavy load
+**Empty.** No cross-platform gap is currently pinned to a line.
 
-**Symptom.** With CPU contention manufactured (24 `yes` processes), running
-`go test ./internal/daemon/ -count=20 -race` intermittently hits `waitFor`'s 10s timeout:
-`TestHTTPDataPlaneServesRealCall` (tools/list never contains `fake__echo`) and
-`TestHTTPDataPlaneTokenTierIsEnforced` (the tier gate never refuses). Eight consecutive runs on an idle
-machine were all green, so it really does only show up under load.
+This is not a claim that the code is without fault — it means nothing meets the bar above right now.
+Two entries were cleared on 2026-07-30:
 
-**Correction to the earlier entry.** This entry originally recorded "`TestHTTPDataPlaneRejectsBadCredentials`
-fails intermittently" and guessed the root cause was **a timing issue between connection reuse and the
-401 decision**. Neither holds:
-
-- What reproduces is a `waitFor` timeout, not a credential misjudgment. `RejectsBadCredentials` was never
-  seen failing under load testing. The original entry recorded only the test name, not the failure
-  output, and a failure inside `initialize()` gets attributed to the parent test — quite likely what was
-  seen back then was the same class of timeout.
-- Authentication has nothing to do with connection reuse: `Authenticator.Authenticate`
-  (`internal/httpbridge/auth.go:113`) parses the `Authorization` header per request, with no
-  per-connection identity cache.
-
-**The evidence is now in place.** On timeout, `waitForDetail` (`internal/daemon/daemon_test.go`) prints
-the last observation (which tools tools/list actually returned, what error the gate actually returned)
-plus **every goroutine stack** — the daemon runs **in-process**, so this is the equivalent of e2e's
-SIGQUIT stack capture.
-
-**Next step.** Get one failure with stacks and determine whether it's a genuine hang or whether 10s
-simply isn't enough for 20 cold daemon starts under `-count=20 -race`. **Don't touch `testTimeout` before
-that**: raising the timeout would turn this into "fails intermittently, but slower," and would delete the
-only clue that distinguishes the two possibilities.
-
-**Reproduction attempts (don't repeat wasted effort).**
-
-| Date | Conditions | Result |
-|---|---|---|
-| 2026-07-29 | 24 `yes` processes + `-count=20 -race`, 3 rounds | **Reproduced twice** (`ServesRealCall`, `TokenTierIsEnforced`) |
-| 2026-07-29 (later) | Same, 4 rounds | Not reproduced |
-| 2026-07-29 (later) | 28 `yes` processes + all packages `-count=8 -race`, 6 rounds (≈48 runs) | Not reproduced |
-
-**Not reproducing isn't the same as fixed**, so this entry stays. None of the changes landed in the
-meantime obviously points at it (the run directory following the data directory only affects Linux, and
-these tests use an explicit `AGENTHUB_SOCKET`; the crash marker adds one file read/write at daemon
-startup; `waitForDetail` does one extra string format per polling round — if any of these matter, the
-direction is to make the timeout **more** likely, not less). The most likely explanation is machine state
-(thermals, background load). Settling it requires **one failure with stacks**, not another run that
-didn't fail.
+- **`internal/daemon` HTTP data-plane tests timing out under heavy load.** Reproduced twice on
+  2026-07-29 under manufactured CPU contention (24 `yes` processes, `-count=20 -race`), then not again
+  across roughly 48 further runs. Closed as not worth further tracking rather than as diagnosed. The
+  evidence path is still in place if it returns: on timeout `waitForDetail`
+  (`internal/daemon/daemon_test.go`) prints the last observation plus every goroutine stack. Should it
+  resurface, get **one failure with stacks** before touching `testTimeout` — raising the timeout would
+  turn it into "fails intermittently, but slower" and delete the only clue separating a genuine hang
+  from 20 cold daemon starts simply needing more than 10s.
+- **The Windows control pipe not distinguishing build channels.** Still true in the code
+  (`windowsCtlEndpoint`, `internal/platform/windows.go`), and now recorded in full — including why the
+  channel must not be spliced into the existing pipe name — in
+  [windows.md](windows.md#the-control-pipe-doesnt-distinguish-build-channels), which is where the rest
+  of the unverified-platform work already lives. `TestDevResolverSeparatesFromRelease` continues to
+  carry `endpointSeparates: false` for the windows row, so the gap stays watched.
 
 ---
 
-### 2. On Windows, dev and release share the same control pipe
+## Appendix: how gaps get found
 
-**Symptom.** Under the same user, a development build and an installed release build resolve to **the
-same** control endpoint, `\\.\pipe\agenthub-ctl-<sha8(SID)>`. The data directories are already separated
-by channel (`AgentHub` / `AgentHubDev`), but the endpoint isn't — so two daemons compete for one pipe,
-whoever binds first wins, and the losing client ends up talking to a daemon holding a different registry.
-
-This was found while fixing the analogous gap on Linux (the run directory following the data directory,
-now fixed), in the cross-platform table of `TestDevResolverSeparatesFromRelease`: the Windows row was the
-only one that couldn't assert endpoint separation. The test therefore carries an explicit
-`endpointSeparates: false` field pointing back at this entry, rather than dropping Windows from the table
-— dropping it would leave this gap unwatched again.
-
-**Root cause.** `windowsCtlEndpoint` (`internal/platform/windows.go:202`) derives the pipe name from the
-SID alone. Channel separation on Unix holds **indirectly**: the endpoint is `<run>/ctl.sock`, the run
-directory follows the data directory, and the data directory follows the channel. The Windows endpoint
-isn't a filesystem path, so that chain of transmission simply doesn't exist there.
-
-**Approach (mind the trap a previous attempt fell into).** The pipe name is a **frozen identifier**
-(CANONICAL §1/§2), so the release name can't move; and it **must not** be derived from `dirName` — that
-was tried once, and the result was that "rename the data directory" silently became "rename the
-protocol." So the correct shape is to give the dev channel **a second, equally frozen** name (for example
-`agenthub-ctl-dev-<sha8(SID)>`) rather than splicing the channel into the existing name's derivation.
-This requires the Resolver to know the channel, i.e. exactly the "decide by build channel" that the Unix
-side deliberately avoids — unavoidable on Windows, because there's no environment variable to carry it.
-
-**Why not fixed this round.** Windows has never been verified on real hardware anywhere
-(`docs/windows.md`); this repo only has a cross-compile gate. Adding a new frozen identifier on a
-platform that can't run is freezing an unverifiable guess into the ABI. Do it alongside the named pipe
-listener once real hardware is available.
-
-**Verification.** With the windows row of `TestDevResolverSeparatesFromRelease` changed to
-`endpointSeparates: true`, the test must pass.
-
----
-
-## Appendix: how these gaps were found
-
-They surfaced during a session on 2026-07-27, while connecting two real MCP servers (both going through
-the same enterprise SSO OAuth). Three problems found in the same batch, all **already fixed**:
+The entries this file has held surfaced during a session on 2026-07-27, while connecting two real MCP
+servers (both going through the same enterprise SSO OAuth). Three problems found in the same batch, all
+**already fixed**:
 
 | commit | Problem |
 |---|---|

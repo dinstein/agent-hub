@@ -90,7 +90,16 @@
 `\\.\pipe\agenthub-ctl-<sha8(SID)>`——数据目录已按渠道分开，端点没有。
 Unix 侧的渠道分离是靠「端点是 `<run>/ctl.sock` → run 目录跟随数据目录」传导的，
 Windows 的端点不是文件系统路径，这条链在它上面不存在。
-细节与「为什么不能把渠道拼进现有管道名」见 [backlog.md](backlog.md) 第三条。
+
+注意此前踩过的坑。管道名是**冻结标识符**（canonical.md §1/§2），release 名字不能动；而且**不能**从
+`dirName` 派生——试过一次，结果是「重命名数据目录」悄悄变成了「重命名协议」。正确形状是给 dev 渠道
+**另一个同样冻结**的名字（例如 `agenthub-ctl-dev-<sha8(SID)>`），而不是把渠道拼进现有名字的派生里。
+这要求 Resolver 知道构建渠道，也就是 Unix 侧刻意回避的「按构建渠道决定」——在这里无法回避，因为没有
+环境变量可以携带它。
+
+等有真机时和命名管道监听器一起做：在一个从未跑起来过的平台上新增冻结标识符，等于把一个无法验证的猜测
+冻进 ABI。验证方式是把 `TestDevResolverSeparatesFromRelease` 的 windows 行改成 `endpointSeparates: true`
+并要求通过。
 
 ### 其他待办
 

@@ -309,8 +309,8 @@ func TestDevResolverSeparatesFromRelease(t *testing.T) {
 		// endpointSeparates is false on Windows alone, where the control
 		// endpoint is a named pipe derived from the user's SID and not from any
 		// directory — so the channel split does NOT reach it. That is a real
-		// gap, recorded in docs/backlog.md and docs/windows.md rather than
-		// papered over here: asserting a separation Windows does not have would
+		// gap, recorded in docs/windows.md rather than papered over here:
+		// asserting a separation Windows does not have would
 		// make this test lie, and asserting nothing would let the Unix
 		// regression back in.
 		endpointSeparates bool

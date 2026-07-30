@@ -230,9 +230,9 @@ func TestProfileDiscovery(t *testing.T) {
 	}
 }
 
-// TestProfileToolsWarnsOnUnknownTool pins the fail-closed-but-invisible case
-// backlog gap #3 described: an `--only` name the server does not have stores a
-// rule that lets NOTHING through, because an allow-list is an intersection.
+// TestProfileToolsWarnsOnUnknownTool pins a fail-closed-but-invisible case:
+// an `--only` name the server does not have stores a rule that lets NOTHING
+// through, because an allow-list is an intersection.
 //
 // Both halves are asserted, and the second is the one that keeps the fix
 // honest: the warning must not have become a refusal. The rule is still
