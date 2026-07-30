@@ -126,6 +126,37 @@ the two channels would share one daemon and the isolation would be skin-deep.
 Release artifacts are always release builds: the Taskfile's `common:cli` and `darwin:build:universal`,
 and the release workflow, all pass `main.channel=release` explicitly.
 
+## Running this checkout where Homebrew installed one
+
+```bash
+make install-to-brew                     # build as a release ships it, install at $(brew --prefix)/bin/agenthub
+scripts/install-to-brew.sh --restore     # give the entry back to Homebrew
+```
+
+**Nothing is published** — no tag, no Release, no tap commit. This is `make bin-release` plus a
+destination, and the destination is the point: `agenthub client connect` writes **the absolute path of
+the running executable** into the client's config, and features are developed in worktrees that get
+removed once they land. A client wired to `bin/agenthub-release` is therefore wired to a path that
+stops existing, in a file this repository never touches again. At the Homebrew path a real client
+exercises the new build with no config change at all.
+
+A dirty tree is allowed here, unlike `scripts/build-release-artifacts.sh` — testing uncommitted work is
+the whole reason to run it, and the version still carries `-dirty`. What the script does refuse is a
+**dev-channel binary**, the same assertion the formula's `test do` block makes: at the installed path a
+dev build resolves `AgentHubDev` while every client keeps invoking the same command name, so the
+servers configured through the release are simply gone and nothing reports an error.
+
+What it replaces is the symlink Homebrew keeps at `$(brew --prefix)/bin/agenthub`, with a regular file
+— which is also how it tells the two apart on the next run without keeping state anywhere, since
+Homebrew never puts a regular file there. A symlink pointing somewhere else belongs to something else
+and is refused rather than guessed at. The keg itself is untouched, so `brew list --versions` keeps
+reporting the released version while `agenthub --version` reports what actually runs; the script says so
+out loud. `brew upgrade agenthub` relinks over the local build on its own.
+
+Replacing the file does not replace the **process**: a daemon started from the previous binary keeps
+serving every client until `agenthub daemon restart`. New CLI against old daemon reads as a bug in
+whatever is being tested, so the script checks and says which case it found.
+
 ## GitHub Actions
 
 Pushing a tag (`v*`) triggers `.github/workflows/release.yml`:

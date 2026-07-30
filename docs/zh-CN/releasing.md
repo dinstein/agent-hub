@@ -126,6 +126,34 @@ socket 在 `<data>/run/ctl.sock`，跟着数据目录走，所以两个 channel 
 发布产物一律是 release：Taskfile 的 `common:cli`、`darwin:build:universal`
 和 release workflow 都显式传了 `main.channel=release`。
 
+## 让当前 checkout 跑在 Homebrew 装出来的那个位置上
+
+```bash
+make install-to-brew                     # 按发布的样子构建，装到 $(brew --prefix)/bin/agenthub
+scripts/install-to-brew.sh --restore     # 把这个入口还给 Homebrew
+```
+
+**什么都不会发布** —— 不打 tag、不建 Release、不动 tap。它就是 `make bin-release` 加一个
+目标路径，而目标路径正是重点：`agenthub client connect` 写进客户端配置的是**当前可执行文件的
+绝对路径**，而功能都在 worktree 里开发、落地之后 worktree 就会被删掉。指向
+`bin/agenthub-release` 的客户端，于是指着一条将来不存在的路径，写在一个这个仓库再也不会碰的
+文件里。装到 Homebrew 那个位置，真实客户端不改任何配置就能跑到新构建上。
+
+这里允许工作区是脏的，和 `scripts/build-release-artifacts.sh` 相反 —— 测未提交的改动本来就是
+跑它的理由，而版本号照样带 `-dirty`。脚本真正拒绝的是 **dev 通道的二进制**，和 formula 的
+`test do` 是同一条断言：装在那个位置上的 dev 构建会解析到 `AgentHubDev`，而每个客户端仍然调用
+同一个命令名，于是通过 release 配好的 server 直接消失，且没有任何东西报错。
+
+它替换掉的是 Homebrew 留在 `$(brew --prefix)/bin/agenthub` 的那个符号链接，换成一个普通文件
+—— 这同时也是下次运行时不靠任何状态就能分辨两者的办法：Homebrew 从不在那里放普通文件。指向别处
+的符号链接属于别的东西，脚本拒绝处理而不是猜。keg 本身没被动过，所以 `brew list --versions` 仍然
+报的是发布版本，而 `agenthub --version` 报的是真正在跑的那个；脚本会把这件事明说出来。
+`brew upgrade agenthub` 会自己重新链接、盖掉本地构建。
+
+换掉文件不等于换掉**进程**：用上一个二进制起的 daemon 会一直服务所有客户端，直到
+`agenthub daemon restart`。新 CLI 配旧 daemon 看起来就像被测改动本身有 bug，所以脚本会检查并
+说明它遇到的是哪种情况。
+
 ## GitHub Actions
 
 tag 推送（`v*`）触发 `.github/workflows/release.yml`：

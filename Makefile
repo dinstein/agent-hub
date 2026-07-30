@@ -373,7 +373,7 @@ release-cli: ## Cross-compile the CLI release artifacts into dist/
 # so there is no environment to remember and no way to forget it. These
 # targets are conveniences on top of that, not the mechanism.
 
-.PHONY: dev dev-gui dev-where release-run
+.PHONY: dev dev-gui dev-where release-run install-to-brew
 dev: bin ## Build, then run one command: make dev ARGS="status"
 	$(BIN) $(ARGS)
 
@@ -393,6 +393,17 @@ dev-where: bin ## Which data directory this build actually resolves
 # the second as readily as `ARGS="doctor"` answers the first.
 release-run: bin-release ## The release build's equivalent of make dev
 	$(RELEASE_BIN) $(ARGS)
+
+# Under Development rather than Release because it publishes nothing: the only
+# machine that sees the result is this one. What it buys over `release-run` is
+# the PATH — a client wired to bin/agenthub-release records this worktree's
+# path and breaks when the worktree is removed, so the installed location is
+# the only place a real client can exercise the build unchanged. The script
+# says what it replaced and how to put it back; `--restore` is not wrapped
+# here, because a target for it would be one letter away from the one that
+# overwrites.
+install-to-brew: ## Install this checkout's release build over Homebrew's agenthub
+	scripts/install-to-brew.sh
 
 ##@ Cleaning
 
