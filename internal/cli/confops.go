@@ -104,14 +104,3 @@ func (a *App) opsStore() (*registry.Store, []string, error) {
 	}
 	return store, warnings, nil
 }
-
-// opsState locates the state directory (the active-profile marker, the
-// integrity stores, the tool-override file) for the operations whose subject
-// is not the registry.
-func (a *App) opsState() (confops.StateOptions, error) {
-	dir, err := a.stateDir()
-	if err != nil {
-		return confops.StateOptions{}, err
-	}
-	return confops.StateOptions{Dir: dir, LockTimeout: a.lockTimeout}, nil
-}

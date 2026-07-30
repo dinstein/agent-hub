@@ -309,7 +309,7 @@ func TestVisibleUsesTheSameScopePredicate(t *testing.T) {
 		"fs":  {{Name: "read_file"}, {Name: "write_file"}},
 		"git": {{Name: "log"}},
 	}
-	rt, err := router.BuildFromCache(cached, router.Policy{})
+	rt, err := router.BuildFromCache(cached)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,7 +14,6 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/event"
-	"github.com/dinstein/agent-hub/internal/integrity"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/session"
 )
@@ -690,9 +689,6 @@ func TestConfopsErrorMappingMatrix(t *testing.T) {
 			http.StatusInternalServerError, confops.CodeStateCorrupt},
 		{"stale", &confops.StaleError{Want: 7, Got: 9},
 			http.StatusConflict, CodeStalePrecondition},
-		{"integrity not found", integrity.ErrNotFound, http.StatusNotFound, CodeNotFound},
-		{"integrity corrupt", &integrity.CorruptError{Path: "p", Err: errors.New("x")},
-			http.StatusInternalServerError, confops.CodeStateCorrupt},
 		{"lock timeout", &registry.LockTimeoutError{Path: "p", Timeout: time.Second},
 			http.StatusInternalServerError, CodeInternal},
 		{"unclassified", errors.New("boom"), http.StatusInternalServerError, CodeInternal},

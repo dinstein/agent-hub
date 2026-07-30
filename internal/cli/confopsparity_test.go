@@ -62,16 +62,14 @@ func runScriptThroughCLI(t *testing.T) {
 	mustRun(t, "", "config", "set", "resultBudget.*", "65536")
 	mustRun(t, "", "config", "set", "resultBudget.github", "1024!")
 
-	mustRun(t, "", "tool", "override", "github", "list_prs", "--name", "prs", "--desc", "List PRs")
-
 	mustRun(t, "", "server", "rm", "remote")
 	mustRun(t, "", "profile", "create", "spare")
 	mustRun(t, "", "profile", "rm", "spare")
 	mustRun(t, "", "profile", "server", "rm", "work2", "linear")
 }
 
-// runScriptThroughConfops executes the same script the way the control plane
-// will: no cobra, no rendering, just the operations.
+// compareTrees asserts that both data directories hold the same set of
+// registry and state documents with byte-identical content.
 func runScriptThroughConfops(t *testing.T, dataDir string) {
 	t.Helper()
 	ctx := context.Background()
@@ -82,10 +80,6 @@ func runScriptThroughConfops(t *testing.T, dataDir string) {
 		return "", false
 	}}
 	regDir, err := resolver.RegistryDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	stateDir, err := resolver.StateDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,11 +148,6 @@ func runScriptThroughConfops(t *testing.T, dataDir string) {
 	_, err = confops.SetGovernance(ctx, st, confops.ResultBudgetPrefix+"github", "1024!", no)
 	must("config set forced budget", err)
 
-	name, desc := "prs", "List PRs"
-	_, err = confops.SetToolOverride(ctx, st, stateDir, "github", "list_prs",
-		confops.ToolOverrideEdit{Name: &name, Description: &desc}, no)
-	must("tool override", err)
-
 	_, err = confops.RemoveServer(ctx, st, "remote", no, confops.RemoveOptions{})
 	must("rm remote", err)
 	_, err = confops.CreateProfile(ctx, st, "spare", nil, no)
@@ -170,14 +159,17 @@ func runScriptThroughConfops(t *testing.T, dataDir string) {
 	must("profile server rm", err)
 }
 
-// compareTrees asserts that both data directories hold the same set of
-// registry and state documents with byte-identical content.
 func compareTrees(t *testing.T, wantDir, gotDir string) {
 	t.Helper()
+	// registry is required; state is compared when either side wrote
+	// anything. Nothing writes <state> any more — the tool-override file was
+	// the last document there and it went with the governance stores — but
+	// the comparison stays so a new state document is covered the day one
+	// arrives, rather than being added and silently unchecked.
 	for _, sub := range []string{"registry", "state"} {
 		wantFiles := readDocs(t, filepath.Join(wantDir, sub))
 		gotFiles := readDocs(t, filepath.Join(gotDir, sub))
-		if len(wantFiles) == 0 {
+		if sub == "registry" && len(wantFiles) == 0 {
 			t.Fatalf("%s produced no documents in %s", wantDir, sub)
 		}
 		for _, name := range sortedNames(wantFiles) {

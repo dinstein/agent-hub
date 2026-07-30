@@ -418,28 +418,6 @@ func TestDoctorColdCacheIsNotAFailure(t *testing.T) {
 	}
 }
 
-// TestDoctorCorruptOverrideStoreFails pins the fail direction of the
-// override store: unreadable must never read as "no overrides".
-func TestDoctorCorruptOverrideStoreFails(t *testing.T) {
-	dir := setDataDir(t)
-	isolateHome(t)
-	stateDir := filepath.Join(dir, "state")
-	if err := os.MkdirAll(stateDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(stateDir, toolOverridesFileName), []byte("{{{"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	code, out, _ := runCLI(t, "", "doctor", "--json")
-	if code != ExitGeneral {
-		t.Fatalf("exit = %d, want 1\n%s", code, out)
-	}
-	report := decodeDoctor(t, doctorEnvelope(t, out))
-	if c := findCheck(t, report, "integrity:overrides"); c.Status != StatusFail {
-		t.Errorf("integrity:overrides = %+v, want fail", c)
-	}
-}
-
 func TestDoctorFailingCheckExit1(t *testing.T) {
 	dir := setDataDir(t)
 	isolateHome(t)

@@ -11,7 +11,6 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/event"
-	"github.com/dinstein/agent-hub/internal/integrity"
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
@@ -186,14 +185,8 @@ func (s *Server) writeOpsError(w http.ResponseWriter, r *http.Request, err error
 		}
 		return
 	}
-	// The state stores below confops speak their own sentinels.
 	switch {
-	case errors.Is(err, integrity.ErrNotFound):
-		writeNotFound(w, r)
-	case errors.Is(err, integrity.ErrStoreCorrupt):
-		writeErr(w, http.StatusInternalServerError, confops.CodeStateCorrupt, err.Error(),
-			"the state file is left in place for inspection; agenthub refuses to read it as empty", reqID)
-	case errors.Is(err, integrity.ErrLockTimeout), errors.Is(err, registry.ErrLockTimeout):
+	case errors.Is(err, registry.ErrLockTimeout):
 		writeErr(w, http.StatusInternalServerError, CodeInternal, err.Error(),
 			"another process holds the cross-process lock; retry", reqID)
 	default:
@@ -233,39 +226,6 @@ func (s *Server) publishRegistryChange(kind registry.DocKind, rev uint64) {
 		// payload is rebuilt server-side at fire time.
 		s.opts.Bus.Publish(event.Event{Topic: "server.registry", Key: string(kind)})
 	}
-}
-
-// stateOptions locates the state directory for the operations whose subject
-// is not the registry. ok=false means no directory was injected, and the
-// caller answers the uniform 404.
-func (s *Server) stateOptions() (confops.StateOptions, bool) {
-	if s.opts.StateDir == "" {
-		return confops.StateOptions{}, false
-	}
-	return confops.StateOptions{Dir: s.opts.StateDir, LockTimeout: s.opts.StateLockTimeout}, true
-}
-
-// generation is the registry generation as of this Server's snapshot; every
-// read response carries it so the write that follows can be guarded without
-// a second round trip.
-func (s *Server) generation() uint64 {
-	return s.opts.Registry.Snapshot().Generation
-}
-
-// checkSnapshotPrecondition is the WEAK form of the guard, for writes whose
-// subject is not the registry (tool governance, quarantine). Those files
-// have their own cross-process locks, so the registry generation can move
-// between this comparison and the write.
-//
-// It therefore catches "the operator's view is stale", not "nothing changed
-// under me" — the same distinction confops draws between check and
-// checkSnapshot. Registry writes get the strong form, inside the lock.
-func (s *Server) checkSnapshotPrecondition(pre confops.Precondition) error {
-	current := s.generation()
-	if pre.Generation == 0 || pre.Generation == current {
-		return nil
-	}
-	return &confops.StaleError{Want: pre.Generation, Got: current}
 }
 
 // readAdminBody reads and bounds one write body. An empty body is legal

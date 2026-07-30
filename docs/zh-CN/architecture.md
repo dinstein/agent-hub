@@ -125,7 +125,6 @@ flowchart TD
         SCOPE["internal/scope<br/>三层解析 + Merge"]
         SESS["internal/session<br/>会话身份 + overlay"]
         APPR["internal/approval<br/>HITL broker"]
-        INTG["internal/integrity<br/>指纹/drift/quarantine"]
         SEC["internal/secrets<br/>四级凭据解析链"]
         OAUTH["internal/oauthflow<br/>发现/DCR/PKCE/刷新"]
         SKL["internal/skills<br/>库+安装两层"]
@@ -427,7 +426,6 @@ webkitgtk-6.0`）就失败，连 `go vet` 都过不去，而 macOS runner 自带
 
 | 能力 | 实现状态 | 装配现状 |
 |---|---|---|
-| `integrity` 的 drift 分级 | 完整（指纹、分级） | 网关用 integrity 算 HITL 的活定义指纹，并在聚合期兑现 disable 与 quarantine（`internal/gateway/toolpolicy.go`）；**自动漂移检测尚未接进数据面**——隔离集要靠 CLI/daemon 写入 |
 
 以下是**有意为之**的边界，不属于待办：GUI 不参与默认构建、skills 物化只到 client 粒度、
 TOON 无解码器、teams 未实现。详见 [canonical.md](../canonical.md) §4「已知的能力边界」。

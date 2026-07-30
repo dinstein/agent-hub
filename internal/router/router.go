@@ -19,10 +19,10 @@
 // projection, RouteOf provenance and the execute pipeline treat them as
 // ordinary servers.
 //
-// Policy carries the two deny sets the aggregation step enforces —
-// Disabled (the operator kill switch) and Quarantined (the integrity
-// isolation set). Allow / DenyDestructive and the per-client/session View
-// layer are still seams.
+// Aggregation applies no policy of its own. What a session may see is
+// decided in one place — internal/scope, which intersects the server's own
+// allow list with the profile's — so the catalog built here is the full
+// surface and narrowing happens once, above it.
 package router
 
 import (
@@ -71,41 +71,6 @@ type Route struct {
 	RawTool  string
 }
 
-// Policy is the tool policy applied at AGGREGATION time. Both sets below
-// remove a tool from the catalog outright — not listed, not searchable, not
-// describable, not routable — which is why they are enforced here and not
-// as a gate: a gate would leave the name visible and would have to be
-// reproduced in every discovery mode. The struct is still the seam for the
-// remaining fields (Allow lists, DenyDestructive).
-//
-// The two sets are keyed differently ON PURPOSE, each matching the store
-// that produces it (internal/integrity):
-//
-//   - Disabled is keyed by the RAW downstream tool name, like the approval
-//     record it comes from, so a downstream that renames a tool cannot move
-//     it out from under its own kill switch.
-//   - Quarantined is keyed by the CLIENT-VISIBLE exposed name, like the
-//     quarantine entry it comes from (integrity doc.go, #423): quarantine
-//     tracks what an agent could actually call.
-//
-// Fail direction of the CALLER, stated here because this struct is where it
-// becomes visible: a zero Policy means "nothing is denied". Anyone building
-// a Policy from a store must therefore never turn a read failure into a
-// zero Policy — an unreadable deny set has to keep (or widen) the previous
-// denial, never clear it (fail-closed).
-type Policy struct {
-	// Disabled maps serverID → raw tool name → true. Disabled tools are
-	// excluded from aggregation entirely: not listed, not routable.
-	Disabled map[string]map[string]bool
-	// Quarantined maps the EXPOSED name → true. Because the exposed name
-	// only exists after collision suffixes are assigned, quarantined entries
-	// are dropped at the end of the build rather than skipped at the start:
-	// isolating one tool must not renumber the names of the tools it
-	// collided with (an agent's other tools cannot silently change identity
-	// because a neighbour was quarantined).
-	Quarantined map[string]bool
-}
-
 // entry is one aggregated tool. Exactly one of srv / prov is set for a
 // callable entry; a cache-built entry has neither (listable, not callable).
 type entry struct {
@@ -132,17 +97,17 @@ type source struct {
 	prov  Provider           // nil for downstream and cache-only sources
 }
 
-// Build aggregates the current Tools() of the given servers under pol.
+// Build aggregates the current Tools() of the given servers.
 // Servers must be non-nil with unique, non-empty IDs.
-func Build(servers []*downstream.Server, pol Policy) (*Router, error) {
-	return BuildWith(servers, nil, pol)
+func Build(servers []*downstream.Server) (*Router, error) {
+	return BuildWith(servers, nil)
 }
 
 // BuildWith is Build plus host-served providers (docs/modules/config.md). Providers
 // are appended AFTER the servers so a provider id colliding with a server
 // id is reported as the duplicate it is — the configured server wins,
 // deterministically, instead of the aggregation order deciding.
-func BuildWith(servers []*downstream.Server, providers []Provider, pol Policy) (*Router, error) {
+func BuildWith(servers []*downstream.Server, providers []Provider) (*Router, error) {
 	sources := make([]source, 0, len(servers)+len(providers))
 	for _, srv := range servers {
 		if srv == nil {
@@ -151,7 +116,7 @@ func BuildWith(servers []*downstream.Server, providers []Provider, pol Policy) (
 		sources = append(sources, source{id: srv.ID(), tools: srv.Tools(), srv: srv})
 	}
 	sources = append(sources, providerSources(providers)...)
-	return build(sources, pol)
+	return build(sources)
 }
 
 // providerSources snapshots each provider's tool list once per build.
@@ -171,26 +136,26 @@ func providerSources(providers []Provider) []source {
 // Build, so a cache-served tools/list can never drift from the live one.
 // Lookup on the result reports a nil server: cache entries are listable and
 // routable but not callable.
-func BuildFromCache(cached map[string][]mcp.ToolDef, pol Policy) (*Router, error) {
-	return BuildFromCacheWith(cached, nil, pol)
+func BuildFromCache(cached map[string][]mcp.ToolDef) (*Router, error) {
+	return BuildFromCacheWith(cached, nil)
 }
 
 // BuildFromCacheWith is BuildFromCache plus host-served providers. A
 // provider is live even while every downstream is still connecting — it has
 // nothing to connect to — so the cold catalog can already list and CALL its
 // tools.
-func BuildFromCacheWith(cached map[string][]mcp.ToolDef, providers []Provider, pol Policy) (*Router, error) {
+func BuildFromCacheWith(cached map[string][]mcp.ToolDef, providers []Provider) (*Router, error) {
 	ids := slices.Sorted(maps.Keys(cached))
 	sources := make([]source, 0, len(ids))
 	for _, id := range ids {
 		sources = append(sources, source{id: id, tools: cached[id]})
 	}
 	sources = append(sources, providerSources(providers)...)
-	return build(sources, pol)
+	return build(sources)
 }
 
 // build is the shared aggregation core of Build / BuildFromCache.
-func build(sources []source, pol Policy) (*Router, error) {
+func build(sources []source) (*Router, error) {
 	type cand struct {
 		route Route
 		def   mcp.ToolDef
@@ -208,11 +173,7 @@ func build(sources []source, pol Policy) (*Router, error) {
 			return nil, fmt.Errorf("router: duplicate server ID %q", id)
 		}
 		seen[id] = true
-		disabled := pol.Disabled[id]
 		for _, def := range src.tools {
-			if disabled[def.Name] {
-				continue
-			}
 			base := sanitize(id) + "__" + sanitize(def.Name)
 			groups[base] = append(groups[base], cand{
 				route: Route{ServerID: id, RawTool: def.Name},
@@ -249,13 +210,7 @@ func build(sources []source, pol Policy) (*Router, error) {
 					}
 				}
 			}
-			// Reserved BEFORE the quarantine check: a dropped entry still
-			// owns its exposed name, so removing it leaves every other name
-			// in this group exactly where it was.
 			taken[name] = true
-			if pol.Quarantined[name] {
-				continue
-			}
 			def := c.def
 			def.Name = name
 			byExposed[name] = entry{route: c.route, def: def, srv: c.srv, prov: c.prov}

@@ -39,8 +39,6 @@ import type {
   ProfileList,
   ProfileTools,
   ProfileWrite,
-  QuarantineList,
-  QuarantineRelease,
   ScopeDetail,
   ScopeWrite,
   SecretChange,
@@ -62,9 +60,6 @@ import type {
   TokenRevoked,
   TokenSpec,
   Tool,
-  ToolList,
-  ToolOverride,
-  ToolWrite,
 } from "./types";
 import { ErrCode, ErrorKindConflict } from "./types";
 
@@ -192,16 +187,6 @@ export const hub = {
   setConfig: (key: string, value: string, generation: number) =>
     call<ConfigWrite>("SetConfig", key, value, generation),
 
-  // -- tool-level governance ------------------------------------------------
-  listTools: (server: string) => call<ToolList>("ListTools", server),
-  setToolEnabled: (server: string, tool: string, enabled: boolean, generation: number) =>
-    call<ToolWrite>("SetToolEnabled", server, tool, enabled, generation),
-  setToolOverride: (server: string, tool: string, ov: ToolOverride, generation: number) =>
-    call<ToolWrite>("SetToolOverride", server, tool, ov, generation),
-  listQuarantine: () => call<QuarantineList>("ListQuarantine"),
-  releaseQuarantine: (exposed: string, generation: number) =>
-    call<QuarantineRelease>("ReleaseQuarantine", exposed, generation),
-
   // -- credential vault (names only, never values) --------------------------
   listSecrets: (server: string) => call<SecretRef[]>("ListSecrets", server),
   /** The plaintext travels as an argument and lives only inside this call:
@@ -255,16 +240,15 @@ export const hub = {
   /** Narrow-only: the daemon rejects anything that would widen scope. */
 };
 
-/** Tools of one server, with an empty list for a daemon that serves no tool
- *  governance yet. Used to offer real tool names in the three-state selector
- *  without failing the whole form when the endpoint is missing. */
-export async function knownTools(server: string): Promise<Tool[]> {
-  try {
-    const list = await hub.listTools(server);
-    return list.tools ?? [];
-  } catch {
-    return [];
-  }
+/** Tool names of one server, for the three-state selector.
+ *
+ *  The daemon no longer serves a tool listing of its own: what a tool IS
+ *  belongs to the server, and what is offered is decided in the registry. The
+ *  selector therefore offers free text and this returns nothing — a form that
+ *  cannot enumerate is honest, one that enumerates from a stale cache is not.
+ */
+export async function knownTools(_server: string): Promise<Tool[]> {
+  return [];
 }
 
 /**

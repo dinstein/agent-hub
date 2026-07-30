@@ -40,27 +40,6 @@ func TestClassifySecretsErrorSeparatesAWrongKeyFromEverythingElse(t *testing.T) 
 	}
 }
 
-// TestShortHashKeepsAPrefixAndMarksTheTruncation: pin identifiers are compared
-// by eye, so a shortened one must be visibly shortened — otherwise a truncated
-// hash reads as a complete, different hash.
-func TestShortHashKeepsAPrefixAndMarksTheTruncation(t *testing.T) {
-	full := strings.Repeat("a", 64)
-	got := shortHash(full)
-	if len([]rune(got)) != 17 || !strings.HasSuffix(got, "…") {
-		t.Errorf("shortHash(64 chars) = %q, want a 16-char prefix plus an ellipsis", got)
-	}
-	if !strings.HasPrefix(full, strings.TrimSuffix(got, "…")) {
-		t.Errorf("shortHash(%q) = %q is not a prefix of the input", full, got)
-	}
-	// Short enough to show whole: returned verbatim, with no ellipsis that
-	// would imply bytes were dropped.
-	for _, s := range []string{"", "abc", strings.Repeat("b", 16)} {
-		if got := shortHash(s); got != s {
-			t.Errorf("shortHash(%q) = %q, want it unchanged", s, got)
-		}
-	}
-}
-
 // TestBinaryExistsDistinguishesAPathFromAPathLookup: a command containing a
 // separator names a FILE and must be checked as one; a bare name is resolved
 // through PATH. Treating a path as a PATH lookup would report a perfectly

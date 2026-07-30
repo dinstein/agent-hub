@@ -12,7 +12,7 @@ import (
 // Fail direction: fail-closed. A corrupt store is never treated as an empty
 // one and is never renamed aside — a ".corrupt" rename would make the next
 // read look like a legitimate fresh store, which is exactly what silent
-// re-baselining gives an attacker (internal/integrity/doc.go states the same
+// re-baselining gives an attacker (docs/modules/security.md states the same
 // rule, for the same reason).
 var ErrStoreCorrupt = errors.New("skills: state store corrupt")
 

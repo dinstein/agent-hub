@@ -25,9 +25,8 @@ import { serversPage } from "./pages/servers";
 import { sessionsPage } from "./pages/sessions";
 import { settingsPage } from "./pages/settings";
 import { skillsPage } from "./pages/skills";
-import { toolsPage } from "./pages/tools";
 import { tokensPage } from "./pages/tokens";
-import type { Status, TopicEvent } from "./types";
+import type { Status } from "./types";
 
 type Route =
   | "onboarding"
@@ -36,7 +35,6 @@ type Route =
   | "catalog"
   | "profiles"
   | "scope"
-  | "tools"
   | "config"
   | "secrets"
   | "sessions"
@@ -53,7 +51,6 @@ const ROUTES: Record<Route, () => Page> = {
   catalog: catalogPage,
   profiles: profilesPage,
   scope: scopePage,
-  tools: toolsPage,
   config: configPage,
   secrets: secretsPage,
   sessions: sessionsPage,
@@ -68,7 +65,6 @@ const view = document.getElementById("view") as HTMLElement;
 const dot = document.getElementById("daemon-dot") as HTMLElement;
 const statusText = document.getElementById("daemon-text") as HTMLElement;
 const statusDetail = document.getElementById("daemon-detail") as HTMLElement;
-const quarantineCount = document.getElementById("quarantine-count") as HTMLElement;
 
 let current: Page | null = null;
 let currentRoute: Route | null = null;
@@ -108,27 +104,9 @@ function paintStatus(st: Status): void {
 }
 
 
-/**
- * The quarantine counter, which the Tools page cannot switch off.
- *
- * Dismissing an alert there is scoped to that alert's content; this number is
- * scoped to reality. Without it, "Keep blocked" on a busy day would be
- * indistinguishable from "resolved", and the operator would have no standing
- * reminder that some tools are still isolated.
- */
-async function refreshQuarantineBadge(): Promise<void> {
-  try {
-    const list = await hub.listQuarantine();
-    const n = (list.entries ?? []).length;
-    quarantineCount.textContent = String(n);
-    quarantineCount.hidden = n === 0;
-  } catch {
-    quarantineCount.hidden = true;
-  }
-}
 
 function refreshCounters(): Promise<void> {
-  return refreshQuarantineBadge();
+  return Promise.resolve();
 }
 
 /**
@@ -172,10 +150,6 @@ function boot(): void {
     paintStatus(st);
     void refreshCounters();
   });
-  // The quarantine is registry-backed, so the servers topic is the cue that
-  // something may have been isolated or released elsewhere.
-  on<TopicEvent>(EVT.servers, () => void refreshQuarantineBadge());
-
   void firstRoute();
   hub
     .status()

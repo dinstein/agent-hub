@@ -50,21 +50,19 @@ type Client struct {
 	// there is no raw-request escape hatch, so "the GUI can do it" always
 	// implies "an endpoint exists and the CLI can reach it too"
 	// (docs/modules/controlplane.md).
-	Servers    *ServersService
-	Sessions   *SessionsService
-	Events     *EventsService
-	Skills     *SkillsService
-	Profiles   *ProfilesService
-	Scope      *ScopeService
-	Config     *ConfigService
-	Tools      *ToolsService
-	Quarantine *QuarantineService
-	Secrets    *SecretsService
-	Tokens     *TokensService
-	Clients    *ClientsService
-	Auth       *AuthService
-	Catalog    *CatalogService
-	Parse      *ParseService
+	Servers  *ServersService
+	Sessions *SessionsService
+	Events   *EventsService
+	Skills   *SkillsService
+	Profiles *ProfilesService
+	Scope    *ScopeService
+	Config   *ConfigService
+	Secrets  *SecretsService
+	Tokens   *TokensService
+	Clients  *ClientsService
+	Auth     *AuthService
+	Catalog  *CatalogService
+	Parse    *ParseService
 }
 
 // New returns a Client that connects to the daemon control socket at
@@ -92,8 +90,6 @@ func New(socketPath string) *Client {
 	c.Profiles = &ProfilesService{c: c}
 	c.Scope = &ScopeService{c: c}
 	c.Config = &ConfigService{c: c}
-	c.Tools = &ToolsService{c: c}
-	c.Quarantine = &QuarantineService{c: c}
 	c.Secrets = &SecretsService{c: c}
 	c.Tokens = &TokensService{c: c}
 	c.Clients = &ClientsService{c: c}

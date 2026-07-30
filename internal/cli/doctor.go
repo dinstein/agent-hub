@@ -22,7 +22,6 @@ import (
 	"github.com/dinstein/agent-hub/internal/clients"
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/gateway"
-	"github.com/dinstein/agent-hub/internal/integrity"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 	"github.com/dinstein/agent-hub/internal/platform"
@@ -267,7 +266,6 @@ func (a *App) runDoctor(ctx context.Context, fix bool) DoctorReport {
 	d.checkServers(ctx)
 	d.phase("checking_stores", "checking vault, integrity and skills...")
 	d.checkVault(ctx)
-	d.checkIntegrity(ctx, dirs.state)
 	d.checkSkills(ctx, dirs.data)
 	d.phase("checking_clients", "checking client configurations...")
 	d.checkClientDrift(ctx)
@@ -868,46 +866,6 @@ func (d *doctorRun) checkVault(ctx context.Context) {
 	}
 	d.add("vault", StatusOK, fmt.Sprintf("%s, %s stored (values are never read), dir %s",
 		backend, plural(len(refs), "key", "keys"), dir))
-}
-
-// checkIntegrity reports the <state> stores. A corrupt store is a FAILURE
-// and never reads as "nothing recorded": treating it as empty would
-// silently un-quarantine every isolated tool.
-func (d *doctorRun) checkIntegrity(ctx context.Context, stateDir string) {
-	if stateDir == "" {
-		return
-	}
-	// Opening a store CREATES <state>; skip while it does not exist so the
-	// diagnostic stays read-only.
-	if _, serr := os.Stat(stateDir); errors.Is(serr, fs.ErrNotExist) {
-		d.add("integrity:quarantine", StatusOK, "no integrity state yet")
-		return
-	}
-	q, err := integrity.OpenQuarantineStore(stateDir, integrity.Options{LockTimeout: d.app.lockTimeout})
-	if err != nil {
-		d.add("integrity:quarantine", StatusFail, err.Error())
-		return
-	}
-	snap, err := q.Snapshot(ctx)
-	if err != nil {
-		d.add("integrity:quarantine", StatusFail, err.Error()).Fix =
-			"inspect " + filepath.Join(stateDir, "quarantine.json") +
-				" (agenthub never rewrites a store it cannot read)"
-		return
-	}
-	if len(snap) == 0 {
-		d.add("integrity:quarantine", StatusOK, "empty")
-	} else {
-		names := sortedKeys(snap)
-		d.add("integrity:quarantine", StatusWarn, fmt.Sprintf("%s quarantined: %s",
-			plural(len(names), "tool", "tools"), strings.Join(names, ", "))).Fix =
-			"review with 'agenthub tool quarantine ls', then release with 'agenthub tool quarantine release <exposed>'"
-	}
-	if _, oerr := d.app.loadOverrides(); oerr != nil {
-		d.add("integrity:overrides", StatusFail, oerr.Error())
-	} else {
-		d.add("integrity:overrides", StatusOK, "readable")
-	}
 }
 
 // checkSkills reports the skill library's health. List is read-only by

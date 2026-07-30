@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/httpbridge"
-	"github.com/dinstein/agent-hub/internal/integrity"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/skills"
 )
@@ -50,11 +49,6 @@ func TestEveryStoreLockTimeoutIsExitLocked(t *testing.T) {
 			classify: func(err error) error { return err },
 		},
 		{
-			store:    "integrity",
-			err:      &integrity.LockTimeoutError{Path: "/x/tool-approvals.json.lock", Timeout: timeout},
-			classify: func(err error) error { return classifyIntegrityError(err, "github", "read_file") },
-		},
-		{
 			store:    "skills",
 			err:      &skills.LockTimeoutError{Path: "/x/installs.json.lock", Timeout: timeout},
 			classify: func(err error) error { return classifySkillsError(err, "some-skill") },
@@ -90,7 +84,6 @@ func TestLockTimeoutErrorsCarryTheirSentinel(t *testing.T) {
 		sentinel error
 	}{
 		{"registry", &registry.LockTimeoutError{Path: "/x", Timeout: timeout}, registry.ErrLockTimeout},
-		{"integrity", &integrity.LockTimeoutError{Path: "/x", Timeout: timeout}, integrity.ErrLockTimeout},
 		{"skills", &skills.LockTimeoutError{Path: "/x", Timeout: timeout}, skills.ErrLockTimeout},
 		{"httpbridge", &httpbridge.LockTimeoutError{Path: "/x", Timeout: timeout}, httpbridge.ErrLockTimeout},
 	}

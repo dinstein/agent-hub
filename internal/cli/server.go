@@ -17,7 +17,6 @@ import (
 	"github.com/dinstein/agent-hub/internal/catalog"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/gateway"
-	"github.com/dinstein/agent-hub/internal/integrity"
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
@@ -618,24 +617,8 @@ func (a *App) newServerRmCmd() *cobra.Command {
 // command: the registry entry is already gone by the time these run, and
 // RemoveServer reports whatever fails as a warning naming what survived.
 func (a *App) serverStateForgetters(stateDir string) []confops.StateForgetter {
-	opts := integrity.Options{LockTimeout: a.lockTimeout}
 	var out []confops.StateForgetter
-	if pins, err := integrity.OpenPinStore(stateDir, opts); err == nil {
-		out = append(out, pins)
-	}
-	if ap, err := integrity.OpenApprovalStore(stateDir, opts); err == nil {
-		out = append(out, ap)
-	}
-	if q, err := integrity.OpenQuarantineStore(stateDir, opts); err == nil {
-		out = append(out, q)
-	}
 	out = append(out,
-		confops.StateFunc{
-			Name: "tool overrides",
-			Forget: func(_ context.Context, id string) error {
-				return confops.ForgetServerOverrides(stateDir, id)
-			},
-		},
 		confops.StateFunc{
 			Name: "the cached tool list",
 			Forget: func(_ context.Context, id string) error {

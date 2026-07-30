@@ -30,24 +30,6 @@ func (p Precondition) check(current uint64) error {
 	return &StaleError{Want: p.Generation, Got: current}
 }
 
-// checkSnapshot is the weaker form used by the operations whose subject is
-// NOT the registry (the active-profile marker, the integrity stores, the
-// tool-override file). Those files have their own locks, so the registry
-// generation can move between this comparison and the write.
-//
-// It is therefore an advisory check — it catches "the operator's view is
-// stale", not "nothing changed under me". Registry-mutating operations use
-// check() above and have no such window.
-func (p Precondition) checkSnapshot(st *registry.Store) error {
-	if p.Generation == 0 {
-		return nil
-	}
-	if st == nil {
-		return usagef("a precondition needs a registry store to compare against")
-	}
-	return p.check(st.Snapshot().Generation)
-}
-
 // Result is what every operation returns alongside its domain-specific
 // payload: the generation the registry now stands at, the healed-quarantine
 // reports (a document was unreadable, got quarantined and reset — usable,

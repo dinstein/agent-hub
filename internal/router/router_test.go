@@ -78,7 +78,7 @@ func TestAggregateListAndRoutedCall(t *testing.T) {
 	alpha := startServer(t, "alpha", markedTool("echo", "alpha/echo"), markedTool("greet", "alpha/greet"))
 	beta := startServer(t, "beta", markedTool("echo", "beta/echo"))
 
-	r, err := router.Build([]*downstream.Server{alpha, beta}, router.Policy{})
+	r, err := router.Build([]*downstream.Server{alpha, beta})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestRouteOfWithDoubleUnderscoreNames(t *testing.T) {
 	a := startServer(t, "my__srv", markedTool("do__it", "from my__srv"))
 	b := startServer(t, "my", markedTool("srv__do__it", "from my"))
 
-	r, err := router.Build([]*downstream.Server{a, b}, router.Policy{})
+	r, err := router.Build([]*downstream.Server{a, b})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestGoldenNamingDeterminism(t *testing.T) {
 		"s__write_file": {ServerID: "s", RawTool: "write file"},
 	}
 	for i := 0; i < 5; i++ { // map iteration randomness must not leak out
-		r, err := router.Build([]*downstream.Server{s, weird}, router.Policy{})
+		r, err := router.Build([]*downstream.Server{s, weird})
 		if err != nil {
 			t.Fatalf("Build #%d: %v", i, err)
 		}
@@ -184,72 +184,14 @@ func TestGoldenNamingDeterminism(t *testing.T) {
 		}
 	}
 }
-
-func TestDisabledPolicyExcludesTool(t *testing.T) {
-	t.Parallel()
-	alpha := startServer(t, "alpha", markedTool("keep", "k"), markedTool("drop", "d"))
-	r, err := router.Build([]*downstream.Server{alpha}, router.Policy{
-		Disabled: map[string]map[string]bool{"alpha": {"drop": true}},
-	})
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-	if got := exposedNames(r); !reflect.DeepEqual(got, []string{"alpha__keep"}) {
-		t.Fatalf("List = %v, want [alpha__keep]", got)
-	}
-	if _, ok := r.RouteOf("alpha__drop"); ok {
-		t.Fatal("disabled tool is still routable")
-	}
-	if _, _, ok := r.Lookup("alpha__drop"); ok {
-		t.Fatal("disabled tool is still lookupable")
-	}
-}
-
-// TestQuarantinePolicyExcludesTool pins both halves of the quarantine
-// contract: the isolated EXPOSED name disappears from the catalog, and the
-// tool it collided with KEEPS the suffixed name it already had — dropping
-// quarantined entries after suffix assignment is what makes that true.
-func TestQuarantinePolicyExcludesTool(t *testing.T) {
-	t.Parallel()
-	// "my.tool" and "my_tool" both sanitize to "alpha__my_tool": raw-name
-	// order gives "my.tool" the base and "my_tool" the "_2" suffix.
-	alpha := startServer(t, "alpha", markedTool("my.tool", "a"), markedTool("my_tool", "b"))
-	base, err := router.Build([]*downstream.Server{alpha}, router.Policy{})
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-	if got := exposedNames(base); !reflect.DeepEqual(got, []string{"alpha__my_tool", "alpha__my_tool_2"}) {
-		t.Fatalf("baseline List = %v, want the colliding pair", got)
-	}
-
-	r, err := router.Build([]*downstream.Server{alpha}, router.Policy{
-		Quarantined: map[string]bool{"alpha__my_tool": true},
-	})
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-	if got := exposedNames(r); !reflect.DeepEqual(got, []string{"alpha__my_tool_2"}) {
-		t.Fatalf("List = %v, want [alpha__my_tool_2] (the sibling must not be renumbered)", got)
-	}
-	if _, ok := r.RouteOf("alpha__my_tool"); ok {
-		t.Fatal("quarantined tool is still routable")
-	}
-	if _, _, ok := r.Lookup("alpha__my_tool"); ok {
-		t.Fatal("quarantined tool is still lookupable")
-	}
-	if _, ok := r.Def("alpha__my_tool"); ok {
-		t.Fatal("quarantined tool still has a definition")
-	}
-}
-
 func TestBuildRejectsDuplicateServerIDs(t *testing.T) {
 	t.Parallel()
 	a := startServer(t, "dup", markedTool("t", "a"))
 	b := startServer(t, "dup", markedTool("t", "b"))
-	if _, err := router.Build([]*downstream.Server{a, b}, router.Policy{}); err == nil {
+	if _, err := router.Build([]*downstream.Server{a, b}); err == nil {
 		t.Fatal("Build accepted duplicate server IDs")
 	}
-	if _, err := router.Build([]*downstream.Server{a, nil}, router.Policy{}); err == nil {
+	if _, err := router.Build([]*downstream.Server{a, nil}); err == nil {
 		t.Fatal("Build accepted a nil server")
 	}
 }
@@ -264,7 +206,7 @@ func TestBuildFromCacheMatchesBuild(t *testing.T) {
 		startServer(t, "s", markedTool("a", "1"), markedTool("x!y", "2")),
 		startServer(t, "s2!", markedTool("t", "3")),
 	}
-	fromLive, err := router.Build(live, router.Policy{})
+	fromLive, err := router.Build(live)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -272,7 +214,7 @@ func TestBuildFromCacheMatchesBuild(t *testing.T) {
 	for _, s := range live {
 		cached[s.ID()] = s.Tools()
 	}
-	fromCache, err := router.BuildFromCache(cached, router.Policy{})
+	fromCache, err := router.BuildFromCache(cached)
 	if err != nil {
 		t.Fatalf("BuildFromCache: %v", err)
 	}

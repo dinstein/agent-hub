@@ -627,20 +627,14 @@ func (a *App) newServerInspectCmd() *cobra.Command {
 					out.TraceLog = downstream.ServerLogPath(logsDir, id)
 				}
 			}
-			// Who may see it. The pieces are registry documents already in
-			// hand plus one state file; a state directory that will not
-			// resolve costs the section, not the report — an override count
-			// nobody can read must not take the server's description down
-			// with it.
+			// Who may see it: registry documents already in hand, plus the
+			// active-profile marker. A marker that will not resolve costs
+			// the section, not the report.
 			active, aerr := a.activeProfile()
 			if aerr != nil {
 				warnings = append(warnings, "could not read the active profile: "+aerr.Error())
 			}
-			overrides, oerr := a.loadOverrides()
-			if oerr != nil {
-				warnings = append(warnings, "could not read the tool overrides: "+oerr.Error())
-			}
-			out.Visibility = serverVisibilityOf(id, snap, active, len(overrides.Overrides[id]))
+			out.Visibility = serverVisibilityOf(id, snap, active)
 			if entry.Runtime == registry.RuntimeDocker {
 				line, derr := dockerRunLine(id, entry)
 				if derr != nil {

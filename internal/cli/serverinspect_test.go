@@ -268,18 +268,3 @@ func TestInspectReportsABindingThatResolvesNowhere(t *testing.T) {
 		t.Errorf("inspect does not state what an unbound client gets:\n%s", out)
 	}
 }
-
-// TestInspectCountsTheLocalToolOverrides: what a client is shown differs
-// from what the downstream calls its own tools, and comparing this report
-// against a client's tool list without knowing that is a wild goose chase.
-func TestInspectCountsTheLocalToolOverrides(t *testing.T) {
-	setDataDir(t)
-	mustRun(t, "", "server", "add", "gh", "--cmd", "srv")
-	mustRun(t, "", "server", "enable", "gh", "--no-probe")
-	mustRun(t, "", "tool", "override", "gh", "list_prs", "--name", "prs")
-
-	_, out, _ := runCLI(t, "", "server", "inspect", "gh")
-	if !strings.Contains(out, "1 tool(s) are exposed under a local name") {
-		t.Errorf("inspect does not report the override:\n%s", out)
-	}
-}

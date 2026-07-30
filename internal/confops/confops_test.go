@@ -3,8 +3,6 @@ package confops
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -127,10 +125,4 @@ func TestResultChangedFollowsTheNoOpGuard(t *testing.T) {
 	if again.Generation != first.Generation {
 		t.Errorf("generation moved on a no-op: %d -> %d", first.Generation, again.Generation)
 	}
-}
-
-// corrupt replaces a state file with unparseable bytes.
-func corrupt(t *testing.T, dir, name string) error {
-	t.Helper()
-	return os.WriteFile(filepath.Join(dir, name), []byte("{{{ not json"), 0o600)
 }

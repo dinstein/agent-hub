@@ -49,8 +49,6 @@ type ServerVisibility struct {
 	// Overrides counts the local name/description overrides recorded for
 	// this server's tools: the exposed surface differing from what the
 	// downstream calls its own tools is a thing to know before comparing
-	// this report with what a client shows.
-	Overrides int `json:"tool_overrides,omitempty"`
 }
 
 // ProfileVisibility is one profile that includes the server.
@@ -78,12 +76,11 @@ type ClientVisibility struct {
 }
 
 // serverVisibilityOf computes the section for one server.
-func serverVisibilityOf(id string, snap *registry.Snapshot, active string, overrides int) *ServerVisibility {
+func serverVisibilityOf(id string, snap *registry.Snapshot, active string) *ServerVisibility {
 	profiles := snap.Profiles.V.Profiles
 	out := &ServerVisibility{
 		Enabled:       snap.Servers.V.Servers[id].V.Enabled,
 		ActiveProfile: active,
-		Overrides:     overrides,
 	}
 	for _, name := range sortedKeys(profiles) {
 		p := profiles[name].V
@@ -169,10 +166,6 @@ func (i ServerInspect) writeVisibility(d *detailWriter) {
 	}
 	if len(v.Excluded) > 0 {
 		d.at(len(v.Profiles), "profiles", "not in: %s", strings.Join(v.Excluded, ", "))
-	}
-	if v.Overrides > 0 {
-		d.field("overrides", "%d tool(s) are exposed under a local name or description", v.Overrides)
-		d.cont("'agenthub tool override ls %s' shows them", i.Server.ID)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -66,4 +67,38 @@ func TestEveryLockTimeoutStoreIsInTheParityTable(t *testing.T) {
 	if found == 0 {
 		t.Fatalf("found no package declaring ErrLockTimeout; the walk is wrong, not the tree")
 	}
+}
+
+// goSources reads every non-test .go file under root, keyed by repo-relative
+// path. It moved here when the unwired-inventory check was retired with
+// internal/integrity; this file is the surviving caller.
+func goSources(t *testing.T, root string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	skip := []string{".git", "node_modules", "testdata", "frontend", "bin", "dist"}
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if slices.Contains(skip, d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".go") || strings.HasSuffix(d.Name(), "_test.go") {
+			return nil
+		}
+		b, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		rel, _ := filepath.Rel(root, path)
+		out[filepath.ToSlash(rel)] = string(b)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the tree: %v", err)
+	}
+	return out
 }

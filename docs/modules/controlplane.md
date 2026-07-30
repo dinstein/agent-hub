@@ -22,7 +22,7 @@ rendering layer. `cmd/agenthub` and `cmd/agenthub-gui` are the two entry points,
 build tag to keep the Wails dependency out of CI. The remaining three packages are foundation and
 proof: `internal/testutil/fakemcp` is the programmable fake downstream used by every test,
 `internal/depguardtest` proves with failing cases that the four dependency constraints really do
-block, and `test/e2e` and `test/concurrency` run end-to-end and cross-process concurrency against real
+block, and `test/e2e` runs end to end against real
 processes.
 
 ```mermaid
@@ -447,7 +447,7 @@ or pasted by the person at the keyboard). Together with `Publisher` and `Homepag
 here is signed, nothing is verified at add time, and `npx -y <package>` will still pull whatever the repository serves
 at that moment. Curated means a maintainer believes that command line is the one in the publisher's docs; **it does
 not mean the code that ends up running is the code they read**. The defenses that actually make assertions about
-running code live elsewhere: `internal/integrity` pins tool fingerprints and quarantines drift, and
+running code live elsewhere, and
 `internal/guard/spawnguard` screens what gets spawned. This package only feeds them a definition; it does not vouch
 for it.
 
@@ -1244,39 +1244,3 @@ contract, written the way an agent would read it.
 `go test ./...`.
 
 ---
-
-## test/concurrency
-
-**Responsibility in one sentence**: run cross-package, cross-process concurrency acceptance against real processes — these
-mechanisms span more than one internal package and therefore have no natural home in any single one.
-
-### What it covers
-
-Under the current topology (N gateways + the daemon sharing every state file), multi-writer discipline is a **correctness
-dependency**, not insurance. So every mechanism must have a test that runs **real processes**. A goroutine-level test would pass
-even with flock removed, because each store's internal Go mutex would still serialize them — such a test proves nothing.
-
-Each mechanism's "other half" lives in its own package: `internal/registry` tests generation monotonicity under concurrent
-`Update`, `internal/integrity` tests pin writes across concurrent processes (`CheckServer`), and `internal/jsonl` tests `O_APPEND`
-single-line writes. **This package fills in the quarantine file lock, plus interleaving across the pins and quarantine stores.**
-
-### Invariants and failure directions
-
-**The helper protocol**: the test binary re-execs **itself** through the `AGENTHUB_CONCURRENCY_HELPER` environment variable to run
-a named helper (the same pattern as `internal/registry` and `internal/jsonl`). Each helper writes one observation per line to stdout
-and exits non-zero on any error.
-
-`helperQuarantine` has each worker add n entries unique to itself, printing the observed total entry count after every Add: **if the
-file lock doesn't exist, concurrent read-modify-write loops lose entries and the parent's final count comes up short**.
-`helperQuarantineChurn` repeatedly Adds/Releases the same key: the Release must report found exactly while this process's own Add is
-still in place — the point being that **no loop ever observes a half-written file**.
-
-The helpers' lock timeout is deliberately generous (30s): helpers serialize on the flock, and fsync-heavy commits are slow on CI
-machines.
-
-### File map
-
-| File | Contents |
-|---|---|
-| `main_test.go` | The helper re-entry protocol and environment variable convention, the package-level methodology note |
-| `quarantine_test.go` | The quarantine store's file lock and churn helper, plus the parent process's assertions |

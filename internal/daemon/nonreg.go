@@ -13,7 +13,6 @@ import (
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/gateway"
 	"github.com/dinstein/agent-hub/internal/httpbridge"
-	"github.com/dinstein/agent-hub/internal/integrity"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 	"github.com/dinstein/agent-hub/internal/oauthlogin"
 	"github.com/dinstein/agent-hub/internal/platform"
@@ -47,24 +46,6 @@ func serverStateForgetters(
 	stateDir string, resolver *platform.Resolver,
 ) []confops.StateForgetter {
 	var out []confops.StateForgetter
-	if stateDir != "" {
-		opts := integrity.Options{}
-		if pins, err := integrity.OpenPinStore(stateDir, opts); err == nil {
-			out = append(out, pins)
-		}
-		if ap, err := integrity.OpenApprovalStore(stateDir, opts); err == nil {
-			out = append(out, ap)
-		}
-		if q, err := integrity.OpenQuarantineStore(stateDir, opts); err == nil {
-			out = append(out, q)
-		}
-		out = append(out, confops.StateFunc{
-			Name: "tool overrides",
-			Forget: func(_ context.Context, id string) error {
-				return confops.ForgetServerOverrides(stateDir, id)
-			},
-		})
-	}
 	out = append(out, confops.StateFunc{
 		Name: "the cached tool list",
 		Forget: func(_ context.Context, id string) error {

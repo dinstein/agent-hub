@@ -589,6 +589,48 @@ func SetServerEnabled(
 	return ServerResult{Result: res, Servers: []ServerSpec{spec}}, nil
 }
 
+// SetServerTools writes a server's GLOBAL tool allow list. A nil selection
+// clears the rule (every tool the server offers); a non-nil one — including
+// the empty list — narrows to exactly what it names.
+//
+// It is its own call rather than a field of UpdateServer because it changes
+// what the server EXPOSES, not what it is: the definition and therefore the
+// connection are untouched, so a running gateway adopts it through the
+// ordinary registry watch without reconnecting. Same reasoning as
+// SetServerEnabled and SetServerTrace beside it.
+//
+// The nil-vs-empty distinction is carried through deliberately and must not
+// be normalized here: collapsing an empty list to nil turns "expose nothing"
+// into "expose everything".
+func SetServerTools(
+	ctx context.Context, st *registry.Store, id string, tools []string, pre Precondition,
+) (ServerResult, error) {
+	var spec ServerSpec
+	res, err := apply(ctx, st, pre, func(tx *registry.Tx) error {
+		doc, ok := tx.Servers.V.Servers[id]
+		if !ok {
+			return serverNotFound(id)
+		}
+		if tools == nil {
+			doc.V.Tools = nil
+		} else {
+			doc.V.Tools = dedupSorted(tools)
+			if doc.V.Tools == nil {
+				// dedupSorted answers nil for an empty input, which is the
+				// one value that must not round-trip here.
+				doc.V.Tools = []string{}
+			}
+		}
+		tx.Servers.V.Servers[id] = doc
+		spec = ServerSpec{ID: id, Entry: doc.V}
+		return nil
+	})
+	if err != nil {
+		return ServerResult{Result: res}, err
+	}
+	return ServerResult{Result: res, Servers: []ServerSpec{spec}}, nil
+}
+
 // SetServerTrace flips a server's frame-trace switch. It is a separate call
 // from UpdateServer because turning a trace on is not a change to what the
 // server IS — the definition, and therefore the connection, is untouched, so

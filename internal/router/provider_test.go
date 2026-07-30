@@ -43,7 +43,7 @@ func TestProviderAggregatesLikeAServer(t *testing.T) {
 	srv := startServer(t, "github", markedTool("create_issue", "gh"))
 	sk := provider("skills", "skill_pdf", "skill_git")
 
-	rt, err := router.BuildWith([]*downstream.Server{srv}, []router.Provider{sk}, router.Policy{})
+	rt, err := router.BuildWith([]*downstream.Server{srv}, []router.Provider{sk})
 	if err != nil {
 		t.Fatalf("BuildWith: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestProviderIsCallableFromAColdCatalog(t *testing.T) {
 	sk := provider("skills", "skill_pdf")
 	rt, err := router.BuildFromCacheWith(map[string][]mcp.ToolDef{
 		"github": {{Name: "create_issue", InputSchema: json.RawMessage(`{}`)}},
-	}, []router.Provider{sk}, router.Policy{})
+	}, []router.Provider{sk})
 	if err != nil {
 		t.Fatalf("BuildFromCacheWith: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestProviderIsCallableFromAColdCatalog(t *testing.T) {
 func TestProviderIDCollisionIsAnError(t *testing.T) {
 	t.Parallel()
 	srv := startServer(t, "skills", markedTool("x", "server"))
-	if _, err := router.BuildWith([]*downstream.Server{srv}, []router.Provider{provider("skills", "y")}, router.Policy{}); err == nil {
+	if _, err := router.BuildWith([]*downstream.Server{srv}, []router.Provider{provider("skills", "y")}); err == nil {
 		t.Fatal("a provider id colliding with a server id must be an error")
 	}
 }

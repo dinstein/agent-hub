@@ -124,12 +124,6 @@ type Options struct {
 	// LogsDir is <data>/logs: the JSONL governance streams read back by
 	// /v1/audit and /v1/security. "" disables both (uniform 404).
 	LogsDir string
-	// ToolLookup resolves a tool the operator names but that no approval
-	// record covers yet, out of the gateway's persisted catalog cache. It is
-	// what lets the kill switch work WITHOUT first starting the suspicious
-	// server. nil means "no cache": disabling an unobserved tool answers the
-	// uniform 404 instead.
-	ToolLookup confops.ToolSnapshotFunc
 	// ServerStateForgetters clear the out-of-registry stores keyed by server
 	// id when DELETE /v1/servers/{id} removes one — integrity baselines,
 	// quarantine entries, the cached tool list.
@@ -289,16 +283,6 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			s.handleParseClientConfig(w, r)
 			return
 		}
-	case "/v1/tools":
-		if r.Method == http.MethodGet {
-			s.handleToolsList(w, r)
-			return
-		}
-	case "/v1/quarantine":
-		if r.Method == http.MethodGet {
-			s.handleQuarantineList(w, r)
-			return
-		}
 	case "/v1/sessions":
 		if r.Method == http.MethodGet {
 			s.handleSessions(w, r)
@@ -365,14 +349,6 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		}
 		if seg, ok := pathSegments(r, "/v1/config/", 1); ok && r.Method == http.MethodPut {
 			s.handleConfigSet(w, r, seg[0])
-			return
-		}
-		if seg, ok := pathSegments(r, "/v1/tools/", 2); ok && r.Method == http.MethodPut {
-			s.handleToolSet(w, r, seg[0], seg[1])
-			return
-		}
-		if seg, ok := pathSegments(r, "/v1/quarantine/", 1); ok && r.Method == http.MethodDelete {
-			s.handleQuarantineRelease(w, r, seg[0])
 			return
 		}
 		if sid, action, ok := gatewayPath(r); ok {

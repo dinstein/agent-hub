@@ -418,48 +418,6 @@ func TestRegistryBoundMethods(t *testing.T) {
 		},
 
 		// Tool-level governance and the quarantine.
-		{
-			name: "ListTools", method: http.MethodGet, path: "/v1/tools", query: "server=github",
-			data: api.ToolList{Generation: readGen},
-			invoke: func(ctx context.Context, h *Hub) (uint64, error) {
-				l, err := h.ListTools(ctx, "github")
-				return l.Generation, err
-			},
-		},
-		{
-			name:   "SetToolEnabled",
-			method: http.MethodPut, path: "/v1/tools/github/create_issue", guarded: true,
-			invoke: func(ctx context.Context, h *Hub) (uint64, error) {
-				w, err := h.SetToolEnabled(ctx, "github", "create_issue", false, readGen)
-				return w.Generation, err
-			},
-		},
-		{
-			name:   "SetToolOverride",
-			method: http.MethodPut, path: "/v1/tools/github/create_issue", guarded: true,
-			invoke: func(ctx context.Context, h *Hub) (uint64, error) {
-				desc := "neutralized"
-				w, err := h.SetToolOverride(ctx, "github", "create_issue",
-					api.ToolOverride{Description: &desc}, readGen)
-				return w.Generation, err
-			},
-		},
-		{
-			name: "ListQuarantine", method: http.MethodGet, path: "/v1/quarantine",
-			data: api.QuarantineList{Generation: readGen},
-			invoke: func(ctx context.Context, h *Hub) (uint64, error) {
-				l, err := h.ListQuarantine(ctx)
-				return l.Generation, err
-			},
-		},
-		{
-			name:   "ReleaseQuarantine",
-			method: http.MethodDelete, path: "/v1/quarantine/github__create_issue", guarded: true,
-			invoke: func(ctx context.Context, h *Hub) (uint64, error) {
-				w, err := h.ReleaseQuarantine(ctx, "github__create_issue", readGen)
-				return w.Generation, err
-			},
-		},
 	})
 }
 

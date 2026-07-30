@@ -232,14 +232,6 @@ type gateway struct {
 	// aggregate, route, scope and execute exactly like a downstream's.
 	skills *skills.Provider
 
-	// Tool governance plane (toolpolicy.go): the operator kill switch and the
-	// integrity quarantine set, enforced at aggregation time. policySrc is
-	// nil when the state stores could not be opened; policy is the deny-set
-	// snapshot the router builds read, and a NIL pointer means UNKNOWN — the
-	// fail-closed state in which the gateway exposes nothing.
-	policySrc *toolPolicySource
-	policy    atomic.Pointer[router.Policy]
-	policyWG  sync.WaitGroup
 	// cachedCatalog is the tool-cache selection this gateway starts from. It
 	// is retained so a governance change that lands BEFORE the first
 	// downstream connects can re-aggregate the cold catalog without
@@ -401,13 +393,6 @@ func newGateway(cfg Config) (*gateway, error) {
 	if g.cache != nil {
 		cached = g.cache.load()
 	}
-
-	// Tool governance state: the kill switch and the quarantine set feed
-	// router.Policy on EVERY build below. Unlike the registry, a failure here
-	// is NOT tolerated by widening — an unreadable deny set leaves the policy
-	// unknown and the catalog empty (toolpolicy.go header).
-	g.policySrc = openToolPolicySource(resolver, log)
-	g.loadToolPolicyOnce(lifeCtx)
 
 	// Registry: docs/flows.md — a load failure must not kill the gateway.
 	specs, regOK := g.loadRegistry(resolver)
@@ -592,7 +577,6 @@ func (g *gateway) run(ctx context.Context) error {
 
 	go g.connectAll()
 	g.startWatch()
-	g.startPolicyWatch()
 	g.startRedial()
 	g.startCredWatch()
 	if g.ctl != nil {
@@ -655,7 +639,6 @@ func (g *gateway) shutdown() {
 		g.watcher.Close()
 		g.watchWG.Wait()
 	}
-	g.policyWG.Wait() // ends on lifeCtx cancellation (g.stop above)
 	g.redialWG.Wait() // same
 	if g.credWatcher != nil {
 		g.credWatcher.Close() // closes Events, which ends the subscriber

@@ -101,7 +101,7 @@ func (a *App) newToolCmd() *cobra.Command {
 		RunE:    groupRunE,
 	}
 	cmd.AddCommand(a.newToolLsCmd())
-	a.registerToolGovCmds(cmd)
+	cmd.AddCommand(a.newToolAllowCmd())
 	return cmd
 }
 
@@ -179,7 +179,7 @@ func offlineSurface(
 			selected[id] = tools
 		}
 	}
-	rt, err := router.BuildFromCache(selected, router.Policy{})
+	rt, err := router.BuildFromCache(selected)
 	if err != nil {
 		return nil, fmt.Errorf("aggregate cached tools: %w", err)
 	}

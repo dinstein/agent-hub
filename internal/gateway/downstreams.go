@@ -147,16 +147,8 @@ func (g *gateway) rebuildAndNotify() {
 	}
 	g.mu.Unlock()
 
-	pol, ok := g.toolPolicy()
 	providers := g.providers()
-	if !ok {
-		// Fail-closed: the deny sets could not be read, so nothing can be
-		// vouched for. Aggregate NOTHING rather than everything
-		// (toolpolicy.go header).
-		g.log.Error("tool governance state unreadable; exposing no tools (fail-closed)")
-		servers, providers = nil, nil
-	}
-	rt, err := router.BuildWith(servers, providers, pol)
+	rt, err := router.BuildWith(servers, providers)
 	if err != nil {
 		g.log.Error("router rebuild failed; keeping previous catalog", "error", err)
 		return
@@ -164,30 +156,17 @@ func (g *gateway) rebuildAndNotify() {
 	g.swapCatalog(rt, true)
 }
 
-// buildColdCatalog aggregates the on-disk tool cache under the CURRENT tool
-// policy. It is the pre-connection catalog of docs/flows.md — listable, not
+// buildColdCatalog aggregates the on-disk tool cache. It is the pre-connection catalog of docs/flows.md — listable, not
 // callable for downstream tools — and never fails: an aggregation error
 // degrades to an empty catalog, as does an unknown policy.
 func (g *gateway) buildColdCatalog() *router.Router {
-	pol, ok := g.toolPolicy()
 	cached, providers := g.cachedCatalog, g.providers()
-	if !ok {
-		g.log.Error("tool governance state unreadable; serving an empty catalog (fail-closed)")
-		cached, providers = nil, nil
-	}
-	rt, err := router.BuildFromCacheWith(cached, providers, pol)
+	rt, err := router.BuildFromCacheWith(cached, providers)
 	if err != nil {
 		g.log.Warn("tool cache aggregation failed; serving an empty catalog", "error", err)
-		rt, _ = router.BuildFromCacheWith(nil, nil, router.Policy{})
+		rt, _ = router.BuildFromCacheWith(nil, nil)
 	}
 	return rt
-}
-
-// rebuildColdAndNotify re-aggregates the cache-built catalog (a governance
-// change that landed before the first downstream connected). It must not
-// mark the catalog live: readiness is connectOne's decision alone.
-func (g *gateway) rebuildColdAndNotify() {
-	g.swapCatalog(g.buildColdCatalog(), false)
 }
 
 // swapCatalog publishes a freshly built catalog and pushes

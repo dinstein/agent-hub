@@ -36,7 +36,7 @@ var goFileRef = regexp.MustCompile(`\b((?:internal|cmd|api|test|build|scripts)/[
 // honest response is to go looking. One was already here when this test was
 // written: internal/skills/errors.go attributed its fail-closed rule to a
 // file named after the integrity package, which has never existed in this
-// layout — the rule is stated in internal/integrity/doc.go.
+// layout — the rule is stated in docs/modules/security.md.
 //
 // This file's own prose is scanned like any other. Naming a dead filename to
 // illustrate a dead filename would have to be exempted, and an exemption on

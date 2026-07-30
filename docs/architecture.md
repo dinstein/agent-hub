@@ -137,7 +137,6 @@ flowchart TD
         SCOPE["internal/scope<br/>three-layer resolution + Merge"]
         SESS["internal/session<br/>session identity + overlay"]
         APPR["internal/approval<br/>HITL broker"]
-        INTG["internal/integrity<br/>fingerprints/drift/quarantine"]
         SEC["internal/secrets<br/>four-level credential chain"]
         OAUTH["internal/oauthflow<br/>discovery/DCR/PKCE/refresh"]
         SKL["internal/skills<br/>library+install tiers"]
@@ -476,7 +475,6 @@ them. The docs call them out because "thought it was in effect but it wasn't" is
 
 | Capability | Implementation status | Assembly status |
 |---|---|---|
-| `integrity` drift grading | Complete (fingerprints, grading) | The gateway uses integrity to compute the live-definition fingerprint for HITL and honors disable and quarantine during aggregation (`internal/gateway/toolpolicy.go`); **automatic drift detection isn't wired into the data plane yet** — the quarantine set has to be written by the CLI/daemon |
 
 This table is a summary, and a summary of an unwired list is exactly the sort of thing that outlives its
 subject. The authoritative inventory is the "Still without a non-test caller" sentence in

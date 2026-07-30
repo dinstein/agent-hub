@@ -737,7 +737,7 @@ remove again.
 ### ApplyState and decision precedence
 
 Five states: `applied`, `stale`, `drifted`, `missing`, `conflict`. This axis is **orthogonal** to
-`internal/integrity`'s tool approval state machine: `ApplyState` answers "are the bytes still where we think they
+the retired tool approval state machine: `ApplyState` answers "are the bytes still where we think they
 are", approval answers "is this content trustworthy". The two live in separate fields, and a transition in either
 implies nothing about the other.
 
