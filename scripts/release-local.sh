@@ -24,12 +24,14 @@
 # Environment:
 #   HOMEBREW_TAP_REPO   owner/homebrew-<name>. Unset skips the tap step.
 #   HOMEBREW_SOURCE_REPO  the repo whose Releases HOLD THE ARTIFACTS, which is
-#       what the formula's download URLs point at. Defaults to the tap, because
-#       that is where they go: dinstein/agent-hub is private and has never held
-#       a release, and `brew install` must be able to fetch the tarball without
-#       credentials. It used to default to dinstein/agent-hub, so every release
-#       had to remember to override it — and forgetting produced a formula whose
-#       URLs 404 for everyone but the person who published it.
+#       what the formula's download URLs point at. Defaults to dinstein/agent-hub:
+#       it is public, so `brew install` fetches the tarball with no credentials,
+#       and the artifacts then sit beside the source they were built from.
+#       It defaulted to the TAP for as long as this repository was private, and
+#       the assets already attached to v0.11.0 and v0.12.0 there stay where they
+#       are — the formula each of those versions shipped pins their sha256, and
+#       a same-named tarball built on another machine hashes differently. A URL
+#       always keeps the hash from its own upload.
 
 set -euo pipefail
 
@@ -48,7 +50,7 @@ v*) ;;
 	;;
 esac
 
-repo="${HOMEBREW_SOURCE_REPO:-dinstein/homebrew-agenthub}"
+repo="${HOMEBREW_SOURCE_REPO:-dinstein/agent-hub}"
 tap="${HOMEBREW_TAP_REPO:-}"
 version="${tag#v}"
 here="$(cd "$(dirname "$0")/.." && pwd)"

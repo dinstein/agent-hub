@@ -23,6 +23,29 @@ jobs:
       tagged: ${{ steps.v.outputs.tagged }}
     steps:
       - uses: actions/checkout@v5
+      # Half-configured is worse than not configured at all, and this job gates
+      # roughly twenty minutes of building: with HOMEBREW_TAP_REPO set somebody
+      # is expecting the tap to be updated, so a missing token has to be said
+      # here rather than after the DMG is packaged.
+      #
+      # It does not gate the Release itself. The artifacts go to this
+      # repository, which the workflow's own GITHUB_TOKEN can write — the tap
+      # token buys nothing but the tap.
+      - name: Require the tap token when a tap is configured
+        env:
+          TAP: ${{ vars.HOMEBREW_TAP_REPO }}
+          TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${TAP}" ] && [ -z "${TOKEN}" ]; then
+            echo "HOMEBREW_TAP_REPO is ${TAP} but HOMEBREW_TAP_TOKEN is empty" >&2
+            echo "add a repository secret holding a token with contents:write on the tap," >&2
+            echo "or clear the variable to turn tap publishing off" >&2
+            exit 1
+          fi
+          if [ -z "${TAP}" ]; then
+            echo "::warning::HOMEBREW_TAP_REPO is unset: the Release is published, and the tap keeps serving whatever it served before"
+          fi
       - name: Check the tag matches VERSION
         id: v
         run: |
@@ -120,8 +143,18 @@ jobs:
           find artifacts -type f \( -name '*.tar.gz' -o -name '*.dmg' -o -name 'checksums-*.txt' \) \
             -exec mv {} release/ \;
           ls -la release
+      # Uploaded HERE, and the homebrew job renders the formula's download URLs
+      # for the same repository. Both are spelled out rather than left to a
+      # default, because the two used to be decided separately — the upload fell
+      # back to this repository, the formula's own default named the tap — and
+      # the run where they disagreed was green everywhere: valid Ruby, real
+      # sha256s, every job passing, with the 404 waiting for the first
+      # `brew install` on a machine this project cannot see.
+      # TestReleaseWorkflowUploadsWhereTheFormulaPoints holds the pair together.
       - uses: softprops/action-gh-release@v2
         with:
+          repository: ${{ github.repository }}
+          token: ${{ github.token }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
@@ -151,28 +184,14 @@ jobs:
   #
   # Opt-in by setting the HOMEBREW_TAP_REPO variable (e.g. dinstein/homebrew-
   # agenthub). Until it is set the job is SKIPPED and says so in the run
-  # summary, rather than being silently absent.
+  # summary, rather than being silently absent. The token that goes with it is
+  # required in `verify`, before anything is built.
   homebrew:
     needs: [verify, publish]
     if: needs.verify.outputs.tagged == 'true' && vars.HOMEBREW_TAP_REPO != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Require the push token
-        env:
-          TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          TAP: ${{ vars.HOMEBREW_TAP_REPO }}
-        run: |
-          # Half-configured is worse than not configured at all. With the
-          # variable set somebody is expecting the tap to be updated, so a
-          # missing token has to fail here — skipping quietly is how a tap
-          # ends up serving a version that no longer exists.
-          if [ -z "${TOKEN}" ]; then
-            echo "HOMEBREW_TAP_REPO is ${TAP} but HOMEBREW_TAP_TOKEN is empty" >&2
-            echo "add a repository secret holding a token with contents:write on the tap," >&2
-            echo "or clear the variable to turn tap publishing off" >&2
-            exit 1
-          fi
       # The same bytes the Release serves. Reading the checksums from the
       # artifact rather than re-hashing anything keeps one source for the sums
       # the formula pins.
@@ -181,6 +200,13 @@ jobs:
           name: cli
           path: cli
       - name: Render the formula
+        env:
+          # The same repository the publish job uploaded to, spelled the same
+          # way. The script has its own default and so does release-local.sh;
+          # leaving this to them would put three places in charge of a value
+          # this workflow already knows, and the disagreement is only ever
+          # discovered by somebody installing.
+          HOMEBREW_SOURCE_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           mkdir -p out
