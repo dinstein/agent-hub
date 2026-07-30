@@ -86,7 +86,7 @@ func DevSocketPath() (string, error) {
 //     - darwin: ~/Library/Application Support/AgentHub;
 //     - linux: ${XDG_DATA_HOME}/AgentHub when XDG_DATA_HOME is an absolute
 //     path (relative values are ignored per the XDG spec), else
-//     ~/.local/share/agenthub.
+//     ~/.local/share/AgentHub.
 //
 // CONTRACT: this must stay byte-identical to
 // internal/platform.(*Resolver).CtlSocketPath. api cannot import

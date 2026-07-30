@@ -212,11 +212,11 @@ func (r *Resolver) home() (string, error) {
 // Resolution order:
 //  1. AGENTHUB_DATA_DIR, when set and non-empty (honored on every platform:
 //     an explicit override requires no platform knowledge).
-//  2. macOS: ~/Library/Application Support/agenthub.
-//  3. Linux: ${XDG_DATA_HOME}/agenthub when XDG_DATA_HOME is set to an
+//  2. macOS: ~/Library/Application Support/AgentHub.
+//  3. Linux: ${XDG_DATA_HOME}/AgentHub when XDG_DATA_HOME is set to an
 //     absolute path (relative values are ignored per the XDG spec),
-//     otherwise ~/.local/share/agenthub.
-//  4. Windows: %APPDATA%\agenthub, subject to the MSIX container escape
+//     otherwise ~/.local/share/AgentHub.
+//  4. Windows: %APPDATA%\AgentHub, subject to the MSIX container escape
 //     described in windows.go (UNVERIFIED — see docs/windows.md).
 //
 // Any other platform returns ErrUnsupportedPlatform.

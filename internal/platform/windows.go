@@ -127,7 +127,7 @@ func defaultProbePath(path string) error {
 	return fmt.Errorf("platform: %s is not reachable", path)
 }
 
-// windowsDataDir resolves %APPDATA%\agenthub, applying the MSIX twin-path
+// windowsDataDir resolves %APPDATA%\AgentHub, applying the MSIX twin-path
 // escape when this process turns out to be inside someone else's container.
 //
 // Callers reach it through DataDir, which has already honoured

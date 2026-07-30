@@ -88,7 +88,7 @@ variable to remember, and therefore none to forget.
 
 | channel | Data directory | `--version` |
 |---|---|---|
-| release | `~/Library/Application Support/agenthub` | `0.1.0-abc1234` |
+| release | `~/Library/Application Support/AgentHub` | `0.1.0-abc1234` |
 | dev | `~/Library/Application Support/AgentHubDev` | `0.1.0-abc1234 (dev)` |
 
 The two are **siblings, not parent and child**: a dev run can't reach the installed registry by walking

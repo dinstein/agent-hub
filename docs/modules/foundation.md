@@ -50,7 +50,7 @@ each have one additional environment-variable escape hatch.
 
 | Function | Resolution order |
 |---|---|
-| `DataDir` | `AGENTHUB_DATA_DIR` (any platform, non-empty wins) → darwin `~/Library/Application Support/agenthub` → linux `${XDG_DATA_HOME}/agenthub` (only when XDG_DATA_HOME is an absolute path), otherwise `~/.local/share/agenthub` → windows `%APPDATA%\agenthub` (plus the MSIX escape on top) → any other platform `ErrUnsupportedPlatform` |
+| `DataDir` | `AGENTHUB_DATA_DIR` (any platform, non-empty wins) → darwin `~/Library/Application Support/AgentHub` → linux `${XDG_DATA_HOME}/AgentHub` (only when XDG_DATA_HOME is an absolute path), otherwise `~/.local/share/AgentHub` → windows `%APPDATA%\AgentHub` (plus the MSIX escape on top) → any other platform `ErrUnsupportedPlatform` |
 | `RegistryDir` | `AGENTHUB_REGISTRY` → `<data>/registry` |
 | `LogsDir` / `CacheDir` / `StateDir` | `<data>/logs`, `<data>/cache`, `<data>/state` |
 | `RunDir` | linux `${XDG_RUNTIME_DIR}/AgentHub` (only when it's an absolute path **and `AGENTHUB_DATA_DIR` is unset**; tmpfs, per-user 0700), otherwise `<data>/run`; darwin/windows always `<data>/run` |
@@ -62,7 +62,7 @@ directories hold sockets and credentials and must not be group- or world-readabl
 
 ### Invariants and failure directions
 
-**Frozen identifiers.** The directory name `agenthub` and the three `AGENTHUB_*` environment variable
+**Frozen identifiers.** The directory name `AgentHub` and the three `AGENTHUB_*` environment variable
 names (`AGENTHUB_DATA_DIR`, `AGENTHUB_REGISTRY`, `AGENTHUB_SOCKET`) have been ABI since v1. Even
 renaming the product can't change them, because users' existing configuration and other clients'
 launch scripts have those names hardcoded.
