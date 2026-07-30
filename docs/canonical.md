@@ -426,7 +426,7 @@ standing in for.
 | `A.2 #9` | The manual paste loop, for providers that cannot reach a loopback redirect | modules/oauth.md |
 | `A.2 #10` | Refresh is serialized: daemon singleflight online, a file lock offline | modules/oauth.md |
 | `A.3 #1` | Quarantine and pin writes take a **cross-process file lock**, proven by an N-process acceptance test | §6; modules/security.md |
-| `A.3 #2` | `kill -9` on the daemon: the stdio data plane is untouched, gateways re-register, HITL fails closed | §6; flows.md |
+| `A.3 #2` | `kill -9` on the daemon: the stdio data plane is untouched and gateways re-register | §6; flows.md |
 | `A.3 #4` | A daemon restart makes the session overlay vanish on **both** sides — the observable half of `#6` | modules/config.md |
 | `A.3 #5` | skills materialization is **client-granular**, never per-session | §4 |
 | `A.5 #23` | Windows is confined to a seam inside `internal/platform`; nothing outside it branches on the platform | §4; windows.md |

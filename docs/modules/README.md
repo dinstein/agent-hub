@@ -22,7 +22,7 @@ incident.
 | [security.md](security.md) | `guard` (`injection`/`spawnguard`/`netguard`/`leakguard`), `integrity`, `approval`, `audit`, `oauthflow` |
 | [controlplane.md](controlplane.md) | `api`, `ctlapi`, `confops`, `catalog`, `daemon`, `httpbridge`, `cli` (+ `output`), the two `cmd/` binaries, `testutil/fakemcp`, `depguardtest`, `test/*` |
 | [oauth.md](oauth.md) | Topic: how well `oauthflow` conforms to the MCP authorization spec, which provider deployment shapes are supported, known gaps; `oauthlogin` (the same flow, as a pollable session) |
-| [gui.md](gui.md) | Topic: the GUI frontend's information architecture, state presentation, write operations and the HITL presentation layer, and what it deliberately does not do |
+| [gui.md](gui.md) | Topic: the GUI frontend's information architecture, state presentation, write operations, and what it deliberately does not do |
 
 ## How these documents are written
 

@@ -21,7 +21,7 @@
 |---|---|
 | [guide.md](guide.md) | The user-facing guide: the server / profile / client model, the everyday setup path, profiles and three-state tool selection, the three discovery modes and when each is right, how to verify the wiring, and the surprises that account for most "it stopped working" reports |
 | [architecture.md](architecture.md) | Architecture overview: the dual-mode process model, core module map, layering and dependency constraints, what a single call passes through, the three data flows, the two planes of scope, the three lines of defense, on-disk layout |
-| [flows.md](flows.md) | Sequence diagrams and failure branches for seven key flows: gateway startup, a lazy call, HITL approval, config writes, config hot reload, OAuth, derived instances |
+| [flows.md](flows.md) | Sequence diagrams and failure branches for six key flows: gateway startup, a lazy call, config writes, config hot reload, OAuth, derived instances |
 | [modules/](modules/) | Per-package docs: responsibilities, key types, **invariants and failure directions**. Five documents organized by layer, plus dedicated write-ups for OAuth and the GUI |
 | [canonical.md](canonical.md) | Frozen identifiers, package layout, the four dependency constraints, command naming rules, engineering conventions, and every decision record |
 | [windows.md](windows.md) | Windows status: what's implemented, **what's unverified**, what's missing, acceptance criteria |

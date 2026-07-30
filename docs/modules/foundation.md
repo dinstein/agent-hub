@@ -267,13 +267,12 @@ different thing from "an unrecognized tier" — the latter has rank 0 and `Cover
 | `destructiveHint == false` | `write` | |
 | An annotations object exists, but neither hint is set | `write` | The server **did describe itself**, it just stayed silent on this one item |
 
-**The asymmetry with `DefaultDestructive` is deliberate.** For an annotations value of `{}`,
-`ToolTier` answers write while `DefaultDestructive` answers true (destructive, the MCP spec's default
-for that hint). They answer different questions: `ToolTier` feeds coarse-grained credential
-separation and intent variants, and treating every "annotated but silent" tool as destructive would
-collapse the whole ladder into one rung; `DefaultDestructive` feeds `denyDestructive` and HITL
-triggering, a global veto that has to stay blunt. **Neither weakens the other**: the tier gate and
-the HITL gate both run, in a fixed order.
+**An annotated but silent tool is `write`, not `destructive`.** The MCP spec's default for a missing
+`destructiveHint` is destructive, and this ladder deliberately does not follow it for an annotations
+object that exists: `ToolTier` feeds coarse-grained credential separation and intent variants, and
+treating every "annotated but silent" tool as destructive would collapse the whole ladder into one
+rung. A **missing or unparseable** annotations value is still destructive — that is the fail-closed
+case, and it is the one the tier gate relies on.
 
 **Intent variants use equality, not coverage.** `call_tool_read` accepts only read tools, not lower
 tiers — because a variant expresses "what I intend to do", while a credential expresses "how far I'm
