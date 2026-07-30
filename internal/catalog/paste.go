@@ -578,29 +578,53 @@ func (f fields) url() string {
 	return ""
 }
 
-// transport normalises the transport marker, inferring it from the entry's
-// own shape when absent. An unrecognized explicit marker yields "" (which
-// the caller refuses) rather than falling back to inference: a typo'd
-// "htpp" must not silently become stdio.
-func (f fields) transport() string {
-	kind := strings.ToLower(strings.TrimSpace(f.str("type")))
-	if kind == "" {
-		kind = strings.ToLower(strings.TrimSpace(f.str("transport")))
-	}
-	switch kind {
+// TransportFromSpelling maps one written transport marker onto a registry
+// transport, folding the spellings client configs use in the wild. The marker
+// is trimmed and case-folded.
+//
+// An unrecognized marker yields "", and so does the empty string. The caller
+// decides whether "absent" may be inferred from the entry's shape, because
+// "not stated" and "stated as nonsense" must not lead to the same place: a
+// typo'd "htpp" falling back to stdio would silently downgrade a remote server
+// into launching a local process.
+//
+// It exists so that "how is a transport spelled" has ONE answer. Two paste
+// paths read the same kind of snippet — `agenthub catalog` and
+// `server add --stdin` — and they disagreed: this table was here, while the CLI
+// carried a narrower, case-SENSITIVE copy recognizing only streamable-http,
+// streamableHttp and http-stream. Configs the catalog accepted were refused by
+// `server add --stdin` for no reason a user could infer, which is what a second
+// implementation of a rule eventually always does (compare
+// downstream.SecretKeysIn, written against the same failure).
+func TransportFromSpelling(marker string) string {
+	switch strings.ToLower(strings.TrimSpace(marker)) {
 	case "stdio", "local", "command":
 		return registry.TransportStdio
 	case "sse":
 		return registry.TransportSSE
 	case "http", "streamable-http", "streamablehttp", "streamable_http", "http-stream", "remote":
 		return registry.TransportHTTP
-	case "":
-		switch {
-		case f.str("command") != "":
-			return registry.TransportStdio
-		case f.url() != "":
-			return registry.TransportHTTP
-		}
+	}
+	return ""
+}
+
+// transport normalises the transport marker, inferring it from the entry's
+// own shape when absent. An unrecognized explicit marker yields "" (which
+// the caller refuses) rather than falling back to inference: a typo'd
+// "htpp" must not silently become stdio.
+func (f fields) transport() string {
+	marker := strings.TrimSpace(f.str("type"))
+	if marker == "" {
+		marker = strings.TrimSpace(f.str("transport"))
+	}
+	if marker != "" {
+		return TransportFromSpelling(marker)
+	}
+	switch {
+	case f.str("command") != "":
+		return registry.TransportStdio
+	case f.url() != "":
+		return registry.TransportHTTP
 	}
 	return ""
 }

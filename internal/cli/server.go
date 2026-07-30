@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dinstein/agent-hub/internal/approval"
+	"github.com/dinstein/agent-hub/internal/catalog"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/gateway"
 	"github.com/dinstein/agent-hub/internal/integrity"
@@ -722,8 +723,22 @@ type stdinEntry struct {
 //  3. {"name": {...}, ...}                   bare name->entry map
 //
 // A name argument may rename the entry only when exactly one entry is
-// present. Only stdio entries are accepted in M0. Results are sorted by name
-// for deterministic output.
+// present. Results are sorted by name for deterministic output.
+//
+// Every transport is accepted, not just stdio. The kind comes from "type" or,
+// failing that, "transport"; with neither, a non-empty "url" means http and
+// anything else means stdio. Three spellings of streamable-http are folded
+// into http ("streamable-http", "streamableHttp", "http-stream").
+//
+// The matching here is EXACT, not case-folded, and the alias set is narrower
+// than internal/catalog's paste parser, which lowercases its input and also
+// accepts "local", "command", "streamable_http" and "remote". Both parse the
+// same kind of pasted snippet, so a snippet `catalog` accepts can be rejected
+// here; TestNormalizeStdinTransportSpellings pins the current boundary so that
+// gap is visible rather than folklore.
+//
+// Unmodeled keys are an ERROR rather than a silent drop; see the decoder below
+// for why that direction is not negotiable.
 func normalizeStdin(data []byte, nameArg string) ([]namedEntry, error) {
 	invalid := func(format string, a ...any) *Error {
 		return &Error{Code: CodeInvalidJSON, ExitCode: ExitGeneral, Message: fmt.Sprintf(format, a...)}
@@ -785,22 +800,22 @@ func normalizeStdin(data []byte, nameArg string) ([]namedEntry, error) {
 		// "type" is the de-facto client-config spelling, "transport" ours;
 		// either may name the transport, and a bare "url" implies http
 		// (which is what every published remote-server snippet looks like).
-		kind := spec.Type
-		if kind == "" {
-			kind = spec.Transport
+		marker := strings.TrimSpace(spec.Type)
+		if marker == "" {
+			marker = strings.TrimSpace(spec.Transport)
 		}
-		if kind == "" {
-			if spec.URL != "" {
-				kind = registry.TransportHTTP
-			} else {
-				kind = registry.TransportStdio
-			}
-		}
-		// Client configs spell streamable-http several ways; normalize the
-		// ones that unambiguously mean the same transport.
-		switch kind {
-		case "streamable-http", "streamableHttp", "http-stream":
+		var kind string
+		switch {
+		case marker != "":
+			// One spelling table, shared with the catalog paste parser, so the
+			// same snippet resolves the same way through either command. An
+			// unrecognized marker stays "" and is refused below rather than
+			// inferred: a typo'd "htpp" must not become a local process launch.
+			kind = catalog.TransportFromSpelling(marker)
+		case spec.URL != "":
 			kind = registry.TransportHTTP
+		default:
+			kind = registry.TransportStdio
 		}
 		// Enabled is false for the same reason as the flags path: `add` is
 		// configuration only, `enable` puts the server into service.
