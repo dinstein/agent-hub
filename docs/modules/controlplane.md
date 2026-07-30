@@ -1185,9 +1185,14 @@ probe file behind, git won't pick it up. This check is plain text comparison and
 ## test/e2e
 
 **Responsibility in one sentence**: pin the full chain with real processes — TestMain compiles the real `agenthub` and `fakemcp`
-binaries and then drives them the way an AI client would.
+binaries, then drives them from the two directions a user does: as an AI client, and as the operator at a terminal.
 
 ### What it covers
+
+**Two axes, and a file belongs to one of them.** The *client* axis spawns a gateway and speaks MCP to it; the *operator* axis
+runs CLI verbs against a registry, and where the verb's contract is about a running gateway it keeps one alive and asserts on
+the exposed surface rather than on the file the CLI wrote. A registry edit that nothing propagates is precisely the failure
+worth catching, and only a live client can see it.
 
 `gatewayClient` in `mcpclient_test.go` is a **hand-written MCP stdio client**: it spawns a real
 `agenthub connect --client <id>` process and talks to it with newline-delimited JSON-RPC, exactly as Claude Code does. It
@@ -1203,6 +1208,11 @@ the outside.
 | `daemonrestart_test.go` | After a daemon restart the gateway re-registers on the 30s ladder and the overlay is discarded (volatility); self-skips under `-short` |
 | `httpserver_test.go` | The full chain against a streamable-http downstream, the downstream seeing a bearer resolved from the vault, and **a loopback URL being rejected at add time without `--local` provenance** (the fail-closed half) |
 | `lazy_test.go` | The lazy mode acceptance path: the frozen meta-tool `tools/list`, a `search_tools` hit, the truncation trailer, savings.jsonl landing on disk |
+| `profilehotreload_test.go` | Switching the active profile under a live gateway: registry watch → snapshot swap → scope invalidation → `notifications/tools/list_changed`, with no restart |
+| `serverlifecycle_test.go` | The `server` verbs the rest of the suite only ever used as scaffolding — `ls` / `inspect` / `disable` / `rm`, and `enable` run the way an operator runs it. Every other fixture passes `--no-probe`, so the enable **probe** has no coverage outside `internal/cli`, where "connect" is an in-process fake rather than a spawned child |
+| `profile_test.go` | The verbs that EDIT a profile in place — `server add`/`rm`, rename, `rm`, `discovery` — three of which change what a running client may see. Each case holds a live gateway and asserts on its exposed surface |
+| `clientwiring_test.go` | `client detect` / `inspect` / `unbind`, the three verbs that touch somebody else's files. Discovery goes through `HOME`, so each case plants one — nothing here can read or write the real one |
+| `serverlive_test.go` | The two `server` verbs whose contract is about a RUNNING gateway: `trace`/`logs` (wire capture switched on under a live client) and `disable` (taking a server away from one). Both are claims the CLI's help makes that a registry-only test cannot check |
 
 ### Invariants and failure directions
 
