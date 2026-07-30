@@ -871,6 +871,8 @@ meaningless across machines or after a reboot).
 `internal/downstream`, has its own **line-based** ring buffer. They serve different presentation
 scenarios and are not the same thing — when you find one, don't assume you've changed the other.
 
-On Windows the registry's cross-process lock is still the placeholder returning
-`errors.ErrUnsupported` (`flock_stub.go`), so `Open` / `Update` / `Reload` all fail. The current state
-and how to close the gap are in [../windows.md](../windows.md#the-registrys-cross-process-lock).
+On Windows the registry's cross-process lock is now implemented via `LockFileEx`/`UnlockFileEx`
+(`flock_windows.go`, delegating to `internal/platform`). The stub build tag was narrowed from
+`!darwin && !linux` to `!darwin && !linux && !windows`, and `internal/ratelimit` now sets
+`crossProcessLockSupported = true`. Nothing has run on a real Windows machine yet — see
+[../windows.md](../windows.md).

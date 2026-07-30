@@ -438,7 +438,7 @@ uses a monotonic generation counter plus event pushes; mtime plays no semantic r
 |---|---|
 | macOS | Fully supported, covered by CI |
 | Linux | Fully supported, covered by CI |
-| Windows | **Not usable yet**: paths and package identity resolve and cross-compile in CI, but the registry's cross-process lock and the control plane's named pipe are stubs, so configuration can't be read and the daemon can't start. [windows.md](windows.md) is the one place that tracks this |
+| Windows | **Experimental**: all runtime gaps are filled — file locks (`LockFileEx`), named-pipe listener (SDDL-gated), api dialing, GUI channel wiring, and portable zip packaging — but **nothing has ever run on a real Windows machine**. See [windows.md](windows.md) |
 
 The GUI (`cmd/agenthub-gui`) is **not** part of the default build: linking a webview needs GTK/WebKit
 dev packages, which the Linux CI runner lacks. All Wails code sits behind `//go:build wails`; build it
@@ -472,10 +472,10 @@ subject. The authoritative inventory is the "Still without a non-test caller" se
 forward direction: wire one of those symbols up and the test fails until the doc is corrected. Read that
 list, not this row, when the question is what is switched on today.
 
-The following are **deliberate** boundaries, not to-dos: Windows only has a cross-compile gate (no
-verification on real hardware), the GUI isn't part of the default build, skills materialization only
-reaches client granularity, TOON has no decoder, and teams is unimplemented. See
-[canonical.md](canonical.md) §4, "Known capability boundaries."
+The following are **deliberate** boundaries, not to-dos: Windows is implemented but has never run on
+real hardware (see [windows.md](windows.md)), the GUI isn't part of the default build, skills
+materialization only reaches client granularity, TOON has no decoder, and teams is unimplemented.
+See [canonical.md](canonical.md) §4, "Known capability boundaries."
 
 Gaps that are confirmed and pinned to a line, but not yet fixed, live in the [modules/](modules/) doc of
 the package that owns them — next to the code they are about, rather than in a list of their own.

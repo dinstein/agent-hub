@@ -10,7 +10,7 @@ Claude Code · Cursor · Codex · Open WebUI · and 8 more
 [![Go 1.26+](https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](VERSION)
-[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey.svg)](#platforms)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows%20(exp.)-lightgrey.svg)](#platforms)
 [![Telemetry: none](https://img.shields.io/badge/telemetry-none-brightgreen.svg)](#privacy-no-data-collection)
 
 **[中文文档](README.zh-CN.md)** · [Architecture](docs/architecture.md) · [User guide](docs/guide.md) · [Flows](docs/flows.md)
@@ -40,7 +40,8 @@ hands each client exactly the surface you decided it should see.
 
 > **Status: feature-complete against its design.** CI is green across both matrices, and end-to-end
 > acceptance passes with real Claude Code calling real downstream MCP servers through the gateway.
-> macOS and Linux are verified; Windows is **not yet usable** ([details](#platforms)).
+> macOS and Linux are verified; Windows is **experimental** — all runtime gaps filled, never run on
+> real hardware ([details](#platforms)).
 
 ## Quickstart
 
@@ -86,7 +87,7 @@ again. Full walkthrough — profiles, narrowing, the whole model — in [docs/gu
 | [docs/flows.md](docs/flows.md) | Sequence diagrams and failure branches for seven key flows |
 | [docs/modules/](docs/modules/) | Per-package documentation: responsibilities, key types, invariants and failure directions |
 | [docs/canonical.md](docs/canonical.md) | The single source of truth for architectural conventions: frozen identifiers, package layout, dependency constraints, command naming rules, and every decision record |
-| [docs/windows.md](docs/windows.md) | Windows status: what is implemented, what is unverified, what is missing |
+| [docs/windows.md](docs/windows.md) | Windows status: what is implemented (all runtime gaps filled), what remains, and acceptance criteria |
 
 Chinese translations cover the product surface — this README, [docs/zh-CN/guide.md](docs/zh-CN/guide.md)
 and [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md). The rest is English only, because those
@@ -99,7 +100,7 @@ that is current.
 |---|---|
 | macOS | ✅ Supported, exercised by CI |
 | Linux | ✅ Supported, exercised by CI |
-| Windows | ⚠️ **Does not run**: paths and the named-pipe design are implemented and CI gates on `GOOS=windows go build ./...`, but the registry's cross-process lock and the pipe listener are still stubs — you can neither read configuration nor start the daemon. Nothing has ever run on a real Windows machine. [Details](docs/windows.md) |
+| Windows | 🧪 **Experimental**: all runtime gaps are filled (`LockFileEx` cross-process locks, named-pipe control plane with SDDL, api dialing, portable zip packaging) and CI gates on `GOOS=windows` build + vet. Nothing has ever run on a real Windows machine. [Details](docs/windows.md) |
 
 ## Privacy: no data collection
 

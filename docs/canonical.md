@@ -159,7 +159,7 @@ code, know which tier you are standing on.
 
 | Item | Status |
 |---|---|
-| Windows | Paths and package identity resolve, with a `GOOS=windows` cross-compile gate, but the registry's cross-process lock and the control plane's named-pipe listener are stubs returning unsupported, and **nothing has ever run on real hardware**. [windows.md](windows.md) tracks it |
+| Windows | All runtime gaps filled: `LockFileEx` cross-process locks in every flock package, named-pipe listener with SDDL (owner-only), api dialing, GUI channel wiring, and portable zip packaging. CI gates on `GOOS=windows` build + vet. **Never run on a real Windows machine.** [windows.md](windows.md) tracks it |
 | GUI | Functionally complete, **not part of the default build** (the webview needs GTK/WebKit, which CI runners lack); `make gui` |
 | skills materialization | **Client granularity only**, not per-session — the files live outside agenthub's read path |
 | skills from git sources | Records and pins a revision, but **never runs git and never touches the network**; update without a local checkout returns a typed unsupported error rather than claiming you are up to date |
