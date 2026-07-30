@@ -39,9 +39,21 @@ type DetectedRow struct {
 // DetectList is the `client detect` result.
 type DetectList struct {
 	Found []DetectedRow `json:"found"`
-	// Supported lists every client agenthub can write directly, so the
-	// answer to "why is my client missing" is in the same output.
+	// Supported lists every client agenthub knows about — not the writable
+	// subset. That is deliberate: the line exists so "why is my client
+	// missing" is answered in the same output, and a codex user asking it
+	// needs to find codex in the list.
+	//
+	// Which is why it may never be LABELLED as the writable set. It was, and
+	// it printed codex on the same screen as a row whose WRITABLE column said
+	// no; Indirect below is what resolves that, by naming the difference
+	// instead of leaving the reader to spot it.
 	Supported []string `json:"supported"`
+	// Indirect lists the supported clients agenthub does not write itself:
+	// the read-only shapes (TOML, YAML, and the fileless remote one), where
+	// `client connect` either delegates to the client's own CLI or prints a
+	// snippet to paste. Every id here is also in Supported.
+	Indirect []string `json:"indirect,omitempty"`
 }
 
 // Human renders the detection table.
@@ -65,7 +77,18 @@ func (l DetectList) Human(w io.Writer) error {
 			return err
 		}
 	}
-	_, err := fmt.Fprintf(w, "\ndirectly writable clients: %s\n", strings.Join(l.Supported, ", "))
+	if _, err := fmt.Fprintf(w, "\nsupported clients: %s\n", strings.Join(l.Supported, ", ")); err != nil {
+		return err
+	}
+	if len(l.Indirect) == 0 {
+		return nil
+	}
+	// Named on their own line, because the list above is what a reader
+	// compares against the WRITABLE column: without this, the two disagree
+	// about the same client and the table is the one that looks wrong.
+	_, err := fmt.Fprintf(w,
+		"agenthub does not write these itself: %s — 'client connect <id>' says what to do instead\n",
+		strings.Join(l.Indirect, ", "))
 	return err
 }
 
@@ -81,7 +104,17 @@ func (a *App) newClientDetectCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			table := clients.Default()
 			found := table.Detect(cmd.Context(), "")
-			list := DetectList{Found: []DetectedRow{}, Supported: clients.IDs()}
+			// Both lists come from the same table the writes go through, so
+			// the split cannot drift from what Connect will actually do.
+			var indirect []string
+			for _, f := range table.Formats() {
+				if !f.Writable() {
+					indirect = append(indirect, f.ID())
+				}
+			}
+			list := DetectList{
+				Found: []DetectedRow{}, Supported: table.IDs(), Indirect: indirect,
+			}
 			var warnings []string
 			for _, d := range found {
 				row := DetectedRow{
