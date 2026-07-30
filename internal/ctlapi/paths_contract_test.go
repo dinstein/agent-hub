@@ -154,6 +154,97 @@ func TestAPIDevDataDirContract(t *testing.T) {
 	}
 }
 
+// TestWindowsEndpointContract is the same contract as
+// TestAPIDefaultSocketPathContract, for the platform neither side can reach by
+// running on it.
+//
+// The two tests above compare the real functions in the real environment, which
+// means they only ever exercise the host's branch: on the Linux and macOS
+// runners this project has, the Windows halves of api/paths.go and
+// internal/platform are compared by nobody. And those halves are the ones most
+// able to disagree — three frozen identifiers (two pipe names and the data
+// directory), a SID hash, and a %APPDATA% fallback, written twice on purpose
+// because api may not import internal/platform (canonical.md §2 rule 1).
+//
+// So both sides are driven through their injectable seams with goos forced to
+// "windows". The platform resolver is told the process is NOT inside an MSIX
+// container, which is not a convenience: it is the assertion that api's copy
+// omitting the container escape is correct, because api's only caller — a
+// desktop GUI the user launches — cannot be inside one. A packaged process
+// resolves its paths through internal/platform, which does have the escape.
+func TestWindowsEndpointContract(t *testing.T) {
+	const (
+		sid     = "S-1-5-21-1111-2222-3333-1001"
+		appData = `C:\Users\alice\AppData\Roaming`
+		home    = `C:\Users\alice`
+	)
+
+	env := map[string]string{"APPDATA": appData}
+	plat := &platform.Resolver{
+		GOOS: "windows",
+		LookupEnv: func(k string) (string, bool) {
+			v, ok := env[k]
+			return v, ok
+		},
+		UserHomeDir:     func() (string, error) { return home, nil },
+		UserSID:         func() (string, error) { return sid, nil },
+		PackageIdentity: func() platform.PackageIdentity { return platform.PackageIdentity{Packaged: false} },
+	}
+
+	// WHY LITERALS AND NOT api's OWN FUNCTIONS. api resolves through
+	// runtime.GOOS, and its injectable seams are unexported — reachable only
+	// from inside the package, and a test file in api/ may not import
+	// internal/platform (depguard rule 1), which is the same reason this test
+	// lives here. Exporting the seams to let this test call them would put
+	// test scaffolding in a public API to check a private duplication.
+	//
+	// So the pinning is done in two halves that meet at these strings: this
+	// test asserts internal/platform produces them, and api's own
+	// TestDefaultSocketPath / TestDevSocketPathSeparatesFromRelease assert api
+	// produces the same ones. Changing either side's constant fails one of the
+	// two tests, and the failure names the other copy.
+	release, err := plat.CtlSocketPath()
+	if err != nil {
+		t.Fatalf("platform release endpoint: %v", err)
+	}
+	dev, err := platform.DevResolver(plat).CtlSocketPath()
+	if err != nil {
+		t.Fatalf("platform dev endpoint: %v", err)
+	}
+	// sha8(sid). Written out rather than recomputed here: recomputing it with
+	// the same two lines of code both sides use would assert only that
+	// SHA-256 is deterministic. api/paths_test.go pins the same digest.
+	const hash = "7abec184"
+	for _, tc := range []struct {
+		what string
+		got  string
+		want string
+	}{
+		{"release pipe", release, `\\.\pipe\agenthub-ctl-` + hash},
+		{"dev pipe", dev, `\\.\pipe\agenthub-ctl-dev-` + hash},
+		{"data dir", mustDataDir(t, plat), appData + `\AgentHub`},
+		{"dev data dir", mustDataDir(t, platform.DevResolver(plat)), appData + `\AgentHubDev`},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s: internal/platform resolves %q, and the frozen spelling is %q.\n"+
+				"api/paths.go carries its own copy of this value (it may not import "+
+				"internal/platform) and asserts the same string in api's own tests. If this "+
+				"change is intended, both must move together — otherwise the GUI dials an "+
+				"endpoint no daemon serves, or reads a directory no daemon writes, with both "+
+				"sides looking correct.", tc.what, tc.got, tc.want)
+		}
+	}
+}
+
+func mustDataDir(t *testing.T, r *platform.Resolver) string {
+	t.Helper()
+	dir, err := r.DataDir()
+	if err != nil {
+		t.Fatalf("data dir: %v", err)
+	}
+	return dir
+}
+
 // TestDevAndReleaseDirectoriesDiffer is the invariant the whole channel split
 // rests on. If these ever resolved to the same path the separation would be
 // gone while every test above still passed.

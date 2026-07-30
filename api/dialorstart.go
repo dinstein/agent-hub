@@ -137,7 +137,10 @@ func dialOrStart(ctx context.Context, opts StartOptions) (*Client, bool, error) 
 		opts.DaemonArgs = []string{"daemon", "start"}
 	}
 	if opts.RunDir == "" {
-		opts.RunDir = filepath.Dir(socket)
+		var err error
+		if opts.RunDir, err = runDirFor(socket); err != nil {
+			return nil, false, err
+		}
 	}
 	if opts.Deadline <= 0 {
 		opts.Deadline = 10 * time.Second
@@ -231,6 +234,31 @@ func dialOrStart(ctx context.Context, opts StartOptions) (*Client, bool, error) 
 		case <-tick.C:
 		}
 	}
+}
+
+// runDirFor answers "where is daemon.json, given this endpoint".
+//
+// For a socket that is its directory, and the answer must keep coming from the
+// socket rather than from a fresh resolution: a caller who overrode
+// SocketPath — the e2e suite, anyone running two sandboxes — has the handshake
+// file beside the socket they named, not beside the default one.
+//
+// A named pipe has no directory. filepath.Dir would return `\\.\pipe`, a
+// location that does not exist, and every readDaemonInfo would fail silently:
+// DialOrStart would still work (it falls back to the endpoint it was given) but
+// would lose the ability to notice that the running daemon is serving a
+// DIFFERENT endpoint, which is the whole reason it reads the file. So the run
+// directory is resolved from the environment instead, exactly as the daemon
+// that writes the file resolves it.
+func runDirFor(socket string) (string, error) {
+	if !isPipePath(socket) {
+		return filepath.Dir(socket), nil
+	}
+	dir, err := runDir(runtime.GOOS, os.LookupEnv, os.UserHomeDir)
+	if err != nil {
+		return "", fmt.Errorf("api: resolve run directory for %s: %w", socket, err)
+	}
+	return dir, nil
 }
 
 // tryDial pings the daemon at socketPath with a short per-attempt

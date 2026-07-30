@@ -76,9 +76,11 @@ func New(socketPath string) *Client {
 		socketPath: socketPath,
 		hc: &http.Client{
 			Transport: &http.Transport{
+				// One dial per platform (dial_windows.go / dial_other.go): the
+				// endpoint is a Unix socket, or on Windows a named pipe, and
+				// "unix" is not a network name that reaches the latter.
 				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-					var d net.Dialer
-					return d.DialContext(ctx, "unix", socketPath)
+					return dialEndpoint(ctx, socketPath)
 				},
 			},
 			// No client-wide timeout: SSE subscriptions are long-lived.
