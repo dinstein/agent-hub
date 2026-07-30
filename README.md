@@ -2,7 +2,7 @@
 
 # AgentHub
 
-**One configuration, one set of credentials, one governance pipeline — shared by every AI client.**
+**One configuration, one set of credentials, one aggregation point — shared by every AI client.**
 
 Claude Code · Cursor · Codex · Open WebUI · and 8 more
 
@@ -70,13 +70,13 @@ again. Full walkthrough — profiles, narrowing, the whole model — in [docs/gu
 |---|---|
 | Gateway | stdio (one process per client) + streamable-http (shared daemon pool); three downstream transports: stdio / streamable-http / legacy HTTP+SSE, targeting protocol version `2025-11-25` with backward negotiation and downgrade |
 | Discovery | Three modes — `full` / `grouped` / `lazy`; lazy mode ships five meta-tools (`status`, `search_tools`, `describe_tool`, `call_tool`, `fetch_result`) plus intent variants; compact signature grammar + two-stage describe |
-| Governance | Three-layer scope resolution chain (global / profile / session; a client entry only selects which profile applies), tri-state per-server tool selector semantics, dangling profiles fail closed to an empty set |
-| Security | Injection scanning (normalization + phrase/regex/base64/head-tail dual window), spawn guard (anti-smuggling), bidirectional SSRF predicates with in-DialContext screening, leakguard, integrity fingerprint pinning + drift grading + quarantine, HITL approval state machine (fail-closed throughout) |
+| Access | Decided in advance, never at call time: a server is on or off and offers all its tools or a named subset; a profile takes a subset of the servers and may narrow their tools further; a client follows a profile. Layers intersect and none can widen; a dangling profile reference fails closed to an empty set |
+| Security | Spawn guard (anti-smuggling), bidirectional SSRF predicates with in-DialContext screening, agent tokens graded read/write/destructive on the HTTP face, cooperative call quotas. These refuse a destination or a process regardless of who asked — none of them inspects what a downstream returned |
 | Isolation | **Docker isolation spawner**: `runtime: host\|docker`, no network by default, mounts only explicitly declared directories (read-only by default), resource limits, secrets never enter argv |
 | Result shaping | Pagination / budgets / `fetch_result` caching / TOON one-way projection encoding (with two constructive guarantees: never-larger and numeric fidelity) |
 | Credentials | Four-level resolution chain (env → explicit bare env → `secrets.enc` → OS keyring), composite vault key `(serverID, scopeName)`, headless OAuth with three callback modes + refresh coordination |
 | Clients | Config adaptation for 12 client types (format-driven), two-layer skills management (library/install), skills-over-MCP provisioning |
-| Operations | `agenthub doctor` full health check, per-server logs + stderr tail window embedded in errors, four audit streams, X-Request-Id across the whole chain |
+| Operations | `agenthub doctor` full health check, per-server JSON-RPC wire trace (off by default, `server trace`), token-savings ledger behind `agenthub activity`, X-Request-Id across the whole chain |
 
 ## Documentation
 
@@ -112,8 +112,7 @@ The process makes only three kinds of outbound connection, all determined by you
 the downstream MCP servers in `servers.json`, those servers' OAuth authorization servers (only
 after you run `agenthub auth login`), and endpoints you specify explicitly (`server add --url`).
 
-Audit streams (`audit.jsonl` / `security.jsonl` / `savings.jsonl`) and per-server logs are
-**written to local disk only**. Version updates are left to your package manager.
+The savings ledger (`savings.jsonl`) and per-server wire traces are **written to local disk only**. Version updates are left to your package manager.
 See the decision record in [canonical.md](docs/canonical.md) §7, item 6.
 
 ## Development

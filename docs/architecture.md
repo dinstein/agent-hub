@@ -13,7 +13,7 @@ the conventions you don't get to change casually in [canonical.md](canonical.md)
 The client thinks it's connected to a single MCP server; it's actually connected to AgentHub's
 gateway. The gateway decides which tools it can see based on the current session's **effective
 scope**, every call passes through **the same execution pipeline** (gates → downstream → defenses and
-shaping), and the result goes back. Configuration, credentials, auditing, and approvals all converge
+shaping), and the result goes back. Configuration and credentials converge
 at this layer, leaving the client side with a single line of `command`.
 
 ---
@@ -32,7 +32,7 @@ flowchart LR
     end
     subgraph daemon["agenthub daemon (optional, long-running)"]
         H["httpbridge: MCP data plane + agent tokens<br/>(off by default, enabled explicitly with --http-addr)"]
-        CO["coordination plane: session registry / approval broker<br/>overlay distribution / OAuth singleflight / event stream"]
+        CO["coordination plane: session registry<br/>OAuth singleflight / event stream"]
         CP["ctlapi: REST + SSE over UDS"]
     end
     subgraph front["frontends (peers)"]
@@ -49,7 +49,7 @@ flowchart LR
     G1 --> D1
     G2 --> D2
     H --> D3
-    G1 & G2 -.->|"ctl.sock: register / overlay / approvals"| CO
+    G1 & G2 -.->|"ctl.sock: register / registry notifications"| CO
     CLI --> CP
     GUI --> CP
 ```
@@ -63,12 +63,13 @@ and a downstream crash affecting only one client.
 
 **The daemon is an optional value-add, not a requirement.** It handles three things: the HTTP access
 surface (a shared downstream connection pool), the control plane (the management API for CLI and GUI),
-and the coordination plane (session registry, approval broker, overlay distribution, OAuth refresh
-singleflight). The gateway **never auto-starts the daemon** — the stdio data plane having zero
-dependency on the daemon is the core selling point of this model, and auto-starting would turn
-"optional" into de facto mandatory. Degradation when the daemon is absent is explicit: calls that need
-human approval are rejected outright (fail-closed), session-level dynamic scope is unavailable (the
-static three layers work as usual), and OAuth refresh falls back to file locks.
+and the coordination plane (session registry, OAuth refresh singleflight). The gateway **never
+auto-starts the daemon** — the stdio data plane having zero dependency on the daemon is the core
+selling point of this model, and auto-starting would turn "optional" into de facto mandatory.
+Degradation when the daemon is absent is now barely observable from the data plane: a stdio
+gateway's scope comes entirely from the registry files, so killing the daemon changes nothing about
+what a client sees. What is lost is `session ls` / `session kill`, the event stream, and the shared
+HTTP pool; OAuth refresh falls back to file locks.
 
 The price is that the discipline of multiple processes writing the same disk has to be right: one
 `O_APPEND` write per log line, cross-process file locks for fingerprints and the quarantine set,
@@ -135,8 +136,7 @@ flowchart TD
     end
     subgraph L2["governance and configuration"]
         SCOPE["internal/scope<br/>three-layer resolution + Merge"]
-        SESS["internal/session<br/>session identity + overlay"]
-        APPR["internal/approval<br/>HITL broker"]
+        SESS["internal/session<br/>session identity"]
         SEC["internal/secrets<br/>four-level credential chain"]
         OAUTH["internal/oauthflow<br/>discovery/DCR/PKCE/refresh"]
         SKL["internal/skills<br/>library+install tiers"]
@@ -209,21 +209,19 @@ flowchart LR
     C -->|"regular tool"| E["router.RouteOf<br/>sole provenance"]
     D -->|"call_tool*"| E
     E --> F["pipeline.Execute"]
-    F --> G1["scope gate"] --> G2["token tier gate"] --> G3["argument pre-validation"] --> G4["HITL gate"]
-    G4 --> H["ratelimit admission<br/>(a quota wrapper, not a fifth gate)"]
+    F --> G1["scope gate"] --> G2["token tier gate"]
+    G2 --> H["ratelimit admission<br/>(a quota wrapper, not a third gate)"]
     H --> I["downstream.Call<br/>circuit breaker / retries / serial queue"]
-    I --> J["defend_and_shape"]
-    J --> J1["injection scan"] --> J2["leakguard"] --> J3["shaping pagination"]
-    J3 --> K["audit append<br/>argsHash only"]
-    K --> A
+    I --> J["shaping<br/>budget + fetch_result cursor"]
+    J --> A
 ```
 
 Three unshakeable properties along this chain:
 
-**The gate chain order is frozen** (`scope → token tier → argument pre-validation → HITL`, see
-`internal/pipeline`), pinned by tests. All three machine-decidable gates come before human approval —
-a call not worth bothering a human about should never produce an approval request, so the approval
-queue holds only things a human genuinely has to decide.
+**The gate chain order is frozen** (`scope → token tier`, see `internal/pipeline`), pinned by tests.
+Both gates decide from configuration alone and both fail closed. Nothing in the chain inspects a
+call's arguments or rewrites them: what the caller sent is what the downstream receives, and what
+the downstream answered is what the caller reads.
 
 **There is only one execution path.** A direct call and lazy mode's `call_tool` go through the same
 `pipeline.Execute`. This isn't upheld by convention: tests assert that both paths advance every gate's
@@ -292,9 +290,9 @@ The three-layer resolution chain (most specific wins):
 
 ```mermaid
 flowchart TD
-    G["Global: governance.json<br/>denyDestructive / blockOnInjection / default discovery and budgets"] --> P
+    G["Global: servers.json + governance.json<br/>server on/off + per-server tool allow list, default discovery and budgets"] --> P
     P["Profile: profiles.json<br/>enabled servers + tool allow + discovery"] --> S
-    S["Session: in-memory overlay, never persisted<br/>tighten-only; loosening needs a manual grant"] --> M
+    S["Credential: an agent token's server allowlist and profile pin<br/>HTTP face only; can only tighten"] --> M
     M{{"Merge: security fields intersect / OR<br/>experience fields overridden by the nearest layer"}} --> E["EffectiveScope (content-addressed, carries a Hash)"]
 ```
 
@@ -316,8 +314,9 @@ authoritative as it did while it worked. `agenthub doctor` therefore **warns** (
 doctor reports, the operator decides.
 
 The merge rules follow from the nature of each field, not from case-by-case judgment: **security
-fields** (server visibility, tool allow) intersect layer by layer, denies union, approval switches OR
-together — everything can only get tighter. **Experience fields** (discovery mode, result budget) are
+fields** (server visibility, tool allow) intersect layer by layer — everything can only get tighter,
+and there is no deny list anywhere, because a deny would answer a newly-added downstream tool in the
+opposite direction from an allow. **Experience fields** (discovery mode, result budget) are
 won by the most specific layer. Two invariants: intersections are always keyed by the **original tool
 name** (otherwise renaming or disambiguation suffixes would let you slip past a narrowing), and a
 dangling profile reference resolves to the **empty set** rather than allow-all, with doctor raising an
@@ -333,7 +332,7 @@ its profile or bind it to another one.
 
 The session's root no longer enters resolution at all — with the project layer gone, no persisted layer
 reads it — so it is not part of the resolver's cache key either, which is now `(clientID, registry
-generation, overlayVersion)`. Keeping the root in the key would have split one client's cache across
+generation)`. Keeping the root in the key would have split one client's cache across
 every directory it happens to report from, for a value that cannot change the answer. The root still
 reaches `internal/downstream`, which derives per-root server instances from it.
 
@@ -368,42 +367,22 @@ enumeration oracle.
 
 ---
 
-## 9. How the three lines of defense stack
+## 9. How the two lines of defense stack
 
 ```mermaid
 flowchart LR
-    S["scope<br/>machine decision"] --> T["agent token tier<br/>machine decision"] --> P["argument pre-validation<br/>machine decision"] --> H["HITL<br/>human decision"]
+    S["scope<br/>machine decision"] --> T["agent token tier<br/>machine decision"]
 ```
 
 | Line | Granularity | Decided by | Blocks |
 |---|---|---|---|
-| scope | server / tool visibility | Machine (three-layer intersection) | Capabilities that shouldn't be visible |
+| scope | server / tool visibility | Machine (layer intersection, from configuration) | Capabilities that should not be visible |
 | agent token tier + intent variants | Operation tier | Machine (token × annotations) | A read-only credential initiating a write/destructive operation |
-| HITL | A single call | Human (bound by args_hash) | Specific actions that still need a human within their tier |
 
-**Four gates, three defenses — argument pre-validation is the one in the chain that is not a line of
-defense**, which is why the diagram has a box the table has no row for. It checks shape shallowly
-(Args is an object, required top-level fields present, present ones of the declared type) and leaves
-the downstream server as the authoritative validator; more to the point, when it can provably repair
-a violation it repairs and passes rather than refusing. A defense line refuses. Reading this gate as
-a security boundary because it sits inside a chain described as frozen and fail-closed is the mistake
-worth naming.
-
-Its position is not free, though. The repair MUTATES the arguments, so it has to happen **before**
-HITL: the approval's `args_hash` then covers what actually runs, and "what's approved is what runs"
-survives self-healing. Moving it after HITL would hash one set of arguments and execute another.
-
-The content binding of an approval matters: the request carries a canonical hash of the arguments, so
-**what's approved is what runs**; it also carries a fingerprint of the live tool definition, so once the
-definition drifts, an old approval returns `Stale` instead of being reused. Everything other than
-`Approved` — denied, timed out, broker unreachable, stale — refuses to let the call through.
-
-`internal/ratelimit` is **deliberately not in the gate chain**: that chain is frozen and fail-closed,
-whereas rate limiting must fail open when its state file is corrupt (rate limiting is not a security
-boundary), and putting a fail-open thing inside a fail-closed chain is a bypass shape. It wraps the
-call itself instead — after all the gates, immediately before actually hitting the downstream.
-
----
+Both are decided before the call, from what an operator wrote down. Neither reads the arguments and
+neither reads the result: an earlier design added an argument pre-validator, a human approval queue,
+a prompt-injection scanner and a leak redactor between these two lines and the downstream, and all
+four were removed. What survives refuses a call outright or lets it through untouched.
 
 ## 10. On-disk layout
 
@@ -412,8 +391,7 @@ call itself instead — after all the gates, immediately before actually hitting
 ├── registry/                 # config source of truth: split into documents by change frequency, sharing one monotonic generation
 │   ├── meta.json  servers.json  profiles.json  clients.json  governance.json
 │   └── *.lock  backups/      # sibling cross-process locks + 5 rolling backups
-├── state/                    # tool-pins.json / quarantine.json / approvals-allowlist.json
-│                             # ratelimits.json / run markers
+├── state/                    # ratelimits.json / run markers
 ├── skills/                   # content-addressed skill library + install index
 ├── cache/tools/<server>.json # tool catalog snapshots used for "answer from cache first"
 ├── logs/                     # audit / security / savings JSONL + server-<name>.log + daemon.log
@@ -497,7 +475,7 @@ the package that owns them — next to the code they are about, rather than in a
 
 ## 13. Further reading
 
-- [flows.md](flows.md) — sequence diagrams for the key flows: gateway startup, a lazy call, HITL approval, config hot reload, OAuth, derived instances.
+- [flows.md](flows.md) — sequence diagrams for the key flows: gateway startup, a lazy call, config hot reload, OAuth, derived instances.
 - [modules/](modules/) — per-package docs: responsibilities, key types, invariants and failure directions, file map.
 - [canonical.md](canonical.md) — frozen identifiers, dependency constraints, command naming rules, engineering conventions, decision records.
 - [windows.md](windows.md) — Windows status and acceptance criteria.

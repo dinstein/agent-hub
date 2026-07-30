@@ -2,7 +2,7 @@
 
 # AgentHub
 
-**一份配置、一套凭据、一条治理管线，供全部 AI 客户端共享。**
+**一份配置、一套凭据、一个聚合点，供全部 AI 客户端共享。**
 
 Claude Code · Cursor · Codex · Open WebUI · 以及另外 8 种
 
@@ -67,13 +67,13 @@ agenthub client connect claude-code
 |---|---|
 | 网关 | stdio（每 client 一进程）+ streamable-http（daemon 共享池）；下游 transport 三种：stdio / streamable-http / legacy HTTP+SSE，协议目标版本 `2025-11-25` 带向下协商降级 |
 | 发现 | `full` / `grouped` / `lazy` 三模式；lazy 模式五件套 meta-tool（`status`、`search_tools`、`describe_tool`、`call_tool`、`fetch_result`）+ 意图变体；紧凑签名文法 + 二段 describe |
-| 治理 | 三层 scope 解析链（global / profile / session；client 只选一个 profile，收窄只住在 profile 上）、per-server 工具选择器三态语义、悬垂 profile fail-closed 空集 |
-| 安全 | 注入扫描（归一化 + 短语/正则/base64/头尾双窗）、spawn guard（反走私）、SSRF 双向谓词 + DialContext 内筛查、leakguard、integrity 指纹 pin + drift 分级 + quarantine、HITL 审批状态机（fail-closed 全家桶） |
+| 访问控制 | 事先决定，永不在调用时决定：server 开或关、提供全部工具或指定子集；profile 取 server 的子集并可进一步收窄其工具；client 绑定 profile。各层取交集，任何一层都不能放宽；悬垂 profile 引用 fail-closed 到空集 |
+| 安全 | spawn guard（反走私）、SSRF 双向谓词 + DialContext 内筛查、HTTP 面的 agent token 分级（read/write/destructive）、协作式调用配额。它们拒绝的是目的地和进程，与谁发起无关——没有一项会检查下游返回了什么 |
 | 隔离 | **Docker 隔离 Spawner**：`runtime: host\|docker`，默认无网络、只挂载显式声明的目录（默认只读）、资源限额、密钥不进 argv（无网络、只读挂载、资源限额） |
 | 结果整形 | 分页 / 预算 / `fetch_result` 缓存 / TOON 单向投影编码（never-larger + 数字保真两条构造性保证） |
 | 凭据 | 四级解析链（env → 显式 bare env → `secrets.enc` → OS keyring）、vault 复合键 `(serverID, scopeName)`、headless OAuth 三模式回调 + 刷新协调 |
 | 客户端 | 12 种客户端配置适配（Format 驱动）、skills 库/安装两层管理、skills-over-MCP 供给 |
-| 运维 | `agenthub doctor` 全面体检、每 server 独立日志 + stderr 尾窗嵌入错误、四条审计流、X-Request-Id 全链路 |
+| 运维 | `agenthub doctor` 全面体检、每 server 的 JSON-RPC 报文抓取（默认关，`server trace`）、`agenthub activity` 背后的 token 节省账本、X-Request-Id 全链路 |
 
 ## 文档
 
@@ -106,7 +106,7 @@ AgentHub **不收集任何数据**。没有遥测、没有崩溃上报、没有�
 这些 server 的 OAuth 授权服务器（仅在你执行 `agenthub auth login` 后），以及你显式指定的
 endpoint（例如 `server add --url`）。
 
-审计流（`audit.jsonl` / `security.jsonl` / `savings.jsonl`）与每 server 日志**只写本地磁盘**。
+节省账本（`savings.jsonl`）与每 server 的报文抓取**只写本地磁盘**。
 版本更新交给你的包管理器。裁决记录见 [canonical.md](docs/canonical.md) §7 第 6 项。
 
 ## 开发

@@ -1,16 +1,20 @@
 # AgentHub
 
-A local hub for Agent services: one configuration, one set of credentials, one governance pipeline,
+A local hub for Agent services: one configuration, one set of credentials, one aggregation point,
 shared by every AI client (Claude Code, Cursor, Codex, Open WebUI, and others). Go + Wails3, with a
 dual-mode gateway (stdio, one process per client / daemon, hosting the shared HTTP pool and the
 coordination plane).
 
-**Feature-complete against its design** (as of 2026-07-30, with CI green on macOS + Linux and
-end-to-end acceptance passing against real downstream MCP servers). The work from here is polish, bug
-fixes, and problems surfaced by real use — not new feature milestones. A claim like this one decays
-without saying so, hence the date: what is actually reached at runtime today is
-[docs/architecture.md §12](docs/architecture.md#12-assembly-status-implemented-but-not-yet-wired-up)
-and the test-watched inventory it points at.
+**What a client may reach is decided in advance, by configuration, and never at call time.** A server
+is on or off; a server offers all of its tools or a named subset; a profile takes a subset of the
+servers and may narrow their tools further; a client follows a profile. Every layer intersects and
+none can widen. There is no approval queue, no runtime scope change, no scanning of what a downstream
+returned — an earlier design had all three and they were removed rather than left half-wired, because
+a governance surface that does not decide anything still reads as protection.
+
+What remains outside that model is not permission: agent tokens grade the HTTP face, rate limits keep
+one runaway loop from burning a budget, and netguard / spawnguard refuse destinations and processes
+regardless of who asked.
 
 ## What to read first
 
@@ -45,16 +49,18 @@ configured but not in effect is worse than no rule.
 
 ## The easiest things to get wrong when changing code
 
-- **The gate chain order is frozen**: scope → token tier → argument pre-validation → HITL.
+- **The gate chain order is frozen**: scope → token tier. Both decide from configuration alone, and
+  both fail closed. Nothing in the chain may inspect or rewrite what a call carries.
 - **There is exactly one execution path**: direct calls and `call_tool` both go through
   `pipeline.Execute`. Any new path must assert its gate count matches a direct call.
 - **`RouteOf` is the only legitimate provenance for an exposed name; splitting on `__` is forbidden**
   — a server id or tool name may itself contain `__`.
 - **Security predicates must document their failure direction** (fail-open or fail-closed); netguard's
   bidirectional predicates are the model.
-- **Overlays are never persisted to disk**: a runtime relaxation that comes back from the dead is a
-  security incident.
-- **Audit records never contain args**, only argsHash — the field does not exist at the type level.
+- **A tool selector is an allow list, never a deny list.** The two answer the arrival of a tool the
+  downstream adds tomorrow in opposite directions, and one file must not give two answers.
+- **`nil` and `[]` are different everywhere a selector appears**: nil means "no rule", `[]` means
+  "nothing". `omitzero`, not `omitempty` — dropping an empty list turns block-all into allow-all.
 - **Isolation a config claims must be delivered or refused**: for fields like `runtime: docker`, fail
   closed rather than silently degrade to host execution.
 - **Run `make fmt` after touching an import block.** `.golangci.yml` enables `gofmt`/`goimports` under
