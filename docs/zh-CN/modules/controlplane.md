@@ -640,10 +640,13 @@ Main 再打印第二遍错误。
 于是 `agenthub secret get --help` 打印 `secret` 组的帮助页并退出 0——跟一个真实子命令给出的答复
 一模一样，这才让根本不存在的 `secret get` 看起来像存在（凭据值压根没有读取路径，所以那一页
 否定的是一条设计规则，而不只是一个事实）。`helpForUnknownSubcommand` 用 `root.Find` 解析参数，
-对**有子命令**的命令上残留的非 flag token 予以拒绝。它的作用范围就精确等于这个口子——没有
-help flag 时 RunE 本来就会答复，而叶子命令有权接收位置参数——另一个方向由
-`TestHelpForEveryRealCommandStillExits0` 遍历整棵树守住，因为一个跑在 cobra 之前的检查，
-是有能力把所有地方的 `--help` 一起弄坏的。
+对**有子命令**的命令上残留的非 flag token 予以拒绝。**这个口子有两道门，只堵一道等于没堵**：
+一道是 help flag，另一道是 cobra 的 help *命令*——`agenthub help secret get`，它自己的实现
+同样解析到最深的匹配、把剩下的丢掉，给出同一张页面和同一个 0。同一个问题的两种拼法，所以
+`helpRequest` 把两者归一成一条路径，而不是查两遍。它的作用范围就精确等于这个口子——没有人
+请求帮助时 RunE 本来就会答复，而叶子命令有权接收位置参数——另一个方向由
+`TestHelpForEveryRealCommandStillExits0` 按三种拼法遍历整棵树守住，因为一个跑在 cobra 之前的
+检查，是有能力把所有地方的 `--help` 一起弄坏的。
 
 **"已自愈的隔离"降级成 warning，不占用退出 7。** `splitQuarantine` 把
 `registry.UnreadableError`（文档读不了但已隔离 + 重置为默认，store 仍完全可用）从致命错误里

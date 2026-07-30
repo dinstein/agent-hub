@@ -136,6 +136,11 @@ func TestUsageErrorsExit2(t *testing.T) {
 		{"unknown subcommand with --help", []string{"secret", "get", "--help"}},
 		{"unknown subcommand with -h", []string{"server", "bogus", "-h"}},
 		{"unknown nested subcommand with --help", []string{"profile", "server", "bogus", "--help"}},
+		// The same question through cobra's help COMMAND, whose own
+		// implementation resolves the deepest match and drops the rest.
+		{"help command, unknown subcommand", []string{"help", "secret", "get"}},
+		{"help command, unknown group", []string{"help", "bogus"}},
+		{"help command, unknown nested subcommand", []string{"help", "profile", "server", "bogus"}},
 		{"unknown flag", []string{"server", "ls", "--nope"}},
 		{"rm missing arg", []string{"server", "rm"}},
 		{"rm extra args", []string{"server", "rm", "a", "b"}},
@@ -187,6 +192,22 @@ func TestUsageErrorJSONEnvelope(t *testing.T) {
 	if env.Error.Hint == "" {
 		t.Errorf("usage errors should hint at --help")
 	}
+
+	// A refused help request reports through the envelope too, and the global
+	// flag may sit before the command. This one is decided before cobra runs,
+	// so it is the case most likely to bypass the output layer and print a
+	// human line into a caller expecting JSON.
+	code, out, stderr := runCLI(t, "", "--json", "help", "secret", "get")
+	if code != ExitUsage {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if stderr != "" {
+		t.Errorf("--json must not write to stderr, got %q", stderr)
+	}
+	env = decodeEnvelope(t, out)
+	if env.OK || env.Error == nil || env.Error.Code != CodeUsage {
+		t.Errorf("envelope = %+v, want ok:false code E_USAGE", env)
+	}
 }
 
 func TestGroupAliases(t *testing.T) {
@@ -222,8 +243,14 @@ func TestHelpForEveryRealCommandStillExits0(t *testing.T) {
 	walk = func(cmd *cobra.Command, path []string) {
 		if len(path) > 0 {
 			checked++
-			for _, flag := range []string{"--help", "-h"} {
-				args := append(append([]string{}, path...), flag)
+			// All three spellings of the same request, since all three go
+			// through the pre-check now.
+			invocations := [][]string{
+				append(append([]string{}, path...), "--help"),
+				append(append([]string{}, path...), "-h"),
+				append([]string{"help"}, path...),
+			}
+			for _, args := range invocations {
 				code, out, stderr := runCLI(t, "", args...)
 				if code != ExitOK {
 					t.Errorf("agenthub %s: exit %d, want 0\nstderr: %s",

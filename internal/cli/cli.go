@@ -349,15 +349,23 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 // values have no read path at all, by design. The one command that would have
 // contradicted that design was documented into existence by its own help.
 //
-// Scoped to exactly that hole. Without a help flag the RunE path already
+// There are two doors into that hole, and closing one is not closing it:
+// the help FLAG above, and the help COMMAND — `agenthub help secret get`,
+// where cobra's own implementation resolves the deepest matching command and
+// ignores whatever is left over, printing the same page with the same zero
+// status. Both are the same question ("document this name for me") and now get
+// the same answer when the name does not exist.
+//
+// Scoped to exactly that hole. Without a request for help the RunE path already
 // answers, and a command with no subcommands is entitled to positional args —
-// only a group, asked for help about a name it does not have, is answered here.
+// only a group, asked about a name it does not have, is answered here.
 func helpForUnknownSubcommand(root *cobra.Command, args []string) error {
-	target, rest, err := root.Find(args)
-	if err != nil || target == nil || !target.HasSubCommands() {
+	path, wantsHelp := helpRequest(args)
+	if !wantsHelp {
 		return nil
 	}
-	if !slices.ContainsFunc(rest, isHelpFlag) {
+	target, rest, err := root.Find(path)
+	if err != nil || target == nil || !target.HasSubCommands() {
 		return nil
 	}
 	for _, arg := range rest {
@@ -371,6 +379,27 @@ func helpForUnknownSubcommand(root *cobra.Command, args []string) error {
 		return e
 	}
 	return nil
+}
+
+// helpRequest reports whether args ask for help and, if so, the command path
+// they ask about. `help <path...>` and `<path...> --help` are one question
+// asked two ways, so they resolve to one path here rather than to two checks.
+//
+// The scan stops at the first non-flag token that is not `help`: from there on
+// the args are a command path, where only a help flag can still be asking.
+func helpRequest(args []string) (path []string, wantsHelp bool) {
+	for i, arg := range args {
+		if arg == "help" {
+			return args[i+1:], true
+		}
+		if !strings.HasPrefix(arg, "-") {
+			break
+		}
+	}
+	if slices.ContainsFunc(args, isHelpFlag) {
+		return args, true
+	}
+	return nil, false
 }
 
 // isHelpFlag reports whether arg asks for help.
