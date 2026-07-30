@@ -588,7 +588,7 @@ Main 再打印第二遍错误。
 | 4 | daemon 离线但命令需要它 | `DaemonDownf` |
 | 5 | 认证/授权失败 | OAuth 流 |
 | 6 | 被治理策略拒绝 | HITL deny、隔离、`E_STALE` |
-| 7 | registry 锁争用超时，或 registry 损坏且**无法自愈** |
+| 7 | 锁争用超时，或状态文件损坏且**无法自愈** | 四把跨进程锁中的任意一把——registry、integrity、skills、HTTP bridge 的 token 存储；外加 `registry.UnreadableError`、integrity 与 skills 的损坏状态路径、以及 `confops.KindState` |
 
 **"cobra 解析错误 = 退出 2" 是靠构造保证的，不是靠约定。** root 上设了
 `SetFlagErrorFunc`，把每一个 flag 解析错误漏斗进 `Usagef`；`exactArgs`/`noArgs`/`rangeArgs`

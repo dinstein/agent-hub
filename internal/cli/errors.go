@@ -18,7 +18,7 @@ const (
 	ExitDaemonDown = 4 // daemon offline but the command requires it
 	ExitAuth       = 5 // authentication / authorization failure
 	ExitDenied     = 6 // rejected by governance policy (HITL deny, quarantine)
-	ExitLocked     = 7 // registry lock contention timeout, or registry corrupt
+	ExitLocked     = 7 // any store's lock contention timeout, or state corrupt
 )
 
 // Stable machine-readable error codes for the --json failure envelope.
