@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dinstein/agent-hub/internal/approval"
 	"github.com/dinstein/agent-hub/internal/clients"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/ctlapi"
@@ -38,16 +37,14 @@ import (
 // serverStateForgetters builds the out-of-registry cleanups that
 // DELETE /v1/servers/{id} runs, so the daemon strips exactly the footprint
 // `agenthub server rm` does. Removing a server must not leave integrity
-// baselines, approval grants or a cached catalog behind for whatever is
+// baselines or a cached catalog behind for whatever is
 // re-added under that id to inherit.
 //
 // Same optional-dependency discipline as the rest of this file: a store that
 // will not open is omitted rather than failing the daemon, and confops turns
-// whatever is missing into a warning on the response. The allowlist is passed
-// in rather than reopened — the broker already holds that handle, and two
-// handles over one file would be two caches of the same grants.
+// whatever is missing into a warning on the response.
 func serverStateForgetters(
-	stateDir string, allowlist *approval.Allowlist, resolver *platform.Resolver,
+	stateDir string, resolver *platform.Resolver,
 ) []confops.StateForgetter {
 	var out []confops.StateForgetter
 	if stateDir != "" {
@@ -67,9 +64,6 @@ func serverStateForgetters(
 				return confops.ForgetServerOverrides(stateDir, id)
 			},
 		})
-	}
-	if allowlist != nil {
-		out = append(out, allowlist)
 	}
 	out = append(out, confops.StateFunc{
 		Name: "the cached tool list",

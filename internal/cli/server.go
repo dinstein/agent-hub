@@ -14,7 +14,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dinstein/agent-hub/internal/approval"
 	"github.com/dinstein/agent-hub/internal/catalog"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/gateway"
@@ -629,9 +628,6 @@ func (a *App) serverStateForgetters(stateDir string) []confops.StateForgetter {
 	}
 	if q, err := integrity.OpenQuarantineStore(stateDir, opts); err == nil {
 		out = append(out, q)
-	}
-	if al, err := approval.OpenAllowlist(stateDir); err == nil {
-		out = append(out, al)
 	}
 	out = append(out,
 		confops.StateFunc{

@@ -274,7 +274,6 @@ func TestSSETopicMapping(t *testing.T) {
 		{session.TopicClosed, TopicSessions, "closed", true},
 		{session.TopicOverlay, TopicSessions, "overlay", true},
 		{"server.changed", TopicServers, "changed", true},
-		{"approval.pending", TopicApprovals, "pending", true},
 		{"skill.updated", TopicSkills, "updated", true},
 		{"activity.call", TopicActivity, "call", true},
 		{"internal.debug", "", "", false},

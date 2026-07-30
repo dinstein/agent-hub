@@ -49,11 +49,11 @@ func okCall(trace *[]string) pipeline.CallFunc {
 }
 
 // TestFrozenGateChainOrder pins the production chain to the docs/architecture.md §9
-// order: scope → token tier → precheck → HITL.
+// order: scope → token tier → precheck.
 func TestFrozenGateChainOrder(t *testing.T) {
 	t.Parallel()
 	got := pipeline.New(pipeline.Options{}).GateNames()
-	want := []string{pipeline.GateScope, pipeline.GateTokenTier, pipeline.GatePrecheck, pipeline.GateHITL}
+	want := []string{pipeline.GateScope, pipeline.GateTokenTier, pipeline.GatePrecheck}
 	if len(got) != len(want) {
 		t.Fatalf("GateNames() = %v, want %v", got, want)
 	}
@@ -106,7 +106,7 @@ func TestM0GatesCountAndAllow(t *testing.T) {
 	counters := p.Counters()
 	for _, stage := range []string{
 		pipeline.GateScope, pipeline.GateTokenTier, pipeline.GatePrecheck,
-		pipeline.GateHITL, pipeline.StageDefendAndShape,
+		pipeline.StageDefendAndShape,
 	} {
 		if counters[stage] != 3 {
 			t.Errorf("counter[%s] = %d, want 3 (all %v)", stage, counters[stage], counters)

@@ -48,55 +48,6 @@ func TestToolTierDerivation(t *testing.T) {
 	}
 }
 
-// The asymmetry with DefaultDestructive is deliberate and documented; a test
-// pins it so a future "simplification" that merges the two has to argue with
-// this file first.
-func TestToolTierAndDefaultDestructiveDisagreeOnlyOnSilentAnnotations(t *testing.T) {
-	t.Parallel()
-	silent := json.RawMessage(`{}`)
-	if pipeline.ToolTier(silent) != pipeline.TierWrite {
-		t.Fatalf("an annotated but silent tool must be write for the tier ladder")
-	}
-	if !pipeline.DefaultDestructive(silent) {
-		t.Fatalf("an annotated but silent tool must stay destructive for denyDestructive")
-	}
-	// Everywhere else they agree.
-	for _, raw := range []string{``, `null`, `{"readOnlyHint":true}`, `{"destructiveHint":true}`, `{"destructiveHint":false}`} {
-		var a json.RawMessage
-		if raw != "" {
-			a = json.RawMessage(raw)
-		}
-		tierSaysDestructive := pipeline.ToolTier(a) == pipeline.TierDestructive
-		if tierSaysDestructive != pipeline.DefaultDestructive(a) {
-			t.Errorf("annotations %q: ToolTier says destructive=%v, DefaultDestructive says %v",
-				raw, tierSaysDestructive, pipeline.DefaultDestructive(a))
-		}
-	}
-}
-
-func TestTierCoversLadder(t *testing.T) {
-	t.Parallel()
-	all := []pipeline.CallerTier{pipeline.TierRead, pipeline.TierWrite, pipeline.TierDestructive}
-	rank := map[pipeline.CallerTier]int{pipeline.TierRead: 1, pipeline.TierWrite: 2, pipeline.TierDestructive: 3}
-	for _, caller := range all {
-		for _, tool := range all {
-			want := rank[caller] >= rank[tool]
-			if got := pipeline.TierCovers(caller, tool); got != want {
-				t.Errorf("TierCovers(%q, %q) = %v, want %v", caller, tool, got, want)
-			}
-		}
-	}
-	// An unrecognised caller tier covers nothing, including the lowest rung.
-	for _, tool := range all {
-		if pipeline.TierCovers(pipeline.CallerTier("root"), tool) {
-			t.Errorf("an unrecognised caller tier covered %q", tool)
-		}
-	}
-	if !pipeline.ValidTier(pipeline.TierWrite) || pipeline.ValidTier(pipeline.CallerTier("")) {
-		t.Error("ValidTier does not match the frozen ladder")
-	}
-}
-
 // TestTokenTierGateMatrix is the gate's own truth table: no tier passes
 // everything, each tier reaches exactly its rung and below, and the tool's
 // tier comes from its annotations (absent = destructive).
@@ -159,10 +110,10 @@ func TestTokenTierDenialNeverCallsDownstream(t *testing.T) {
 	}
 }
 
-// TestThreeDefenceLinesAreDistinguishable is the docs/architecture.md §9 stack: scope,
-// token tier and HITL each block, in that order, and each rejection carries
-// its own gate and code so audit can tell them apart.
-func TestThreeDefenceLinesAreDistinguishable(t *testing.T) {
+// TestDefenceLinesAreDistinguishable is the docs/architecture.md §9 stack:
+// scope and token tier each block, in that order, and each rejection carries
+// its own gate and code so a caller can tell them apart.
+func TestDefenceLinesAreDistinguishable(t *testing.T) {
 	t.Parallel()
 	const (
 		srv  = "srv"
@@ -192,15 +143,7 @@ func TestThreeDefenceLinesAreDistinguishable(t *testing.T) {
 	})
 	wantBlocked(t, err, pipeline.GateTokenTier, pipeline.CodeTokenTierDenied)
 
-	// Line 3: visible AND within the credential's tier — now the human's
-	// rule applies.
-	_, err = execute(t, visible, pipeline.CallRequest{
-		Exposed: "srv__rm", ServerID: srv, RawTool: tool,
-		Annotations: destructive, CallerTier: pipeline.TierDestructive,
-	})
-	wantBlocked(t, err, pipeline.GateHITL, pipeline.CodeDestructiveDenied)
-
-	// All three lines open: the call runs.
+	// Both lines open: the call runs.
 	permissive := pipeline.New(pipeline.Options{
 		Scope: scopeOf(scopeWith([]string{tool}, scope.EffectiveApproval{})),
 	})
@@ -212,7 +155,7 @@ func TestThreeDefenceLinesAreDistinguishable(t *testing.T) {
 	}
 }
 
-// The three codes must stay distinct values — audit keys off them.
+// The codes must stay distinct values — callers key off them.
 func TestRejectionCodesAreDistinct(t *testing.T) {
 	t.Parallel()
 	seen := map[string]bool{}

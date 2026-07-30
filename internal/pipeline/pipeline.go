@@ -5,7 +5,7 @@
 // nowhere else, so the governance gates cannot fork. The gate chain order is
 // frozen by docs/architecture.md §9:
 //
-//	scope gate → token tier gate → argument precheck → HITL
+//	scope gate → token tier gate → argument precheck
 //
 // then the downstream call, then the defend_and_shape hook (injection scan,
 // leakguard, then budget-shape through Options.ResultShaper). Success and
@@ -135,23 +135,12 @@ type Pipeline struct {
 // documented no-authority assembly, not an error state.
 type Options struct {
 	// Scope returns the caller's current effective scope. The scope gate
-	// and the HITL trigger predicate read the SAME pointer the assembling
-	// gateway uses for its tools/list projection (docs/architecture.md §7). nil func
+	// reads the SAME pointer the assembling gateway uses for its tools/list
+	// projection (docs/architecture.md §7). nil func
 	// or nil result = no scope authority: the scope gate allows (matching
 	// M0 and the registry-unavailable cache-serving mode of docs/flows.md;
 	// with no registry there is also no governance config to enforce).
 	Scope func() *scope.EffectiveScope
-
-	// Destructive decides whether a tool is destructive from its verbatim
-	// annotations JSON. nil = DefaultDestructive (annotations missing or
-	// unparsable ⇒ destructive — fail-closed, docs/architecture.md §9).
-	Destructive func(annotations json.RawMessage) bool
-
-	// Asker is the HITL approval broker. nil = M1 baseline (no broker
-	// shipped yet): approval-triggering calls pass with only the counter
-	// advanced — the pre-M1.5 behavior; DenyDestructive is still enforced
-	// because it needs no human in the loop.
-	Asker Asker
 
 	// Scanner runs the injection scan inside defend_and_shape. nil
 	// disables scanning (M0-compat pass-through).
@@ -195,16 +184,11 @@ type Options struct {
 // New returns the production pipeline with the frozen gate chain
 // (docs/architecture.md §9 order) and the defend_and_shape hook, wired to opts.
 func New(opts Options) *Pipeline {
-	destructive := opts.Destructive
-	if destructive == nil {
-		destructive = DefaultDestructive
-	}
 	return &Pipeline{
 		gates: []Gate{
 			&scopeGate{scopeOf: opts.Scope},
 			&tokenTierGate{},
 			&precheckGate{onSelfHeal: opts.OnSelfHeal},
-			&hitlGate{scopeOf: opts.Scope, destructive: destructive, asker: opts.Asker},
 		},
 		shaper: &defendAndShape{
 			scanner:     opts.Scanner,

@@ -175,7 +175,7 @@ func eventRowOf(ev api.Event) EventRow {
 // deliver anything.
 func eventTopics() []string {
 	return []string{
-		ctlapi.TopicServers, ctlapi.TopicSessions, ctlapi.TopicApprovals,
+		ctlapi.TopicServers, ctlapi.TopicSessions,
 		ctlapi.TopicActivity, ctlapi.TopicSkills,
 	}
 }

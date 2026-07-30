@@ -428,7 +428,7 @@ func TestStartupSequenceAndFullCallPath(t *testing.T) {
 	}
 	for _, stage := range []string{
 		pipeline.GateScope, pipeline.GateTokenTier, pipeline.GatePrecheck,
-		pipeline.GateHITL, pipeline.StageDefendAndShape,
+		pipeline.StageDefendAndShape,
 	} {
 		if _, ok := g.pipe.Counters()[stage]; !ok {
 			t.Errorf("pipeline counter %q missing", stage)

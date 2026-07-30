@@ -462,12 +462,8 @@ func newGateway(cfg Config) (*gateway, error) {
 
 	// The pipeline reads the SAME effective-scope pointer the tools/list
 	// projection uses (docs/architecture.md §7: one visibility source, two readers).
-	// The asker is ALWAYS wired (M1-C): with no daemon link it answers
-	// Unreachable, so an approval-triggering call without a reachable broker
-	// is rejected — fail-closed — while non-gated calls are untouched.
 	g.pipe = pipeline.New(pipeline.Options{
 		Scope:           scopeFn,
-		Asker:           &gwAsker{g: g},
 		Scanner:         injection.NewDefault(),
 		InjectionPolicy: g.injectionPolicy,
 		// Shaping runs inside the pipeline, not around it: every execute path

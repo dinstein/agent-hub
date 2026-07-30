@@ -8,7 +8,6 @@ import (
 	"slices"
 
 	"github.com/dinstein/agent-hub/internal/discovery"
-	"github.com/dinstein/agent-hub/internal/integrity"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/pipeline"
@@ -327,18 +326,6 @@ type callTarget struct {
 // outcome upstream.
 func (g *gateway) runCall(ctx context.Context, req *mcp.Request, t callTarget, args json.RawMessage) {
 	route := t.route
-	// Approval metadata rides the context (the pipeline passes ctx through
-	// to the HITL asker): raw args for frontend display over the socket,
-	// and the live definition for the allowlist fingerprint (asker.go).
-	ctx = withCallMeta(ctx, callMeta{
-		args: args,
-		snap: integrity.ToolSnapshot{
-			Name:        route.RawTool,
-			Description: t.description,
-			InputSchema: t.inputSchema,
-		},
-	})
-
 	callReq := pipeline.CallRequest{
 		Exposed:     t.exposed,
 		ServerID:    route.ServerID,

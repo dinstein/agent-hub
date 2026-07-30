@@ -35,7 +35,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dinstein/agent-hub/internal/approval"
 	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/downstream"
@@ -210,25 +209,14 @@ func Run(ctx context.Context, cfg Config) error {
 	bus := event.NewBus()
 	mgr := session.NewMemoryManager(session.Options{Bus: bus})
 
-	// HITL broker (docs/flows.md): lives in the daemon, frontends subscribe
-	// through ctlapi SSE, stdio gateways ask over the control socket. The
-	// remember-forever allowlist failing to open only degrades — a broker
-	// WITHOUT an allowlist sends every gated call to a human, which is the
-	// safe direction; refusing to run the broker would instead turn every
-	// gated call into an Unreachable rejection with no way to approve.
-	var allowlist *approval.Allowlist
+	// <data>/state backs the tool-governance stores the control plane reads
+	// and writes. An unresolvable state dir is not fatal: the endpoints that
+	// need it answer 404 rather than the daemon refusing to start.
 	stateDir, serr := resolver.StateDir()
 	if serr != nil {
-		log.Warn("state dir unresolved; running without approval allowlist", "error", serr)
+		log.Warn("state dir unresolved; tool governance endpoints unavailable", "error", serr)
 		stateDir = ""
-	} else if allowlist, serr = approval.OpenAllowlist(stateDir); serr != nil {
-		log.Warn("approval allowlist unavailable; every gated call needs a human", "error", serr)
-		allowlist = nil
 	}
-	broker := approval.NewMemBroker(approval.Options{
-		Allowlist:  allowlist,
-		DefaultTTL: cfg.ApprovalTTL,
-	})
 
 	// Runtime state source: ONE aggregator wired as both the sink the
 	// gateway-report endpoint writes into and the source /v1/servers reads
@@ -269,7 +257,6 @@ func Run(ctx context.Context, cfg Config) error {
 		Logger:            log,
 		LinkAckTimeout:    cfg.LinkAckTimeout,
 		LinkAttachTimeout: cfg.LinkAttachTimeout,
-		Approvals:         broker,
 		GrantTTL:          cfg.GrantTTL,
 		NonRegistry:       nonReg,
 		// Tool governance, quarantine and the audit readers are gated on
@@ -280,7 +267,7 @@ func Run(ctx context.Context, cfg Config) error {
 		LogsDir:  logsDir,
 		// Deleting a server must strip its whole footprint here exactly as it
 		// does from the CLI; these are the stores that outlive the registry.
-		ServerStateForgetters: serverStateForgetters(stateDir, allowlist, resolver),
+		ServerStateForgetters: serverStateForgetters(stateDir, resolver),
 	})
 	if err != nil {
 		return fmt.Errorf("daemon: %w", err)
@@ -328,7 +315,6 @@ func Run(ctx context.Context, cfg Config) error {
 	bgCtx, bgStop := context.WithCancel(context.Background())
 	defer bgStop()
 	go mgr.Run(bgCtx)
-	go forgetSessionGrants(bgCtx, bus, broker)
 
 	watcher := startWatch(bgCtx, store, cfg.Watch, bus, log)
 
@@ -467,26 +453,6 @@ func buildLogger(cfg Config, logsDir string) (*slog.Logger, func() error, error)
 		}
 	}
 	return log, closeFn, nil
-}
-
-// forgetSessionGrants drops broker remember-session grants when their
-// session closes (session.TopicClosed): a grant scoped to a session must
-// never outlive it (fail direction: forgetting too much only costs a human
-// one extra approval).
-func forgetSessionGrants(ctx context.Context, bus *event.Bus, broker *approval.MemBroker) {
-	sub := bus.Subscribe(event.DefaultBuffer, session.TopicClosed)
-	defer sub.Close()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case ev, ok := <-sub.Events():
-			if !ok {
-				return
-			}
-			broker.ForgetSession(ev.Key)
-		}
-	}
 }
 
 // startWatch wires registry watching into the bus: on every external change

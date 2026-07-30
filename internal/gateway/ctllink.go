@@ -60,16 +60,6 @@ type ctlLink struct {
 	loggedDown bool // first dial failure logs at Info, repeats at Debug
 }
 
-// alive returns a context that ends when the current daemon connection
-// does. It is never nil: a link that has not connected yet still lets an
-// ask try (the dial fails fast and reports Unreachable) — only a
-// connection that dies mid-wait needs the cancellation.
-func (l *ctlLink) alive() context.Context {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.aliveCtx
-}
-
 // armLocked replaces the alive context, cancelling whatever waited on the
 // previous connection. Callers must hold l.mu.
 func (l *ctlLink) armLocked(parent context.Context) {

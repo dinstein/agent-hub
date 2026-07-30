@@ -110,7 +110,7 @@ func TestInProcGateCountParity(t *testing.T) {
 	}
 	for _, stage := range []string{
 		pipeline.GateScope, pipeline.GateTokenTier, pipeline.GatePrecheck,
-		pipeline.GateHITL, pipeline.StageDefendAndShape,
+		pipeline.StageDefendAndShape,
 	} {
 		if httpCounters[stage] != 1 {
 			t.Errorf("stage %q counted %d over the HTTP path, want 1", stage, httpCounters[stage])

@@ -192,6 +192,9 @@ func (c *gatewayClient) call(method string, params any, timeout time.Duration) (
 				// Responses to other ids (stale reverse-RPC replies) drop.
 			}
 		case <-deadline:
+			// "timeout" alone cannot say where the gateway was parked, so
+			// take the goroutine dump with us on the way out.
+			c.dumpStacks()
 			c.fatalf("timeout (%s) waiting for %s response", timeout, method)
 		}
 	}

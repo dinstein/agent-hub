@@ -157,162 +157,6 @@ func TestPrecheckGateMatrix(t *testing.T) {
 	}
 }
 
-// fakeAsker returns a scripted decision (or error) and records the request.
-type fakeAsker struct {
-	dec  pipeline.Decision
-	err  error
-	last pipeline.ApprovalRequest
-	n    int
-}
-
-func (a *fakeAsker) Ask(_ context.Context, req pipeline.ApprovalRequest) (pipeline.Decision, error) {
-	a.n++
-	a.last = req
-	return a.dec, a.err
-}
-
-// TestHITLGateDecisions covers the asker decision mapping and the trigger
-// predicate combinations.
-func TestHITLGateDecisions(t *testing.T) {
-	t.Parallel()
-	view := []string{"tool"}
-	req := pipeline.CallRequest{
-		Exposed: "srv__tool", ServerID: "srv", RawTool: "tool",
-		Args:        json.RawMessage(`{"a":1}`),
-		Annotations: readOnlyAnnotations,
-	}
-
-	humanApproval := scope.EffectiveApproval{HumanApproval: true}
-	cases := []struct {
-		name     string
-		dec      pipeline.Decision
-		err      error
-		wantCode string // "" = allowed
-	}{
-		{"approved", pipeline.DecisionApproved, nil, ""},
-		{"denied", pipeline.DecisionDenied, nil, pipeline.CodeHITLDenied},
-		{"timeout", pipeline.DecisionTimeout, nil, pipeline.CodeHITLTimeout},
-		{"unavailable", pipeline.DecisionUnavailable, nil, pipeline.CodeHITLUnavailable},
-		{"unknown-decision", pipeline.Decision("perhaps"), nil, pipeline.CodeHITLUnavailable},
-		{"broker-error", pipeline.DecisionApproved, errors.New("broker down"), pipeline.CodeHITLUnavailable},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			asker := &fakeAsker{dec: tc.dec, err: tc.err}
-			p := pipeline.New(pipeline.Options{
-				Scope: scopeOf(scopeWith(view, humanApproval)),
-				Asker: asker,
-			})
-			_, err := execute(t, p, req)
-			if tc.wantCode == "" {
-				if err != nil {
-					t.Fatalf("want allow, got %v", err)
-				}
-			} else {
-				wantBlocked(t, err, pipeline.GateHITL, tc.wantCode)
-			}
-			if asker.n != 1 {
-				t.Fatalf("asker called %d times, want 1", asker.n)
-			}
-			// The approval is bound to these exact arguments.
-			if asker.last.ArgsHash != pipeline.HashArgs(req.Args) {
-				t.Errorf("ArgsHash = %q, want the sha256 binding", asker.last.ArgsHash)
-			}
-		})
-	}
-}
-
-// TestHITLGateTriggers covers when the gate consults the broker at all,
-// the destructive fail-closed default, DenyDestructive enforcement without
-// a broker, and the nil-asker M1 baseline.
-func TestHITLGateTriggers(t *testing.T) {
-	t.Parallel()
-	view := []string{"tool"}
-	readReq := pipeline.CallRequest{
-		Exposed: "srv__tool", ServerID: "srv", RawTool: "tool",
-		Annotations: readOnlyAnnotations,
-	}
-	bareReq := readReq
-	bareReq.Annotations = nil // missing annotations ⇒ destructive (fail-closed)
-	explicitSafe := readReq
-	explicitSafe.Annotations = json.RawMessage(`{"destructiveHint":false}`)
-
-	t.Run("no-approval-needed-never-asks", func(t *testing.T) {
-		asker := &fakeAsker{dec: pipeline.DecisionDenied}
-		p := pipeline.New(pipeline.Options{
-			Scope: scopeOf(scopeWith(view, scope.EffectiveApproval{})),
-			Asker: asker,
-		})
-		if _, err := execute(t, p, bareReq); err != nil {
-			t.Fatalf("no switches set: %v", err)
-		}
-		if asker.n != 0 {
-			t.Fatalf("asker consulted %d times without a trigger", asker.n)
-		}
-	})
-	t.Run("missing-annotations-classify-as-destructive", func(t *testing.T) {
-		asker := &fakeAsker{dec: pipeline.DecisionDenied}
-		p := pipeline.New(pipeline.Options{
-			Scope: scopeOf(scopeWith(view, scope.EffectiveApproval{HumanApproval: true})),
-			Asker: asker,
-		})
-		_, err := execute(t, p, bareReq)
-		wantBlocked(t, err, pipeline.GateHITL, pipeline.CodeHITLDenied)
-		if !asker.last.Destructive {
-			t.Error("missing annotations must classify as destructive")
-		}
-		// The annotation decides how a request is CLASSIFIED to the approver,
-		// not whether one is asked: humanApproval gates every call, so these
-		// reach the broker too — flagged non-destructive.
-		for _, r := range []pipeline.CallRequest{readReq, explicitSafe} {
-			asker.n = 0
-			if _, err := execute(t, p, r); err == nil {
-				t.Fatalf("%q: humanApproval must gate non-destructive calls too", r.RawTool)
-			}
-			if asker.n != 1 {
-				t.Fatalf("%q: broker consulted %d times, want 1", r.RawTool, asker.n)
-			}
-			if asker.last.Destructive {
-				t.Errorf("%q classified as destructive", r.RawTool)
-			}
-		}
-	})
-	t.Run("deny-destructive-blocks-without-broker", func(t *testing.T) {
-		p := pipeline.New(pipeline.Options{
-			Scope: scopeOf(scopeWith(view, scope.EffectiveApproval{DenyDestructive: true})),
-		})
-		_, err := execute(t, p, bareReq)
-		wantBlocked(t, err, pipeline.GateHITL, pipeline.CodeDestructiveDenied)
-		// A read-only tool is unaffected.
-		if _, err := execute(t, p, readReq); err != nil {
-			t.Fatalf("read-only under denyDestructive: %v", err)
-		}
-	})
-	t.Run("nil-asker-fails-closed", func(t *testing.T) {
-		// An assembly that requires human approval but wires no broker cannot
-		// obtain one, so the call is blocked rather than auto-approved. This
-		// used to pass (the M1 baseline, before any broker existed); nothing
-		// in the type system requires an Asker, so the old default meant a
-		// forgotten field silently disabled the whole HITL gate.
-		p := pipeline.New(pipeline.Options{
-			Scope: scopeOf(scopeWith(view, scope.EffectiveApproval{HumanApproval: true})),
-		})
-		_, err := execute(t, p, readReq)
-		wantBlocked(t, err, pipeline.GateHITL, pipeline.CodeHITLUnavailable)
-	})
-
-	t.Run("nil-asker-does-not-block-what-no-scope-requires", func(t *testing.T) {
-		// The flip must not turn into "no broker means nothing works": a call
-		// whose scope asks for no approval never reaches the asker at all.
-		p := pipeline.New(pipeline.Options{
-			Scope: scopeOf(scopeWith(view, scope.EffectiveApproval{})),
-		})
-		if _, err := execute(t, p, readReq); err != nil {
-			t.Fatalf("a call needing no approval was blocked without a broker: %v", err)
-		}
-	})
-}
-
 // testScanner builds a scanner with a single deterministic phrase rule.
 func testScanner(t *testing.T) *injection.Scanner {
 	t.Helper()
@@ -328,6 +172,9 @@ func testScanner(t *testing.T) *injection.Scanner {
 func polOf(p injection.Policy) func() injection.Policy {
 	return func() injection.Policy { return p }
 }
+
+// TestDefendAndShapeLabel: label mode injects the warning block BEFORE the
+// original content and never blocks.
 
 // TestDefendAndShapeLabel: label mode injects the warning block BEFORE the
 // original content and never blocks.
@@ -444,30 +291,4 @@ func TestDefendAndShapeBlock(t *testing.T) {
 			t.Fatalf("exempt server result = (%+v, %v), want pass-through", res, err)
 		}
 	})
-}
-
-// TestDestructiveDefault pins the fail-closed annotation classifier.
-func TestDestructiveDefault(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		annotations string
-		want        bool
-	}{
-		{"", true},                           // missing ⇒ destructive
-		{`{broken`, true},                    // unparsable ⇒ destructive
-		{`{}`, true},                         // no hints ⇒ destructive (spec default)
-		{`{"readOnlyHint":true}`, false},     // read-only wins
-		{`{"destructiveHint":false}`, false}, // explicit opt-out
-		{`{"destructiveHint":true}`, true},   // explicit destructive
-		{`{"readOnlyHint":false}`, true},     // not read-only, hint absent
-	}
-	for _, tc := range cases {
-		var raw json.RawMessage
-		if tc.annotations != "" {
-			raw = json.RawMessage(tc.annotations)
-		}
-		if got := pipeline.DefaultDestructive(raw); got != tc.want {
-			t.Errorf("DefaultDestructive(%q) = %v, want %v", tc.annotations, got, tc.want)
-		}
-	}
 }

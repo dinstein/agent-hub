@@ -15,9 +15,8 @@ The packages collaborate in layers rather than as peers:
   plus `internal/guard` itself only, enforced by depguard). These packages know nothing about
   servers, sessions, or the pipeline; they make purely functional determinations and hand the result
   up for someone else to act on.
-- `internal/integrity` and `internal/approval` are the stateful governance surface: the former
-  answers "is this tool definition still the one I recognize", the latter "does a human consent to
-  this particular call". The two are deliberately orthogonal and never write to each other's
+- `internal/integrity` is the stateful governance surface: it answers "is this tool definition still
+  the one I recognize". It never writes to another governance store's
   storage.
 - `internal/audit` is everyone's exit. Its write discipline is a concurrency-correctness dependency,
   not a belt-and-braces measure — but it is **not uniform across the four streams**, and reading it
@@ -533,9 +532,7 @@ The gateway consumes two stores through `internal/gateway/toolpolicy.go`:
 that removes disabled/quarantined tools from the catalog entirely **during aggregation** (not listed,
 not routable), with hot reload driven by fsnotify plus polling. **The failure direction is refusal**:
 if a read has never succeeded the catalog is empty, and on a failed reload the currently effective
-deny set is retained — never relaxed because a read failed. The gateway also uses
-`integrity.Fingerprint` to bind HITL approvals to live definitions
-(`internal/gateway/asker.go`).
+deny set is retained — never relaxed because a read failed.
 
 `DisabledTools` **projects only the `Disabled` flag, not `Status`** — moving `CallAllowed()` wholesale
 into the data plane would make every unapproved tool vanish from the catalog under ModeManual, which
@@ -566,74 +563,6 @@ entry, without going through `CheckServer`. In other words, the **automatic** dr
 auto-quarantine chain is fully implemented at the storage layer with cross-process tests, but is not
 yet wired into the gateway's catalog refresh path; today the quarantine set can only be written by
 the CLI/daemon, and once written the gateway honors it immediately.
-
----
-
-## internal/approval
-
-**One-line responsibility**: implement HITL approval — a resident `Broker` in the daemon queues
-intercepted calls for a human to decide, the gateway side reaches it through the `Asker` façade, and
-a fingerprint-keyed allowlist remembers "approve permanently".
-
-`Asker` has only `Ask`, which is everything the data plane needs; `MemBroker` implements the full
-`Broker` in-process inside the daemon, while `RemoteAsker` is the stdio-gateway implementation over
-the UDS control connection.
-
-### Invariants and failure directions: fail-closed all the way down
-
-- **Only `Approved` permits execution.** `Denied`, `Timedout`, `Unreachable`, and `Stale` are all
-  terminal refusals, and a caller that can't tell them apart still has to block. `Decision`'s zero
-  value is `Denied`, `ParseDecision` returns `(Unreachable, false)` for unknown strings, and
-  `RemoteAsker` returns `Unreachable` for an out-of-range `Decision` value too — no path turns
-  corrupt data into an approval.
-- **No subscribers means an immediate `Unreachable`** (inherited from toolport's headless semantics).
-  We can't leave the agent waiting until the deadline for a human who can't even see the request.
-- **The deadline is stamped by the broker** (default `DefaultTTL` 120s), so the UI countdown and the
-  automatic refusal land at the same instant. An answer arriving after expiry gets `ErrExpired`, and
-  `AnswerAs` adds one more case: if the deadline has passed but `Ask`'s timer hasn't fired yet, it's
-  recorded as `Timedout` on the spot — a late approval never executes.
-- **`RemoteAsker` folds every failure into `Unreachable`**: nil receiver, an unwired `Send`, a
-  transport error, an out-of-range decision. A gateway that can't reach the daemon must refuse the
-  intercepted call, not allow it.
-- **The first answer wins.** `finish`/`setTerminalLocked` guarantee `terminal` is written exactly once
-  under `MemBroker.mu`, and `done` is buffered(1) so sends never block; later answers get
-  `ErrAlreadyDecided` (with the first decider's identity in the message, which ctlapi maps to a 409),
-  or `ErrExpired` when the terminal state is `Timedout`/`Unreachable`.
-- **`LiveCheck` turns drift into `Stale`.** The approval path first runs the injected `LiveCheck`
-  outside the lock (it may need to consult the router), then re-confirms on return that nobody got
-  ahead of it; if the definition changed, waiters are set to `Stale` and `ErrStale` is returned, and
-  **no remember grant is recorded**. A nil `LiveCheck` only disables the re-check at answer time; the
-  pipeline's independent recomputation of args_hash before execution still stands.
-- **`ArgsJSON` exists only in memory and on the authenticated control channel.** The allowlist doesn't
-  store it, audit records don't store it, and `Entry` holds only the hash. Argument binding relies on
-  `ArgsHash` (`audit.ArgsHash`'s canonical-JSON SHA-256) — "what was approved is what runs". The
-  `Request` embedded in `RequestStatus` still carries `ArgsJSON`, so consumers (ctlapi) must strip it
-  themselves from responses on non-SSE/control channels.
-- **The allowlist is keyed by fingerprint, and callers pass the live definition's fingerprint.** A
-  drifted tool definition produces a different fingerprint, so it misses the allowlist and goes back
-  to a human. An empty fingerprint **never matches any entry** (blocked once in `Entry.matches` and
-  again in `allowHit`), so tools that can't be fingerprinted always go through a human.
-  `Server`/`Tool`/`ArgsHash` are optional additional bindings: if set, they must match too.
-- **Watch the granularity of remember**: `grantEntry` writes only
-  `Fingerprint`+`Server`+`Tool`+`GateReason` and **not `ArgsHash`** — the semantics of "remember" are
-  "this exact tool definition, any subsequent arguments". `Entry` supporting an `ArgsHash` binding
-  exists so that narrower grants can be written from elsewhere, not as the broker's default behavior.
-- **A failed remember does not revoke this approval**: `ErrRememberFailed` (missing fingerprint,
-  missing session, no allowlist configured, write failure) is returned to the caller, but the
-  one-time approval still stands.
-- **Allowlist read/write discipline**: the daemon is the sole writer, so there's only an in-process
-  mutex plus the atomic write ladder and **no cross-process lock** (unlike integrity — confirm this
-  premise still holds before changing anything). A missing file = an empty table; corruption or a
-  future version = an error and **no overwrite** of the file, after which the caller runs without an
-  allowlist, meaning a human is asked every single time — that's the safe direction. `Add`/`Remove`
-  roll back the in-memory state on a save failure, so the disk can't report failure while memory
-  quietly keeps an entry.
-- **Broadcasting is non-blocking**: `Ask` does a select-default send to each subscriber channel while
-  holding the lock, skipping full ones. A dropped notification degrades to `Timedout`, and never to
-  blocking the data plane or approving anything. `Subscribe` replays all currently pending requests to
-  a newly attached frontend, and the returned cancel is idempotent.
-
-Every terminal state except `Approved` forbids execution.
 
 ---
 

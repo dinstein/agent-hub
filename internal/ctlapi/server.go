@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/api"
-	"github.com/dinstein/agent-hub/internal/approval"
 	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/event"
@@ -36,16 +35,12 @@ const (
 	CodeTightenOnly = "E_TIGHTEN_ONLY"
 	// CodeConflict rejects a second attach on a single-shot gateway link.
 	CodeConflict = "E_CONFLICT"
-	// CodeAlreadyDecided answers a late approval/grant decision with 409:
-	// first answer wins; the body names the first decider (idempotent for
+	// CodeAlreadyDecided answers a late grant decision with 409: first
+	// answer wins; the body names the first decider (idempotent for
 	// scripts, docs/modules/controlplane.md).
 	CodeAlreadyDecided = "E_ALREADY_DECIDED"
-	// CodeExpired answers a decision on a timed-out (or asker-vanished)
-	// approval request with 410 — late approvals never execute.
+	// CodeExpired answers a decision on a timed-out request with 410.
 	CodeExpired = "E_EXPIRED"
-	// CodeStale reports that an approval was recorded as Stale: the tool
-	// definition drifted between gate time and the answer.
-	CodeStale = "E_STALE"
 	// CodeInternal is the generic 500 (including recovered panics).
 	CodeInternal = "E_INTERNAL"
 )
@@ -136,10 +131,6 @@ type Options struct {
 	// LinkAttachTimeout bounds registration-to-link-attach before the
 	// session is presumed dead (0 = DefaultLinkAttachTimeout).
 	LinkAttachTimeout time.Duration
-	// Approvals is the daemon-resident HITL broker. nil disables the
-	// approvals surface entirely (endpoints answer the uniform 404) — a
-	// test-only mode; the daemon always wires one.
-	Approvals *approval.MemBroker
 	// GrantTTL is the default widening lifetime of an approved grant
 	// (0 = DefaultGrantTTL, 1h). Tests shrink it.
 	GrantTTL time.Duration
@@ -365,18 +356,6 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			s.handleGatewayRegister(w, r)
 			return
 		}
-	case "/v1/approvals":
-		if r.Method == http.MethodGet {
-			s.handleApprovalsList(w, r)
-			return
-		}
-	case "/v1/approvals/ask":
-		// Matched before the {token} pattern below: "ask" is a verb, never a
-		// token (broker tokens are long random strings).
-		if r.Method == http.MethodPost {
-			s.handleApprovalAsk(w, r)
-			return
-		}
 	case "/v1/grants":
 		switch r.Method {
 		case http.MethodGet:
@@ -393,10 +372,6 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		}
 		if id, ok := killPathID(r); ok && r.Method == http.MethodPost {
 			s.handleKillSession(w, r, id)
-			return
-		}
-		if tok, ok := approvalsToken(r); ok && r.Method == http.MethodPost {
-			s.handleApprovalDecide(w, r, tok)
 			return
 		}
 		if id, ok := grantsPathID(r); ok && r.Method == http.MethodPost {

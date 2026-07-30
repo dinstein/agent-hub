@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"slices"
 	"testing"
@@ -223,4 +224,50 @@ func TestGrantTTLCapAndDefault(t *testing.T) {
 	if over.TTLSeconds != int64((24*time.Hour)/time.Second) {
 		t.Errorf("capped ttl = %ds, want 24h", over.TTLSeconds)
 	}
+}
+
+// postJSON sends one JSON body to the daemon over the unix socket and
+// returns the status and raw response. It moved here from the approvals
+// test file when human approval was removed; grants is the surviving
+// caller.
+func postJSON(t *testing.T, sock, path string, body any) (int, []byte) {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := rawClient(sock).Post("http://d"+path, "application/json", bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.StatusCode, b
+}
+
+// getJSON reads one JSON endpoint over the unix socket. Same provenance as
+// postJSON above.
+func getJSON(t *testing.T, sock, path string, out any) int {
+	t.Helper()
+	resp, err := rawClient(sock).Get("http://d" + path)
+	if err != nil {
+		t.Fatalf("GET %s: %v", path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var env struct {
+		OK   bool            `json:"ok"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+		t.Fatalf("GET %s decode: %v", path, err)
+	}
+	if out != nil && env.OK {
+		if err := json.Unmarshal(env.Data, out); err != nil {
+			t.Fatalf("GET %s data: %v", path, err)
+		}
+	}
+	return resp.StatusCode
 }

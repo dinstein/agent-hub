@@ -9,27 +9,24 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/api"
-	"github.com/dinstein/agent-hub/internal/approval"
 	"github.com/dinstein/agent-hub/internal/event"
 	"github.com/dinstein/agent-hub/internal/session"
 )
 
 // SSE topics exposed on /v1/events (api.EventsService mirrors this list).
 const (
-	TopicServers   = "servers"
-	TopicSessions  = "sessions"
-	TopicApprovals = "approvals"
-	TopicActivity  = "activity"
-	TopicSkills    = "skills"
+	TopicServers  = "servers"
+	TopicSessions = "sessions"
+	TopicActivity = "activity"
+	TopicSkills   = "skills"
 )
 
 // sseTopics is the closed set of subscribable topics.
 var sseTopics = map[string]bool{
-	TopicServers:   true,
-	TopicSessions:  true,
-	TopicApprovals: true,
-	TopicActivity:  true,
-	TopicSkills:    true,
+	TopicServers:  true,
+	TopicSessions: true,
+	TopicActivity: true,
+	TopicSkills:   true,
 }
 
 // busTopicPrefixMap maps internal bus topic name prefixes (the segment
@@ -38,7 +35,6 @@ var sseTopics = map[string]bool{
 var busTopicPrefixMap = map[string]string{
 	"session":  TopicSessions,
 	"server":   TopicServers,
-	"approval": TopicApprovals,
 	"activity": TopicActivity,
 	"skill":    TopicSkills,
 }
@@ -103,26 +99,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	topics, err := parseTopics(r.URL.Query().Get("topics"))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, CodeBadRequest, err.Error(),
-			"valid topics: servers, sessions, approvals, activity, skills", reqID)
+			"valid topics: servers, sessions, activity, skills", reqID)
 		return
 	}
 	rc := http.NewResponseController(w)
 
 	sub := s.opts.Bus.Subscribe(event.DefaultBuffer)
 	defer sub.Close()
-
-	// Approvals bridge: a connection subscribed to the approvals topic IS an
-	// approval frontend — it registers with the broker (FrontendCount) and
-	// receives pending requests (with ArgsJSON: the authenticated socket is
-	// the one place argument bytes may travel) plus the replayed backlog.
-	// Registered BEFORE the headers go out so that a connected subscriber is
-	// never invisible to the broker's Unreachable check.
-	var pending <-chan approval.Request
-	if s.opts.Approvals != nil && subscribed(topics, TopicApprovals) {
-		ch, cancel := s.opts.Approvals.Subscribe(actorFrom(r.Context()))
-		defer cancel()
-		pending = ch
-	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -200,21 +183,6 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			_ = rc.Flush()
 		case f := <-out:
-			if !s.writeFrame(w, rc, topics, f) {
-				return
-			}
-		case req, ok := <-pending:
-			if !ok {
-				pending = nil // closed by our own cancel during teardown
-				continue
-			}
-			raw, err := json.Marshal(pendingWire(req))
-			if err != nil {
-				continue
-			}
-			f := frame{topic: TopicApprovals, ev: api.Event{
-				Topic: TopicApprovals, Kind: "pending", Payload: raw,
-			}}
 			if !s.writeFrame(w, rc, topics, f) {
 				return
 			}
