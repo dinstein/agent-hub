@@ -304,7 +304,10 @@ client 绑定（收窄搬到了 profile 上），但 `scopeBindingWire` 依旧�
 **`GET /v1/clients` 只 stat，绝不打开文件**（每次打开页面就按客户端数弹一轮 macOS 隐私窗，比没有列表更糟），
 所以「agenthub 到底接进这个客户端没有」在 `GET /v1/clients/{id}/inspect`——一次一个、由调用方点名，
 弹窗因此属于一次点击而不是属于打开页面。那里某个位置读不了不会让整个请求失败：它带着自己的错误和读得
-好的位置一起返回，并把状态压成 `denied` 而不是 `not_connected`；
+好的位置一起返回，并把状态压成 `denied` 而不是 `not_connected`。
+这份列表同时报出 agenthub 认识的**全部**客户端、以及其中它不亲自写入的那一批，而且是故意分开报的：
+前者才是回答「我的客户端怎么不在里面」的那一份，所以不能被筛掉——而只拿到那一份的前端会给它贴上
+"writable" 的标签，GUI 就是这么干的，还贴在自己带着 read-only 徽标的那些行上面。
 `PATCH /v1/skills/{id}` **只有**库级粗开关。`GET /v1/audit` 与 `GET /v1/security` 的存在是为了让前端
 回填两条治理流——GUI 不许自己碰数据目录。`POST /v1/parse/client-config` 只读不写（产出条目**预览**），
 因此不入审计。

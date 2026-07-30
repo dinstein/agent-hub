@@ -364,7 +364,11 @@ location; **`GET /v1/clients` stats and never opens a file** (one macOS privacy 
 load is worse than no listing), so "is agenthub actually wired into this one?" lives at
 `GET /v1/clients/{id}/inspect` — one client, named by the caller, which is what makes the prompt belong to a
 click rather than to opening a page. One unreadable location there does not fail the request: it is reported with
-its error next to the locations that read fine, and forces the state to `denied` rather than `not_connected`; `PATCH /v1/skills/{id}` exposes **only** the coarse library-level switch. `GET /v1/audit` and
+its error next to the locations that read fine, and forces the state to `denied` rather than `not_connected`.
+That listing also reports **both** every client agenthub knows about and the subset it will not write itself, and
+it reports them separately on purpose: the first is what answers "why is my client missing", so it cannot be
+filtered down — and a frontend given only that list labels it "writable", which is what the GUI did, above rows
+carrying their own read-only badge. `PATCH /v1/skills/{id}` exposes **only** the coarse library-level switch. `GET /v1/audit` and
 `GET /v1/security` exist so frontends can backfill the two governance streams — the GUI is not allowed to touch
 the data directory itself. `POST /v1/parse/client-config` is read-only (it produces an entry **preview**), which
 is why it is not audited.
