@@ -10,7 +10,8 @@ import (
 // flock via syscall keeps the package free of third-party dependencies
 // (golang.org/x/sys is deliberately not used, matching internal/registry
 // and internal/audit). flock(2) exists on both darwin and linux; Windows
-// arrives with the rest of M2's platform work.
+// has its own implementation in flock_windows.go, delegating to
+// internal/platform.
 
 // crossProcessLockSupported reports that this build holds a real exclusive
 // lock across the whole read-decide-write cycle, so counters from several

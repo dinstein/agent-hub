@@ -7,9 +7,9 @@ import (
 	"os"
 )
 
-// Cross-process locking is implemented for darwin/linux only in M1; Windows
-// (LockFileEx) is scheduled for M2. The stubs keep the call sites compiling
-// so the port does not touch the refresh logic.
+// Cross-process locking is implemented for darwin/linux (flock_unix.go) and
+// windows (flock_windows.go, LockFileEx via internal/platform). These stubs
+// keep the call sites compiling on everything else.
 //
 // Failure direction on an unsupported platform: acquiring the refresh lock
 // fails, so the offline refresh path refuses to run rather than running

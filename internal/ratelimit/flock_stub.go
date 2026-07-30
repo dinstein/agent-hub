@@ -4,8 +4,8 @@ package ratelimit
 
 import "os"
 
-// Stub for platforms without an flock implementation yet (Windows is the
-// rest of M2).
+// Stub for platforms with no flock implementation. Darwin, linux and
+// windows all have one; the build tag above names exactly who lands here.
 //
 // Failure direction: FAIL CLOSED AT CONFIGURATION TIME. Without a
 // cross-process lock the read-modify-write cycle degrades to

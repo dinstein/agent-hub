@@ -9,8 +9,8 @@ import (
 
 // flock via syscall keeps the package free of third-party dependencies
 // (golang.org/x/sys is deliberately not used, matching internal/registry).
-// flock(2) exists on both darwin and linux; Windows arrives in M2 with a
-// separate implementation.
+// flock(2) exists on both darwin and linux; Windows has its own
+// implementation in flock_windows.go, delegating to internal/platform.
 
 // flockExclusive takes a blocking exclusive lock, retrying on EINTR.
 func flockExclusive(f *os.File) error {

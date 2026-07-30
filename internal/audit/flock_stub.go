@@ -4,7 +4,8 @@ package audit
 
 import "os"
 
-// Stub for platforms without a flock implementation yet (Windows is M2).
+// Stub for platforms with no flock implementation. Darwin, linux and
+// windows all have one; the build tag above names exactly who lands here.
 //
 // Failure direction: with no lock, cross-process dedup degrades to
 // best-effort — duplicate security events may be emitted, but nothing is
