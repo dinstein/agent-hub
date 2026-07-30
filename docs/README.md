@@ -25,7 +25,7 @@
 | [modules/](modules/) | Per-package docs: responsibilities, key types, **invariants and failure directions**. Five documents organized by layer, plus dedicated write-ups for OAuth and the GUI |
 | [canonical.md](canonical.md) | Frozen identifiers, package layout, the four dependency constraints, command naming rules, engineering conventions, and every decision record |
 | [windows.md](windows.md) | Windows status: what's implemented, **what's unverified**, what's missing, acceptance criteria |
-| [releasing.md](releasing.md) | Version numbering, build artifacts, release process |
+| [releasing.md](releasing.md) | The release runbook: preflight, choose the number, bump it, write the changelog, verify, tag, watch the workflow, check what shipped, and what to do when a step fails |
 
 ## Three layers — don't read them interchangeably
 

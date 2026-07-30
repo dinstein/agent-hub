@@ -21,6 +21,7 @@ and the test-watched inventory it points at.
 | [docs/modules/](docs/modules/) | Before touching a package — its invariants and failure directions |
 | [docs/modules/oauth.md](docs/modules/oauth.md) | An OAuth downstream will not connect, or which provider shapes are supported |
 | [docs/canonical.md](docs/canonical.md) | Whether a name/dependency/convention may change, and why it was decided |
+| [docs/releasing.md](docs/releasing.md) | Cutting a release — the runbook, start to finish |
 
 Confirmed gaps, pinned to a line but not yet fixed, live in the `docs/modules/` file of the package
 that owns them — under "current assembly status", or beside the invariant they bend — and, for one
