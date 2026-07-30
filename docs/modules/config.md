@@ -518,7 +518,12 @@ returns true only for the two JSON shapes.
 Each row's `locs` is ordered **project first**, but that is **read priority** (when `Import` hits a duplicate name,
 the project-level definition wins), **not a write preference** — the default write target is decided by placement,
 see below. `locSpec.home` is a GOOS-to-path map, and a missing GOOS makes that location unavailable on that
-platform — this is the mechanism by which Windows was deferred to M2, with no build tags involved.
+platform rather than guessed — no build tags involved.
+
+**Every row's `home` map is still darwin and linux only**, so on Windows `resolve` drops every user placement and
+`client connect` finds nothing to write for any client whose config is user-level. Unavailable is the right
+direction — inventing a `%APPDATA%` path and writing to it unverified is worse than finding nothing — but it is a
+gap, not a design boundary, and [windows.md](../windows.md) tracks it.
 
 ### Invariants and failure directions
 
@@ -891,8 +896,9 @@ destructive (fail-closed), so a read-only tool without annotations would prompt 
 
 **This package never shells out to git and never touches the network.** git sources are imported from a local
 checkout the caller already has, and `--pin <rev>` is **recorded** (`Source.GitRef` / `Source.PinnedCommit`) so the
-revision that produced this library copy is reproducible. fetch, clone, and ref resolution are M2; until then, an
-`Update` on a git skill without a new checkout path returns `ErrGitFetchUnsupported`, rather than reporting
+revision that produced this library copy is reproducible. Fetch, clone and ref resolution are **not planned work
+that has slipped** — they are a capability boundary canonical.md §4 records deliberately, and until it moves, an
+`Update` on a git skill without a new checkout path returns `ErrGitFetchUnsupported` rather than reporting
 "already up to date" without having looked.
 
 ### Current capability boundaries

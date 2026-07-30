@@ -163,7 +163,9 @@ The package comment is blunt about this, and you have to accept the framing befo
 configured themselves, that was always going to run code, still runs; `npx`, `uvx`, and `docker run`
 with ordinary project mounts all pass through untouched. What it blocks is the shape "an
 innocuous-looking entry point with `sh -c`, `LD_PRELOAD`, or `--privileged` hiding inside it". The
-real isolation story lives elsewhere (M2's Docker Spawner).
+real isolation story lives elsewhere, and it is shipped rather than pending: the Docker spawner
+(`internal/mcp/transport/docker.go`), reached by `runtime: docker`, which fails closed rather than
+degrading to host execution when the isolation an entry claims cannot be delivered.
 
 ### Invariants and failure directions
 
