@@ -141,7 +141,7 @@ type DevicePoller struct {
 	OnPending func(interval time.Duration)
 }
 
-// PollDevice runs the RFC 8628 §3.4/§3.5 poll loop.
+// PollDevice runs the RFC 8628 §3.4, docs/modules/oauth.md poll loop.
 //
 // Loop rules:
 //

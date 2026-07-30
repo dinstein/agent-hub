@@ -1,5 +1,5 @@
 // Package router aggregates the tools of many downstream servers into one
-// namespaced catalog (task M0-7 minimal version).
+// namespaced catalog (docs/modules/dataplane.md, internal/router).
 //
 // Exposed names are sanitize(serverID) + "__" + sanitize(rawTool), with
 // deterministic _2/_3 suffixes on collisions. The mapping back to

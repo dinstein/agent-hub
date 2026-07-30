@@ -85,7 +85,7 @@ func Covers(caller, tool Tier) bool {
 // same case:
 //
 //   - NO annotations object at all means the server told us nothing. That is
-//     the fail-closed case frozen by CANONICAL/§7.3 ("unknown annotations mean
+//     the fail-closed case frozen by canonical.md §6 (determinism is the contract) ("unknown annotations mean
 //     destructive"): an unannotated tool must never be reachable with a
 //     read-only credential.
 //   - An annotations object that simply stays silent about destructiveHint

@@ -19,7 +19,7 @@ func decodeRows(t *testing.T, env envelope) []ServerRow {
 	return rows
 }
 
-// TestServerRoundtrip is the M0-3 acceptance path: add -> ls -> rm against a
+// TestServerRoundtrip is the acceptance path: add -> ls -> rm against a
 // temp data directory selected via AGENTHUB_DATA_DIR.
 func TestServerRoundtrip(t *testing.T) {
 	dir := setDataDir(t)

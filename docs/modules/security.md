@@ -489,7 +489,7 @@ and the comments say plainly "do not simplify away".
   only an explicit `ModeAuto` self-approves.
 - **`CallAllowed()` is the sole call gate**: only `StateApproved && !Disabled` passes; zero-value
   records, Pending, Changed, and Disabled are all blocked. The index/search surface and the call
-  surface must read the same stored state ("both gates agree", §7.5).
+  surface must read the same stored state ("both gates agree", docs/modules/dataplane.md).
 - **Quarantine and approval are orthogonal**: releasing from quarantine isn't approval, approval
   doesn't release from quarantine, and neither store writes the other's.
 - **Cross-process discipline**: N gateways plus the daemon run integrity checks on the same set of

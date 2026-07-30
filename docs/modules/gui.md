@@ -36,7 +36,7 @@ accessibility requirement and a guard against misreading:
 | State | Display |
 |---|---|
 | connected | **`23 tools`** — not "connected". An informative number displaces a redundant status word |
-| needs-auth | the status cell **becomes an `Authenticate` button** that signs in for real (§2.1) |
+| needs-auth | the status cell **becomes an `Authenticate` button** that signs in for real (docs/modules/controlplane.md) |
 | checking | after 4 seconds, if the command is `npx`/`uvx`, it changes to **`Installing…`** — reinterpreting a wait as progress |
 | error | a one-line distilled error headline, expandable to the full text |
 | disabled | gray dot, no text |

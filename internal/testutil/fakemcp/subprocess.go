@@ -48,7 +48,7 @@ func MaybeServe() {
 
 // StdioConfig returns a transport.StdioConfig that re-executes the current
 // binary with the script passed through ScriptEnv — a real child process
-// for transport.SpawnStdio tests (M0-7 / M0-9). The parent environment is
+// for transport.SpawnStdio tests. The parent environment is
 // inherited so the Go test runner's context survives.
 func (s *Script) StdioConfig() (transport.StdioConfig, error) {
 	exe, err := os.Executable()

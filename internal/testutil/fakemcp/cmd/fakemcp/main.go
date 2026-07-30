@@ -1,6 +1,6 @@
 // Command fakemcp is a standalone scripted fake MCP downstream server
 // speaking newline-delimited JSON-RPC over stdio (test infrastructure,
-// canonical.md §6 / M0-5). It exists for spawn tests that want a dedicated
+// canonical.md §6). It exists for spawn tests that want a dedicated
 // binary instead of the TestMain re-exec pattern (fakemcp.MaybeServe).
 //
 // The behavior script is taken from, in order of precedence:

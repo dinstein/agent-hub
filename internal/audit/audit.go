@@ -13,7 +13,7 @@
 //   - inspect        — an opt-in, memory-only ring of at most 50 entries
 //     (bodies truncated at 4 KiB, cleared on disable) pulled by ctlapi.
 //
-// Multi-writer discipline (docs/architecture.md §10 "multi-writer discipline", §6.5): N gateways
+// Multi-writer discipline (docs/architecture.md §10 "multi-writer discipline", docs/modules/security.md): N gateways
 // plus the daemon append to the same JSONL files concurrently. Every file
 // is opened O_APPEND, every record is exactly one write(2) of one line,
 // and rotation renames the active file to a new segment — the active file

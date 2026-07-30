@@ -101,8 +101,8 @@ func TestClientConnectRejectsProfileFlag(t *testing.T) {
 	}
 }
 
-// TestConnectSnippetSeam pins the shared seam that both the M0-3 dry-run
-// preview and the M0-9 config writer must go through.
+// TestConnectSnippetSeam pins the shared seam that both the dry-run preview
+// and the config writer must go through.
 func TestConnectSnippetSeam(t *testing.T) {
 	plan := ConnectSnippet("/usr/local/bin/agenthub", "cursor")
 	if plan.Client != "cursor" || !plan.DryRun {

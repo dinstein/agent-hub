@@ -23,8 +23,8 @@ const killGrace = 3 * time.Second
 
 // StdioConfig describes the child process for a stdio transport. This
 // package spawns exactly what it is given: spawn-guard policy, AGENTHUB_*
-// env stripping, and secret resolution are the caller's job (M0-7/M1), as
-// is process-group management (the gateway setsids itself, M0-8).
+// env stripping, and secret resolution are the caller's job, as is
+// process-group management (the gateway setsids itself).
 type StdioConfig struct {
 	Command string
 	Args    []string

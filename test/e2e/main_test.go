@@ -1,4 +1,4 @@
-// Package e2e_test is the end-to-end regression suite frozen by M0-9: it
+// Package e2e_test is the end-to-end regression suite: it
 // builds the real agenthub binary, drives it exactly like an AI client does
 // (a spawned `agenthub connect --client <id>` child spoken to over
 // newline-delimited JSON-RPC on stdio), and pins the full path

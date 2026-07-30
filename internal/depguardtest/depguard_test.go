@@ -291,7 +291,7 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 	})
 
 	// Rule 3: internal/pipeline must not import internal/ctlapi.
-	// The rule was written before the package existed (M0-8), so the test
+	// The rule was written before the package existed, so the test
 	// still materializes the directory when the copy has none, and removes
 	// it again if it did — the probe tree is disposable, but a control lint
 	// of a directory this test invented has to be one it also cleaned up.

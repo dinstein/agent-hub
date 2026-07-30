@@ -58,7 +58,7 @@ type message struct {
 
 // Writer is a multi-process-safe JSONL appender.
 //
-// Invariants (docs/architecture.md §10 / §6.5 multi-writer discipline):
+// Invariants (docs/architecture.md §10, docs/modules/security.md multi-writer discipline):
 //   - The file is opened O_APPEND|O_CREATE|O_WRONLY 0600 and every record
 //     is exactly one write(2) of one '\n'-terminated line.
 //   - Lines are bounded by MaxLineBytes so concurrent appends from other
