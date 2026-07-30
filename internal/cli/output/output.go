@@ -89,9 +89,12 @@ func (p *Printer) Emit(data Data, warnings ...string) error {
 	return data.Human(p.out)
 }
 
-// ProgressEvent is one intermediate step of a long-running command
-// (docs/modules/controlplane.md: "progress commands — auth login, server test — emit their
-// intermediate events as NDJSON, one line each, under --json").
+// ProgressEvent is one intermediate step of a long-running command. Four
+// stream today — auth login, server test, server enable's probe, and doctor
+// — and docs/modules/controlplane.md carries the same list next to the
+// parsing rule it decides. Adding a fifth means updating that list and the
+// shipped skill's, because both tell a consumer whether to parse one JSON
+// object or a stream of them.
 //
 // Rendering rules, both deliberate:
 //

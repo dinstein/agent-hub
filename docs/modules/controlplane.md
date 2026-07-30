@@ -976,7 +976,10 @@ JSON mode it marshals that value verbatim into the envelope's `data` field, and 
 **There is no second code path** by which the two modes could render different content — that is how "human output and
 machine output share one source" is implemented.
 
-`ProgressEvent` + `Printer.Progress` handle intermediate steps for long commands (`auth login`, `server test`).
+`ProgressEvent` + `Printer.Progress` handle intermediate steps for long commands. **Four of them stream**, and the
+list is worth keeping current because it decides how a script must parse the output: `auth login`, `server test`,
+`server enable` (the post-enable probe, unless `--no-probe`), and `doctor`. A consumer that treats any of these
+as a single JSON object instead of NDJSON fails on the first progress line.
 `Fail(ErrorDetail)` renders the failure envelope.
 
 ### Invariants and failure directions
