@@ -172,7 +172,7 @@ func TestRenewLogsAFailedRefreshWithItsError(t *testing.T) {
 		t.Fatalf("renew() error = %v, want the coordinator's error unwrapped", err)
 	}
 
-	rec, ok := h.find("access token refresh failed; the downstream rejection stands")
+	rec, ok := h.find("access token refresh failed")
 	if !ok {
 		t.Fatalf("no failure line logged; got: %s", h.messages())
 	}
@@ -182,6 +182,51 @@ func TestRenewLogsAFailedRefreshWithItsError(t *testing.T) {
 	v, ok := attr(rec, "error")
 	if !ok || !strings.Contains(v.String(), "token endpoint said 500") {
 		t.Errorf("failure line carries error=%v, want the underlying cause", v)
+	}
+	// No attempt/retry_in, and that absence is deliberate: this path has no
+	// schedule of its own, the next try is the next rejection. Only the
+	// daemon's ladder has something to report there.
+	if v, ok := attr(rec, "retry_in"); ok {
+		t.Errorf("failure line carries retry_in=%v; this path schedules no retry", v)
+	}
+}
+
+// Every line of the group carries the field that says WHICH process
+// refreshed. The daemon logs the same four messages (its half is pinned by
+// internal/daemon/oauthlog_test.go), so without this an operator reading a
+// merged log cannot tell a gateway's 401-driven renewal from the daemon's
+// proactive one.
+func TestRenewTagsEveryLineWithTheRejectionTrigger(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		ref  fakeRefresher
+		msgs []string
+	}{
+		{"success", fakeRefresher{tok: "fresh"},
+			[]string{"refreshing a downstream access token", "access token refreshed"}},
+		{"login required", fakeRefresher{err: oauthflow.ErrNoRefreshToken},
+			[]string{"token cannot be refreshed without a new login"}},
+		{"failure", fakeRefresher{err: errors.New("boom")},
+			[]string{"access token refresh failed"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := &recordHandler{}
+			renew := loggedRenew(tc.ref, "alpha", "_global", slog.New(h))
+			_, _ = renew(context.Background())
+
+			for _, msg := range tc.msgs {
+				rec, ok := h.find(msg)
+				if !ok {
+					t.Fatalf("%q not logged; got: %s", msg, h.messages())
+				}
+				v, ok := attr(rec, "trigger")
+				if !ok || v.String() != oauthflow.TriggerRejection {
+					t.Errorf("%q carries trigger=%v, want %q", msg, v, oauthflow.TriggerRejection)
+				}
+			}
+		})
 	}
 }
 

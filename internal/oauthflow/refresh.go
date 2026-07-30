@@ -24,6 +24,22 @@ type Refresher interface {
 	Refresh(ctx context.Context, serverID string) (*State, string, error)
 }
 
+// Refresh triggers, reported as the `trigger` field of every refresh log
+// record. Two processes renew tokens — the daemon proactively before expiry,
+// a stdio gateway only once a downstream has rejected one — and they log the
+// same messages for the same outcomes, so this field is what tells them apart.
+//
+// They live here rather than in either caller because the whole point is that
+// both sides spell them identically, and two independent string literals is
+// precisely how a log field stops being greppable.
+const (
+	// TriggerExpiry is the daemon's proactive scan (internal/daemon/oauth.go).
+	TriggerExpiry = "expiry"
+	// TriggerRejection is a downstream 401/403
+	// (internal/downstream/httpauth.go, wired up in internal/gateway/auth.go).
+	TriggerRejection = "rejection"
+)
+
 // Lock acquisition bounds.
 const (
 	// refreshLockTimeout bounds waiting for the sibling file lock. It is

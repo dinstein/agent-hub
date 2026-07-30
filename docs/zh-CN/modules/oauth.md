@@ -206,14 +206,21 @@ shell 里删 server，会枚举不到任何东西、删不掉任何东西 ——
 **daemon 没跑时就完全没有主动刷新**：过期 token 只能靠下游拒绝来发现；对 `initialize` 握手来说，
 这意味着「连接」本身就是触发续期的那次请求。不声明 `expires_in` 的 server 则永远走这条路。
 
-两个进程打的是同样四条消息，一次 grep 通吃：
+两个进程打的是同样四条消息，并且每条都带 `trigger=expiry`（daemon 的扫描）
+或 `trigger=rejection`（下游 401/403）说明是谁打的。所以一次 grep 通吃两种部署，
+区分二者的是这个字段而不是措辞：
 
 | 消息 | 级别 | 含义 |
 |---|---|---|
-| `refreshing a downstream access token` | DEBUG | 仅 gateway；用来区分「卡在兄弟锁上」和「压根没试」 |
-| `access token refreshed` | INFO | `superseded=true` 表示别的写入方先完成了 —— 是锁在起作用，不是刷了两次 |
+| `refreshing a downstream access token` | DEBUG | 尝试本身；用来区分「卡在兄弟锁上」和「压根没试」 |
+| `access token refreshed` | INFO | `superseded=true` 表示别的**进程**先完成了 —— 是文件锁在起作用，不是刷了两次。daemon 另有 `shared`，那是同一句话的进程内版本 |
 | `token cannot be refreshed without a new login` | WARN | 死路；只有 `agenthub auth login` 能修 |
-| `access token refresh failed; …` | WARN | 可恢复；daemon 会附带 `retry_in`，gateway 则等下一个 401 |
+| `access token refresh failed` | WARN | 可恢复。`attempt` + `retry_in` 只在 `trigger=expiry` 下出现：退避阶梯是 daemon 的，gateway 只是等下一次被拒 |
+
+这份对称是有意为之、并且是有承重作用的。**是哪个进程续的期，属于部署的性质而不是事件的性质**，
+而看日志的人通常并不知道当时 daemon 在不在跑 —— 所以它该放进字段，
+而不是放进只能在其中一侧 grep 到的措辞里。`internal/gateway/authlog_test.go`
+与 `internal/daemon/oauthlog_test.go` 分别钉住两半；只在一侧改消息名，正是它们要抓的回归。
 
 gateway 这几行是**必需的而非装饰**：`internal/downstream` 的 round tripper 会**故意丢弃**刷新错误、
 把下游原始的 401 交回去（它的 `WWW-Authenticate` 是更好的诊断信息），

@@ -31,9 +31,13 @@ import (
 // downstream's own 401 back (its WWW-Authenticate is the better diagnostic) —
 // so without a line here the renewal that just failed leaves no trace at all,
 // and a successful one is visible only as the credential announcement it
-// happens to cause. The messages match internal/daemon/oauth.go's word for
-// word: the same event refreshed by the daemon and by an offline gateway must
-// grep as one thing.
+// happens to cause.
+//
+// The messages match internal/daemon/oauth.go's word for word, and the
+// `trigger` field is what separates the two: which process renewed a token is
+// a property of the DEPLOYMENT, not of the event, and the operator reading
+// the log usually does not know whether a daemon was up. Prose only one side
+// can be grepped for would make them answer that question by guessing.
 
 // secretsDir resolves <data>/secrets, the directory holding secrets.enc, the
 // keyring key registry and the per-server refresh locks.
@@ -92,25 +96,29 @@ func loggedRenew(coord oauthflow.Refresher, serverID, scopeName string, log *slo
 		// hung on the sibling file lock (30s, held by another process doing a
 		// network round trip) from one that was never attempted. Both look
 		// identical from the outcome alone.
-		log.Debug("refreshing a downstream access token", logx.Server(serverID), "scope", scopeName)
+		log.Debug("refreshing a downstream access token", logx.Server(serverID),
+			"trigger", oauthflow.TriggerRejection, "scope", scopeName)
 		_, tok, err := coord.Refresh(ctx, serverID)
 		switch {
 		// ErrRefreshSuperseded means another writer already stored a fresh
 		// credential; the token it returns IS usable, so it is a success for
 		// the caller, not a failure.
 		case err == nil, errors.Is(err, oauthflow.ErrRefreshSuperseded):
-			log.Info("access token refreshed", logx.Server(serverID), "superseded", err != nil)
+			log.Info("access token refreshed", logx.Server(serverID),
+				"trigger", oauthflow.TriggerRejection, "superseded", err != nil)
 			return tok, nil
 		case errors.Is(err, oauthflow.ErrNoRefreshToken), errors.Is(err, oauthflow.ErrNoState):
 			// Not transient: no retry and no amount of waiting fixes it, only
-			// `agenthub auth login`. Same message the daemon uses for the same
-			// dead end.
+			// `agenthub auth login`.
 			log.Warn("token cannot be refreshed without a new login",
-				logx.Server(serverID), "error", err)
+				logx.Server(serverID), "trigger", oauthflow.TriggerRejection, "error", err)
 			return "", err
 		default:
-			log.Warn("access token refresh failed; the downstream rejection stands",
-				logx.Server(serverID), "error", err)
+			// No attempt/retry_in here, and their absence is the information:
+			// unlike the daemon's ladder, this path has no schedule of its own.
+			// The next try is whenever the downstream rejects the token again.
+			log.Warn("access token refresh failed",
+				logx.Server(serverID), "trigger", oauthflow.TriggerRejection, "error", err)
 			return "", err
 		}
 	}

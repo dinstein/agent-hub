@@ -226,14 +226,23 @@ With **no daemon running there is no proactive refresh at all**: an expired toke
 the downstream rejecting it, which for the `initialize` handshake means the connect itself is what
 triggers the renewal. Servers that advertise no `expires_in` live on this path permanently.
 
-Both processes log the same four messages, so one grep covers either:
+Both processes log the same four messages, and every record carries
+`trigger=expiry` (the daemon's scan) or `trigger=rejection` (a downstream 401/403) to say which one
+produced it. One grep therefore covers either deployment, and the field — not the wording — is what
+separates them:
 
 | Message | Level | Meaning |
 |---|---|---|
-| `refreshing a downstream access token` | DEBUG | gateway only; separates "hung on the sibling lock" from "never attempted" |
-| `access token refreshed` | INFO | `superseded=true` means another writer got there first — the lock working, not a double refresh |
+| `refreshing a downstream access token` | DEBUG | the attempt; separates "hung on the sibling lock" from "never attempted" |
+| `access token refreshed` | INFO | `superseded=true` means another PROCESS got there first — the file lock working, not a double refresh. The daemon adds `shared`, the same statement about a caller inside its own process |
 | `token cannot be refreshed without a new login` | WARN | dead end; only `agenthub auth login` fixes it |
-| `access token refresh failed; …` | WARN | transient; the daemon adds `retry_in`, the gateway waits for the next 401 |
+| `access token refresh failed` | WARN | transient. `attempt` + `retry_in` appear only under `trigger=expiry`: the ladder is the daemon's, a gateway simply waits for the next rejection |
+
+The symmetry is deliberate and load-bearing. Which process renewed a token is a property of the
+deployment, not of the event, and an operator reading a log usually does not know whether a daemon
+was up — so it belongs in a field, not in prose that can only be grepped for on one of the two
+sides. `internal/gateway/authlog_test.go` and `internal/daemon/oauthlog_test.go` pin the two halves;
+renaming a message on one side alone is what they exist to catch.
 
 The gateway's lines are load-bearing rather than decorative: `internal/downstream`'s round tripper
 deliberately **discards** a refresh error and returns the downstream's original 401 (its

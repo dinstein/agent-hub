@@ -265,7 +265,15 @@ func (r *refresher) cycle(ctx context.Context) time.Duration {
 
 // refreshOne renews one server's token under the singleflight gate and
 // records the outcome for the backoff ladder.
+//
+// The four messages are the ones internal/gateway/auth.go emits for the same
+// four outcomes, and the wording is shared deliberately: whether a token was
+// renewed by this daemon or by a stdio gateway that took a 401 is a property
+// of the DEPLOYMENT, not of the event, so it belongs in the trigger field
+// rather than in prose only one of the two sides can be grepped for.
 func (r *refresher) refreshOne(ctx context.Context, id string, now time.Time, observedExpiresAt int64) {
+	r.cfg.Log.Debug("refreshing a downstream access token", logx.Server(id),
+		"trigger", oauthflow.TriggerExpiry)
 	_, shared, err := r.group.Do(ctx, id, func(ctx context.Context) (string, error) {
 		_, tok, rerr := r.coord.Refresh(ctx, id)
 		return tok, rerr
@@ -273,17 +281,28 @@ func (r *refresher) refreshOne(ctx context.Context, id string, now time.Time, ob
 	switch {
 	case err == nil, errors.Is(err, oauthflow.ErrRefreshSuperseded):
 		// Superseded means another writer already stored a fresh
-		// credential — the goal state, reached by someone else.
+		// credential — the goal state, reached by someone else. shared says
+		// the same thing about a caller inside THIS process; both are
+		// reported because they answer different questions ("did the file
+		// lock do its job" vs "did the singleflight").
 		r.noteSuccess(id)
-		r.cfg.Log.Info("access token refreshed", logx.Server(id), "shared", shared)
+		r.cfg.Log.Info("access token refreshed", logx.Server(id),
+			"trigger", oauthflow.TriggerExpiry,
+			"superseded", errors.Is(err, oauthflow.ErrRefreshSuperseded),
+			"shared", shared)
 	case errors.Is(err, oauthflow.ErrNoRefreshToken), errors.Is(err, oauthflow.ErrNoState):
 		r.noteFailure(id, now, observedExpiresAt, true)
 		r.cfg.Log.Warn("token cannot be refreshed without a new login",
-			logx.Server(id), "error", err)
+			logx.Server(id), "trigger", oauthflow.TriggerExpiry, "error", err)
 	default:
+		// The old wording said "keeping the current token" here. It is still
+		// true — a proactive failure happens while the stored token is valid —
+		// but it is the trigger that makes it true, so it is now readable
+		// from trigger=expiry plus retry_in rather than from the message.
 		n, d := r.noteFailure(id, now, observedExpiresAt, false)
-		r.cfg.Log.Warn("proactive token refresh failed; keeping the current token",
-			logx.Server(id), "attempt", n, "retry_in", d, "error", err)
+		r.cfg.Log.Warn("access token refresh failed",
+			logx.Server(id), "trigger", oauthflow.TriggerExpiry,
+			"attempt", n, "retry_in", d, "error", err)
 	}
 }
 
