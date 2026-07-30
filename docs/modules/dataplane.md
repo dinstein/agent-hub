@@ -11,9 +11,9 @@ rather than by convention:
 - `internal/router` owns **naming**: it aggregates the tools of multiple servers into one namespaced
   catalog and provides the single reverse-provenance lookup `RouteOf`. It knows nothing about who can
   see what.
-- `internal/pipeline` owns **governance**: four gates in frozen order + the call + the
-  `defend_and_shape` post hook. There is exactly one execution path in the whole repository, and the
-  gate chain cannot fork.
+- `internal/pipeline` owns **the execute path**: two gates in frozen order + the call + the shaping
+  post hook. There is exactly one execution path in the whole repository, and the gate chain cannot
+  fork.
 - `internal/gateway` does only **assembly**: it wires the three layers above together with visibility
   (`internal/scope`), the discovery face, and the budget face, and handles the upstream MCP protocol,
   startup ordering, hot reload, and the control link. It implements no governance decision of its own.
@@ -35,8 +35,7 @@ packages:
    `sanitize(serverID) + "__" + sanitize(rawTool)`, but serverID and the tool name may themselves contain
    `__`, so splitting on `__` is ambiguous and is banned repository-wide. Any "get back from an exposed
    name to (server, tool)" must go through `router.RouteOf`'s map lookup.
-2. **Failure directions are layered.** The gate chain (scope / token tier / precheck / HITL) is always
-   fail-closed; the budget and cost-saving mechanisms (shaping, toonenc, ratelimit) are always fail-open
+2. **Failure directions are layered.** The gate chain (scope / token tier) is always fail-closed; the budget and cost-saving mechanisms (shaping, toonenc, ratelimit) are always fail-open
    and must be loud (log it, set the `Degraded` flag). Stuffing a fail-open thing into a fail-closed chain
    is exactly how a rate limiter becomes a bypass — which is why `ratelimit` is not a fifth gate.
 
@@ -53,9 +52,9 @@ flowchart TD
     M -->|call_tool| E
     E --> LK[Pool.Acquire decides which process executes]
     LK --> P[pipeline.Execute]
-    P --> G1[scope] --> G2[token_tier] --> G3[precheck+self-heal] --> G4[HITL]
-    G4 --> DS[downstream.Server.Call<br/>serialized on the owner goroutine]
-    DS --> SH[defend_and_shape<br/>injection → leakguard → shaping]
+    P --> G1[scope] --> G2[token_tier]
+    G2 --> DS[downstream.Server.Call<br/>serialized on the owner goroutine]
+    DS --> SH[shaping<br/>budget + fetch_result cursor]
     SH --> C
 ```
 
@@ -168,7 +167,7 @@ one.
 **Derived instances: `Spec.ID` never changes.** Derivation specializes only the connection parameters
 (`${ROOT}` expansion in `Args` / `Env` values / `Cwd`, plus explicit `Env` overrides); `Spec.ID` stays the
 baseline server id, so `router.RouteOf` remains the sole provenance for the call, scope intersection still
-matches on `(serverID, rawTool)`, and audit still records the name from the operator's config. The only thing
+matches on `(serverID, rawTool)`, and the operator's config keeps the name. The only thing
 that changes is `Spec.ScopeName` (= derive key), which lets a derivation hold its own vault entries. `URL` and
 `Headers` are **deliberately not derived** — changing a header does not need a new connection, and per-call
 RoundTripper injection is enough (the "headers-only fast path"). `expandRoot` leaves the placeholder verbatim
@@ -196,7 +195,7 @@ because a 4KiB cut lands mid-line and half a line is worse than no line.
 transport depends only on the standard library and knows neither server identity nor the data directory,
 whereas here we have both and the frames are still complete (params going in, raw result coming out).
 `callTransport` is the **only** place where frames cross the downstream boundary, so it is also the only place
-feeding the trace log. Log writes go through `audit.Writer`, dropping rather than blocking under backpressure —
+feeding the trace log. Log writes go through `jsonl.Writer`, dropping rather than blocking under backpressure —
 a trace log must not slow down a tool call. Methods on a nil `*ServerLog` are no-ops, so callers need no nil
 checks.
 
@@ -222,7 +221,7 @@ server being debugged (`TestHotReloadServerTraceFlip` pins both halves: frames a
 path, a dropped line under backpressure — degrades to less tracing and never to a failed call. A trace is a
 debugging aid; the one thing it must not do is take the data plane down with it. The opposite direction applies
 to the switch itself: it is off unless the registry says otherwise, because frames are captured at the
-connection, **before** leakguard redacts anything, so the file holds raw downstream results.
+connection, before anything else touches the bytes, so the file holds raw downstream results.
 
 **Three HTTP-side concerns live in this layer**, because the transport facade is pure standard library and is
 not allowed to know about them: SSRF blocking (`netguard.DialControl` acts on the **resolved address** and opens
@@ -333,14 +332,10 @@ lookup goes through the map built at `build` time. Even the gateway's "does this
 `routable()` → `RouteOf` rather than parsing the name; `discovery.IsBareName` is the only place in the repository
 that inspects `__`, and its result is **used only for logging**, never for routing.
 
-**`Policy` interprets `Disabled` and `Quarantined`.** Both remove a tool entirely during aggregation: not listed,
-not searchable, not describable, and not routable. The keys are **deliberately different**, each aligned with the
-storage that produced it: `Disabled` is keyed by `(serverID, raw tool name)` (approval records are rename-proof),
-while `Quarantined` is keyed by **exposed name** (the quarantine set records the name the agent can actually call,
-#423). Consequently `Quarantined` filtering happens **after** collision suffix assignment — quarantining one tool
-must not renumber the sibling it collided with. The gateway fills this Policy from integrity's two stores in
-`toolpolicy.go` with hot reload; `cli/tool.go`'s offline listing still passes the zero value (that is the operator
-view, see the comment in that file). `Allow` / `DenyDestructive` and the per-client/session View layer remain seams.
+**Aggregation applies no policy.** The catalog built here is the full surface every configured server offers, and
+narrowing happens once, above it, in `internal/scope`. There used to be a `Policy` here carrying two deny sets, and
+removing it fixed a real defect as well as a duplicated mechanism: filtering at aggregation renumbered the collision
+suffixes of a dropped tool's neighbours, so switching one tool off could silently change another tool's exposed name.
 
 **`CatalogOf` skips nil servers.** A server that has vanished simply contributes no tools, and the scope layer
 treats "does not exist" as "not visible" — the closed direction.
@@ -350,22 +345,19 @@ treats "does not exist" as "not visible" — the closed direction.
 ## internal/pipeline
 
 **Responsibility in one sentence**: the repository's only `execute_call` pipeline — four governance gates in frozen
-order, the downstream call, at most one argument self-heal retry, and the `defend_and_shape` post hook that spans
-both the success and error branches.
+order, the downstream call, and the shaping post hook that spans both the success and error branches.
 
 ### The request contract
 
 `CallRequest`'s `ServerID`/`RawTool` **must** come from `RouteOf`. Its `Annotations` field is the one where
-**absence is itself information**: no annotations = destructive, fail-closed. Setting `CallWithArgs` is what
-**enables** argument self-healing — the pipeline may only re-send a call whose arguments it controls, and
-`CallFunc` by construction has already closed over its arguments.
+**absence is itself information**: no annotations = destructive, fail-closed, which is what the token tier gate
+reads.
 
 **Every `Options` field may be zero**, and a zero-value `Options` assembles the M0 baseline (count + allow + pass
 through), which is a documented "unauthorized assembly", not an error state.
 
 `BlockedError` / `ErrBlocked` are the typed carriers of a gate rejection, and `Code` is a stable machine-readable
-rejection code (`E_SCOPE_DENIED`, `E_TOKEN_TIER_DENIED`, `E_ARGS_INVALID`, `E_HITL_DENIED`, `E_HITL_TIMEOUT`,
-`E_HITL_UNAVAILABLE`, `E_DESTRUCTIVE_DENIED`) — ABI the moment it ships.
+rejection code (`E_SCOPE_DENIED`, `E_TOKEN_TIER_DENIED`) — ABI the moment it ships.
 
 ### Invariants and failure directions
 
@@ -387,64 +379,13 @@ argument pre-validator and a human approval gate; both were removed, and nothing
   is the only allow case, and it is not a hole: it means "this assembly has no tier authority" — the stdio gateway
   serves a human's own session and the pipe carries no credential. Only the HTTP face (`internal/httpbridge`) mints
   tiers.
-- `precheckGate`: **shallow** validation — `Args` must be a JSON object (or empty), `required` top-level fields must
-  be present, and present top-level fields must have the right type. Full JSON Schema validation is **deliberately
-  not done**; the downstream server remains the authoritative validator. A missing or unparseable `inputSchema`
-  skips validation entirely (fail-open: that is downstream data we failed to understand, and rejecting a legitimate
-  call because of our own limited parsing ability is wrong). When multiple fields violate, the one reported is
-  always the same (iterating names in sorted order), because the error text is a contract.
-- `hitlGate`: `DenyDestructive` runs first — a machine-decidable global switch that **needs no broker** and is
-  enforced whether or not an `Asker` exists. Then `HumanApproval` gates every remaining call. The two switches
-  sit at opposite ends deliberately; the middle setting (ask about destructive calls only) was reachable solely
-  from the client layer and was removed with it, rather than left as a field this gate reads and nothing sets.
-  The annotation still decides how a request is CLASSIFIED to the approver, not whether one is asked.
-  When going through the broker, a **broker error means block** (`E_HITL_UNAVAILABLE`), and an unknown decision
-  string also blocks — only an explicit approval opens the gate. An approval is bound to `HashArgs(req.Args)`, so
-  one approval covers exactly that set of arguments.
+**Shaping runs exactly once, over the outcome.** Shaping a result twice would consume the cursor twice and could
+leave a truncation banner pointing at bytes nobody receives. There used to be more in this hook — an injection scan
+and a leak scan ran ahead of the budget, and their relative order was load-bearing — and the ordering rules went with
+them. What is left bounds how much of the answer travels and retains the rest for `fetch_result`.
 
-**precheck's self-healing happens before the rejection, and it MUTATES `req.Args`.** This matters: the repaired
-arguments are seen by every subsequent gate (notably HITL's args hash) and by the call itself, so "what was approved
-is what runs" still holds. A repair must actually pass precheck (`tryHeal` re-runs `precheckViolation` with the
-repaired arguments), or it doesn't count as a repair.
-
-**Self-healing performs only two provably safe classes of repair.** A missing required field can only be filled from
-the schema's own `default`; a type mismatch is only fixed when the conversion **round-trips byte for byte**
-(`"5"` → `5` → `"5"`). Explicitly unsupported: `"5.5"` → integer (loses the fraction), `"007"` → 7 (doesn't
-round-trip), scalar → array (that is shape guessing, not conversion), anything → object. At most **one** retry, no
-ladder, no loop. Every self-heal (pre-call repair and post-call retry alike) is audited through `OnSelfHeal`, and the
-event contains only **the field name and the repair kind**, never argument values.
-
-**Post-call self-healing only happens when downstream returned its own `inputSchema`.** The logic is
-straightforward: if the rejection carries no new schema, then whatever the cached schema could fix was already fixed
-by the precheck gate, and a retry would just replay the identical call. The classifier (`isInvalidParams`) accepts
-two shapes: JSON-RPC code `-32602`, or an `isError` result whose wording matches the parameter-error dialect; and
-there is a **veto list** `authSmellRe` (401/403/unauthorized/rate limit/timeout/tls/…), so an authentication or
-transport failure is never reclassified even if its text mentions parameters — mislabeling a 401 as invalid_params
-would have the agent retry a call that can never succeed. If the repaired retry **does not** succeed, what gets
-delivered is the **original** result: the remediation hint given to the agent must describe the call it actually
-made, not our speculative rewrite.
-
-**`defend_and_shape` runs exactly once, and on the final result.** The order inside `Execute` is
-"call → self-heal → shaper", not "call → shaper → self-heal → shaper". Scanning and budgeting an intermediate
-invalid_params response that is about to be replaced would consume shaping cursors twice and could leave a truncation
-banner pointing at a result nobody will receive.
-
-**The three-part order inside `defend_and_shape` is also load-bearing: `injection → leakguard → shaping`.**
-
-- injection runs first, because a blocked result has no payload left to leak;
-- leakguard must run **before** shaping, because the scan must see the **complete** result (otherwise a payload could
-  smuggle itself out beyond the budget), and unredacted secrets must never sit in the shaping cache (7.6);
-- both branches are scanned: a malicious server must not be able to dodge scanning by returning a JSON-RPC error. A
-  withheld (blocked) result is neither leak-scanned nor shaped — no downstream payload survived inside it, and its
-  recovery trailer must remain the last, untruncated block.
-
-**Label mode passes the error branch through.** Rewriting a JSON-RPC error would destroy the typed downstream error
-(code pass-through), and label is advisory by definition — block mode is the enforcement path. Likewise
-`labeledResult` delivers content verbatim when it isn't an insertable JSON array.
-
-**`ToolTier` and `DefaultDestructive` deliberately answer `{}` differently**; both gates run, in fixed order, and
-neither weakens the other. The reasoning belongs to the tier vocabulary — see
-[foundation.md](foundation.md).
+**A tool with missing or unparseable annotations is destructive.** The reasoning belongs to the tier vocabulary —
+see [foundation.md](foundation.md).
 
 **Dependency constraint**: this package may not import `internal/ctlapi` (canonical.md §2 rule 3, enforced by
 depguard) — the data plane does not depend on the control plane.
@@ -454,12 +395,9 @@ depguard) — the data plane does not depend on the control plane.
 | File | Contents |
 |---|---|
 | `pipeline.go` | The package contract, `CallRequest` / `Gate` / `Shaper` / `Options`, `New`, and `Execute`'s ordering invariants |
-| `gates.go` | Frozen stage names and rejection codes, `ScopeAllows`, the scope / token_tier / precheck gates, shallow schema validation |
-| `hitl.go` | `Decision` / `ApprovalRequest` / `Asker`, `DefaultDestructive`, `HashArgs`, the HITL gate |
-| `tier.go` | The operation tier ladder: `tierRank` / `TierCovers` / `ToolTier` and their deliberate asymmetry with `DefaultDestructive` |
-| `selfheal.go` | Self-heal rules (default filling + lossless coercion), the invalid_params classifier and auth veto list, post-call retry |
-| `shape.go` | The three-part `defendAndShape` hook, label/block disposition for injection, the recovery trailer |
-| `leak.go` | The leakguard segment: async audit / inline rewriting, the source slots of `leakSegments`, `LeakEvent` |
+| `gates.go` | Frozen stage names and rejection codes, `ScopeAllows`, the scope and token_tier gates |
+| `tier.go` | The operation tier ladder: `tierRank` / `TierCovers` / `ToolTier` |
+| `shape.go` | `shapeStage`: the budget hook that runs once over the outcome |
 
 ---
 
@@ -572,12 +510,6 @@ roots capability gets an empty root set, and that **is cached too** — asking i
 whole roots protocol is annotated `DEPRECATED-UPSTREAM`, and removing it will change only the `RootSource`
 implementation, leaving callers untouched.
 
-**The HITL asker is always wired.** `gwAsker` is installed whether or not a daemon link exists: with no link it answers
-Unreachable, so calls that trigger approval are rejected (fail-closed) while calls that don't trigger approval are
-entirely unaffected. Approval requests carry the raw arguments (over an authenticated UDS only, never persisted on either
-side) and the fingerprint of the **live definition** (`integrity.Fingerprint`); when fingerprinting isn't possible it is
-left empty — an empty fingerprint matches no remembered authorization, so the call still goes to a human (fail-closed).
-
 **`shapeResult` is the pipeline's `ResultShaper` seam, not a layer outside the pipeline.** That is why every execution
 path is budgeted by the same rule — because it is applied in exactly one place. The cursor id is minted **before** shaping
 (`Shape` needs to embed it in the truncation trailer); an unused id merely leaves a hole in an already-guessable sequence
@@ -634,9 +566,9 @@ so no call can ever arrive to trigger a dial on demand: recovery has to come off
 
 ### Current wiring status
 
-In `pipeline.Options` the gateway sets only `Scope` / `Asker` / `Scanner` / `InjectionPolicy` / `ResultShaper`. So
-leakguard, argument self-healing (`CallWithArgs` is never set), TOON output format, intent variants, and pin sets are all
-**unwired** in the stdio gateway, even though each of those packages is fully implemented and tested.
+In `pipeline.Options` the gateway sets only `Scope` and `ResultShaper` — that is now the whole surface. TOON output
+format, intent variants and pin sets remain **unwired** in the stdio gateway, even though each of those packages is
+fully implemented and tested.
 
 Rate limiting is the exception: it **is wired**, but not through `pipeline.Options` — quotas are an admission wrapper
 around `CallRequest.Call` (`ratelimit.go` + `runCall`), not a pipeline stage.
@@ -743,9 +675,9 @@ not one byte of content — a search query is free text the agent composed and m
 payload. Tool names and scores are safe (they come from the catalog, not the caller). Adding a field to this struct is a
 privacy decision, and the golden test fails the moment someone adds a content field.
 
-**describe_tool's "one error, no oracle".** Of the four conceivable per-id errors (not_found / invisible / quarantined /
-disabled), the implementation emits only **one**: `not_found`. Nonexistent, hidden by scope, quarantined by integrity, and
-disabled by an operator are indistinguishable in the reply — distinguishing them would turn describe_tool into an oracle
+**describe_tool's "one error, no oracle".** Of the conceivable per-id errors (not_found / invisible / not offered by
+this server), the implementation emits only **one**: `not_found`. Nonexistent, hidden by scope, and left out of a
+server's allow list are indistinguishable in the reply — distinguishing them would turn describe_tool into an oracle
 enumerating "the part of the catalog deliberately not shown to this session". This is the same rule `fetch_result` follows
 for cursors and `ResolveCall` for names. `MaxDescribeTools` = 5, and exceeding it is **an error rather than a silent
 truncation** — truncation would let the agent believe it saw everything it asked for. A call where none of the ids resolve
@@ -848,7 +780,7 @@ must not drag an audit writer in with it); the caller copies the fields across.
 1. Truncation cuts at a character (rune) offset within a **text** content block. Structured blocks are **never split** and are
    deferred whole. Page 1 preserves the original block structure; page 2 onward is a plain-text slice of the retained payload.
 2. The recovery trailer is appended as the **last** content block and is **exempt from the budget** — it is neither truncated
-   nor wrapped. Same rule as the pipeline's injection trailer: a recovery hint the agent can't read isn't a recovery hint. So a
+   nor wrapped: a recovery hint the agent can't read isn't a recovery hint. So a
    page may exceed `Budget.Bytes` by exactly one trailer block.
 3. `fetch_result`'s cursor id is an ordinary, **guessable by design** sequence (`rc-%06d`, process-global, not per-owner).
    **Owner (session) validation is the only isolation**, and unknown ids, expired ids, and other people's ids all return the
@@ -892,7 +824,7 @@ cursors out of another session's path; it is **not** isolation — `Entry.Owner`
 a dot segment, or an unexpected byte must be rejected before it reaches the filesystem.
 
 **The ordering invariant for format re-encoding.** `Reformat` runs on the **delivery path**, i.e. **after** the pipeline's defenses
-have already scanned the downstream text (the timing in 7.6: leakguard and injection scanning read the text **before** encoding).
+sits at the very end of the delivery path, so nothing after it can invalidate the budget the trailer describes.
 Moving it earlier would hand the scanner a notation it has never seen. Its rewrite scope is also fixed: it touches only `text`
 blocks, and only those whose payload is a single JSON document; `structuredContent` is **never** re-encoded (that is the
 machine-readable channel, clients may parse it, and TOON does not round-trip); and the contract marker `toonenc.HeaderLine` is
@@ -966,18 +898,13 @@ rename should not change which quota a call spends.
 
 ### Invariants and failure directions
 
-**Why it is not a fifth gate.** The frozen 7.3 gate chain (scope → token tier → precheck → HITL) decides whether a call is
-**allowed at all**, and all four gates are fail-closed. Quotas decide whether an already-allowed call happens **now or a few seconds
-from now**, and they are fail-open. Mixing the two would stuff a fail-open stage into a fail-closed chain — which is exactly how a
-rate limiter becomes a bypass. So `StageName` is deliberately **not** any of the `pipeline.Gate*` values.
+**Why it is not a third gate.** The frozen gate chain (scope → token tier) decides whether a call is **allowed at all**, and both
+gates are fail-closed. Quotas decide whether an already-allowed call happens **now or a few seconds from now**, and they are
+fail-open. Mixing the two would stuff a fail-open stage into a fail-closed chain — which is exactly how a rate limiter becomes a
+bypass. So `StageName` is deliberately **not** any of the `pipeline.Gate*` values.
 
-**Its position is achieved structurally, not by adding a stage.** By wrapping `CallRequest.Call` (and its self-heal twin
-`CallWithArgs`), it lands "after **every** gate, immediately before the downstream call". Both consequences are load-bearing:
-
-- a call rejected by HITL **never consumes a token**. Charging a human's "no" against the agent's quota would let rejected calls
-  starve approved ones.
-- the 7.2 argument self-heal retry is charged **once**: both wrappers share one `Admission`, and the token is spent only on first
-  admission. One agent intention = one token.
+**Its position is achieved structurally, not by adding a stage.** By wrapping `CallRequest.Call` it lands "after **every** gate,
+immediately before the downstream call", so a call a gate rejected never consumes a token.
 
 **`ExceededError` unwraps into two errors at once** (Go 1.20 multiple unwrap): `*pipeline.BlockedError` (so
 `errors.Is(err, pipeline.ErrBlocked)` still holds for any caller classifying gate rejections) and `*mcp.Error` (so the gateway's
@@ -1078,23 +1005,15 @@ Package-level completeness and whether the runtime actually reaches it are two d
 **code-complete with its own tests**, but the assembly layer hasn't connected it. It is listed here because "thinking something is in
 effect when it isn't" is far more dangerous than "knowing it isn't done".
 
-1. **`router.Policy` still lacks `Allow` / `DenyDestructive` and the per-client View layer.**
-   `Disabled` and `Quarantined` are already populated from integrity's two stores by `gateway/toolpolicy.go` with hot reload
-   (fail-closed when they can't be read: the entire catalog goes empty), while the other fields remain seams. Approval status
-   (`Status == approved`) is **deliberately absent** from the data plane — see the comment on integrity's `DisabledTools`.
-
-2. ~~**The HITL gate still allows when `asker == nil`.**~~ **Flipped.** `asker == nil` in `pipeline/hitl.go` is now fail-closed
-   (`CodeHITLUnavailable`). The production path was already closed (the gateway always wires `gwAsker`, which answers Unreachable
-   with no link → block), so what flipped is the **default**: the cost of the old default fell on the **next** assembly point — the
-   type system doesn't require an `Asker`, and a pipeline that forgot to wire one would silently allow every call that scope
-   explicitly wanted a human to look at. The flip affects only assemblies with no broker; calls where scope requires no approval
-   still pass straight through (both are pinned by test cases).
-
-3. **`fetch_result`'s `limit` parameter is accepted but has no effect.** The field is in the frozen schema, and
+1. **`fetch_result`'s `limit` parameter is accepted but has no effect.** The field is in the frozen schema, and
    `gateway/handleFetchResult` explicitly doesn't honor it — page size is determined by the shaping budget of page 1, and that budget
    is stored alongside the entry. The field is retained so that the wire shape doesn't change when it eventually lands.
 
-4. **A batch of switches not yet wired.** `internal/shaping`'s `FileStore` and `Reformat` (TOON output) have no callers;
-   `pipeline.Options`' `LeakScanner` / `LeakPolicy` / `OnLeak` / `OnSelfHeal` / `Destructive` and `CallRequest.CallWithArgs` (the
-   argument self-heal switch) are all unset in the stdio gateway; and `discovery.Options.IntentVariants` and `Pins` are likewise
-   unwired (the registry already has an `intentVariants` field and `IntentVariantsEnabled()`; the gateway just doesn't read it).
+2. **A batch of switches not yet wired.** `internal/shaping`'s `FileStore` and `Reformat` (TOON output) have no callers, and
+   `discovery.Options.IntentVariants` and `Pins` are likewise unwired (the registry already has an `intentVariants` field and
+   `IntentVariantsEnabled()`; the gateway just doesn't read it).
+
+This list used to be longer. Several entries described governance faces — a router policy with Allow/DenyDestructive
+seams, a fail-closed HITL default, leak and self-heal hooks on `pipeline.Options` — and every one of them was removed
+rather than wired. An unwired governance seam is the most dangerous thing this appendix can hold: it looks like a
+feature waiting to be switched on, and it reads to a hurried operator as protection that is already there.
