@@ -224,6 +224,26 @@ type InputRequest struct {
 // original request.
 type InputResponses map[string]json.RawMessage
 
+// Subscription event types a subscriptions/listen request may opt into
+// (MCP 2026-07-28). The stream then carries the matching notifications;
+// each event's _meta holds io.modelcontextprotocol/subscriptionId for
+// correlation.
+const (
+	SubscriptionEventToolsListChanged      = "toolsListChanged"
+	SubscriptionEventPromptsListChanged    = "promptsListChanged"
+	SubscriptionEventResourcesListChanged  = "resourcesListChanged"
+	SubscriptionEventResourceSubscriptions = "resourceSubscriptions"
+)
+
+// SubscriptionsListenParams is the "subscriptions/listen" request payload
+// (MCP 2026-07-28): the long-lived POST-response SSE stream that replaces
+// both the HTTP GET notification stream and resources/subscribe. Events
+// lists the event types the client opts into.
+type SubscriptionsListenParams struct {
+	Events []string     `json:"events"`
+	Meta   *RequestMeta `json:"_meta,omitempty"`
+}
+
 // DiscoverParams is the "server/discover" request payload (MCP 2026-07-28).
 // Meta carries the required per-request protocol metadata — discover is
 // itself a stateless request, so it declares the client's version and

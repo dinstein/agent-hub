@@ -103,11 +103,17 @@ func DialStreamableHTTP(cfg HTTPConfig) (Transport, error) {
 // setNegotiated implements negotiatedSetter: Handshake records the outcome
 // here. It reuses the protoVersion slot the legacy path fills from
 // afterInitialize, so the MCP-Protocol-Version header stays correct on both.
+// On the 2026 path it also opens the subscriptions/listen stream — the
+// replacement for the GET notification stream afterInitialize would have
+// opened, gated by the same NotificationStream config.
 func (t *streamableHTTP) setNegotiated(version string, meta *mcp.RequestMeta) {
 	t.mu.Lock()
 	t.protoVersion = version
 	t.reqMeta = meta
 	t.mu.Unlock()
+	if meta != nil && t.notifyStream {
+		t.startBackgroundStream(t.openListenStream)
+	}
 }
 
 func (t *streamableHTTP) currentMeta() *mcp.RequestMeta {
@@ -470,9 +476,17 @@ func (t *streamableHTTP) rememberEventID(id string) {
 	t.mu.Unlock()
 }
 
-// startNotificationStream opens the optional server→client GET stream once.
-// It carries notifications (and reverse RPCs) that belong to no call.
+// startNotificationStream opens the optional server→client GET stream once
+// (≤ 2025-11-25). It carries notifications (and reverse RPCs) that belong
+// to no call.
 func (t *streamableHTTP) startNotificationStream() {
+	t.startBackgroundStream(t.openNotificationStream)
+}
+
+// startBackgroundStream runs one long-lived out-of-call stream (the legacy
+// GET stream or the 2026 subscriptions/listen stream, chosen by the opener)
+// once per transport.
+func (t *streamableHTTP) startBackgroundStream(open func() (*http.Response, bool, error)) {
 	t.mu.Lock()
 	if t.streamOn || t.closed {
 		t.mu.Unlock()
@@ -486,23 +500,24 @@ func (t *streamableHTTP) startNotificationStream() {
 
 	go func() {
 		defer t.wg.Done()
-		t.notificationLoop()
+		t.streamLoop(open)
 	}()
 }
 
-// notificationLoop keeps the GET stream open until Close, reconnecting with
-// bounded backoff and carrying Last-Event-ID across breaks.
+// streamLoop keeps the out-of-call stream open until Close, reconnecting
+// with bounded backoff (and, on the legacy GET stream, carrying
+// Last-Event-ID across breaks).
 //
-// It gives up permanently on the statuses that mean "this server does not
-// offer the stream" (405/501) or "stop asking" (410, 404, 401, 403);
-// everything else is treated as transient.
-func (t *streamableHTTP) notificationLoop() {
+// It gives up permanently when the opener says so — the statuses that mean
+// "this server does not offer the stream" (405/501) or "stop asking"
+// (410, 404, 401, 403); everything else is treated as transient.
+func (t *streamableHTTP) streamLoop(open func() (*http.Response, bool, error)) {
 	attempt := 0
 	for {
 		if t.ctx.Err() != nil || t.stateErr() != nil {
 			return
 		}
-		resp, permanent, err := t.openNotificationStream()
+		resp, permanent, err := open()
 		if err != nil {
 			if permanent {
 				return
@@ -519,6 +534,65 @@ func (t *streamableHTTP) notificationLoop() {
 			return
 		}
 	}
+}
+
+// openListenStream performs one subscriptions/listen POST (MCP 2026-07-28):
+// the long-lived SSE answer replaces the legacy GET notification stream.
+// The stream's notifications dispatch by method name exactly like the GET
+// stream's did; the per-event subscriptionId in _meta is correlation data
+// this client does not need until it subscribes to individual resources.
+// permanent=true means "never retry this endpoint".
+func (t *streamableHTTP) openListenStream() (resp *http.Response, permanent bool, err error) {
+	params := mcp.SubscriptionsListenParams{
+		Events: []string{
+			mcp.SubscriptionEventToolsListChanged,
+			mcp.SubscriptionEventPromptsListChanged,
+			mcp.SubscriptionEventResourcesListChanged,
+		},
+		Meta: t.currentMeta(),
+	}
+	raw, merr := json.Marshal(params)
+	if merr != nil {
+		return nil, true, merr
+	}
+	body, berr := encodeMessage(mcp.NewRequest(mcp.NewIntID(t.nextID.Add(1)), mcp.MethodSubscriptionsListen, raw), t.maxFrame)
+	if berr != nil {
+		return nil, true, berr
+	}
+	req, err := t.newRequest(t.ctx, http.MethodPost, t.endpoint, body)
+	if err != nil {
+		return nil, true, err
+	}
+	req.Header.Set(headerContentType, mediaJSON)
+	req.Header.Set(headerAccept, mediaSSE)
+	req.Header.Set(headerMcpMethod, mcp.MethodSubscriptionsListen)
+	t.applyProtocolHeaders(req)
+
+	resp, err = t.client.Do(req)
+	if err != nil {
+		return nil, t.ctx.Err() != nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		code := resp.StatusCode
+		terr := httpError(resp)
+		t.noteTerminalStatus(code)
+		switch code {
+		case http.StatusMethodNotAllowed, http.StatusNotImplemented,
+			http.StatusGone, http.StatusNotFound,
+			http.StatusUnauthorized, http.StatusForbidden:
+			return nil, true, terr
+		}
+		return nil, false, terr
+	}
+	if responseMediaType(resp) != mediaSSE {
+		// A JSON answer is the server answering the listen request with a
+		// single response (usually an error): it does not offer the stream.
+		// Give up rather than hammer it.
+		drainClose(resp)
+		return nil, true, fmt.Errorf("%w: subscriptions/listen answered content-type %q",
+			ErrHTTPProtocol, responseMediaType(resp))
+	}
+	return resp, false, nil
 }
 
 // openNotificationStream performs one GET. permanent=true means "never

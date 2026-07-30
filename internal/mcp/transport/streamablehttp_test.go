@@ -595,6 +595,82 @@ func TestStreamableHTTPNotificationStream(t *testing.T) {
 	}
 }
 
+// TestStreamableHTTP2026SubscriptionsListen covers the 2026 replacement for
+// the GET notification stream: after a discover handshake the transport
+// POSTs subscriptions/listen (with _meta and the opted-in event types), and
+// notifications on the long-lived SSE answer dispatch exactly like the GET
+// stream's did — including reconnecting when the stream ends.
+func TestStreamableHTTP2026SubscriptionsListen(t *testing.T) {
+	listens := make(chan mcp.SubscriptionsListenParams, 4)
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		m := readRequestRPC(t, r)
+		switch m.Method {
+		case mcp.MethodDiscover:
+			result, _ := json.Marshal(mcp.DiscoverResult{
+				ProtocolVersions: []string{mcp.Version2026},
+				ServerInfo:       mcp.Implementation{Name: "stub2026", Version: "1"},
+			})
+			writeJSONRPC(t, w, mcp.NewResponse(m.ID, result))
+		case mcp.MethodSubscriptionsListen:
+			if got := r.Header.Get(headerMcpMethod); got != mcp.MethodSubscriptionsListen {
+				t.Errorf("listen Mcp-Method = %q", got)
+			}
+			var p mcp.SubscriptionsListenParams
+			if err := json.Unmarshal(m.Params, &p); err != nil {
+				t.Errorf("decode listen params: %v", err)
+			}
+			listens <- p
+			s := startSSE(t, w)
+			s.message("", mcp.NewNotification(mcp.NotificationToolsListChanged, nil))
+			// stream ends; the client must re-POST
+		default:
+			t.Errorf("unexpected method %q", m.Method)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	})
+
+	tr := dialStreamable(t, HTTPConfig{
+		URL:                fs.URL + "/mcp",
+		NotificationStream: true,
+		retryBase:          time.Millisecond,
+	})
+	changed := make(chan ChangeMask, 8)
+	tr.OnListChanged(func(m ChangeMask) { changed <- m })
+
+	if _, err := Handshake(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"}); err != nil {
+		t.Fatalf("Handshake: %v", err)
+	}
+
+	p := <-listens
+	if p.Meta == nil || p.Meta.ProtocolVersion != mcp.Version2026 {
+		t.Fatalf("listen _meta = %+v", p.Meta)
+	}
+	found := false
+	for _, ev := range p.Events {
+		if ev == mcp.SubscriptionEventToolsListChanged {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("listen events %v do not opt into toolsListChanged", p.Events)
+	}
+
+	select {
+	case m := <-changed:
+		if m != ChangeTools {
+			t.Fatalf("mask = %s", m)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("subscriptions/listen stream delivered nothing")
+	}
+	// The broken stream is re-established with a fresh POST.
+	select {
+	case <-listens:
+	case <-time.After(5 * time.Second):
+		t.Fatal("subscriptions/listen never reconnected")
+	}
+}
+
 // TestStreamableHTTPNotificationStreamGivesUpOn405 pins that a server which
 // does not offer the GET stream is not hammered.
 func TestStreamableHTTPNotificationStreamGivesUpOn405(t *testing.T) {
