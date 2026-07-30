@@ -96,6 +96,36 @@ func testEnv(dataDir string) []string {
 	return append(env, "AGENTHUB_DATA_DIR="+dataDir)
 }
 
+// envWith returns env with every key named in kv replaced rather than
+// repeated. It is how a test redirects a variable the ambient environment
+// already carries — HOME, for the cases that plant fake AI-client
+// configuration files.
+//
+// Appending alone would in fact work: os/exec deduplicates the child
+// environment and keeps the LAST occurrence of each key. But a test whose
+// isolation from the developer's real home directory rests on that detail
+// reads, at the call site, exactly like one that has no isolation at all —
+// and the failure mode is a suite that rewrites the real ~/.cursor/mcp.json.
+func envWith(t *testing.T, env []string, kv ...string) []string {
+	t.Helper()
+	replaced := make(map[string]bool, len(kv))
+	for _, e := range kv {
+		key, _, ok := strings.Cut(e, "=")
+		if !ok || key == "" {
+			t.Fatalf("envWith: %q is not KEY=VALUE", e)
+		}
+		replaced[key] = true
+	}
+	out := make([]string, 0, len(env)+len(kv))
+	for _, e := range env {
+		if key, _, ok := strings.Cut(e, "="); ok && replaced[key] {
+			continue
+		}
+		out = append(out, e)
+	}
+	return append(out, kv...)
+}
+
 // runAgenthub executes one offline CLI invocation (server add, client
 // connect, ...) against dataDir and fails the test on a non-zero exit,
 // printing both output streams for diagnosis.
