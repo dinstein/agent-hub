@@ -855,7 +855,7 @@ meaningless across machines or after a reboot).
 | `types.go` | The five `DocKind` documents, `MetaDoc`, `ServerEntry` (transport/runtime/docker/provenance/derive), `DockerRuntime`/`DockerMount`, `OAuthHint`, `ToolSelector`, `Profile`, `ClientEntry`/`ProfileBinding`, `GovernanceDoc`, `Snapshot`, the default documents |
 | `fileio.go` | The `atomicWrite` ladder, `syncDir`, `rotateBackups`, `quarantine`, `canonicalize`/`canonicallyEqual`, `encodeDoc` |
 | `lock.go` | The sibling lock file path, `acquireLock` polling and timeout, `release` |
-| `flock_unix.go` / `flock_stub.go` | `syscall.Flock` on darwin/linux; a compile-time placeholder returning `errors.ErrUnsupported` elsewhere |
+| `flock_unix.go` / `flock_windows.go` / `flock_stub.go` | `syscall.Flock` on darwin/linux; `LockFileEx` on Windows (delegating to `internal/platform`); a compile-time placeholder returning `errors.ErrUnsupported` on any other platform |
 | `errors.go` | `ErrLockTimeout`/`LockTimeoutError`, `UnreadableError` |
 | `watch.go` | `Change`, `WatchOptions`, `Watcher` with its single-goroutine scan loop, the debounce/poll dual channels, park/flush delivery |
 | `selfwrite.go` | `selfWriteSet` (register/withdraw/consume/clear) and `fingerprint` |

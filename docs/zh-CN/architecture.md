@@ -396,7 +396,7 @@ generation 单调计数 + 事件推送，mtime 不参与语义。
 |---|---|
 | macOS | 完整支持，CI 覆盖 |
 | Linux | 完整支持，CI 覆盖 |
-| Windows | **尚不可用**：路径与包身份解析已实现且交叉编译进 CI，但 registry 的跨进程锁与控制面 named pipe 都还是 stub，因此配置读不了、daemon 起不来。见 [windows.md](../windows.md) |
+| Windows | **实验性**：运行时缺口已全部补上——文件锁（`LockFileEx`）、named pipe 监听器（SDDL 收口）、api 拨号、GUI 通道接线、便携 zip 打包——但**从未在真实 Windows 机器上跑过任何一行**。见 [windows.md](../windows.md) |
 
 GUI（`cmd/agenthub-gui`）默认**不参与**构建：链接 webview 需要 GTK/WebKit 开发包，
 Linux CI runner 上没有。Wails 代码全部在 `//go:build wails` 之后，用 `make gui` 单独构建。

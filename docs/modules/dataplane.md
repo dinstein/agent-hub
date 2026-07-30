@@ -1026,7 +1026,8 @@ ambiguity gets discovered in production in the form of a quota that is off by 10
 **The failure direction splits in two by timing.**
 
 *Fail-closed at assembly* — when rules **are configured**, `New` rejects three cases: an invalid rule set (`Validate`); a build
-without a cross-process file lock (`flock_stub.go`, where counts would silently multiply by the number of gateway processes); and a
+without a cross-process file lock (`flock_stub.go` — no longer darwin/linux/windows, all three of which set
+`crossProcessLockSupported = true`; on a build that lacks it, counts would silently multiply by the number of gateway processes); and a
 counter file that can't be locked/read/replaced right now (`probe` tests once rather than leaving it for each call to discover). All
 three are the same rule: **if you claim a quota you must honor it or error**, never silently ignore it. With no rules, none of the
 three trigger — an empty rule set is a no-op that doesn't even touch the filesystem.

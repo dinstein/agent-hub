@@ -859,7 +859,8 @@ discovery ──► registration ──► authorization ──► token exchang
 - **Dependency budget**: standard library + `internal/secrets` + `internal/guard/netguard`. It imports
   no control plane, no pipeline, and no logging package — it returns a structured `*FlowError` and
   lets the caller decide how to render it.
-- On non-darwin/linux platforms the file lock is an `errors.ErrUnsupported` stub, so **the offline
-  refresh path would rather refuse to run than run unordered**: two processes racing for one
-  single-use refresh token is worse than one "unsupported" refresh failure.
+- The file lock is real on darwin/linux (`syscall.Flock`) and on Windows (`LockFileEx`, via
+  `internal/platform`); anywhere else it is an `errors.ErrUnsupported` stub, so **the offline refresh
+  path would rather refuse to run than run unordered**: two processes racing for one single-use
+  refresh token is worse than one "unsupported" refresh failure.
 

@@ -907,6 +907,8 @@ sentinel-block reference implementation, and generic to prove the table extends 
 git-sourced skills record and pin a revision but **do not execute git and do not go online**; an update without a
 local checkout returns `ErrGitFetchUnsupported` rather than reporting "already up to date" without having looked.
 
-The cross-process lock is only implemented for darwin/linux (`flock_unix.go`); other platforms get a compile-time
-placeholder (`flock_stub.go`) — Windows' `LockFileEx` is covered in [../windows.md](../windows.md).
+The cross-process lock is implemented for darwin/linux (`flock_unix.go`, `syscall.Flock`) and for Windows
+(`flock_windows.go`, `LockFileEx` via `internal/platform`); any other platform gets a compile-time placeholder
+(`flock_stub.go`, build tag `!darwin && !linux && !windows`). The Windows half has never run on a real Windows
+machine — see [../windows.md](../windows.md).
 
