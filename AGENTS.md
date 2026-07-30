@@ -18,9 +18,11 @@ surfaced by real use — not new feature milestones.
 | [docs/modules/oauth.md](docs/modules/oauth.md) | An OAuth downstream will not connect, or which provider shapes are supported |
 | [docs/canonical.md](docs/canonical.md) | Whether a name/dependency/convention may change, and why it was decided |
 
-Confirmed gaps, pinned to a line but not yet fixed, are in [docs/backlog.md](docs/backlog.md) — look
-there first when you need work. Fixing one means deleting it from there and updating the matching
-`docs/modules/` file.
+Confirmed gaps, pinned to a line but not yet fixed, live in the `docs/modules/` file of the package
+that owns them — under "current assembly status", or beside the invariant they bend — and, for one
+platform's overall state, in [docs/windows.md](docs/windows.md). There is no separate backlog file:
+a gap recorded next to the code it is about gets read by whoever touches that code, which is more
+than a central list can claim.
 
 ## Hard constraints (violations fail CI)
 

@@ -7,7 +7,7 @@ architectural convention.
 
 For how the system works see [architecture.md](architecture.md); for flow timing see
 [flows.md](flows.md); for per-package detail see [modules/](modules/); for debts already pinned to a
-line see [backlog.md](backlog.md).
+line are recorded in the `modules/` doc of the package that owns them.
 
 ---
 

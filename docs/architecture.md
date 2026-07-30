@@ -479,7 +479,8 @@ verification on real hardware), the GUI isn't part of the default build, skills 
 reaches client granularity, TOON has no decoder, and teams is unimplemented. See
 [canonical.md](canonical.md) §4, "Known capability boundaries."
 
-Gaps that are confirmed, pinned to a line, but not yet fixed live in [backlog.md](backlog.md).
+Gaps that are confirmed and pinned to a line, but not yet fixed, live in the [modules/](modules/) doc of
+the package that owns them — next to the code they are about, rather than in a list of their own.
 
 ---
 
@@ -488,5 +489,4 @@ Gaps that are confirmed, pinned to a line, but not yet fixed live in [backlog.md
 - [flows.md](flows.md) — sequence diagrams for the key flows: gateway startup, a lazy call, HITL approval, config hot reload, OAuth, derived instances.
 - [modules/](modules/) — per-package docs: responsibilities, key types, invariants and failure directions, file map.
 - [canonical.md](canonical.md) — frozen identifiers, dependency constraints, command naming rules, engineering conventions, decision records.
-- [backlog.md](backlog.md) — confirmed but unfixed gaps.
 - [windows.md](windows.md) — Windows status and acceptance criteria.

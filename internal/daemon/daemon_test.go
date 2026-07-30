@@ -25,6 +25,15 @@ import (
 	"github.com/dinstein/agent-hub/internal/testutil/fakemcp"
 )
 
+// testTimeout bounds every waitFor in this package.
+//
+// It has been suspected once, in 2026-07: two timeouts under manufactured CPU
+// contention (24 `yes` processes, `-count=20 -race`), then never again across
+// ~48 further runs. If it resurfaces, get ONE failure with the goroutine dump
+// waitForDetail prints before touching this constant. Raising it turns "fails
+// intermittently" into "fails intermittently, but slower", and deletes the
+// only evidence separating a genuine hang from 20 cold daemon starts honestly
+// needing more than 10s.
 const testTimeout = 10 * time.Second
 
 // testResolver pins the data dir and a SHORT socket path (t.TempDir can

@@ -419,7 +419,8 @@ webkitgtk-6.0`）就失败，连 `go vet` 都过不去，而 macOS runner 自带
 GUI 不参与默认构建、skills 物化只到 client 粒度、TOON 无解码器、teams 未实现。
 详见 [canonical.md](canonical.md) §4「已知的能力边界」。
 
-已确认存在、已定位到行、但尚未修复的缺口在 [backlog.md](backlog.md)。
+已确认存在、已定位到行、但尚未修复的缺口，记在拥有它的那个包的 [modules/](modules/) 文档里——
+贴着它所描述的代码，而不是另立一份清单。
 
 ---
 
@@ -428,5 +429,4 @@ GUI 不参与默认构建、skills 物化只到 client 粒度、TOON 无解码�
 - [flows.md](flows.md) —— 关键流程的时序图：网关启动、一次 lazy 调用、HITL 审批、配置热更新、OAuth、派生实例。
 - [modules/](modules/) —— 逐包文档：职责、关键类型、不变量与失败方向、文件地图。
 - [canonical.md](canonical.md) —— 冻结标识符、依赖约束、命令名规则、工程约定、裁决记录。
-- [backlog.md](backlog.md) —— 已确认但未修复的缺口。
 - [windows.md](windows.md) —— Windows 现状与验收标准。

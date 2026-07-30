@@ -36,5 +36,6 @@ but the assembly layer hasn't connected them yet. Those cases are called out exp
 "current assembly status" in the relevant package section rather than glossed over.
 [../architecture.md §12](../architecture.md#12-assembly-status-implemented-but-not-yet-wired-up) has a summary.
 
-**Gaps already pinned down to a specific line go in [../backlog.md](../backlog.md), not here.**
-This describes what is; that describes what's owed.
+**A gap already pinned down to a specific line belongs HERE**, in the section for the package that
+owns it — say plainly that it is owed rather than describing it as done. It is read by whoever
+touches that code; a list of its own would not be.

@@ -4,7 +4,7 @@
 以及每一条曾被认真裁决过的事项及其理由。改这里等于改架构约定。
 
 系统怎么运作看 [architecture.md](architecture.md)，流程时序看 [flows.md](flows.md)，
-逐包细节看 [modules/](modules/)，已定位到行的欠账看 [backlog.md](backlog.md)。
+逐包细节看 [modules/](modules/)，已定位到行的欠账记在对应包的 modules/ 文档里。
 
 ---
 

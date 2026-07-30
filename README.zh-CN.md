@@ -84,7 +84,6 @@ agenthub client connect claude-code
 | [docs/modules/](docs/modules/) | 逐包文档：职责、关键类型、不变量与失败方向 |
 | [docs/canonical.md](docs/canonical.md) | 架构约定的唯一真源：冻结标识符、包布局、依赖约束、命令名规则、全部裁决记录 |
 | [docs/windows.md](docs/windows.md) | Windows 现状：已实现什么、未验证什么、缺什么 |
-| [docs/backlog.md](docs/backlog.md) | 已确认但未修复的缺口：症状、根因（指到行）、做法、验证方式 |
 
 ## 平台
 

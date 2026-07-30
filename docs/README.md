@@ -13,7 +13,6 @@
 | Touch the GUI frontend | [modules/gui.md](modules/gui.md) |
 | Check whether a name, dependency, or convention is changeable | [canonical.md](canonical.md) |
 | Find out what works on Windows today | [windows.md](windows.md) |
-| Find something to work on: confirmed but unfixed gaps | [backlog.md](backlog.md) |
 | Cut a release | [releasing.md](releasing.md) |
 
 ## Files
@@ -25,7 +24,6 @@
 | [flows.md](flows.md) | Sequence diagrams and failure branches for seven key flows: gateway startup, a lazy call, HITL approval, config writes, config hot reload, OAuth, derived instances |
 | [modules/](modules/) | Per-package docs: responsibilities, key types, **invariants and failure directions**. Five documents organized by layer, plus dedicated write-ups for OAuth and the GUI |
 | [canonical.md](canonical.md) | Frozen identifiers, package layout, the four dependency constraints, command naming rules, engineering conventions, and every decision record |
-| [backlog.md](backlog.md) | Confirmed but unfixed gaps: symptom, root cause (pinned to a line), approach, verification. Deleted once fixed |
 | [windows.md](windows.md) | Windows status: what's implemented, **what's unverified**, what's missing, acceptance criteria |
 | [releasing.md](releasing.md) | Version numbering, build artifacts, release process |
 
@@ -47,5 +45,5 @@ Each fact belongs in exactly one layer. Content duplicated across layers will ev
 - **A sentence earns its place by carrying a reason, not by restating the code.** Don't write file listings, exported signatures, or step-by-step narration of straightforward control flow — `ls`, `go doc`, and the code itself are faster and never go stale. Write down the *why*: rejected alternatives, traps that were actually hit, which way a predicate fails.
 - **Invariants first.** The most valuable thing to write down isn't "what this package does" but "what must not be touched, and which way failures fall" — fail-open or fail-closed, ordering invariants, cross-process discipline.
 - **Capability exists ≠ wired up.** Where a package is functionally complete but the assembly layer hasn't connected it, say so explicitly at that spot. "Thought it was in effect but it wasn't" is far more dangerous than "known to be missing."
-- **Gaps go in `backlog.md`, not the main text.** The bar for inclusion is "you can point to a specific location in the code." Delete an entry once it's fixed, and update the corresponding `modules/` doc to describe reality.
+- **A gap goes in the `modules/` doc of the package that owns it**, not into a list of its own — under "current assembly status", or beside the invariant it bends. The bar for writing one down is "you can point to a specific location in the code"; once it's fixed, the same paragraph becomes the description of reality. A gap kept next to its code is read by whoever touches that code, which is the one thing a central backlog could never manage.
 - If you change an architectural convention (package name, command name, dependency direction, frozen identifier), update `canonical.md` in the same change.

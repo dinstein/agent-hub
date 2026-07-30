@@ -87,7 +87,6 @@ again. Full walkthrough — profiles, narrowing, the whole model — in [docs/gu
 | [docs/modules/](docs/modules/) | Per-package documentation: responsibilities, key types, invariants and failure directions |
 | [docs/canonical.md](docs/canonical.md) | The single source of truth for architectural conventions: frozen identifiers, package layout, dependency constraints, command naming rules, and every decision record |
 | [docs/windows.md](docs/windows.md) | Windows status: what is implemented, what is unverified, what is missing |
-| [docs/backlog.md](docs/backlog.md) | Confirmed but unfixed gaps: symptom, root cause (pinned to a line), approach, and how to verify |
 
 Chinese translations live in [docs/zh-CN/](docs/zh-CN/).
 

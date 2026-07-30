@@ -13,7 +13,6 @@
 | 动 GUI 前端之前 | [modules/gui.md](modules/gui.md) |
 | 确认某个命名/依赖/约定能不能改 | [canonical.md](canonical.md) |
 | 知道 Windows 上现在能用什么 | [windows.md](windows.md) |
-| 找活干：已确认但没修的缺口 | [backlog.md](backlog.md) |
 | 发一个版本 | [releasing.md](releasing.md) |
 
 ## 文件
@@ -25,7 +24,6 @@
 | [flows.md](flows.md) | 七个关键流程的时序图与失败分支：网关启动、lazy 调用、HITL 审批、配置写入、配置热更新、OAuth、派生实例 |
 | [modules/](modules/) | 逐包文档：职责、关键类型、**不变量与失败方向**。按层分五篇，另有 OAuth 与 GUI 两篇专题 |
 | [canonical.md](canonical.md) | 冻结标识符、包布局、四条依赖约束、命令名规则、工程约定、全部裁决记录 |
-| [backlog.md](backlog.md) | 已确认但未修复的缺口：症状、根因（指到行）、做法、验证方式。修完即删 |
 | [windows.md](windows.md) | Windows 现状：实现了什么、**未验证什么**、缺什么、验收标准 |
 | [releasing.md](releasing.md) | 版本号、构建产物、发布流程 |
 
@@ -49,6 +47,8 @@
   fail-open 还是 fail-closed、顺序不变量、跨进程纪律。
 - **能力存在 ≠ 已接线。** 包功能完整但装配层没接上的，在对应位置明确标出。
   「以为在生效其实没生效」比「知道没做」危险得多。
-- **缺口写进 `backlog.md`，不写进正文。** 收录标准是「代码里能指到具体位置」；
-  修完一条就从那里删掉，并把对应 `modules/` 文档改成描述现状。
+- **缺口写进它所属那个包的 `modules/` 文档**，不另立清单——写在「当前装配现状」下，
+  或者紧挨着它扭曲的那条不变量。收录标准仍是「代码里能指到具体位置」；
+  修完之后，同一段话就变成对现状的描述。缺口贴着代码放，动这段代码的人才会读到——
+  这一点是集中式 backlog 永远做不到的。
 - 改了架构约定（包名、命令名、依赖方向、冻结标识符），同步改 `canonical.md`。
