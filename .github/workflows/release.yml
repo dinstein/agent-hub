@@ -145,8 +145,13 @@ jobs:
           node-version: "22.x"
           cache: npm
           cache-dependency-path: cmd/agenthub-gui/frontend/package-lock.json
+      # CGO_ENABLED=0: the wails3 CLI binary is compiled for the Linux host,
+      # but on ubuntu-latest its operatingsystem package pulls in gtk4 +
+      # webkitgtk-6.0 via pkg-config. We only need `wails3 generate syso`
+      # (a pure-Go Windows resource compiler) and `wails3 task`, neither of
+      # which needs GTK. Building without CGO skips the C/pkg-config path.
       - name: Install wails3
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.118
+        run: CGO_ENABLED=0 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.118
       # The same reason as ci.yml and gui-macos: gui_main.go embeds
       # frontend/dist, which is gitignored. `npm ci` rejects a stale lockfile.
       - name: Frontend (typecheck + bundle)
