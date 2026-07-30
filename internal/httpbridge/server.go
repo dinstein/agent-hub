@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -16,6 +17,15 @@ const DefaultPath = "/mcp"
 
 // SessionHeader carries the Streamable HTTP session id.
 const SessionHeader = "Mcp-Session-Id"
+
+// MethodHeader and NameHeader are required on every POST once 2026-07-28 is
+// in play: the JSON-RPC method, and the tool/resource/prompt name when the
+// params carry one. A header that disagrees with the body is rejected with
+// CodeHeaderMismatch (-32020) and HTTP 400.
+const (
+	MethodHeader = "Mcp-Method"
+	NameHeader   = "Mcp-Name"
+)
 
 // Dispatcher is the seam between this transport face and the MCP logic
 // behind it (the daemon's shared downstream pool + internal/pipeline).
@@ -198,8 +208,17 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request, c *Caller) {
 
 	switch m := msg.(type) {
 	case *mcp.Request:
+		if e := checkMcpHeaders(r, m.Method, m.Params); e != nil {
+			s.replyRPCError(w, http.StatusBadRequest, m.ID, e)
+			return
+		}
 		s.handleRequest(w, r, c, m)
 	case *mcp.Notification:
+		if e := checkMcpHeaders(r, m.Method, m.Params); e != nil {
+			// A notification has no id to bind a JSON-RPC error to.
+			s.fail(w, r, &httpError{http.StatusBadRequest, CodeBadRequest, e.Message})
+			return
+		}
 		sess, ok := s.resolveSession(w, r, c, false)
 		if !ok {
 			return
@@ -214,11 +233,16 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request, c *Caller) {
 	}
 }
 
-// handleRequest answers one JSON-RPC request. initialize is the only method
-// that may arrive WITHOUT a session id — it is what mints one.
+// handleRequest answers one JSON-RPC request. Two shapes may arrive WITHOUT
+// a session id: initialize (≤ 2025-11-25, it is what mints one) and the
+// stateless 2026-07-28 shapes — server/discover, or any request carrying
+// the per-request _meta. 2026 removed the session header from the wire, and
+// nothing here needs one: the per-caller state behind the dispatcher is
+// keyed by the authenticated identity, never by this header.
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request, c *Caller, req *mcp.Request) {
 	var sess *Session
-	if req.Method == mcp.MethodInitialize && r.Header.Get(SessionHeader) == "" {
+	switch {
+	case req.Method == mcp.MethodInitialize && r.Header.Get(SessionHeader) == "":
 		created, err := s.sessions.create(c)
 		if err != nil {
 			s.fail(w, r, asHTTPError(err))
@@ -228,7 +252,12 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request, c *Caller
 		w.Header().Set(SessionHeader, sess.ID)
 		s.log.Info("http session bound",
 			"session", sess.ID, "caller", string(c.Kind), "token", c.Token, "tier", string(c.Tier))
-	} else {
+	case r.Header.Get(SessionHeader) == "" && stateless2026Request(req):
+		// Sessionless by protocol. The declared _meta version is validated
+		// by the gateway behind the dispatcher (one enforcement point), so
+		// a wrong version still earns its -32022 rather than a 404 here.
+		sess = nil
+	default:
 		resolved, ok := s.resolveSession(w, r, c, true)
 		if !ok {
 			return
@@ -260,6 +289,79 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, c *Caller)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// stateless2026Request reports whether req is a 2026-07-28 stateless shape:
+// server/discover, or a request whose params carry the per-request _meta
+// with a declared protocol version. The version's VALUE is deliberately not
+// checked here — the gateway behind the dispatcher owns that rejection
+// (-32022), and a second copy of the check would be a second place for it
+// to be wrong.
+func stateless2026Request(req *mcp.Request) bool {
+	if req.Method == mcp.MethodDiscover {
+		return true
+	}
+	if len(req.Params) == 0 {
+		return false
+	}
+	var probe struct {
+		Meta *mcp.RequestMeta `json:"_meta"`
+	}
+	if err := json.Unmarshal(req.Params, &probe); err != nil || probe.Meta == nil {
+		return false
+	}
+	return probe.Meta.ProtocolVersion != ""
+}
+
+// checkMcpHeaders enforces the 2026-07-28 Mcp-Method / Mcp-Name headers
+// against the message body. Rules, in the order they can fail:
+//
+//   - A present Mcp-Method that differs from the body's method is -32020,
+//     whatever the session's protocol generation — a lying header is never
+//     tolerable.
+//   - A request that carries the 2026 per-request _meta MUST carry
+//     Mcp-Method (the spec requires it on every POST); its absence is
+//     -32020. Requests without _meta (stateful sessions) owe no headers.
+//   - A present Mcp-Name that differs from the params' top-level name is
+//     -32020. Params without a name owe no Mcp-Name.
+//
+// nil means the headers are acceptable.
+func checkMcpHeaders(r *http.Request, method string, params json.RawMessage) *mcp.Error {
+	hdrMethod := r.Header.Get(MethodHeader)
+	if hdrMethod != "" && hdrMethod != method {
+		return &mcp.Error{Code: mcp.CodeHeaderMismatch, Message: fmt.Sprintf(
+			"%s header %q disagrees with the body method %q", MethodHeader, hdrMethod, method)}
+	}
+	var probe struct {
+		Meta *mcp.RequestMeta `json:"_meta"`
+		Name string           `json:"name"`
+	}
+	if len(params) > 0 {
+		_ = json.Unmarshal(params, &probe) // non-object params carry neither
+	}
+	if hdrMethod == "" && probe.Meta != nil && probe.Meta.ProtocolVersion != "" {
+		return &mcp.Error{Code: mcp.CodeHeaderMismatch, Message: fmt.Sprintf(
+			"2026-07-28 requires the %s header on every request", MethodHeader)}
+	}
+	if hdrName := r.Header.Get(NameHeader); hdrName != "" && probe.Name != "" && hdrName != probe.Name {
+		return &mcp.Error{Code: mcp.CodeHeaderMismatch, Message: fmt.Sprintf(
+			"%s header %q disagrees with the params name %q", NameHeader, hdrName, probe.Name)}
+	}
+	return nil
+}
+
+// replyRPCError writes a JSON-RPC error response with the given HTTP
+// status: the 2026-07-28 header rejections are protocol-level errors that
+// still bind to the request id.
+func (s *Server) replyRPCError(w http.ResponseWriter, status int, id mcp.ID, e *mcp.Error) {
+	raw, err := json.Marshal(mcp.NewErrorResponse(id, e))
+	if err != nil {
+		s.fail(w, nil, &httpError{http.StatusInternalServerError, CodeBadRequest, "response could not be encoded"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(raw)
 }
 
 // resolveSession looks up the session named by the request header. When
