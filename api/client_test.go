@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 // shortTempDir returns a temp dir with a short absolute path. t.TempDir()
@@ -111,46 +110,6 @@ func TestServersList(t *testing.T) {
 	}
 	if len(got) != 1 || got[0] != want[0] {
 		t.Errorf("got %+v want %+v", got, want)
-	}
-}
-
-func TestSessionsListAndSetScope(t *testing.T) {
-	var gotID string
-	var gotNarrow ScopeNarrow
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/sessions", func(w http.ResponseWriter, r *http.Request) {
-		writeOK(t, w, []SessionInfo{{
-			ID: "claude:1", ClientID: "claude", Origin: "stdio",
-			ProfileName: "default", LastSeen: time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC),
-		}})
-	})
-	mux.HandleFunc("POST /v1/sessions/{id}/scope", func(w http.ResponseWriter, r *http.Request) {
-		gotID = r.PathValue("id")
-		if err := json.NewDecoder(r.Body).Decode(&gotNarrow); err != nil {
-			t.Errorf("decoding narrow body: %v", err)
-		}
-		writeOK(t, w, nil)
-	})
-	c := New(newTestDaemon(t, mux))
-	defer c.Close()
-
-	ss, err := c.Sessions.List(context.Background())
-	if err != nil {
-		t.Fatalf("Sessions.List: %v", err)
-	}
-	if len(ss) != 1 || ss[0].ID != "claude:1" {
-		t.Errorf("unexpected sessions: %+v", ss)
-	}
-
-	narrow := ScopeNarrow{DisableServers: []string{"github"}, Tools: map[string][]string{"jira": {"search"}}}
-	if err := c.Sessions.SetScope(context.Background(), "claude:1", narrow); err != nil {
-		t.Fatalf("SetScope: %v", err)
-	}
-	if gotID != "claude:1" {
-		t.Errorf("session id on wire = %q, want claude:1", gotID)
-	}
-	if len(gotNarrow.DisableServers) != 1 || gotNarrow.DisableServers[0] != "github" {
-		t.Errorf("narrow body did not round-trip: %+v", gotNarrow)
 	}
 }
 

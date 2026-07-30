@@ -18,7 +18,6 @@ import (
 	"github.com/dinstein/agent-hub/api"
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/registry"
-	"github.com/dinstein/agent-hub/internal/scope"
 )
 
 // defaultLinkRetry is the reconnect/re-register interval (docs/architecture.md §2:
@@ -36,9 +35,9 @@ const linkDialTimeout = 5 * time.Second
 // reach the upstream protocol channel.
 //
 // Lifecycle per attempt: register (POST /v1/gateway/register) → remember
-// the daemon-assigned SessionID and apply the initial overlay → consume the
-// SSE link (overlay pushes acked via POST .../ack, registry change
-// notifications) → on ANY disconnect: discard the overlay (the authority
+// the daemon-assigned SessionID → consume the
+// SSE link (registry change
+// notifications) → on ANY disconnect: discard the session id (the authority
 // died with the daemon-side session — fall back to the static three-layer
 // scope), back off, re-register for a NEW identity.
 type ctlLink struct {
@@ -49,7 +48,6 @@ type ctlLink struct {
 
 	mu        sync.Mutex
 	sessionID string
-	overlay   *scope.Overlay
 	// aliveCtx is cancelled whenever this link's connection to the daemon
 	// drops. Approval asks derive from it, so a broker that dies mid-wait
 	// releases them at once instead of leaving a gated call parked on a
@@ -129,14 +127,6 @@ func (l *ctlLink) Session() string {
 	return l.sessionID
 }
 
-// Overlay returns the current daemon-pushed overlay (nil = none: static
-// three-layer scope applies). The value is immutable.
-func (l *ctlLink) Overlay() *scope.Overlay {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.overlay
-}
-
 // run is the connection loop; it lives on the gateway lifetime context.
 func (l *ctlLink) run(ctx context.Context) {
 	for {
@@ -150,24 +140,22 @@ func (l *ctlLink) run(ctx context.Context) {
 		} else {
 			l.loggedDown = false
 			l.linkUp(ctx)
-			// Registration switched the session identity and may have
-			// delivered an initial overlay: re-project the scope.
-			l.g.onOverlayChanged()
+			// Registration switched the session identity: re-project the
+			// scope, whose cache is keyed by it.
+			l.g.onSessionChanged()
 			// Seed the new session's runtime state. Reports are keyed by
 			// session id and are full snapshots, so everything the gateway
 			// learned before it had a session (downstreams connect and the
 			// link registers concurrently) arrives here in one go.
 			l.g.reportServers()
 			l.serveLink(ctx, reg.SessionID)
-			// Release anything waiting on this connection (asks in flight)
-			// before anything else: the broker behind it is gone.
 			l.linkDown()
 			if ctx.Err() != nil {
 				return
 			}
-			// Disconnected: the daemon-side session (and with it the overlay
-			// authority) is gone. Discard and fall back to the static scope
-			// baseline — never keep executing a widowed overlay.
+			// Disconnected: the daemon-side session is gone. Drop the id and
+			// re-register on the next tick; the data plane is unaffected,
+			// because a stdio gateway's scope comes from the registry files.
 			l.clear("control link lost")
 		}
 		select {
@@ -203,21 +191,8 @@ func (l *ctlLink) register(ctx context.Context) (ctlapi.GatewayRegistered, error
 		return reg, fmt.Errorf("gateway: daemon returned an empty session id")
 	}
 
-	var initial *scope.Overlay
-	if len(reg.Overlay) > 0 && !bytes.Equal(reg.Overlay, []byte("null")) {
-		ov := new(scope.Overlay)
-		if err := json.Unmarshal(reg.Overlay, ov); err != nil {
-			// Fail-closed direction for registration itself: an overlay we
-			// cannot parse means we cannot honor the daemon's authority —
-			// treat the registration as failed rather than running without it.
-			return reg, fmt.Errorf("gateway: decoding initial overlay: %w", err)
-		}
-		initial = ov
-	}
-
 	l.mu.Lock()
 	l.sessionID = reg.SessionID
-	l.overlay = initial
 	l.mu.Unlock()
 	l.g.log.Info("registered with daemon", "session", reg.SessionID)
 	return reg, nil
@@ -247,8 +222,6 @@ func (l *ctlLink) serveLink(ctx context.Context, sid string) {
 
 	err = readSSE(resp.Body, func(eventName string, data []byte) {
 		switch eventName {
-		case ctlapi.LinkEventOverlay:
-			l.handleOverlayFrame(ctx, sid, data)
 		case ctlapi.LinkEventRegistry:
 			var rf ctlapi.RegistryFrame
 			if jerr := json.Unmarshal(data, &rf); jerr != nil {
@@ -271,60 +244,20 @@ func (l *ctlLink) serveLink(ctx context.Context, sid string) {
 	}
 }
 
-// handleOverlayFrame applies one pushed overlay and acks it. Apply BEFORE
-// ack: the daemon commits only what this gateway actually holds (authority
-// in the daemon, execution in the gateway — docs/architecture.md §7).
-func (l *ctlLink) handleOverlayFrame(ctx context.Context, sid string, data []byte) {
-	var frame ctlapi.OverlayFrame
-	if err := json.Unmarshal(data, &frame); err != nil {
-		l.g.log.Warn("malformed overlay frame ignored", "error", err)
-		return
-	}
-	ack := ctlapi.GatewayAck{ID: frame.ID, OK: true}
-	ov := new(scope.Overlay)
-	if err := json.Unmarshal(frame.Overlay, ov); err != nil {
-		// Nack: the daemon must NOT commit an overlay this gateway cannot
-		// execute; the previous overlay stays in force on both sides.
-		ack.OK = false
-		ack.Error = fmt.Sprintf("decoding overlay: %v", err)
-	} else {
-		l.mu.Lock()
-		l.overlay = ov
-		l.mu.Unlock()
-		l.g.log.Info("overlay applied", "session", sid, "version", ov.Version)
-	}
-	if err := l.post(ctx, "/v1/gateway/"+url.PathEscape(sid)+"/ack", "gateway:"+sid, ack, nil); err != nil {
-		// The unacked push fails on the daemon side (nothing committed
-		// there); drop our local copy too so the two sides stay converged.
-		l.g.log.Warn("overlay ack failed", "error", err)
-	}
-	if ack.OK {
-		// Apply happened above (before the ack — authority in the daemon,
-		// execution here); now re-project the session scope and push
-		// tools/list_changed iff visibility actually changed.
-		l.g.onOverlayChanged()
-	}
-}
-
-// clear drops the registration state. If an overlay was active this is the
-// degradation moment: back to the static scope baseline.
+// clear drops the registration state.
 func (l *ctlLink) clear(reason string) {
 	l.mu.Lock()
 	hadSession := l.sessionID != ""
-	hadOverlay := l.overlay != nil
 	l.sessionID = ""
-	l.overlay = nil
 	l.mu.Unlock()
-	if hadOverlay {
-		l.g.log.Warn("discarding session overlay; static scope applies", "reason", reason)
-	} else if hadSession {
+	if hadSession {
 		l.g.log.Info("daemon session ended", "reason", reason)
 	}
-	if hadSession || hadOverlay {
+	if hadSession {
 		// Fall back to the static three-layer scope (and, on the widowed-
 		// overlay path, WIDEN back from the discarded overlay — a session
 		// grant dies with its session by design, docs/architecture.md §2).
-		l.g.onOverlayChanged()
+		l.g.onSessionChanged()
 	}
 }
 

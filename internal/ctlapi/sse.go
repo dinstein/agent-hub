@@ -274,11 +274,6 @@ func (s *Server) directFrame(topic, kind string, ev event.Event) (frame, bool) {
 			Session api.SessionInfo `json:"session"`
 			Reason  string          `json:"reason"`
 		}{apiSessionInfo(p.Info), string(p.Reason)}
-	case session.OverlayChanged:
-		payload = struct {
-			ID      string `json:"id"`
-			Version uint64 `json:"version"`
-		}{string(p.ID), p.Version}
 	default:
 		payload = ev.Payload
 	}

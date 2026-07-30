@@ -278,64 +278,6 @@ func TestServerHealthSelectsByID(t *testing.T) {
 	}
 }
 
-func TestSetSessionScopeSendsNarrowOnlyBody(t *testing.T) {
-	var gotPath string
-	var gotBody api.ScopeNarrow
-	mux := pingMux(t)
-	mux.HandleFunc("POST /v1/sessions/{id}/scope", func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-			t.Errorf("decoding body: %v", err)
-		}
-		writeOK(t, w, map[string]string{})
-	})
-	h, _ := newHub(t, newFakeDaemon(t, mux), nil)
-
-	narrow := api.ScopeNarrow{
-		DisableServers: []string{"github"},
-		Tools:          map[string][]string{"fs": {"read_file"}},
-	}
-	if err := h.SetSessionScope(t.Context(), "claude:1", narrow); err != nil {
-		t.Fatalf("SetSessionScope: %v", err)
-	}
-	if gotPath != "/v1/sessions/claude:1/scope" {
-		t.Errorf("path = %q", gotPath)
-	}
-	if len(gotBody.DisableServers) != 1 || gotBody.DisableServers[0] != "github" ||
-		len(gotBody.Tools["fs"]) != 1 {
-		t.Errorf("body = %+v", gotBody)
-	}
-}
-
-func TestListSessionsAndScopeRejectionKeepsConnection(t *testing.T) {
-	mux := pingMux(t)
-	mux.HandleFunc("GET /v1/sessions", func(w http.ResponseWriter, _ *http.Request) {
-		writeOK(t, w, []api.SessionInfo{{ID: "claude:1", ClientID: "claude", Origin: "stdio"}})
-	})
-	mux.HandleFunc("POST /v1/sessions/{id}/scope", func(w http.ResponseWriter, _ *http.Request) {
-		writeErr(t, w, http.StatusForbidden, api.ErrCodeTightenOnly, "would widen scope")
-	})
-	fd := newFakeDaemon(t, mux)
-	h, dl := newHub(t, fd, nil)
-
-	if _, err := h.ListSessions(t.Context()); err != nil {
-		t.Fatalf("ListSessions: %v", err)
-	}
-	baseline, _ := dl.counts()
-	err := h.SetSessionScope(t.Context(), "claude:1", api.ScopeNarrow{Reset: true})
-	if !api.IsCode(err, api.ErrCodeTightenOnly) {
-		t.Fatalf("want E_TIGHTEN_ONLY, got %v", err)
-	}
-	// A refusal is the daemon answering, not the connection failing: the
-	// client must be kept, otherwise every denied action would re-dial.
-	if _, err := h.ListSessions(t.Context()); err != nil {
-		t.Fatalf("ListSessions after refusal: %v", err)
-	}
-	if dials, _ := dl.counts(); dials != baseline {
-		t.Errorf("re-dialed %d times after a control-plane refusal", dials-baseline)
-	}
-}
-
 func TestSkillsAndAuditReportNotImplementedDistinctly(t *testing.T) {
 	mux := pingMux(t)
 	// Nothing is registered for /v1/skills and /v1/audit: this daemon does

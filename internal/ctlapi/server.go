@@ -35,12 +35,6 @@ const (
 	CodeTightenOnly = "E_TIGHTEN_ONLY"
 	// CodeConflict rejects a second attach on a single-shot gateway link.
 	CodeConflict = "E_CONFLICT"
-	// CodeAlreadyDecided answers a late grant decision with 409: first
-	// answer wins; the body names the first decider (idempotent for
-	// scripts, docs/modules/controlplane.md).
-	CodeAlreadyDecided = "E_ALREADY_DECIDED"
-	// CodeExpired answers a decision on a timed-out request with 410.
-	CodeExpired = "E_EXPIRED"
 	// CodeInternal is the generic 500 (including recovered panics).
 	CodeInternal = "E_INTERNAL"
 )
@@ -125,15 +119,9 @@ type Options struct {
 	// KeepAlive is the SSE keep-alive comment interval (0 = 15s;
 	// negative = disabled).
 	KeepAlive time.Duration
-	// LinkAckTimeout bounds one overlay push waiting for its gateway ack
-	// (0 = DefaultLinkAckTimeout). Tests shrink it.
-	LinkAckTimeout time.Duration
 	// LinkAttachTimeout bounds registration-to-link-attach before the
 	// session is presumed dead (0 = DefaultLinkAttachTimeout).
 	LinkAttachTimeout time.Duration
-	// GrantTTL is the default widening lifetime of an approved grant
-	// (0 = DefaultGrantTTL, 1h). Tests shrink it.
-	GrantTTL time.Duration
 	// StateDir is <data>/state: the integrity stores and the tool-override
 	// file. "" disables the tool-governance and quarantine endpoints, which
 	// then answer the uniform 404 — a half-wired daemon must not pick a
@@ -154,7 +142,7 @@ type Options struct {
 	ToolLookup confops.ToolSnapshotFunc
 	// ServerStateForgetters clear the out-of-registry stores keyed by server
 	// id when DELETE /v1/servers/{id} removes one — integrity baselines,
-	// approval grants, quarantine entries, the cached tool list.
+	// quarantine entries, the cached tool list.
 	//
 	// They are INJECTED rather than opened here so this package keeps its
 	// distance from the concrete stores; the daemon assembles them next to
@@ -189,9 +177,6 @@ type Server struct {
 	// gateway, keyed by session id (see gateway.go).
 	gwMu     sync.Mutex
 	gateways map[string]*gatewayLink
-
-	// grants is the volatile session-widen grant table (see grants.go).
-	grants *grantManager
 }
 
 // NewServer validates opts and builds a Server.
@@ -217,14 +202,8 @@ func NewServer(opts Options) (*Server, error) {
 	if opts.KeepAlive == 0 {
 		opts.KeepAlive = 15 * time.Second
 	}
-	if opts.LinkAckTimeout <= 0 {
-		opts.LinkAckTimeout = DefaultLinkAckTimeout
-	}
 	if opts.LinkAttachTimeout <= 0 {
 		opts.LinkAttachTimeout = DefaultLinkAttachTimeout
-	}
-	if opts.GrantTTL <= 0 {
-		opts.GrantTTL = DefaultGrantTTL
 	}
 	log := opts.Logger
 	if log == nil {
@@ -234,7 +213,6 @@ func NewServer(opts Options) (*Server, error) {
 		opts:     opts,
 		log:      log,
 		gateways: make(map[string]*gatewayLink),
-		grants:   newGrantManager(),
 	}
 	s.hs = &http.Server{
 		Handler: s.Handler(),
@@ -356,26 +334,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			s.handleGatewayRegister(w, r)
 			return
 		}
-	case "/v1/grants":
-		switch r.Method {
-		case http.MethodGet:
-			s.handleGrantsList(w, r)
-			return
-		case http.MethodPost:
-			s.handleGrantCreate(w, r)
-			return
-		}
 	default:
-		if id, ok := scopePathID(r); ok && r.Method == http.MethodPost {
-			s.handleSetScope(w, r, id)
-			return
-		}
 		if id, ok := killPathID(r); ok && r.Method == http.MethodPost {
 			s.handleKillSession(w, r, id)
-			return
-		}
-		if id, ok := grantsPathID(r); ok && r.Method == http.MethodPost {
-			s.handleGrantDecide(w, r, id)
 			return
 		}
 		if seg, ok := pathSegments(r, "/v1/servers/", 1); ok {
@@ -438,9 +399,6 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case action == "link" && r.Method == http.MethodGet:
 				s.handleGatewayLink(w, r, sid)
-				return
-			case action == "ack" && r.Method == http.MethodPost:
-				s.handleGatewayAck(w, r, sid)
 				return
 			case action == "servers" && r.Method == http.MethodPost:
 				s.handleGatewayServers(w, r, sid)

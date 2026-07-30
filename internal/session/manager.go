@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/event"
-	"github.com/dinstein/agent-hub/internal/scope"
 )
 
 // Bus topics published by the manager. Payload types are documented per
@@ -23,10 +22,6 @@ const (
 	// TopicClosed fires on Close (explicit or reaped). Key = session ID;
 	// payload Closed.
 	TopicClosed event.Topic = "session.closed"
-	// TopicOverlay fires after a successful Mutate. Key = session ID;
-	// payload OverlayChanged. Subscribers invalidate the scope resolver
-	// (scope.EvOverlayChanged) and push tools/list_changed.
-	TopicOverlay event.Topic = "session.overlay"
 )
 
 // Closed is the TopicClosed payload.
@@ -42,12 +37,6 @@ const (
 	ReasonClosed  CloseReason = "closed"
 	ReasonExpired CloseReason = "expired"
 )
-
-// OverlayChanged is the TopicOverlay payload.
-type OverlayChanged struct {
-	ID      SessionID
-	Version uint64 // new overlay version
-}
 
 // Defaults for Options zero values (docs/architecture.md §7).
 const (
@@ -68,8 +57,7 @@ var (
 // ). Deviations from the sketch there, both deliberate:
 //   - Mutate takes a ctx (the stdio path blocks on a gateway ack) and
 //     variadic options carrying the human-grant flag (A.1 #8).
-//   - Touch and Overlay are exposed for the HTTP bridge (LastSeen refresh)
-//     and the scope resolver (Sources.Overlay) respectively.
+//   - Touch is exposed for the HTTP bridge (LastSeen refresh).
 type SessionManager interface {
 	// Register admits a stdio gateway dialing in over the control socket.
 	// link must be non-nil; the session lives until the link drops and the
@@ -80,37 +68,11 @@ type SessionManager interface {
 	OpenHTTP(ctx context.Context, hello SessionHello) (*Session, error)
 	Get(id SessionID) (*Session, bool)
 	List() []Info
-	// Mutate applies fn to a private deep copy of the session's overlay,
-	// validates tighten-only (unless WithHumanGrant), then commits: HTTP
-	// sessions swap in memory directly; stdio sessions first push the new
-	// overlay over the ControlLink and commit only after the gateway acks
-	// (authority in the daemon, execution in the gateway — a failed push
-	// commits NOTHING, so daemon and gateway can never diverge).
-	// On success the overlay version increments and TopicOverlay fires.
-	Mutate(ctx context.Context, id SessionID, fn func(*scope.Overlay), opts ...MutateOption) error
 	// Touch refreshes LastSeen (TTL liveness for HTTP sessions).
 	Touch(id SessionID)
-	// Overlay returns the session's current immutable overlay snapshot
-	// (nil = none) — the scope.Sources.Overlay hook.
-	Overlay(id SessionID) *scope.Overlay
 	// Close removes the session, closes its link, and fires TopicClosed.
 	// Idempotent; closing an unknown ID is a no-op.
 	Close(id SessionID)
-}
-
-// MutateOption configures one Mutate call.
-type MutateOption func(*mutateConfig)
-
-type mutateConfig struct {
-	humanGrant bool
-}
-
-// WithHumanGrant marks the mutation as human-approved, allowing it to
-// LOOSEN the overlay (grant injection, --reset, restore beyond the agent's
-// own narrowing). The approval flow that gates this flag is M1-C; callers
-// must never pass it on an agent-reachable path.
-func WithHumanGrant() MutateOption {
-	return func(c *mutateConfig) { c.humanGrant = true }
 }
 
 // Options configures a MemoryManager. Zero values select the defaults.
@@ -264,65 +226,6 @@ func (m *MemoryManager) Touch(id SessionID) {
 	}
 }
 
-// Overlay implements SessionManager.
-func (m *MemoryManager) Overlay(id SessionID) *scope.Overlay {
-	if s, ok := m.Get(id); ok {
-		return s.Overlay()
-	}
-	return nil
-}
-
-// Mutate implements SessionManager. See the interface doc for the commit
-// protocol; the per-session mutex makes concurrent Mutate calls fully
-// serialized read-copy-update (no lost updates).
-func (m *MemoryManager) Mutate(ctx context.Context, id SessionID, fn func(*scope.Overlay), opts ...MutateOption) error {
-	var cfg mutateConfig
-	for _, o := range opts {
-		o(&cfg)
-	}
-	s, ok := m.Get(id)
-	if !ok {
-		return fmt.Errorf("%w: %s", ErrNotFound, id)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	prev := s.overlay.Load()
-	next := cloneOverlay(prev)
-	fn(next)
-	// Version is assigned HERE, after fn: the mutation fn cannot forge or
-	// rewind versions, so the resolver cache key moves iff a commit happens.
-	if prev != nil {
-		next.Version = prev.Version + 1
-	} else {
-		next.Version = 1
-	}
-
-	if !cfg.humanGrant {
-		if viols := loosenings(prev, next); len(viols) > 0 {
-			// Fail-closed: reject the WHOLE mutation, not just the loosening
-			// parts — partial application would commit a state nobody asked for.
-			return fmt.Errorf("%w: %v", ErrLoosening, viols)
-		}
-	}
-
-	if s.Origin == OriginStdioGateway {
-		// Push-then-commit: the gateway executes the overlay, so the daemon
-		// commits only what the gateway acked. On error nothing changes.
-		if err := s.Link.PushOverlay(ctx, next); err != nil {
-			return fmt.Errorf("session: push overlay to gateway: %w", err)
-		}
-	}
-	s.overlay.Store(next)
-	s.touch(m.clock())
-	m.publish(event.Event{
-		Topic:   TopicOverlay,
-		Key:     string(id),
-		Payload: OverlayChanged{ID: id, Version: next.Version},
-	})
-	return nil
-}
-
 // Close implements SessionManager.
 func (m *MemoryManager) Close(id SessionID) {
 	m.close(id, ReasonClosed)
@@ -339,10 +242,8 @@ func (m *MemoryManager) close(id SessionID, reason CloseReason) {
 		return
 	}
 	info := s.info()
-	// Cascade: the overlay dies with the session (A.1 #6 — it never
-	// existed anywhere else). Downstream cascades (confirm tokens, pending
-	// grants, shaping cursors) key off the TopicClosed event.
-	s.overlay.Store(nil)
+	// Downstream cascades (shaping cursors and anything else keyed on a live
+	// session) key off the TopicClosed event.
 	if s.Link != nil {
 		_ = s.Link.Close() // best-effort; the link may already be gone
 	}

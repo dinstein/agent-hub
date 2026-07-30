@@ -1,7 +1,6 @@
 package ctlapi
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,7 +12,6 @@ import (
 	"github.com/dinstein/agent-hub/internal/audit"
 	"github.com/dinstein/agent-hub/internal/event"
 	"github.com/dinstein/agent-hub/internal/registry"
-	"github.com/dinstein/agent-hub/internal/scope"
 	"github.com/dinstein/agent-hub/internal/session"
 )
 
@@ -22,7 +20,6 @@ import (
 //
 //	POST /v1/gateway/register             GatewayHelloWire -> GatewayRegistered
 //	GET  /v1/gateway/{sid}/link           SSE: "overlay" / "registry" frames
-//	POST /v1/gateway/{sid}/ack            GatewayAck (answers one overlay frame)
 //	POST /v1/gateway/{sid}/servers        GatewayServersReport (gatewaystate.go)
 //
 // The last one is the ONLY upward-flowing state on this face: the gateway is
@@ -44,37 +41,17 @@ type GatewayHelloWire struct {
 	ScopeHash string `json:"scope_hash,omitempty"`
 }
 
-// GatewayRegistered is the register response: the minted session identity
-// plus the current authoritative overlay (normally absent — a re-registered
-// gateway always gets a fresh session whose overlay starts empty).
+// GatewayRegistered is the register response: the minted session identity.
 type GatewayRegistered struct {
-	SessionID string          `json:"session_id"`
-	Overlay   json.RawMessage `json:"overlay,omitempty"`
-}
-
-// GatewayAck answers one pushed overlay frame. OK=false reports that the
-// gateway could not apply the overlay; the daemon then commits nothing.
-type GatewayAck struct {
-	ID    uint64 `json:"id"`
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
+	SessionID string `json:"session_id"`
 }
 
 // SSE event names on the gateway link.
 const (
-	// LinkEventOverlay carries an OverlayFrame and requires an ack.
-	LinkEventOverlay = "overlay"
 	// LinkEventRegistry carries a RegistryFrame (notification only, no ack;
 	// the gateway re-reads the registry itself, canonical.md §5c #2).
 	LinkEventRegistry = "registry"
 )
-
-// OverlayFrame is the LinkEventOverlay payload: the full authoritative
-// overlay (scope.Overlay JSON) plus the ack correlation id.
-type OverlayFrame struct {
-	ID      uint64          `json:"id"`
-	Overlay json.RawMessage `json:"overlay"`
-}
 
 // RegistryFrame is the LinkEventRegistry payload. Rev is a hint only —
 // consumers re-read and adopt iff read generation >= applied generation.
@@ -91,8 +68,6 @@ const TopicRegistry event.Topic = "registry.changed"
 
 // Defaults for the link timing options.
 const (
-	// DefaultLinkAckTimeout bounds one overlay push waiting for its ack.
-	DefaultLinkAckTimeout = 30 * time.Second
 	// DefaultLinkAttachTimeout bounds registration-to-link-attach: a gateway
 	// that registers but never opens its link is presumed dead and its
 	// session is closed (otherwise a crash between the two calls would leak
@@ -111,18 +86,11 @@ type linkFrame struct {
 	data  []byte
 }
 
-// ackResult is the outcome delivered to a waiting overlay push.
-type ackResult struct {
-	ok     bool
-	errMsg string
-}
-
 // gatewayLink is the daemon-side session.ControlLink over the register/link/
 // ack HTTP triple. One instance exists per registered gateway; it dies with
 // the session (SessionManager.Close calls Close) or when the SSE connection
 // drops (the handler then closes the session).
 type gatewayLink struct {
-	ackTimeout time.Duration
 	// clientID is the AI client this gateway serves. It is captured at
 	// register time so a runtime report can be attributed to a human-
 	// meaningful name ("whose state is this?") instead of a session id.
@@ -135,81 +103,15 @@ type gatewayLink struct {
 	closedFlag  bool
 	attachedNow bool
 	attachTimer *time.Timer // armed at register time, disarmed by attach
-	pending     map[uint64]chan ackResult
-	nextID      uint64
 }
 
 var _ session.ControlLink = (*gatewayLink)(nil)
 
-func newGatewayLink(ackTimeout time.Duration, clientID string) *gatewayLink {
+func newGatewayLink(clientID string) *gatewayLink {
 	return &gatewayLink{
-		ackTimeout: ackTimeout,
-		clientID:   clientID,
-		frames:     make(chan linkFrame, linkFrameBuffer),
-		closed:     make(chan struct{}),
-		pending:    make(map[uint64]chan ackResult),
-	}
-}
-
-// PushOverlay implements session.ControlLink: enqueue one overlay frame and
-// wait for the gateway's ack.
-//
-// Failure direction: EVERY outcome other than a positive ack — link closed,
-// ctx done, ack timeout, gateway nack — returns an error, and the caller
-// (SessionManager.Mutate) then commits NOTHING. An unacked overlay must
-// never be considered applied.
-func (l *gatewayLink) PushOverlay(ctx context.Context, ov *scope.Overlay) error {
-	raw, err := json.Marshal(ov)
-	if err != nil {
-		return fmt.Errorf("ctlapi: encoding overlay: %w", err)
-	}
-
-	l.mu.Lock()
-	if l.closedFlag {
-		l.mu.Unlock()
-		return fmt.Errorf("ctlapi: gateway link is closed")
-	}
-	l.nextID++
-	id := l.nextID
-	ch := make(chan ackResult, 1)
-	l.pending[id] = ch
-	l.mu.Unlock()
-	defer func() {
-		l.mu.Lock()
-		delete(l.pending, id)
-		l.mu.Unlock()
-	}()
-
-	data, err := json.Marshal(OverlayFrame{ID: id, Overlay: raw})
-	if err != nil {
-		return fmt.Errorf("ctlapi: encoding overlay frame: %w", err)
-	}
-
-	timer := time.NewTimer(l.ackTimeout)
-	defer timer.Stop()
-
-	select {
-	case l.frames <- linkFrame{event: LinkEventOverlay, data: data}:
-	case <-ctx.Done():
-		return fmt.Errorf("ctlapi: overlay push: %w", context.Cause(ctx))
-	case <-l.closed:
-		return fmt.Errorf("ctlapi: overlay push: gateway link closed")
-	case <-timer.C:
-		return fmt.Errorf("ctlapi: overlay push: enqueue timed out after %v", l.ackTimeout)
-	}
-
-	select {
-	case res := <-ch:
-		if !res.ok {
-			return fmt.Errorf("ctlapi: gateway rejected overlay: %s", res.errMsg)
-		}
-		return nil
-	case <-ctx.Done():
-		return fmt.Errorf("ctlapi: overlay ack: %w", context.Cause(ctx))
-	case <-l.closed:
-		return fmt.Errorf("ctlapi: overlay ack: gateway link closed")
-	case <-timer.C:
-		return fmt.Errorf("ctlapi: overlay ack: timed out after %v", l.ackTimeout)
+		clientID: clientID,
+		frames:   make(chan linkFrame, linkFrameBuffer),
+		closed:   make(chan struct{}),
 	}
 }
 
@@ -255,18 +157,6 @@ func (l *gatewayLink) armAttachWatchdog(d time.Duration, expire func()) {
 		return
 	}
 	l.attachTimer = time.AfterFunc(d, expire)
-}
-
-// deliverAck routes one GatewayAck to its waiting push. Unknown ids are
-// ignored: a late ack after the push already timed out is a benign race.
-func (l *gatewayLink) deliverAck(ack GatewayAck) {
-	l.mu.Lock()
-	ch := l.pending[ack.ID]
-	delete(l.pending, ack.ID)
-	l.mu.Unlock()
-	if ch != nil {
-		ch <- ackResult{ok: ack.OK, errMsg: ack.Error} // buffered(1): never blocks
-	}
 }
 
 // gatewayFor looks up the live link for a session id.
@@ -323,7 +213,7 @@ func (s *Server) handleGatewayRegister(w http.ResponseWriter, r *http.Request) {
 	if hello.Root != "" {
 		roots = []string{hello.Root}
 	}
-	link := newGatewayLink(s.opts.LinkAckTimeout, hello.ClientID)
+	link := newGatewayLink(hello.ClientID)
 	sess, err := s.opts.Sessions.Register(r.Context(), session.GatewayHello{
 		ClientID: hello.ClientID,
 		Roots:    roots,
@@ -365,13 +255,7 @@ func (s *Server) handleGatewayRegister(w http.ResponseWriter, r *http.Request) {
 		"session", sid, "client", hello.ClientID,
 		"gateway_pid", hello.Pid, "scope_hash", hello.ScopeHash)
 
-	res := GatewayRegistered{SessionID: sid}
-	if ov := sess.Overlay(); ov != nil {
-		if raw, err := json.Marshal(ov); err == nil {
-			res.Overlay = raw
-		}
-	}
-	writeOK(w, http.StatusOK, res)
+	writeOK(w, http.StatusOK, GatewayRegistered{SessionID: sid})
 }
 
 // auditGatewayRegister records the registration (canonical.md 1.6: every
@@ -477,26 +361,4 @@ func (s *Server) writeLinkFrame(w http.ResponseWriter, rc *http.ResponseControll
 		return false
 	}
 	return rc.Flush() == nil
-}
-
-// handleGatewayAck implements POST /v1/gateway/{sid}/ack.
-func (s *Server) handleGatewayAck(w http.ResponseWriter, r *http.Request, sid string) {
-	reqID := requestIDFrom(r.Context())
-	link, ok := s.gatewayFor(sid)
-	if !ok {
-		writeNotFound(w, r)
-		return
-	}
-	body, err := readBody(r)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, CodeBadRequest, err.Error(), "", reqID)
-		return
-	}
-	var ack GatewayAck
-	if err := json.Unmarshal(body, &ack); err != nil {
-		writeErr(w, http.StatusBadRequest, CodeBadRequest, "decoding ack body: "+err.Error(), "", reqID)
-		return
-	}
-	link.deliverAck(ack)
-	writeOK(w, http.StatusOK, struct{}{})
 }

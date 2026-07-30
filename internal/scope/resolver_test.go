@@ -11,17 +11,15 @@ import (
 
 // testSources is a mutable Sources backend for resolver tests.
 type testSources struct {
-	mu       sync.Mutex
-	snap     *registry.Snapshot
-	cat      router.Catalog
-	overlays map[SessionID]*Overlay
+	mu   sync.Mutex
+	snap *registry.Snapshot
+	cat  router.Catalog
 }
 
 func newTestSources() *testSources {
 	return &testSources{
-		snap:     emptySnap(),
-		cat:      testCatalog(),
-		overlays: map[SessionID]*Overlay{},
+		snap: emptySnap(),
+		cat:  testCatalog(),
 	}
 }
 
@@ -29,19 +27,12 @@ func (s *testSources) sources() Sources {
 	return Sources{
 		Registry: func() *registry.Snapshot { s.mu.Lock(); defer s.mu.Unlock(); return s.snap },
 		Catalog:  func() router.Catalog { s.mu.Lock(); defer s.mu.Unlock(); return s.cat },
-		Overlay:  func(id SessionID) *Overlay { s.mu.Lock(); defer s.mu.Unlock(); return s.overlays[id] },
 	}
 }
 
 func (s *testSources) setCatalog(c router.Catalog) { s.mu.Lock(); s.cat = c; s.mu.Unlock() }
 
 func (s *testSources) setSnap(sn *registry.Snapshot) { s.mu.Lock(); s.snap = sn; s.mu.Unlock() }
-
-func (s *testSources) setOverlay(id SessionID, ov *Overlay) {
-	s.mu.Lock()
-	s.overlays[id] = ov
-	s.mu.Unlock()
-}
 
 func key1() SessionKey { return SessionKey{ClientID: "claude-code", SessionID: "claude-code:1"} }
 
@@ -84,15 +75,7 @@ func TestResolveAutoMissOnTupleChange(t *testing.T) {
 		t.Error("generation bump must recompute")
 	}
 
-	// Overlay version moved.
-	src.setOverlay(key1().SessionID, &Overlay{Version: 1, Servers: []string{"fs"}})
-	c, _ := r.Resolve(ctx, key1())
-	if c == b {
-		t.Error("overlay version bump must recompute")
-	}
-	if len(c.Servers) != 1 {
-		t.Errorf("overlay narrowing not applied: %v", c.Servers)
-	}
+	c := b
 
 	// Root moved: a HIT, not a miss. No persisted layer reads the root since
 	// the per-project layer was retired, so keying on it would split one
@@ -147,31 +130,6 @@ func TestInvalidateRegistryChangedClearsAll(t *testing.T) {
 	}
 }
 
-func TestInvalidatePerSessionEvents(t *testing.T) {
-	for _, kind := range []EventKind{EvOverlayChanged, EvRootChanged} {
-		src := newTestSources()
-		r := NewCachedResolver(src.sources())
-		ctx := context.Background()
-
-		a1, _ := r.Resolve(ctx, key1())
-		a2, _ := r.Resolve(ctx, key2())
-
-		// Make recomputation observable: swap the catalog under the cache.
-		src.setCatalog(router.NewCatalog(map[string][]string{"fs": {"read"}}))
-
-		r.Invalidate(Event{Kind: kind, Session: key1().SessionID})
-
-		b1, _ := r.Resolve(ctx, key1())
-		b2, _ := r.Resolve(ctx, key2())
-		if !Changed(a1, b1) {
-			t.Errorf("kind %d: target session must be recomputed", kind)
-		}
-		if a2 != b2 {
-			t.Errorf("kind %d: other sessions must keep their cached scope", kind)
-		}
-	}
-}
-
 func TestResolveNoSnapshotFails(t *testing.T) {
 	r := NewCachedResolver(Sources{Registry: func() *registry.Snapshot { return nil }})
 	if _, err := r.Resolve(context.Background(), key1()); err == nil {
@@ -186,26 +144,6 @@ func TestResolveContextCancelled(t *testing.T) {
 	cancel()
 	if _, err := r.Resolve(ctx, key1()); err == nil {
 		t.Fatal("cancelled context must abort resolution")
-	}
-}
-
-func TestResolveOverlayTightenOnlyApproval(t *testing.T) {
-	src := newTestSources()
-	gov := emptySnap()
-	gov.Governance = doc(registry.GovernanceDoc{HumanApproval: true})
-	src.setSnap(gov)
-	f := false
-	src.setOverlay(key1().SessionID, &Overlay{
-		Version:  1,
-		Approval: OverlayApproval{HumanApproval: &f}, // attempt to loosen
-	})
-	r := NewCachedResolver(src.sources())
-	es, err := r.Resolve(context.Background(), key1())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !es.Approval.HumanApproval {
-		t.Error("overlay false loosened a governance true (must be OR / tighten-only)")
 	}
 }
 
@@ -232,7 +170,7 @@ func TestResolverConcurrency(t *testing.T) {
 				case 0:
 					r.Invalidate(Event{Kind: EvCatalogChanged})
 				case 1:
-					r.Invalidate(Event{Kind: EvOverlayChanged, Session: k.SessionID})
+					r.Invalidate(Event{Kind: EvRootChanged, Session: k.SessionID})
 				}
 			}
 		}(i)

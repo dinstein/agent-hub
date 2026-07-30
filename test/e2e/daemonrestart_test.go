@@ -31,9 +31,8 @@ const (
 
 // sessionRow is the slice of api.SessionInfo this test reads.
 type sessionRow struct {
-	ID             string `json:"id"`
-	ClientID       string `json:"client_id"`
-	OverlaySummary string `json:"overlay_summary"`
+	ID       string `json:"id"`
+	ClientID string `json:"client_id"`
 }
 
 // listSessions reads `session ls --json` for one client.
@@ -125,10 +124,7 @@ func TestDaemonRestartReregistersTheGateway(t *testing.T) {
 	c.initialize()
 	c.waitForTool("fake__echo", 30*time.Second)
 
-	first := waitSession(t, env, "e2e-restart", 30*time.Second, func(r sessionRow) bool { return r.ID != "" })
-	if first.OverlaySummary != "" {
-		t.Fatalf("fresh session already carries an overlay: %+v", first)
-	}
+	waitSession(t, env, "e2e-restart", 30*time.Second, func(r sessionRow) bool { return r.ID != "" })
 
 	// --- kill -9. The data plane must not notice: a stdio session's scope
 	// comes from the registry files, not from the daemon, so a gateway whose

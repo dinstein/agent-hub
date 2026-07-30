@@ -111,25 +111,3 @@ func TestActorParsing(t *testing.T) {
 		}
 	}
 }
-
-func TestScopePathID(t *testing.T) {
-	cases := []struct {
-		path   string
-		wantID string
-		ok     bool
-	}{
-		{"/v1/sessions/cursor:3/scope", "cursor:3", true},
-		{"/v1/sessions/a%2Fb/scope", "a/b", true}, // escaped slash stays one segment
-		{"/v1/sessions//scope", "", false},
-		{"/v1/sessions/a/b/scope", "", false},
-		{"/v1/sessions/a", "", false},
-		{"/v1/sessionsX/a/scope", "", false},
-	}
-	for _, tc := range cases {
-		r := httptest.NewRequest(http.MethodPost, tc.path, nil)
-		id, ok := scopePathID(r)
-		if ok != tc.ok || id != tc.wantID {
-			t.Errorf("scopePathID(%q) = (%q, %v), want (%q, %v)", tc.path, id, ok, tc.wantID, tc.ok)
-		}
-	}
-}

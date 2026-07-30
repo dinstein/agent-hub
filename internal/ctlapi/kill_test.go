@@ -5,9 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
-
-	"github.com/dinstein/agent-hub/internal/scope"
-	"github.com/dinstein/agent-hub/internal/session"
 )
 
 // envelopeData decodes a success envelope body into out.
@@ -72,52 +69,5 @@ func TestKillUnknownSessionIs404(t *testing.T) {
 	status, _ := postJSON(t, env.sock, "/v1/sessions/ghost:9/kill", struct{}{})
 	if status != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", status)
-	}
-}
-
-// TestScopeDiscoveryOverride: discovery is an EXPERIENCE field, so it moves
-// freely (the tighten-only check does not apply to it) and it survives a
-// request that also carries Reset.
-func TestScopeDiscoveryOverride(t *testing.T) {
-	_, env := startServer(t, nil)
-	s := openSession(t, env.mgr, "cursor")
-	path := "/v1/sessions/" + url.PathEscape(string(s.ID)) + "/scope"
-
-	status, body := postJSON(t, env.sock, path, ScopeNarrowWire{Discovery: "lazy"})
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, body %v", status, body)
-	}
-	ov := env.mgr.Overlay(session.SessionID(s.ID))
-	if ov == nil || ov.Discovery == nil || *ov.Discovery != scope.DiscoveryLazy {
-		t.Fatalf("overlay discovery = %+v, want lazy", ov)
-	}
-
-	// Reset drops the narrowing but must NOT wipe a discovery override sent
-	// in the same request (reset runs first, the override after).
-	req := ScopeNarrowWire{Discovery: "grouped"}
-	req.Reset = true
-	status, body = postJSON(t, env.sock, path, req)
-	if status != http.StatusOK {
-		t.Fatalf("reset+discovery status = %d, body %v", status, body)
-	}
-	ov = env.mgr.Overlay(session.SessionID(s.ID))
-	if ov == nil || ov.Discovery == nil || *ov.Discovery != scope.DiscoveryGrouped {
-		t.Errorf("overlay discovery after reset = %+v, want grouped", ov)
-	}
-}
-
-// TestScopeUnknownDiscoveryIsRefused: silently keeping the old mode would
-// tell the operator an override took effect when it did not.
-func TestScopeUnknownDiscoveryIsRefused(t *testing.T) {
-	_, env := startServer(t, nil)
-	s := openSession(t, env.mgr, "cursor")
-	status, _ := postJSON(t, env.sock,
-		"/v1/sessions/"+url.PathEscape(string(s.ID))+"/scope",
-		ScopeNarrowWire{Discovery: "sideways"})
-	if status != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", status)
-	}
-	if ov := env.mgr.Overlay(session.SessionID(s.ID)); ov != nil && ov.Discovery != nil {
-		t.Errorf("a refused request still mutated the overlay: %+v", ov)
 	}
 }

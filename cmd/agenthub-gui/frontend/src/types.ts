@@ -845,14 +845,7 @@ export interface SessionInfo {
   origin: string;
   root?: string;
   profile_name: string;
-  overlay_summary?: string;
   last_seen: string;
-}
-
-export interface ScopeNarrow {
-  disable_servers?: string[];
-  tools?: Record<string, string[]>;
-  reset?: boolean;
 }
 
 export interface Approval {

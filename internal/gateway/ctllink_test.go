@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -13,7 +12,6 @@ import (
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/platform"
 	"github.com/dinstein/agent-hub/internal/registry"
-	"github.com/dinstein/agent-hub/internal/scope"
 	"github.com/dinstein/agent-hub/internal/session"
 	"github.com/dinstein/agent-hub/internal/testutil/fakemcp"
 )
@@ -105,10 +103,9 @@ func waitCond(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// TestCtlLinkRegisterApplyAck: the gateway registers best-effort, a
-// daemon-side Mutate pushes an overlay over the link, and the gateway
-// stores it before acking (push-then-commit both sides).
-func TestCtlLinkRegisterApplyAck(t *testing.T) {
+// TestCtlLinkRegisters: the gateway registers best-effort and the daemon
+// ends up holding a live session for it.
+func TestCtlLinkRegisters(t *testing.T) {
 	t.Parallel()
 	resolver, socket := linkResolver(t, t.TempDir())
 	h, _ := startCtlServer(t, socket)
@@ -129,39 +126,21 @@ func TestCtlLinkRegisterApplyAck(t *testing.T) {
 		t.Fatalf("session %q not present in the daemon manager", sid)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-	defer cancel()
-	err := h.mgr.Mutate(ctx, sid, func(ov *scope.Overlay) {
-		ov.Servers = []string{"fake"}
-	})
-	if err != nil {
-		t.Fatalf("Mutate: %v", err)
-	}
-	// Mutate returning nil means the gateway acked — and it applies BEFORE
-	// acking, so the overlay must already be visible here.
-	ov := g.ctl.Overlay()
-	if ov == nil || ov.Version != 1 || len(ov.Servers) != 1 || ov.Servers[0] != "fake" {
-		t.Fatalf("gateway overlay = %+v, want version 1 servers [fake]", ov)
-	}
-	// Both sides converged on the same version.
-	if dov := h.mgr.Overlay(sid); dov == nil || dov.Version != ov.Version {
-		t.Fatalf("daemon overlay = %+v, gateway overlay = %+v", dov, ov)
-	}
 }
 
 // TestCtlLinkDaemonKillInjection is the gateway side of the kill -9
 // injection test (A.3 #2, in-process equivalent: force-close the daemon's
 // listener and every connection with no draining):
 //
-//  1. gateway registered, overlay active;
+//  1. gateway registered;
 //  2. daemon killed → stdio data plane keeps answering tools/call;
-//  3. the widowed overlay is DISCARDED (static scope baseline returns);
+//  3. the session id is dropped;
 //  4. a fresh daemon appears on the same socket → the gateway's backoff
 //     loop re-registers under a fresh identity.
 func TestCtlLinkDaemonKillInjection(t *testing.T) {
 	t.Parallel()
 	resolver, socket := linkResolver(t, t.TempDir())
-	h, kill := startCtlServer(t, socket)
+	_, kill := startCtlServer(t, socket)
 
 	seedRegistry(t, resolver, "fake")
 	g, c, _ := startGateway(t, Config{
@@ -174,18 +153,6 @@ func TestCtlLinkDaemonKillInjection(t *testing.T) {
 	c.waitNotification(mcp.NotificationToolsListChanged)
 
 	waitCond(t, "gateway registration", func() bool { return g.ctl.Session() != "" })
-	sid := session.SessionID(g.ctl.Session())
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-	defer cancel()
-	if err := h.mgr.Mutate(ctx, sid, func(ov *scope.Overlay) {
-		ov.Servers = []string{"fake"}
-	}); err != nil {
-		t.Fatalf("Mutate: %v", err)
-	}
-	if g.ctl.Overlay() == nil {
-		t.Fatal("overlay not applied before the kill")
-	}
-
 	// Data plane works while the daemon is up.
 	callEchoOK(t, c)
 
@@ -196,10 +163,9 @@ func TestCtlLinkDaemonKillInjection(t *testing.T) {
 	// 2. The stdio data plane must not even hiccup.
 	callEchoOK(t, c)
 
-	// 3. The overlay authority died with the daemon: the gateway must drop
-	// its copy and fall back to the static baseline.
-	waitCond(t, "overlay discard after daemon death", func() bool {
-		return g.ctl.Overlay() == nil && g.ctl.Session() == ""
+	// 3. The daemon-side session died with it: the gateway drops the id.
+	waitCond(t, "session dropped after daemon death", func() bool {
+		return g.ctl.Session() == ""
 	})
 
 	// 4. Fresh daemon on the same socket (Listen removes the stale socket

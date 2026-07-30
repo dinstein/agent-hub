@@ -38,7 +38,6 @@ type SessionRow struct {
 	Origin   string `json:"origin"`
 	Root     string `json:"root,omitempty"`
 	Profile  string `json:"profile_name,omitempty"`
-	Overlay  string `json:"overlay_summary,omitempty"`
 	LastSeen string `json:"last_seen"`
 }
 
@@ -54,10 +53,10 @@ func (l SessionList) Human(w io.Writer) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "SID\tCLIENT\tORIGIN\tROOT\tPROFILE\tOVERLAY\tLAST SEEN")
+	_, _ = fmt.Fprintln(tw, "SID\tCLIENT\tORIGIN\tROOT\tPROFILE\tLAST SEEN")
 	for _, s := range l.Sessions {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			s.ID, s.ClientID, s.Origin, dash(s.Root), dash(s.Profile), dash(s.Overlay), s.LastSeen)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			s.ID, s.ClientID, s.Origin, dash(s.Root), dash(s.Profile), s.LastSeen)
 	}
 	return tw.Flush()
 }
@@ -169,7 +168,6 @@ func sessionRowOf(in api.SessionInfo) SessionRow {
 		Origin:   in.Origin,
 		Root:     in.Root,
 		Profile:  in.ProfileName,
-		Overlay:  in.OverlaySummary,
 		LastSeen: in.LastSeen.UTC().Format(time.RFC3339),
 	}
 }

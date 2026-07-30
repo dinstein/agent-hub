@@ -3,7 +3,6 @@ package scope
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -17,8 +16,6 @@ type EventKind uint8
 const (
 	// EvRegistryChanged: registry generation changed — drop ALL cached scopes.
 	EvRegistryChanged EventKind = iota
-	// EvOverlayChanged: one session's overlay mutated — drop that session only.
-	EvOverlayChanged
 	// EvRootChanged: roots/list_changed for one session — drop that session
 	// only. Since the per-project layer was retired no persisted layer reads
 	// the root, so this can no longer change a resolution; it is kept because
@@ -38,12 +35,12 @@ const (
 // Event carries the optional session (empty ⇒ ignored for the global kinds).
 type Event struct {
 	Kind    EventKind
-	Session SessionID // required for EvOverlayChanged / EvRootChanged
+	Session SessionID // required for EvRootChanged
 }
 
 // Resolver is the cached resolution entry point. The core Merge stays a
 // pure function and is independently unit-testable; Resolve only adds
-// caching around FromRegistry + Overlay + Merge.
+// caching around FromRegistry + Merge.
 type Resolver interface {
 	Resolve(ctx context.Context, key SessionKey) (*EffectiveScope, error)
 	Invalidate(ev Event)
@@ -58,9 +55,7 @@ type Sources struct {
 	// Catalog returns the current tool-directory snapshot. Nil func or an
 	// empty catalog resolves to zero visible servers (closed direction).
 	Catalog func() router.Catalog
-	// Overlay returns the session's live overlay, or nil when it has none.
-	Overlay func(SessionID) *Overlay
-	// Extra supplies additional layers appended AFTER the overlay — the seam
+	// Extra supplies additional layers appended after the persisted ones — the seam
 	// through which a credential narrows a session it does not own a
 	// registry entry for (the daemon's HTTP data plane folds an agent
 	// token's server allowlist and profile pin in here, docs/architecture.md §9
@@ -79,7 +74,7 @@ type Sources struct {
 }
 
 // CachedResolver caches one EffectiveScope per session, validated by the
-// tuple (clientID, registryGeneration, overlayVersion) — docs/architecture.md
+// tuple (clientID, registryGeneration) — docs/architecture.md
 // §7. Cache values are immutable *EffectiveScope, safe to share.
 //
 // The session's root is deliberately NOT part of the key. It was, while the
@@ -98,7 +93,6 @@ type CachedResolver struct {
 type cacheEntry struct {
 	clientID   string
 	generation uint64
-	overlayVer uint64
 	scope      *EffectiveScope
 }
 
@@ -112,7 +106,7 @@ func NewCachedResolver(src Sources) *CachedResolver {
 }
 
 // Resolve returns the session's effective scope, computing and caching it
-// when the (generation, overlayVersion, root) tuple has moved. Concurrent
+// when the (generation, root) tuple has moved. Concurrent
 // resolves of the same key may compute twice; both results are identical
 // values (Merge is pure) so last-store-wins is harmless.
 func (r *CachedResolver) Resolve(ctx context.Context, key SessionKey) (*EffectiveScope, error) {
@@ -125,28 +119,16 @@ func (r *CachedResolver) Resolve(ctx context.Context, key SessionKey) (*Effectiv
 		// rather than invent an empty-but-valid scope.
 		return nil, errors.New("scope: no registry snapshot available")
 	}
-	var ov *Overlay
-	if r.src.Overlay != nil {
-		ov = r.src.Overlay(key.SessionID)
-	}
-	var overlayVer uint64
-	if ov != nil {
-		overlayVer = ov.Version
-	}
 	r.mu.Lock()
 	if e, ok := r.cache[key.SessionID]; ok &&
 		e.clientID == key.ClientID &&
-		e.generation == snap.Generation &&
-		e.overlayVer == overlayVer {
+		e.generation == snap.Generation {
 		r.mu.Unlock()
 		return e.scope, nil
 	}
 	r.mu.Unlock()
 
 	layers, diags := FromRegistry(snap, key)
-	if ov != nil {
-		layers = append(layers, ov.Layer(fmt.Sprintf("session:%s", key.SessionID)))
-	}
 	if r.src.Extra != nil {
 		layers = append(layers, r.src.Extra(key.SessionID)...)
 	}
@@ -164,7 +146,6 @@ func (r *CachedResolver) Resolve(ctx context.Context, key SessionKey) (*Effectiv
 	r.cache[key.SessionID] = cacheEntry{
 		clientID:   key.ClientID,
 		generation: snap.Generation,
-		overlayVer: overlayVer,
 		scope:      es,
 	}
 	r.mu.Unlock()
@@ -179,7 +160,7 @@ func (r *CachedResolver) Invalidate(ev Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	switch ev.Kind {
-	case EvOverlayChanged, EvRootChanged:
+	case EvRootChanged:
 		delete(r.cache, ev.Session)
 	case EvRegistryChanged, EvCatalogChanged:
 		clear(r.cache)

@@ -371,14 +371,8 @@ func TestGatewayRegistersWithDaemon(t *testing.T) {
 		return true
 	})
 
-	// Daemon-side scope narrowing round-trips through the real gateway:
-	// SetScope succeeds ONLY after the gateway applied and acked the pushed
-	// overlay (push-then-commit) — this is the cross-process proof.
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-	defer cancel()
-	err := client.Sessions.SetScope(ctx, sid, api.ScopeNarrow{DisableServers: []string{"fake"}})
-	if err != nil {
-		t.Fatalf("SetScope: %v", err)
+	if sid == "" {
+		t.Fatal("the daemon registered the gateway without an id")
 	}
 }
 

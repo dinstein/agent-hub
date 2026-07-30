@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"net/http"
-	"net/url"
 )
 
 // ServersService accesses the configured downstream servers.
@@ -32,27 +31,4 @@ func (s *SessionsService) List(ctx context.Context) ([]SessionInfo, error) {
 		return nil, err
 	}
 	return out, nil
-}
-
-// ScopeNarrow tightens a session's scope overlay. The public API is
-// narrow-only (ruling #8): agents may only shrink their own visibility or
-// restore the static baseline; temporary widening is a human grant that
-// goes through the approval flow, never through this call. The daemon
-// rejects any request that would widen scope (fail-closed on its side).
-type ScopeNarrow struct {
-	// DisableServers removes whole servers from the session's view.
-	DisableServers []string `json:"disable_servers,omitempty"`
-	// Tools restricts a server to the given tool subset
-	// (serverID -> tool names).
-	Tools map[string][]string `json:"tools,omitempty"`
-	// Reset drops the overlay and restores the static scope baseline.
-	Reset bool `json:"reset,omitempty"`
-}
-
-// SetScope applies a narrow-only scope overlay to the session with the
-// short id "client:seq". Overlays are volatile: they disappear on daemon
-// restart and are never persisted (ruling #6).
-func (s *SessionsService) SetScope(ctx context.Context, sessionID string, narrow ScopeNarrow) error {
-	return s.c.do(ctx, http.MethodPost,
-		"/sessions/"+url.PathEscape(sessionID)+"/scope", nil, narrow, nil)
 }

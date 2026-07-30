@@ -126,13 +126,12 @@ func (g *gateway) refreshScopeAndNotify() {
 	}
 }
 
-// onOverlayChanged reacts to any session-overlay transition (daemon push,
-// registration, link loss). Invalidation clears the whole cache rather than
-// one session: the session identity itself may have just changed, and this
-// process hosts exactly one upstream session — over-invalidation is a cheap
-// recompute (the closed direction; under-invalidation would serve a stale
-// scope).
-func (g *gateway) onOverlayChanged() {
+// onSessionChanged reacts to a daemon-session transition (registration, link
+// loss). Invalidation clears the whole cache rather than one session: the
+// session identity itself has just changed, and this process hosts exactly
+// one upstream session — over-invalidation is a cheap recompute (the closed
+// direction; under-invalidation would serve a stale scope).
+func (g *gateway) onSessionChanged() {
 	if g.scopeRes == nil {
 		return
 	}

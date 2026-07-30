@@ -223,44 +223,6 @@ func TestEventsUnknownTopicRejected(t *testing.T) {
 	}
 }
 
-// TestEventsOverlayChange: a scope mutation through the API produces an
-// overlay event on the stream (wire shape pinned).
-func TestEventsOverlayChange(t *testing.T) {
-	client, env := startServer(t, nil)
-	s := openSession(t, env.mgr, "cursor")
-
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	ch, err := client.Events.Subscribe(ctx, TopicSessions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(50 * time.Millisecond) // let the server-side subscription attach
-
-	if err := client.Sessions.SetScope(t.Context(), string(s.ID), api.ScopeNarrow{
-		Tools: map[string][]string{"gh": {"a"}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	ev, ok := recvEvent(t, ch, 2*time.Second)
-	if !ok {
-		t.Fatal("no overlay event")
-	}
-	if ev.Kind != "overlay" {
-		t.Fatalf("event = %+v", ev)
-	}
-	var payload struct {
-		ID      string `json:"id"`
-		Version uint64 `json:"version"`
-	}
-	if err := json.Unmarshal(ev.Payload, &payload); err != nil {
-		t.Fatal(err)
-	}
-	if payload.ID != string(s.ID) || payload.Version != 1 {
-		t.Errorf("payload = %+v", payload)
-	}
-}
-
 // TestSSETopicMapping pins the bus-topic -> SSE-topic classification,
 // including that daemon-internal topics never leak.
 func TestSSETopicMapping(t *testing.T) {
@@ -272,7 +234,6 @@ func TestSSETopicMapping(t *testing.T) {
 	}{
 		{session.TopicOpened, TopicSessions, "opened", true},
 		{session.TopicClosed, TopicSessions, "closed", true},
-		{session.TopicOverlay, TopicSessions, "overlay", true},
 		{"server.changed", TopicServers, "changed", true},
 		{"skill.updated", TopicSkills, "updated", true},
 		{"activity.call", TopicActivity, "call", true},

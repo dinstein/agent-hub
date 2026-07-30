@@ -3,7 +3,6 @@ package ctlapi
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/event"
 	"github.com/dinstein/agent-hub/internal/registry"
-	"github.com/dinstein/agent-hub/internal/scope"
 	"github.com/dinstein/agent-hub/internal/session"
 )
 
@@ -98,33 +96,6 @@ func (fg *fakeGateway) closeLink() {
 	}
 }
 
-func (fg *fakeGateway) nextFrame() sseFrame {
-	fg.t.Helper()
-	select {
-	case f, ok := <-fg.frames:
-		if !ok {
-			fg.t.Fatal("link stream closed while waiting for a frame")
-		}
-		return f
-	case <-time.After(gwTestTimeout):
-		fg.t.Fatal("timed out waiting for a link frame")
-	}
-	return sseFrame{}
-}
-
-func (fg *fakeGateway) ack(ack GatewayAck) {
-	fg.t.Helper()
-	body, _ := json.Marshal(ack)
-	resp, err := fg.hc.Post("http://d/v1/gateway/"+fg.sid+"/ack", "application/json", bytes.NewReader(body))
-	if err != nil {
-		fg.t.Fatalf("ack: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		fg.t.Fatalf("ack status = %d, want 200", resp.StatusCode)
-	}
-}
-
 // waitFor polls cond until true or the timeout expires.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
@@ -136,130 +107,6 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
-}
-
-func TestGatewayRegisterOverlayPushAck(t *testing.T) {
-	_, env := startServer(t, nil)
-
-	fg := registerFakeGateway(t, env.sock, "cursor")
-	defer fg.closeLink()
-	if fg.sid != "cursor:1" {
-		t.Fatalf("session id = %q, want cursor:1", fg.sid)
-	}
-	sess, ok := env.mgr.Get(session.SessionID(fg.sid))
-	if !ok {
-		t.Fatal("session not registered with the manager")
-	}
-	if sess.Origin != session.OriginStdioGateway {
-		t.Fatalf("origin = %v, want stdio", sess.Origin)
-	}
-	fg.openLink()
-
-	// Push-then-commit round trip: Mutate must block until the gateway
-	// acks, and must commit exactly what was pushed.
-	mutDone := make(chan error, 1)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), gwTestTimeout)
-		defer cancel()
-		mutDone <- env.mgr.Mutate(ctx, session.SessionID(fg.sid), func(ov *scope.Overlay) {
-			ov.Servers = []string{"github"}
-		})
-	}()
-
-	f := fg.nextFrame()
-	if f.event != LinkEventOverlay {
-		t.Fatalf("frame event = %q, want overlay", f.event)
-	}
-	var frame OverlayFrame
-	if err := json.Unmarshal(f.data, &frame); err != nil {
-		t.Fatalf("overlay frame decode: %v", err)
-	}
-	var pushed scope.Overlay
-	if err := json.Unmarshal(frame.Overlay, &pushed); err != nil {
-		t.Fatalf("overlay decode: %v", err)
-	}
-	if len(pushed.Servers) != 1 || pushed.Servers[0] != "github" {
-		t.Fatalf("pushed overlay servers = %v, want [github]", pushed.Servers)
-	}
-
-	select {
-	case err := <-mutDone:
-		t.Fatalf("Mutate returned before ack: %v", err)
-	case <-time.After(50 * time.Millisecond):
-		// Still blocked on the ack: correct.
-	}
-
-	fg.ack(GatewayAck{ID: frame.ID, OK: true})
-	select {
-	case err := <-mutDone:
-		if err != nil {
-			t.Fatalf("Mutate: %v", err)
-		}
-	case <-time.After(gwTestTimeout):
-		t.Fatal("Mutate did not return after ack")
-	}
-	ov := env.mgr.Overlay(session.SessionID(fg.sid))
-	if ov == nil || ov.Version != 1 {
-		t.Fatalf("committed overlay = %+v, want version 1", ov)
-	}
-}
-
-func TestGatewayNackCommitsNothing(t *testing.T) {
-	_, env := startServer(t, nil)
-	fg := registerFakeGateway(t, env.sock, "cursor")
-	defer fg.closeLink()
-	fg.openLink()
-
-	mutDone := make(chan error, 1)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), gwTestTimeout)
-		defer cancel()
-		mutDone <- env.mgr.Mutate(ctx, session.SessionID(fg.sid), func(ov *scope.Overlay) {
-			ov.Servers = []string{}
-		})
-	}()
-	f := fg.nextFrame()
-	var frame OverlayFrame
-	if err := json.Unmarshal(f.data, &frame); err != nil {
-		t.Fatalf("overlay frame decode: %v", err)
-	}
-	fg.ack(GatewayAck{ID: frame.ID, OK: false, Error: "cannot apply"})
-
-	select {
-	case err := <-mutDone:
-		if err == nil {
-			t.Fatal("Mutate succeeded despite gateway nack")
-		}
-		if !strings.Contains(err.Error(), "cannot apply") {
-			t.Fatalf("Mutate error %q does not carry the gateway reason", err)
-		}
-	case <-time.After(gwTestTimeout):
-		t.Fatal("Mutate did not return after nack")
-	}
-	if ov := env.mgr.Overlay(session.SessionID(fg.sid)); ov != nil {
-		t.Fatalf("overlay committed despite nack: %+v", ov)
-	}
-}
-
-func TestGatewayAckTimeoutFailsMutate(t *testing.T) {
-	_, env := startServer(t, func(o *Options) {
-		o.LinkAckTimeout = 50 * time.Millisecond
-	})
-	fg := registerFakeGateway(t, env.sock, "cursor")
-	defer fg.closeLink()
-	fg.openLink()
-
-	ctx, cancel := context.WithTimeout(context.Background(), gwTestTimeout)
-	defer cancel()
-	err := env.mgr.Mutate(ctx, session.SessionID(fg.sid), func(ov *scope.Overlay) {
-		ov.Servers = []string{}
-	})
-	if err == nil {
-		t.Fatal("Mutate succeeded without any ack")
-	}
-	if ov := env.mgr.Overlay(session.SessionID(fg.sid)); ov != nil {
-		t.Fatalf("overlay committed despite missing ack: %+v", ov)
-	}
 }
 
 func TestGatewayLinkDropClosesSession(t *testing.T) {
@@ -396,18 +243,6 @@ func TestGatewayUnknownSessionIsUniform404(t *testing.T) {
 		if !bytes.Contains(raw, []byte(notFoundMessage)) {
 			t.Fatalf("%s %s body %q is not the uniform 404", req.method, req.path, raw)
 		}
-	}
-}
-
-func TestGatewayRegisterIsAudited(t *testing.T) {
-	_, env := startServer(t, nil)
-	fg := registerFakeGateway(t, env.sock, "cursor")
-	defer fg.closeLink()
-
-	waitFor(t, "audit record", func() bool { return len(env.aud.records()) > 0 })
-	rec := env.aud.records()[0]
-	if rec.Tool != "gateway/register" || rec.Client != "cursor" || rec.Session != fg.sid {
-		t.Fatalf("audit record = %+v", rec)
 	}
 }
 

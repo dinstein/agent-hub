@@ -2,15 +2,12 @@ package session
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/event"
-	"github.com/dinstein/agent-hub/internal/scope"
 )
 
 // fakeClock is an injectable, advanceable clock.
@@ -35,22 +32,10 @@ func (c *fakeClock) Advance(d time.Duration) {
 	c.mu.Unlock()
 }
 
-// fakeLink records overlay pushes; err (if set) fails PushOverlay.
+// fakeLink is a stand-in ControlLink that records how often it was closed.
 type fakeLink struct {
 	mu     sync.Mutex
-	pushes []*scope.Overlay
-	err    error
 	closed int
-}
-
-func (l *fakeLink) PushOverlay(_ context.Context, ov *scope.Overlay) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.err != nil {
-		return l.err
-	}
-	l.pushes = append(l.pushes, ov)
-	return nil
 }
 
 func (l *fakeLink) Close() error {
@@ -58,12 +43,6 @@ func (l *fakeLink) Close() error {
 	defer l.mu.Unlock()
 	l.closed++
 	return nil
-}
-
-func (l *fakeLink) pushCount() int {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return len(l.pushes)
 }
 
 func newTestManager(t *testing.T) (*MemoryManager, *fakeClock, *event.Subscription) {
@@ -191,170 +170,6 @@ func TestGetListInfo(t *testing.T) {
 	}
 }
 
-func TestMutateHTTPDirectAndEvents(t *testing.T) {
-	m, _, sub := newTestManager(t)
-	ctx := context.Background()
-	h, _ := m.OpenHTTP(ctx, SessionHello{ClientID: "web"})
-	drain(sub)
-
-	if err := m.Mutate(ctx, h.ID, func(o *scope.Overlay) {
-		o.Servers = []string{"github"}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	ov := m.Overlay(h.ID)
-	if ov == nil || ov.Version != 1 || len(ov.Servers) != 1 {
-		t.Fatalf("overlay = %+v", ov)
-	}
-
-	if err := m.Mutate(ctx, h.ID, func(o *scope.Overlay) {
-		o.Servers = []string{} // block-all: further narrowing
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if got := m.Overlay(h.ID); got.Version != 2 {
-		t.Fatalf("version = %d, want 2", got.Version)
-	}
-	// The previously published snapshot must be untouched (copy-on-write).
-	if ov.Version != 1 || len(ov.Servers) != 1 {
-		t.Fatalf("published snapshot mutated: %+v", ov)
-	}
-
-	evs := drain(sub)
-	if len(evs) != 2 {
-		t.Fatalf("events = %d, want 2 overlay events", len(evs))
-	}
-	for i, ev := range evs {
-		if ev.Topic != TopicOverlay {
-			t.Fatalf("topic = %s", ev.Topic)
-		}
-		p := ev.Payload.(OverlayChanged)
-		if p.ID != h.ID || p.Version != uint64(i+1) {
-			t.Fatalf("payload = %+v", p)
-		}
-	}
-
-	if err := m.Mutate(ctx, "nope:9", func(*scope.Overlay) {}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("err = %v, want ErrNotFound", err)
-	}
-}
-
-func TestMutateStdioPushThenCommit(t *testing.T) {
-	m, _, sub := newTestManager(t)
-	ctx := context.Background()
-	link := &fakeLink{}
-	s, _ := m.Register(ctx, GatewayHello{ClientID: "cc"}, link)
-	drain(sub)
-
-	if err := m.Mutate(ctx, s.ID, func(o *scope.Overlay) {
-		o.Servers = []string{"fs"}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if link.pushCount() != 1 {
-		t.Fatalf("pushes = %d, want 1", link.pushCount())
-	}
-	if got := m.Overlay(s.ID); got == nil || got.Version != 1 {
-		t.Fatalf("overlay after ack = %+v", got)
-	}
-	// The pushed overlay IS the committed one (authority == execution).
-	if link.pushes[0] != m.Overlay(s.ID) {
-		t.Fatal("pushed overlay differs from committed overlay")
-	}
-
-	// Push failure: nothing commits, no event, version unchanged.
-	link.err = errors.New("gateway gone")
-	err := m.Mutate(ctx, s.ID, func(o *scope.Overlay) { o.Servers = []string{} })
-	if err == nil || !strings.Contains(err.Error(), "gateway gone") {
-		t.Fatalf("err = %v", err)
-	}
-	if got := m.Overlay(s.ID); got.Version != 1 || got.Servers == nil || len(got.Servers) != 1 {
-		t.Fatalf("failed push mutated daemon state: %+v", got)
-	}
-	if evs := drain(sub); len(evs) != 1 {
-		t.Fatalf("events = %d, want only the successful one", len(evs))
-	}
-}
-
-func TestMutateTightenOnlyAndHumanGrant(t *testing.T) {
-	m, _, sub := newTestManager(t)
-	ctx := context.Background()
-	link := &fakeLink{}
-	s, _ := m.Register(ctx, GatewayHello{ClientID: "cc"}, link)
-	if err := m.Mutate(ctx, s.ID, func(o *scope.Overlay) {
-		o.Servers = []string{"a"}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	drain(sub)
-	pushed := link.pushCount()
-
-	// Loosening without a grant: rejected atomically, BEFORE any push.
-	err := m.Mutate(ctx, s.ID, func(o *scope.Overlay) {
-		o.Servers = []string{"a", "b"}
-	})
-	if !errors.Is(err, ErrLoosening) {
-		t.Fatalf("err = %v, want ErrLoosening", err)
-	}
-	if link.pushCount() != pushed {
-		t.Fatal("loosening was pushed to the gateway before rejection")
-	}
-	if got := m.Overlay(s.ID); got.Version != 1 {
-		t.Fatalf("rejected mutation committed: %+v", got)
-	}
-	if evs := drain(sub); len(evs) != 0 {
-		t.Fatalf("rejected mutation published %d events", len(evs))
-	}
-
-	// Same mutation WITH the human-grant flag: applied.
-	if err := m.Mutate(ctx, s.ID, func(o *scope.Overlay) {
-		o.Servers = []string{"a", "b"}
-	}, WithHumanGrant()); err != nil {
-		t.Fatal(err)
-	}
-	if got := m.Overlay(s.ID); got.Version != 2 || len(got.Servers) != 2 {
-		t.Fatalf("granted mutation not applied: %+v", got)
-	}
-}
-
-func TestMutateConcurrentSerialized(t *testing.T) {
-	m, _, _ := newTestManager(t)
-	ctx := context.Background()
-	h, _ := m.OpenHTTP(ctx, SessionHello{ClientID: "web"})
-
-	const n = 50
-	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			err := m.Mutate(ctx, h.ID, func(o *scope.Overlay) {
-				if o.Tools == nil {
-					o.Tools = make(map[string]*scope.ToolSelector)
-				}
-				sel := o.Tools["s"]
-				if sel == nil {
-					sel = &scope.ToolSelector{}
-					o.Tools["s"] = sel
-				}
-				sel.Deny = append(sel.Deny, fmt.Sprintf("tool-%d", i)) // deny grows: always a tighten
-			})
-			if err != nil {
-				t.Errorf("mutate %d: %v", i, err)
-			}
-		}(i)
-	}
-	wg.Wait()
-
-	ov := m.Overlay(h.ID)
-	if ov.Version != n {
-		t.Fatalf("version = %d, want %d (no lost updates)", ov.Version, n)
-	}
-	if got := len(ov.Tools["s"].Deny); got != n {
-		t.Fatalf("denies = %d, want %d", got, n)
-	}
-}
-
 func TestReaperTTLAndTouch(t *testing.T) {
 	m, clk, sub := newTestManager(t)
 	ctx := context.Background()
@@ -425,9 +240,6 @@ func TestCloseCascadesAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	link := &fakeLink{}
 	s, _ := m.Register(ctx, GatewayHello{ClientID: "cc"}, link)
-	if err := m.Mutate(ctx, s.ID, func(o *scope.Overlay) { o.Servers = []string{"a"} }); err != nil {
-		t.Fatal(err)
-	}
 	drain(sub)
 
 	m.Close(s.ID)
@@ -435,9 +247,6 @@ func TestCloseCascadesAndIsIdempotent(t *testing.T) {
 
 	if _, ok := m.Get(s.ID); ok {
 		t.Fatal("closed session still listed")
-	}
-	if s.Overlay() != nil {
-		t.Fatal("overlay survived close")
 	}
 	if link.closed != 1 {
 		t.Fatalf("link.Close called %d times, want 1", link.closed)
@@ -465,26 +274,5 @@ func TestSetRootsIsAttributeNotIdentity(t *testing.T) {
 	got[0] = "MUT" // returned slice is a copy
 	if s.Roots()[0] != "/b" {
 		t.Fatal("Roots returned an aliased slice")
-	}
-}
-
-// TestResolverIntegration wires the manager into scope.Sources the way the
-// daemon will: Overlay(id) + OverlayVersion as cache key component.
-func TestResolverIntegration(t *testing.T) {
-	m, _, _ := newTestManager(t)
-	h, _ := m.OpenHTTP(context.Background(), SessionHello{ClientID: "web"})
-
-	var src scope.Sources
-	src.Overlay = m.Overlay // signature must keep matching scope.Sources
-	if ov := src.Overlay(h.ID); ov != nil {
-		t.Fatalf("fresh session overlay = %+v, want nil", ov)
-	}
-	if err := m.Mutate(context.Background(), h.ID, func(o *scope.Overlay) {
-		o.Servers = []string{"x"}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if ov := src.Overlay(h.ID); ov == nil || ov.Version != 1 {
-		t.Fatalf("overlay via Sources = %+v", ov)
 	}
 }

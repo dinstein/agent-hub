@@ -16,8 +16,6 @@ import (
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 	"github.com/dinstein/agent-hub/internal/platform"
 	"github.com/dinstein/agent-hub/internal/registry"
-	"github.com/dinstein/agent-hub/internal/scope"
-	"github.com/dinstein/agent-hub/internal/session"
 	"github.com/dinstein/agent-hub/internal/testutil/fakemcp"
 )
 
@@ -240,64 +238,6 @@ func TestHotReloadProfileNarrowRestore(t *testing.T) {
 	callToolOK(t, c, "s2__echo")
 	if d1, d2 := dials.count("s1"), dials.count("s2"); d1 != 1 || d2 != 1 {
 		t.Errorf("dials after restore = (s1 %d, s2 %d), want (1, 1)", d1, d2)
-	}
-}
-
-// TestOverlaySessionNarrowRestore: a daemon-pushed session overlay narrows
-// visibility (tools/list shrinks, hidden calls blocked), clearing it
-// restores visibility — and the downstream connections survive the whole
-// dance untouched (docs/architecture.md §7: "a pure scope change never touches downstream connections").
-func TestOverlaySessionNarrowRestore(t *testing.T) {
-	t.Parallel()
-	resolver, socket := linkResolver(t, t.TempDir())
-	h, _ := startCtlServer(t, socket)
-	seedRegistry(t, resolver, "s1", "s2")
-
-	dials := newDialCounter(scriptedDial(map[string]*fakemcp.Script{
-		"s1": fakemcp.Minimal("echo"),
-		"s2": fakemcp.Minimal("echo"),
-	}))
-	g, c, _ := startGateway(t, Config{
-		ClientID: "cursor", Resolver: resolver, Dial: dials.fn,
-		LinkRetry: 50 * time.Millisecond,
-	})
-	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
-	waitForTools(t, c, "s1__echo", "s2__echo")
-	waitCond(t, "gateway registration", func() bool { return g.ctl.Session() != "" })
-	sid := session.SessionID(g.ctl.Session())
-
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
-	defer cancel()
-
-	// Narrow to s1 via the session overlay.
-	before := c.notifCount(mcp.NotificationToolsListChanged)
-	if err := h.mgr.Mutate(ctx, sid, func(ov *scope.Overlay) {
-		ov.Servers = []string{"s1"}
-	}); err != nil {
-		t.Fatalf("Mutate narrow: %v", err)
-	}
-	waitForTools(t, c, "s1__echo")
-	// The push happens after the overlay ack round trip: wait, don't sample.
-	waitFor(t, "list_changed after the overlay", func() bool {
-		return c.notifCount(mcp.NotificationToolsListChanged) > before
-	})
-	callBlockedWithCode(t, c, "s2__echo", "E_SCOPE_DENIED")
-	callToolOK(t, c, "s1__echo")
-
-	// Restore: clear the overlay narrowing (nil = no intervention).
-	// Loosening a session scope requires the human-grant flag (docs/architecture.md §7
-	// : only a human grant may temporarily widen).
-	if err := h.mgr.Mutate(ctx, sid, func(ov *scope.Overlay) {
-		ov.Servers = nil
-	}, session.WithHumanGrant()); err != nil {
-		t.Fatalf("Mutate restore: %v", err)
-	}
-	waitForTools(t, c, "s1__echo", "s2__echo")
-	callToolOK(t, c, "s2__echo")
-
-	// Session narrowing never touched the connection plane.
-	if d1, d2 := dials.count("s1"), dials.count("s2"); d1 != 1 || d2 != 1 {
-		t.Errorf("dials = (s1 %d, s2 %d), want (1, 1): overlay changes must not reconnect", d1, d2)
 	}
 }
 

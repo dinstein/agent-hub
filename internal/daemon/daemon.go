@@ -90,16 +90,9 @@ type Config struct {
 	// Watch overrides registry watch timing (zero value = production
 	// defaults). Tests shrink debounce/poll.
 	Watch registry.WatchOptions
-	// LinkAckTimeout / LinkAttachTimeout pass through to ctlapi.Options
-	// (0 = ctlapi defaults). Tests shrink them.
-	LinkAckTimeout    time.Duration
+	// LinkAttachTimeout passes through to ctlapi.Options (0 = ctlapi
+	// default). Tests shrink it.
 	LinkAttachTimeout time.Duration
-	// ApprovalTTL is the human-decision deadline for HITL requests
-	// (0 = approval default, 120s). Tests shrink it.
-	ApprovalTTL time.Duration
-	// GrantTTL is the default lifetime of an approved widen grant
-	// (0 = ctlapi default, 1h). Tests shrink it.
-	GrantTTL time.Duration
 	// Secrets overrides the credential vault used by the OAuth refresh
 	// coordinator. nil builds the real chain over <data>/secrets; tests
 	// inject an in-memory store so no test ever touches the OS keyring.
@@ -255,9 +248,7 @@ func Run(ctx context.Context, cfg Config) error {
 		ServerReports:     states,
 		Audit:             streams.Audit,
 		Logger:            log,
-		LinkAckTimeout:    cfg.LinkAckTimeout,
 		LinkAttachTimeout: cfg.LinkAttachTimeout,
-		GrantTTL:          cfg.GrantTTL,
 		NonRegistry:       nonReg,
 		// Tool governance, quarantine and the audit readers are gated on
 		// these directories being known: an empty one silently unregisters

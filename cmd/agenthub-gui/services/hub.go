@@ -472,12 +472,6 @@ func call[T any](ctx context.Context, h *Hub, fn func(*api.Client) (T, error)) (
 	return out, nil
 }
 
-// do is call for a control-plane call that answers with no value.
-func do(ctx context.Context, h *Hub, fn func(*api.Client) error) error {
-	_, err := call(ctx, h, func(c *api.Client) (struct{}, error) { return struct{}{}, fn(c) })
-	return err
-}
-
 // ListServers returns the configured servers with the server-computed Health
 // display contract (docs/modules/controlplane.md). The frontend renders Health verbatim and
 // never re-derives status from other fields.
@@ -515,17 +509,6 @@ func (h *Hub) ServerHealth(ctx context.Context, id string) (api.Health, error) {
 func (h *Hub) ListSessions(ctx context.Context) ([]api.SessionInfo, error) {
 	return call(ctx, h, func(c *api.Client) ([]api.SessionInfo, error) {
 		return c.Sessions.List(ctx)
-	})
-}
-
-// SetSessionScope applies a narrow-only overlay to one session (ruling #8).
-// The daemon rejects anything that would widen scope with E_TIGHTEN_ONLY;
-// this method does not pre-validate, so the authoritative check stays in one
-// place — a GUI that only offers narrowing buttons is a convenience, not the
-// guarantee.
-func (h *Hub) SetSessionScope(ctx context.Context, sessionID string, narrow api.ScopeNarrow) error {
-	return do(ctx, h, func(c *api.Client) error {
-		return c.Sessions.SetScope(ctx, sessionID, narrow)
 	})
 }
 

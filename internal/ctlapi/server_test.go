@@ -3,7 +3,6 @@ package ctlapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -234,100 +233,6 @@ func TestSessionsList(t *testing.T) {
 	if got.ID != string(s.ID) || got.ClientID != "cursor" || got.Origin != "http" || got.Root != "/w" {
 		t.Errorf("session = %+v", got)
 	}
-	if got.OverlaySummary != "" {
-		t.Errorf("unexpected overlay summary %q", got.OverlaySummary)
-	}
-}
-
-func TestScopeNarrowThenWidenRejected(t *testing.T) {
-	client, env := startServer(t, nil)
-	s := openSession(t, env.mgr, "cursor")
-	id := string(s.ID)
-
-	// Narrow: allowed.
-	err := client.Sessions.SetScope(t.Context(), id, api.ScopeNarrow{
-		Tools: map[string][]string{"github": {"get_issue", "list_prs"}},
-	})
-	if err != nil {
-		t.Fatalf("narrow: %v", err)
-	}
-	ov := env.mgr.Overlay(s.ID)
-	if ov == nil || ov.Tools["github"] == nil {
-		t.Fatalf("overlay not applied: %+v", ov)
-	}
-	if got := ov.Tools["github"].Allow; len(got) != 2 {
-		t.Errorf("allow = %v", got)
-	}
-
-	// Widen: rejected 403 with the tighten-only code; overlay unchanged.
-	err = client.Sessions.SetScope(t.Context(), id, api.ScopeNarrow{
-		Tools: map[string][]string{"github": {"get_issue", "list_prs", "merge_pr"}},
-	})
-	var apiErr *api.Error
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("widen err = %v", err)
-	}
-	if apiErr.Status != http.StatusForbidden || apiErr.Code != CodeTightenOnly {
-		t.Errorf("widen: status %d code %s", apiErr.Status, apiErr.Code)
-	}
-	if apiErr.RequestID == "" {
-		t.Error("error carries no request id")
-	}
-	if got := env.mgr.Overlay(s.ID).Tools["github"].Allow; len(got) != 2 {
-		t.Errorf("overlay changed on rejected mutation: %v", got)
-	}
-
-	// Disable a server: pure narrowing, allowed.
-	if err := client.Sessions.SetScope(t.Context(), id, api.ScopeNarrow{
-		DisableServers: []string{"github"},
-	}); err != nil {
-		t.Fatalf("disable: %v", err)
-	}
-	sel := env.mgr.Overlay(s.ID).Tools["github"]
-	if sel == nil || sel.Allow == nil || len(sel.Allow) != 0 {
-		t.Errorf("disable selector = %+v, want block-all (empty allow)", sel)
-	}
-
-	// Reset after narrowing = loosening without a grant: rejected.
-	err = client.Sessions.SetScope(t.Context(), id, api.ScopeNarrow{Reset: true})
-	if !errors.As(err, &apiErr) || apiErr.Code != CodeTightenOnly {
-		t.Errorf("reset err = %v", err)
-	}
-
-	// Audit trail: one record per write, allowed/denied as it happened.
-	recs := env.aud.records()
-	if len(recs) != 4 {
-		t.Fatalf("audit records = %d, want 4", len(recs))
-	}
-	wantDecisions := []audit.Decision{
-		audit.DecisionAllowed, audit.DecisionDenied, audit.DecisionAllowed, audit.DecisionDenied,
-	}
-	for i, r := range recs {
-		if r.Decision != wantDecisions[i] {
-			t.Errorf("rec[%d].Decision = %s, want %s", i, r.Decision, wantDecisions[i])
-		}
-		if r.Session != id || r.Client != "cursor" || r.Actor != "cli" {
-			t.Errorf("rec[%d] identity = %+v", i, r)
-		}
-		if r.RequestID == "" || r.ArgsHash == "" {
-			t.Errorf("rec[%d] missing request id or args hash: %+v", i, r)
-		}
-		if r.Tool != "sessions/scope" {
-			t.Errorf("rec[%d].Tool = %q", i, r.Tool)
-		}
-	}
-}
-
-func TestScopeUnknownSessionUniform404(t *testing.T) {
-	client, _ := startServer(t, nil)
-	err := client.Sessions.SetScope(t.Context(), "ghost:9", api.ScopeNarrow{Reset: true})
-	var apiErr *api.Error
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("err = %v", err)
-	}
-	if apiErr.Status != http.StatusNotFound || apiErr.Code != CodeNotFound || apiErr.Message != notFoundMessage {
-		t.Errorf("got status=%d code=%s message=%q", apiErr.Status, apiErr.Code, apiErr.Message)
-	}
 }
 
 // TestUniform404 asserts the anti-probing invariant: unknown route, wrong
@@ -455,14 +360,16 @@ func TestAPIVersionRejected(t *testing.T) {
 
 func TestActorHeaderValidation(t *testing.T) {
 	_, env := startServer(t, nil)
-	s := openSession(t, env.mgr, "cursor")
 	hc := rawClient(env.sock)
 
+	// A fresh session per call: kill is the audited write this exercises, and
+	// killing the same session twice would only be audited once.
 	post := func(actor string) {
 		t.Helper()
+		s := openSession(t, env.mgr, "cursor")
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-			"http://agenthub/v1/sessions/"+string(s.ID)+"/scope",
-			strings.NewReader(`{"tools":{"gh":["a"]}}`))
+			"http://agenthub/v1/sessions/"+string(s.ID)+"/kill",
+			strings.NewReader(`{}`))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -490,25 +397,6 @@ func TestActorHeaderValidation(t *testing.T) {
 		if r.Actor != want[i] {
 			t.Errorf("rec[%d].Actor = %q, want %q", i, r.Actor, want[i])
 		}
-	}
-}
-
-func TestScopeBadBody(t *testing.T) {
-	_, env := startServer(t, nil)
-	s := openSession(t, env.mgr, "cursor")
-	hc := rawClient(env.sock)
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-		"http://agenthub/v1/sessions/"+string(s.ID)+"/scope", strings.NewReader("{not json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp, err := hc.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("status = %d", resp.StatusCode)
 	}
 }
 

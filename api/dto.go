@@ -96,12 +96,9 @@ type SessionInfo struct {
 	// Origin is how the session is attached (e.g. "stdio", "http").
 	Origin string `json:"origin"`
 	// Root is the project root bound to the session, when known.
-	Root        string `json:"root,omitempty"`
-	ProfileName string `json:"profile_name"`
-	// OverlaySummary is a human-readable digest of the session's scope
-	// overlay ("" when no overlay is active).
-	OverlaySummary string    `json:"overlay_summary,omitempty"`
-	LastSeen       time.Time `json:"last_seen"`
+	Root        string    `json:"root,omitempty"`
+	ProfileName string    `json:"profile_name"`
+	LastSeen    time.Time `json:"last_seen"`
 }
 
 // Event is one daemon event as delivered over the SSE stream

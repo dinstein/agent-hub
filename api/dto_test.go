@@ -62,16 +62,15 @@ func TestDTOGoldenJSON(t *testing.T) {
 		{
 			name: "session_info",
 			v: SessionInfo{
-				ID:             "claude:1",
-				ClientID:       "claude",
-				Origin:         "stdio",
-				Root:           "/work/repo",
-				ProfileName:    "default",
-				OverlaySummary: "narrowed: -2 servers",
-				LastSeen:       time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC),
+				ID:          "claude:1",
+				ClientID:    "claude",
+				Origin:      "stdio",
+				Root:        "/work/repo",
+				ProfileName: "default",
+				LastSeen:    time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC),
 			},
 			want: `{"id":"claude:1","client_id":"claude","origin":"stdio","root":"/work/repo",` +
-				`"profile_name":"default","overlay_summary":"narrowed: -2 servers","last_seen":"2026-07-26T12:00:00Z"}`,
+				`"profile_name":"default","last_seen":"2026-07-26T12:00:00Z"}`,
 		},
 		{
 			name: "session_info_optionals_omitted",
@@ -107,15 +106,6 @@ func TestDTOGoldenJSON(t *testing.T) {
 			name: "error_body_no_hint_omitted",
 			v:    ErrorBody{Code: "E_DAEMON_DOWN", Message: "daemon offline"},
 			want: `{"code":"E_DAEMON_DOWN","message":"daemon offline"}`,
-		},
-		{
-			name: "scope_narrow",
-			v: ScopeNarrow{
-				DisableServers: []string{"github"},
-				Tools:          map[string][]string{"jira": {"search", "get_issue"}},
-				Reset:          false,
-			},
-			want: `{"disable_servers":["github"],"tools":{"jira":["search","get_issue"]}}`,
 		},
 	}
 	for _, tc := range cases {

@@ -43,7 +43,6 @@ import type {
   QuarantineList,
   QuarantineRelease,
   ScopeDetail,
-  ScopeNarrow,
   ScopeWrite,
   SecretChange,
   SecretRef,
@@ -256,8 +255,6 @@ export const hub = {
   // -- sessions / approvals / audit -----------------------------------------
   listSessions: () => call<SessionInfo[]>("ListSessions"),
   /** Narrow-only: the daemon rejects anything that would widen scope. */
-  setSessionScope: (sessionID: string, narrow: ScopeNarrow) =>
-    call<void>("SetSessionScope", sessionID, narrow),
   auditTail: (limit: number) => call<AuditRecord[]>("AuditTail", limit),
   securityTail: (limit: number) => call<SecurityEvent[]>("SecurityTail", limit),
 };

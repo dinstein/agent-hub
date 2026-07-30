@@ -442,14 +442,6 @@ func newGateway(cfg Config) (*gateway, error) {
 		g.scopeRes = scope.NewCachedResolver(scope.Sources{
 			Registry: func() *registry.Snapshot { return g.snap.Load() },
 			Catalog:  g.catalogSnapshot,
-			// The gateway hosts a single upstream session; the daemon link
-			// overlay (nil when unregistered) is that session's overlay.
-			Overlay: func(scope.SessionID) *scope.Overlay {
-				if g.ctl != nil {
-					return g.ctl.Overlay()
-				}
-				return nil
-			},
 			Extra: func(scope.SessionID) []scope.ScopeLayer {
 				if cfg.ScopeLayers == nil {
 					return nil
