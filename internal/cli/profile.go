@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dinstein/agent-hub/internal/confops"
+	"github.com/dinstein/agent-hub/internal/discovery"
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
@@ -400,15 +401,41 @@ func (a *App) newProfileToolsCmd() *cobra.Command {
 	return cmd
 }
 
+// discoveryModeLines renders the mode list for `profile discovery --help`,
+// marking the default from discovery.DefaultMode rather than in the prose.
+//
+// The marker was written into the text, on `full`, while the default has been
+// lazy for as long as the modes have existed. A help text naming the wrong
+// default is worse than one naming none: it is what a reader checks INSTEAD of
+// running the command, so the mistake survives every reading of it. Placing
+// the marker from the constant means the next change to DefaultMode moves it.
+func discoveryModeLines() string {
+	lines := []struct {
+		mode discovery.Mode
+		text string
+	}{
+		{discovery.ModeFull, "  full     list every tool by name"},
+		{discovery.ModeGrouped, "  grouped  list one entry per server, opened up on demand"},
+		{discovery.ModeLazy, "  lazy     list a small search-and-call set, and let the client look tools up"},
+	}
+	var b strings.Builder
+	for _, l := range lines {
+		b.WriteString(l.text)
+		if l.mode == discovery.DefaultMode {
+			b.WriteString(" (the default)")
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 func (a *App) newProfileDiscoveryCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "discovery <profile> <lazy|grouped|full|->",
 		Short: "Choose how a profile's tools are presented to the AI client",
 		Long: "Changes how the tools are shown, never which ones get through. Worth changing\n" +
 			"only when a profile holds so many that the client's list becomes unwieldy.\n\n" +
-			"  full     list every tool by name (the default)\n" +
-			"  grouped  list one entry per server, opened up on demand\n" +
-			"  lazy     list a small search-and-call set, and let the client look tools up\n" +
+			discoveryModeLines() +
 			"  -        drop the setting and follow the global default",
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {

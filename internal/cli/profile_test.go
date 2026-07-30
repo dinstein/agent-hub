@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/dinstein/agent-hub/internal/discovery"
 )
 
 // decodeInto unmarshals a success envelope's data into v.
@@ -279,5 +281,29 @@ func TestProfileToolsSilentWithoutCatalog(t *testing.T) {
 		if strings.Contains(w, "no recorded tool") {
 			t.Errorf("warned against a cache that was never written: %q", w)
 		}
+	}
+}
+
+// TestProfileDiscoveryHelpMarksTheRealDefault keeps `profile discovery --help`
+// and discovery.DefaultMode in step. The help used to mark `full` as the
+// default while the gateway had always fallen back to lazy — a wrong default
+// in a help text is the failure that survives longest, because it is what a
+// reader consults instead of running the command.
+func TestProfileDiscoveryHelpMarksTheRealDefault(t *testing.T) {
+	setDataDir(t)
+	out := mustRun(t, "", "profile", "discovery", "--help")
+
+	marked := make([]string, 0, 1)
+	for _, mode := range []discovery.Mode{discovery.ModeFull, discovery.ModeGrouped, discovery.ModeLazy} {
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), string(mode)+" ") &&
+				strings.Contains(line, "(the default)") {
+				marked = append(marked, string(mode))
+			}
+		}
+	}
+	want := []string{string(discovery.DefaultMode)}
+	if !slices.Equal(marked, want) {
+		t.Errorf("help marks %v as default, want exactly %v\n%s", marked, want, out)
 	}
 }
