@@ -16,7 +16,7 @@
 | [dataplane.md](dataplane.md) | `downstream`、`router`、`pipeline`、`gateway`、`discovery`（+`toolsig`）、`shaping`（+`toonenc`）、`ratelimit` |
 | [security.md](security.md) | `guard`（`injection`/`spawnguard`/`netguard`/`leakguard`）、`integrity`、`approval`、`audit`、`oauthflow` |
 | [controlplane.md](controlplane.md) | `api`、`ctlapi`、`confops`、`catalog`、`daemon`、`httpbridge`、`cli`（+`output`）、两个 `cmd/`、`testutil/fakemcp`、`depguardtest`、`test/*` |
-| [oauth.md](oauth.md) | 专题：`oauthflow` 对 MCP 授权规范的符合度、支持的 provider 部署形态、已知差距 |
+| [oauth.md](oauth.md) | 专题：`oauthflow` 对 MCP 授权规范的符合度、支持的 provider 部署形态、已知差距；`oauthlogin`（同一个流程，做成可轮询的会话） |
 | [gui.md](gui.md) | 专题：GUI 前端的信息架构、状态呈现、写操作与 HITL 表现层、明确不做的事 |
 
 ## 这套文档的写法

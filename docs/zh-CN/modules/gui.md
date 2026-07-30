@@ -31,7 +31,7 @@
 | 状态 | 显示 |
 |---|---|
 | connected | **`23 tools`** —— 不写 "connected"。有信息量的数字顶掉冗余状态词 |
-| needs-auth | 状态位整个**换成 `Authenticate` 按钮** |
+| needs-auth | 状态位整个**换成 `Authenticate` 按钮**，点了真的登录（§2.1） |
 | checking | 超过 4 秒且命令是 `npx`/`uvx` 时改成 **`Installing…`** —— 把等待重解释成进度 |
 | error | 一行提炼的错误标题 + 展开看全文 |
 | disabled | 灰点，无文案 |
@@ -45,6 +45,39 @@
 **Health 一律渲染，绝不再推导。** 等级由 daemon 的纯函数算出，前端只显示；
 常量从 `api` 包生成到 `generated/health.ts`，golden 测试盯着它防三端漂移。
 前端拿连接标志自己拼一个状态，就是第二份判定。
+
+**全局开关是开关，不是动词。** 启用/停用原先是行尾四个同款按钮里的一个词，这把本页最常用的设置
+搞错了两次：它落在视线最后到的位置，而且它说的是**动作**而不是**当前值**——当作标签来读，"Disable"
+标记的是那些开着的 server。现在它在行首。
+
+它上面有两条规矩，都很容易被顺手改坏：
+
+- **「开」的颜色是 `--accent`（墨色），绝不是 `--success`。** 绿色轨道会在一行里放上第二个绿，而这
+  一行已经有一个绿色的健康点了，两者含义无关——「你把它打开了」对「它真的在工作」。别家产品的开关
+  都是绿的，所以这条写在 `style.css` 里别人会去「修」它的那个位置。
+- **开关的位置永远不由点击决定。** `onChange` 去发写请求，页面从返回结果重画，所以被拒绝的写、失效
+  的 precondition、被取消的确认框，都会让开关停在**已存储**的那个值上。乐观翻转是要往回撤的，而它
+  错着的那一刻恰好就是用户满意地把视线移开的那一刻——和审批行「变灰而不是消失」是同一个理由（§5）。
+
+### 2.1 Authenticate 按钮真的会登录
+
+它原先弹出的对话框，全部内容是「GUI 没有能做这件事的端点，请去终端跑 `agenthub auth login`」——
+而这个应用的立足点正是客户端不碰凭据。现在控制面提供了登录
+（[controlplane.md](controlplane.md#面上唯一的长流程交换交互式登录)），本页负责驱动它。
+
+- **第一瞬间刻意什么都不显示。** 在 device 与 loopback 之间做选择需要授权服务器的 metadata，所以那
+  时候确实没什么可说的。这个状态会说明它在等什么，而不是围着一个用户之后还得重新理解的、凭空编出来
+  的模式转圈。
+- **由本页打开宿主浏览器**，绝不用这个 webview。把授权页渲染在应用里，就是 agenthub 在一个由
+  agenthub 控制的窗口里索要 provider 密码：那是钓鱼页的形状，并且拿掉了地址栏、锁，以及密码管理器
+  拒绝在错误 origin 上填充这三重保护。
+- **loopback URL 只打开一次**，按值记录——每次轮询都打开会让用户的浏览器每 700ms 多出一个授权页。
+- **关掉窗口只取消「等待」，别的什么都不取消**；而且会话一旦终结就不再发取消：对一件已经成功的事
+  请求放弃，是一个没有正确答案的问题。
+- **失败会明说什么都没存下**，带上流程自己的建议，并给一个重试入口，用户不会被留在「这台 server 现
+  在是不是半授权状态」的猜测里。
+- **device code 用大号等宽字体并加了字距。** 它是本应用里唯一需要人往另一个窗口里重新敲一遍的字符
+  串，`O`/`0` 和 `I`/`l` 必须一眼就能分开，而不是敲错一次之后才分开。
 
 ---
 
@@ -150,10 +183,10 @@ button/input/dialog 三套 CSS 类**。三样都不需要框架。
 | 文件 | 内容 |
 |---|---|
 | `main.ts` | 入口：主题 bootstrap、路由、侧栏、SSE 订阅 |
-| `bridge.ts` | 与 Go 侧的唯一接缝：`Call.ByName(<Go FQN>)` + `Events.On`（不用 `wails3 generate bindings`） |
+| `bridge.ts` | 与 Go 侧的唯一接缝：`Call.ByName(<Go FQN>)` + `Events.On`（不用 `wails3 generate bindings`），以及 `openExternal`——走宿主浏览器，绝不走这个 webview |
 | `page.ts` | `Page` 契约、`failureBox` / `failureState`、`CONFLICT_MESSAGE`、`noticeSlot` |
 | `dom.ts` | 无依赖 DOM 构造：`el` / `table` / `emptyState`（三态）/ `chip`（0 返回 null）/ `errorHeadline` / 时间格式化 |
-| `ui.ts` | 表单件：输入、三态选择器、pair/lines 编辑器、确认对话框 |
+| `ui.ts` | 表单件：输入、三态选择器、pair/lines 编辑器、确认对话框、`toggleSwitch`（绝不乐观翻转） |
 | `types.ts` | 控制面 DTO 的 TS 镜像 |
 | `generated/health.ts` | **生成物**：Health 的 Level/AdminState/Action 常量，`go generate ./cmd/agenthub-gui/...` |
 | `pages/*.ts` | 每个资源一页，17 页 |

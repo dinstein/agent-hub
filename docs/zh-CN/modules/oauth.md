@@ -70,6 +70,17 @@ backwards compatibility」），把 CIMD 升到 **SHOULD**。我们的默认路�
 | Device flow (RFC 8628) | ✅ 自动选择：AS 广告了 `device_authorization_endpoint` 就用 |
 | 浏览器打开失败自动降级到手工 | ✅ 只在 `ModeAuto` |
 
+**有两个调用方在驱动这个流程，而流程只有一份实现。** `agenthub auth login` 在前台跑它；控制面把它当
+成一个会话跑给图形前端用（`internal/oauthlogin`，见
+[controlplane.md](controlplane.md#面上唯一的长流程交换交互式登录)）。唯一的行为差异在
+`LoginRequest.Open`：CLI 在那里打开浏览器，而会话路径**记下 URL 并返回成功**，让调用方去打开——
+daemon 可能是无头的，也可能不是用户所在的那台机器。
+
+这个反转有一个从代码上看不出来的后果，值得点明：会话路径上 `Paste` 是 nil，所以 `SelectMode` 永远
+选不到 `ModeManual`，上表最后一行那个「loopback 自动降级到手工」**不可能触发**。手工模式要从终端读
+回粘贴的 callback，而 HTTP API 后面没有终端。真的开不了浏览器的宿主，要回落到 CLI，而不是回落到一个
+会永远等一个没人能粘贴的输入的模式。
+
 ### Token 处理
 
 | 形态 | 支持 |
