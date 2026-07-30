@@ -191,24 +191,46 @@ func identityName(id PackageIdentity) string {
 // named pipe, not a file, so the run directory only holds daemon.json.
 func (r *Resolver) windowsRunDir() (string, error) { return r.dataSub("run") }
 
+// ctlPipePrefix and devCtlPipePrefix are the two control-pipe names, one per
+// build channel. Both are FROZEN identifiers (canonical.md §1/§2).
+//
+// Two spelled-out constants rather than one with the channel spliced in. The
+// pipe name must not move when the data directory is renamed — deriving it
+// from dirName was tried once, and the result was that "rename the data
+// directory" silently became "rename the protocol". A dev channel obtained by
+// interpolating into the release name has the same defect one level down: the
+// release name stops being a literal you can grep for and starts being an
+// output of string concatenation.
+const (
+	ctlPipePrefix    = `\\.\pipe\agenthub-ctl-`
+	devCtlPipePrefix = `\\.\pipe\agenthub-ctl-dev-`
+)
+
 // windowsCtlEndpoint returns the control-plane named pipe path
-// \\.\pipe\agenthub-ctl-<sha8(SID)> (frozen identifier, canonical.md §1).
+// \\.\pipe\agenthub-ctl-<sha8(SID)>, or its dev sibling
+// \\.\pipe\agenthub-ctl-dev-<sha8(SID)> on a Resolver from DevResolver.
 //
 // The SID hash is not obfuscation: pipe names live in a single machine-wide
 // namespace, so on a multi-user machine two users would otherwise race for
 // the same name and the loser would be talking to the winner's daemon. The
 // hash keeps the name stable per user and unique across users; the actual
 // access control is the SDDL on the pipe (see CtlPipeSDDL).
+//
+// WHY THE CHANNEL IS A FIELD AND NOT A LOOKUP. On Unix the split reaches the
+// endpoint for free: the socket is <run>/ctl.sock, the run directory follows
+// the data directory, and DevResolver moves the data directory. A pipe name is
+// not a filesystem path, so that chain does not exist here and the resolver
+// has to be told. Asking "does the data directory end in AgentHubDev?" would
+// re-introduce exactly the dirName derivation the constants above refuse.
 func (r *Resolver) windowsCtlEndpoint() (string, error) {
 	sid, err := r.userSID()
 	if err != nil {
 		return "", err
 	}
-	// Spelled out rather than built from dirName: the pipe name is a frozen
-	// identifier (canonical.md §1) and must not move when the data directory
-	// is renamed. Deriving it from dirName once meant a directory rename
-	// silently became a protocol rename.
-	return `\\.\pipe\agenthub-ctl-` + sha8(sid), nil
+	if r.devChannel {
+		return devCtlPipePrefix + sha8(sid), nil
+	}
+	return ctlPipePrefix + sha8(sid), nil
 }
 
 func (r *Resolver) userSID() (string, error) {

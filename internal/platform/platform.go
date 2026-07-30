@@ -93,6 +93,9 @@ func DevResolver(base *Resolver) *Resolver {
 	if base != nil {
 		*r = *base
 	}
+	// Windows only: the control endpoint is a pipe name, so it cannot follow
+	// the data directory the way <run>/ctl.sock does. See windowsCtlEndpoint.
+	r.devChannel = true
 	inner := r.LookupEnv
 	if inner == nil {
 		inner = os.LookupEnv
@@ -166,6 +169,18 @@ type Resolver struct {
 	// could not be escaped). nil writes one line per distinct message to
 	// stderr — never stdout, which carries JSON-RPC frames on a gateway.
 	Warn func(msg string)
+
+	// devChannel marks a Resolver built by DevResolver. It exists for ONE
+	// caller — the Windows control-pipe name, which is not derived from any
+	// directory and so cannot inherit the channel split the way <run>/ctl.sock
+	// does (see windowsCtlEndpoint).
+	//
+	// Unexported deliberately. Every other part of this package answers "given
+	// an environment, resolve a path" with no opinion about which build is
+	// asking, and DevResolver is the single place that opinion enters. An
+	// exported field would be a second entrance, and a Resolver could then
+	// claim the dev endpoint while resolving the release data directory.
+	devChannel bool
 }
 
 // Default returns a Resolver backed by the real process environment.

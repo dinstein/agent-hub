@@ -306,13 +306,14 @@ func TestDevResolverSeparatesFromRelease(t *testing.T) {
 		goos string
 		home string
 		env  map[string]string
-		// endpointSeparates is false on Windows alone, where the control
-		// endpoint is a named pipe derived from the user's SID and not from any
-		// directory — so the channel split does NOT reach it. That is a real
-		// gap, recorded in docs/windows.md rather than papered over here:
-		// asserting a separation Windows does not have would
-		// make this test lie, and asserting nothing would let the Unix
-		// regression back in.
+		// endpointSeparates was false on Windows alone for as long as the
+		// control pipe name came from the SID and nothing else: the channel
+		// split reached the data directory and stopped there, so a dev daemon
+		// and an installed release competed for one pipe. It is true on every
+		// row now that the dev channel has its own frozen pipe name. The field
+		// stays rather than being deleted: a platform that grows a fourth kind
+		// of endpoint should have to answer this question explicitly instead of
+		// inheriting an assertion written for a filesystem path.
 		endpointSeparates bool
 	}{
 		{name: "darwin", goos: "darwin", home: "/Users/alice", endpointSeparates: true},
@@ -327,13 +328,18 @@ func TestDevResolverSeparatesFromRelease(t *testing.T) {
 			name: "windows",
 			goos: "windows", home: `C:\Users\alice`,
 			env:               map[string]string{"APPDATA": `C:\Users\alice\AppData\Roaming`},
-			endpointSeparates: false,
+			endpointSeparates: true,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			base := fakeResolver(tc.goos, tc.env, tc.home)
+			// The Windows endpoint hashes the user's SID, which the machine
+			// running this test does not have. Injected before DevResolver
+			// copies the base, so both channels hash the same identity — the
+			// point of the row is that the two names differ for ONE user.
+			base.UserSID = func() (string, error) { return "S-1-5-21-1111111111-2222222222-3333333333-1001", nil }
 			dev := platform.DevResolver(base)
 
 			release, err := base.DataDir()

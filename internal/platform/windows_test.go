@@ -167,6 +167,51 @@ func TestWindowsCtlPipePath(t *testing.T) {
 	}
 }
 
+// TestWindowsDevCtlPipePath pins the SECOND frozen endpoint: the dev channel's
+// own pipe name.
+//
+// The release name is the one that may never move, and the trap is the cheap
+// way to obtain a dev name — splice "dev" into whatever the release name
+// resolved to, or derive both from the data directory. Deriving from the
+// directory was tried once and turned "rename the data directory" into "rename
+// the protocol"; splicing has the same defect one level down, because the
+// release name stops being a literal anyone can grep for and becomes the output
+// of a concatenation. Both spellings are therefore asserted whole.
+func TestWindowsDevCtlPipePath(t *testing.T) {
+	const sid = "S-1-5-21-1111-2222-3333-1001"
+
+	base, _ := winResolver(t, platform.PackageIdentity{}, nil)
+	base.UserSID = func() (string, error) { return sid, nil }
+	dev := platform.DevResolver(base)
+
+	release, err := base.CtlSocketPath()
+	if err != nil {
+		t.Fatalf("release CtlSocketPath: %v", err)
+	}
+	devPipe, err := dev.CtlSocketPath()
+	if err != nil {
+		t.Fatalf("dev CtlSocketPath: %v", err)
+	}
+
+	hash := strings.TrimPrefix(release, `\\.\pipe\agenthub-ctl-`)
+	if want := `\\.\pipe\agenthub-ctl-` + hash; release != want {
+		t.Errorf("release pipe = %q, want %q", release, want)
+	}
+	if want := `\\.\pipe\agenthub-ctl-dev-` + hash; devPipe != want {
+		t.Errorf("dev pipe = %q, want %q", devPipe, want)
+	}
+	// Same user, same hash: what separates the channels is the name, not the
+	// identity. A dev build that hashed something else would also "differ",
+	// while quietly ceasing to be per-user — and two users would then share
+	// the dev pipe in the machine-wide namespace.
+	if !strings.HasSuffix(devPipe, hash) {
+		t.Errorf("dev pipe %q does not hash the same SID as %q", devPipe, release)
+	}
+	if !platform.IsPipePath(devPipe) {
+		t.Errorf("IsPipePath(%q) = false", devPipe)
+	}
+}
+
 func TestIsPipePath(t *testing.T) {
 	yes := []string{`\\.\pipe\agenthub-ctl-abcdef01`, `\\?\pipe\x`}
 	no := []string{"/run/user/1000/agenthub/ctl.sock", `C:\Users\a\ctl.sock`, ""}
