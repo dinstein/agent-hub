@@ -70,11 +70,9 @@ func NoTools() ProfileTools { return ProfileTools{Mode: ToolSelectNone} }
 //	Allow == [..] -> exactly those tools
 //
 // `omitzero` (not omitempty) is load-bearing: it keeps the empty list on the
-// wire, and dropping it would silently turn block-all into allow-all. Deny
-// is a union across layers.
+// wire, and dropping it would silently turn block-all into allow-all.
 type ToolSelector struct {
 	Allow []string `json:"allow,omitzero"`
-	Deny  []string `json:"deny,omitempty"`
 }
 
 // Blocked reports the block-all state: an allow list that is present and

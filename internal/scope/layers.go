@@ -178,7 +178,6 @@ func selectorsFromDocs(in map[string]registry.Doc[registry.ToolSelector]) map[st
 	for k, d := range in {
 		sel := ToolSelector{
 			Allow: cloneStrings(d.V.Allow),
-			Deny:  cloneStrings(d.V.Deny),
 		}
 		out[k] = &sel
 	}

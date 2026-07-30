@@ -18,7 +18,7 @@ func goldenScope(t *testing.T) *EffectiveScope {
 		{Kind: LayerProfile, Servers: []string{"fs", "git"},
 			Discovery: discPtr(DiscoveryGrouped),
 			Tools: map[string]*ToolSelector{"fs": {
-				Allow: []string{"read", "write", "delete"}, Deny: []string{"delete"},
+				Allow: []string{"read", "write"},
 			}},
 			Approval: ApprovalPolicy{HumanApproval: boolPtr(true)}},
 		{Kind: LayerSession, ResultBudget: map[string]*Budget{"git": {Bytes: 512}}},
@@ -39,6 +39,13 @@ func goldenScope(t *testing.T) *EffectiveScope {
 // client layer was retired, so hash.go writes one fewer bool and every digest
 // moved. The cost is a cold start for cursors, search caches and approval
 // staleness checks — they recompute rather than serve a wrong answer.
+//
+// NOT bumped when ToolSelector lost Deny. The digest covers the RESOLVED
+// scope, not the layers that produced it, so the fixture was rewritten to
+// spell the same effective tool set with an allow list alone
+// (allow[read,write,delete] minus deny[delete] == allow[read,write]) and
+// every persisted digest stayed valid. A fixture edit that moved the hash
+// would have charged real users a cold start for a refactor they cannot see.
 const goldenHashHex = "2d5ed27e55b0a510a7d6755631e25f64f1c407d537f1f15f4f762bdf63fff45c"
 
 func TestHashGolden(t *testing.T) {
@@ -76,7 +83,7 @@ func TestHashDistinguishesContent(t *testing.T) {
 		diags  []Diagnostic
 	}{
 		{"server set", []ScopeLayer{{Kind: LayerSession, Servers: []string{"fs"}}}, nil},
-		{"tool set", []ScopeLayer{{Kind: LayerSession, Tools: map[string]*ToolSelector{"fs": {Deny: []string{"read"}}}}}, nil},
+		{"tool set", []ScopeLayer{{Kind: LayerSession, Tools: map[string]*ToolSelector{"fs": {Allow: []string{"read"}}}}}, nil},
 		{"discovery", []ScopeLayer{{Kind: LayerSession, Discovery: discPtr(DiscoveryLazy)}}, nil},
 		{"budget", []ScopeLayer{{Kind: LayerSession, ResultBudget: map[string]*Budget{"*": {Bytes: 1}}}}, nil},
 		{"approval", []ScopeLayer{{Kind: LayerSession, Approval: ApprovalPolicy{HumanApproval: boolPtr(true)}}}, nil},

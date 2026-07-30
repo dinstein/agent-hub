@@ -285,13 +285,18 @@ type ServersDoc struct {
 //   - Allow == []                                  = block-all
 //   - Allow == [...]                               = narrow to that subset
 //
-// Deny is a union across layers. `omitzero` (not omitempty) on Allow is
-// load-bearing: it keeps the nil-vs-empty distinction on disk — dropping an
-// empty Allow would silently turn block-all into allow-all (fail-open); with
-// omitzero the empty list round-trips and block-all stays closed.
+// It is an ALLOW list and nothing else. A deny list answers the arrival of a
+// tool the downstream added after the rule was written in the opposite
+// direction — allow hides it, deny exposes it — so carrying both would make
+// one configuration file give two different answers to the same question
+// depending on which field the operator happened to use.
+//
+// `omitzero` (not omitempty) is load-bearing: it keeps the nil-vs-empty
+// distinction on disk — dropping an empty Allow would silently turn
+// block-all into allow-all (fail-open); with omitzero the empty list
+// round-trips and block-all stays closed.
 type ToolSelector struct {
 	Allow []string `json:"allow,omitzero"`
-	Deny  []string `json:"deny,omitempty"`
 }
 
 // ProfileBindingKind enumerates the explicit profile-reference semantics that

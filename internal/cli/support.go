@@ -156,9 +156,6 @@ func describeSelector(sel registry.ToolSelector) string {
 	default:
 		parts = append(parts, "only "+strings.Join(sel.Allow, ","))
 	}
-	if len(sel.Deny) > 0 {
-		parts = append(parts, "deny "+strings.Join(sel.Deny, ","))
-	}
 	return strings.Join(parts, "; ")
 }
 

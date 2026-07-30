@@ -70,7 +70,6 @@ func MergeWithDiagnostics(layers []ScopeLayer, cat router.Catalog, diags []Diagn
 		for _, t := range cat.Servers[id] {
 			allowed[t] = true
 		}
-		denied := make(map[string]bool)
 		for _, l := range layers {
 			sel := l.Tools[id]
 			if sel == nil {
@@ -87,15 +86,10 @@ func MergeWithDiagnostics(layers []ScopeLayer, cat router.Catalog, diags []Diagn
 					}
 				}
 			}
-			for _, d := range sel.Deny {
-				denied[d] = true
-			}
 		}
 		tools := make([]string, 0, len(allowed))
 		for t := range allowed {
-			if !denied[t] {
-				tools = append(tools, t)
-			}
+			tools = append(tools, t)
 		}
 		slices.Sort(tools)
 		servers[id] = ToolView{Tools: tools}

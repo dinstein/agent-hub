@@ -96,7 +96,7 @@ flowchart LR
 
 **There are two classes of merge semantics, and changes must not confuse them.** Security fields tighten
 monotonically: server visibility **intersects** across layers (seeded from the catalog's server set),
-a tool's `Allow` intersects and its `Deny` unions across layers, and approval switches fold with a
+a tool's `Allow` intersects across layers, and approval switches fold with a
 **boolean OR**. Experience fields take the nearest value: `Discovery` is won by the most specific layer
 (within the same `LayerKind`, the later layer wins) and `ResultBudget` takes the nearest value per key.
 The one exception is `Budget.Forced`: a budget marked forced is capped at the **minimum**, so it can only
@@ -204,7 +204,7 @@ availability improvement. `Close` explicitly nils out the overlay.
 **The "tighten only" check: every ambiguity is judged a loosening and rejected.** `loosenings(prev, next)`
 compares security fields one by one: `Servers` going from non-nil to nil is a loosening, and adding any
 server is a loosening; for a server that prev constrained, `Tools` counts removing the selector, undoing an
-`Allow` narrowing, adding an `Allow` entry, or removing a `Deny` entry as loosenings; canceling an approval
+`Allow` narrowing or adding an `Allow` entry as loosenings; canceling an approval
 switch already set to `true` is a loosening; and removing or raising a `Forced` budget is a loosening.
 Experience fields (`Discovery`, non-forced `ResultBudget`) may change freely. `prev == nil` is the
 "no overlay" baseline, in which case creating any overlay counts as a tightening. Being too strict costs the

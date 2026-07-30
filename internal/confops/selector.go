@@ -69,7 +69,7 @@ func applySelector(m map[string]registry.Doc[registry.ToolSelector], server stri
 	case ToolSelectUnset:
 		return
 	}
-	if cur.Allow == nil && len(cur.Deny) == 0 {
+	if cur.Allow == nil {
 		delete(m, server)
 		return
 	}

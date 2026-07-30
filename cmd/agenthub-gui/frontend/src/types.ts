@@ -341,7 +341,6 @@ export interface ProfileTools {
  */
 export interface ToolSelector {
   allow?: string[];
-  deny?: string[];
 }
 
 export interface Profile {

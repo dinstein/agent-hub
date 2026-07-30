@@ -125,10 +125,11 @@ func TestMergeMatrix(t *testing.T) {
 			},
 		},
 		{
-			name: "deny unions across layers and beats allow",
+			// Allow lists intersect: each layer can only take away.
+			name: "allow lists intersect across layers",
 			layers: []ScopeLayer{
-				{Kind: LayerProfile, Tools: map[string]*ToolSelector{"fs": {Deny: []string{"delete"}}}},
-				{Kind: LayerSession, Tools: map[string]*ToolSelector{"fs": {Allow: []string{"read", "delete"}, Deny: []string{"write"}}}},
+				{Kind: LayerProfile, Tools: map[string]*ToolSelector{"fs": {Allow: []string{"read", "write"}}}},
+				{Kind: LayerSession, Tools: map[string]*ToolSelector{"fs": {Allow: []string{"read", "delete"}}}},
 			},
 			cat: testCatalog(),
 			servers: map[string][]string{
@@ -212,7 +213,7 @@ func TestMergeMatrix(t *testing.T) {
 				{Kind: LayerProfile, Servers: []string{"fs", "git"},
 					Tools: map[string]*ToolSelector{"fs": {Allow: []string{"read", "write", "delete"}}}},
 				{Kind: LayerProfile, Discovery: discPtr(DiscoveryGrouped), Servers: []string{"fs"},
-					Tools: map[string]*ToolSelector{"fs": {Deny: []string{"delete"}}}},
+					Tools: map[string]*ToolSelector{"fs": {Allow: []string{"read", "write"}}}},
 				{Kind: LayerSession,
 					Tools: map[string]*ToolSelector{"fs": {Allow: []string{"read", "delete"}}}},
 			},
@@ -267,7 +268,7 @@ func TestMergeInvalidLayerKind(t *testing.T) {
 func TestMergePurity(t *testing.T) {
 	layers := []ScopeLayer{
 		{Kind: LayerProfile, Servers: []string{"fs", "git"},
-			Tools:        map[string]*ToolSelector{"fs": {Allow: []string{"read", "write"}, Deny: []string{"write"}}},
+			Tools:        map[string]*ToolSelector{"fs": {Allow: []string{"read", "write"}}},
 			ResultBudget: map[string]*Budget{"*": {Bytes: 500, Forced: true}},
 			Discovery:    discPtr(DiscoveryLazy),
 			Approval:     ApprovalPolicy{HumanApproval: boolPtr(true)}},
@@ -339,7 +340,7 @@ func deepCopyLayers(in []ScopeLayer) []ScopeLayer {
 		if l.Tools != nil {
 			cp.Tools = make(map[string]*ToolSelector, len(l.Tools))
 			for k, v := range l.Tools {
-				s := ToolSelector{Allow: cloneStrings(v.Allow), Deny: cloneStrings(v.Deny)}
+				s := ToolSelector{Allow: cloneStrings(v.Allow)}
 				cp.Tools[k] = &s
 			}
 		}
