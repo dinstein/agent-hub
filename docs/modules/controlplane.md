@@ -922,7 +922,7 @@ SIGTTIN/SIGTTOU.
 curated catalog trails because leading with it teaches a path that ends in "not listed" for most servers), Wire up
 (`profile`, `client` — a profile says what a surface *contains*, `client bind` says who gets it,
 so the two halves of one question sit together), Daemon (`daemon`, `session`, `events`, `token`), Manage
-(everything else), and the machine entry point `connect`.
+(everything else), Diagnose (`doctor`, alone), and the machine entry point `connect`.
 
 **The back half is split on one testable question — does this command need a running daemon?** Every
 member of Daemon is inert without one: `session` and `events` say so in their own help text, and `token`
@@ -950,6 +950,17 @@ thing the registry must never hold.
 command stays registered and stays runnable: this narrows what the binary *teaches*, never what it can do.
 Withholding `profile` — which the retired Scope group used to do — left a shipped build able to connect a
 client while giving it no vocabulary for what that client would then see.
+
+**Diagnose exists so a shipped build can name the user's next move when a step fails.** `doctor` was in
+Manage, which meant a release taught a linear path — register a server, authorize it, build a profile,
+bind a client — and withheld the one command that says which step of it broke. That is the `secret` fault
+read from the other end, and worse than a dangling recommendation: the everyday path has failure modes
+(no handshake, a client config pointing at a stale binary, a cold launcher cache) and hiding `doctor`
+left the response to all of them unspoken. It is a group of one rather than a line in Wire up because it
+answers a different kind of question from everything around it — Setup and Wire up are steps to take,
+Diagnose is what to run when a step did not take, and filing it under either would read as a third
+required step in a path that has two. A second diagnostic belongs here only if it clears the same bar:
+a user following the everyday path is stuck without it.
 
 ---
 

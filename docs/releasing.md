@@ -104,8 +104,10 @@ make release-run ARGS="--help"   # the release build's equivalent of make dev
 
 The two flavors land at **different paths**, so you can keep both around and compare. Their differences
 go beyond the data directory: the release build's `--version` has no `(dev)`, and its `--help` doesn't
-list the governance command groups (approval / grant / config / audit). "Which one am I holding?" no
-longer needs a test run to guess.
+list the Daemon or Manage groups (daemon / session / events / token, approval / grant / config / tool /
+audit / activity / skill). `doctor` is the one back-half command a release still shows, in a Diagnose
+group of its own — a help page that teaches the everyday path has to name what to run when a step of it
+fails. "Which one am I holding?" no longer needs a test run to guess.
 
 **The default is dev rather than release, because the two failure directions cost asymmetrically.** A
 release build mislabeled as dev costs an empty sandbox — visible to the user and easy to fix. A dev build

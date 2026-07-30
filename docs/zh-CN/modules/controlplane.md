@@ -663,7 +663,7 @@ auth、audit、activity、events、config、doctor、connect）保持原名，�
 同一份测试还钉住了帮助分组的成员——Setup 是 `server, auth, secret, catalog`（`catalog` 只有一小撮策展条目，
 让它打头会教出一条对多数 server 以「没收录」结尾的路；`server add --url ...` 才是通用答案），
 Wire up 是 `profile, client`（一份面**装了什么**和**给谁**是同一个问题的两半），
-Daemon 是 `daemon, session, events, token`，Manage 是其余全部。
+Daemon 是 `daemon, session, events, token`，Manage 是其余全部，Diagnose 只有 `doctor` 一条。
 
 后半段按**一个可验证的问题**切分：这条命令需不需要 daemon 在跑？Daemon 组的每个成员没有 daemon
 都是空转的——`session` 和 `events` 在自己的帮助文案里就写了，`token` 发的是 daemon HTTP 数据面的
@@ -682,6 +682,16 @@ Daemon 的原因。
 并不会。`secret set` 是唯一一条会去读凭证的命令，而 `catalog show` 本来就在给每个需要凭证的条目打印
 「store it with 'agenthub secret set …'」——于是 release 在推荐一条被自己帮助页藏起来的命令。
 藏起来之后剩下的路是 `--env KEY=<字面量>`，那会把 key 写进 registry，而这正是 registry 绝不能装的东西。
+
+**Diagnose 组的存在，是为了让 shipped build 能说出「下一步做什么」。** `doctor` 原本在 Manage 里，
+于是 release 教了一条线性路径——加 server、授权、建 profile、绑 client——却把唯一那条能说清「断在哪一步」
+的命令藏了起来。这是 `secret` 那个毛病的另一面，而且比「推荐了一条藏起来的命令」更糟：这条日常路径
+本身就有失败模式（握手不通、client 配置指向了旧二进制、launcher 缓存还是冷的），藏掉 `doctor`
+等于对所有这些失败都不给回应。它单独成组而不是并进 Wire up，是因为它回答的问题种类不同——
+Setup 和 Wire up 是要走的步骤，Diagnose 是步骤没走通时该跑的东西；塞进任何一组都会被读成
+一条只有两步的路径里的第三个必做步骤。将来第二条诊断命令要进这一组，得过同一道门槛：
+沿着日常路径走的用户，没有它就卡住。
+
 每个 group 裸调用打印 help 且退出 0，未知子命令退出 2。
 
 **错误文案是 golden 测试冻结的**（`errorgolden_test.go`）。canonical.md §6 要求三族 golden

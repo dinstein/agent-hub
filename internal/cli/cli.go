@@ -54,11 +54,13 @@ type Options struct {
 	// registered and stays runnable — this narrows what the help page
 	// TEACHES, never what the binary can do.
 	//
-	// What survives is the whole everyday path and no more: register a server
-	// and authorize it, build a profile, bind a client to it. Withholding the
-	// profile commands (as the Scope group once did) left a shipped build able
-	// to connect a client while giving it no vocabulary for what that client
-	// would then see.
+	// What survives is the whole everyday path, plus the one command that says
+	// which step of it broke: register a server and authorize it, build a
+	// profile, bind a client to it, and `doctor` when one of those does not
+	// work. Withholding the profile commands (as the Scope group once did) left
+	// a shipped build able to connect a client while giving it no vocabulary
+	// for what that client would then see; withholding `doctor` (as Manage
+	// once did) left it able to describe the path but not to diagnose it.
 	//
 	// One field rather than one per group: there is a single reason to
 	// withhold any of them (this is a shipped build) and no caller that wants
@@ -225,24 +227,46 @@ func (a *App) newRoot() *cobra.Command {
 	addGroupedHidden(root, a.reducedHelp, groupManage,
 		a.newApprovalCmd(), a.newGrantCmd(), a.newConfigCmd(),
 		a.newToolCmd(), a.newAuditCmd(), a.newActivityCmd(),
-		a.newSkillCmd(), a.newDoctorCmd())
+		a.newSkillCmd())
+	// `doctor` is VISIBLE, in a shipped build too, and it is alone.
+	//
+	// It was in Manage, which made a release build teach a linear path —
+	// register a server, authorize it, build a profile, bind a client — and
+	// withhold the one command that says which step of it broke. That is the
+	// same fault `secret` had: `catalog show` printed "store it with 'agenthub
+	// secret set …'" while the help page hid `secret`, so a shipped build was
+	// recommending a command it did not teach. Here the gap is worse than a
+	// dangling recommendation — the everyday path has failure modes (no
+	// handshake, a client config pointing at a stale binary, a cold launcher
+	// cache) and withholding `doctor` left the user's next move unnamed.
+	//
+	// One member, and a group rather than a line in Wire up, because it answers
+	// a different question from everything around it. Setup and Wire up are
+	// steps to take; this is what to run when a step did not take. Filing it
+	// under either would read as a third required step in a path that has two.
+	//
+	// If a second diagnostic ever earns a place on a shipped help page it
+	// belongs here — but the bar is the same one `doctor` had to clear, which
+	// is that a user following the everyday path is left stuck without it.
+	addGrouped(root, groupDiagnose, a.newDoctorCmd())
 	addGrouped(root, groupEntry, a.newConnectCmd())
 	return root
 }
 
 // Help groups, in the order the onboarding path actually runs: bring a server
 // in -> choose a surface and hand it to an AI client -> start the daemon and
-// watch what it serves -> everything else. `connect` is held apart because it
-// is the machine entry point a client's MCP config invokes; a human who types
-// it gets a terminal that just hangs on stdio.
+// watch what it serves -> everything else -> what to run when one of those did
+// not work. `connect` is held apart because it is the machine entry point a
+// client's MCP config invokes; a human who types it gets a terminal that just
+// hangs on stdio.
 //
 // There is no separate Scope group: narrowing is what a profile IS, so it
 // belongs with the commands that build and hand out profiles rather than in a
 // section of its own.
 //
-// The last two groups are split on ONE testable question — does this command
-// need a running daemon? — because that is the only line through the back half
-// of the CLI that a reader can check against behavior. The former Govern and
+// The two WITHHELD groups are split on ONE testable question — does this
+// command need a running daemon? — because that is the only line through the
+// back half of the CLI that a reader can check against behavior. The former Govern and
 // Operate split was thematic, and the themes did not survive contact with the
 // membership: `token` is setup, not governance, and `skill` and `activity` are
 // not operations. A heading that mis-sorts its own members teaches the wrong
@@ -258,7 +282,11 @@ var (
 	groupWire   = &cobra.Group{ID: "wire", Title: "Wire up — choose a surface, hand it to an AI client:"}
 	groupDaemon = &cobra.Group{ID: "daemon", Title: "Daemon — the coordination plane and what rides on it:"}
 	groupManage = &cobra.Group{ID: "manage", Title: "Manage — governance and local state:"}
-	groupEntry  = &cobra.Group{ID: "entry", Title: "Machine entry point (not for humans):"}
+	// Diagnose sits after Manage and before the machine entry point, so on a
+	// shipped page it lands directly under Wire up: the path, then what to run
+	// when the path does not work.
+	groupDiagnose = &cobra.Group{ID: "diagnose", Title: "Diagnose — when something is not working:"}
+	groupEntry    = &cobra.Group{ID: "entry", Title: "Machine entry point (not for humans):"}
 )
 
 // addGrouped stamps every command with its group before adding it. Cobra does

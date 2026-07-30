@@ -47,10 +47,13 @@ var withheldGroups = []*cobra.Group{groupDaemon, groupManage}
 // `secret` is likewise NOT withheld: it is the only command that stores an
 // API key, and the path left when it is hidden writes the key into the
 // registry instead.
+// `doctor` is likewise NOT withheld, and has its own group: a shipped build
+// that teaches the everyday path has to name what to run when a step of it
+// fails, or the user's next move after a failed handshake is unspoken.
 var withheldCommands = []string{
 	"daemon", "session", "events", "token",
 	"approval", "grant", "config", "tool", "audit", "activity",
-	"skill", "doctor",
+	"skill",
 }
 
 // walk visits every command in the tree, root included.
@@ -250,8 +253,11 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		{"daemon", []string{"daemon", "session", "events", "token"}},
 		{"manage", []string{
 			"approval", "grant", "config", "tool", "audit", "activity",
-			"skill", "doctor",
+			"skill",
 		}},
+		// One member, and visible even in a shipped build: Setup and Wire up
+		// are steps to take, and this is what to run when a step did not take.
+		{"diagnose", []string{"doctor"}},
 		{"entry", []string{"connect"}},
 	}
 	root := newTestRoot(t)
@@ -408,12 +414,12 @@ func TestReleaseHidesExactlyTheWithheldCommands(t *testing.T) {
 	}
 	// The rest of the page must be untouched — this is a help-page edit, not
 	// a reshuffle of everything else.
-	for _, g := range []*cobra.Group{groupSetup, groupWire, groupEntry} {
+	for _, g := range []*cobra.Group{groupSetup, groupWire, groupDiagnose, groupEntry} {
 		if !strings.Contains(out, g.Title) {
 			t.Errorf("release --help dropped the %q heading, which stays visible:\n%s", g.ID, out)
 		}
 	}
-	for _, other := range []string{"catalog", "server", "auth", "secret", "profile", "client", "connect"} {
+	for _, other := range []string{"catalog", "server", "auth", "secret", "profile", "client", "connect", "doctor"} {
 		if !strings.Contains(out, "  "+other+" ") {
 			t.Errorf("release --help dropped %q, which is not withheld:\n%s", other, out)
 		}
