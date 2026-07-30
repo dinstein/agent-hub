@@ -179,27 +179,24 @@ The nine packages worth knowing first:
 
 ## 4. Layering and dependency direction
 
-The four dependency constraints aren't a verbal review convention; they're **CI failure conditions**,
-and each has a failing case that proves it actually bites (`internal/depguardtest` injects violating
-probes into the constrained packages — inside a disposable copy of the checkout, never the checkout
-itself — and asserts golangci-lint reports them):
+Four dependency directions are **CI failure conditions**, not review conventions: `api` and
+`cmd/agenthub-gui` import no `internal/*` ("the GUI is optional and unprivileged" is a compile-time
+property); `internal/mcp` is stdlib-only and the only package touching protocol implementation;
+`internal/pipeline` must not import `internal/ctlapi` (the data plane does not depend on the control
+plane); and `internal/mcp`, `internal/platform`, `internal/logx`, `internal/guard/*` carry zero
+business dependencies, so any layer can reuse them. The normative wording — and the numbering that
+code comments cite as "§2 rule 3" — is [canonical.md §2](canonical.md#hard-dependency-direction-constraints-enforced-at-compile-time-by-depguard).
 
-| # | Constraint | Why |
-|---|---|---|
-| 1 | `cmd/agenthub-gui` and `api` must not import any `internal/*` | "The GUI is optional and unprivileged" is a compile-time constraint, not a slogan |
-| 2 | `internal/mcp` depends only on the standard library; no other package may import a third-party MCP library | One protocol facade, and protocol-layer invariants we guarantee ourselves |
-| 3 | `internal/pipeline` must not import `internal/ctlapi` | The data plane does not depend on the control plane |
-| 4 | `internal/mcp`, `internal/platform`, `internal/logx`, `internal/guard/*` have zero business dependencies | The foundation must be safely reusable by any layer |
+What belongs here is how they are *held*: `internal/depguardtest` plants violating probes in the
+constrained packages — inside a disposable copy of the checkout, never the checkout itself — and
+asserts golangci-lint reports each one. A lint rule that is configured but not in effect is more
+dangerous than no rule at all, so the implicit fifth constraint is that **every rule must have a
+failing case**, and that case must not be able to pass by skipping itself.
 
-A lint rule that is configured but not in effect is more dangerous than no rule at all, so the implicit
-fifth constraint is: **every rule must have a failing case.**
-
-`internal/tier` (the three-level read / write / destructive vocabulary) exists as a standalone leaf
-package precisely because of these constraints: five packages need to say the word "read," and none of
-them should import another to do it. It used to live in `pipeline`, which meant the control plane had
-to import the data plane's execution package just to say "tier" — and that import made the failing case
-for "pipeline must not import ctlapi" produce an **import cycle rather than a lint error**, rendering
-the rule unprovable.
+The layering is also why `internal/tier` is a standalone leaf rather than a type inside `pipeline`:
+five packages need to say the word "read", and none of them should import another to do it. canonical.md
+§2 records what the old placement cost — it turned rule 3's failing case into an import cycle rather
+than a lint error, which left the rule unprovable.
 
 ---
 
@@ -279,12 +276,12 @@ flowchart LR
 
 Each flow has one property you must not forget:
 
-- **Config flow**: the `generation` criterion is "what I read is ≥ what I applied," not "equals the Rev
-  in the event." Events are notifications and carry no snapshot; under several rapid successive writes,
-  an equality test leaves you stuck on an old version waiting for an event that will never come again.
-- **Credential flow**: the vault key has been the composite `(serverID, scopeName)` since day one.
-  Retrofitting it would touch every singleton in the token store, callback server, and refresh
-  coordinator, so it isn't something you can "do simply for now."
+- **Config flow**: events are notifications and carry no snapshot, so the reader re-reads the file and
+  adopts on "generation read ≥ generation applied" — never on equality with the event's `Rev`
+  ([canonical.md §5c](canonical.md#5c-the-config-hot-reload-path-two-things-not-to-get-wrong) has both
+  rulings, `modules/foundation.md` the mechanism).
+- **Credential flow**: the vault key is the composite `(serverID, scopeName)` and has been since day
+  one — one of the three things canonical.md §4 says must never be retrofitted.
 - **Observability flow**: **the audit never records args** — the field doesn't exist at the type level,
   only `argsHash`. The raw arguments only ever flow through memory and the SSE channel.
 
@@ -423,14 +420,10 @@ call itself instead — after all the gates, immediately before actually hitting
 
 The two are **siblings, not parent and child**: a dev process can't reach the installed copy's registry
 by walking up one level, and `rm -rf` on one won't take the other with it. Which one you get is decided
-by the `channel` at the binary's entry point (`main.channel` defaults to `"dev"`; only a build made
-explicitly for release resolves to the installed location). `internal/platform` itself doesn't make that
-choice — it only resolves a path given an environment.
-**Failure direction: a build that forgot to declare its channel gets the dev directory, never the
-release directory.** Guessing wrong in that direction costs you one extra sandbox; guessing wrong the
-other way burns the one-shot OAuth refresh token in the user's real installation, and that's
-unrecoverable. An explicit `AGENTHUB_DATA_DIR` still takes precedence over both (CI, e2e, and anyone
-running two sandboxes at once rely on it).
+by the `channel` at the binary's entry point, defaulting to dev — `internal/platform` itself makes no
+such choice, it only resolves a path given an environment. `AGENTHUB_DATA_DIR` overrides both, which is
+what lets CI, e2e and two concurrent sandboxes coexist. The failure direction and what it costs to get
+backwards are in [canonical.md §1](canonical.md#1-frozen-identifiers-abi-unchangeable-as-of-v1).
 
 The config source of truth is always the files, **not the daemon's memory**. When the daemon is offline
 the CLI writes files directly (hold lock + atomic write); when it's online it writes via the daemon —
@@ -445,21 +438,20 @@ uses a monotonic generation counter plus event pushes; mtime plays no semantic r
 |---|---|
 | macOS | Fully supported, covered by CI |
 | Linux | Fully supported, covered by CI |
-| Windows | **Not usable yet**: path and package-identity resolution is implemented and cross-compiled in CI, but the registry's cross-process lock and the control plane's named pipe are both still stubs, so configuration can't be read and the daemon can't start. See [windows.md](windows.md) |
+| Windows | **Not usable yet**: paths and package identity resolve and cross-compile in CI, but the registry's cross-process lock and the control plane's named pipe are stubs, so configuration can't be read and the daemon can't start. [windows.md](windows.md) is the one place that tracks this |
 
 The GUI (`cmd/agenthub-gui`) is **not** part of the default build: linking a webview needs GTK/WebKit
 dev packages, which the Linux CI runner lacks. All Wails code sits behind `//go:build wails`; build it
 separately with `make gui`.
 
-CI coverage comes in two layers. The untagged half (the `services` service body, the golden test in
-`cmd/agenthub-gui/internal/healthgen`) is already inside `make test`'s `go test ./...` and runs on both
-matrix legs; the
-`wails`-tagged shell and the frontend are covered by a **separate `gui` job** (`make gui-frontend-ci` +
-`make gui-go` + `make gui-vet`), which runs on a macOS runner — on Linux, `-tags wails` fails in
-the cgo preamble (`pkg-config: gtk4 webkitgtk-6.0`) before even `go vet` can pass, whereas the macOS
-runner ships with the Cocoa/WebKit SDK and needs no packages installed. This job is deliberately **not**
-in `make ci`: "the GUI is optional" is a compile-time property, and it must not become a prerequisite of
-the default build.
+Its CI coverage comes in two layers, and the split is worth knowing before you move code across it. The
+untagged half (the `services` service body, the golden test in `cmd/agenthub-gui/internal/healthgen`) is
+already inside `make test`'s `go test ./...` on both matrix legs. The `wails`-tagged shell and the
+frontend need a **separate `gui` job** (`make gui-frontend-ci` + `make gui-go` + `make gui-vet`) on a
+**macOS** runner: on Linux `-tags wails` dies in the cgo preamble (`pkg-config: gtk4 webkitgtk-6.0`)
+before `go vet` can even run, while the macOS runner ships the Cocoa/WebKit SDK and needs nothing
+installed. That job stays out of `make ci` on purpose — "the GUI is optional" is a compile-time
+property, and it must not become a prerequisite of the default build.
 
 ---
 
@@ -473,6 +465,12 @@ them. The docs call them out because "thought it was in effect but it wasn't" is
 | Capability | Implementation status | Assembly status |
 |---|---|---|
 | `integrity` drift grading | Complete (fingerprints, grading) | The gateway uses integrity to compute the live-definition fingerprint for HITL and honors disable and quarantine during aggregation (`internal/gateway/toolpolicy.go`); **automatic drift detection isn't wired into the data plane yet** — the quarantine set has to be written by the CLI/daemon |
+
+This table is a summary, and a summary of an unwired list is exactly the sort of thing that outlives its
+subject. The authoritative inventory is the "Still without a non-test caller" sentence in
+[modules/security.md](modules/security.md), which `TestSecurityDocsUnwiredListIsStillTrue` checks in the
+forward direction: wire one of those symbols up and the test fails until the doc is corrected. Read that
+list, not this row, when the question is what is switched on today.
 
 The following are **deliberate** boundaries, not to-dos: Windows only has a cross-compile gate (no
 verification on real hardware), the GUI isn't part of the default build, skills materialization only

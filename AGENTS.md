@@ -5,8 +5,12 @@ shared by every AI client (Claude Code, Cursor, Codex, Open WebUI, and others). 
 dual-mode gateway (stdio, one process per client / daemon, hosting the shared HTTP pool and the
 coordination plane).
 
-**Feature-complete against its design.** The work from here is polish, bug fixes, and problems
-surfaced by real use — not new feature milestones.
+**Feature-complete against its design** (as of 2026-07-30, with CI green on macOS + Linux and
+end-to-end acceptance passing against real downstream MCP servers). The work from here is polish, bug
+fixes, and problems surfaced by real use — not new feature milestones. A claim like this one decays
+without saying so, hence the date: what is actually reached at runtime today is
+[docs/architecture.md §12](docs/architecture.md#12-assembly-status-implemented-but-not-yet-wired-up)
+and the test-watched inventory it points at.
 
 ## What to read first
 

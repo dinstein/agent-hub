@@ -362,12 +362,12 @@ none gets silently reopened, and the numbering is cited from code.
    re-encoding sits on the delivery path **after** the pipeline's injection and leak scans — which is
    what makes "leakguard scans pre-encoding text" structurally true rather than merely intended.
 
-   Two-stage describe is part of the same ruling: `describe_tool` joined the meta-tools, making five in
-   a frozen order (`status, search_tools, describe_tool, call_tool, fetch_result`). Its visibility
-   predicate is exactly `Surface.byExposed` — the same set as search/tools_list/call, so it is
-   structurally impossible for it to be wider — and it emits **only one per-id error, `not_found`**
-   (nonexistent, out of scope, quarantined and disabled all share the copy), because differentiated
-   errors would make it an enumeration oracle. Same rule as `fetch_result`.
+   Two-stage describe is part of the same ruling: the meta-tools are **five, in a frozen order**
+   (`status, search_tools, describe_tool, call_tool, fetch_result`); `describe_tool`'s visibility
+   predicate is exactly `Surface.byExposed`, so it is structurally impossible for it to be wider than
+   search/tools_list/call; and it emits **one per-id error only, `not_found`** — nonexistent, out of
+   scope, quarantined and disabled all share the copy, because differentiated errors would make it an
+   enumeration oracle. Same rule as `fetch_result`.
 5. ~~A workable story for macOS keychain ACLs and unsigned development binaries~~ → **Decided (M1):
    yes, dev mode falls back to `secrets.enc` automatically.** Every `go build` produces a new unsigned
    binary, so the keychain ACL prompts again each time; when keyring availability detection fails, or
