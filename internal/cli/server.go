@@ -727,15 +727,17 @@ type stdinEntry struct {
 //
 // Every transport is accepted, not just stdio. The kind comes from "type" or,
 // failing that, "transport"; with neither, a non-empty "url" means http and
-// anything else means stdio. Three spellings of streamable-http are folded
-// into http ("streamable-http", "streamableHttp", "http-stream").
+// anything else means stdio.
 //
-// The matching here is EXACT, not case-folded, and the alias set is narrower
-// than internal/catalog's paste parser, which lowercases its input and also
-// accepts "local", "command", "streamable_http" and "remote". Both parse the
-// same kind of pasted snippet, so a snippet `catalog` accepts can be rejected
-// here; TestNormalizeStdinTransportSpellings pins the current boundary so that
-// gap is visible rather than folklore.
+// The marker itself is resolved by catalog.TransportFromSpelling, the ONE
+// table both paste paths use. They used to carry separate ones: the catalog
+// folded case and accepted "local", "command", "streamable_http" and
+// "remote", while this path matched exactly and knew only three spellings of
+// streamable-http — so a snippet `agenthub catalog` accepted, `server add
+// --stdin` refused, for no reason a user could infer from either. Sharing the
+// table is what closed that, and TestNormalizeStdinAgreesWithTheCatalogOnSpellings
+// drives the table's whole input set through here, so re-inlining a private
+// copy fails in that test rather than in somebody's paste.
 //
 // Unmodeled keys are an ERROR rather than a silent drop; see the decoder below
 // for why that direction is not negotiable.
