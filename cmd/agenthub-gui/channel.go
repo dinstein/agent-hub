@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/dinstein/agent-hub/api"
 )
@@ -62,5 +63,54 @@ func applyChannel() {
 	}
 	if err := os.Setenv("AGENTHUB_DATA_DIR", dir); err != nil {
 		fmt.Fprintf(os.Stderr, "agenthub-gui: could not point this development build at %s: %v\n", dir, err)
+	}
+	applyChannelEndpoint()
+}
+
+// applyChannelEndpoint finishes the job on platforms where moving the data
+// directory does not move the control endpoint.
+//
+// On Unix it does, which is why one assignment was enough for two years: the
+// socket is <run>/ctl.sock, the run directory follows the data directory, and
+// both sides — this GUI and the daemon it spawns — recompute the same path from
+// the variable already set above. A Windows control endpoint is a named pipe
+// whose name comes from the user's SID, so it follows nothing: without this, a
+// development GUI would dial \\.\pipe\agenthub-ctl-<sha8(SID)>, which is the
+// INSTALLED RELEASE's endpoint, and then operate on the release's servers,
+// credentials and approvals while its own data directory sat unused. Everything
+// would look like it worked.
+//
+// AGENTHUB_SOCKET, rather than passing a path into api.StartOptions, for the
+// same reason applyChannel uses the environment at all: DialOrStart spawns
+// `agenthub daemon start`, and the child has to arrive at the same endpoint.
+//
+// Failure direction: a variable the user already set is left alone, and a
+// resolution failure is reported and survived. The GUI's reason for opening
+// when things are broken is to be the surface you diagnose them from.
+func applyChannelEndpoint() { applyChannelEndpointFor(runtime.GOOS) }
+
+// applyChannelEndpointFor is applyChannelEndpoint with the platform named, so
+// the Windows branch is reachable from a test on the machines that run them.
+func applyChannelEndpointFor(goos string) {
+	// Windows only, and the narrowness is deliberate. Setting AGENTHUB_SOCKET
+	// everywhere would pin the endpoint where it is currently DERIVED, and the
+	// derivation has a rule this function does not know: on Linux the socket
+	// leaves XDG_RUNTIME_DIR as soon as the data directory moves. Pinning it
+	// here would freeze one answer to that question at GUI startup and hand the
+	// same answer to a daemon that should have computed its own.
+	if goos != "windows" {
+		return
+	}
+	if v, ok := os.LookupEnv("AGENTHUB_SOCKET"); ok && v != "" {
+		return
+	}
+	pipe, err := api.DevSocketPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "agenthub-gui: development build could not resolve its control endpoint: %v\n", err)
+		fmt.Fprintln(os.Stderr, "agenthub-gui: continuing against the default endpoint, which is the RELEASE one")
+		return
+	}
+	if err := os.Setenv("AGENTHUB_SOCKET", pipe); err != nil {
+		fmt.Fprintf(os.Stderr, "agenthub-gui: could not point this development build at %s: %v\n", pipe, err)
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -69,6 +70,70 @@ func TestReleaseChannelIsLeftAlone(t *testing.T) {
 	}
 	if after != before {
 		t.Errorf("a release build moved its socket from %q to %q", before, after)
+	}
+}
+
+// On Windows the data directory is not enough: the control endpoint is a named
+// pipe derived from the user's SID, so moving the directory leaves the endpoint
+// exactly where it was — the installed release's. A development GUI would then
+// drive the release daemon's servers, credentials and approvals with nothing
+// appearing wrong.
+//
+// The platform is passed in because that branch is unreachable on the machines
+// this suite runs on, and an untested branch on the one platform nobody can run
+// is how the gap it closes got there in the first place.
+func TestDevChannelPinsTheEndpointOnWindows(t *testing.T) {
+	t.Setenv("AGENTHUB_DATA_DIR", "")
+	t.Setenv("AGENTHUB_SOCKET", "")
+
+	applyChannelEndpointFor("windows")
+
+	got := os.Getenv("AGENTHUB_SOCKET")
+	if got == "" {
+		t.Fatal("AGENTHUB_SOCKET was not set: a dev GUI would dial the release endpoint")
+	}
+	want, err := api.DevSocketPath()
+	if err != nil {
+		t.Fatalf("dev socket path: %v", err)
+	}
+	if got != want {
+		t.Errorf("AGENTHUB_SOCKET = %q, want the dev endpoint %q", got, want)
+	}
+}
+
+// The same precedence as the data directory: an endpoint the user named must
+// survive. Someone debugging two sandboxes at once passes AGENTHUB_SOCKET, and
+// a build flavour that overrode it would break them in a way that looks like
+// the tool is ignoring its own documented variable.
+func TestExplicitSocketWinsOverTheChannel(t *testing.T) {
+	const explicit = `\\.\pipe\somebody-elses-choice`
+	t.Setenv("AGENTHUB_DATA_DIR", "")
+	t.Setenv("AGENTHUB_SOCKET", explicit)
+
+	applyChannelEndpointFor("windows")
+
+	if got := os.Getenv("AGENTHUB_SOCKET"); got != explicit {
+		t.Errorf("AGENTHUB_SOCKET = %q, want the explicit %q", got, explicit)
+	}
+}
+
+// Off Windows the endpoint must stay DERIVED, not pinned. The socket follows
+// the run directory, which follows the data directory — and on Linux it also
+// leaves the shared XDG_RUNTIME_DIR the moment that directory moves. Freezing a
+// path at GUI startup would answer that question once, for a daemon that has to
+// answer it itself.
+func TestDevChannelDoesNotPinTheEndpointOffWindows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the pinning branch is the correct behavior here")
+	}
+	t.Setenv("AGENTHUB_DATA_DIR", "")
+	t.Setenv("AGENTHUB_SOCKET", "")
+
+	channel = "dev"
+	applyChannel()
+
+	if got := os.Getenv("AGENTHUB_SOCKET"); got != "" {
+		t.Errorf("AGENTHUB_SOCKET = %q on %s; the endpoint must stay derived here", got, runtime.GOOS)
 	}
 }
 
