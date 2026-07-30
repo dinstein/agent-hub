@@ -31,6 +31,10 @@ const (
 	headerRetryAfter      = "Retry-After"
 	headerAccept          = "Accept"
 	headerContentType     = "Content-Type"
+	// Required on every POST once 2026-07-28 is negotiated: the JSON-RPC
+	// method, and the tool/resource/prompt name when the params carry one.
+	headerMcpMethod = "Mcp-Method"
+	headerMcpName   = "Mcp-Name"
 
 	mediaJSON = "application/json"
 	mediaSSE  = "text/event-stream"

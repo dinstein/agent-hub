@@ -63,12 +63,12 @@ func spawn(t *testing.T, script *fakemcp.Script) transport.Transport {
 func smoke(t *testing.T, tr transport.Transport) {
 	t.Helper()
 	ctx := testCtx(t)
-	res, err := transport.Initialize(ctx, tr, clientInfo)
+	res, err := transport.Handshake(ctx, tr, clientInfo)
 	if err != nil {
-		t.Fatalf("initialize: %v (stderr: %q)", err, tr.Stderr())
+		t.Fatalf("handshake: %v (stderr: %q)", err, tr.Stderr())
 	}
-	if res.ProtocolVersion != mcp.ProtocolVersion {
-		t.Fatalf("negotiated %q, want %q", res.ProtocolVersion, mcp.ProtocolVersion)
+	if res.Version != mcp.ProtocolVersion {
+		t.Fatalf("negotiated %q, want %q", res.Version, mcp.ProtocolVersion)
 	}
 	if res.ServerInfo.Name != "fakemcp" {
 		t.Fatalf("serverInfo %+v", res.ServerInfo)
@@ -115,7 +115,7 @@ func TestSubprocessSmoke(t *testing.T) {
 // call must end with the context error, not hang.
 func TestInProcessSlowResponseTimesOut(t *testing.T) {
 	tr := connect(t, fakemcp.Minimal().With(fakemcp.SlowResponse(mcp.MethodPing, 30*time.Second)))
-	if _, err := transport.Initialize(testCtx(t), tr, clientInfo); err != nil {
+	if _, err := transport.Handshake(testCtx(t), tr, clientInfo); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -134,7 +134,7 @@ func TestInProcessSlowResponseTimesOut(t *testing.T) {
 // connection still serves later requests.
 func TestInProcessNeverRespond(t *testing.T) {
 	tr := connect(t, fakemcp.Minimal().With(fakemcp.NeverRespond(mcp.MethodPing)))
-	if _, err := transport.Initialize(testCtx(t), tr, clientInfo); err != nil {
+	if _, err := transport.Handshake(testCtx(t), tr, clientInfo); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -150,7 +150,7 @@ func TestInProcessNeverRespond(t *testing.T) {
 // Mid-handshake crash: initialize is consumed, then the stream closes.
 func TestInProcessCrashOnInitialize(t *testing.T) {
 	tr := connect(t, fakemcp.Minimal().With(fakemcp.CrashOn(mcp.MethodInitialize)))
-	_, err := transport.Initialize(testCtx(t), tr, clientInfo)
+	_, err := transport.Handshake(testCtx(t), tr, clientInfo)
 	var te *transport.Error
 	if !errors.As(err, &te) || te.Class != transport.ClassUnavailable {
 		t.Fatalf("err = %v, want ClassUnavailable", err)
@@ -162,7 +162,7 @@ func TestInProcessVersionMismatch(t *testing.T) {
 	script := fakemcp.Minimal()
 	script.ProtocolVersion = "1999-01-01"
 	tr := connect(t, script)
-	_, err := transport.Initialize(testCtx(t), tr, clientInfo)
+	_, err := transport.Handshake(testCtx(t), tr, clientInfo)
 	if !errors.Is(err, mcp.ErrUnsupportedVersion) {
 		t.Fatalf("err = %v, want ErrUnsupportedVersion", err)
 	}
@@ -176,7 +176,7 @@ func TestInProcessVersionMismatch(t *testing.T) {
 // the connection with the typed sentinel.
 func TestInProcessHugeResponse(t *testing.T) {
 	tr := connect(t, fakemcp.Minimal().With(fakemcp.HugeResponse(mcp.MethodToolsList, 0)))
-	if _, err := transport.Initialize(testCtx(t), tr, clientInfo); err != nil {
+	if _, err := transport.Handshake(testCtx(t), tr, clientInfo); err != nil {
 		t.Fatal(err)
 	}
 	_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
@@ -207,7 +207,7 @@ func TestInProcessProtocolViolations(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tr := connect(t, fakemcp.Minimal().With(tt.rule))
-			if _, err := transport.Initialize(testCtx(t), tr, clientInfo); err != nil {
+			if _, err := transport.Handshake(testCtx(t), tr, clientInfo); err != nil {
 				t.Fatal(err)
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -237,7 +237,7 @@ func TestInProcessListChangedStorm(t *testing.T) {
 	tr := connect(t, fakemcp.Minimal().With(fakemcp.ListChangedStorm(mcp.MethodPing, n, time.Millisecond)))
 	got := make(chan transport.ChangeMask, n+1)
 	tr.OnListChanged(func(mask transport.ChangeMask) { got <- mask })
-	if _, err := transport.Initialize(testCtx(t), tr, clientInfo); err != nil {
+	if _, err := transport.Handshake(testCtx(t), tr, clientInfo); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tr.Call(testCtx(t), mcp.MethodPing, nil); err != nil {
@@ -261,7 +261,7 @@ func TestInProcessStderrTailWindow(t *testing.T) {
 	script := fakemcp.Minimal()
 	script.StderrBanner = strings.Repeat("n", 8<<10) + "TAIL-MARKER"
 	tr := connect(t, script)
-	if _, err := transport.Initialize(testCtx(t), tr, clientInfo); err != nil {
+	if _, err := transport.Handshake(testCtx(t), tr, clientInfo); err != nil {
 		t.Fatal(err)
 	}
 	tail := tr.Stderr()
@@ -279,7 +279,7 @@ func TestInProcessNthCallRule(t *testing.T) {
 	rule.Call = 2
 	tr := connect(t, fakemcp.Minimal().With(rule))
 	ctx := testCtx(t)
-	if _, err := transport.Initialize(ctx, tr, clientInfo); err != nil {
+	if _, err := transport.Handshake(ctx, tr, clientInfo); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tr.Call(ctx, mcp.MethodPing, nil); err != nil {
@@ -295,7 +295,7 @@ func TestInProcessNthCallRule(t *testing.T) {
 
 func TestSubprocessCrashOnInitialize(t *testing.T) {
 	tr := spawn(t, fakemcp.Minimal().With(fakemcp.CrashOn(mcp.MethodInitialize)))
-	_, err := transport.Initialize(testCtx(t), tr, clientInfo)
+	_, err := transport.Handshake(testCtx(t), tr, clientInfo)
 	var te *transport.Error
 	if !errors.As(err, &te) || te.Class != transport.ClassUnavailable {
 		t.Fatalf("err = %v, want ClassUnavailable", err)
@@ -308,7 +308,7 @@ func TestSubprocessCrashOnInitialize(t *testing.T) {
 
 func TestSubprocessHugeResponse(t *testing.T) {
 	tr := spawn(t, fakemcp.Minimal().With(fakemcp.HugeResponse(mcp.MethodToolsList, 0)))
-	if _, err := transport.Initialize(testCtx(t), tr, clientInfo); err != nil {
+	if _, err := transport.Handshake(testCtx(t), tr, clientInfo); err != nil {
 		t.Fatal(err)
 	}
 	_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
@@ -322,7 +322,7 @@ func TestSubprocessStderrTailWindow(t *testing.T) {
 	script := fakemcp.Minimal()
 	script.StderrBanner = strings.Repeat("n", 8<<10) + "TAIL-MARKER"
 	tr := spawn(t, script)
-	if _, err := transport.Initialize(testCtx(t), tr, clientInfo); err != nil {
+	if _, err := transport.Handshake(testCtx(t), tr, clientInfo); err != nil {
 		t.Fatal(err)
 	}
 	// The exec stderr copier is asynchronous; poll briefly.
@@ -382,7 +382,7 @@ func TestConfiguredToolResultAndUnknownTool(t *testing.T) {
 	}
 	tr := connect(t, script)
 	ctx := testCtx(t)
-	if _, err := transport.Initialize(ctx, tr, clientInfo); err != nil {
+	if _, err := transport.Handshake(ctx, tr, clientInfo); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := tr.Call(ctx, mcp.MethodToolsCall, mcp.CallToolParams{Name: "fixed"})

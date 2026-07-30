@@ -92,7 +92,7 @@ func TestStreamableHTTPSingleJSONResponse(t *testing.T) {
 	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
 
 	// Version negotiation goes through the shared initialize.go path.
-	res, err := Initialize(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"})
+	res, err := initializeLegacy(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"})
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
@@ -112,6 +112,77 @@ func TestStreamableHTTPSingleJSONResponse(t *testing.T) {
 	}
 	if string(raw) != `{"tools":[]}` {
 		t.Fatalf("result = %s", raw)
+	}
+}
+
+// TestStreamableHTTP2026Handshake covers the discover-based handshake: no
+// initialize round-trip, and every later POST carries the per-request _meta
+// plus the Mcp-Method / Mcp-Name headers.
+func TestStreamableHTTP2026Handshake(t *testing.T) {
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		msg := readRPC(t, r)
+		m, ok := msg.(*mcp.Request)
+		if !ok {
+			t.Errorf("unexpected message %T", msg)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		switch m.Method {
+		case mcp.MethodInitialize:
+			t.Error("2026 handshake must not send initialize")
+			w.WriteHeader(http.StatusBadRequest)
+		case mcp.MethodDiscover:
+			result, _ := json.Marshal(mcp.DiscoverResult{
+				ResultType:       mcp.ResultTypeComplete,
+				ProtocolVersions: []string{"2026-07-28"},
+				ServerInfo:       mcp.Implementation{Name: "stub2026", Version: "1"},
+			})
+			writeJSONRPC(t, w, mcp.NewResponse(m.ID, result))
+		case mcp.MethodToolsCall:
+			if got := r.Header.Get(headerMcpMethod); got != mcp.MethodToolsCall {
+				t.Errorf("Mcp-Method = %q, want %q", got, mcp.MethodToolsCall)
+			}
+			if got := r.Header.Get(headerMcpName); got != "echo" {
+				t.Errorf("Mcp-Name = %q, want %q", got, "echo")
+			}
+			if got := r.Header.Get(headerProtocolVersion); got != mcp.Version2026 {
+				t.Errorf("protocol header = %q, want %q", got, mcp.Version2026)
+			}
+			var p struct {
+				Name string           `json:"name"`
+				Meta *mcp.RequestMeta `json:"_meta"`
+			}
+			if err := json.Unmarshal(m.Params, &p); err != nil {
+				t.Errorf("decode tools/call params %s: %v", m.Params, err)
+			}
+			if p.Meta == nil || p.Meta.ProtocolVersion != mcp.Version2026 {
+				t.Errorf("tools/call _meta = %+v, want protocolVersion %q", p.Meta, mcp.Version2026)
+			}
+			writeJSONRPC(t, w, mcp.NewResponse(m.ID, json.RawMessage(`{"resultType":"complete","content":[]}`)))
+		default:
+			t.Errorf("unexpected method %q", m.Method)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	})
+
+	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+	res, err := Handshake(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"})
+	if err != nil {
+		t.Fatalf("Handshake: %v", err)
+	}
+	if res.Version != mcp.Version2026 {
+		t.Fatalf("negotiated %q, want %q", res.Version, mcp.Version2026)
+	}
+	// The discover POST itself must not carry Mcp-Method: the header set
+	// only turns on once 2026 is negotiated (the recorded first request
+	// pins the pre-negotiation state).
+	if got := fs.recorded()[0].Header[headerMcpMethod]; got != "" {
+		t.Fatalf("discover POST carried Mcp-Method %q before negotiation", got)
+	}
+	if _, err := tr.Call(testCtx(t), mcp.MethodToolsCall, mcp.CallToolParams{
+		Name: "echo", Arguments: json.RawMessage(`{"s":"hi"}`),
+	}); err != nil {
+		t.Fatalf("tools/call: %v", err)
 	}
 }
 

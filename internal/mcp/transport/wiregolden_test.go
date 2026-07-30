@@ -83,7 +83,7 @@ func TestStreamableHTTPWireGolden(t *testing.T) {
 		URL:    fs.URL + "/mcp",
 		Header: http.Header{"Authorization": []string{"Bearer golden-token"}},
 	})
-	if _, err := Initialize(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"}); err != nil {
+	if _, err := initializeLegacy(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	if _, err := tr.Call(testCtx(t), mcp.MethodToolsList, mcp.ListToolsParams{}); err != nil {
@@ -118,7 +118,7 @@ func TestHTTPSSEWireGolden(t *testing.T) {
 		}
 		ls.events <- mcp.NewResponse(req.ID, initResult(t, mcp.ProtocolVersion))
 	}()
-	if _, err := Initialize(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"}); err != nil {
+	if _, err := initializeLegacy(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	// The initialized notification is fire-and-forget; wait for the server

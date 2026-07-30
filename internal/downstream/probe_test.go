@@ -66,10 +66,15 @@ func (t *scriptedTransport) Close() error {
 
 // handshakeAnswer serves initialize and the CONNECT-TIME tools/list so
 // Connect succeeds, then delegates everything else — including every later
-// tools/list — to next.
+// tools/list — to next. server/discover is answered like a pre-2026 server
+// (method-not-found), driving Handshake down the legacy initialize path.
 func handshakeAnswer(next func(method string, n int) (json.RawMessage, error)) func(string, int) (json.RawMessage, error) {
 	return func(method string, n int) (json.RawMessage, error) {
 		switch {
+		case method == mcp.MethodDiscover:
+			return nil, &transport.Error{Class: transport.ClassFatal, Err: &mcp.Error{
+				Code: mcp.CodeMethodNotFound, Message: "scripted server predates server/discover",
+			}}
 		case method == mcp.MethodInitialize:
 			return json.RawMessage(`{"protocolVersion":"2025-11-25","capabilities":{},` +
 				`"serverInfo":{"name":"scripted","version":"1"}}`), nil

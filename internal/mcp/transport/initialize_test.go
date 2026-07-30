@@ -49,7 +49,7 @@ func TestInitializeNegotiation(t *testing.T) {
 				gotInitialized <- ok && n.Method == mcp.NotificationInitialized
 			}()
 
-			res, err := Initialize(testCtx(t), c, mcp.Implementation{Name: "agenthub", Version: "test"})
+			res, err := initializeLegacy(testCtx(t), c, mcp.Implementation{Name: "agenthub", Version: "test"})
 
 			ip := <-serverSaw
 			if ip.ProtocolVersion != mcp.ProtocolVersion {
@@ -88,7 +88,7 @@ func TestInitializeNegotiation(t *testing.T) {
 func TestHandshakeDiscover2026(t *testing.T) {
 	c, p := newPipeConn(t, mcp.MaxFrameSize)
 	paramsSeen := make(chan mcp.DiscoverParams, 1)
-	afterMethod := make(chan string, 1)
+	after := make(chan *mcp.Request, 1)
 	go func() {
 		req := p.nextRequest()
 		if req.Method != mcp.MethodDiscover {
@@ -109,7 +109,7 @@ func TestHandshakeDiscover2026(t *testing.T) {
 		// The stateless path must not send notifications/initialized: the
 		// next frame after the handshake has to be the follow-up request.
 		next := p.nextRequest()
-		afterMethod <- next.Method
+		after <- next
 		p.writeFrame(mcp.NewResponse(next.ID, json.RawMessage(`{"tools":[]}`)))
 	}()
 
@@ -136,8 +136,20 @@ func TestHandshakeDiscover2026(t *testing.T) {
 	if _, err := c.Call(testCtx(t), mcp.MethodToolsList, nil); err != nil {
 		t.Fatal(err)
 	}
-	if m := <-afterMethod; m != mcp.MethodToolsList {
-		t.Fatalf("frame after handshake was %q, want %q (stateless path must not send notifications/initialized)", m, mcp.MethodToolsList)
+	next := <-after
+	if next.Method != mcp.MethodToolsList {
+		t.Fatalf("frame after handshake was %q, want %q (stateless path must not send notifications/initialized)", next.Method, mcp.MethodToolsList)
+	}
+	// Post-handshake requests carry the negotiated _meta, even with nil
+	// caller params.
+	var lp struct {
+		Meta *mcp.RequestMeta `json:"_meta"`
+	}
+	if err := json.Unmarshal(next.Params, &lp); err != nil {
+		t.Fatalf("decode tools/list params %s: %v", next.Params, err)
+	}
+	if lp.Meta == nil || lp.Meta.ProtocolVersion != mcp.Version2026 {
+		t.Fatalf("tools/list _meta = %+v, want protocolVersion %q", lp.Meta, mcp.Version2026)
 	}
 }
 
@@ -277,7 +289,7 @@ func TestInitializeMalformedResult(t *testing.T) {
 		req := p.nextRequest()
 		p.writeFrame(mcp.NewResponse(req.ID, json.RawMessage(`"not an object"`)))
 	}()
-	_, err := Initialize(testCtx(t), c, mcp.Implementation{Name: "x", Version: "1"})
+	_, err := initializeLegacy(testCtx(t), c, mcp.Implementation{Name: "x", Version: "1"})
 	var te *Error
 	if !errors.As(err, &te) || te.Class != ClassFatal {
 		t.Fatalf("err = %v, want ClassFatal decode failure", err)

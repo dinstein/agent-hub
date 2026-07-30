@@ -59,12 +59,17 @@ type streamableHTTP struct {
 	mu           sync.Mutex
 	sessionID    string
 	protoVersion string
-	lastEventID  string
-	peer         PeerHandler
-	onChange     func(ChangeMask)
-	closed       bool
-	streamOn     bool
-	moved        bool // 410 seen: never dial this endpoint again
+	// reqMeta, when non-nil, switches the transport into 2026-07-28
+	// stateless mode: every outgoing message carries it as _meta, and every
+	// POST carries the Mcp-Method (and, when applicable, Mcp-Name) header.
+	// Set once by Handshake (via setNegotiated), before concurrent calls.
+	reqMeta     *mcp.RequestMeta
+	lastEventID string
+	peer        PeerHandler
+	onChange    func(ChangeMask)
+	closed      bool
+	streamOn    bool
+	moved       bool // 410 seen: never dial this endpoint again
 
 	peerSem   chan struct{}
 	wg        sync.WaitGroup
@@ -95,10 +100,29 @@ func DialStreamableHTTP(cfg HTTPConfig) (Transport, error) {
 	}, nil
 }
 
+// setNegotiated implements negotiatedSetter: Handshake records the outcome
+// here. It reuses the protoVersion slot the legacy path fills from
+// afterInitialize, so the MCP-Protocol-Version header stays correct on both.
+func (t *streamableHTTP) setNegotiated(version string, meta *mcp.RequestMeta) {
+	t.mu.Lock()
+	t.protoVersion = version
+	t.reqMeta = meta
+	t.mu.Unlock()
+}
+
+func (t *streamableHTTP) currentMeta() *mcp.RequestMeta {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.reqMeta
+}
+
 // Call implements Transport.
 func (t *streamableHTTP) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	raw, err := marshalParams(params)
 	if err != nil {
+		return nil, &Error{Class: ClassFatal, Err: err}
+	}
+	if raw, err = injectMeta(raw, t.currentMeta()); err != nil {
 		return nil, &Error{Class: ClassFatal, Err: err}
 	}
 	if err := t.stateErr(); err != nil {
@@ -110,7 +134,7 @@ func (t *streamableHTTP) Call(ctx context.Context, method string, params any) (j
 		return nil, err
 	}
 
-	resp, terr := t.post(ctx, body)
+	resp, terr := t.post(ctx, body, method, nameForHeader(raw))
 	if terr != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			t.sendCancelled(id, ctxErr)
@@ -155,11 +179,14 @@ func (t *streamableHTTP) Notify(ctx context.Context, method string, params any) 
 	if err := t.stateErr(); err != nil {
 		return err
 	}
+	if raw, err = injectMeta(raw, t.currentMeta()); err != nil {
+		return &Error{Class: ClassFatal, Err: err}
+	}
 	body, err := encodeMessage(mcp.NewNotification(method, raw), t.maxFrame)
 	if err != nil {
 		return err
 	}
-	resp, terr := t.post(ctx, body)
+	resp, terr := t.post(ctx, body, method, "")
 	if terr != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
@@ -226,13 +253,22 @@ func (t *streamableHTTP) stateErr() *Error {
 
 // post sends one message and returns the 2xx response with its body still
 // open. Non-2xx bodies are drained and turned into typed errors here.
-func (t *streamableHTTP) post(ctx context.Context, body []byte) (*http.Response, *Error) {
+// method and name feed the Mcp-Method / Mcp-Name headers MCP 2026-07-28
+// requires on every POST; both are ignored in pre-2026 mode, and an empty
+// method (a JSON-RPC response being POSTed back) suppresses them.
+func (t *streamableHTTP) post(ctx context.Context, body []byte, method, name string) (*http.Response, *Error) {
 	req, err := t.newRequest(ctx, http.MethodPost, t.endpoint, body)
 	if err != nil {
 		return nil, &Error{Class: ClassFatal, Err: fmt.Errorf("build request: %w", err)}
 	}
 	req.Header.Set(headerContentType, mediaJSON)
 	req.Header.Set(headerAccept, mediaJSON+", "+mediaSSE)
+	if t.currentMeta() != nil && method != "" {
+		req.Header.Set(headerMcpMethod, method)
+		if name != "" {
+			req.Header.Set(headerMcpName, name)
+		}
+	}
 	t.applyProtocolHeaders(req)
 
 	resp, err := t.client.Do(req)
@@ -626,7 +662,7 @@ func (t *streamableHTTP) answerPeer(h PeerHandler, req *mcp.Request) {
 			return
 		}
 	}
-	httpResp, terr := t.post(ctx, body)
+	httpResp, terr := t.post(ctx, body, "", "")
 	if terr != nil {
 		return // best effort: the next call will surface the real state
 	}
@@ -648,13 +684,16 @@ func (t *streamableHTTP) sendCancelled(id mcp.ID, cause error) {
 	if err != nil {
 		return
 	}
+	if raw, err = injectMeta(raw, t.currentMeta()); err != nil {
+		return
+	}
 	body, err := encodeMessage(mcp.NewNotification(mcp.NotificationCancelled, raw), t.maxFrame)
 	if err != nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(t.ctx, cancelForwardTimeout)
 	defer cancel()
-	resp, terr := t.post(ctx, body)
+	resp, terr := t.post(ctx, body, mcp.NotificationCancelled, "")
 	if terr == nil {
 		drainClose(resp)
 	}

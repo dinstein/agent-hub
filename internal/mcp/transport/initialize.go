@@ -9,17 +9,17 @@ import (
 	"github.com/dinstein/agent-hub/internal/mcp"
 )
 
-// Initialize performs the MCP handshake over an already-connected
-// transport: it sends initialize declaring mcp.ProtocolVersion, validates
-// the server's protocolVersion against mcp.SupportedVersions (downgrade
-// accepted, anything else is a typed failure satisfying
-// errors.Is(err, mcp.ErrUnsupportedVersion)), and on success sends the
-// notifications/initialized notification.
+// initializeLegacy performs the ≤ 2025-11-25 MCP handshake over an
+// already-connected transport: it sends initialize declaring
+// mcp.ProtocolVersion, validates the server's protocolVersion against
+// mcp.SupportedVersions (downgrade accepted, anything else is a typed
+// failure satisfying errors.Is(err, mcp.ErrUnsupportedVersion)), and on
+// success sends the notifications/initialized notification.
 //
-// The returned InitializeResult carries the negotiated (server) version in
-// ProtocolVersion. Handshake failures are ClassFatal: retrying the same
-// handshake cannot succeed, so they must not trip the circuit breaker.
-func Initialize(ctx context.Context, t Transport, clientInfo mcp.Implementation) (*mcp.InitializeResult, error) {
+// Handshake is the entry point; it lands here when the server does not
+// speak 2026-07-28. The returned InitializeResult carries the negotiated
+// (server) version in ProtocolVersion.
+func initializeLegacy(ctx context.Context, t Transport, clientInfo mcp.Implementation) (*mcp.InitializeResult, error) {
 	params := mcp.InitializeParams{
 		ProtocolVersion: mcp.ProtocolVersion,
 		Capabilities: mcp.ClientCapabilities{
@@ -125,6 +125,16 @@ func Handshake(ctx context.Context, t Transport, clientInfo mcp.Implementation) 
 	if v != mcp.Version2026 {
 		return handshakeLegacy(ctx, t, clientInfo)
 	}
+	s, ok := t.(negotiatedSetter)
+	if !ok {
+		// The transport cannot inject the per-request _meta the stateless
+		// protocol requires; sending bare requests would be rejected with
+		// -32602 by a strict server. Refuse rather than degrade (the
+		// "isolation claimed must be delivered or refused" direction).
+		return nil, &Error{Class: ClassFatal, Err: fmt.Errorf(
+			"transport %T cannot carry the per-request _meta MCP %s requires", t, v)}
+	}
+	s.setNegotiated(v, BuildRequestMeta(v, clientCapabilities2026(), clientInfo))
 	return &HandshakeResult{
 		Version:      v,
 		Capabilities: dres.Capabilities,
@@ -132,9 +142,9 @@ func Handshake(ctx context.Context, t Transport, clientInfo mcp.Implementation) 
 	}, nil
 }
 
-// handshakeLegacy adapts the Initialize result to a HandshakeResult.
+// handshakeLegacy adapts the initializeLegacy result to a HandshakeResult.
 func handshakeLegacy(ctx context.Context, t Transport, clientInfo mcp.Implementation) (*HandshakeResult, error) {
-	res, err := Initialize(ctx, t, clientInfo)
+	res, err := initializeLegacy(ctx, t, clientInfo)
 	if err != nil {
 		return nil, err
 	}

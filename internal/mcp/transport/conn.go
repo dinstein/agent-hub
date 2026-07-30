@@ -40,6 +40,10 @@ type conn struct {
 	peer     PeerHandler
 	onChange func(ChangeMask)
 	failErr  *Error // terminal state; set once under mu
+	// reqMeta, when non-nil, switches the conn into 2026-07-28 stateless
+	// mode: every outgoing request and notification carries it as _meta.
+	// Set once by Handshake (via setNegotiated), before concurrent calls.
+	reqMeta *mcp.RequestMeta
 
 	readDone  chan struct{}
 	closeOnce sync.Once
@@ -192,10 +196,27 @@ func (c *conn) handleNotification(n *mcp.Notification) {
 	}
 }
 
+// setNegotiated implements negotiatedSetter: Handshake records the outcome
+// here. The version itself is not needed — a non-nil meta is the 2026 gate.
+func (c *conn) setNegotiated(_ string, meta *mcp.RequestMeta) {
+	c.mu.Lock()
+	c.reqMeta = meta
+	c.mu.Unlock()
+}
+
+func (c *conn) currentMeta() *mcp.RequestMeta {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.reqMeta
+}
+
 // Call implements Transport.
 func (c *conn) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	raw, err := marshalParams(params)
 	if err != nil {
+		return nil, &Error{Class: ClassFatal, Err: err}
+	}
+	if raw, err = injectMeta(raw, c.currentMeta()); err != nil {
 		return nil, &Error{Class: ClassFatal, Err: err}
 	}
 	id := mcp.NewIntID(c.nextID.Add(1))
@@ -249,6 +270,9 @@ func (c *conn) Notify(_ context.Context, method string, params any) error {
 	if err != nil {
 		return &Error{Class: ClassFatal, Err: err}
 	}
+	if raw, err = injectMeta(raw, c.currentMeta()); err != nil {
+		return &Error{Class: ClassFatal, Err: err}
+	}
 	if fe := c.failedErr(); fe != nil {
 		return fe
 	}
@@ -276,6 +300,9 @@ func (c *conn) sendCancelled(id mcp.ID, ctx context.Context) {
 	}
 	raw, err := json.Marshal(mcp.CancelledParams{RequestID: id, Reason: reason})
 	if err != nil {
+		return
+	}
+	if raw, err = injectMeta(raw, c.currentMeta()); err != nil {
 		return
 	}
 	_ = c.fw.WriteFrame(mcp.NewNotification(mcp.NotificationCancelled, raw))

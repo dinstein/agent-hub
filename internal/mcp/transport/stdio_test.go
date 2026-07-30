@@ -41,7 +41,7 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18",
 read line2
 `
 	tr := spawnShellServer(t, script)
-	res, err := Initialize(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"})
+	res, err := initializeLegacy(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"})
 	if err != nil {
 		t.Fatalf("initialize: %v (stderr: %q)", err, tr.Stderr())
 	}

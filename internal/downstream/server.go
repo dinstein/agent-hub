@@ -497,11 +497,20 @@ func (s *Server) dialAndInit(ctx context.Context) (transport.Transport, *mcp.Ini
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("downstream %q: dial: %w", s.spec.ID, err)
 	}
-	initRes, err := transport.Initialize(ctx, tr, clientInfo)
+	hres, err := transport.Handshake(ctx, tr, clientInfo)
 	if err != nil {
-		err = fmt.Errorf("downstream %q: initialize: %w", s.spec.ID, withStderr(err, tr))
+		err = fmt.Errorf("downstream %q: handshake: %w", s.spec.ID, withStderr(err, tr))
 		_ = tr.Close()
 		return nil, nil, nil, err
+	}
+	// The stored *mcp.InitializeResult is the normalized handshake outcome:
+	// on the 2026-07-28 discover path no initialize ever ran, but the fields
+	// mean the same thing to every consumer (status, doctor, server test).
+	initRes := &mcp.InitializeResult{
+		ProtocolVersion: hres.Version,
+		Capabilities:    hres.Capabilities,
+		ServerInfo:      hres.ServerInfo,
+		Instructions:    hres.Instructions,
 	}
 	raw, err := s.callTransport(ctx, tr, mcp.MethodToolsList, nil)
 	if err != nil {
