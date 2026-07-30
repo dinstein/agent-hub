@@ -67,7 +67,7 @@ Two rules on it, both easy to undo by accident:
 - **The position is never set by the click.** `onChange` performs the write and the page repaints
   from the answer, so a refused write, a lost precondition or a cancelled confirmation leaves the
   switch showing what is *stored*. Optimistic flips have to be walked back, and the moment they are
-  wrong is exactly the moment the user looks away satisfied — the same reason approval rows gray out
+  wrong is exactly the moment the user looks away satisfied — the same reason a row grays out
   instead of vanishing (§5).
 
 ### 2.1 The Authenticate button signs in
@@ -144,33 +144,7 @@ an explicit note that closing it makes the value unrecoverable.
 
 ---
 
-## 5. The presentation layer for HITL
-
-The approval panel is the one part of the GUI that cannot be half-done — and it is all DOM + CSS:
-
-- pinned to the top, **non-blocking** for the rest of the interface (`role="alertdialog"` but
-  `aria-modal="false"`) — an approval box that locks the whole window makes people dismiss it just to
-  see the context they need
-- the subtitle states the mechanism outright: **"3 tool calls held — no decision auto-denies"**.
-  fail-closed belongs on the screen, not only in the docs
-- the countdown uses both a progress bar and a seconds readout, turning red at ≤20 seconds
-- **Esc = deny the oldest pending item** (denial is the safe direction)
-- three decision scopes: this call / this session / permanently — this is what keeps approval fatigue
-  in check
-- **decisions are not optimistically removed**: the row grays out and waits for backend confirmation,
-  otherwise it would "flash back" to pending
-
-**The dismiss scope for an isolation alert is a content signature** (a hash of the tool name plus
-timestamp), not a boolean. So a tool that was dismissed once and later drifted again **pops back up**.
-A persistent count badge in the sidebar backstops discoverability.
-
-**The quiescent card**: when nothing is wrong, a gray line reads "monitoring for tool tampering,
-poisoning, and injected output; nothing wrong right now". It costs almost nothing, but **protection
-the user cannot see generates no trust**.
-
----
-
-## 6. Show the equivalent CLI command next to every action
+## 5. Show the equivalent CLI command next to every action
 
 ```
 [Remove]  ⌘  agenthub server rm stripe
@@ -186,7 +160,7 @@ user knows what the commands look like.
 
 ---
 
-## 7. Explicitly not doing
+## 6. Explicitly not doing
 
 **Not rewriting in React + shadcn.** The cost, concretely: runtime dependencies go from 1 to roughly
 13 direct plus hundreds of transitive ones. For a **security gateway** product that supply-chain
@@ -213,7 +187,7 @@ zero runtime dependency).
 
 ---
 
-## 8. File map
+## 7. File map
 
 | File | Contents |
 |---|---|

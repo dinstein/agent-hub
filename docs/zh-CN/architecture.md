@@ -16,7 +16,7 @@ AgentHub 是本地的 Agent 服务枢纽：一份配置、一套凭据、一条�
 
 客户端以为自己连的是一个 MCP server，实际连的是 AgentHub 的网关；网关按当前会话的
 **有效作用域**决定它能看见哪些工具，每次调用都穿过**同一条执行管线**（门禁 → 下游 → 防护与整形），
-再把结果交回去。配置、凭据、审计、审批都收敛在这一层，客户端侧只剩一行 `command`。
+再把结果交回去。配置与凭据都收敛在这一层，客户端侧只剩一行 `command`。
 
 ---
 
@@ -34,7 +34,7 @@ flowchart LR
     end
     subgraph daemon["agenthub daemon（可选常驻）"]
         H["httpbridge：MCP 数据面 + agent token<br/>（默认不监听，--http-addr 显式开启）"]
-        CO["协调面：session 注册表 / 审批 broker<br/>overlay 分发 / OAuth 单飞 / 事件流"]
+        CO["协调面：session 注册表<br/>OAuth 单飞 / 事件流"]
         CP["ctlapi：REST + SSE over UDS"]
     end
     subgraph front["前端（平权）"]
@@ -51,7 +51,7 @@ flowchart LR
     G1 --> D1
     G2 --> D2
     H --> D3
-    G1 & G2 -.->|"ctl.sock：注册 / overlay / 审批"| CO
+    G1 & G2 -.->|"ctl.sock：注册 / 注册表变更通知"| CO
     CLI --> CP
     GUI --> CP
 ```
@@ -62,10 +62,11 @@ flowchart LR
 一个客户端的慢调用不会阻塞另一个、下游崩溃只影响一个客户端。
 
 **daemon 是可选的增值层，不是必需品。** 它承担三件事：HTTP 接入面（共享下游连接池）、
-控制面（CLI 与 GUI 的管理 API）、协调面（会话注册表、审批 broker、overlay 分发、OAuth 刷新单飞）。
+控制面（CLI 与 GUI 的管理 API）、协调面（会话注册表、OAuth 刷新单飞）。
 网关**永不自动拉起 daemon**——stdio 数据面对 daemon 零依赖是这个模型的核心卖点，
-自动拉起会把「可选」变成事实上的必选。daemon 不在时的降级是明确的：需要人审批的调用直接拒绝
-（fail-closed），会话级动态作用域不可用（静态三层照常），OAuth 刷新退回文件锁。
+自动拉起会把「可选」变成事实上的必选。daemon 不在时的降级如今在数据面上几乎观察不到：
+stdio 网关的 scope 完全来自注册表文件，杀掉 daemon 不改变任何客户端看到的东西；
+失去的是 `session ls` / `session kill`、事件流和共享 HTTP 池，OAuth 刷新退回文件锁。
 
 代价是多进程共写磁盘的纪律必须做对：日志每行一次 `O_APPEND` 写、指纹与隔离集用跨进程文件锁、
 安全事件跨进程去重。这些不是保险，是并发正确性依赖。
@@ -123,8 +124,7 @@ flowchart TD
     end
     subgraph L2["治理与配置"]
         SCOPE["internal/scope<br/>三层解析 + Merge"]
-        SESS["internal/session<br/>会话身份 + overlay"]
-        APPR["internal/approval<br/>HITL broker"]
+        SESS["internal/session<br/>会话身份"]
         SEC["internal/secrets<br/>四级凭据解析链"]
         OAUTH["internal/oauthflow<br/>发现/DCR/PKCE/刷新"]
         SKL["internal/skills<br/>库+安装两层"]
@@ -157,10 +157,10 @@ flowchart TD
 | `internal/confops` | **唯一**的语义写实现（加 server、改 profile、翻治理开关） | CLI 与控制面是同一套规则的两个前端，规则只有一份 |
 | `internal/scope` | 三层解析链 + `Merge` 纯函数 + 内容寻址 `EffectiveScope` | 「谁能看见什么」的全部判定；安全字段只能越收越紧 |
 | `internal/router` | 命名空间聚合与 `RouteOf` 唯一溯源 | 暴露名 → `(server, tool)` 的唯一合法还原方式 |
-| `internal/pipeline` | ★ 唯一执行管线：四道门 + defend_and_shape | 所有调用路径都在这里汇合，门禁不可能分叉 |
+| `internal/pipeline` | ★ 唯一执行管线：两道门 + 整形 | 所有调用路径都在这里汇合，门禁不可能分叉 |
 | `internal/downstream` | 下游连接生命周期、串行队列、断路器、派生实例池 | 下游的不稳定被挡在这一层，不外溢到调用方 |
 | `internal/gateway` | stdio 网关装配与生命周期（`connect` 的实现体） | 数据面的组装点；HTTP 面复用的也是它 |
-| `internal/guard/*` | 注入扫描 / spawn 反走私 / SSRF / 泄漏检测 | 零业务依赖，可被任何层安全复用 |
+| `internal/guard/*` | spawn 反走私 / SSRF | 零业务依赖，可被任何层安全复用 |
 
 ---
 
@@ -195,28 +195,25 @@ flowchart LR
     C -->|"普通工具"| E["router.RouteOf<br/>唯一溯源"]
     D -->|"call_tool*"| E
     E --> F["pipeline.Execute"]
-    F --> G1["scope 门"] --> G2["token 层级门"] --> G3["参数预校验"] --> G4["HITL 门"]
-    G4 --> H["ratelimit 准入<br/>（配额包裹，非第五道门）"]
+    F --> G1["scope 门"] --> G2["token 层级门"]
+    G2 --> H["ratelimit 准入<br/>（配额包裹，非第三道门）"]
     H --> I["downstream.Call<br/>断路器 / 重试 / 串行队列"]
-    I --> J["defend_and_shape"]
-    J --> J1["injection 扫描"] --> J2["leakguard"] --> J3["shaping 分页"]
-    J3 --> K["审计 append<br/>只记 argsHash"]
-    K --> A
+    I --> J["shaping<br/>预算 + fetch_result 游标"]
+    J --> A
 ```
 
 这条链上有三个不可动摇的性质：
 
-**门禁链顺序是冻结的**（`scope → token 层级 → 参数预校验 → HITL`，见 `internal/pipeline`），
-顺序由测试钉死。机器能判定的三道全部排在人工审批之前——不值得打扰人的调用不该产生审批请求，
-审批队列里只装人真正要决策的东西。
+**门禁链顺序是冻结的**（`scope → token 层级`，见 `internal/pipeline`），顺序由测试钉死。
+两道门都只依据配置判定，都 fail-closed。链子里没有任何一环会读调用的参数或改写它：
+调用方发出什么，下游就收到什么；下游答了什么，调用方就读到什么。
 
 **只有一条执行路径。** 直接调用与 lazy 模式的 `call_tool` 走的是同一个 `pipeline.Execute`。
 这不是靠约定维持的：测试断言两条路径把每个门的计数器推进得完全一致——门禁不可能分叉。
 任何**新增**执行路径都必须自带同样的计数断言，不能以「已经有测试了」为由免除。
 
-**成功与错误分支共用防护。** 恶意下游可以用 JSON-RPC error 承载注入载荷，所以
-`defend_and_shape` 对两个分支都扫，扫描顺序是 injection → leakguard → shaping，
-整形器看到的永远是已脱敏的文本。
+**成功与错误分支走同一条出口。** 整形对两个分支都生效，并且**只跑一次**——跑两次会重复消耗
+游标，还可能留下一个指向没人会收到的字节的截断提示。
 
 ---
 
@@ -273,15 +270,15 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    G["Global：governance.json<br/>denyDestructive / blockOnInjection / 默认 discovery 与预算"] --> P
+    G["Global：servers.json + governance.json<br/>server 开关 + 每 server 工具白名单，默认 discovery 与预算"] --> P
     P["Profile：profiles.json<br/>enabled servers + tool allow + discovery"] --> S
-    S["Session：内存 overlay，不落盘<br/>只紧不松；放宽须人工 grant"] --> M
+    S["凭据层：agent token 的 server 白名单与 profile 钉选<br/>仅 HTTP 面；只能收紧"] --> M
     M{{"Merge：安全字段交集 / OR<br/>体验字段就近覆盖"}} --> E["EffectiveScope（内容寻址，带 Hash）"]
     CL["clients.json：client 绑定<br/>只选 profile，不叠加收窄"] -. "选哪一个 profile" .-> P
 ```
 
 **client 不是一层。** `clients.json` 只回答「这个客户端跟哪个 profile」，绝不在 profile 之上再叠一层
-收窄。它曾经有自己的 servers / tools / discovery / 审批 / 预算字段，结果是「这个 client 绑了哪个
+收窄。它曾经有自己的 servers / tools / discovery / 预算字段，结果是「这个 client 绑了哪个
 profile」不再是「这个 client 能看见什么」的完整答案——而后者正是整个模型存在的理由：操作者得翻两处
 再自己手算交集。收窄现在只有一个家（profile），需要不同面的 client 就绑到不同的 profile 上。
 
@@ -292,14 +289,15 @@ root 的客户端静默落回更宽的那一层。`clients.json` 里遗留的 `p
 用来收窄的，失效的方向是**放宽**。
 
 合并规则由字段性质决定，不是逐字段拍脑袋：**安全字段**（server 可见性、tool allow）逐层取交集，
-deny 取并集，审批开关取布尔或——只能越来越紧；**体验字段**（discovery 模式、结果预算）最具体层胜出。
+——只能越来越紧，而且任何地方都没有 deny 列表：deny 对「下游明天新增的工具」给出的答案与 allow 相反，
+一份配置不能有两个答案；**体验字段**（discovery 模式、结果预算）最具体层胜出。
 两条不变量：交集永远以**原始工具名**为键（否则改名或后缀消歧就能绕过收窄），
 悬垂的 profile 引用解析为**空集**而不是全放行，并且 doctor 会显式告警而不是静默。
 
 **可见性平面与连接平面是分开的。** 网关连接的是本 client 的静态水位（它绑定的 profile），
 而每个会话看见什么是查询期投影。所以收窄一个会话的作用域不会重建 router、不会重启下游进程——
-这正是 per-session 粒度可行的原因。overlay 永不落盘：复活的运行时放宽是安全事故；
-`session scope` 的每一次修改都只活在 overlay 上，要让一份面永久生效只能改 profile。
+要改变一份面只能改配置——profile 的成员与工具白名单、server 自己的白名单、client 的绑定。
+活着的会话没有可以被改动的东西。
 
 ---
 
@@ -328,31 +326,21 @@ lazy 模式下 `call_tool` 可按治理开关拆成 `call_tool_read` / `call_too
 
 ---
 
-## 9. 三道防线如何叠加
+## 9. 两道防线如何叠加
 
 ```mermaid
 flowchart LR
-    S["scope<br/>机器判定"] --> T["agent token 层级<br/>机器判定"] --> P["参数预校验<br/>机器判定"] --> H["HITL<br/>人判定"]
+    S["scope<br/>机器判定"] --> T["agent token 层级<br/>机器判定"]
 ```
 
 | 防线 | 粒度 | 判定者 | 挡什么 |
 |---|---|---|---|
-| scope | server / 工具可见性 | 机器（三层交集） | 不该看见的能力 |
+| scope | server / 工具可见性 | 机器（各层取交集，全部来自配置） | 不该看见的能力 |
 | agent token 层级 + 意图变体 | 操作等级 | 机器（token × annotations） | 只读凭据发起写/毁灭操作 |
-| HITL | 单次调用 | 人（args_hash 绑定） | 等级内仍需人审的具体动作 |
 
-**四道门、三条防线——参数预校验是链子里唯一不算防线的那道**，所以图里有一个盒子表里没有对应行。
-它只做浅层形状检查（Args 是对象、必填顶层字段在场、在场的字段类型对得上），权威校验者仍是下游
-server；更关键的是，凡是它能可证明地修好的违规，它修好放行而不是拒绝。防线是拒绝的。因为这道门
-坐在一条被描述为「冻结且 fail-closed」的链子里就把它读成安全边界——这个误读值得点名。
-
-但它的位置并不自由。修复会**改写参数**，所以它必须排在 HITL **之前**：这样审批的 `args_hash`
-覆盖的才是真正跑的那份参数，「批的就是跑的」在自愈之后依然成立。放到 HITL 之后，就会变成哈希一份
-参数、执行另一份。
-
-审批的内容绑定很关键：请求携带参数的规范化哈希，**批的就是跑的**；同时携带活工具定义的指纹，
-定义漂移后旧的批准会返回 `Stale` 而不是被复用。除 `Approved` 外的一切结果——拒绝、超时、
-broker 不可达、陈旧——都不放行。
+两道都在调用发生之前判定，依据的是运维事先写下的东西。两道都不读参数，也都不读结果：更早的设计
+在这两道防线和下游之间还塞过参数预校验、人工审批队列、提示注入扫描和泄漏脱敏，四样全部删除了。
+留下来的要么直接拒绝一次调用，要么原样放行。
 
 `internal/ratelimit` **刻意不在门禁链里**：这条链是冻结且 fail-closed 的，
 而限流在状态文件损坏时必须 fail-open（限流不是安全边界），把一个 fail-open 的东西放进
@@ -367,11 +355,10 @@ fail-closed 的链里就是一个绕过形状。它包在调用本身外面—�
 ├── registry/                 # 配置真源：按变更频率拆多文档，共用一个单调 generation
 │   ├── meta.json  servers.json  profiles.json  clients.json  governance.json
 │   └── *.lock  backups/      # sibling 跨进程锁 + 5 代滚动备份
-├── state/                    # tool-pins.json / quarantine.json / approvals-allowlist.json
-│                             # ratelimits.json / 运行标记
+├── state/                    # ratelimits.json / run 标记
 ├── skills/                   # 内容寻址的技能库 + 安装索引
 ├── cache/tools/<server>.json # 「缓存先答」用的工具目录快照
-├── logs/                     # audit / security / savings JSONL + server-<name>.log + daemon.log
+├── logs/                     # savings.jsonl + server-<name>.log + daemon.log
 ├── tokens.json  .token_key   # agent token（只存 HMAC）
 └── run/                      # Linux 未设 AGENTHUB_DATA_DIR 时优先 $XDG_RUNTIME_DIR/AgentHub
     ├── ctl.sock  daemon.json # 控制 socket + 就绪握手（bind 成功后才写）
@@ -440,7 +427,7 @@ Windows 不属于这一类。它的平台层已实现、但从未在真机上跑
 
 ## 13. 延伸阅读
 
-- [flows.md](../flows.md) —— 关键流程的时序图：网关启动、一次 lazy 调用、HITL 审批、配置热更新、OAuth、派生实例。
+- [flows.md](../flows.md) —— 关键流程的时序图：网关启动、一次 lazy 调用、配置热更新、OAuth、派生实例。
 - [modules/](../modules/) —— 逐包文档：职责、关键类型、不变量与失败方向、文件地图。
 - [canonical.md](../canonical.md) —— 冻结标识符、依赖约束、命令名规则、工程约定、裁决记录。
 - [windows.md](../windows.md) —— Windows 现状与验收标准。

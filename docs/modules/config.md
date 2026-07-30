@@ -4,14 +4,12 @@ This layer answers two questions: **what can this session see right now**, and *
 configs, credentials, and files come from, and who is responsible for changing them**. Seven packages
 divide the work as follows.
 
-`internal/scope` holds this layer's core computation: it takes the two persisted configuration layers
-from the registry, adds the session's in-memory overlay, and folds them into a single
-content-addressed `EffectiveScope`. `internal/session` owns the overlay — session identity, lifecycle,
-and the "may only tighten" mutation check; the overlay lives only in memory and is gone the moment the
-daemon restarts, which is deliberate. `internal/event` is the notification channel between the two
-(and across the daemon generally): session changes the overlay, an event goes out, and scope's cache
-is invalidated on it. event also provides two mergers that compress a change storm into a single
-notification.
+`internal/scope` holds this layer's core computation: it takes the persisted configuration layers from
+the registry and folds them into a single content-addressed `EffectiveScope`. `internal/session` owns
+session identity and lifecycle — and nothing else: a session has no scope of its own, so there is
+nothing about it to mutate. `internal/event` is the notification channel across the daemon: a registry
+change goes out as an event and scope's cache is invalidated on it. event also provides two mergers
+that compress a change storm into a single notification.
 
 The other four packages each guard a class of external state. `internal/secrets` is the credential
 vault, a four-level resolution chain stringing together environment variables, an encrypted file, and
@@ -32,9 +30,9 @@ a change turns fail-closed into fail-open.
 
 ### Responsibility in one sentence
 
-Fold three configuration layers (Global, Profile, Session) into one deterministic, content-addressed
-`EffectiveScope` that answers "which servers and which tools can this session see right now, does it
-need human approval, and how big is the result budget".
+Fold the configuration layers (Global, Profile, plus any credential-supplied layer) into one
+deterministic, content-addressed `EffectiveScope` that answers "which servers and which tools can this
+session see right now, and how big is the result budget".
 
 ### Key types and entry points
 
@@ -44,7 +42,7 @@ the design goal "both modes behave identically" lands in code. `MergeWithDiagnos
 pre-collected `[]Diagnostic` into the result **before hashing**, so diagnostics participate in content
 addressing too.
 
-`CachedResolver`'s cache key is the triple `(clientID, registryGeneration, overlayVersion)`,
+`CachedResolver`'s cache key is the pair `(clientID, registryGeneration)`,
 invalidated event-driven through `Invalidate(Event)`, never by polling. The session's **root is
 deliberately absent** from it: it was in the key while the project layer matched on it, but with that
 layer retired no persisted layer reads the root, so keeping it would have split one client's cache
@@ -54,12 +52,12 @@ resolution today but because dropping one entry is cheap and the alternative (le
 decide which notices matter) is how a stale scope gets served the next time something does depend on
 the root.
 
-`Sources.Extra` holds extra layers appended after the overlay, so that **credentials with no registry
-entry** can participate in the same intersection (the daemon's HTTP data plane folds an agent token's
+`Sources.Extra` holds extra layers appended after the persisted ones, so that **credentials with no
+registry entry** can participate in the same intersection (the daemon's HTTP data plane folds an agent token's
 server allowlist and profile pin in here; the profile pin uses `PinnedProfileLayer`, and an
 unresolvable name yields a block-all layer plus `ok=false`, matching how `FromRegistry` treats dangling
 references). They are ordinary layers and `Merge` treats them no differently — security fields
-intersect, deny unions, approval switches OR — so Extra **has no shape that can widen visibility**.
+intersect — so Extra **has no shape that can widen visibility**.
 Constraint: its return value must be a pure function of "session id + registry generation", because it
 does not enter the cache key.
 
@@ -84,9 +82,9 @@ and the next caller would inherit a failure direction chosen for a job that no l
 
 ```mermaid
 flowchart LR
+  S["servers.json<br/>enabled + per-server tool allow list<br/>LayerGlobal"] --> M
   G["governance.json<br/>LayerGlobal"] --> M
   P["profiles.json<br/>LayerProfile<br/>(selected via clients.json binding)"] --> M
-  O["Overlay (in memory, never persisted)<br/>LayerSession"] --> M
   X["Sources.Extra<br/>credential-supplied, tighten-only"] --> M
   CAT["router.Catalog<br/>seed set for visibility"] --> M
   M["Merge<br/>pure function"] --> ES["EffectiveScope<br/>Hash = SHA-256(every field except Generation)"]
@@ -96,8 +94,9 @@ flowchart LR
 
 **There are two classes of merge semantics, and changes must not confuse them.** Security fields tighten
 monotonically: server visibility **intersects** across layers (seeded from the catalog's server set),
-a tool's `Allow` intersects across layers, and approval switches fold with a
-**boolean OR**. Experience fields take the nearest value: `Discovery` is won by the most specific layer
+and a tool's `Allow` intersects across layers. There is no deny list anywhere and no boolean switch
+left to fold: a deny would answer a newly-added downstream tool in the opposite direction from an
+allow, and one configuration must not give two answers. Experience fields take the nearest value: `Discovery` is won by the most specific layer
 (within the same `LayerKind`, the later layer wins) and `ResultBudget` takes the nearest value per key.
 The one exception is `Budget.Forced`: a budget marked forced is capped at the **minimum**, so it can only
 push the nearest value down, never raise it.
@@ -106,15 +105,10 @@ push the nearest value down, never raise it.
 does not require the layers passed in to be sorted; specificity comes entirely from comparing
 `LayerKind` values, so swapping the enum values silently changes who wins.
 
-**A nil tri-state pointer means "don't intervene", not false.** `orInto` only lets `true` take effect;
-a `false` pointer is inert and can never turn off a `true` set by another layer. That is the fail-closed
-direction: if any layer demands approval, approval is required.
-
-**`DenyDestructive` can only be set by governance.json.** The code enforces this with two mechanisms
-rather than validation: `Overlay` (the input type for the session layer) **has no such field at all**,
-so no overlay can possibly carry it; and `FromRegistry` populates it only on `LayerGlobal`, while
-`registry.ApprovalPolicy` (the persisted per-client type) does not model this field either. In other
-words the constraint is "inexpressible", not "rejected".
+**`nil` and `[]` are different, and the difference is the whole rule.** An absent selector means "no
+intervention"; a nil `Allow` means the server's full tool set; an **empty** `Allow` means nothing at
+all. That is why the field carries `omitzero` rather than `omitempty` — dropping an empty list on the
+way to disk would turn block-all into allow-all, silently and in the fail-open direction.
 
 **The keys of a tool selector are always raw tool names, never exposed names.** `ToolSelector` is a type
 alias for `registry.ToolSelector`, and the persisted semantics have exactly one source of truth: an
@@ -144,8 +138,8 @@ contract. `Changed(prev, next)` compares only the `Hash`: only a content change 
 `tools/list_changed` to a session, otherwise a single registry rebuild would amplify into a notification
 storm.
 
-**Better to over-invalidate the cache than to under-invalidate.** `EvOverlayChanged` and `EvRootChanged`
-clear only the corresponding session; `EvRegistryChanged` and `EvCatalogChanged` clear everything, and
+**Better to over-invalidate the cache than to under-invalidate.** `EvRootChanged` clears only the
+corresponding session; `EvRegistryChanged` and `EvCatalogChanged` clear everything, and
 **an unknown event type also clears everything**. The catalog is not in the cache key, so
 `EvCatalogChanged` is the only channel through which a change in the downstream tool set becomes visible;
 lose it and stale scopes get served forever. Over-invalidating costs one recomputation;
@@ -174,8 +168,9 @@ we get that property.
 
 ### Responsibility in one sentence
 
-The daemon-side session registry: it mints session identities, holds in-memory overlays, runs the
-"tighten only" check on overlay changes, and pushes changes out to stdio gateways.
+The daemon-side session registry: it mints session identities and tracks liveness. A session carries no
+scope of its own — what it may see is resolved from the registry every time it is asked — so there is
+nothing here to mutate and no way to change a live session's surface.
 
 ### Invariants and failure directions
 
@@ -194,44 +189,8 @@ candidate and returns `(nil, false)` for unknown or malformed tokens.
 token, and never mints a session with an under-filled token.
 
 **A re-registering gateway always gets a new identity.** seq is monotonic and never reused, so a gateway
-that drops and reconnects will not silently reuse its old ID. The old overlay's authority died with the
-old session, so references must break rather than quietly rebind to a blank overlay.
-
-**Overlays are never persisted to disk.** Nowhere in this package serializes an overlay. Losing them on
-daemon restart is the design intent — a "resurrected runtime loosening" is a security incident, not an
-availability improvement. `Close` explicitly nils out the overlay.
-
-**The "tighten only" check: every ambiguity is judged a loosening and rejected.** `loosenings(prev, next)`
-compares security fields one by one: `Servers` going from non-nil to nil is a loosening, and adding any
-server is a loosening; for a server that prev constrained, `Tools` counts removing the selector, undoing an
-`Allow` narrowing or adding an `Allow` entry as loosenings; canceling an approval
-switch already set to `true` is a loosening; and removing or raising a `Forced` budget is a loosening.
-Experience fields (`Discovery`, non-forced `ResultBudget`) may change freely. `prev == nil` is the
-"no overlay" baseline, in which case creating any overlay counts as a tightening. Being too strict costs the
-caller one extra human authorization; being too lax hands a loosening to the very subject of the threat
-model (the agent itself).
-
-Note **which direction** this check guards. The merge itself already guarantees an overlay can never breach
-the watermark set by the static layers (the session layer only intersects); `loosenings` guards the
-other end: the agent revoking a runtime tightening that it (or the operator) just made.
-
-**A rejection rejects the entire mutation; there is no partial application.** The moment a loosening is
-found, `Mutate` returns `ErrLoosening` listing every violation, and `s.overlay` is untouched. A partial
-application would commit a state nobody asked for.
-
-**The version number is assigned by `Mutate` after `fn` runs** (`next.Version = prev.Version + 1`). The
-mutation function cannot forge or roll back the version, so the resolver's cache key moves **if and only
-if** a mutation was actually committed.
-
-**stdio does "push then commit"; HTTP swaps directly.** Authority lives in the daemon, execution in the
-gateway. A stdio session calls `Link.PushOverlay(ctx, next)` first, and only after the gateway applies and
-acks does the daemon do `s.overlay.Store(next)`; if the push fails, **nothing is committed**, so the daemon
-and the gateway cannot diverge.
-
-**The overlay is a copy-on-write immutable snapshot.** The pointer returned by `Session.Overlay()` **must
-never be modified by callers** (the scope resolver included); `Mutate` clones a private copy under the
-per-session mutex, hands it to `fn`, and then swaps the whole thing in. The per-session lock fully
-serializes concurrent `Mutate` calls, so no update is lost.
+that drops and reconnects will not silently reuse its old ID: a reference to the old session must break
+rather than quietly rebind to a different connection.
 
 **Only HTTP sessions are reaped by TTL.** A stdio session's lifetime is the gateway process's lifetime,
 cleaned up when the daemon calls `Close` on link teardown, and the reaper skips them explicitly. Default TTL
@@ -736,10 +695,8 @@ remove again.
 
 ### ApplyState and decision precedence
 
-Five states: `applied`, `stale`, `drifted`, `missing`, `conflict`. This axis is **orthogonal** to
-the retired tool approval state machine: `ApplyState` answers "are the bytes still where we think they
-are", approval answers "is this content trustworthy". The two live in separate fields, and a transition in either
-implies nothing about the other.
+Five states: `applied`, `stale`, `drifted`, `missing`, `conflict`. It answers exactly one question —
+"are the bytes still where we think they are" — and deliberately not "is this content trustworthy".
 
 `verifyOne`'s decision order is "most actionable first", with each level answering a different question:
 
@@ -792,8 +749,7 @@ would make re-importing identical bytes produce an unstable fingerprint.
 
 The `HashSchemaVersion` prefix earns its keep: once the formula changes, pins recorded with the old formula must be
 identifiable as "different algorithm" rather than "content changed". Without the prefix, a formula upgrade would
-present as a fleet-wide alert, and users would learn to ignore alerts. It is deliberately separate from
-`integrity.HashSchemaVersion`; the two snapshot different kinds of thing and must be able to evolve independently.
+present as a fleet-wide alert, and users would learn to ignore alerts.
 
 `requireTrusted` runs ahead of `InstallTo` and `syncOne`: **unpinned entries are allowed** (they predate the pin
 mechanism), **mismatched entries are not** (`TamperError`). `Verify` does a full recomputation — recomputing the
@@ -801,8 +757,8 @@ fingerprint from the bytes on disk rather than reading the value out of the inde
 edited cannot vouch for itself.
 
 **Pins are never deleted.** Not even by `Remove`. When the same skill is deleted and added back, it is compared
-against the **original baseline** rather than blindly re-pinned. This rule is inherited from integrity's "merge
-never deletes".
+against the **original baseline** rather than blindly re-pinned: re-pinning on re-add is how a tampered copy
+launders itself back into trust.
 
 **Drift refuses to be overwritten unless a human explicitly decides.** A materialized copy modified by something
 other than agenthub returns `ErrDrifted`, and the caller must pass `InstallRequest.AllowDrift` to overwrite it.
@@ -878,8 +834,8 @@ MCP resources are semantically a better fit, but the gateway's upstream face cur
 inventing a protocol face inside a subsystem package is the wrong place for it. Tools are the honestly available
 shape — same content, same governance, no pretending at capabilities. Second, **the host stays on the gate path**:
 this type never answers on its own in any privileged way, and the gateway that assembles it routes the call through
-exactly the same `pipeline.Execute` as a downstream call, so scope, HITL, and injection scanning all apply; this path
-**deliberately does not** re-scan SKILL.md locally, because a second scanner is a second policy. Third, **enabled
+exactly the same `pipeline.Execute` as a downstream call, so the scope and tier gates apply to it exactly as they
+apply to a downstream tool. Third, **enabled
 state is verified live at call time**: `Tools()` serves a snapshot (it is invoked on every catalog build and cannot do
 I/O), but `Call` re-reads the library, so a skill disabled or deleted since the last `Refresh` is rejected rather than
 served out of a stale snapshot.
@@ -891,8 +847,8 @@ last known-good set beats serving nothing because a lock was busy). Disabled ski
 tool name, the first in sort order is kept and the rest are skipped: a silently shadowed skill is worse than a
 nonexistent one.
 
-`Annotations()` is **payload, not decoration**: the pipeline's destructiveness ruling treats **missing** annotations as
-destructive (fail-closed), so a read-only tool without annotations would prompt for approval on every call.
+`Annotations()` is **payload, not decoration**: the tier ladder treats **missing** annotations as destructive
+(fail-closed), so a read-only tool without annotations would be refused to a read-only credential.
 
 **This package never shells out to git and never touches the network.** git sources are imported from a local
 checkout the caller already has, and `--pin <rev>` is **recorded** (`Source.GitRef` / `Source.PinnedCommit`) so the

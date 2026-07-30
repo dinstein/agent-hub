@@ -394,7 +394,7 @@ four were removed. What survives refuses a call outright or lets it through unto
 ├── state/                    # ratelimits.json / run markers
 ├── skills/                   # content-addressed skill library + install index
 ├── cache/tools/<server>.json # tool catalog snapshots used for "answer from cache first"
-├── logs/                     # audit / security / savings JSONL + server-<name>.log + daemon.log
+├── logs/                     # savings.jsonl + server-<name>.log + daemon.log
 ├── tokens.json  .token_key   # agent tokens (HMAC only)
 └── run/                      # on Linux, prefers $XDG_RUNTIME_DIR/AgentHub when AGENTHUB_DATA_DIR is unset
     ├── ctl.sock  daemon.json # control socket + readiness handshake (written only after a successful bind)
