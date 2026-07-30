@@ -10,9 +10,9 @@ import (
 // TestEveryFileLockHasAWindowsImplementation keeps the next single-writer file
 // from silently shipping without a lock on one platform.
 //
-// Seven packages keep one, each with the same three-file shape: flock_unix.go
+// Five packages keep one, each with the same three-file shape: flock_unix.go
 // (syscall.Flock), flock_windows.go (internal/platform's LockFileEx) and
-// flock_stub.go for everything else. The eighth is the problem this test
+// flock_stub.go for everything else. The sixth is the problem this test
 // exists for. Copying the pair a new package starts from is copying
 // flock_unix.go and flock_stub.go — the two that were there first — and the
 // result compiles on every platform, passes every test on darwin and linux,
