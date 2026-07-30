@@ -131,5 +131,56 @@ tag 推送（`v*`）触发 `.github/workflows/release.yml`：
 - **CLI**：ubuntu runner 交叉编译全平台，纯 Go 无 cgo
 - **GUI**：macOS runner 原生构建 universal（Windows / Linux 尚未启用）
 
-仓库当前是 **private**，Release asset 需要认证才能下载 ——
-`curl | sh` 式安装不可用，纯 CLI 路径的意义要等转 public 后才完整成立。
+`workflow_dispatch` 可以不打 tag 就把整条链路彩排一遍；只有 publish job 会察觉，它会 skip。
+
+## 产物存放在哪里
+
+**就在本仓库。** 本仓库是 public，`brew install` 不带任何凭据就能取到 tarball，产物也就和构建
+它的源码待在一起。
+
+这个去向是**一个决定、两个读者**：上传目标，以及写进 formula 的下载 URL。两者过去都靠各自的默认
+值，而两个默认值并不一致 —— 上传回落到本仓库，`homebrew-formula.sh` 的默认值指向 tap。这种组合
+的出错方式是能挑出来最安静的一种：所有 job 全绿、formula 是合法 Ruby、sha256 都是真的，然后在
+除了这台机器以外的第一次 `brew install` 上 404。现在 workflow 在两处都写明
+`${{ github.repository }}`，`TestReleaseWorkflowUploadsWhereTheFormulaPoints` 和
+`TestReleaseScriptsAgreeOnTheArtifactRepo` 分别把 workflow 和脚本钉在各自那一半上。
+
+**tap 上仍然挂着 `v0.11.0` 和 `v0.12.0` 的产物，它们留在原地。** 那两个版本是在本仓库还是
+private 时发的，各自随之发布的 formula 钉的是**那一次上传**的 sha256。在这边重新构建出的同名
+tarball 哈希不一样，所以 URL 和它旁边的哈希必须来自同一次上传 —— tap 上那批旧产物和任何东西
+都不可互换。
+
+有两项配置管 tap，都不影响 Release 本身：
+
+| 配置项 | 类型 | 值 |
+|---|---|---|
+| `HOMEBREW_TAP_REPO` | repository variable | `dinstein/homebrew-agenthub` |
+| `HOMEBREW_TAP_TOKEN` | repository secret | 对 tap 有 `contents: write` 的 token |
+
+token 不能用 `GITHUB_TOKEN`，它只够得着本仓库；而 Release 本身不需要这种 token，因为它就写在
+本仓库。**配了变量却没有 token，会在 `verify` 里失败，早于任何构建** —— 变量一旦配上，就说明
+有人在等 tap 被更新，而等打完 DMG 才发现要多花二十分钟。两项都不配是受支持的状态：Release 照发，
+tap 继续提供上一个版本，运行摘要里有一条 warning 说明这件事。
+
+## Homebrew tap
+
+有两个文件要送到 tap，`scripts/tap-sync.sh` 把它们作为**一个 commit** 一起放进去：
+
+| 文件 | 是什么 |
+|---|---|
+| `Formula/agenthub.rb` | 由 `scripts/homebrew-formula.sh` 生成；安装预编译好的二进制 |
+| `skills/agenthub/SKILL.md` | 从本仓库拷过去；教 AI 客户端怎么驱动那个二进制 |
+
+两者并不独立。skill 是针对某个具体的已发布表面写的 —— 它自己开头就这么说 —— 所以如果两者分成
+两个 commit 落地，中间就有一个窗口，其中任一个描述的版本另一个并不成立。
+
+**skill 在本仓库维护，生成到 tap。** 它过去是直接在 tap 里改的，而这正是第二份副本一定会变成的
+样子：agent 碰巧读到哪一份，就由哪一份决定它相信的 CLI 表面。tap 那份在 frontmatter 之后带一条
+"生成物、勿手改"的横幅，而那条横幅是两份之间**唯一**的差别。
+
+`scripts/tap-sync.sh <tap-checkout> <tag>` 省掉 formula 参数就是**只同步 skill**。skill 的修订
+比 release 落地得快，没有这条路径的话，发一个文档修正就只能去切一个不改任何代码的版本。
+
+两条发布路径 —— workflow 和 `scripts/release-local.sh` —— 都走这一个脚本，这一点由
+`TestBothReleasePathsSyncTheTapThroughOneScript` 强制。一个内联了自己那份拷贝的调用方，照样会
+commit、照样会 push、照样全绿；它做的事是把它忘掉的那个文件留在上一个 release。
