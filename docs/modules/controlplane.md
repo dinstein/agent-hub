@@ -720,7 +720,7 @@ module and isn't constrained the way the public `api` package is.
 | 4 | Daemon offline but the command requires it | `DaemonDownf` |
 | 5 | Authentication/authorization failure | OAuth flows |
 | 6 | Rejected by governance policy | HITL deny, quarantine, `E_STALE` |
-| 7 | Lock contention timeout, or a state file corrupt and **unable to self-heal** | Any of the four cross-process locks — registry, integrity, skills, the HTTP-bridge token store; plus `registry.UnreadableError`, the integrity and skills corrupt-state paths, and `confops.KindState` |
+| 7 | Lock contention timeout, or a state file corrupt and **unable to self-heal** | Any of the four locks with a timeout ladder — registry, integrity, skills, the HTTP-bridge token store (seven packages take a cross-process flock, but the other three cannot time out, so contention there never reaches a user this way); plus `registry.UnreadableError`, the integrity and skills corrupt-state paths, and `confops.KindState` |
 
 **"A cobra parse error = exit 2" is guaranteed by construction, not by convention.** The root sets
 `SetFlagErrorFunc`, funneling every flag parse error into `Usagef`; `exactArgs`/`noArgs`/`rangeArgs` are typed replacements

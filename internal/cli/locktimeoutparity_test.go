@@ -15,11 +15,14 @@ import (
 // TestEveryStoreLockTimeoutIsExitLocked pins the one answer an operator gets
 // for lock contention, whichever store was busy.
 //
-// Four packages take a cross-process flock and can time out on it: registry,
-// integrity, skills and httpbridge's token store. Each has its own copy of the
-// lock ladder, because none of them may import another's document model, so
-// nothing but a test makes them agree on what a timeout LOOKS like from
-// outside.
+// Seven packages take a cross-process flock; four of them can time out on it
+// and report that to a user: registry, integrity, skills and httpbridge's
+// token store. (The other three cannot — audit and ratelimit block on
+// LOCK_EX, oauthflow tries once and gives up — which is why declaring
+// ErrLockTimeout, not owning a flock, is what puts a store in this table.)
+// Each of the four has its own copy of the lock ladder, because none of them
+// may import another's document model, so nothing but a test makes them agree
+// on what a timeout LOOKS like from outside.
 //
 // They did not agree. httpbridge returned a plain fmt.Errorf, so `agenthub
 // token create` under contention fell through its classifier's default branch
@@ -28,8 +31,11 @@ import (
 // the one store whose ladder had never been given a typed error.
 //
 // The reason to pin it here rather than trust four matching implementations:
-// this file fails when a FIFTH store is added and left untyped, which is the
-// moment the divergence is cheap to fix.
+// a divergence is cheap to fix at the moment it appears and expensive later.
+// This table cannot notice a FIFTH store on its own — it is hand-written, and
+// a new package declaring its own ErrLockTimeout changes nothing here.
+// test/buildrules' TestEveryLockTimeoutStoreIsInTheParityTable is what
+// notices, by failing until the new store is named below.
 func TestEveryStoreLockTimeoutIsExitLocked(t *testing.T) {
 	const timeout = 10 * time.Second
 
