@@ -42,8 +42,6 @@ func TestEveryHumanRendererHandlesTheZeroValue(t *testing.T) {
 	}{
 		{ActivityReport{}, "ActivityReport"},
 		{AddedServers{}, "AddedServers"},
-		{ApprovalDecideResult{}, "ApprovalDecideResult"},
-		{ApprovalList{}, "ApprovalList"},
 		{AuditExport{}, "AuditExport"},
 		{AuditTail{}, "AuditTail"},
 		{AuthLoginResult{}, "AuthLoginResult"},
@@ -104,7 +102,7 @@ func TestEveryHumanRendererHandlesTheZeroValue(t *testing.T) {
 	// Guards against the table silently falling behind the code. The count is
 	// asserted rather than the membership, because the compiler already
 	// rejects a name that does not exist.
-	const humanImplementations = 59
+	const humanImplementations = 57
 	if len(cases) != humanImplementations {
 		t.Fatalf("table covers %d types, expected %d — a result type was added or removed "+
 			"without updating this table", len(cases), humanImplementations)

@@ -336,75 +336,6 @@ func TestListSessionsAndScopeRejectionKeepsConnection(t *testing.T) {
 	}
 }
 
-func TestApprovalsListAnswerAndRaceLoss(t *testing.T) {
-	var gotToken string
-	var gotBody struct {
-		Approve  bool   `json:"approve"`
-		Remember string `json:"remember"`
-	}
-	mux := pingMux(t)
-	mux.HandleFunc("GET /v1/approvals", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("history") != "" {
-			writeOK(t, w, []api.Approval{{Token: "t1", Decision: api.DecisionDenied, DecidedBy: "cli"}})
-			return
-		}
-		// The REST listing never carries arguments (docs/modules/controlplane.md).
-		writeOK(t, w, []api.Approval{{
-			Token: "t1", Server: "github", Tool: "create_issue",
-			ArgsHash: "sha256:abc", Deadline: time.Now().Add(time.Minute),
-		}})
-	})
-	mux.HandleFunc("POST /v1/approvals/{token}", func(w http.ResponseWriter, r *http.Request) {
-		gotToken = r.PathValue("token")
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-			t.Errorf("decoding body: %v", err)
-		}
-		if gotToken == "taken" {
-			writeErr(t, w, http.StatusConflict, api.ErrCodeAlreadyDecided, "decided by cli")
-			return
-		}
-		writeOK(t, w, api.ApprovalDecision{Decision: api.DecisionApproved})
-	})
-	h, _ := newHub(t, newFakeDaemon(t, mux), nil)
-
-	pending, err := h.ListApprovals(t.Context(), false)
-	if err != nil {
-		t.Fatalf("ListApprovals: %v", err)
-	}
-	if len(pending) != 1 || !pending[0].Pending() {
-		t.Fatalf("unexpected queue: %+v", pending)
-	}
-	if len(pending[0].Args) != 0 {
-		t.Error("REST listing leaked call arguments")
-	}
-
-	hist, err := h.ListApprovals(t.Context(), true)
-	if err != nil {
-		t.Fatalf("ListApprovals(history): %v", err)
-	}
-	if len(hist) != 1 || hist[0].Pending() {
-		t.Errorf("history entry should be decided: %+v", hist)
-	}
-
-	dec, err := h.Answer(t.Context(), "t1", true, api.RememberSession)
-	if err != nil {
-		t.Fatalf("Answer: %v", err)
-	}
-	if dec.Decision != api.DecisionApproved {
-		t.Errorf("decision = %q", dec.Decision)
-	}
-	if gotToken != "t1" || !gotBody.Approve || gotBody.Remember != api.RememberSession {
-		t.Errorf("token=%q body=%+v", gotToken, gotBody)
-	}
-
-	// Losing the multi-frontend race is reported with a code the UI can
-	// branch on rather than a generic failure.
-	_, err = h.Answer(t.Context(), "taken", false, "")
-	if !api.IsCode(err, api.ErrCodeAlreadyDecided) {
-		t.Fatalf("want E_ALREADY_DECIDED, got %v", err)
-	}
-}
-
 func TestSkillsAndAuditReportNotImplementedDistinctly(t *testing.T) {
 	mux := pingMux(t)
 	// Nothing is registered for /v1/skills and /v1/audit: this daemon does
@@ -557,9 +488,9 @@ func TestTransportFailureDropsClientAndRedials(t *testing.T) {
 	}
 }
 
-// TestPumpBridgesSSEToFrontendEvents covers the SSE -> Wails event bridge,
-// including the approvals pending frame that carries call arguments in
-// memory only.
+// TestPumpBridgesSSEToFrontendEvents covers the SSE -> Wails event bridge:
+// every topic the daemon streams has to reach the frontend as a TopicEvent
+// carrying the revision and the raw payload.
 func TestPumpBridgesSSEToFrontendEvents(t *testing.T) {
 	rec := &recorder{}
 	mux := pingMux(t)
@@ -573,8 +504,6 @@ func TestPumpBridgesSSEToFrontendEvents(t *testing.T) {
 		}
 		frames := []string{
 			`{"topic":"servers","kind":"changed","rev":7,"payload":[{"id":"a"}]}`,
-			`{"topic":"approvals","kind":"pending","payload":{"token":"t1","args":{"path":"/etc/passwd"}}}`,
-			`{"topic":"approvals","kind":"resolved","payload":{"token":"t1","decision":"denied","decided_by":"cli"}}`,
 			`{"topic":"sessions","kind":"opened","rev":8,"payload":{"id":"claude:1"}}`,
 		}
 		for _, f := range frames {
@@ -589,7 +518,6 @@ func TestPumpBridgesSSEToFrontendEvents(t *testing.T) {
 		t.Fatalf("Connect: %v", err)
 	}
 	waitFor(t, "servers event", func() bool { return len(rec.byName(EventServers)) == 1 })
-	waitFor(t, "approval events", func() bool { return len(rec.byName(EventApprovals)) == 2 })
 	waitFor(t, "session event", func() bool { return len(rec.byName(EventSessions)) == 1 })
 
 	ev, ok := rec.byName(EventServers)[0].data.(TopicEvent)
@@ -600,30 +528,6 @@ func TestPumpBridgesSSEToFrontendEvents(t *testing.T) {
 		t.Errorf("servers event = %+v", ev)
 	}
 
-	pend, _ := rec.byName(EventApprovals)[0].data.(TopicEvent)
-	if pend.Kind != api.KindApprovalPending {
-		t.Errorf("first approvals frame kind = %q", pend.Kind)
-	}
-	var ap api.Approval
-	if err := json.Unmarshal(pend.Payload, &ap); err != nil {
-		t.Fatalf("decoding approval payload: %v", err)
-	}
-	// Arguments reach the frontend only through this in-memory hop.
-	if ap.Token != "t1" || len(ap.Args) == 0 {
-		t.Errorf("pending approval = %+v", ap)
-	}
-
-	res, _ := rec.byName(EventApprovals)[1].data.(TopicEvent)
-	if res.Kind != api.KindApprovalResolved {
-		t.Errorf("second approvals frame kind = %q", res.Kind)
-	}
-	var resolution api.ApprovalResolution
-	if err := json.Unmarshal(res.Payload, &resolution); err != nil {
-		t.Fatalf("decoding resolution payload: %v", err)
-	}
-	if resolution.Token != "t1" || resolution.DecidedBy != "cli" {
-		t.Errorf("resolution = %+v", resolution)
-	}
 }
 
 // TestStopIsIdempotentAndStopsThePump guards against a leaked bridge

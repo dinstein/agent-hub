@@ -1,13 +1,11 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 )
@@ -153,30 +151,3 @@ type errNotCtl struct{}
 func (errNotCtl) Error() string { return "not a control-plane error" }
 
 // TestRemainingTextSaysExpiringRatherThanNegative: an approval whose deadline
-// has passed must not render "-3s left".
-func TestRemainingTextSaysExpiringRatherThanNegative(t *testing.T) {
-	if got := remainingText(time.Now().Add(-time.Minute)); got != "expiring" {
-		t.Errorf("past deadline = %q, want %q", got, "expiring")
-	}
-	if got := remainingText(time.Now()); got != "expiring" {
-		t.Errorf("deadline now = %q, want %q", got, "expiring")
-	}
-	got := remainingText(time.Now().Add(90 * time.Second))
-	if !strings.HasSuffix(got, "left") || strings.HasPrefix(got, "-") {
-		t.Errorf("future deadline = %q, want a positive duration ending in 'left'", got)
-	}
-}
-
-// TestCompactJSONFallsBackToTheRawBytes: the payload is shown to a human who
-// is deciding whether to approve a call, so unparseable input must still be
-// displayed rather than silently becoming empty.
-func TestCompactJSONFallsBackToTheRawBytes(t *testing.T) {
-	if got := compactJSON(json.RawMessage("{\n  \"a\": 1\n}")); got != `{"a":1}` {
-		t.Errorf("compactJSON = %q, want compacted", got)
-	}
-	for _, bad := range []string{"", "{not json", "\x00"} {
-		if got := compactJSON(json.RawMessage(bad)); got != bad {
-			t.Errorf("compactJSON(%q) = %q, want the raw bytes back", bad, got)
-		}
-	}
-}

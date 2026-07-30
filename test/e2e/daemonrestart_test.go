@@ -2,15 +2,17 @@ package e2e_test
 
 import (
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
 
-// the halves the approval e2e does not cover:
+// The daemon-lifecycle halves no other e2e covers:
 //
 //	A.3 #2 "gateway degradation / re-registration path" — after a daemon kill -9 AND a restart, the
 //	       gateway re-registers and receives a BRAND NEW session identity.
@@ -120,7 +122,7 @@ func TestDaemonRestartReregistersAndDropsOverlay(t *testing.T) {
 	runAgenthub(t, dataDir, "", "server", "add", "fake", "--cmd", fakemcpBin, "--args", scriptPath)
 	enableServer(t, dataDir, "fake")
 
-	h := &hitlEnv{dataDir: dataDir, socket: socket, env: env}
+	h := &daemonEnv{dataDir: dataDir, socket: socket, env: env}
 	runAgenthubEnv(t, env, "", "daemon", "start")
 	t.Cleanup(func() { h.killDaemon(t) })
 
@@ -185,4 +187,80 @@ func TestDaemonRestartReregistersAndDropsOverlay(t *testing.T) {
 		func(tools []string) bool { return !hasTool(tools, "fake__echo") })
 
 	c.close()
+}
+
+// daemonEnv is a test's forked daemon: the data directory it serves, the
+// control socket it listens on, and the child environment that reaches it.
+//
+// It used to live in the HITL end-to-end file, which was the only case that
+// needed a real daemon. Removing human approval removed that case, but not
+// the need: the daemon still owns session registration, and the restart
+// behaviour below is the one thing no in-process test can show.
+type daemonEnv struct {
+	dataDir string
+	socket  string
+	env     []string
+}
+
+// killDaemon SIGKILLs the forked daemon if it is still running. Used as
+// cleanup, where an already-dead daemon is the normal case.
+func (h *daemonEnv) killDaemon(t *testing.T) {
+	t.Helper()
+	h.killDaemonStrict(t, false)
+}
+
+// killDaemonStrict SIGKILLs the daemon and waits for the process to be gone.
+// With require set, a daemon that cannot be found is a test failure rather
+// than a no-op — a test that means to kill one must not silently skip it.
+//
+// The wait is on the PROCESS, not on the socket. A socket probe is not a
+// death test: a dial can fail transiently (a full listen backlog answers
+// EAGAIN on Linux) while the daemon is very much alive, and the caller would
+// then race a daemon it believes it has killed.
+func (h *daemonEnv) killDaemonStrict(t *testing.T, require bool) {
+	t.Helper()
+	infoPath := filepath.Join(h.dataDir, "run", "daemon.json")
+	raw, err := os.ReadFile(infoPath)
+	if err != nil {
+		if require {
+			t.Fatalf("cannot kill daemon: reading %s: %v", infoPath, err)
+		}
+		return // cleanup path: already gone
+	}
+	var info struct {
+		Pid int `json:"pid"`
+	}
+	if json.Unmarshal(raw, &info) != nil || info.Pid <= 0 {
+		if require {
+			t.Fatalf("cannot kill daemon: bad %s: %s", infoPath, raw)
+		}
+		return
+	}
+	_ = syscall.Kill(info.Pid, syscall.SIGKILL)
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(info.Pid, 0); err != nil {
+			return // ESRCH: reaped by init (the daemon is not our child)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Errorf("daemon pid %d still alive 15s after SIGKILL", info.Pid)
+}
+
+// assertSocketRefuses waits until the control socket stops accepting, which
+// is what a client observes when the daemon is gone.
+func (h *daemonEnv) assertSocketRefuses(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		conn, err := net.DialTimeout("unix", h.socket, time.Second)
+		if err != nil {
+			return
+		}
+		_ = conn.Close()
+		if time.Now().After(deadline) {
+			t.Fatalf("control socket %s still accepts connections after the daemon died", h.socket)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }

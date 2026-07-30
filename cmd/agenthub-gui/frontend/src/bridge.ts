@@ -20,8 +20,6 @@
 
 import { Browser, Call, Clipboard, Events } from "@wailsio/runtime";
 import type {
-  Approval,
-  ApprovalDecision,
   AuditRecord,
   AuthLoggedOut,
   AuthLogin,
@@ -260,9 +258,6 @@ export const hub = {
   /** Narrow-only: the daemon rejects anything that would widen scope. */
   setSessionScope: (sessionID: string, narrow: ScopeNarrow) =>
     call<void>("SetSessionScope", sessionID, narrow),
-  listApprovals: (history: boolean) => call<Approval[]>("ListApprovals", history),
-  answer: (token: string, approve: boolean, remember: string) =>
-    call<ApprovalDecision>("Answer", token, approve, remember),
   auditTail: (limit: number) => call<AuditRecord[]>("AuditTail", limit),
   securityTail: (limit: number) => call<SecurityEvent[]>("SecurityTail", limit),
 };

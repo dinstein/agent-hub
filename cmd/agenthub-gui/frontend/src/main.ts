@@ -12,7 +12,6 @@ import { clear, loadingState } from "./dom";
 import type { Page } from "./page";
 import { failureBox } from "./page";
 import { initTheme } from "./ui";
-import { approvalsPage } from "./pages/approvals";
 import { auditPage } from "./pages/audit";
 import { authPage } from "./pages/auth";
 import { catalogPage } from "./pages/catalog";
@@ -42,7 +41,6 @@ type Route =
   | "config"
   | "secrets"
   | "sessions"
-  | "approvals"
   | "skills"
   | "tokens"
   | "clients"
@@ -61,7 +59,6 @@ const ROUTES: Record<Route, () => Page> = {
   config: configPage,
   secrets: secretsPage,
   sessions: sessionsPage,
-  approvals: approvalsPage,
   skills: skillsPage,
   tokens: tokensPage,
   clients: clientsPage,
@@ -74,7 +71,6 @@ const view = document.getElementById("view") as HTMLElement;
 const dot = document.getElementById("daemon-dot") as HTMLElement;
 const statusText = document.getElementById("daemon-text") as HTMLElement;
 const statusDetail = document.getElementById("daemon-detail") as HTMLElement;
-const approvalsCount = document.getElementById("approvals-count") as HTMLElement;
 const quarantineCount = document.getElementById("quarantine-count") as HTMLElement;
 
 let current: Page | null = null;
@@ -114,18 +110,6 @@ function paintStatus(st: Status): void {
   statusDetail.title = st.socket ?? "";
 }
 
-/** Keeps the sidebar badge in step with the queue, whichever frontend
- *  actually decides the requests. */
-async function refreshApprovalBadge(): Promise<void> {
-  try {
-    const pending = await hub.listApprovals(false);
-    approvalsCount.textContent = String(pending.length);
-    approvalsCount.hidden = pending.length === 0;
-  } catch {
-    // Offline or not served: no badge rather than a wrong one.
-    approvalsCount.hidden = true;
-  }
-}
 
 /**
  * The quarantine counter, which the Tools page cannot switch off.
@@ -147,7 +131,7 @@ async function refreshQuarantineBadge(): Promise<void> {
 }
 
 function refreshCounters(): Promise<void> {
-  return Promise.all([refreshApprovalBadge(), refreshQuarantineBadge()]).then(() => undefined);
+  return refreshQuarantineBadge();
 }
 
 /**
@@ -191,7 +175,6 @@ function boot(): void {
     paintStatus(st);
     void refreshCounters();
   });
-  on<TopicEvent>(EVT.approvals, () => void refreshApprovalBadge());
   // The quarantine is registry-backed, so the servers topic is the cue that
   // something may have been isolated or released elsewhere.
   on<TopicEvent>(EVT.servers, () => void refreshQuarantineBadge());

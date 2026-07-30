@@ -19,7 +19,7 @@
 // that is the distinction a page has to get right:
 //
 //	hub.go       connection, the SSE bridge, and the runtime surfaces
-//	             (servers list, sessions, approvals, audit)
+//	             (servers list, sessions)
 //	registry.go  registry-backed configuration — every write carries an
 //	             expectedGeneration and can lose a compare-and-swap
 //	nonreg.go    stores that are NOT the registry (secrets, skills, tokens,
@@ -526,25 +526,6 @@ func (h *Hub) ListSessions(ctx context.Context) ([]api.SessionInfo, error) {
 func (h *Hub) SetSessionScope(ctx context.Context, sessionID string, narrow api.ScopeNarrow) error {
 	return do(ctx, h, func(c *api.Client) error {
 		return c.Sessions.SetScope(ctx, sessionID, narrow)
-	})
-}
-
-// ListApprovals returns the pending approval queue (history=true also
-// returns recently decided requests). Arguments are never part of this
-// listing — they arrive only on SSE pending frames.
-func (h *Hub) ListApprovals(ctx context.Context, history bool) ([]api.Approval, error) {
-	return call(ctx, h, func(c *api.Client) ([]api.Approval, error) {
-		return c.Approvals.List(ctx, history)
-	})
-}
-
-// Answer decides one pending approval. The GUI is one frontend among several
-// (CLI `approval watch` is another): losing the race yields
-// api.ErrCodeAlreadyDecided, which the frontend treats as "card already
-// handled elsewhere", not as an error (docs/modules/controlplane.md).
-func (h *Hub) Answer(ctx context.Context, token string, approve bool, remember string) (api.ApprovalDecision, error) {
-	return call(ctx, h, func(c *api.Client) (api.ApprovalDecision, error) {
-		return c.Approvals.Answer(ctx, token, approve, remember)
 	})
 }
 

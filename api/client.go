@@ -53,7 +53,6 @@ type Client struct {
 	Servers    *ServersService
 	Sessions   *SessionsService
 	Events     *EventsService
-	Approvals  *ApprovalsService
 	Skills     *SkillsService
 	Audit      *AuditService
 	Profiles   *ProfilesService
@@ -90,7 +89,6 @@ func New(socketPath string) *Client {
 	c.Servers = &ServersService{c: c}
 	c.Sessions = &SessionsService{c: c}
 	c.Events = &EventsService{c: c, retryMin: 200 * time.Millisecond, retryMax: 5 * time.Second}
-	c.Approvals = &ApprovalsService{c: c}
 	c.Skills = &SkillsService{c: c}
 	c.Audit = &AuditService{c: c}
 	c.Profiles = &ProfilesService{c: c}
