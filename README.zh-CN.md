@@ -95,7 +95,7 @@ agenthub client connect claude-code
 |---|---|
 | macOS | ✅ 支持，CI 常跑 |
 | Linux | ✅ 支持，CI 常跑 |
-| Windows | 🧪 **实验性**：运行时缺口已全部补上（`LockFileEx` 跨进程锁、带 SDDL 的 named pipe 控制面、api 拨号、便携 zip 打包），CI 门禁为 `GOOS=windows` build + vet，每次 release 附带两个架构的 zip。从未在真实 Windows 机器上跑过。[详见](docs/windows.md) |
+| Windows | 🧪 **实验性**：平台层已补齐（`LockFileEx` 跨进程锁、带 SDDL 的 named pipe 控制面、api 拨号、便携 zip 打包），CI 门禁为 `GOOS=windows` build + vet，每次 release 附带两个架构的 zip。仍有两处不能用 —— `daemon stop` 和 `client connect` 的用户级路径；且从未在真实 Windows 机器上跑过。[详见](docs/windows.md) |
 
 ## 隐私：不收集任何数据
 

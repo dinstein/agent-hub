@@ -100,7 +100,7 @@ that is current.
 |---|---|
 | macOS | ✅ Supported, exercised by CI |
 | Linux | ✅ Supported, exercised by CI |
-| Windows | 🧪 **Experimental**: all runtime gaps are filled (`LockFileEx` cross-process locks, named-pipe control plane with SDDL, api dialing, portable zip packaging) and CI gates on `GOOS=windows` build + vet. Nothing has ever run on a real Windows machine. [Details](docs/windows.md) |
+| Windows | 🧪 **Experimental**: the platform layer is filled in (`LockFileEx` cross-process locks, named-pipe control plane with SDDL, api dialing, portable zip packaging) and CI gates on `GOOS=windows` build + vet. Two things still do not work — `daemon stop` and `client connect`'s user-level paths — and nothing has ever run on a real Windows machine. [Details](docs/windows.md) |
 
 ## Privacy: no data collection
 

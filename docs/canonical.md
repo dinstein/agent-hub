@@ -159,7 +159,7 @@ code, know which tier you are standing on.
 
 | Item | Status |
 |---|---|
-| Windows | All runtime gaps filled: `LockFileEx` cross-process locks in every flock package, named-pipe listener with SDDL (owner-only), api dialing, GUI channel wiring, and portable zip packaging. CI gates on `GOOS=windows` build + vet. **Never run on a real Windows machine.** [windows.md](windows.md) tracks it |
+| Windows | Platform layer filled in: `LockFileEx` cross-process locks in every flock package, named-pipe listener with SDDL (owner-only), api dialing, GUI channel wiring, and portable zip packaging. CI gates on `GOOS=windows` build + vet. Two gaps remain above it — `daemon stop` has no process control, and no client has a user-level config path. **Never run on a real Windows machine.** [windows.md](windows.md) tracks all of it |
 | GUI | Functionally complete, **not part of the default build** (the webview needs GTK/WebKit, which CI runners lack); `make gui` |
 | skills materialization | **Client granularity only**, not per-session — the files live outside agenthub's read path |
 | skills from git sources | Records and pins a revision, but **never runs git and never touches the network**; update without a local checkout returns a typed unsupported error rather than claiming you are up to date |
