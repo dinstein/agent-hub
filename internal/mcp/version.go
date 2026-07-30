@@ -5,15 +5,30 @@ import (
 	"fmt"
 )
 
-// ProtocolVersion is the MCP protocol version this client declares in
-// initialize (canonical.md §5b: target 2025-11-25).
-const ProtocolVersion = "2025-11-25"
+// Named version constants. Use these in version-conditional code paths rather
+// than repeating string literals.
+const (
+	// Version2026 is the MCP 2026-07-28 specification: stateless per-request
+	// _meta, server/discover, MRTR, subscriptions/listen, no Mcp-Session-Id.
+	Version2026 = "2026-07-28"
+	// Version2025 is the MCP 2025-11-25 specification: initialize handshake,
+	// Mcp-Session-Id, server-initiated reverse RPCs, GET notification stream.
+	Version2025 = "2025-11-25"
+)
+
+// ProtocolVersion is the MCP protocol version this client declares during
+// handshake (canonical.md §5b). Pinned at 2025-11-25 while the 2026-07-28
+// transport changes (stateless _meta, server/discover, MRTR) are being
+// implemented; flipped to Version2026 as the final commit of Phase 1 — see
+// docs/mcp-2026-07-28.md.
+const ProtocolVersion = Version2025
 
 // SupportedVersions lists every protocol version this facade accepts from a
-// server, newest first. A server answering initialize with any of these is
-// accepted (downgrade negotiation); anything else fails the handshake.
+// downstream server, newest first. NegotiateVersion and Handshake accept any
+// version in this list; anything else fails the handshake.
 var SupportedVersions = []string{
-	"2025-11-25",
+	Version2026,
+	Version2025,
 	"2025-06-18",
 	"2025-03-26",
 }

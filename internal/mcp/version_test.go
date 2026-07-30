@@ -12,11 +12,12 @@ func TestNegotiateVersion(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "exact match", server: "2025-11-25", want: "2025-11-25"},
+		{name: "accept 2026-07-28", server: "2026-07-28", want: "2026-07-28"},
+		{name: "exact match 2025-11-25", server: "2025-11-25", want: "2025-11-25"},
 		{name: "downgrade to 2025-06-18", server: "2025-06-18", want: "2025-06-18"},
 		{name: "downgrade to 2025-03-26", server: "2025-03-26", want: "2025-03-26"},
 		{name: "older draft rejected", server: "2024-11-05", wantErr: true},
-		{name: "future version rejected", server: "2026-01-01", wantErr: true},
+		{name: "2026-01-01 not in list", server: "2026-01-01", wantErr: true},
 		{name: "empty rejected", server: "", wantErr: true},
 		{name: "garbage rejected", server: "banana", wantErr: true},
 	}
@@ -42,11 +43,24 @@ func TestNegotiateVersion(t *testing.T) {
 	}
 }
 
-// The declared client version must itself be acceptable, and must lead
-// SupportedVersions (newest first).
+// TestProtocolVersionConsistency checks that ProtocolVersion appears in
+// SupportedVersions and that NegotiateVersion accepts it.
+// SupportedVersions[0] is the highest version this facade supports, which
+// may exceed ProtocolVersion while the implementation of a newer spec version
+// is still in progress (see docs/mcp-2026-07-28.md Phase 1).
 func TestProtocolVersionConsistency(t *testing.T) {
-	if len(SupportedVersions) == 0 || SupportedVersions[0] != ProtocolVersion {
-		t.Fatalf("SupportedVersions[0] = %v, want %q first", SupportedVersions, ProtocolVersion)
+	if len(SupportedVersions) == 0 {
+		t.Fatal("SupportedVersions is empty")
+	}
+	found := false
+	for _, v := range SupportedVersions {
+		if v == ProtocolVersion {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("ProtocolVersion %q not found in SupportedVersions %v", ProtocolVersion, SupportedVersions)
 	}
 	if _, err := NegotiateVersion(ProtocolVersion); err != nil {
 		t.Fatal(err)
