@@ -26,10 +26,10 @@ Claude Code · Cursor · Codex · Open WebUI · 以及另外 8 种
    Claude Code ──┐                                   ┌── linear
    Cursor ───────┤      ┌──────────────────┐         ├── github
    Codex ────────┼─────►│     AgentHub     │────────►┼── postgres
-   Open WebUI ───┤      │   一份配置       │         ├── filesystem
-   … 另外 8 种 ──┘      │   一套凭据       │         └── …
-                        │   一条治理管线   │
-                        └──────────────────┘
+   Open WebUI ───┤      └──────────────────┘         ├── filesystem
+   … +8 ─────────┘                                   └── …
+
+                一份配置 · 一套凭据 · 一条治理管线
 ```
 
 - **单一必装二进制 `agenthub`** —— `connect`（stdio 网关，每 client 一进程）、
