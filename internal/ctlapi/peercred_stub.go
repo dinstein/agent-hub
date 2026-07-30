@@ -11,8 +11,16 @@ import (
 )
 
 // peerCredSupported gates Listen: platforms without a peer credential
-// implementation (Windows named pipes + SDDL arrive in M2) must not serve
-// the control socket at all — fail-closed, never "listen without checking".
+// implementation must not serve the control socket at all — fail-closed, never
+// "listen without checking".
+//
+// It is still false on Windows, and that is no longer a gap. Its subject is a
+// UNIX SOCKET, which Windows has and for which it has no SO_PEERCRED
+// equivalent. The Windows control endpoint is a named pipe, taken earlier in
+// Listen and authorized by its SDDL (pipelisten_windows.go). A Windows daemon
+// pointed at a socket path — AGENTHUB_SOCKET is honoured on every platform —
+// therefore refuses, which is the right answer: it could bind one and never
+// learn who was connecting.
 const peerCredSupported = false
 
 // peerUID is the unsupported-platform seam. It always fails, and because

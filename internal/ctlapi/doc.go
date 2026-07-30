@@ -1,5 +1,5 @@
 // Package ctlapi is the control-plane server: REST + SSE over a Unix
-// domain socket (named pipe on Windows, M2).
+// domain socket, or a named pipe on Windows.
 //
 // Surface (docs/architecture.md §2, docs/modules/controlplane.md):
 //
@@ -35,8 +35,12 @@
 // LOCAL_PEERCRED (macOS) to belong to the same uid as this process (second
 // gate: peer credentials defeat a misconfigured directory). No tokens are
 // issued — OS-level identity is sufficient for the local single-user model.
-// Windows returns ErrUnsupportedPlatform until the named-pipe implementation
-// lands in M2.
+// On Windows the endpoint is a named pipe and the two layers collapse into one
+// that is stronger than either: the pipe's SDDL admits the current user and
+// nobody else — not Administrators, not SYSTEM — so an unauthorized process
+// cannot open the pipe at all and never reaches an Accept that would have to
+// reject it (pipelisten_windows.go; platform.CtlPipeSDDL renders the
+// descriptor).
 //
 // Every request carries an X-Request-Id (echo-or-generate; the response
 // header is set before the handler runs so even a panic cannot lose it),

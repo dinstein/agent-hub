@@ -31,10 +31,20 @@ const probeTimeout = 500 * time.Millisecond
 //  4. the listener is wrapped so every accepted connection has its peer
 //     credentials checked against this process's uid (second auth gate).
 //
+// On Windows socketPath is a named pipe (platform.CtlSocketPath returns
+// \\.\pipe\agenthub-ctl-…) and none of the four steps above apply: there is no
+// directory to tighten, no file to chmod, and nothing left behind to clean up.
+// That branch is taken FIRST, before the peer-credential gate, because the
+// gate's subject is a Unix socket — see listenPipe, where the authorization
+// those two gates provide is done by the pipe's SDDL instead.
+//
 // On platforms without a peer credential implementation Listen fails with
 // platform.ErrUnsupportedPlatform — fail-closed: no peer check, no
 // control plane.
 func Listen(socketPath string) (net.Listener, error) {
+	if platform.IsPipePath(socketPath) {
+		return listenPipe(socketPath)
+	}
 	if !peerCredSupported {
 		return nil, fmt.Errorf("ctlapi: listen on %s: %w", runtime.GOOS, platform.ErrUnsupportedPlatform)
 	}
