@@ -280,9 +280,19 @@ GUI/CLI edits a profile → the corresponding gateway updates automatically; see
 
 ## 5d. Collaboration conventions
 
-- Commit directly to `main`, **one commit per subtask** (every commit must compile and be testable)
-- Commit messages in English
-- Push as soon as each commit is done
+**They live in [AGENTS.md](../AGENTS.md), not here** — worktree per feature, one commit per subtask,
+`main` stays linear (rebase, never merge), `make ci-landing` **after** the rebase, `--ff-only` as the
+enforcement.
+
+This section used to carry its own copy, and the copy was the older rule: *commit directly to `main`,
+push as soon as each commit is done*. That is the dangerous direction for a contradiction to fall in.
+This file advertises itself as the authority on whether a convention may change, so an agent that
+starts here and stops reading commits straight into the main work tree — which is what the worktree
+rule exists to prevent, and no review after the fact puts the history back.
+
+Development workflow is not an architectural convention: it says nothing about the shape of the code,
+it changes for reasons the code never sees, and the file every coding agent reads first is `AGENTS.md`.
+One home, and that is the one.
 
 ---
 
