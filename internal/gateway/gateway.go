@@ -472,9 +472,9 @@ func newGateway(cfg Config) (*gateway, error) {
 		g.dialing[spec.ID] = struct{}{}
 	}
 	if g.scopeRes != nil {
-		// Seed the hash-diff baseline so the first overlay/registry event
-		// does not push a spurious tools/list_changed when nothing visible
-		// actually changed.
+		// Seed the hash-diff baseline so the first registry event does not
+		// push a spurious tools/list_changed when nothing visible actually
+		// changed.
 		g.lastScope = g.currentScope()
 	}
 	return g, nil

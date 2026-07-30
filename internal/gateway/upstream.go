@@ -282,11 +282,12 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 	defer lease.Release()
 	target := lease.Server
 
-	// The routed tool's definition feeds the precheck (inputSchema) and the
-	// HITL destructive predicate (annotations; absent = destructive,
-	// fail-closed — see pipeline.DefaultDestructive). It is read from the
-	// BASE server: a derived instance serves the same catalog by
-	// construction, and the base list is the one the router aggregated.
+	// The routed tool's definition feeds the token tier gate (annotations;
+	// absent = destructive, fail-closed — see pipeline.ToolTier). The
+	// inputSchema travels with it and is read by NOTHING: the precheck gate
+	// that consumed it is gone. It is read from the BASE server: a derived
+	// instance serves the same catalog by construction, and the base list is
+	// the one the router aggregated.
 	var inputSchema, annotations json.RawMessage
 	var description string
 	for _, def := range srv.Tools() {
@@ -340,11 +341,11 @@ func (g *gateway) runCall(ctx context.Context, req *mcp.Request, t callTarget, a
 		Call:       t.call,
 	}
 	// Quota admission (internal/ratelimit, ratelimit.go): Guard WRAPS the
-	// call closures, so a token is spent after EVERY gate — HITL included —
-	// and immediately before the downstream call. It is not a fifth gate:
-	// the frozen chain order is untouched, and a call any gate denied never
-	// spends a token. A nil limiter (no rules configured) leaves the request
-	// exactly as it was.
+	// call closures, so a token is spent after BOTH gates and immediately
+	// before the downstream call. It is not a third gate: the frozen chain
+	// order is untouched, and a call either gate denied never spends a
+	// token. A nil limiter (no rules configured) leaves the request exactly
+	// as it was.
 	//
 	// The key uses the ROUTED (server, tool) — RouteOf provenance, never the
 	// exposed name: renaming a tool must not move which quota it spends

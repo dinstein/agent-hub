@@ -51,8 +51,13 @@ type CallRequest struct {
 	// Args is the raw argument JSON, passed through verbatim.
 	Args json.RawMessage
 	// InputSchema is the routed tool's inputSchema, verbatim from the
-	// downstream tools/list (nil = unknown: the precheck gate then only
-	// checks the JSON-object shape of Args).
+	// downstream tools/list.
+	//
+	// NOTHING READS IT. Its only consumer was the argument precheck gate,
+	// removed with the rest of the argument-inspecting stages, and no gate
+	// may inspect a call's arguments any more. It is left in place, and
+	// still populated by internal/gateway, only so that deleting it is a
+	// deliberate decision rather than a side effect of this refactor.
 	InputSchema json.RawMessage
 	// Annotations is the routed tool's annotations object, verbatim from
 	// the downstream tools/list. ABSENCE IS LOAD-BEARING: a tool without
