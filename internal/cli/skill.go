@@ -340,7 +340,7 @@ func (a *App) newSkillAddCmd() *cobra.Command {
 		Use:   "add <path> [--pin <rev>]",
 		Short: "Import a skill package directory into the library (fingerprint pinned)",
 		Long: "Import a local directory into the skill library.\n\n" +
-			"agenthub performs no git operations (M2): --git-url and --pin record\n" +
+			"agenthub performs no git operations: --git-url and --pin record\n" +
 			"provenance for a checkout you already have, they do not fetch it. The\n" +
 			"imported bytes are content-addressed and fingerprinted, so a later\n" +
 			"'skill verify' can prove the library copy has not been edited.",

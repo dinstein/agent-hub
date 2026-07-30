@@ -103,7 +103,7 @@ func (a *App) newGrantRequestCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "request --session <id> --server <id> --tool <name> [--tool ...]",
-		Short: "File a widen request for a live session (M1: frontend-triggered; agents get request_widen later)",
+		Short: "File a widen request on behalf of a live session (you file it, not the agent)",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if sessionID == "" || server == "" || len(tools) == 0 {
