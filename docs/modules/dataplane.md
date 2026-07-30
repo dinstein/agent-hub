@@ -479,8 +479,11 @@ catalog and visibility, but **implements no governance decision**.
 ### Key types and entry points
 
 `Run(ctx, Config) error` is the only exported run entry point; `Config` requires `ClientID` / `In` / `Out`, and
-everything else has production defaults. `LoadToolCache` is additionally exported so the offline `agenthub tool ls`
-reads the same cache format (one writer, one reader, one struct). `RootSource` is the migration seam frozen by A.5
+everything else has production defaults. Two readers are additionally exported so the offline CLI reads the same
+cache format the gateway writes: `LoadToolCache` for `agenthub tool ls`, and `LoadToolCacheEntries` for
+`agenthub server inspect`, which reports a cached catalog beside a live one and so must also say how old the
+cached answer is. **One writer, and one decode** — the first is a projection of the second, dropping each entry's
+`SavedAt`, which is what keeps two readers from disagreeing about the same files. `RootSource` is the migration seam frozen by A.5
 #30: M0 wires in the roots protocol implementation `clientRoots`, and a future explicit-roots implementation from
 clients.json will drop straight in, with scope resolution consuming the interface itself.
 

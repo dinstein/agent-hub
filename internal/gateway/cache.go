@@ -73,7 +73,12 @@ const toolCacheSubdir = "tools"
 // reader — `agenthub tool ls`, which must be able to show the catalog
 // without spawning a gateway or connecting to anything.
 //
-// The format stays owned by this file: one writer, one reader, one struct.
+// The format stays owned by this file: one writer, and one decode. This is
+// a PROJECTION of LoadToolCacheEntries — load() drops each entry's SavedAt —
+// so the two exported readers cannot come to disagree about what is on disk.
+// A caller that adds a third must project it the same way rather than
+// parsing the files again.
+//
 // A missing cache is an empty map, not an error (it only means no gateway
 // has connected yet); log may be nil.
 func LoadToolCache(resolver *platform.Resolver, log *slog.Logger) (map[string][]mcp.ToolDef, error) {
