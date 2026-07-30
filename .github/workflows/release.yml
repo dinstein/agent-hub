@@ -91,9 +91,10 @@ jobs:
           path: dist/*
           retention-days: 7
 
-  # The GUI must be built on the platform it targets: the webview is native.
-  # macOS only for now — Windows and Linux need their own runners and their own
-  # packaging, and neither has ever been exercised.
+  # The GUI must be built on the platform it targets — for macOS.
+  # Windows is the exception: WebView2 is loaded at runtime through COM and the
+  # wails v3 Windows backend is pure Go, so the full zip builds on any host.
+  # A separate job keeps the two build shapes easy to read and diff.
   gui-macos:
     needs: verify
     runs-on: macos-latest
@@ -127,8 +128,47 @@ jobs:
             dist/checksums-macos.txt
           retention-days: 7
 
+  # Cross-compiled on ubuntu-latest — WebView2 is runtime COM, no cgo needed.
+  # The runner is Linux not macOS, so `sha256sum` rather than `shasum -a 256`.
+  gui-windows:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22.x"
+          cache: npm
+          cache-dependency-path: cmd/agenthub-gui/frontend/package-lock.json
+      - name: Install wails3
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.118
+      # The same reason as ci.yml and gui-macos: gui_main.go embeds
+      # frontend/dist, which is gitignored. `npm ci` rejects a stale lockfile.
+      - name: Frontend (typecheck + bundle)
+        run: make gui-frontend-ci
+      - name: Package the Windows zips (amd64 + arm64)
+        env:
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+        run: make release-windows
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum *.zip > checksums-windows.txt
+      - uses: actions/upload-artifact@v5
+        with:
+          name: gui-windows
+          path: |
+            dist/*.zip
+            dist/checksums-windows.txt
+          retention-days: 7
+
   publish:
-    needs: [verify, cli, gui-macos]
+    needs: [verify, cli, gui-macos, gui-windows]
     # Never publishes on the workflow_dispatch rehearsal path: that run has no
     # tag, so there is nothing to attach a Release to.
     if: needs.verify.outputs.tagged == 'true'
@@ -140,7 +180,7 @@ jobs:
       - name: Collect
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.dmg' -o -name 'checksums-*.txt' \) \
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.dmg' -o -name '*.zip' -o -name 'checksums-*.txt' \) \
             -exec mv {} release/ \;
           ls -la release
       # Uploaded HERE, and the homebrew job renders the formula's download URLs
@@ -167,11 +207,19 @@ jobs:
             notarized**: on first launch, right-click → Open, or run
             `xattr -cr /Applications/AgentHub.app`.
 
+            **GUI (Windows, experimental)** — download the `.zip` for your
+            architecture (amd64 or arm64), unzip anywhere, and keep
+            `agenthub-gui.exe` and `agenthub.exe` in the same folder. These
+            binaries are **not code-signed**: SmartScreen will warn on first
+            run (More info → Run anyway). The Microsoft Edge WebView2 runtime
+            is required; Windows 11 already has it, and most Windows 10
+            machines receive it through Edge. See the README.txt inside the zip
+            for details. The Windows support cross-compiles and is unit-tested
+            but has never run on a real Windows machine — treat surprises as
+            expected and report them.
+
             **CLI only** — download the `.tar.gz` for your platform and put
             `agenthub` somewhere on your `$PATH`.
-
-            Windows binaries are cross-compiled and have never been run on real
-            hardware; treat them as experimental.
 
             Verify downloads against `checksums-*.txt`.
 
