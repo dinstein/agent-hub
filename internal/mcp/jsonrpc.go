@@ -19,6 +19,26 @@ const (
 	CodeInternalError  = -32603
 )
 
+// MCP-specification error codes in the reserved range -32020 to -32099.
+// Codes -32000 to -32019 are legacy (grandfathered SDK allocations); new
+// allocations must not use that sub-range. See MCP 2026-07-28 §error-codes.
+const (
+	// CodeHeaderMismatch is returned when a required protocol header is
+	// present but its value conflicts with the request body (e.g. the
+	// Mcp-Method header names a different method than the JSON-RPC body).
+	CodeHeaderMismatch = -32020
+
+	// CodeMissingRequiredClientCapability is returned when processing a
+	// request requires a client capability not declared in the request's
+	// _meta.io.modelcontextprotocol/clientCapabilities field.
+	CodeMissingRequiredClientCapability = -32021
+
+	// CodeUnsupportedProtocolVersion is returned when the protocol version
+	// in _meta.io.modelcontextprotocol/protocolVersion is not supported by
+	// the server.
+	CodeUnsupportedProtocolVersion = -32022
+)
+
 // ErrMalformedFrame is the decidable sentinel for a frame that is not a
 // valid JSON-RPC 2.0 message (bad JSON, wrong "jsonrpc" version, invalid id
 // type, or none of request/response/notification). Errors returned by

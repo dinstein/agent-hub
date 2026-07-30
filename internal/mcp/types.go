@@ -2,15 +2,30 @@ package mcp
 
 import "encoding/json"
 
-// MCP method and notification names used by M0. The facade owns these
-// strings; no other package spells protocol method names.
+// MCP method and notification names. The facade owns these strings; no other
+// package spells protocol method names.
 const (
 	MethodInitialize = "initialize"
-	MethodPing       = "ping"
-	MethodToolsList  = "tools/list"
-	MethodToolsCall  = "tools/call"
-	MethodRootsList  = "roots/list"
+	// MethodPing is removed from the core protocol in MCP 2026-07-28.
+	// DEPRECATED-UPSTREAM(ping, earliest-removal: 2027-07-28)
+	MethodPing      = "ping"
+	MethodToolsList = "tools/list"
+	MethodToolsCall = "tools/call"
+	MethodRootsList = "roots/list"
 
+	// MethodDiscover is the server/discover RPC introduced in MCP 2026-07-28.
+	// Servers MUST implement it; clients MAY call it before any other request
+	// to negotiate the highest mutually supported protocol version.
+	MethodDiscover = "server/discover"
+
+	// MethodSubscriptionsListen is the 2026-07-28 replacement for the HTTP
+	// GET notification stream and resources/subscribe. A single long-lived
+	// POST-response SSE stream delivers all opted-in change notifications.
+	MethodSubscriptionsListen = "subscriptions/listen"
+
+	// NotificationInitialized is sent after a successful initialize handshake
+	// (MCP ≤ 2025-11-25). Removed in 2026-07-28 (stateless protocol).
+	// DEPRECATED-UPSTREAM(initialize-handshake, earliest-removal: 2027-07-28)
 	NotificationInitialized          = "notifications/initialized"
 	NotificationCancelled            = "notifications/cancelled"
 	NotificationToolsListChanged     = "notifications/tools/list_changed"
@@ -19,6 +34,17 @@ const (
 	// NotificationRootsListChanged is sent by a client whose roots changed.
 	// DEPRECATED-UPSTREAM(roots, earliest-removal: 2027-07-28)
 	NotificationRootsListChanged = "notifications/roots/list_changed"
+)
+
+// ResultType values for the required resultType field introduced in MCP
+// 2026-07-28. Servers speaking earlier protocol versions omit the field;
+// clients MUST treat an absent resultType as ResultTypeComplete.
+const (
+	// ResultTypeComplete signals a normal, finished result.
+	ResultTypeComplete = "complete"
+	// ResultTypeInputRequired signals that the server needs more information
+	// from the client before it can complete the request (see InputRequiredResult).
+	ResultTypeInputRequired = "input_required"
 )
 
 // Root is one entry of a roots/list result.
@@ -49,11 +75,29 @@ type RootsCapability struct {
 	ListChanged bool `json:"listChanged,omitempty"`
 }
 
-// ClientCapabilities is the minimal capability set M0 declares. Unknown
-// capability groups a future server might require are out of scope here;
-// extend this struct rather than hand-writing JSON elsewhere.
+// ClientCapabilities is the capability set this client declares. Extend this
+// struct rather than hand-writing JSON elsewhere. Extensions carries any
+// opt-in extension capabilities negotiated during the handshake (MCP 2026-07-28+).
 type ClientCapabilities struct {
-	Roots *RootsCapability `json:"roots,omitempty"`
+	// DEPRECATED-UPSTREAM(roots, earliest-removal: 2027-07-28)
+	Roots      *RootsCapability           `json:"roots,omitempty"`
+	Extensions map[string]json.RawMessage `json:"extensions,omitempty"`
+}
+
+// RequestMeta carries the per-request protocol metadata introduced in MCP
+// 2026-07-28 under the io.modelcontextprotocol/* _meta key namespace.
+// It is injected into the _meta field of every outgoing request when the
+// negotiated protocol version is Version2026.
+//
+// Clients MUST include ProtocolVersion and ClientCapabilities on every
+// request; ClientInfo SHOULD be included.
+type RequestMeta struct {
+	ProtocolVersion    string             `json:"io.modelcontextprotocol/protocolVersion"`
+	ClientCapabilities ClientCapabilities `json:"io.modelcontextprotocol/clientCapabilities"`
+	ClientInfo         *Implementation    `json:"io.modelcontextprotocol/clientInfo,omitempty"`
+	// LogLevel, when set, asks the server to emit log messages at or above
+	// this level for this request only (replaces logging/setLevel).
+	LogLevel string `json:"io.modelcontextprotocol/logLevel,omitempty"`
 }
 
 // InitializeParams is the "initialize" request payload.
@@ -90,10 +134,24 @@ type ListToolsParams struct {
 	Cursor string `json:"cursor,omitempty"`
 }
 
+// CacheableResult carries the freshness hint fields that MCP 2026-07-28
+// requires on all list and read results (tools/list, resources/list,
+// prompts/list, resources/read, resources/templates/list).
+// TtlMs is a client-side cache TTL in milliseconds; CacheScope controls
+// whether shared intermediaries may cache the response ("public"/"private").
+type CacheableResult struct {
+	TtlMs      *int64 `json:"ttlMs,omitempty"`
+	CacheScope string `json:"cacheScope,omitempty"`
+}
+
 // ListToolsResult is the "tools/list" response payload.
 type ListToolsResult struct {
 	Tools      []ToolDef `json:"tools"`
 	NextCursor string    `json:"nextCursor,omitempty"`
+	// ResultType is "complete" for a normal result (MCP 2026-07-28+).
+	// An absent field from older servers is treated as "complete".
+	ResultType string `json:"resultType,omitempty"`
+	CacheableResult
 }
 
 // CallToolParams is the "tools/call" request payload. Arguments are raw:
@@ -104,14 +162,67 @@ type CallToolParams struct {
 	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
-// CallResult is the "tools/call" response payload. Content (and optional
-// structuredContent) are passed through verbatim; IsError distinguishes a
-// tool-level failure (a successful RPC whose tool reported an error) from a
-// protocol-level failure (a JSON-RPC error response).
+// CallResult is the "tools/call" complete response payload. Content (and
+// optional structuredContent) are passed through verbatim; IsError
+// distinguishes a tool-level failure from a protocol-level failure.
+// ResultType is "complete" for a finished result; check for
+// InputRequiredResult before unmarshalling as CallResult (MCP 2026-07-28+).
 type CallResult struct {
+	ResultType        string          `json:"resultType,omitempty"`
 	Content           json.RawMessage `json:"content"`
 	StructuredContent json.RawMessage `json:"structuredContent,omitempty"`
 	IsError           bool            `json:"isError,omitempty"`
+}
+
+// InputRequiredResult is the "tools/call" (and "prompts/get",
+// "resources/read") interim response when the server needs additional input
+// from the client before it can complete the request (MCP 2026-07-28 MRTR).
+//
+// The client must:
+//  1. Collect the responses for every key in InputRequests.
+//  2. Retry the original request with a NEW JSON-RPC id, carrying
+//     InputResponses and the echoed RequestState.
+//
+// Clients MUST NOT inspect, parse, or modify RequestState; servers own its
+// integrity (HMAC/AEAD if it influences auth or resource access).
+type InputRequiredResult struct {
+	ResultType    string        `json:"resultType"` // always ResultTypeInputRequired
+	InputRequests InputRequests `json:"inputRequests,omitempty"`
+	RequestState  string        `json:"requestState,omitempty"`
+}
+
+// InputRequests is a map of server-assigned string keys to input request
+// objects. Keys are unique within the scope of one InputRequiredResult.
+// Values are InputRequest objects carrying the method and params of each
+// server-initiated request (elicitation/create, sampling/createMessage,
+// or roots/list).
+type InputRequests map[string]InputRequest
+
+// InputRequest is one entry in an InputRequests map: the method and raw
+// params of a server-initiated request the client must fulfill.
+type InputRequest struct {
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params,omitempty"`
+}
+
+// InputResponses is a map of client responses keyed by the same string keys
+// as the originating InputRequests. It is carried in the retry of the
+// original request.
+type InputResponses map[string]json.RawMessage
+
+// DiscoverParams is the "server/discover" request payload (MCP 2026-07-28).
+// Currently empty; reserved for future fields.
+type DiscoverParams struct{}
+
+// DiscoverResult is the "server/discover" response payload. It advertises
+// the server's supported protocol versions (newest first), capabilities, and
+// identity. Clients pick the highest mutually supported version from
+// ProtocolVersions before sending their first real request.
+type DiscoverResult struct {
+	ResultType       string          `json:"resultType,omitempty"`
+	ProtocolVersions []string        `json:"protocolVersions"`
+	Capabilities     json.RawMessage `json:"capabilities,omitempty"`
+	ServerInfo       Implementation  `json:"serverInfo"`
 }
 
 // CancelledParams is the "notifications/cancelled" payload. RequestID names
