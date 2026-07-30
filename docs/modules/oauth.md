@@ -174,6 +174,15 @@ have:
 | `__http_auth__` | Access token (shared slot for OAuth tokens and manually pasted tokens) |
 | Any custom key | Whatever `secret set <server> <KEY>` stored, possibly under a non-default scope |
 
+**Gap: the registration and the refresh token share `__oauth_state__`, so they cannot be updated
+independently.** `Store.Save` marshals the whole `State` — client_id/secret and refresh token
+together — and writes it as one value, which makes a re-registration and a token refresh the same
+read-modify-write against the same key; whichever finishes second overwrites what the other put
+there. The window is narrow rather than absent: credentials are persisted precisely so that
+re-registration does not happen on every start. Closing it means a third entry holding the
+registration alone, which is additive and does not disturb the state-before-token write ordering
+described below.
+
 Deletion paths:
 
 | Command | Effect |

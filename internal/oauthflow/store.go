@@ -29,11 +29,14 @@ type State struct {
 	// re-registering on every start both spams the provider and, on
 	// providers that rate-limit DCR, eventually fails.
 	//
-	// TODO(M1.5, oauth): docs/modules/oauth.md splits client registration into its
-	// own vault key to remove the read-modify-write merge window between a
-	// token update and a registration update. M1 ships the two-entry model
-	// of 3.3; the split is additive (a third key) and does not change the
-	// state-before-token ordering invariant below.
+	// Sharing one vault entry with the refresh token is what makes a
+	// registration update and a token update the same read-modify-write:
+	// Save marshals this whole struct and writes it as one value, so the
+	// two cannot be updated independently. Splitting registration into a
+	// third vault key would close that window and is additive — it does not
+	// touch the state-before-token ordering invariant below. Recorded under
+	// "Credential lifecycle" in docs/modules/oauth.md, which describes the
+	// two-entry model as it stands, not the split.
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret,omitempty"`
 	// RegistrarKind records where the client credentials came from

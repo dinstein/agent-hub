@@ -197,10 +197,11 @@ func (r *dcrRegistrar) wrap(md *AuthServerMetadata, err error) error {
 // registering, the client publishes a metadata document at an https URL and
 // uses that URL as its client_id.
 //
-// It is deliberately unimplemented in M1. The seam exists now (canonical.md
-// §5b: "in place by M1") so that when DCR is removed upstream the change is a
-// constructor swap. Implementing it requires a hosting story for the
-// document, which agenthub does not have yet.
+// It is deliberately unimplemented. The seam exists so that when DCR is
+// removed upstream the change is a constructor swap — canonical.md §5b's
+// deprecation table lists it as the migration seam for DCR, and
+// docs/modules/oauth.md marks this row "seam only". Implementing it requires
+// a hosting story for the document, which agenthub does not have yet.
 type clientIDMetadataRegistrar struct {
 	// DocumentURL is the https URL that would serve the client metadata
 	// document and simultaneously be the client_id.
@@ -210,10 +211,11 @@ type clientIDMetadataRegistrar struct {
 // NewClientIDMetadataRegistrar returns the Client ID Metadata Document
 // implementation of ClientRegistrar.
 //
-// TODO(M2, oauth): implement once agenthub can publish a client metadata
-// document at a stable https URL. Until then Register returns
-// ErrNotImplemented rather than silently falling back to DCR — a silent
-// fallback would hide the very migration this seam exists to make visible.
+// The blocker is a hosting story, not a schedule: this can be implemented
+// once agenthub can publish a client metadata document at a stable https
+// URL. Until then Register returns ErrNotImplemented rather than silently
+// falling back to DCR — a silent fallback would hide the very migration this
+// seam exists to make visible.
 func NewClientIDMetadataRegistrar(documentURL string) ClientRegistrar {
 	return &clientIDMetadataRegistrar{DocumentURL: documentURL}
 }
