@@ -382,6 +382,18 @@ flowchart LR
 | agent token tier + intent variants | Operation tier | Machine (token × annotations) | A read-only credential initiating a write/destructive operation |
 | HITL | A single call | Human (bound by args_hash) | Specific actions that still need a human within their tier |
 
+**Four gates, three defenses — argument pre-validation is the one in the chain that is not a line of
+defense**, which is why the diagram has a box the table has no row for. It checks shape shallowly
+(Args is an object, required top-level fields present, present ones of the declared type) and leaves
+the downstream server as the authoritative validator; more to the point, when it can provably repair
+a violation it repairs and passes rather than refusing. A defense line refuses. Reading this gate as
+a security boundary because it sits inside a chain described as frozen and fail-closed is the mistake
+worth naming.
+
+Its position is not free, though. The repair MUTATES the arguments, so it has to happen **before**
+HITL: the approval's `args_hash` then covers what actually runs, and "what's approved is what runs"
+survives self-healing. Moving it after HITL would hash one set of arguments and execute another.
+
 The content binding of an approval matters: the request carries a canonical hash of the arguments, so
 **what's approved is what runs**; it also carries a fingerprint of the live tool definition, so once the
 definition drifts, an old approval returns `Stale` instead of being reused. Everything other than
