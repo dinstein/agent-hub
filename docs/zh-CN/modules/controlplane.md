@@ -1005,8 +1005,22 @@ nil，ctx 在 sleep/storm 中被取消时返回 `ctx.Err()`，只有解释器误
 
 ### 不变量与失败方向
 
-**探针只写在仓库树内，且一定被 `t.Cleanup` 删掉**，哪怕测试失败。规则 3 的测试在
-`internal/pipeline` 不存在时会创建整个目录，并且只在自己创建过的情况下才 `RemoveAll`。
+**探针写进 checkout 的一份一次性副本，绝不写进 checkout 自身。** `probeTree` 把整个 module
+（源码与配置；跳过 `.git`、`node_modules` 和构建产物）复制到一个由真实 root 推导出来的 `$TMPDIR`
+路径下，所有探针路径都以它为根。理由是这个测试跑的时候真实树正在**被构建**：`go test ./...` 并行
+跑各个包的测试二进制，`test/e2e` 的 `TestMain` 会 shell 出 `go build ./cmd/agenthub`，而一个在探针
+创建与删除之间列出被约束包的 build 会死在 `open internal/platform/zz_depguard_probe_rule4.go: no
+such file or directory`。这不是假设——Linux CI job 就是这样被这个证明搞红的，拿 `go build` 去锤旧的
+树内版本，25 次里有 6 次失败。副本路径是推导出来的而不是随机的，因为 golangci-lint 按绝对路径做
+缓存：每次一个新目录就意味着每次都对每个探针做一次冷 lint。
+
+**副本内部每个探针仍然被 `t.Cleanup` 删掉**，哪怕测试失败——正是它让每条规则的对照组能紧接着把
+同一个包 lint 干净。规则 3 的测试在副本里没有 `internal/pipeline` 时会创建整个目录，并且只在自己
+创建过的情况下才 `RemoveAll`。
+
+**"真实树是只读的"是被断言的，不只是被打算的**：证明跑完后 `assertNoProbesIn` 会走一遍真实
+checkout，见到任何 `zz_depguard_probe_*` 文件就失败。把探针搬回树里的改动会在这里红，并且消息直接
+点名原因，而不是变成 `test/e2e` 里一个看起来毫不相干的 flake。
 
 **每个探针 import 的包都在 `go.mod` 里且能通过类型检查**（比如 cobra），所以 lint 失败**只可能
 来自 depguard，不可能来自编译器**。`assertBlocked` 除了断言失败，还断言输出里出现 "depguard"

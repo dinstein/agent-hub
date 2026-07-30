@@ -1138,8 +1138,22 @@ would let it quietly rot).
 
 ### Invariants and failure directions
 
-**Probes are written only inside the repository tree, and are always deleted by `t.Cleanup`**, even when the test fails. Rule 3's
-test creates the whole directory when `internal/pipeline` doesn't exist, and only `RemoveAll`s when it created it itself.
+**Probes are written into a disposable copy of the checkout, never into the checkout itself.** `probeTree` copies the module
+(sources and configuration; `.git`, `node_modules` and build output are skipped) to a `$TMPDIR` path derived from the real root, and
+every probe path is rooted there. The reason is that the real tree is being *built* while this test runs: `go test ./...` runs
+package test binaries in parallel, `test/e2e`'s `TestMain` shells out to `go build ./cmd/agenthub`, and a build that lists a
+constrained package between a probe's creation and its removal dies with `open internal/platform/zz_depguard_probe_rule4.go: no
+such file or directory`. That is not hypothetical — it is how this proof turned the Linux CI job red, and hammering `go build`
+alongside the old in-tree version fails 6 builds out of 25. The copy's path is derived from the root rather than random because
+golangci-lint caches by absolute path: a fresh directory per run would mean a cold lint of every probe, every time.
+
+**Inside the copy each probe is still removed by `t.Cleanup`**, even when the test fails — that is what lets each rule's control
+case lint the same package clean immediately afterwards. Rule 3's test creates the whole directory when `internal/pipeline` doesn't
+exist in the copy, and only `RemoveAll`s when it created it itself.
+
+**The real tree being read-only is asserted, not merely intended**: when the proof is over, `assertNoProbesIn` walks the real
+checkout and fails on any `zz_depguard_probe_*` file. A change that moves a probe back into the tree fails here, in a message that
+names the cause, instead of resurfacing as an unrelated flake in `test/e2e`.
 
 **Every package a probe imports is in `go.mod` and type-checks** (cobra, for instance), so a lint failure **can only come from
 depguard and never from the compiler**. Besides asserting failure, `assertBlocked` also asserts that the word "depguard" appears in

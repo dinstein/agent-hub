@@ -13,9 +13,13 @@
 //
 // Invariants:
 //
-//   - Probes are written only under the repository tree and are always
-//     removed by t.Cleanup, even on test failure. If internal/pipeline
-//     did not exist before the test, the whole directory is removed.
+//   - Probes are written into a disposable copy of the checkout, never into
+//     the checkout itself. The real tree is read-only for this package,
+//     because `go test ./...` builds it from other packages at the same
+//     time (test/e2e's TestMain) and a probe appearing and vanishing under
+//     a concurrent `go build` breaks that build. Within the copy each probe
+//     is still removed by t.Cleanup, even on failure: that is what lets the
+//     control case lint the same package clean immediately afterwards.
 //   - Every probe imports a package that is present in go.mod and
 //     type-checks, so a lint failure can only come from depguard,
 //     never from the compiler.

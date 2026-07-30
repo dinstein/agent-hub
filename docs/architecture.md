@@ -181,7 +181,8 @@ The nine packages worth knowing first:
 
 The four dependency constraints aren't a verbal review convention; they're **CI failure conditions**,
 and each has a failing case that proves it actually bites (`internal/depguardtest` injects violating
-probes into real packages and asserts golangci-lint reports them):
+probes into the constrained packages — inside a disposable copy of the checkout, never the checkout
+itself — and asserts golangci-lint reports them):
 
 | # | Constraint | Why |
 |---|---|---|

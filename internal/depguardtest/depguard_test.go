@@ -3,6 +3,7 @@ package depguardtest
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -103,9 +104,97 @@ func runLint(t *testing.T, bin, root, relPkg string) (string, error) {
 	return string(out), err
 }
 
+// probeTree materializes a disposable copy of the checkout for the probes
+// to be written into, and returns its root.
+//
+// The probes used to be written into the real tree, which made this proof a
+// concurrency hazard rather than a proof: `go test ./...` runs package test
+// binaries in parallel, test/e2e's TestMain shells out to `go build
+// ./cmd/agenthub` against that same tree, and a build that listed
+// internal/platform between the probe's creation and its removal died with
+// "open internal/platform/zz_depguard_probe_rule4.go: no such file or
+// directory". Locally the window is narrow enough to hide (a warm build
+// cache closes it in a second); on a CI runner with a cold cache the build
+// spans the entire probe run and the failure is reliable. The real tree is
+// now read-only for this package, so no builder — present or future — can
+// be caught by it.
+//
+// The path is derived from the real root rather than random: golangci-lint
+// caches by absolute file path, and a fresh directory per run would mean a
+// cold lint of every probe every time. Reused across runs, private per
+// checkout. Two concurrent runs over one checkout would fight over it, and
+// would do so loudly (a vanished tree fails the lint, it does not quietly
+// pass it).
+func probeTree(t *testing.T, root string) string {
+	t.Helper()
+	sum := sha256.Sum256([]byte(root))
+	work := filepath.Join(os.TempDir(), "agenthub-depguard-tree-"+hex.EncodeToString(sum[:8]))
+	if err := os.RemoveAll(work); err != nil {
+		t.Fatalf("clearing previous probe tree %s: %v", work, err)
+	}
+	copyTree(t, root, work)
+	for _, needed := range []string{".golangci.yml", "go.mod", "go.sum"} {
+		if _, err := os.Stat(filepath.Join(work, needed)); err != nil {
+			t.Fatalf("probe tree %s is missing %s: %v", work, needed, err)
+		}
+	}
+	return work
+}
+
+// copyTree copies the Go module — sources and configuration — from src to
+// dst. Build output and dependency directories are skipped: they are large
+// (node_modules alone is 41M), and nothing golangci-lint does to a Go
+// package needs them.
+func copyTree(t *testing.T, src, dst string) {
+	t.Helper()
+	skipAnywhere := map[string]bool{".git": true, "node_modules": true, ".task": true}
+	skipAtRoot := map[string]bool{
+		"bin": true, "dist": true, "tmp": true,
+		".lintcache": true, ".make": true, ".agenthub": true, ".claude": true,
+	}
+	err := filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if rel == "." {
+				return os.MkdirAll(dst, 0o755)
+			}
+			if skipAnywhere[d.Name()] || skipAtRoot[rel] {
+				return filepath.SkipDir
+			}
+			return os.MkdirAll(filepath.Join(dst, rel), 0o755)
+		}
+		// Symlinks and other irregular entries are not copied: the module
+		// contains none that a lint of a Go package reads, and following
+		// one blindly is how a copy walks out of the tree.
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dst, rel), data, info.Mode().Perm())
+	})
+	if err != nil {
+		t.Fatalf("copying %s to probe tree %s: %v", src, dst, err)
+	}
+}
+
 // writeProbe writes a violating (or clean) probe file and registers its
-// removal. Probe files are named zz_depguard_probe_*.go and are also
-// git-ignored as a second line of defense.
+// removal. Removal is what lets each rule's control case lint the same
+// package clean straight afterwards — the tree being disposable does not
+// make it redundant. Probe files are named zz_depguard_probe_*.go and are
+// also git-ignored as a second line of defense.
 func writeProbe(t *testing.T, path, content string) {
 	t.Helper()
 	if _, err := os.Stat(path); err == nil {
@@ -147,19 +236,22 @@ func assertClean(t *testing.T, rule, out string, err error) {
 func TestDepguardRulesActuallyFire(t *testing.T) {
 	root := repoRoot(t)
 	bin := findGolangciLint(t, root)
+	// Every probe below is written into `work`; `root` is read-only here.
+	work := probeTree(t, root)
+	t.Cleanup(func() { assertNoProbesIn(t, root) })
 
 	// Rule 1: api (and cmd/agenthub-gui) must not import internal/*.
 	t.Run("rule1_api_no_internal", func(t *testing.T) {
 		t.Run("violation_blocked", func(t *testing.T) {
-			writeProbe(t, filepath.Join(root, "api", "zz_depguard_probe_rule1.go"),
+			writeProbe(t, filepath.Join(work, "api", "zz_depguard_probe_rule1.go"),
 				"package api\n\n"+
 					"// Probe: api must not import internal/* (canonical.md §2 rule 1).\n"+
 					"import _ \"github.com/dinstein/agent-hub/internal/registry\"\n")
-			out, err := runLint(t, bin, root, "api")
+			out, err := runLint(t, bin, work, "api")
 			assertBlocked(t, "1", out, err)
 		})
 		t.Run("clean_passes", func(t *testing.T) {
-			out, err := runLint(t, bin, root, "api")
+			out, err := runLint(t, bin, work, "api")
 			assertClean(t, "1", out, err)
 		})
 	})
@@ -167,15 +259,15 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 	// Rule 1 (second file set): cmd/agenthub-gui must not import internal/*.
 	t.Run("rule1_gui_no_internal", func(t *testing.T) {
 		t.Run("violation_blocked", func(t *testing.T) {
-			writeProbe(t, filepath.Join(root, "cmd", "agenthub-gui", "zz_depguard_probe_rule1.go"),
+			writeProbe(t, filepath.Join(work, "cmd", "agenthub-gui", "zz_depguard_probe_rule1.go"),
 				"package main\n\n"+
 					"// Probe: cmd/agenthub-gui must not import internal/* (canonical.md §2 rule 1).\n"+
 					"import _ \"github.com/dinstein/agent-hub/internal/registry\"\n")
-			out, err := runLint(t, bin, root, "cmd/agenthub-gui")
+			out, err := runLint(t, bin, work, "cmd/agenthub-gui")
 			assertBlocked(t, "1-gui", out, err)
 		})
 		t.Run("clean_passes", func(t *testing.T) {
-			out, err := runLint(t, bin, root, "cmd/agenthub-gui")
+			out, err := runLint(t, bin, work, "cmd/agenthub-gui")
 			assertClean(t, "1-gui", out, err)
 		})
 	})
@@ -185,24 +277,26 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 	// the only possible failure source is depguard's allowlist.
 	t.Run("rule2_mcp_stdlib_only", func(t *testing.T) {
 		t.Run("violation_blocked", func(t *testing.T) {
-			writeProbe(t, filepath.Join(root, "internal", "mcp", "zz_depguard_probe_rule2.go"),
+			writeProbe(t, filepath.Join(work, "internal", "mcp", "zz_depguard_probe_rule2.go"),
 				"package mcp\n\n"+
 					"// Probe: internal/mcp is stdlib-only (canonical.md §2 rule 2, ruling #32).\n"+
 					"import _ \"github.com/spf13/cobra\"\n")
-			out, err := runLint(t, bin, root, "internal/mcp")
+			out, err := runLint(t, bin, work, "internal/mcp")
 			assertBlocked(t, "2", out, err)
 		})
 		t.Run("clean_passes", func(t *testing.T) {
-			out, err := runLint(t, bin, root, "internal/mcp")
+			out, err := runLint(t, bin, work, "internal/mcp")
 			assertClean(t, "2", out, err)
 		})
 	})
 
 	// Rule 3: internal/pipeline must not import internal/ctlapi.
-	// internal/pipeline does not exist yet (M0-8); the test materializes
-	// it and removes the whole directory afterwards if it created it.
+	// The rule was written before the package existed (M0-8), so the test
+	// still materializes the directory when the copy has none, and removes
+	// it again if it did — the probe tree is disposable, but a control lint
+	// of a directory this test invented has to be one it also cleaned up.
 	t.Run("rule3_pipeline_no_ctlapi", func(t *testing.T) {
-		dir := filepath.Join(root, "internal", "pipeline")
+		dir := filepath.Join(work, "internal", "pipeline")
 		created := false
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
 			if err := os.Mkdir(dir, 0o755); err != nil {
@@ -223,7 +317,7 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 					"// control plane (canonical.md §2 rule 3).\n"+
 					"package pipeline\n\n"+
 					"import _ \"github.com/dinstein/agent-hub/internal/ctlapi\"\n")
-			out, err := runLint(t, bin, root, "internal/pipeline")
+			out, err := runLint(t, bin, work, "internal/pipeline")
 			assertBlocked(t, "3", out, err)
 		})
 		t.Run("clean_passes", func(t *testing.T) {
@@ -231,7 +325,7 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 			writeProbe(t, filepath.Join(dir, "zz_depguard_probe_rule3_clean.go"),
 				"// Package pipeline probe (control): no forbidden imports.\n"+
 					"package pipeline\n")
-			out, err := runLint(t, bin, root, "internal/pipeline")
+			out, err := runLint(t, bin, work, "internal/pipeline")
 			assertClean(t, "3", out, err)
 		})
 	})
@@ -240,15 +334,15 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 	// foundations platform/logx/guard) may depend on the stdlib only.
 	t.Run("rule4_platform_zero_dep", func(t *testing.T) {
 		t.Run("violation_blocked", func(t *testing.T) {
-			writeProbe(t, filepath.Join(root, "internal", "platform", "zz_depguard_probe_rule4.go"),
+			writeProbe(t, filepath.Join(work, "internal", "platform", "zz_depguard_probe_rule4.go"),
 				"package platform\n\n"+
 					"// Probe: internal/platform is a zero-dependency foundation (canonical.md §2 rule 4).\n"+
 					"import _ \"github.com/spf13/cobra\"\n")
-			out, err := runLint(t, bin, root, "internal/platform")
+			out, err := runLint(t, bin, work, "internal/platform")
 			assertBlocked(t, "4", out, err)
 		})
 		t.Run("clean_passes", func(t *testing.T) {
-			out, err := runLint(t, bin, root, "internal/platform")
+			out, err := runLint(t, bin, work, "internal/platform")
 			assertClean(t, "4", out, err)
 		})
 	})
@@ -258,24 +352,54 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 	// platform were exercised.
 	t.Run("rule4_logx_zero_dep", func(t *testing.T) {
 		t.Run("violation_blocked", func(t *testing.T) {
-			writeProbe(t, filepath.Join(root, "internal", "logx", "zz_depguard_probe_rule4.go"),
+			writeProbe(t, filepath.Join(work, "internal", "logx", "zz_depguard_probe_rule4.go"),
 				"package logx\n\n"+
 					"// Probe: internal/logx is a zero-dependency foundation (canonical.md §2 rule 4).\n"+
 					"import _ \"github.com/spf13/cobra\"\n")
-			out, err := runLint(t, bin, root, "internal/logx")
+			out, err := runLint(t, bin, work, "internal/logx")
 			assertBlocked(t, "4-logx", out, err)
 		})
 		t.Run("clean_passes", func(t *testing.T) {
-			out, err := runLint(t, bin, root, "internal/logx")
+			out, err := runLint(t, bin, work, "internal/logx")
 			assertClean(t, "4-logx", out, err)
 		})
 	})
 }
 
-// TestProbeNamingConventionIsIgnoredByGit guards the second line of
-// defense: if a probe ever survives a crashed test run, git must not
-// pick it up. This only checks the .gitignore pattern textually — the
-// test must not depend on a git binary being present.
+// assertNoProbesIn fails if a probe file exists anywhere under dir. Run
+// against the real checkout once the proof is over, it states the invariant
+// that makes this package safe to run beside every other test package: the
+// probes live in the copy, and a change that quietly moves one back into the
+// tree turns a race in test/e2e into a failure here, where it is readable.
+func assertNoProbesIn(t *testing.T, dir string) {
+	t.Helper()
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" || d.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasPrefix(d.Name(), "zz_depguard_probe_") {
+			return fmt.Errorf("probe file %s was written into the real checkout; "+
+				"probes belong in the disposable copy (see probeTree)", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+// TestProbeNamingConventionIsIgnoredByGit guards the last line of defense:
+// probes are written into a copy now, so one should never reach the tree —
+// but if one ever does (a crashed run of an older revision, a change that
+// moves them back), git must not pick it up. This only checks the
+// .gitignore pattern textually — the test must not depend on a git binary
+// being present.
 func TestProbeNamingConventionIsIgnoredByGit(t *testing.T) {
 	root := repoRoot(t)
 	data, err := os.ReadFile(filepath.Join(root, ".gitignore"))

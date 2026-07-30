@@ -13,8 +13,11 @@
 *.out
 coverage.*
 
-# depguard proof probes (internal/depguardtest writes and removes these;
-# ignored as a safety net in case a crashed run leaves one behind)
+# depguard proof probes. internal/depguardtest writes these into a disposable
+# copy of the checkout, so one should never appear here at all — the pattern
+# stays as the last safety net for the day something writes one in-tree again
+# (that regression has its own assertion; this is the line that keeps it from
+# being committed).
 zz_depguard_probe_*.go
 
 # Go workspace
