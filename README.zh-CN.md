@@ -13,7 +13,7 @@ Claude Code · Cursor · Codex · Open WebUI · 以及另外 8 种
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey.svg)](#平台)
 [![Telemetry: none](https://img.shields.io/badge/telemetry-none-brightgreen.svg)](#隐私不收集任何数据)
 
-**[English documentation](README.md)** · [架构](docs/architecture.md) · [使用指南](docs/guide.md) · [流程](docs/flows.md)
+**[English documentation](README.md)** · [架构](docs/zh-CN/architecture.md) · [使用指南](docs/zh-CN/guide.md) · [流程](docs/flows.md)
 
 </div>
 
@@ -78,12 +78,15 @@ agenthub client connect claude-code
 
 | 文件 | 内容 |
 |---|---|
-| [docs/guide.md](docs/guide.md) | **怎么用**：三个名词（server / profile / client）、日常路径，以及你真正要做的那几个决定 |
-| [docs/architecture.md](docs/architecture.md) | **要改代码先看这个**：进程模型、核心模块地图、分层与依赖约束、一次调用穿过什么、三条数据流向、三道防线 |
-| [docs/flows.md](docs/flows.md) | 七个关键流程的时序图与失败分支 |
-| [docs/modules/](docs/modules/) | 逐包文档：职责、关键类型、不变量与失败方向 |
-| [docs/canonical.md](docs/canonical.md) | 架构约定的唯一真源：冻结标识符、包布局、依赖约束、命令名规则、全部裁决记录 |
-| [docs/windows.md](docs/windows.md) | Windows 现状：已实现什么、未验证什么、缺什么 |
+| [docs/zh-CN/guide.md](docs/zh-CN/guide.md) | **怎么用**：三个名词（server / profile / client）、日常路径，以及你真正要做的那几个决定 |
+| [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md) | **要改代码先看这个**：进程模型、核心模块地图、分层与依赖约束、一次调用穿过什么、三条数据流向、三道防线 |
+| [docs/flows.md](docs/flows.md) | 七个关键流程的时序图与失败分支（英文） |
+| [docs/modules/](docs/modules/) | 逐包文档：职责、关键类型、不变量与失败方向（英文） |
+| [docs/canonical.md](docs/canonical.md) | 架构约定的唯一真源：冻结标识符、依赖约束、命令名规则、全部裁决记录（英文） |
+| [docs/windows.md](docs/windows.md) | Windows 现状：已实现什么、未验证什么、缺什么（英文） |
+
+中文只覆盖上面两篇——讲产品怎么用、怎么切分的那一层。其余几篇跟着代码一起变，一份中文镜像
+就是每次改行为都要记得同步的第二个文件，而忘掉同步的那一份看上去和最新的一模一样。
 
 ## 平台
 

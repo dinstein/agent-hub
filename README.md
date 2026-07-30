@@ -88,7 +88,10 @@ again. Full walkthrough — profiles, narrowing, the whole model — in [docs/gu
 | [docs/canonical.md](docs/canonical.md) | The single source of truth for architectural conventions: frozen identifiers, package layout, dependency constraints, command naming rules, and every decision record |
 | [docs/windows.md](docs/windows.md) | Windows status: what is implemented, what is unverified, what is missing |
 
-Chinese translations live in [docs/zh-CN/](docs/zh-CN/).
+Chinese translations cover the product surface — this README, [docs/zh-CN/guide.md](docs/zh-CN/guide.md)
+and [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md). The rest is English only, because those
+documents move whenever the code does and the copy that gets forgotten looks exactly like the copy
+that is current.
 
 ## Platforms
 

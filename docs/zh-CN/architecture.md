@@ -2,8 +2,13 @@
 
 AgentHub 是本地的 Agent 服务枢纽：一份配置、一套凭据、一条治理管线，供全部 AI 客户端
 （Claude Code、Cursor、Codex、Open WebUI 等）共享。本文说明**系统怎么切分、进程怎么摆、
-数据往哪流**；每个包的细节在 [modules/](modules/)，关键流程的时序在 [flows.md](flows.md)，
-不能随手改的约定在 [canonical.md](canonical.md)。
+数据往哪流**；每个包的细节在 [modules/](../modules/)，关键流程的时序在 [flows.md](../flows.md)，
+不能随手改的约定在 [canonical.md](../canonical.md)。
+
+**这几篇只有英文。** 它们跟着代码一起变，一份中文镜像就是每次改行为都要记得同步的第二个文件，
+而被忘掉的那一份和最新的那一份长得一模一样——`canonical.md` 里写的是「不许改的规则」，
+只在一边更新过的规则不像过期翻译，像一条从没做过的裁决。中文覆盖的是讲产品的那一层：
+本文与 [guide.md](guide.md)。
 
 ---
 
@@ -91,7 +96,7 @@ flowchart LR
 
 ## 3. 核心模块地图
 
-包按层归属，逐包细节见 [modules/](modules/)。这张表回答的是「我要改的东西在哪个包」。
+包按层归属，逐包细节见 [modules/](../modules/)。这张表回答的是「我要改的东西在哪个包」。
 
 ```mermaid
 flowchart TD
@@ -315,7 +320,7 @@ lazy 模式下 `call_tool` 可按治理开关拆成 `call_tool_read` / `call_too
 
 **但这个开关目前还没有人去读。** 上面这些 `internal/discovery` 都实现了、也有测试，可是 stdio 网关
 从来不会拿 `intentVariants` 去设 `discovery.Options.IntentVariants`——所以今天在治理里打开这个字段，
-什么都不会发生，详见 [modules/dataplane.md](modules/dataplane.md) 里那份「已实现但尚未接线」的附录。
+什么都不会发生，详见 [modules/dataplane.md](../modules/dataplane.md) 里那份「已实现但尚未接线」的附录。
 这句话写在这里而不是只写在那边，是因为决定要不要打开它的人是在这一节里做这个决定的。
 
 搜索结果携带的是**紧凑签名**而不是完整 schema，agent 需要细节时再调 `describe_tool`。
@@ -391,7 +396,7 @@ generation 单调计数 + 事件推送，mtime 不参与语义。
 |---|---|
 | macOS | 完整支持，CI 覆盖 |
 | Linux | 完整支持，CI 覆盖 |
-| Windows | **尚不可用**：路径与包身份解析已实现且交叉编译进 CI，但 registry 的跨进程锁与控制面 named pipe 都还是 stub，因此配置读不了、daemon 起不来。见 [windows.md](windows.md) |
+| Windows | **尚不可用**：路径与包身份解析已实现且交叉编译进 CI，但 registry 的跨进程锁与控制面 named pipe 都还是 stub，因此配置读不了、daemon 起不来。见 [windows.md](../windows.md) |
 
 GUI（`cmd/agenthub-gui`）默认**不参与**构建：链接 webview 需要 GTK/WebKit 开发包，
 Linux CI runner 上没有。Wails 代码全部在 `//go:build wails` 之后，用 `make gui` 单独构建。
@@ -417,16 +422,16 @@ webkitgtk-6.0`）就失败，连 `go vet` 都过不去，而 macOS runner 自带
 
 以下是**有意为之**的边界，不属于待办：Windows 只做到交叉编译门禁（无真机验证）、
 GUI 不参与默认构建、skills 物化只到 client 粒度、TOON 无解码器、teams 未实现。
-详见 [canonical.md](canonical.md) §4「已知的能力边界」。
+详见 [canonical.md](../canonical.md) §4「已知的能力边界」。
 
-已确认存在、已定位到行、但尚未修复的缺口，记在拥有它的那个包的 [modules/](modules/) 文档里——
+已确认存在、已定位到行、但尚未修复的缺口，记在拥有它的那个包的 [modules/](../modules/) 文档里——
 贴着它所描述的代码，而不是另立一份清单。
 
 ---
 
 ## 13. 延伸阅读
 
-- [flows.md](flows.md) —— 关键流程的时序图：网关启动、一次 lazy 调用、HITL 审批、配置热更新、OAuth、派生实例。
-- [modules/](modules/) —— 逐包文档：职责、关键类型、不变量与失败方向、文件地图。
-- [canonical.md](canonical.md) —— 冻结标识符、依赖约束、命令名规则、工程约定、裁决记录。
-- [windows.md](windows.md) —— Windows 现状与验收标准。
+- [flows.md](../flows.md) —— 关键流程的时序图：网关启动、一次 lazy 调用、HITL 审批、配置热更新、OAuth、派生实例。
+- [modules/](../modules/) —— 逐包文档：职责、关键类型、不变量与失败方向、文件地图。
+- [canonical.md](../canonical.md) —— 冻结标识符、依赖约束、命令名规则、工程约定、裁决记录。
+- [windows.md](../windows.md) —— Windows 现状与验收标准。

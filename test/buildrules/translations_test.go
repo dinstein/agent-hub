@@ -11,6 +11,49 @@ import (
 // headingLine matches an ATX heading and captures its level.
 var headingLine = regexp.MustCompile(`^(#{1,6})\s+\S`)
 
+// contributorOnlyDocs are the documents deliberately kept in English only,
+// each with the reason it stays that way. A trailing slash covers a subtree.
+//
+// The line is drawn by WHAT A DOCUMENT TRACKS, not by who reads it. Everything
+// listed here moves when the code moves, so a translation of it is a second
+// file that every behaviour change has to remember — and the copy that gets
+// forgotten is indistinguishable from a copy that is current. canonical.md is
+// the sharpest case: it is where rules that must NOT change live, so a rule
+// updated on one side only does not read as a stale translation, it reads as a
+// rule that was never made. The mirror of everything below came to some 5,800
+// lines, and the check in this file can only ever prove that their headings
+// agree.
+//
+// What stays translated is the surface that describes the product rather than
+// the tree: the root README and docs/guide.md (how to use it), plus
+// docs/architecture.md (how the system is carved up), which moves far more
+// slowly than the packages beneath it.
+var contributorOnlyDocs = []struct{ Path, Why string }{
+	{"docs/README.md", "the contributor doc index, which itself lists what is English-only"},
+	{"docs/canonical.md", "conventions and decision records; a one-sided edit reads as a ruling"},
+	{"docs/flows.md", "runtime sequences and failure branches, restated whenever a flow changes"},
+	{"docs/modules/", "per-package invariants and the gaps recorded beside them; each moves with its package"},
+	{"docs/windows.md", "one platform's implementation status, rewritten on every change to it"},
+	{"docs/releasing.md", "the release procedure, read at the machine cutting the release"},
+}
+
+// englishOnly reports whether rel is declared contributor-only.
+func englishOnly(rel string) bool {
+	rel = filepath.ToSlash(rel)
+	for _, d := range contributorOnlyDocs {
+		if strings.HasSuffix(d.Path, "/") {
+			if strings.HasPrefix(rel, d.Path) {
+				return true
+			}
+			continue
+		}
+		if rel == d.Path {
+			return true
+		}
+	}
+	return false
+}
+
 // translationPairs are the documents kept in two languages. README sits at the
 // repo root with a suffixed name; everything under docs/ mirrors its path
 // beneath docs/zh-CN/.
@@ -18,7 +61,9 @@ var headingLine = regexp.MustCompile(`^(#{1,6})\s+\S`)
 // The pairing is derived rather than listed, so a NEW English document under
 // docs/ is picked up the moment it exists — which is the direction that
 // matters. A translation that was never started is exactly the case a
-// hand-maintained list would omit.
+// hand-maintained list would omit. What IS listed is the exemption
+// (contributorOnlyDocs), because declining to translate something is a
+// decision that should have to be written down.
 func translationPairs(t *testing.T, root string) [][2]string {
 	t.Helper()
 	var out [][2]string
@@ -39,6 +84,9 @@ func translationPairs(t *testing.T, root string) [][2]string {
 		rel, err := filepath.Rel(docs, path)
 		if err != nil {
 			return err
+		}
+		if englishOnly(filepath.Join("docs", rel)) {
+			return nil
 		}
 		out = append(out, [2]string{
 			filepath.Join("docs", rel),
@@ -61,12 +109,12 @@ func translationPairs(t *testing.T, root string) [][2]string {
 // a way a mistranslation is not: nothing looks wrong, the document simply says
 // less, and only a reader who has both open notices.
 //
-// canonical.md had exactly this. It carried 20 headings against the
-// translation's 19, and the missing one was §3's ruling that `server add` and
-// `server enable` stay separate primitives. That is the worst possible file for
-// the failure, because canonical.md is where rules that must NOT change live —
-// an absent rule there does not read as untranslated, it reads as a rule that
-// was never made.
+// canonical.md had exactly this while it was still translated. It carried 20
+// headings against the translation's 19, and the missing one was §3's ruling
+// that `server add` and `server enable` stay separate primitives — an absent
+// rule in that file does not read as untranslated, it reads as a rule that was
+// never made. That file is now English-only for the same reason it was the
+// worst offender; see contributorOnlyDocs above.
 //
 // WHAT THIS CHECKS, AND WHAT IT DOES NOT. It compares the SEQUENCE OF HEADING
 // LEVELS, nothing else. Heading text is not compared — it is translated, so of
@@ -97,7 +145,10 @@ func TestTranslationsHaveTheSameSectionStructure(t *testing.T) {
 		zhLevels, err := headingLevels(filepath.Join(root, zh))
 		if err != nil {
 			if os.IsNotExist(err) {
-				t.Errorf("%s has no translation at %s", en, zh)
+				t.Errorf("%s has no translation at %s.\n"+
+					"Write the translation, or — if this document tracks the code closely enough "+
+					"that a mirror would rot — declare it in contributorOnlyDocs with the reason.",
+					en, zh)
 				continue
 			}
 			t.Fatalf("reading %s: %v", zh, err)
@@ -115,6 +166,75 @@ func TestTranslationsHaveTheSameSectionStructure(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+// TestContributorOnlyDocsMatchTheTree keeps the exemption list honest in both
+// directions.
+//
+// An entry naming a document that no longer exists is the dangerous half: the
+// list goes on excusing a name nobody writes any more, and the day a NEW
+// document lands at that path it is born untranslated with the exemption
+// already in place — silently, because the exemption predates the file.
+//
+// A lingering zh-CN copy of an exempted document is the other half. It reads
+// exactly like a maintained translation, while nothing at all checks it: the
+// skeleton test skips the pair, so the file is free to describe a version of
+// the rules that stopped being true whenever it was last touched. Deleting a
+// translation has to mean deleting the file.
+func TestContributorOnlyDocsMatchTheTree(t *testing.T) {
+	root := repoRoot(t)
+
+	for _, d := range contributorOnlyDocs {
+		if d.Why == "" {
+			t.Errorf("%s is exempted from translation with no reason given", d.Path)
+		}
+		if strings.HasSuffix(d.Path, "/") {
+			entries, err := os.ReadDir(filepath.Join(root, d.Path))
+			if err != nil {
+				t.Errorf("contributorOnlyDocs names the subtree %q, which does not exist: %v", d.Path, err)
+				continue
+			}
+			found := false
+			for _, e := range entries {
+				if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("contributorOnlyDocs names the subtree %q, which holds no markdown — "+
+					"drop the entry rather than leaving it to exempt whatever lands there next", d.Path)
+			}
+			continue
+		}
+		if !exists(root, d.Path) {
+			t.Errorf("contributorOnlyDocs exempts %q from translation, but that document does not exist. "+
+				"Drop the entry: left in place, it exempts the next document to land at that path.", d.Path)
+		}
+	}
+
+	zhRoot := filepath.Join(root, "docs", "zh-CN")
+	err := filepath.WalkDir(zhRoot, func(path string, e os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			return nil
+		}
+		rel, err := filepath.Rel(zhRoot, path)
+		if err != nil {
+			return err
+		}
+		if englishOnly(filepath.Join("docs", rel)) {
+			t.Errorf("docs/zh-CN/%s translates a document declared English-only. "+
+				"Nothing checks that file, so delete it — an unchecked translation of the rules "+
+				"is worse than none.", filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking docs/zh-CN: %v", err)
 	}
 }
 
