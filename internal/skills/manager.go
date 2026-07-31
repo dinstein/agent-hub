@@ -386,7 +386,7 @@ func (m *Manager) InstallTo(ctx context.Context, req InstallRequest) (*InstallSt
 		if err != nil {
 			return err
 		}
-		if err := requireTrusted(st, sk); err != nil {
+		if err := m.requireTrusted(st, sk); err != nil {
 			return err
 		}
 		p, err := m.plan(st, sk, t, req)
@@ -416,18 +416,48 @@ func (m *Manager) lookupForInstall(st *state, skillID, clientID string) (*Skill,
 	return &sk, t, nil
 }
 
-// requireTrusted refuses to propagate a library copy that no longer matches
-// its pin. Fail-closed: an unpinned entry is allowed (it predates pinning),
-// a mismatching one is not.
-func requireTrusted(st *state, sk *Skill) error {
-	p, ok := st.pins.Pins[sk.ID]
-	if !ok {
+// requireTrusted refuses to propagate a library copy that is not what the
+// index says it is. It runs before every materialization, and it is the
+// check standing between a modified `SKILL.md` and a client's rule file —
+// where the bytes are read by that client's model as its own instructions.
+//
+// **It re-reads the library copy rather than comparing the index to
+// itself.** Comparing `pins.Pins[id].Fingerprint` against `sk.Fingerprint`
+// is two values out of the same two files, so a stored file edited after
+// pinning — leaving `skills.json` and `skill-pins.json` untouched — passed
+// it, and `applySentinel` then read that modified file directly. This
+// package already says why elsewhere: an index a tamperer has edited cannot
+// vouch for itself. The install path was the one taking it at its word.
+//
+// So the recomputation is `verifyLibrary`'s, the same one `Verify` reports:
+// hash the files on disk, rebuild the fingerprint from what is actually
+// there, and compare both against the recorded values.
+//
+// Fail-closed in three directions. Tampered refuses. A library copy that
+// cannot be read or hashed refuses too, rather than being read as "nothing
+// to compare" — that is precisely the state an attacker can arrange. Only
+// LibraryUnpinned passes without a baseline, and it has still had its
+// content hash checked; it means an entry predating pinning, not an
+// unverified one.
+//
+// What it cannot answer: a tamperer who rewrites the library copy, the
+// index AND the pin file consistently. All three live on the same disk, and
+// no recomputation can outrank a baseline the attacker also wrote. The
+// remaining window is between this check and the read at materialization.
+func (m *Manager) requireTrusted(st *state, sk *Skill) error {
+	lib, onDisk, detail := m.verifyLibrary(st, *sk)
+	switch lib {
+	case LibraryOK, LibraryUnpinned:
 		return nil
+	case LibraryTampered:
+		pinned := ""
+		if p, ok := st.pins.Pins[sk.ID]; ok {
+			pinned = p.Fingerprint
+		}
+		return &TamperError{SkillID: sk.ID, Pinned: pinned, Current: onDisk, Detail: detail}
+	default:
+		return fmt.Errorf("%w: %q: %s", ErrUnverifiable, sk.ID, detail)
 	}
-	if p.Fingerprint != sk.Fingerprint {
-		return &TamperError{SkillID: sk.ID, Pinned: p.Fingerprint, Current: sk.Fingerprint}
-	}
-	return nil
 }
 
 // SyncAction is what Sync did to one skill at one target.
@@ -582,7 +612,7 @@ func (m *Manager) containersOf(t TargetDef, scope, projectRoot, dir string) map[
 // into an item instead of an aborted batch.
 func (m *Manager) syncOne(st *state, sk Skill, t TargetDef, req InstallRequest) SyncItem {
 	item := SyncItem{SkillID: sk.ID}
-	if err := requireTrusted(st, &sk); err != nil {
+	if err := m.requireTrusted(st, &sk); err != nil {
 		item.Action, item.State, item.Error = ActionFailed, StateConflict, err.Error()
 		return item
 	}

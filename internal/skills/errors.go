@@ -112,15 +112,40 @@ var ErrTampered = errors.New("skills: library copy does not match its pin")
 type TamperError struct {
 	SkillID string
 	Pinned  string
+	// Current is the fingerprint recomputed FROM DISK, which is what makes
+	// the pair meaningful: two values read out of the same index would agree
+	// with each other whatever the files say.
 	Current string
+	// Detail names which comparison failed — the content hash, or the
+	// fingerprint against the pin. An entry can fail the first while having
+	// no pin at all, in which case Pinned is empty and this is the whole
+	// answer.
+	Detail string
 }
 
 func (e *TamperError) Error() string {
-	return fmt.Sprintf("skills: library copy of %q changed outside agenthub (pinned %s, now %s); refusing to install or update",
-		e.SkillID, e.Pinned, e.Current)
+	pinned := e.Pinned
+	if pinned == "" {
+		pinned = "no baseline"
+	}
+	msg := fmt.Sprintf("skills: library copy of %q changed outside agenthub (pinned %s, on disk %s); refusing to install or update",
+		e.SkillID, pinned, e.Current)
+	if e.Detail != "" {
+		msg += ": " + e.Detail
+	}
+	return msg
 }
 
 func (e *TamperError) Is(target error) bool { return target == ErrTampered }
+
+// ErrUnverifiable reports a library copy that could not be read or hashed at
+// all — gone, unreadable, or a directory we cannot walk.
+//
+// It is deliberately NOT folded into ErrTampered (the cause is different and
+// an operator's next move is different) and deliberately not treated as
+// "nothing to compare, carry on": a copy that cannot be verified is exactly
+// the state an attacker can arrange, so materialization refuses.
+var ErrUnverifiable = errors.New("skills: library copy cannot be verified (fail-closed)")
 
 // ErrGitFetchUnsupported reports a git-source operation that would require
 // talking to git. Recording a pin is supported today; fetching is M2. The

@@ -784,10 +784,24 @@ The `HashSchemaVersion` prefix earns its keep: once the formula changes, pins re
 identifiable as "different algorithm" rather than "content changed". Without the prefix, a formula upgrade would
 present as a fleet-wide alert, and users would learn to ignore alerts.
 
-`requireTrusted` runs ahead of `InstallTo` and `syncOne`: **unpinned entries are allowed** (they predate the pin
-mechanism), **mismatched entries are not** (`TamperError`). `Verify` does a full recomputation — recomputing the
-fingerprint from the bytes on disk rather than reading the value out of the index, because an index a tamperer has
-edited cannot vouch for itself.
+`requireTrusted` runs ahead of `InstallTo` and `syncOne`, and it **re-reads the library copy** — the same full
+recomputation `Verify` performs, through the same `verifyLibrary`: hash the files on disk, rebuild the fingerprint
+from what is actually there, compare both against the recorded values. It used to compare `pins.Pins[id].Fingerprint`
+against `sk.Fingerprint`, which is two values out of the same two files, so a stored `SKILL.md` edited after pinning
+— leaving `skills.json` and `skill-pins.json` untouched — passed a check documented as fail-closed, and
+`applySentinel` then read that same modified file and spliced it into a client's rule file, where the client's model
+reads it as its own instructions. The rule this violated is the one stated in the next sentence, and had been for as
+long as it has been written down: **an index a tamperer has edited cannot vouch for itself.** The install path was
+the one taking it at its word.
+
+Three fail-closed directions, and one honest limit. **Mismatched entries refuse** (`TamperError`, carrying the
+fingerprint recomputed from disk rather than the index's). **A copy that cannot be read or hashed refuses** too
+(`ErrUnverifiable`) rather than reading as "nothing to compare" — that is the state an attacker can arrange most
+cheaply of all. **Unpinned entries are allowed** (they predate the pin mechanism) but have still had their content
+hash checked, so "unpinned" means "no baseline", never "unverified". The limit: a tamperer who rewrites the library
+copy, the index AND the pin file consistently is not detectable here — all three are files on the same disk, and no
+recomputation outranks a baseline the attacker also wrote — as is the window between this check and the read at
+materialization.
 
 **Pins are never deleted.** Not even by `Remove`. When the same skill is deleted and added back, it is compared
 against the **original baseline** rather than blindly re-pinned: re-pinning on re-add is how a tampered copy
@@ -931,14 +945,6 @@ carried the findings both engines confirmed independently plus the two single-en
   `c.orig` and the rename is lost — and lost from the backup too, which preserves the stale `c.orig`
   rather than what was actually on disk. Re-reading and comparing (content hash, or dev/ino+mtime+size)
   immediately before the rename would let it refuse and back up what it observed.
-- **`skills/manager.go:406` — the documented fail-closed trust check compares index to index and never
-  re-reads the bytes.** `requireTrusted` compares `pins.Pins[id].Fingerprint` against `sk.Fingerprint`,
-  both read out of the index, so a stored `SKILL.md` modified after pinning — without touching
-  `skills.json` or `skill-pins.json` — still passes. `applySentinel` then reads that modified file
-  directly and writes the attacker-controlled instructions into a client's rule file, which the
-  client's model reads as its own instructions. This section already records why an index cannot vouch
-  for itself: "`Verify` does a full recomputation … because an index a tamperer has edited cannot vouch
-  for itself." The install path is the one that takes the index at its word.
 - **`secrets/store.go:190` — a keyring credential is committed before its enumeration record.**
   `Chain.Set` writes the value to the OS keyring and only then calls `registryAdd`. If
   `keyring-keys.json` cannot be created, synced or renamed, the caller gets an error while the
