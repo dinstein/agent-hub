@@ -584,12 +584,26 @@ func checkContainerFlag(key, val string) error {
 			return blockedf(CodeContainerEscape, "%s=%s shares a host namespace", key, val)
 		}
 	case "--cap-add":
-		if dangerousCaps[strings.ToUpper(strings.TrimPrefix(val, "CAP_"))] {
+		// Case-fold BEFORE stripping the prefix, the way docker normalizes
+		// it. Stripping "CAP_" from a value spelled "cap_sys_admin" removed
+		// nothing, and upper-casing what was left produced "CAP_SYS_ADMIN",
+		// which is not a key in dangerousCaps. So the lower-cased spelling
+		// was allowed and the upper-cased one blocked, while docker grants
+		// the identical capability for both.
+		if dangerousCaps[strings.TrimPrefix(strings.ToUpper(val), "CAP_")] {
 			return blockedf(CodeContainerEscape, "--cap-add=%s grants an escape-capable capability", val)
 		}
 	case "--security-opt":
-		v := strings.ToLower(val)
-		if strings.Contains(v, "seccomp=unconfined") || strings.Contains(v, "apparmor=unconfined") || v == "label=disable" {
+		// The separator is normalized because moby still accepts the legacy
+		// ':' form — the deprecation was never carried through to a
+		// removal — so "seccomp:unconfined" turned seccomp off while
+		// "seccomp=unconfined" was refused. A bare "disable" is moby's
+		// shorthand for disabling SELinux labelling and was missed for the
+		// same reason: this compared text where it had to compare meaning.
+		v := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(val)), ":", "=")
+		if strings.Contains(v, "seccomp=unconfined") ||
+			strings.Contains(v, "apparmor=unconfined") ||
+			v == "disable" || v == "label=disable" {
 			return blockedf(CodeContainerEscape, "--security-opt=%s disables a confinement layer", val)
 		}
 	case "-v", "--volume":

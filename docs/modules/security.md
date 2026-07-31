@@ -207,6 +207,19 @@ that will be missing from the next assembly.
   The `=false` branch is also the one place in the flag loop that continues **without** consuming a
   value, which is the shape `containerBoolFlags` was inverted to prevent; `TestPrivilegedFalseDoesNotBlindTheScan`
   is the regression for it.
+- **`--cap-add` and `--security-opt` are matched by meaning, not by spelling** — the same lesson as
+  `--privileged` above, in two more places. `--cap-add` stripped `CAP_` **case-sensitively and only
+  then** upper-cased, so `cap_sys_admin` survived both steps as `CAP_SYS_ADMIN`, which is not a key in
+  `dangerousCaps` (it holds `SYS_ADMIN`) — the lower-cased spelling was allowed and the upper-cased one
+  refused, while docker grants the identical capability for both. It now folds case **before**
+  stripping, the order docker normalizes in. `--security-opt` matched only the `=` separator and the
+  exact string `label=disable`, but moby's `parseSecurityOpt` still falls back to `:` (the deprecation
+  was never carried through to a removal) and reads a bare `disable` as SELinux label-disable, so
+  `seccomp:unconfined`, `apparmor:unconfined` and `disable` each switched off a confinement layer this
+  guard's own error message claims to protect. The separator is now normalized before matching, and
+  both shorthands are covered. Adding confinement or naming a profile
+  (`seccomp=/path/profile.json`, `apparmor=docker-default`, `no-new-privileges`, `--cap-drop`) still
+  passes: a guard that refused those would push operators away from using them.
 - **`--device` is a DENY list of block and memory devices**, matched on the cleaned host source — the
   first colon-separated field of `host-src[:container-dest[:permissions]]`. Refusing only the exact
   path `/dev` blocked the one form docker itself rejects, while `--device=/dev/sda` handed over the
