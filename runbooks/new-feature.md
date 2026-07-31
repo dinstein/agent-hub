@@ -152,13 +152,20 @@ Then, in the main work tree:
 
 ```bash
 git merge --ff-only <topic> && git push origin main
+sleep 3                                     # GitHub notices the push asynchronously
 gh pr view <topic> --json state,mergedAt    # MERGED — main holds its head commit verbatim
 git push origin --delete <topic>
 git worktree remove ../agent-hub-<topic> && git branch -d <topic>
 ```
 
-Still `OPEN` means its head is not what landed; `main` is fine, only the link is missing:
-`gh pr close <topic> --comment "landed on main as <sha>"`.
+**`OPEN` on the first read is usually the race, not the diagnosis.** GitHub marks a PR merged when it
+notices the head is an ancestor of `main`, and that happens after the push returns — a `gh pr view`
+issued immediately can win. Re-read it before concluding anything. Closing by hand is the one step
+here that cannot be undone: a closed PR is never marked merged afterwards, so the link the step
+exists to preserve is gone for good.
+
+Only once a re-read still says `OPEN` does it mean the head is not what landed. `main` is fine then;
+only the link is missing: `gh pr close <topic> --comment "landed on main as <sha>"`.
 
 **`--ff-only` is the enforcement, not a formality.** If it refuses, rebase again and re-run
 `ci-landing`. Never reach for a plain `git merge` — `main` is linear.

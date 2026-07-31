@@ -144,7 +144,8 @@ overnight conflicts with real work and nobody remembers what it was for.
 was fixed is in `git log`. A separate ledger is the thing that goes stale first.
 
 ```bash
-gh pr view tidy-<slice> --json state,mergedAt    # MERGED, or close it by hand
+sleep 3                                          # GitHub notices the push asynchronously
+gh pr view tidy-<slice> --json state,mergedAt    # MERGED — re-read before believing OPEN
 git push origin --delete tidy-<slice>
 git worktree remove ../agent-hub-tidy-<slice> && git branch -d tidy-<slice>
 ```
