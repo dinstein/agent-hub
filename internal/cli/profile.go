@@ -10,6 +10,7 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/discovery"
+	"github.com/dinstein/agent-hub/internal/gateway"
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
@@ -471,19 +472,89 @@ func (a *App) newProfileServerEditCmd(add bool) *cobra.Command {
 }
 
 // newProfileToolCmd is the profile half of the tool model, and it is named to
-// match the global half: `profile tool allow` and `server tool allow` are one
-// mechanism at two altitudes, so they are one spelling at two altitudes. The
-// group also leaves room for the reading half (`profile tool ls`) to land
-// beside its writer rather than as a flag on something else.
+// match the global half: `profile tool ls | allow` and `server tool ls | allow`
+// are one mechanism at two altitudes, so they are one spelling at two
+// altitudes.
+//
+// The reading half was missing here for a release, and its absence had a
+// shape: `server tool ls` said what the machine offered, `profile ls` said
+// what each profile narrowed, and the INTERSECTION — the only thing a client
+// bound to that profile actually gets — was left for the reader to work out
+// per tool, in their head. That is the arithmetic `server tool inspect` exists
+// to stop them doing, and nothing was doing it at listing granularity.
 func (a *App) newProfileToolCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "tool",
 		Aliases: []string{"tools"},
-		Short:   "Choose which of a server's tools a profile lets through",
+		Short:   "See and narrow the tools a profile lets through",
 		Args:    cobra.ArbitraryArgs,
 		RunE:    groupRunE,
 	}
-	cmd.AddCommand(a.newProfileToolAllowCmd())
+	cmd.AddCommand(a.newProfileToolLsCmd(), a.newProfileToolAllowCmd())
+	return cmd
+}
+
+func (a *App) newProfileToolLsCmd() *cobra.Command {
+	var (
+		search  string
+		showAll bool
+	)
+	cmd := &cobra.Command{
+		Use:   "ls <profile> [<server>]",
+		Short: "List the tools this profile lets through",
+		Long: "What a client bound to this profile ends up with: the machine-wide allow\n" +
+			"lists and the profile's own narrowing, intersected — which is what the\n" +
+			"gateway hands out, rather than either layer read on its own.\n\n" +
+			"--all adds the tools that were held back, each with the layer that took it:\n" +
+			"'global' is 'agenthub server tool allow', 'profile:servers' means the profile\n" +
+			"does not include that server ('agenthub profile server add' puts it back), and\n" +
+			"'profile:tools' is this profile's own allow list. The three need different\n" +
+			"repairs, which is why the listing says which one applied.\n\n" +
+			"'agenthub server tool ls' is the same reading one layer up: what the machine\n" +
+			"offers before any profile narrows it.",
+		Args: rangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			profileName, serverArg := args[0], ""
+			if len(args) == 2 {
+				serverArg = args[1]
+			}
+			store, warnings, err := a.openStore()
+			if err != nil {
+				return err
+			}
+			snap := store.Snapshot()
+			// A profile that does not exist is an ERROR here, not the empty
+			// scope it fail-closes to at runtime. A session has to keep going
+			// and must not widen; a reader who mistyped a name is not served
+			// by a correct listing of nothing.
+			if _, ok := snap.Profiles.V.Profiles[profileName]; !ok {
+				e := NotFoundf(CodeProfileNotFound, "no profile %q", profileName)
+				e.Hint = "run 'agenthub profile ls' to see the profiles you have"
+				return e
+			}
+			if serverArg != "" {
+				if _, ok := snap.Servers.V.Servers[serverArg]; !ok {
+					e := NotFoundf(CodeServerNotFound, "no server %q", serverArg)
+					e.Hint = "run 'agenthub server ls' to see configured servers"
+					return e
+				}
+			}
+			cached, err := gateway.LoadToolCache(a.resolver, nil)
+			if err != nil {
+				return err
+			}
+			list, err := toolListing(snap, cached, toolListingRequest{
+				server: serverArg, profile: profileName, search: search, showAll: showAll,
+			})
+			if err != nil {
+				return err
+			}
+			return a.printer().Emit(list, warnings...)
+		},
+	}
+	cmd.Flags().StringVar(&search, "search", "", "rank the tools against a keyword query")
+	cmd.Flags().BoolVar(&showAll, "all", false,
+		"list the tools a layer holds back too, with the state of each and the layer that took it")
 	return cmd
 }
 

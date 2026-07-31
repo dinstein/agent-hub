@@ -118,6 +118,14 @@ func (l ToolList) Human(w io.Writer) error {
 		case l.Ranked:
 			_, err := fmt.Fprintln(w, "no tool matches this query")
 			return err
+		case l.Held > 0 && l.Layered:
+			// Which layer took them is exactly what the reader needs and
+			// cannot be said here — there is one line and several possible
+			// answers, one per row — so it points at the listing that says.
+			_, err := fmt.Fprintf(w,
+				"nothing gets through: all %d cached tool(s) are held back "+
+					"('--all' shows them, each with the layer that took it)\n", l.Held)
+			return err
 		case l.Held > 0:
 			// Not "nothing cached": the tools are there and a rule is
 			// holding all of them back, which is a different repair.
@@ -170,7 +178,14 @@ func (l ToolList) Human(w io.Writer) error {
 		return err
 	}
 	if l.Held > 0 {
-		_, err := fmt.Fprintf(w, "\n%d tool(s) held back by an allow list; '--all' shows them\n", l.Held)
+		// The layered listing does not name the rule: with more than one layer
+		// able to have taken them, naming one would be a guess about rows that
+		// are not on the table.
+		reason := " by an allow list"
+		if l.Layered {
+			reason = ""
+		}
+		_, err := fmt.Fprintf(w, "\n%d tool(s) held back%s; '--all' shows them\n", l.Held, reason)
 		return err
 	}
 	return nil
@@ -254,29 +269,11 @@ func (a *App) newToolLsCmd() *cobra.Command {
 				return a.printer().Emit(
 					toolRulesOf(snap.Servers.V.Servers, cached, serverArg), warnings...)
 			}
-			cat, err := offlineCatalogOf(snap, cached, serverArg, "")
+			list, err := toolListing(snap, cached, toolListingRequest{
+				server: serverArg, search: search, showAll: showAll,
+			})
 			if err != nil {
 				return err
-			}
-
-			tools := cat.visible
-			if showAll {
-				tools = append(append([]discovery.Tool{}, cat.visible...), cat.blocked...)
-			}
-			list, err := renderTools(surfaceOf(tools, snap.Generation), search)
-			if err != nil {
-				return err
-			}
-			list.ShowAll = showAll
-			if !showAll {
-				list.Held = len(cat.blocked)
-			}
-			list.mark(cat)
-			// Ranking has nothing to rank a pending name against — there is
-			// no description, no schema, no ToolDef at all — so it stays out
-			// of --search rather than being scored against an empty string.
-			if !list.Ranked {
-				list.Rows = append(list.Rows, cat.pending...)
 			}
 			return a.printer().Emit(list, warnings...)
 		},
@@ -292,6 +289,50 @@ func (a *App) newToolLsCmd() *cobra.Command {
 	// way it used to be done.
 	_ = cmd.Flags().MarkHidden("rules")
 	return cmd
+}
+
+// toolListingRequest is what the two listings differ by. profile is the only
+// field either of them sets alone, which is the point: `server tool ls` and
+// `profile tool ls` are one rendering of one catalog at two altitudes, and a
+// second implementation is how the two would come to disagree about a tool.
+type toolListingRequest struct {
+	server  string
+	profile string
+	search  string
+	showAll bool
+}
+
+// toolListing builds the rendered list for either altitude.
+func toolListing(
+	snap *registry.Snapshot,
+	cached map[string][]mcp.ToolDef,
+	req toolListingRequest,
+) (ToolList, error) {
+	cat, err := offlineCatalogOf(snap, cached, req.server, req.profile)
+	if err != nil {
+		return ToolList{}, err
+	}
+	tools := cat.visible
+	if req.showAll {
+		tools = append(append([]discovery.Tool{}, cat.visible...), cat.blocked...)
+	}
+	list, err := renderTools(surfaceOf(tools, snap.Generation), req.search)
+	if err != nil {
+		return ToolList{}, err
+	}
+	list.ShowAll = req.showAll
+	list.Layered = req.profile != ""
+	if !req.showAll {
+		list.Held = len(cat.blocked)
+	}
+	list.mark(cat)
+	// Ranking has nothing to rank a pending name against — there is no
+	// description, no schema, no ToolDef at all — so it stays out of --search
+	// rather than being scored against an empty string.
+	if !list.Ranked {
+		list.Rows = append(list.Rows, cat.pending...)
+	}
+	return list, nil
 }
 
 // mark stamps the state column, and for a blocked row the layer that took it.
