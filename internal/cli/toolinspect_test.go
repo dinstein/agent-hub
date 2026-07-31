@@ -19,17 +19,25 @@ func decodeToolRules(t *testing.T, out string) ToolRuleList {
 	return rows
 }
 
-// The rule table is the only reader that can express a server configured to
-// expose NOTHING: it contributes no tool rows, so a per-tool listing cannot
-// show it at all — and that is the state most worth finding.
-func TestToolRulesReportsAllThreeStates(t *testing.T) {
+// --rules is the OLD home of the rule reading (it now lives on `server ls` /
+// `server inspect`, see serverrule_test.go). For one release it must keep
+// answering, byte-for-byte, and say on stderr where the reading moved — on
+// stderr because the callers it is kept alive for are parsing stdout.
+func TestToolRulesFlagStillAnswersAndSaysWhereItMoved(t *testing.T) {
 	seedCatalog(t)
 	mustRun(t, "", "server", "tool", "allow", "fs", "--only", "read_file")
 	mustRun(t, "", "server", "tool", "allow", "git", "--none")
 	mustRun(t, "", "server", "add", "idle", "--cmd", "idle-server")
 
+	code, stdout, stderr := runCLI(t, "", "server", "tool", "ls", "--rules", "--json")
+	if code != 0 {
+		t.Fatalf("exit = %d, want the deprecated flag to still work; stderr = %s", code, stderr)
+	}
+	if !strings.Contains(stderr, "server ls") || !strings.Contains(stderr, "will be removed") {
+		t.Errorf("the notice must name the replacement and its own end, got %q", stderr)
+	}
 	byServer := map[string]ToolRuleRow{}
-	for _, r := range decodeToolRules(t, mustRun(t, "", "server", "tool", "ls", "--rules", "--json")) {
+	for _, r := range decodeToolRules(t, stdout) {
 		byServer[r.Server] = r
 	}
 	if got := byServer["fs"]; got.Rule != "only" || len(got.Tools) != 1 || got.Cached != 2 {
@@ -41,30 +49,20 @@ func TestToolRulesReportsAllThreeStates(t *testing.T) {
 	if got := byServer["idle"]; got.Rule != "all" || got.Tools != nil {
 		t.Errorf("idle row = %+v, want all with a null list", got)
 	}
-	// A server with no rule still gets a row: "which of my servers is
-	// narrowed" cannot be answered by a list of the narrowed ones alone.
 	if len(byServer) != 3 {
 		t.Errorf("every configured server needs a row, got %d", len(byServer))
 	}
-
-	out := mustRun(t, "", "server", "tool", "ls", "--rules")
-	if !strings.Contains(out, "exposes nothing") {
-		t.Errorf("the human table must spell out the block-all state:\n%s", out)
+	if out := mustRun(t, "", "server", "tool", "ls", "--rules"); !strings.Contains(out, "exposes nothing") {
+		t.Errorf("the human table must still spell out the block-all state:\n%s", out)
 	}
 }
 
-// A name no cached tool matches is marked in the rule table, because after
-// the one warning at write time nothing else ever mentions it again.
-func TestToolRulesMarksUnknownNames(t *testing.T) {
-	seedCatalog(t)
-	mustRun(t, "", "server", "tool", "allow", "fs", "--only", "read_file,reed_file")
-
-	rows := decodeToolRules(t, mustRun(t, "", "server", "tool", "ls", "--rules", "fs", "--json"))
-	if len(rows) != 1 || len(rows[0].Unknown) != 1 || rows[0].Unknown[0] != "reed_file" {
-		t.Fatalf("rule row = %+v, want reed_file reported unknown", rows)
-	}
-	if out := mustRun(t, "", "server", "tool", "ls", "--rules", "fs"); !strings.Contains(out, "!reed_file") {
-		t.Errorf("the human table must mark the unknown name:\n%s", out)
+// Hidden, not documented: --help is what a reader consults instead of running
+// the command, so a listed flag would read as the way to do this.
+func TestToolRulesFlagIsNotAdvertised(t *testing.T) {
+	setDataDir(t)
+	if out := mustRun(t, "", "server", "tool", "ls", "--help"); strings.Contains(out, "--rules") {
+		t.Errorf("the deprecated flag must not appear in help:\n%s", out)
 	}
 }
 

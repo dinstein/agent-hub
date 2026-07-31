@@ -194,8 +194,10 @@ func (a *App) newToolLsCmd() *cobra.Command {
 			fmt.Sprintf("lazy-mode search_tools meta-tool uses, best match first, capped at %d results.\n\n",
 				discovery.MaxSearchLimit) +
 			"What is listed is what this machine OFFERS: a tool an allow list holds back\n" +
-			"is counted, not listed, and --all brings it back with the state of each.\n" +
-			"--rules reads the allow lists themselves — do that before 'tool allow', which\n" +
+			"is counted, not listed, and --all brings it back with the state of each.\n\n" +
+			"This is the EFFECT of the rules. The rules themselves are on the servers that\n" +
+			"carry them — 'agenthub server ls' has a TOOLS column and 'agenthub server\n" +
+			"inspect <server>' spells one out. Read them before 'tool allow', which\n" +
 			"replaces a rule rather than adding to it.",
 		Args: rangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -221,6 +223,15 @@ func (a *App) newToolLsCmd() *cobra.Command {
 				return err
 			}
 			if rules {
+				// Advisory, and on stderr: the root has SetOut(stdout), so a
+				// notice printed there would corrupt --json for exactly the
+				// scripted callers the flag is being kept alive for. It is
+				// also advisory in the other sense — a stderr that will not
+				// take the note must not turn a working command into a
+				// failure, which is why the write is discarded.
+				_, _ = fmt.Fprint(a.stderr,
+					"note: the tool rules are now reported by 'agenthub server ls' and "+
+						"'agenthub server inspect <server>'; --rules still works but will be removed\n")
 				return a.printer().Emit(
 					toolRulesOf(snap.Servers.V.Servers, cached, serverArg), warnings...)
 			}
@@ -255,7 +266,12 @@ func (a *App) newToolLsCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&showAll, "all", false,
 		"list the tools an allow list holds back too, with the state of each")
 	cmd.Flags().BoolVar(&rules, "rules", false,
-		"list the allow lists themselves, one row per server, instead of the tools")
+		"deprecated: the rules are now on 'server ls' and 'server inspect'")
+	// Hidden rather than removed, for one release. It is kept out of --help
+	// because help is what a reader consults INSTEAD of running the command,
+	// and a documented flag reads as the way to do this rather than as the
+	// way it used to be done.
+	_ = cmd.Flags().MarkHidden("rules")
 	return cmd
 }
 
