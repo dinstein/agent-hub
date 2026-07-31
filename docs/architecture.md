@@ -420,10 +420,21 @@ such choice, it only resolves a path given an environment. `AGENTHUB_DATA_DIR` o
 what lets CI, e2e and two concurrent sandboxes coexist. The failure direction and what it costs to get
 backwards are in [canonical.md §1](canonical.md#1-frozen-identifiers-abi-unchangeable-as-of-v1).
 
-The config source of truth is always the files, **not the daemon's memory**. When the daemon is offline
-the CLI writes files directly (hold lock + atomic write); when it's online it writes via the daemon —
-both paths use the same locks and the same no-op guard, so neither loses updates. Change propagation
-uses a monotonic generation counter plus event pushes; mtime plays no semantic role.
+The config source of truth is always the files, **not the daemon's memory**, and that is what lets the
+two frontends write by different routes without disagreeing. The **CLI always writes the files
+directly** — `internal/confops` under the registry's cross-process lock, whether or not a daemon is
+running; it holds no long-lived view to be stale against, so it sends no precondition. The **GUI always
+writes through the daemon** (`api` → `ctlapi` → the same `internal/confops`), and because its window
+may be holding a minutes-old read, that route carries the optimistic-concurrency precondition. One
+implementation of the rules, one lock, two entry points. A daemon that is running does not get bypassed
+either: its registry watcher picks the CLI's write up and announces it. Change propagation uses a
+monotonic generation counter plus event pushes; mtime plays no semantic role.
+
+The CLI reaches the daemon **only for runtime objects** — `session ls/show/kill`, `events`, and the
+live status section of `server inspect` (best-effort there; offline it says so and reads the persisted
+cache). Those refuse with exit 4 rather than inventing an offline answer, because a session is never
+persisted and an empty event stream would read as "nothing happened". Everything else, configuration
+included, works with no daemon at all.
 
 ---
 

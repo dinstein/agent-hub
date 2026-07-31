@@ -6,17 +6,17 @@
 // A quota here is RESOURCE GOVERNANCE, not a security control. It exists so
 // one runaway agent loop cannot burn a paid API budget or trip a downstream
 // server's own limiter for everybody else. It is deliberately NOT part of
-// the frozen 7.3 gate chain (scope → token tier → argument precheck →
-// HITL): those four decide whether a call is ALLOWED AT ALL, and every one
-// of them fails closed. A quota decides whether an allowed call happens NOW
+// the frozen gate chain (scope → token tier): those two decide whether a
+// call is ALLOWED AT ALL, and both fail closed and decide from configuration
+// alone. A quota decides whether an allowed call happens NOW
 // or a few seconds from now, and it fails OPEN (see "Failure direction").
 // Mixing the two would put a fail-open stage inside a fail-closed chain,
 // which is how a limiter becomes a bypass.
 //
 // # Where it runs in the pipeline
 //
-// Immediately BEFORE the downstream call and AFTER every gate, including
-// HITL. That position is not achieved by adding a fifth gate — it is
+// Immediately BEFORE the downstream call and AFTER every gate. That position
+// is not achieved by adding a third gate — it is
 // achieved structurally, by wrapping pipeline.CallRequest.Call (and its
 // self-heal twin CallWithArgs) through Admission:
 //
@@ -26,9 +26,8 @@
 //
 // Two consequences are load-bearing:
 //
-//   - A call the HITL gate denied never spends a token. Charging a human's
-//     "no" against the agent's quota would let a denied call starve an
-//     approved one.
+//   - A call a gate denied never spends a token. Charging a refusal against
+//     the agent's quota would let denied calls starve allowed ones.
 //   - The 7.2 argument self-heal retry is charged ONCE, not twice: both
 //     wrappers share one Admission and the token is spent on first
 //     admission only. One agent intent = one token.

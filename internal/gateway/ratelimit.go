@@ -12,19 +12,18 @@ import (
 //
 // Placement — the one thing not to get wrong. The limiter WRAPS the call
 // closures of the assembled pipeline.CallRequest (runCall in upstream.go);
-// it is NOT a fifth gate. The frozen chain order (scope → token tier →
-// argument precheck → HITL) is untouched, and that is deliberate on both
-// sides:
+// it is NOT a third gate. The frozen chain order (scope → token tier) is
+// untouched, and that is deliberate on both sides:
 //
-//   - Those four gates decide whether a call is allowed AT ALL and every one
-//     of them fails closed. A quota decides whether an ALLOWED call happens
+//   - Those two gates decide whether a call is allowed AT ALL and both fail
+//     closed. A quota decides whether an ALLOWED call happens
 //     now or a few seconds from now, and its call path fails open. Putting a
 //     fail-open stage inside a fail-closed chain is the shape a limiter
 //     takes when it becomes a bypass.
 //   - Wrapping puts the spend after EVERY gate, immediately before the
-//     downstream call. So a call HITL denied never spends a token (charging
-//     a human's "no" against the agent's quota would let denied calls starve
-//     approved ones), and the 7.2 argument self-heal retry is charged once,
+//     downstream call. So a call a gate denied never spends a token (charging
+//     a refusal against the agent's quota would let denied calls starve
+//     allowed ones), and the 7.2 argument self-heal retry is charged once,
 //     not twice (both wrappers share one Admission).
 //
 // Configuration lives at the GLOBAL layer only, governance.json

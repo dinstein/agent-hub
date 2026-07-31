@@ -33,7 +33,8 @@ var ErrNoInputRequests = errors.New("input_required result carried no inputReque
 // Resolve answers every input request of one MRTR round and returns the
 // inputResponses map for the retry. Requests are answered sequentially in
 // sorted key order — deterministic ordering keeps any human-facing side
-// effects (HITL prompts) stable across runs. The first failure aborts the
+// effects (a client that elicits the answer from its user) stable across
+// runs. The first failure aborts the
 // round: a partially answered retry would be indistinguishable from a
 // client that ignored a required input, so no partial map is ever returned
 // (fail closed).

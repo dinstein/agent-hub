@@ -38,10 +38,12 @@ import (
 //
 //  2. THE HOST STAYS ON THE GATE PATH. This type never answers a call
 //     itself in any privileged way: the assembling gateway routes it through
-//     the same pipeline.Execute every downstream call takes, so scope, HITL
-//     and the injection scan all apply. SKILL.md is a first-class prompt
-//     injection carrier (5.1.5) and this path deliberately does NOT scan it
-//     locally — a second scanner would be a second policy.
+//     the same pipeline.Execute every downstream call takes, so the scope
+//     and token tier gates apply to it exactly as they do to a downstream
+//     tool. SKILL.md is a first-class prompt injection carrier (5.1.5), and
+//     nothing here scans it: agenthub inspects no content on any path, so a
+//     scanner local to this one would be the only policy in the product that
+//     reads what it governs.
 //
 //  3. LIVE ENABLEMENT AT CALL TIME. Tools() serves a snapshot (it is called
 //     on every catalog build and must not do I/O), but Call re-reads the

@@ -19,7 +19,7 @@
 //
 // stdio gateways depend on NONE of this: the daemon dying (even kill -9,
 // A.3 #2) only loses coordination — session listing, dynamic overlays,
-// HITL, centralized refresh. Gateways fall back to their static scope and
+// centralized refresh. Gateways fall back to their static scope and
 // re-register with backoff when the daemon returns.
 package daemon
 
@@ -319,8 +319,8 @@ func Run(ctx context.Context, cfg Config) error {
 
 	// Data plane (opt-in; see Config.HTTPAddr — nothing listens by default).
 	// It starts AFTER the control socket is serving because every gateway it
-	// assembles registers over that socket: session listing, overlays and
-	// HITL then work for an HTTP caller exactly as they do for an stdio one.
+	// assembles registers over that socket: session listing and overlays
+	// then work for an HTTP caller exactly as they do for an stdio one.
 	endpoint, herr := startHTTPPlane(bgCtx, cfg, httpPlaneDeps{
 		Resolver: resolver,
 		Log:      log,

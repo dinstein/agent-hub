@@ -92,14 +92,14 @@ func Covers(caller, tool Tier) bool {
 //     is a server that DID describe itself; docs/architecture.md §9 reads that silence
 //     as write, and that is what the tier ladder does.
 //
-// Deliberate asymmetry with DefaultDestructive: for annotations `{}` this
-// function answers write while DefaultDestructive answers true (destructive,
-// the MCP spec default for the hint). The two answer different questions.
-// ToolTier feeds coarse credential separation and the intent variants, where
-// treating every silent-but-annotated tool as destructive would collapse the
-// ladder to a single tier. DefaultDestructive feeds denyDestructive and the
-// HITL trigger — a blunt global veto that must stay blunt. Neither weakens
-// the other: the tier gate and the HITL gate both run, in that order.
+// `{}` therefore answers write, not destructive, even though destructive is
+// the MCP spec default for a missing hint. This function feeds coarse
+// credential separation and the intent variants, where treating every
+// silent-but-annotated tool as destructive would collapse the ladder to a
+// single tier. It used to have a blunter counterpart — DefaultDestructive,
+// which read `{}` as destructive and fed the global denyDestructive veto —
+// and the asymmetry between the two was the point; the veto went with the
+// rest of the runtime governance, so the tier gate is now the only reader.
 func ToolTier(annotations json.RawMessage) Tier {
 	trimmed := bytes.TrimSpace(annotations)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {

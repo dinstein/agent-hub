@@ -17,7 +17,7 @@ const (
 	ExitNotFound   = 3 // resource not found (server/profile/secret/skill)
 	ExitDaemonDown = 4 // daemon offline but the command requires it
 	ExitAuth       = 5 // authentication / authorization failure
-	ExitDenied     = 6 // rejected by governance policy (HITL deny, quarantine)
+	ExitDenied     = 6 // refused by a guard (spawnguard, a skill integrity pin)
 	ExitLocked     = 7 // any store's lock contention timeout, or state corrupt
 )
 

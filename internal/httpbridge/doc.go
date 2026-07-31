@@ -37,8 +37,8 @@
 //
 // The tier travels into internal/pipeline as CallRequest.CallerTier, where
 // the token tier gate compares it against the tool's annotation-derived
-// tier. That is the SECOND of the three defence lines of docs/architecture.md §9
-// (scope → token tier → precheck → HITL); this package mints the input, it
+// tier. That is the SECOND of the two defence lines of docs/architecture.md §9
+// (scope → token tier); this package mints the input, it
 // does not re-implement the decision.
 //
 // # Ordering invariant

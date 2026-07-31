@@ -85,9 +85,10 @@ type Gate interface {
 
 // ShapeFunc bounds ONE delivered result to the caller's budget
 // (internal/shaping). It is the seam through which result pagination joins
-// the single execute path: it runs INSIDE defend_and_shape, after the
-// injection verdict, so every caller of Execute — direct tools/call and lazy
-// call_tool — is shaped by the same rule. It must never return nil; when it
+// the single execute path: it runs INSIDE defend_and_shape — which no longer
+// defends, only shapes (see shape.go) — so every caller of Execute, direct
+// tools/call and lazy call_tool alike, is bounded by the same rule. It must
+// never return nil; when it
 // cannot shape, it returns res unchanged (shaping fails OPEN,
 // internal/shaping doc.go).
 type ShapeFunc func(ctx context.Context, req *CallRequest, res *mcp.CallResult) *mcp.CallResult

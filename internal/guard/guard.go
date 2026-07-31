@@ -5,10 +5,14 @@
 //
 // The actual guards live in the subpackages:
 //
-//   - injection:  prompt-injection scanning of downstream results
 //   - spawnguard: anti-smuggling checks on spawn command lines
 //   - netguard:   SSRF host/IP predicates and the dial-time control hook
-//   - leakguard:  sensitive-data egress detection
+//
+// Both refuse a destination or a process regardless of who asked, which is
+// why they survived the removal of the runtime governance surfaces: an
+// injection scanner over downstream results and a sensitive-data egress
+// detector were listed here too, and each went with the stage that read its
+// verdict. Nothing in agenthub inspects what a downstream returned.
 //
 // This package only holds what the subpackages share: the decidable
 // rejection sentinel. Per docs/modules/foundation.md ("error-handling conventions"), every typed

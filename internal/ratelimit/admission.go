@@ -97,7 +97,7 @@ type Admission struct {
 }
 
 // Admit creates a reservation for key. Nothing is charged until the wrapped
-// call actually runs — a call the HITL gate denies never spends a token.
+// call actually runs — a call a gate denies never spends a token.
 func (l *Limiter) Admit(key Key) *Admission {
 	return &Admission{lim: l, key: key}
 }
@@ -120,9 +120,9 @@ func (a *Admission) check() error {
 // the wiring can wrap both CallRequest fields unconditionally.
 //
 // Placement invariant: the returned closure runs where the wrapped one did
-// — after EVERY gate (scope, token tier, precheck, HITL) and immediately
+// — after EVERY gate (scope, token tier) and immediately
 // before the downstream call. That is the whole reason quotas are wired
-// here rather than as a fifth gate.
+// here rather than as a third gate.
 func (a *Admission) Wrap(call pipeline.CallFunc) pipeline.CallFunc {
 	if call == nil {
 		return nil
