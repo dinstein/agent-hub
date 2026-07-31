@@ -547,7 +547,7 @@ recorded beside the invariant they bend rather than in a backlog file, because t
 see them. None was fixed on the sweep's branch, whose scope was the findings both engines confirmed
 independently plus the two single-engine highs.
 
-- **`netguard.go:103` — the non-public prefix table omits RFC 8215's local-use NAT64 prefix
+- **`netguard.go:113` — the non-public prefix table omits RFC 8215's local-use NAT64 prefix
   `64:ff9b:1::/48`.** The v4-embedding group lists `64:ff9b::/96`, `::/96` and `2002::/16` and nothing
   else, so on a network routing the local-use prefix through a NAT64 translator, a literal from it
   encodes an RFC1918 destination that `AddrIsPrivate` answers false for — passing both the hostname

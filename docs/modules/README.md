@@ -41,3 +41,14 @@ says why: a list kept away from the code it describes is the one that goes stale
 **A gap already pinned down to a specific line belongs HERE**, in the section for the package that
 owns it — say plainly that it is owed rather than describing it as done. It is read by whoever
 touches that code; a list of its own would not be.
+
+**The line numbers rot, and nothing catches it.** A pin is a number in prose; inserting a comment
+above the code it names moves it silently, and `make ci` cannot tell a citation that landed on the
+wrong function from one that landed on the right one. On the night this paragraph was written five of
+the seventeen `file.go:NNN` citations in these documents pointed at unrelated code — two of them moved
+by commits landed hours earlier in that same session, each of which had added lines near the top of a
+cited file. So: **re-read the pins in a package's section whenever you tidy that package**, and treat
+the surrounding prose as the real citation — it names the function, and the number is only there to
+save a search. A rule was considered and not written, because most pins here spell a bare basename
+(`profile.go:434`, `iss.go:41`) that resolves to more than one file in this tree; a check that
+silently skipped those would be the inert-rule failure `test/buildrules` exists to prevent.

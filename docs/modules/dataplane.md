@@ -1192,7 +1192,7 @@ which is why it is allowed to wait.
   merged at all. The fix: when `ScopeLayers` is non-nil, apply them regardless of `g.store` (build the
   resolver against an empty registry snapshot so the Extra layers still intersect), or refuse to
   assemble a gateway for a constrained credential when no registry authority exists.
-- **`downstream/httpdial.go:189` — `http.ProxyFromEnvironment` routes around the dial-time screen.**
+- **`downstream/httpdial.go:227` — `http.ProxyFromEnvironment` routes around the dial-time screen.**
   Both HTTP clients set it, so with `HTTP_PROXY`/`HTTPS_PROXY` configured the guarded `DialContext`
   screens the PROXY's address and the proxy then resolves and connects to the real destination. A
   hostname that `screenEndpoint` saw resolve publicly can be reached privately through the proxy's own
@@ -1200,7 +1200,7 @@ which is why it is allowed to wait.
   disabling environment proxies for guarded downstream traffic breaks every operator behind a corporate
   proxy, while keeping them means the SSRF screen is advisory whenever one is set. Whichever way it
   goes, it should be stated here rather than left to inference.
-- **`mcp/transport/httpcommon.go:411` — legacy batch decoding materializes an attacker-sized slice
+- **`mcp/transport/httpcommon.go:430` — legacy batch decoding materializes an attacker-sized slice
   before validating any element.** A ~16 MiB JSON array of millions of one-byte values passes
   `readBounded` (it is under `mcp.MaxFrameSize`), and `json.Unmarshal` into `[]json.RawMessage`
   allocates per element — tens of megabytes of input becoming hundreds of megabytes of heap, plus

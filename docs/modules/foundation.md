@@ -435,7 +435,7 @@ a bare newline, which makes appending `'\n'` safe.
 sweep raised it as a shutdown deadlock: `Call` performs the write before selecting on `ctx.Done`, and
 `Notify` ignores its context entirely, so a stdio downstream that stops reading mid-frame was said to
 hang shutdown. **Not reproduced.** Handler goroutines never wait on the stuck write —
-`downstream/server.go:388-397` selects on the reply, the call context and the server lifetime, and
+`downstream/server.go:420-442` selects on the reply, the call context and the server lifetime, and
 shutdown cancels the gateway lifetime before joining handlers — while `Server.Close` closes the
 transport *before* joining the owner goroutine, and closing the child's stdin unwinds a blocked
 `Write` with an error. There is also no reachable trigger for the `Notify` half: it is used only

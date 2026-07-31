@@ -939,7 +939,7 @@ carried the findings both engines confirmed independently plus the two single-en
   cases (`mcpServers`, `context_servers`) pass, which is why the tests and
   `FuzzSpliceEntryKeepsEverythingElse` — all one-element sections — miss it. Reproduced during the
   sweep with exactly that document.
-- **`clients/jsonfile.go:319` — an unchecked read-to-rename window.** The rendered result is renamed
+- **`clients/jsonfile.go:338` — an unchecked read-to-rename window.** The rendered result is renamed
   over the target without confirming the target is still the file that was read. VS Code, Zed and
   Cursor all rewrite their settings on their own schedule, so a concurrent edit between the read into
   `c.orig` and the rename is lost — and lost from the backup too, which preserves the stale `c.orig`
