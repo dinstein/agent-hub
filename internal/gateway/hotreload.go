@@ -122,7 +122,16 @@ func (g *gateway) syncServers(snap *registry.Snapshot) {
 		newByID[sp.ID] = sp
 	}
 
-	var toClose []*downstream.Server
+	// closing pairs each server with WHY it is being taken down. The reason
+	// lives here because this is the only layer that has it: downstream.Close
+	// reports that a connection ended, and cannot say whether the operator
+	// deleted the entry or edited it — which are the two different things an
+	// operator wants confirmed after a config change.
+	type closing struct {
+		srv    *downstream.Server
+		reason string
+	}
+	var toClose []closing
 	var toConnect []downstream.Spec
 	removedAny := false
 
@@ -139,7 +148,7 @@ func (g *gateway) syncServers(snap *registry.Snapshot) {
 		case !specEqual(os, ns):
 			// Definition changed: only THIS server reconnects.
 			if srv := g.servers[id]; srv != nil {
-				toClose = append(toClose, srv)
+				toClose = append(toClose, closing{srv, "definition changed"})
 				delete(g.servers, id)
 			}
 			toConnect = append(toConnect, ns)
@@ -149,7 +158,7 @@ func (g *gateway) syncServers(snap *registry.Snapshot) {
 		if _, ok := newByID[id]; !ok {
 			removedAny = true
 			if srv := g.servers[id]; srv != nil {
-				toClose = append(toClose, srv)
+				toClose = append(toClose, closing{srv, "removed from the configuration"})
 				delete(g.servers, id)
 			}
 		}
@@ -183,14 +192,21 @@ func (g *gateway) syncServers(snap *registry.Snapshot) {
 	}
 	g.mu.Unlock()
 
-	for _, srv := range toClose {
-		srv.Close() // outside g.mu: Close waits for the owner goroutine
+	for _, c := range toClose {
+		// Announced BEFORE the close, which is what makes the pair worth two
+		// lines: Close blocks on the owner goroutine, so this line without
+		// downstream's "downstream connection closed" after it is a teardown
+		// that did not finish — a state that otherwise looks exactly like a
+		// server quietly missing from the catalog.
+		g.log.Info("closing a downstream connection",
+			logx.Server(c.srv.ID()), "reason", c.reason)
+		c.srv.Close() // outside g.mu: Close waits for the owner goroutine
 		// Derived instances of a redefined or removed server are stale by the
 		// same argument their base connection is: they were dialed from the
 		// old spec. Closing them here means the next call re-derives from the
 		// applied one (docs/modules/dataplane.md lifecycle).
 		if g.pool != nil {
-			g.pool.CloseServer(srv.ID())
+			g.pool.CloseServer(c.srv.ID())
 		}
 	}
 	for _, sp := range toConnect {

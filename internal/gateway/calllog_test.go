@@ -217,3 +217,48 @@ func TestServedToolCallIsLoggedAtDebug(t *testing.T) {
 	}
 	assertCallIdentity(t, rec, "alpha", "echo")
 }
+
+// "downstream connected" had no counterpart at this layer either. A server
+// that leaves the catalog because the operator deleted or edited its entry
+// produced no line naming that decision, so the config change and the
+// disappearance could not be connected to each other.
+//
+// The reason belongs here and nowhere lower: downstream.Close reports that a
+// connection ended and cannot know whether the entry was removed or
+// rewritten, which is exactly the distinction an operator is checking after
+// an edit.
+func TestClosingADownstreamNamesTheReason(t *testing.T) {
+	t.Parallel()
+	resolver := testResolver(t.TempDir())
+	seedRegistry(t, resolver, "alpha", "beta")
+	log, sink := newCallLog()
+	_, c, _ := startGateway(t, Config{
+		ClientID: "closelog", Resolver: resolver, Log: log,
+		Dial: scriptedDial(map[string]*fakemcp.Script{
+			"alpha": fakemcp.Minimal("echo"),
+			"beta":  fakemcp.Minimal("echo"),
+		}),
+	})
+	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
+	waitForTools(t, c, "alpha__echo", "beta__echo")
+
+	ext := externalRegistry(t, resolver)
+	updateRegistry(t, ext, func(tx *registry.Tx) {
+		delete(tx.Servers.V.Servers, "beta")
+	})
+	waitForTools(t, c, "alpha__echo")
+
+	rec := sink.find(t, "closing a downstream connection")
+	if rec[logx.FieldServer] != "beta" {
+		t.Errorf("server = %q, want beta: %v", rec[logx.FieldServer], rec)
+	}
+	if rec["reason"] != "removed from the configuration" {
+		t.Errorf("reason = %q, want the removal: %v", rec["reason"], rec)
+	}
+	// The pair is the point: this line is written before Close, which blocks
+	// on the owner goroutine, so its counterpart arriving proves the teardown
+	// finished rather than wedged.
+	waitFor(t, "the connection to report itself closed", func() bool {
+		return sink.count("downstream connection closed") > 0
+	})
+}
