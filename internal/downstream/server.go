@@ -178,7 +178,7 @@ func Connect(ctx context.Context, spec Spec, deps Deps) (*Server, error) {
 		stop:           stop,
 		calls:          make(chan callReq, 1),
 		refreshCh:      make(chan struct{}, 1),
-		health:         newHealthTracker(time.Now()),
+		health:         newHealthTracker(time.Now(), srvLog),
 		trace:          deps.traceFor(spec),
 		traceInst:      string(spec.DeriveKey),
 		ownerDone:      make(chan struct{}),
@@ -395,6 +395,12 @@ func (s *Server) Close() {
 			_ = tr.Close()
 		}
 		<-s.ownerDone
+		// The counterpart of the assembling layer's "downstream connected".
+		// Without it a server leaves the catalog — removed from the config,
+		// redefined, or taken down with the process — and the log's last word
+		// on it is that it connected, which reads as though it still is.
+		s.log.Info("downstream connection closed",
+			"reconnects", s.reconnects.Load(), "state", string(s.health.snapshot().State))
 	})
 }
 
@@ -528,7 +534,16 @@ func (s *Server) execute(req callReq) (json.RawMessage, error) {
 		cls, retryAfter := classify(err)
 		switch {
 		case cls == transport.ClassRetry && attempt < s.retry.MaxAttempts:
-			if werr := s.sleep(req.ctx, backoff(s.retry, attempt, retryAfter)); werr != nil {
+			wait := backoff(s.retry, attempt, retryAfter)
+			// Debug, not Info: a retry that WORKS is the normal outcome and
+			// says nothing about the system, while the caller's own call line
+			// carries the total. What it buys is the answer to "why did that
+			// call take three seconds" — without it a call slowed by two
+			// backoffs is indistinguishable from a slow downstream.
+			s.log.Debug("retrying a downstream call", "method", req.method,
+				"attempt", attempt, "of", s.retry.MaxAttempts,
+				"backoff", wait.String(), "error", err)
+			if werr := s.sleep(req.ctx, wait); werr != nil {
 				return nil, werr
 			}
 			attempt++

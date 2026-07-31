@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"sync"
 	"syscall"
@@ -68,13 +69,26 @@ type Health struct {
 
 // healthTracker owns the probe verdict state machine. It is written only by
 // the probe path and read under its mutex by Health().
+//
+// It logs STATE CHANGES, never individual verdicts, and that distinction is
+// the point. A server that is down for an hour produces one line saying so
+// and one saying it came back; a line per failing probe would produce a
+// hundred and twenty identical warnings instead — the shape that teaches a
+// reader to filter the message out, and the transition with it.
 type healthTracker struct {
-	mu sync.Mutex
-	h  Health
+	mu  sync.Mutex
+	h   Health
+	log *slog.Logger
 }
 
-func newHealthTracker(now time.Time) *healthTracker {
-	return &healthTracker{h: Health{State: ConnConnecting, Since: now}}
+// newHealthTracker builds the tracker for one connection. log is the
+// server's bound logger (it carries the server and, for a derivation, the
+// instance); nil means no logging.
+func newHealthTracker(now time.Time, log *slog.Logger) *healthTracker {
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	return &healthTracker{h: Health{State: ConnConnecting, Since: now}, log: log}
 }
 
 func (t *healthTracker) snapshot() Health {
@@ -88,7 +102,7 @@ func (t *healthTracker) snapshot() Health {
 // the connection carries traffic). The failure streak resets.
 func (t *healthTracker) success(now time.Time) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	before, failures := t.h.State, t.h.Failures
 	if t.h.State != ConnConnected {
 		t.h.State = ConnConnected
 		t.h.Since = now
@@ -96,6 +110,24 @@ func (t *healthTracker) success(now time.Time) {
 	t.h.Detail = ""
 	t.h.Failures = 0
 	t.h.LastProbe = now
+	t.mu.Unlock()
+
+	// Every state line in this package carries the pair, so one grep on
+	// from/to follows a connection through an outage whichever way it moved.
+	pair := []any{"from", string(before), "to", string(ConnConnected)}
+	switch before {
+	case ConnConnected:
+	case ConnError:
+		// The one recovery line. Nothing else announces it: the call path
+		// only ever reports what fails, so without this a log shows a server
+		// going down and never coming back.
+		t.log.Info("downstream healthy again", append(pair, "failures_cleared", failures)...)
+	default:
+		// connecting → connected is the handshake, which the assembling
+		// layer already reports in its own words ("downstream connected",
+		// with the tool count). Debug, so the two do not read as two events.
+		t.log.Debug("downstream answered its first probe", pair...)
+	}
 }
 
 // failure records one probe failure. hard failures (connection refused and
@@ -103,17 +135,26 @@ func (t *healthTracker) success(now time.Time) {
 // HealthFailureStreak consecutive failures.
 func (t *healthTracker) failure(now time.Time, err error, hard bool) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	before := t.h.State
 	t.h.Failures++
 	t.h.Detail = err.Error()
 	t.h.LastProbe = now
-	if !hard && t.h.Failures < HealthFailureStreak {
-		return
-	}
-	if t.h.State != ConnError {
+	flip := hard || t.h.Failures >= HealthFailureStreak
+	if flip && t.h.State != ConnError {
 		t.h.State = ConnError
 		t.h.Since = now
 	}
+	after, failures := t.h.State, t.h.Failures
+	t.mu.Unlock()
+
+	if before == after {
+		return
+	}
+	// `hard` is on the line because it is the difference between "this server
+	// refused the connection outright" and "three probes in a row timed out",
+	// and the two send a reader to different places.
+	t.log.Warn("downstream is not answering", "from", string(before), "to", string(after),
+		"failures", failures, "hard", hard, "error", err)
 }
 
 // Health returns the current probe-derived connection condition. Servers
@@ -146,11 +187,12 @@ func (s *Server) Ping(ctx context.Context) error {
 		// The CALLER went away — neither proof of health nor of failure.
 		return err
 	default:
-		hard := hardConnError(err)
-		s.health.failure(now, err, hard)
-		if hard {
-			s.log.Warn("health probe hit a hard connection failure", "error", err)
-		}
+		// The tracker owns the reporting: it is the only thing that knows
+		// whether this verdict MOVED the state. There used to be a warning
+		// here instead, fired on every hard failure — so a server with the
+		// plug pulled logged one every probe interval for as long as it
+		// stayed unplugged, and never logged its recovery at all.
+		s.health.failure(now, err, hardConnError(err))
 		return err
 	}
 }
