@@ -90,7 +90,8 @@ func TestSSRFAllowLoopbackIsNarrow(t *testing.T) {
 // that passed checkURL and then resolved private is still refused.
 func TestDialControlScreensResolvedAddress(t *testing.T) {
 	c := NewClient(Config{})
-	err := c.dialControl("tcp", "10.0.0.1:443", nil)
+	// Requested and resolved agree here: a literal was dialed directly.
+	err := c.dialControlFor("10.0.0.1:443")("tcp", "10.0.0.1:443", nil)
 	if err == nil {
 		t.Fatal("dial to a private address must be refused")
 	}
@@ -98,15 +99,50 @@ func TestDialControlScreensResolvedAddress(t *testing.T) {
 	if !errors.As(err, &blocked) {
 		t.Fatalf("expected a *netguard.BlockedError, got %v", err)
 	}
-	if err := c.dialControl("tcp", "127.0.0.1:443", nil); err == nil {
+	if err := c.dialControlFor("127.0.0.1:443")("tcp", "127.0.0.1:443", nil); err == nil {
 		t.Fatal("loopback dial must be refused without AllowLoopback")
 	}
 	cl := NewClient(Config{AllowLoopback: true})
-	if err := cl.dialControl("tcp", "127.0.0.1:443", nil); err != nil {
+	if err := cl.dialControlFor("127.0.0.1:443")("tcp", "127.0.0.1:443", nil); err != nil {
 		t.Fatalf("loopback dial with AllowLoopback: %v", err)
 	}
-	if err := cl.dialControl("tcp", "10.0.0.1:443", nil); err == nil {
+	if err := cl.dialControlFor("10.0.0.1:443")("tcp", "10.0.0.1:443", nil); err == nil {
 		t.Fatal("AllowLoopback must not unlock RFC1918 at dial time")
+	}
+}
+
+// TestDNSCannotUnlockTheLoopbackCarveOut is the regression for a carve-out
+// decided from the RESOLVED address.
+//
+// The switch documents itself as unlocking only literal loopback addresses
+// and the RFC 6761 localhost tree, with no hostname's DNS answer able to
+// open it. Deciding from what the address resolved to did exactly that: a
+// public-looking name that answers 127.0.0.1 at dial time was connected
+// without netguard ever being consulted — with the discovery GET, or a POST
+// carrying a code_verifier or a refresh token, going to whatever listens on
+// this host.
+func TestDNSCannotUnlockTheLoopbackCarveOut(t *testing.T) {
+	cl := NewClient(Config{AllowLoopback: true})
+	// as.example.com passed checkURL as public, then resolved to loopback.
+	err := cl.dialControlFor("as.example.com:443")("tcp", "127.0.0.1:443", nil)
+	if err == nil {
+		t.Fatal("a rebound hostname must not reach loopback through the carve-out")
+	}
+	var blocked *netguard.BlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("expected a *netguard.BlockedError, got %v", err)
+	}
+	// The names the carve-out DOES cover still work, or the switch would be
+	// off rather than narrowed.
+	for _, requested := range []string{"localhost:9000", "sub.localhost:9000", "127.0.0.1:9000", "[::1]:9000"} {
+		if err := cl.dialControlFor(requested)("tcp", "127.0.0.1:9000", nil); err != nil {
+			t.Errorf("carve-out refused %s: %v", requested, err)
+		}
+	}
+	// A name inside the carve-out that resolves somewhere else is refused
+	// on the second condition: both halves have to hold.
+	if err := cl.dialControlFor("localhost:9000")("tcp", "10.0.0.5:9000", nil); err == nil {
+		t.Fatal("a poisoned localhost must not unlock RFC1918")
 	}
 }
 

@@ -397,6 +397,17 @@ discovery ──► registration ──► authorization ──► token exchang
   are not exempt, and no hostname's DNS answer can unlock this exception. The connection pool's
   `IdleConnTimeout` is dropped to 30s to avoid reusing a connection that was still a public address
   when it was screened.
+
+  **The carve-out is decided from the REQUESTED host, and needs the resolved address to agree.**
+  `dialControlFor` is built per dial from the `host:port` the transport was asked for — the URL's own
+  host, before any resolution — and it opens only when `isLiteralLoopbackHost` holds for that host
+  **and** the address being dialed is itself a loopback literal. Deciding it from the resolved address
+  alone (which is what it did) reopened the switch to precisely the DNS answer the sentence above says
+  cannot unlock it: a public-looking name that answered `127.0.0.1` was dialed without netguard being
+  consulted at all, delivering a discovery GET — or a `postForm` carrying a `code_verifier` or a
+  refresh token — to whatever listens on this host's loopback interface. Requiring both halves is what
+  keeps a poisoned `localhost` on the netguard branch. `isLiteralLoopbackHost` is DNS-free for this
+  reason and had, until then, never been consulted on the dial path.
 - **PKCE is never downgraded.** `ChallengeMethodS256` is the only method ever sent, and there is no
   `plain` code path in the package. `randRead` is a package-level variable rather than a config
   option — making the entropy source configurable would be manufacturing exactly that downgrade path.
@@ -512,18 +523,6 @@ recorded beside the invariant they bend rather than in a backlog file, because t
 see them. None was fixed on the sweep's branch, whose scope was the findings both engines confirmed
 independently plus the two single-engine highs.
 
-- **`oauthflow/client.go:131` — the `AllowLoopback` carve-out is decided from the RESOLVED address, so
-  a DNS rebind reopens it.** With the opt-in on, `dialControl` returns nil for any dial whose resolved
-  address is a loopback literal, without consulting `netguard.DialControl`. So a hostname that passed
-  `checkURL` as public and then resolves to `127.0.0.1` is dialed — the discovery GET, or a `postForm`
-  carrying `code_verifier`/`refresh_token`, delivered to a service on the agenthub host's loopback
-  interface. This contradicts the invariant stated above for that switch: "even when on it allows only
-  literal loopback addresses and RFC 6761's `localhost` name tree … and no hostname's DNS answer can
-  unlock this exception." `isLiteralLoopbackHost`, the DNS-free predicate written for exactly this, is
-  never consulted on the dial path. The fix has a shape: carry the already-screened hostname into the
-  dialer (a per-request `DialContext` closure, or a context value set by `checkURL`) and allow the
-  carve-out only when `isLiteralLoopbackHost` held for that host. The existing regressions cover the
-  URL layer and bare literals passed straight to `dialControl`, which is why neither caught it.
 - **`oauthflow/token.go:77` — a DISCOVERED `authorization_endpoint` is never SSRF-screened before the
   browser opens it.** Only an operator-PINNED endpoint goes through `Client.checkURL`; `BuildAuthorizeURL`
   merely `url.Parse`s what the metadata document said, and `LoopbackFlow.Run` hands the result to

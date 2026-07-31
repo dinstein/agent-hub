@@ -111,13 +111,18 @@ func NewClient(cfg Config) *Client {
 // the ACTUAL resolved address, so a hostname that passed checkURL and then
 // flipped to a private answer is still refused.
 func (c *Client) newTransport() http.RoundTripper {
-	d := &net.Dialer{
-		Timeout:   10 * time.Second,
-		KeepAlive: 30 * time.Second,
-		Control:   c.dialControl,
-	}
 	t := http.DefaultTransport.(*http.Transport).Clone()
-	t.DialContext = d.DialContext
+	// The dialer is built per dial rather than once, because the carve-out
+	// below is decided from the address the TRANSPORT WAS ASKED FOR — which
+	// only this closure sees — and not from what that address resolved to.
+	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		d := &net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+			Control:   c.dialControlFor(address),
+		}
+		return d.DialContext(ctx, network, address)
+	}
 	// A screened dialer is worthless if a pooled connection to a
 	// previously-public address is reused after a rebind; short idle
 	// lifetimes keep the screen close to the traffic.
@@ -125,20 +130,56 @@ func (c *Client) newTransport() http.RoundTripper {
 	return t
 }
 
-// dialControl is the net.Dialer.Control hook. It delegates to
-// netguard.DialControl except for the one carve-out the AllowLoopback
-// switch buys: literal loopback addresses.
-func (c *Client) dialControl(network, address string, rc syscall.RawConn) error {
-	if c.cfg.AllowLoopback {
-		host := address
-		if h, _, err := net.SplitHostPort(address); err == nil {
-			host = h
-		}
-		if a, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil && a.Unmap().IsLoopback() {
+// dialControlFor builds the net.Dialer.Control hook for ONE dial.
+//
+// `requested` is what http.Transport asked for: `host:port` taken from the
+// URL, before any name resolution. The Control hook it returns sees the
+// resolved address instead, and that difference is the whole point.
+//
+// The AllowLoopback carve-out needs BOTH to hold, and neither alone:
+//
+//   - the requested host is certainly loopback (`isLiteralLoopbackHost`, an
+//     IP literal or the RFC 6761 localhost tree — never a name whose answer
+//     comes from DNS), and
+//   - the address actually being dialed is a loopback literal.
+//
+// Deciding it from the resolved address alone reopened the switch to DNS:
+// a hostname that passed checkURL as public and then answered 127.0.0.1 was
+// dialed without ever consulting netguard, delivering the discovery GET —
+// or a postForm carrying code_verifier or a refresh token — to a service on
+// this host's loopback interface. That contradicts what the switch says
+// about itself: no hostname's DNS answer can unlock the exception.
+// isLiteralLoopbackHost was written for exactly this and was never on the
+// dial path.
+//
+// Requiring the second condition as well keeps a poisoned `localhost` (a
+// name in the carve-out that answers with something else) on the
+// netguard.DialControl branch.
+func (c *Client) dialControlFor(requested string) func(string, string, syscall.RawConn) error {
+	allow := c.cfg.AllowLoopback && isLiteralLoopbackHost(hostOnly(requested))
+	return func(network, address string, rc syscall.RawConn) error {
+		if allow && isLoopbackAddress(address) {
 			return nil
 		}
+		return netguard.DialControl(network, address, rc)
 	}
-	return netguard.DialControl(network, address, rc)
+}
+
+// hostOnly strips a port and brackets from a dial address. An address
+// without a port is already a host.
+func hostOnly(address string) string {
+	host := address
+	if h, _, err := net.SplitHostPort(address); err == nil {
+		host = h
+	}
+	return strings.Trim(host, "[]")
+}
+
+// isLoopbackAddress reports whether a dial address is a loopback literal.
+// Fail-to-false: anything unparsable is not loopback, and goes to netguard.
+func isLoopbackAddress(address string) bool {
+	a, err := netip.ParseAddr(hostOnly(address))
+	return err == nil && a.Unmap().IsLoopback()
 }
 
 // checkURL screens a destination before the request is made.
