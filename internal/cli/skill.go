@@ -728,6 +728,15 @@ func (a *App) newSkillVerifyCmd() *cobra.Command {
 // governance), not a generic failure — the operation was REFUSED by an
 // integrity rule, and a script should be able to tell that apart from an
 // I/O error.
+//
+// OWED, and the reason this switch is easy to leave incomplete: the default is
+// to return the error unclassified, which exits 1 as E_GENERAL and looks like
+// a deliberate answer. Two sentinels are in that state — ErrInvalidID (a
+// rejected --id is an argument, so exit 2) and ErrUnverifiable (the other arm
+// of the same fail-closed check as ErrTampered, so exit 6). Both are written
+// up with their reproduction in docs/modules/config.md, under the skills
+// integrity section; the exit table is frozen, so moving them is a decision
+// rather than a fix.
 func classifySkillsError(err error, id string) error {
 	switch {
 	case err == nil:

@@ -812,6 +812,22 @@ other than agenthub returns `ErrDrifted`, and the caller must pass `InstallReque
 Drift is the user telling us something, even if what they mean is "I edited the wrong file"; silently rolling it
 back is how a sync tool teaches users not to trust its own receipts.
 
+**Owed: two of this package's sentinels reach the CLI with no arm in `classifySkillsError`, so they exit 1 as
+`E_GENERAL`.** That function (`internal/cli/skill.go`) is a `switch` over `errors.Is`, and its `default` is to return
+the error unclassified — a shape that says nothing when a new sentinel is added beside the ones already handled.
+
+| Sentinel | Today | Should be | Why |
+|---|---|---|---|
+| `ErrInvalidID` | 1 / `E_GENERAL` | 2 / `E_USAGE` | A rejected `--id` is an argument the user typed. The frozen exit table gives row 2 as "arguments, unknown flag, unknown subcommand", and `agenthub skill add <dir> --id 'Bad..ID' --json` answers `{"code":"E_GENERAL"}` with status 1. |
+| `ErrUnverifiable` | 1 / `E_GENERAL` | 6 / `E_GOVERNANCE_DENIED` | It is the second arm of the same fail-closed decision as `ErrTampered`, which maps to 6. A library copy that mismatches its pin and one that cannot be hashed at all are the same refusal — the second is the state an attacker can arrange most cheaply — and they should not be told apart by exit code. |
+
+`ErrGitFetchUnsupported` is also unmapped and is arguably right there: a feature that does not exist is a general
+failure, and its message already names the remedy. `ErrSkillUnavailable` is correctly absent — it is raised on the
+MCP face (`mcp.go`) and handled there, and never reaches the CLI.
+
+Not fixed here because an exit code is a machine contract and the table is frozen: moving a case from 1 to 2 or 6 is
+the table's owner's call, not a tidy-night edit.
+
 **Import is this package's largest attack surface, and every rejection is non-negotiable.** `scanTree` rejects:
 symlinks of any kind (following one copies content from outside the package; preserving one makes the installed copy
 point at an attacker-chosen path inside the user's home directory), non-regular files (devices, sockets, fifos), a
