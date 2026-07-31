@@ -161,7 +161,7 @@ func (g *gateway) acquire(ctx context.Context, base *downstream.Server, serverID
 	}
 	if lease.Fallback {
 		g.log.Warn("call served by the base instance: derived-instance cap reached",
-			logx.Server(serverID), "derive_key", string(key))
+			logx.Server(serverID), logx.Instance(string(key)))
 	}
 	return lease, nil
 }

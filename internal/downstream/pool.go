@@ -228,7 +228,7 @@ func (p *Pool) Acquire(ctx context.Context, base *Server, spec Spec, key DeriveK
 			// which means it does NOT get the derived cwd/env. Loud on
 			// purpose — this is a configuration problem, not a hiccup.
 			p.log.Warn("derived instance cap reached; reusing the base instance",
-				logx.Server(spec.ID), "derive_key", string(key), "cap", p.maxPerServer)
+				logx.Server(spec.ID), logx.Instance(string(key)), "cap", p.maxPerServer)
 			return &Lease{Server: base, Key: key, Fallback: true}, nil
 		}
 		d = &derived{
@@ -297,7 +297,7 @@ func (p *Pool) dial(ctx context.Context, d *derived) (*Lease, error) {
 	p.mu.Unlock()
 
 	p.log.Info("derived downstream instance connected",
-		logx.Server(d.serverID), "derive_key", string(d.key),
+		logx.Server(d.serverID), logx.Instance(string(d.key)),
 		"tools", len(srv.Tools()), "cwd", d.spec.Cwd)
 	return &Lease{Server: srv, Key: d.key, Derived: true, pool: p, inst: d}, nil
 }
@@ -442,7 +442,7 @@ func (p *Pool) closeInstance(d *derived, reason string) {
 		d.srv.Close()
 	}
 	p.log.Info("derived downstream instance closed",
-		logx.Server(d.serverID), "derive_key", string(d.key), "reason", reason)
+		logx.Server(d.serverID), logx.Instance(string(d.key)), "reason", reason)
 }
 
 func (p *Pool) runSweeper(interval time.Duration) {

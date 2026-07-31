@@ -153,7 +153,17 @@ func Connect(ctx context.Context, spec Spec, deps Deps) (*Server, error) {
 	// One bound logger for the whole connection, built before the struct so
 	// the breaker writes under the same identity as every other line this
 	// server produces.
+	//
+	// The derive key is bound here for the reason TraceFrame carries `inst`:
+	// Spec.ID deliberately does NOT change under derivation, so every
+	// instance of one server logs under the same `server` value, and a
+	// respawn or an opening circuit could not be attributed to the connection
+	// it happened on. Bound once rather than stamped per call site — that is
+	// how one line ends up without it.
 	srvLog := log.With(logx.FieldServer, spec.ID)
+	if spec.DeriveKey != "" {
+		srvLog = srvLog.With(logx.Instance(string(spec.DeriveKey)))
+	}
 
 	lifeCtx, stop := context.WithCancel(context.Background())
 	s := &Server{
