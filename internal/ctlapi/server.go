@@ -153,6 +153,13 @@ type Server struct {
 	// gateway, keyed by session id (see gateway.go).
 	gwMu     sync.Mutex
 	gateways map[string]*gatewayLink
+
+	// draining is closed by CloseStreams to tell the long-lived SSE handlers
+	// that no more frames are coming. It is a channel rather than a flag
+	// because the handlers are parked in a select and a flag cannot wake
+	// them.
+	drainOnce sync.Once
+	draining  chan struct{}
 }
 
 // NewServer validates opts and builds a Server.
@@ -189,6 +196,7 @@ func NewServer(opts Options) (*Server, error) {
 		opts:     opts,
 		log:      log,
 		gateways: make(map[string]*gatewayLink),
+		draining: make(chan struct{}),
 	}
 	s.hs = &http.Server{
 		Handler: s.Handler(),
@@ -215,10 +223,49 @@ func (s *Server) Serve(l net.Listener) error {
 	return err
 }
 
+// CloseStreams ends every long-lived SSE handler so that Shutdown has
+// something it can actually drain. Call it FIRST; Shutdown alone cannot,
+// because http.Server.Shutdown waits for handlers to return and never
+// cancels their request contexts, while both of this server's streams are
+// parked until their client hangs up. Without it a graceful stop is not
+// graceful at all: it spends the whole grace period, times out, and
+// force-closes the same connections it was waiting for.
+//
+// The two streams end by different doors, and both are needed:
+//
+//   - /v1/gateway/{sid}/link selects on its link's closed channel, so
+//     closing every registered link returns it — and that is also the
+//     lifecycle the handler documents ("when this handler returns for any
+//     reason — connection drop, daemon shutdown, ...").
+//   - /v1/events belongs to no link (the GUI and `-f` watchers hold it), so
+//     it selects on `draining`.
+//
+// Idempotent, and safe to call with no server running. It does NOT stop the
+// listener: Shutdown and Close still own that, and a stream ended here fails
+// exactly as it would if the client had gone away, which is the failure
+// direction every consumer already handles by re-registering.
+func (s *Server) CloseStreams() {
+	s.drainOnce.Do(func() { close(s.draining) })
+
+	// Snapshot under the lock and close outside it: gatewayLink.Close wakes
+	// the goroutine that deletes the link from this very map, and holding
+	// gwMu across that is a deadlock.
+	s.gwMu.Lock()
+	links := make([]*gatewayLink, 0, len(s.gateways))
+	for _, l := range s.gateways {
+		links = append(links, l)
+	}
+	s.gwMu.Unlock()
+	for _, l := range links {
+		_ = l.Close()
+	}
+}
+
 // Shutdown gracefully stops the server: the listener closes (no new
 // connections), then in-flight requests are drained until ctx expires.
-// Long-lived SSE connections do not drain on their own — callers with a
-// bounded grace period follow up with Close.
+// Long-lived SSE connections do not drain on their own — a caller with a
+// bounded grace period ends them with CloseStreams first, and follows up
+// with Close for anything still left.
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.hs.Shutdown(ctx)
 }

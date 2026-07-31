@@ -177,6 +177,12 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-s.draining:
+			// The server is stopping. Nothing cancels this handler's request
+			// context — http.Server.Shutdown waits for handlers, it does not
+			// interrupt them — so without this door the drain spends its whole
+			// grace period on a stream that never ends by itself.
+			return
 		case <-keepalive:
 			if _, err := fmt.Fprint(w, ":ka\n\n"); err != nil {
 				return
