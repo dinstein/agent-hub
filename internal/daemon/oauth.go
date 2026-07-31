@@ -50,12 +50,6 @@ const (
 	// often so credentials written by `auth login` while the daemon runs are
 	// picked up without a restart.
 	maxRefreshScan = 60 * time.Second
-	// fastRetries is how many consecutive failures use the 15s retry of
-	// docs/modules/oauth.md before switching to the OAuth slow ladder. A blip
-	// deserves a prompt retry; twenty failures a minute against a provider
-	// is abuse, and a persistently failing refresh is waiting on a human
-	// (oauthflow.SlowBackoff: 5m/15m/1h/4h/24h).
-	fastRetries = 3
 )
 
 // refresherConfig configures the proactive refresh loop.
@@ -147,12 +141,12 @@ func (r *refresher) noteFailure(id string, now time.Time, observedAt int64, park
 		// of the ladder rather than retrying, because `agenthub auth login`
 		// is the only fix. (A rescan still notices a fresh login promptly —
 		// this only suppresses the pointless token requests.)
-		r.fails[id] = fastRetries + len(oauthflow.SlowBackoffLadder)
+		r.fails[id] = oauthflow.FastRetries + len(oauthflow.SlowBackoffLadder)
 	} else {
 		r.fails[id]++
 	}
 	n := r.fails[id]
-	d := r.backoff(n)
+	d := oauthflow.RetryBackoff(n)
 	r.retryAt[id] = backoffState{until: now.Add(d), observedAt: observedAt}
 	return n, d
 }
@@ -304,15 +298,6 @@ func (r *refresher) refreshOne(ctx context.Context, id string, now time.Time, ob
 			logx.Server(id), "trigger", oauthflow.TriggerExpiry,
 			"attempt", n, "retry_in", d, "error", err)
 	}
-}
-
-// backoff is the retry wait after n consecutive failures: the flat 15s of
-// docs/modules/oauth.md for the first few, then the OAuth slow ladder.
-func (r *refresher) backoff(n int) time.Duration {
-	if n <= fastRetries {
-		return oauthflow.RefreshRetryBackoff
-	}
-	return oauthflow.SlowBackoff(n - fastRetries - 1)
 }
 
 // servers lists the enabled HTTP-transport servers, sorted, so a cycle is

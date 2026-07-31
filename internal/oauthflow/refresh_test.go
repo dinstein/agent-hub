@@ -339,12 +339,15 @@ func TestEnsureFreshSkipsRefreshWhenTokenIsHealthy(t *testing.T) {
 		Store: store, Client: as.client(), LockDir: t.TempDir(),
 		Now: func() time.Time { return now },
 	})
-	_, tok, err := co.EnsureFresh(context.Background(), "gh")
+	_, tok, renewed, err := co.EnsureFresh(context.Background(), "gh")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if tok != "at-live" {
 		t.Fatalf("token = %q, want the stored one", tok)
+	}
+	if renewed {
+		t.Error("renewed = true for a healthy token: the caller would log a renewal that never happened")
 	}
 	as.mu.Lock()
 	defer as.mu.Unlock()
@@ -367,12 +370,15 @@ func TestEnsureFreshRefreshesInsideTheGraceWindow(t *testing.T) {
 		Store: store, Client: as.client(), LockDir: t.TempDir(),
 		Now: func() time.Time { return now },
 	})
-	_, tok, err := co.EnsureFresh(context.Background(), "gh")
+	_, tok, renewed, err := co.EnsureFresh(context.Background(), "gh")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if tok != "access-refreshed-1" {
 		t.Fatalf("token = %q, want a refreshed one", tok)
+	}
+	if !renewed {
+		t.Error("renewed = false although the token was renewed")
 	}
 }
 
@@ -389,12 +395,15 @@ func TestEnsureFreshRefreshesDCROnlyRecord(t *testing.T) {
 	v.mu.Unlock()
 
 	co := NewCoordinator(CoordinatorConfig{Store: store, Client: as.client(), LockDir: t.TempDir()})
-	_, tok, err := co.EnsureFresh(context.Background(), "gh")
+	_, tok, renewed, err := co.EnsureFresh(context.Background(), "gh")
 	if err != nil {
 		t.Fatalf("ensure fresh: %v", err)
 	}
 	if tok != "access-refreshed-1" {
 		t.Fatalf("token = %q", tok)
+	}
+	if !renewed {
+		t.Error("renewed = false although the DCR-only record was renewed")
 	}
 }
 

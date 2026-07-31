@@ -74,8 +74,16 @@ func vaultAuth(chain *secrets.Chain, dir string, epochs *credEpochs, log *slog.L
 	// Refresh stays keyed on serverID: the refresh token is the server's, and
 	// a per-scope lock would let two derivations spend it concurrently.
 	return func(serverID, scopeName string) downstream.TokenSource {
-		ts := downstream.NewScopedVaultTokenSource(serverID, scopeName, resolve,
-			loggedRenew(coord, serverID, scopeName, log))
+		// Two triggers, one coordinator. The inner source renews when a
+		// downstream rejects the token (trigger=rejection); proactiveSource
+		// renews before expiry, when a connection asks for the credential
+		// (trigger=expiry, authfresh.go) — and that is the only one that
+		// fires at all against a server which answers an expired token with
+		// 200 rather than 401.
+		ts := downstream.TokenSource(newProactiveSource(
+			downstream.NewScopedVaultTokenSource(serverID, scopeName, resolve,
+				loggedRenew(coord, serverID, scopeName, log)),
+			coord, serverID, scopeName, log))
 		if epochs == nil {
 			return ts
 		}

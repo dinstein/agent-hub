@@ -78,6 +78,26 @@ func SlowBackoff(attempt int) time.Duration {
 	return SlowBackoffLadder[attempt]
 }
 
+// FastRetries is how many consecutive proactive-refresh failures use the flat
+// RefreshRetryBackoff before the slow ladder takes over. A blip deserves a
+// prompt retry; a persistently failing refresh is waiting on a human.
+const FastRetries = 3
+
+// RetryBackoff is the wait after n consecutive proactive-refresh failures
+// (n counted from 1): the flat retry of docs/modules/oauth.md for the first
+// FastRetries, then the OAuth slow ladder.
+//
+// It lives here, next to the ladder, because BOTH proactive refreshers use
+// it — the daemon's scan loop and the standalone gateway's token source —
+// and a schedule reimplemented on each side is a schedule that drifts. The
+// same argument as TriggerExpiry / TriggerRejection above.
+func RetryBackoff(n int) time.Duration {
+	if n <= FastRetries {
+		return RefreshRetryBackoff
+	}
+	return SlowBackoff(n - FastRetries - 1)
+}
+
 // ShouldRefreshOnStatus reports whether an HTTP status observed on a
 // downstream call should trigger a passive refresh.
 //
@@ -176,17 +196,28 @@ func (c *Coordinator) Refresh(ctx context.Context, serverID string) (*State, str
 // EnsureFresh returns a usable access token, refreshing first if the token
 // is within the refresh grace of expiry. It is the entry point for the
 // proactive path; ShouldRefreshOnStatus drives the passive one.
-func (c *Coordinator) EnsureFresh(ctx context.Context, serverID string) (*State, string, error) {
-	st, tok, err := c.cfg.Store.Load(ctx, serverID)
+//
+// renewed reports whether a refresh actually ran. The caller needs it to log
+// honestly: the overwhelmingly common outcome here is "the stored token was
+// already fine", and a renewal record emitted for that would make the
+// `access token refreshed` line — which an operator greps to see what the
+// authorization server was asked for — meaningless.
+//
+// On ErrRefreshSuperseded the returned state and token ARE usable (another
+// writer's); renewed is true, because a renewal did happen, just not this
+// call's.
+func (c *Coordinator) EnsureFresh(ctx context.Context, serverID string) (st *State, tok string, renewed bool, err error) {
+	st, tok, err = c.cfg.Store.Load(ctx, serverID)
 	switch {
 	case err == nil && !st.NeedsRefresh(c.now()):
-		return st, tok, nil
+		return st, tok, false, nil
 	case err != nil && !errors.Is(err, ErrNoToken):
 		// ErrNoState and persistence failures are terminal; only a missing
 		// access token next to valid state is refreshable.
-		return nil, "", err
+		return nil, "", false, err
 	}
-	return c.Refresh(ctx, serverID)
+	st, tok, err = c.Refresh(ctx, serverID)
+	return st, tok, true, err
 }
 
 // refreshLocked is the offline path: observe, lock, re-read, decide.
