@@ -121,7 +121,7 @@ func (s *Server) handleScopePut(w http.ResponseWriter, r *http.Request, client s
 	if field := req.retiredField(); field != "" {
 		writeErr(w, http.StatusBadRequest, confops.CodeUsage,
 			fmt.Sprintf("%q is no longer part of a client binding: narrowing lives on the profile now", field),
-			"put the rule in a profile ('agenthub profile server' / 'profile tools' / "+
+			"put the rule in a profile ('agenthub profile server' / 'profile tool allow' / "+
 				"'profile discovery') and bind this client to it",
 			requestIDFrom(r.Context()))
 		return

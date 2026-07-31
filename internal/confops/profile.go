@@ -80,7 +80,7 @@ func CreateProfile(
 		}
 		if _, exists := tx.Profiles.V.Profiles[name]; exists {
 			e := conflictf(CodeProfileExists, "profile %q already exists", name)
-			e.Hint = "edit it with 'agenthub profile server add' / 'agenthub profile tools'"
+			e.Hint = "edit it with 'agenthub profile server add' / 'agenthub profile tool allow'"
 			return e
 		}
 		p = registry.Profile{Servers: dedupSorted(servers)}

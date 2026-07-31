@@ -25,11 +25,17 @@ import (
 // describes "the agenthub tool surface", which is a noun phrase and not an
 // invocation. The narrower form is also the honest scope: what this catches
 // is a spelling a reader could COPY, which is the one that misleads.
+// The `profile tools` entries carry no trailing space: two hint strings kept
+// teaching the retired spelling as 'agenthub profile tools' and a bare
+// 'profile tools' — quote-closed, so a trailing-space pattern walked past
+// both. The quoted bare form is listed on its own because hints drop the
+// binary name, and what a hint shows is still what a reader will type.
 var retiredCommands = map[string]string{
-	"agenthub tool ls":        "agenthub server tool ls",
-	"agenthub tool allow":     "agenthub server tool allow",
-	"agenthub tool inspect":   "agenthub server tool inspect",
-	"agenthub profile tools ": "agenthub profile tool allow ",
+	"agenthub tool ls":       "agenthub server tool ls",
+	"agenthub tool allow":    "agenthub server tool allow",
+	"agenthub tool inspect":  "agenthub server tool inspect",
+	"agenthub profile tools": "agenthub profile tool allow",
+	"'profile tools'":        "'profile tool allow'",
 }
 
 // commandDocRoots are the trees whose text is read by a human or handed to an
