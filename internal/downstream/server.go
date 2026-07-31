@@ -647,6 +647,22 @@ func (s *Server) respawn(ctx context.Context, cause respawnCause, trigger error)
 	s.mu.Lock()
 	old := s.tr
 	s.mu.Unlock()
+	// The dying connection's last words, read BEFORE it is closed and carried
+	// onto whichever line this respawn ends on. A startup crash embeds this
+	// same window in the handshake error, for the same reason: a child that
+	// dies leaves nothing else. Mid-life it used to be dropped here, so a
+	// server that paniced under load reported only the transport's verdict —
+	// "broken pipe" — and the panic that caused it went to a closed pipe and
+	// nowhere.
+	//
+	// Only for a respawn a FAILURE triggered. A manual reconnect kills a
+	// connection that was working, whose stderr is the server's ordinary
+	// chatter (many MCP servers log there routinely); attaching it would put
+	// a paragraph of unrelated output on every `agenthub server reconnect`.
+	var lastWords string
+	if trigger != nil {
+		lastWords = formatStderrTail(stderrTail(old, StderrRingLines))
+	}
 	if old != nil {
 		_ = old.Close()
 	}
@@ -654,14 +670,26 @@ func (s *Server) respawn(ctx context.Context, cause respawnCause, trigger error)
 	defer cancel()
 	tr, initRes, tools, err := s.dialAndInit(cctx)
 	if err != nil {
-		s.log.Warn("respawn failed", append(respawnFields(cause, trigger, n), "error", err)...)
+		fields := append(respawnFields(cause, trigger, n), "error", err)
+		s.log.Warn("respawn failed", withLastWords(fields, lastWords)...)
 		s.health.failure(time.Now(), err, hardConnError(err))
 		return nil, &transport.Error{Class: transport.ClassUnavailable, Err: fmt.Errorf("respawn: %w", err)}
 	}
 	s.attach(tr, initRes, tools)
 	s.health.success(time.Now())
-	s.log.Info("respawned", respawnFields(cause, trigger, n)...)
+	s.log.Info("respawned", withLastWords(respawnFields(cause, trigger, n), lastWords)...)
 	return tr, nil
+}
+
+// withLastWords appends the dead connection's stderr tail, and appends
+// nothing when there is none — an empty `child_stderr` on every HTTP
+// downstream would assert the child said nothing, where the truth is that
+// there was no child.
+func withLastWords(fields []any, tail string) []any {
+	if tail == "" {
+		return fields
+	}
+	return append(fields, "child_stderr", tail)
 }
 
 // respawnFields renders the cause of one respawn for the log. The trigger is

@@ -152,3 +152,79 @@ func TestManualReconnectLogsNoTrigger(t *testing.T) {
 		t.Errorf("trigger = %q on a manual reconnect, want the field absent", trigger)
 	}
 }
+
+// A startup crash embeds the child's stderr tail in the handshake error,
+// because a child that dies leaves nothing else. Mid-life the same evidence
+// was dropped: the dying transport was closed and only the transport's own
+// verdict — "broken pipe", "unexpected EOF" — reached the log, while the
+// panic that caused it went to a closed pipe and nowhere.
+func TestRespawnCarriesTheDeadChildsStderr(t *testing.T) {
+	t.Parallel()
+	rec := &respawnLog{}
+	var dials int
+	dial := func(context.Context, downstream.Spec) (transport.Transport, error) {
+		dials++
+		dead := dials == 1
+		tr := &scriptedTransport{answer: handshakeAnswer(func(string, int) (json.RawMessage, error) {
+			if dead {
+				return nil, &transport.Error{
+					Class: transport.ClassUnavailable,
+					Err:   fmt.Errorf("%w: sse stream: unexpected EOF", transport.ErrDeadConnection),
+				}
+			}
+			return json.RawMessage(`{"content":[{"type":"text","text":"pong"}]}`), nil
+		})}
+		if dead {
+			tr.stderr = "starting up\npanic: nil map write\ngoroutine 1 [running]:\n"
+		}
+		return tr, nil
+	}
+	s, err := downstream.Connect(context.Background(), downstream.Spec{ID: "crasher"}, downstream.Deps{
+		Log:       rec.logger(),
+		Dial:      dial,
+		Breaker:   downstream.BreakerConfig{FailureThreshold: 5, Cooldown: time.Hour},
+		Reconnect: downstream.RetryConfig{BaseDelay: time.Millisecond, MaxDelay: time.Millisecond},
+	})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(s.Close)
+
+	if _, err := s.Call(context.Background(), "echo", nil); err != nil {
+		t.Fatalf("call on a dead stream: %v", err)
+	}
+	got := rec.attrs(t, "respawned")
+	if !strings.Contains(got["child_stderr"], "panic: nil map write") {
+		t.Errorf("child_stderr = %q, want the dead child's panic", got["child_stderr"])
+	}
+}
+
+// A manual reconnect kills a connection that was WORKING, and a working MCP
+// server's stderr is its ordinary chatter — many of them log there
+// routinely. Attaching it would put a paragraph of unrelated output on every
+// `agenthub server reconnect`.
+func TestManualReconnectCarriesNoStderr(t *testing.T) {
+	t.Parallel()
+	rec := &respawnLog{}
+	dial := func(context.Context, downstream.Spec) (transport.Transport, error) {
+		return &scriptedTransport{
+			stderr: "listening on stdio\nserving 12 tools\n",
+			answer: handshakeAnswer(func(string, int) (json.RawMessage, error) {
+				return json.RawMessage(`{"content":[]}`), nil
+			}),
+		}, nil
+	}
+	s, err := downstream.Connect(context.Background(), downstream.Spec{ID: "chatty"},
+		downstream.Deps{Log: rec.logger(), Dial: dial})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(s.Close)
+
+	if err := s.Reconnect(context.Background()); err != nil {
+		t.Fatalf("Reconnect: %v", err)
+	}
+	if tail, ok := rec.attrs(t, "respawned")["child_stderr"]; ok {
+		t.Errorf("child_stderr = %q on a manual reconnect, want the field absent", tail)
+	}
+}
