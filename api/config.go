@@ -107,12 +107,6 @@ func (s *ConfigService) Get(ctx context.Context, key string) (GovernanceValue, b
 // literally would report "no such key" for a name the daemon would have set.
 func canonicalGovernanceKey(key string) string {
 	switch key {
-	case "deny_destructive":
-		return "denyDestructive"
-	case "block_on_injection":
-		return "blockOnInjection"
-	case "human_approval":
-		return "humanApproval"
 	case "discovery_mode":
 		return "discovery"
 	default:

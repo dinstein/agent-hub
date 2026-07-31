@@ -62,8 +62,8 @@ type Sources struct {
 	// "profile is the sixth constraint source in the scope intersection").
 	//
 	// Failure direction: these are ordinary layers, so Merge treats them
-	// exactly like the persisted five — security fields intersect, deny
-	// unions, approval switches OR. An Extra layer can therefore only
+	// exactly like the persisted ones — security fields intersect. An Extra
+	// layer can therefore only
 	// TIGHTEN; there is no shape of it that widens visibility.
 	//
 	// Contract: the returned layers must be a pure function of the session

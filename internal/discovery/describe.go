@@ -28,10 +28,9 @@ import (
 //
 // # One error, no oracle
 //
-// docs/modules/dataplane.md lists four per-id error kinds (not_found / invisible /
-// quarantined / disabled). This implementation emits ONE: not_found. A tool
-// that does not exist, one the scope hides, one integrity quarantined and one
-// an operator disabled are indistinguishable in the reply — telling them
+// There are several reasons an id may not resolve (it does not exist, the
+// scope hides it, a server's allow list leaves it out). This implementation
+// emits ONE: not_found. They are indistinguishable in the reply — telling them
 // apart would turn describe_tool into an enumeration oracle for the parts of
 // the catalog a session was deliberately not shown. It is the same rule
 // fetch_result follows for cursors and ResolveCall for names, and it is why

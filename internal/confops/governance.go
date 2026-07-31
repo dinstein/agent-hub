@@ -12,13 +12,13 @@ import (
 // The governance surface edits governance.json — the GLOBAL layer of the
 // scope chain. Key names are the registry field names, with snake_case
 // aliases accepted because that is how the design examples spell them
-// (`config set block_on_injection true`).
+// (`config set discovery_mode lazy`).
 //
-// Every switch here merges tighten-only downward (boolean OR), so setting
-// one to true can never be undone by a lower layer. That is precisely why
-// this table lives behind an operator surface and not an agent-reachable
-// one — and why get/set/ls must all read the SAME table: a key whose
-// listing and whose setter disagree is a governance switch nobody can trust.
+// Nothing here decides what a client may reach: that is settled by
+// servers.json and profiles.json. What is left describes PRESENTATION — the
+// default discovery mode and the result budgets — and the reason get/set/ls
+// must all read the SAME table is unchanged: a key whose listing and whose
+// setter disagree is a setting nobody can trust.
 
 // GovernanceKey describes one settable governance field. Get and Set are the
 // single place a key's semantics live.

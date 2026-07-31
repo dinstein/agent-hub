@@ -44,13 +44,20 @@ func goldenScope(t *testing.T) *EffectiveScope {
 // cold start for cursors and search caches, which recompute rather than
 // serve a wrong answer.
 //
+// And once more, for the domain separator those bools sat behind. Keeping a
+// constant "approval" label in the digest would have avoided a second cold
+// start at the price of a hash whose shape describes a field that does not
+// exist — and the next person to change hash.go would have had to work out
+// which of the two it was. The separator is gone; the cost was paid once
+// more, deliberately, in the same release as the bump above.
+//
 // NOT bumped when ToolSelector lost Deny. The digest covers the RESOLVED
 // scope, not the layers that produced it, so the fixture was rewritten to
 // spell the same effective tool set with an allow list alone
 // (allow[read,write,delete] minus deny[delete] == allow[read,write]) and
 // every persisted digest stayed valid. A fixture edit that moved the hash
 // would have charged real users a cold start for a refactor they cannot see.
-const goldenHashHex = "86ffc53e340e6b04f7904976953978c5e8b5dbd3c31517e3da458138a0f10879"
+const goldenHashHex = "aeb2c0a5e781d5a0854ecae5a441abb37e50bc8ac700a8b03966f6cddfbf354c"
 
 func TestHashGolden(t *testing.T) {
 	es := goldenScope(t)

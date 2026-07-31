@@ -11,26 +11,27 @@ import (
 )
 
 // Frozen stage names (docs/architecture.md §9 chain order). They key Counters
-// snapshots and appear in audit records; do not rename.
+// snapshots; do not rename.
+//
+// StageDefendAndShape keeps its name although the stage now only shapes: the
+// gate-count parity assertions between the stdio and HTTP faces compare these
+// keys, and renaming one would make those tests pass while comparing nothing.
 const (
 	GateScope           = "scope"
 	GateTokenTier       = "token_tier"
-	GateHITL            = "hitl"
 	StageDefendAndShape = "defend_and_shape"
 )
 
-// Stable rejection codes so audit can tell rejection layers apart
-// (docs/architecture.md §9: "rejection reasons are individually distinguishable"). They are ABI once emitted; do not
-// rename. The HITL gate has one code per non-approved Decision plus the
-// broker-free DenyDestructive rejection.
+// Stable rejection codes so a caller can tell the two gates apart
+// (docs/architecture.md §9: "rejection reasons are individually
+// distinguishable"). They are ABI once emitted; do not rename.
+//
+// There are exactly two, because there are exactly two gates. Codes for
+// stages that no longer exist are not kept "for compatibility": a frozen ABI
+// nothing can emit reads as a rejection reason a caller should still handle.
 const (
-	CodeScopeDenied       = "E_SCOPE_DENIED"
-	CodeTokenTierDenied   = "E_TOKEN_TIER_DENIED"
-	CodeArgsInvalid       = "E_ARGS_INVALID"
-	CodeHITLDenied        = "E_HITL_DENIED"
-	CodeHITLTimeout       = "E_HITL_TIMEOUT"
-	CodeHITLUnavailable   = "E_HITL_UNAVAILABLE"
-	CodeDestructiveDenied = "E_DESTRUCTIVE_DENIED"
+	CodeScopeDenied     = "E_SCOPE_DENIED"
+	CodeTokenTierDenied = "E_TOKEN_TIER_DENIED"
 )
 
 // ErrBlocked is the decidable sentinel for a gate rejection: every

@@ -45,7 +45,7 @@ func exitCodeForOps(kind confops.Kind) int {
 }
 
 // opsError translates a confops failure into the CLI's typed error. Anything
-// else (a registry sentinel, an integrity sentinel, an I/O error) is passed
+// else (a registry sentinel, an I/O error) is passed
 // through untouched so the existing classifiers keep owning it.
 func opsError(err error) error {
 	if err == nil {

@@ -41,8 +41,6 @@ func hashScope(es *EffectiveScope) [32]byte {
 		writeUint(h, uint64(int64(es.Budgets[k])))
 	}
 
-	writeStr(h, "approval")
-
 	writeStr(h, "diags")
 	writeUint(h, uint64(len(es.Diags)))
 	for _, d := range es.Diags {

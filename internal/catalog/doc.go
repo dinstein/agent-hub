@@ -29,10 +29,10 @@
 // believed the command line was the publisher's documented one; it does not
 // mean the code that eventually runs is the code they looked at.
 //
-// The defences that DO make claims about running code live elsewhere —
-// internal/integrity pins tool fingerprints and quarantines drift,
-// internal/guard/spawnguard screens what gets spawned. This package feeds
-// them a definition; it does not vouch for it.
+// The defences that DO make claims about running code live elsewhere:
+// internal/guard/spawnguard screens what gets spawned, internal/guard/netguard
+// screens where a connection may go. This package feeds them a definition; it
+// does not vouch for it.
 //
 // # needsConfig: the one-click split
 //

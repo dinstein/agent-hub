@@ -159,9 +159,7 @@ func TestRejectionCodesAreDistinct(t *testing.T) {
 	t.Parallel()
 	seen := map[string]bool{}
 	for _, code := range []string{
-		pipeline.CodeScopeDenied, pipeline.CodeTokenTierDenied, pipeline.CodeArgsInvalid,
-		pipeline.CodeHITLDenied, pipeline.CodeHITLTimeout, pipeline.CodeHITLUnavailable,
-		pipeline.CodeDestructiveDenied,
+		pipeline.CodeScopeDenied, pipeline.CodeTokenTierDenied,
 	} {
 		if seen[code] {
 			t.Fatalf("duplicate rejection code %q", code)

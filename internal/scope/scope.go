@@ -99,7 +99,7 @@ type Diagnostic struct {
 
 // EffectiveScope is the pure, content-addressed merge result. Hash covers
 // every field EXCEPT Generation (and Hash itself), so it serves as a search
-// cache key and staleness check for cursors/approvals; Generation records
+// cache key and staleness check for cursors; Generation records
 // which registry state the value was computed from and does not affect
 // content identity.
 type EffectiveScope struct {

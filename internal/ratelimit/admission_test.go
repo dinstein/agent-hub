@@ -35,7 +35,7 @@ func okResult() *mcp.CallResult {
 
 func TestGuardRunsAfterEveryGateAndBeforeTheCall(t *testing.T) {
 	tl := newTestLimiter(t, Config{Rules: []Rule{{Limit: 1, Window: Duration(time.Minute)}}})
-	gate := &countingGate{name: pipeline.GateHITL}
+	gate := &countingGate{name: pipeline.GateTokenTier}
 	p := pipeline.NewWithGates([]pipeline.Gate{gate}, nil)
 
 	calls := 0
@@ -67,7 +67,7 @@ func TestGuardRunsAfterEveryGateAndBeforeTheCall(t *testing.T) {
 // "no" would let denied calls starve approved ones.
 func TestDeniedCallSpendsNoToken(t *testing.T) {
 	tl := newTestLimiter(t, Config{Rules: []Rule{{Limit: 1, Window: Duration(time.Minute)}}})
-	deny := &countingGate{name: pipeline.GateHITL, deny: true}
+	deny := &countingGate{name: pipeline.GateTokenTier, deny: true}
 	denyPipe := pipeline.NewWithGates([]pipeline.Gate{deny}, nil)
 	allowPipe := pipeline.NewWithGates(nil, nil)
 

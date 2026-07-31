@@ -201,8 +201,9 @@ func ParseSearch(raw json.RawMessage) (SearchArgs, error) {
 }
 
 // CallToolArgs is the decoded call_tool payload. Arguments travel as raw
-// JSON: this package never inspects, rewrites or logs them — the pipeline
-// owns argument handling (schema precheck, argsHash, HITL display).
+// JSON: this package never inspects, rewrites or logs them, and neither does
+// anything downstream of it — what the caller sent is what the server
+// receives.
 type CallToolArgs struct {
 	Tool      string          `json:"tool"`
 	Arguments json.RawMessage `json:"arguments,omitempty"`

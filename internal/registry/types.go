@@ -356,15 +356,6 @@ type ProfilesDoc struct {
 	Profiles map[string]Doc[Profile] `json:"profiles"`
 }
 
-// ApprovalPolicy carries the layered approval switches a client may set.
-// Pointer three-state: nil = no intervention. Merge direction is
-// boolean OR across layers — any layer requiring approval wins (tighten-only,
-// fail-closed). DenyDestructive lives only in governance.json: it is global
-// and never agent-writable.
-type ApprovalPolicy struct {
-	HumanApproval *bool `json:"humanApproval,omitempty"`
-}
-
 // Budget bounds result payloads. Forced marks an org/tighten-only rule: when
 // set, merge takes the minimum instead of most-specific-wins.
 type Budget struct {
@@ -445,11 +436,14 @@ type ClientsDoc struct {
 }
 
 // GovernanceDoc is the typed view of governance.json: the global root layer
-// of the scope chain. It is the one layer where "absent" and "off" coincide
-// (there is nothing above it to not-intervene against), so the switches are
-// plain bools. All of them merge tighten-only downward (boolean OR), and
-// DenyDestructive/BlockOnInjection are never agent-writable (enforced at the
-// ctlapi surface, M1).
+// of the scope chain.
+//
+// It carries no permission switches. It used to hold three — humanApproval,
+// denyDestructive, blockOnInjection — and each went with the stage that read
+// it. What is left decides PRESENTATION (the default discovery mode, result
+// budgets) and which profile is active; nothing here can widen or narrow what
+// a client may reach, because that is settled by servers.json and
+// profiles.json.
 type GovernanceDoc struct {
 	Discovery string `json:"discovery,omitempty"` // global default discovery mode
 	// ActiveProfile is the globally active profile name, the fallback every

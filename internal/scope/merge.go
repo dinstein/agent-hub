@@ -17,11 +17,8 @@ import (
 //     server set (nil = no intervention, [] = block-all) — can only narrow.
 //   - tool allow: per-layer INTERSECTION keyed by ORIGINAL tool names,
 //     seeded from the catalog's raw tool set of each server.
-//   - tool deny: UNION across layers.
-//   - approval switches: boolean OR — any layer requiring approval wins
-//     (tighten-only; a false never loosens; fail-closed).
-//   - discovery: most specific layer wins (session > project > client >
-//     profile > global; among equal kinds the later layer wins).
+//   - discovery: most specific layer wins (among equal kinds the later layer
+//     wins).
 //   - result budget: most specific layer wins per key; Forced entries
 //     impose a tighten-only min cap over whatever the specific value is.
 //

@@ -80,7 +80,7 @@ type SessionDetail struct {
 	Effective map[string][]string `json:"effective"`
 	Discovery string              `json:"discovery,omitempty"`
 	// ScopeHash is the content address of the effective scope (the search
-	// cache / approval staleness key).
+	// cache key).
 	ScopeHash string `json:"scope_hash"`
 	// Diagnostics carry non-fatal resolution warnings — above all a
 	// dangling profile reference, which fail-closes to an empty scope and

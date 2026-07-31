@@ -13,8 +13,8 @@ import (
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 )
 
-// This file is the CLI's raw control-plane access for the surfaces the
-// typed api client does not cover (approvals, grants). It speaks the same
+// This file is the CLI's raw control-plane access for the surfaces the typed
+// api client does not cover. It speaks the same
 // envelope over the same UDS; wire DTOs come from internal/ctlapi (the CLI
 // lives inside the module, unlike the public api package).
 
@@ -53,8 +53,8 @@ func (a *App) newCtlClient() (*ctlClient, error) {
 				return d.DialContext(ctx, "unix", socket)
 			},
 		}},
-		// No client timeout: approvals watch decisions and long polls come
-		// with caller-context deadlines where needed.
+		// No client timeout: long polls come with caller-context deadlines
+		// where needed.
 	}, nil
 }
 
