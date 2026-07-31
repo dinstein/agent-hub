@@ -306,39 +306,70 @@ func (a *App) stopDaemon(ctx context.Context, force bool) (DaemonStopResult, err
 	if err != nil {
 		return DaemonStopResult{}, err
 	}
+	// The pid this signals comes from the daemon that ANSWERED, never from
+	// run/daemon.json. daemonproc_unix.go states the direction — stop and
+	// status "never signal a pid they cannot verify" — and that file cannot
+	// carry the proof: an abrupt death leaves it behind (a state daemon.go
+	// explicitly designs for), after which the OS is free to hand the
+	// number to something else. Signalling it then hits a stranger, and
+	// with --force the signal goes to that stranger's whole process group.
+	//
+	// A successful ping settles both halves at once: it proves a daemon is
+	// there, and Hello.Pid is that daemon naming itself over a socket that
+	// is 0600 with a peer-credential check. Reading the answer and then
+	// discarding it in favour of the file also lost the narrower race where
+	// a replacement has bound the socket but not yet rewritten daemon.json.
 	info, ierr := daemon.ReadInfo(runDir)
-	_, perr := pingDaemon(ctx, socket)
-	alive := perr == nil
+	hello, perr := pingDaemon(ctx, socket)
 
-	if !alive && (ierr != nil || !daemonAlive(info.Pid)) {
+	if perr != nil {
+		// Nothing answered, so nothing can be verified. When the run file
+		// still names a live pid, say so rather than signal it: refusing
+		// is the whole point of this branch. The cost is that a daemon
+		// wedged badly enough to stop serving its socket can no longer be
+		// stopped through the CLI, so the hint names the pid and the file.
+		if ierr == nil && info.Pid > 0 && daemonAlive(info.Pid) {
+			return DaemonStopResult{}, &Error{
+				Code: CodeGeneral, ExitCode: ExitGeneral,
+				Message: fmt.Sprintf(
+					"run/daemon.json names pid %d, but nothing answers on the control socket: that pid cannot be confirmed to be the daemon",
+					info.Pid),
+				Hint: fmt.Sprintf(
+					"the file may be stale and the pid reused by an unrelated process. If you are certain pid %d is a wedged agenthub daemon, stop it yourself; otherwise delete %s",
+					info.Pid, filepath.Join(runDir, daemon.InfoFileName)),
+				Err: perr,
+			}
+		}
 		return DaemonStopResult{Stopped: false, Message: "daemon is not running"}, nil
 	}
-	if ierr != nil || info.Pid <= 0 {
+
+	pid := hello.Pid
+	if pid <= 0 {
 		return DaemonStopResult{}, &Error{
 			Code: CodeGeneral, ExitCode: ExitGeneral,
-			Message: "daemon is reachable but run/daemon.json is unreadable; cannot determine its pid",
+			Message: "daemon is reachable but did not report its pid; nothing here can be signalled safely",
 			Hint:    "remove the stale socket only if you are sure no daemon is running",
 			Err:     ierr,
 		}
 	}
 
 	if force {
-		if err := daemonKillGroup(info.Pid); err != nil {
+		if err := daemonKillGroup(pid); err != nil {
 			return DaemonStopResult{}, &Error{
 				Code: CodeGeneral, ExitCode: ExitGeneral,
-				Message: fmt.Sprintf("force-killing daemon pid %d", info.Pid), Err: err,
+				Message: fmt.Sprintf("force-killing daemon pid %d", pid), Err: err,
 			}
 		}
 		return DaemonStopResult{
-			Stopped: true, Pid: info.Pid, Forced: true,
-			Message: fmt.Sprintf("daemon (pid %d) killed", info.Pid),
+			Stopped: true, Pid: pid, Forced: true,
+			Message: fmt.Sprintf("daemon (pid %d) killed", pid),
 		}, nil
 	}
 
-	if err := daemonSignalStop(info.Pid); err != nil {
+	if err := daemonSignalStop(pid); err != nil {
 		return DaemonStopResult{}, &Error{
 			Code: CodeGeneral, ExitCode: ExitGeneral,
-			Message: fmt.Sprintf("signaling daemon pid %d", info.Pid), Err: err,
+			Message: fmt.Sprintf("signaling daemon pid %d", pid), Err: err,
 		}
 	}
 	deadline := time.NewTimer(daemonStopDeadline)
@@ -346,10 +377,10 @@ func (a *App) stopDaemon(ctx context.Context, force bool) (DaemonStopResult, err
 	tick := time.NewTicker(daemonPollInterval)
 	defer tick.Stop()
 	for {
-		if !daemonAlive(info.Pid) {
+		if !daemonAlive(pid) {
 			return DaemonStopResult{
-				Stopped: true, Pid: info.Pid,
-				Message: fmt.Sprintf("daemon (pid %d) stopped", info.Pid),
+				Stopped: true, Pid: pid,
+				Message: fmt.Sprintf("daemon (pid %d) stopped", pid),
 			}, nil
 		}
 		select {
@@ -358,7 +389,7 @@ func (a *App) stopDaemon(ctx context.Context, force bool) (DaemonStopResult, err
 		case <-deadline.C:
 			return DaemonStopResult{}, &Error{
 				Code: CodeGeneral, ExitCode: ExitGeneral,
-				Message: fmt.Sprintf("daemon (pid %d) did not stop within %v", info.Pid, daemonStopDeadline),
+				Message: fmt.Sprintf("daemon (pid %d) did not stop within %v", pid, daemonStopDeadline),
 				Hint:    "retry with 'agenthub daemon stop --force'",
 			}
 		case <-tick.C:

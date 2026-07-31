@@ -907,6 +907,16 @@ reported is its real failure plus a 4 KiB stderr tail rather than a bare timeout
 kill as the fallback for foreground starts. `daemonAlive` probes with signal 0, and **any error (ESRCH, EPERM, …) reads as
 false** — stop/status must never signal a pid whose ownership it cannot confirm.
 
+**The pid `stop` signals comes from the ping, never from `run/daemon.json`.** That file names a process, it does not identify
+one: an abrupt death leaves it behind, and the OS is then free to reuse the number. Reading a pid out of it and signalling that
+pid is how `daemon stop` came to SIGTERM an unrelated process — and, with `--force`, that process's whole group. A successful
+ping proves two things at once: a daemon is there, and `Hello.Pid` is that daemon naming itself over a socket that is 0600 with
+a peer-credential check. It also settles the race where a replacement has bound the socket but not yet rewritten `daemon.json`.
+**Nothing answering means nothing can be verified, so nothing is signalled** — even with `--force`. When the run file still
+names a live pid, `stop` reports why it refused and names both the pid and the file rather than acting on a guess. The cost is
+deliberate and worth stating: a daemon wedged badly enough to stop serving its control socket can no longer be stopped through
+the CLI, and the operator is told to stop it themselves.
+
 **`doctor` only reads, never writes.** It deliberately **does not call `registry.Open`**: opening the store would create the
 directory, five documents, and a lock file, which would turn a diagnostic tool into a writer and incidentally "fix" the state it is
 reporting on. All checks read raw files. `--fix` performs only safe self-healing (recreating missing directories, repointing stale
