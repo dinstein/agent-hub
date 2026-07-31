@@ -65,7 +65,8 @@ agenthub client connect claude-code
 
 | 面 | 内容 |
 |---|---|
-| 网关 | stdio（每 client 一进程）+ streamable-http（daemon 共享池）；下游 transport 三种：stdio / streamable-http / legacy HTTP+SSE，协议目标版本 `2025-11-25` 带向下协商降级 |
+| 协议 | MCP `2026-07-28`（无状态逐请求 `_meta`、`server/discover`、MRTR、`subscriptions/listen`）加上有状态各版本 `2025-11-25` / `2025-06-18` / `2025-03-26`，**双面都支持**：对下游，`server/discover` 协商双方都支持的最高版本、失败回退 `initialize`；对上游，网关按每个 client 讲的那一代作答。只代理工具——resource 和 prompt 不代理，extension 能力不转发（fail closed）。细节见 [docs/mcp-2026-07-28.md](docs/mcp-2026-07-28.md)（英文） |
+| 网关 | stdio（每 client 一进程）+ streamable-http（daemon 共享池）；下游 transport 三种：stdio / streamable-http / legacy HTTP+SSE |
 | 发现 | `full` / `grouped` / `lazy` 三模式；lazy 模式五件套 meta-tool（`status`、`search_tools`、`describe_tool`、`call_tool`、`fetch_result`）+ 意图变体；紧凑签名文法 + 二段 describe |
 | 访问控制 | 事先决定，永不在调用时决定：server 开或关、提供全部工具或指定子集；profile 取 server 的子集并可进一步收窄其工具；client 绑定 profile。各层取交集，任何一层都不能放宽；悬垂 profile 引用 fail-closed 到空集 |
 | 安全 | spawn guard（反走私）、SSRF 双向谓词 + DialContext 内筛查、HTTP 面的 agent token 分级（read/write/destructive）、协作式调用配额。它们拒绝的是目的地和进程，与谁发起无关——没有一项会检查下游返回了什么 |

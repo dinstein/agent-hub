@@ -68,7 +68,8 @@ again. Full walkthrough — profiles, narrowing, the whole model — in [docs/gu
 
 | Area | What it covers |
 |---|---|
-| Gateway | stdio (one process per client) + streamable-http (shared daemon pool); three downstream transports: stdio / streamable-http / legacy HTTP+SSE, targeting protocol version `2025-11-25` with backward negotiation and downgrade |
+| Protocol | MCP `2026-07-28` (stateless per-request `_meta`, `server/discover`, MRTR, `subscriptions/listen`) plus the stateful generations `2025-11-25` / `2025-06-18` / `2025-03-26`, on **both faces**: downstream, `server/discover` picks the highest mutually supported version and falls back to `initialize`; upstream, the gateway answers whichever generation each client speaks. Tools only — resources and prompts are not proxied, and extension capabilities are not forwarded (fail closed). Details: [docs/mcp-2026-07-28.md](docs/mcp-2026-07-28.md) |
+| Gateway | stdio (one process per client) + streamable-http (shared daemon pool); three downstream transports: stdio / streamable-http / legacy HTTP+SSE |
 | Discovery | Three modes — `full` / `grouped` / `lazy`; lazy mode ships five meta-tools (`status`, `search_tools`, `describe_tool`, `call_tool`, `fetch_result`) plus intent variants; compact signature grammar + two-stage describe |
 | Access | Decided in advance, never at call time: a server is on or off and offers all its tools or a named subset; a profile takes a subset of the servers and may narrow their tools further; a client follows a profile. Layers intersect and none can widen; a dangling profile reference fails closed to an empty set |
 | Security | Spawn guard (anti-smuggling), bidirectional SSRF predicates with in-DialContext screening, agent tokens graded read/write/destructive on the HTTP face, cooperative call quotas. These refuse a destination or a process regardless of who asked — none of them inspects what a downstream returned |
