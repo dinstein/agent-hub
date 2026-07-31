@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -240,4 +241,103 @@ func TestOneLine(t *testing.T) {
 			t.Errorf("oneLine(%q, %d) = %q exceeds the byte bound", tc.in, tc.max, got)
 		}
 	}
+}
+
+// The listing must agree with what a client is actually served. Before this,
+// `tool ls` read the cache and nothing else, so a server narrowed by an allow
+// list listed every tool it had — the rule's only reader disagreed with the
+// rule.
+func TestToolLsAppliesTheGlobalAllowList(t *testing.T) {
+	seedCatalog(t)
+	mustRun(t, "", "tool", "allow", "fs", "--only", "read_file")
+
+	rows := decodeToolRowsFromCLI(t, "tool", "ls", "--json")
+	for _, r := range rows {
+		if r.Name == "fs__write_file" {
+			t.Errorf("a blocked tool is still listed: %+v", rows)
+		}
+		if r.State != "on" {
+			t.Errorf("a listed tool must be marked on, got %q for %s", r.State, r.Name)
+		}
+	}
+	// git carries no rule at all, and must not be narrowed by fs having one.
+	if !hasTool(rows, "git__log") {
+		t.Errorf("a server with no rule lost tools: %+v", rows)
+	}
+
+	// The human table says how many it held back rather than dropping them
+	// quietly.
+	_, out, _ := runCLI(t, "", "tool", "ls")
+	if !strings.Contains(out, "held back by an allow list") {
+		t.Errorf("the footer must count what was held back:\n%s", out)
+	}
+
+	// --all brings them back, with the verdict spelled out.
+	rows = decodeToolRowsFromCLI(t, "tool", "ls", "--all", "--json")
+	states := map[string]string{}
+	for _, r := range rows {
+		states[r.Name] = r.State
+	}
+	if states["fs__write_file"] != "blocked" || states["fs__read_file"] != "on" {
+		t.Errorf("--all states = %v, want write_file blocked and read_file on", states)
+	}
+	_, out, _ = runCLI(t, "", "tool", "ls", "--all")
+	if !strings.Contains(out, "STATE") {
+		t.Errorf("--all must add the state column:\n%s", out)
+	}
+}
+
+// --none is the state that fails open if the layer is not applied: every tool
+// of the server would be listed as offered while the gateway serves none.
+func TestToolLsShowsABlockedServerAsOfferingNothing(t *testing.T) {
+	seedCatalog(t)
+	mustRun(t, "", "tool", "allow", "fs", "--none")
+
+	rows := decodeToolRowsFromCLI(t, "tool", "ls", "fs", "--json")
+	if len(rows) != 0 {
+		t.Fatalf("a --none server must offer nothing, got %+v", rows)
+	}
+	_, out, _ := runCLI(t, "", "tool", "ls", "fs")
+	if !strings.Contains(out, "holds back all 2") {
+		t.Errorf("the empty listing must say a RULE emptied it, not that the cache is cold:\n%s", out)
+	}
+}
+
+// A name no catalog has lets nothing through and is otherwise invisible: the
+// write only warns once, and every listing afterwards is silent about it.
+func TestToolLsSurfacesAPendingRuleName(t *testing.T) {
+	seedCatalog(t)
+	mustRun(t, "", "tool", "allow", "fs", "--only", "read_file,reed_file")
+
+	rows := decodeToolRowsFromCLI(t, "tool", "ls", "fs", "--json")
+	var pending *ToolRow
+	for i := range rows {
+		if rows[i].State == "pending" {
+			pending = &rows[i]
+		}
+	}
+	if pending == nil {
+		t.Fatalf("the misspelled name must be listed as pending, got %+v", rows)
+	}
+	if pending.RawName != "reed_file" || pending.Server != "fs" {
+		t.Errorf("pending row = %+v, want fs/reed_file", *pending)
+	}
+	// A server nobody has ever connected to is NOT a spelling mistake: every
+	// name would be reported and none of them would be wrong.
+	mustRun(t, "", "server", "add", "cold", "--cmd", "cold-server")
+	mustRun(t, "", "server", "enable", "cold", "--no-probe")
+	mustRun(t, "", "tool", "allow", "cold", "--only", "anything")
+	rows = decodeToolRowsFromCLI(t, "tool", "ls", "cold", "--json")
+	if len(rows) != 0 {
+		t.Errorf("a server with no cached catalog must report nothing pending, got %+v", rows)
+	}
+}
+
+func hasTool(rows []ToolRow, name string) bool {
+	for _, r := range rows {
+		if r.Name == name {
+			return true
+		}
+	}
+	return false
 }

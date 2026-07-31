@@ -35,7 +35,7 @@ func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diag
 	// and a profile's rule intersect through the SAME Merge — one place
 	// decides what a session sees, and adding a second narrowing mechanism
 	// beside it is how the two drift apart.
-	if sl, ok := serverToolsLayer(snap); ok {
+	if sl, ok := ServerToolsLayer(snap); ok {
 		layers = append(layers, sl)
 	}
 
@@ -242,10 +242,17 @@ func cloneStrings(in []string) []string {
 	return out
 }
 
-// serverToolsLayer builds the global per-server tool allow lists. It returns
+// ServerToolsLayer builds the global per-server tool allow lists. It returns
 // ok=false when no server carries one, so the common case adds no layer at
 // all rather than an inert map.
-func serverToolsLayer(snap *registry.Snapshot) (ScopeLayer, bool) {
+//
+// It is exported for the same reason DiscoveryFor is: a front end listing the
+// tools this machine offers — with no client and no session to resolve — must
+// reach the answer through the layer a session gets, not through a second
+// filter written beside it. `server tool ls` merges exactly this layer and
+// nothing else, which is what makes its answer "what every client sees before
+// its own profile narrows further" rather than an approximation of it.
+func ServerToolsLayer(snap *registry.Snapshot) (ScopeLayer, bool) {
 	if snap == nil {
 		return ScopeLayer{}, false
 	}
