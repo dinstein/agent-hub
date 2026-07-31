@@ -105,6 +105,17 @@ push the nearest value down, never raise it.
 does not require the layers passed in to be sorted; specificity comes entirely from comparing
 `LayerKind` values, so swapping the enum values silently changes who wins.
 
+**A front end asking "which discovery mode does this profile get" goes through `DiscoveryFor`, never
+through its own copy of the rule.** `profile ls` prints the resolved mode per profile — the same
+question a session answers — so the pick rule lives in `pickDiscovery` and both callers use it,
+`FromRegistry` and `DiscoveryFor` build their layers from the same `globalLayer` / `profileLayer`, and
+`TestDiscoveryForMatchesTheResolvedSession` asserts the two answers agree for every combination of
+global and per-profile setting. `DiscoveryFor` deliberately does **not** know `discovery.DefaultMode`:
+"no layer set one" comes back as `ok=false` and the caller applies the built-in, so the default stays
+in the one package that owns it. Note the asymmetry with `PinnedProfileLayer`, which carries a
+profile's servers and tools but **not** its discovery — a token-pinned profile is presented in whatever
+mode the rest of that session's chain resolves to.
+
 **`nil` and `[]` are different, and the difference is the whole rule.** An absent selector means "no
 intervention"; a nil `Allow` means the server's full tool set; an **empty** `Allow` means nothing at
 all. That is why the field carries `omitzero` rather than `omitempty` — dropping an empty list on the

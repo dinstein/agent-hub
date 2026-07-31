@@ -706,6 +706,21 @@ client to a profile is `client bind` / `client unbind` / `client ls`, and the na
 / `profile tools` / `profile discovery`. Every group invoked bare prints help and exits 0,
 and an unknown subcommand exits 2.
 
+**`(default)` is one token across every listing that renders a binding.** The fallback an unbound client
+follows is a *display* row, not an object: `profile ls` heads its table with it (always, and carrying
+the `*` whenever it is the row in force — including when the active profile is missing, since the row
+that would have carried it is the one that does not exist), `client ls` prints it in the PROFILE column,
+and `client inspect` plus the bind/unbind echo go through the same two helpers,
+`describeDefaultProfile` / `describeActiveProfile`. It replaced a per-table `(active)` that named
+nothing the user could look up. `confops.validateProfileName` refuses a name starting with `(` so the
+token cannot be shadowed, and the `default` object is kept **out of** `profiles[]` in the JSON so a
+script walking that array keeps getting names it can pass back to `profile rm`.
+
+**The two dangling directions are reported in different places, and both must stay reported.** A client
+bound to a missing profile is flagged per row (`dangling`); a missing *active* profile fail-closes every
+client that follows it, which no row can carry — those rows have no binding of their own — so it lives on
+the listing (`active_dangling`) and, in `client inspect`, on the one client the command is about.
+
 **Error text is frozen by golden tests** (`errorgolden_test.go`). canonical.md §6 requires three families of golden test to
 run in CI from day one, and this is the third (the other two are signature grammar and search ranking, in
 `internal/discovery`). What is frozen is the entire failure contract: the machine code, exit code, message, and hint of every

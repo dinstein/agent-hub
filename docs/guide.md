@@ -116,6 +116,24 @@ With nothing active, "unbound" means "everything enabled". There is no
 separate default-profile object to manage — the absence of narrowing is the
 default.
 
+Both listings still name it, because "what does a client I never bound get"
+is a question they have to answer. `profile ls` heads its table with a
+`(default)` row and `client ls` prints the same token in its PROFILE column:
+
+```
+NAME                    ACTIVE  SERVERS  DISCOVERY         TOOL RULES
+(default) -> research           linear   lazy (inherited)  linear: only list_issues,get_issue
+research                *       linear   lazy (inherited)  linear: only list_issues,get_issue
+```
+
+The star marks whichever row is in force, and `(default)` shows what the
+fallback resolves to rather than making you look it up. It is a display
+token, not an object: `agenthub profile use` is the only thing that moves it,
+and a profile name may not start with `(`, so nothing you create can be
+mistaken for it. If the active profile does not exist, that row says
+`MISSING -> empty scope` — the same marker a client bound to a missing
+profile gets, for the same reason.
+
 ## Discovery: how the surface is presented
 
 `discovery` decides how many tool names a client is shown, not which tools it
@@ -132,6 +150,11 @@ agenthub profile discovery research lazy      # or grouped / full / -
 | `grouped` | one aggregate entry per server, then `call_tool` | a mid-sized set — the client reads per-server entries, then dispatches |
 | `lazy` | the meta-tools (`status`, `search_tools`, `describe_tool`, `call_tool`, `fetch_result`) plus any pinned tools | large surfaces — the client holds a handful of names instead of hundreds. **The default when nothing sets a mode** |
 | `-` | clears the profile's override | fall back to the global default |
+
+`profile ls` prints the mode each profile will actually be served in, so a
+profile that sets none shows the inherited one — `lazy (inherited)` — rather
+than a dash you would have to resolve yourself. The footer names where that
+inherited mode comes from: the built-in default, or `config set discovery`.
 
 The reason to care is context, not security. Forty servers in `full` mode
 means a tool list the client re-reads on every turn; `lazy` turns that into
@@ -197,7 +220,8 @@ program, and it prints what to run instead.
 
 `client ls` closes the loop on the other side, with both halves per client:
 CONNECTED comes from the client's own config file, and PROFILE is what it
-may see. When a row says something other than yes or no — `denied`,
+may see — its own profile, or the `(default)` row of `profile ls` when you
+never bound it. When a row says something other than yes or no — `denied`,
 `unreadable`, `?` — `client inspect <id>` says which file and why.
 
 A written config file only shows intent. The confirmation is the client

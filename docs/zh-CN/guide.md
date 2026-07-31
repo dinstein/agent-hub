@@ -104,6 +104,20 @@ agenthub profile use -            # 清除：未绑定的 client 看到全部已
 没有任何 profile 处于激活状态时，「未绑定」就等于「全部已启用的 server」。这里不存在一个
 额外的「默认 profile」对象要你管理——不收窄本身就是默认值。
 
+但两张列表仍然会点它的名，因为「我从没绑过的 client 到底拿到什么」是它们必须回答的问题。
+`profile ls` 的表头第一行就是 `(default)`，`client ls` 的 PROFILE 列印的是同一个记号：
+
+```
+NAME                    ACTIVE  SERVERS  DISCOVERY         TOOL RULES
+(default) -> research           linear   lazy (inherited)  linear: only list_issues,get_issue
+research                *       linear   lazy (inherited)  linear: only list_issues,get_issue
+```
+
+星号标的是**当前生效的那一行**，而 `(default)` 直接把兜底解析成什么摆出来，不用你再去查一次。
+它是一个显示记号，不是一个对象：只有 `agenthub profile use` 能挪动它；profile 名字不允许以
+`(` 开头，所以你建出来的东西不会被误认成它。激活的 profile 不存在时，这一行会写
+`MISSING -> empty scope`——和绑到不存在 profile 的 client 是同一个标记，也是同一个原因。
+
 ## discovery：工具面怎么呈现
 
 `discovery` 决定的是一个 client 会被展示多少个 tool 名字，而不是它可以调用哪些 tool。它是
@@ -119,6 +133,10 @@ agenthub profile discovery research lazy      # 或 grouped / full / -
 | `grouped` | 每台 server 一条聚合条目，然后走 `call_tool` | 中等规模的集合——客户端先读每台 server 的条目，再分派 |
 | `lazy` | 元工具（`status`、`search_tools`、`describe_tool`、`call_tool`、`fetch_result`）加上被 pin 住的 tool | 工具面很大的时候——客户端手里只握几个名字，而不是几百个。**谁都没设模式时的默认值** |
 | `-` | 清除这个 profile 的覆盖 | 回落到全局默认值 |
+
+`profile ls` 印的是每个 profile **实际会被服务的**模式：自己没设的那些显示继承来的值——
+`lazy (inherited)`——而不是一个还要你自己去解析的短横线。表尾会说清楚这个继承值来自哪里：
+内置默认值，还是 `config set discovery`。
 
 值得在意它的理由是**上下文，不是安全**。四十台 server 跑在 `full` 模式下，意味着一份客户端
 每轮都要重读一遍的工具清单；`lazy` 把它变成五个名字加一次搜索。两种模式下可见性都没变——
@@ -172,7 +190,8 @@ codex 是唯一一个 agenthub 不自己写的客户端——它的配置是 TOM
 它会改成告诉你该跑什么。
 
 `client ls` 补上另一侧，每个客户端两个答案：CONNECTED 来自客户端自己的配置文件，
-PROFILE 是它**可以看见什么**。某一行给出的不是 yes/no 而是 `denied`、`unreadable`、`?` 时，
+PROFILE 是它**可以看见什么**——它自己的 profile，或者你从没绑过它时的 `(default)`，也就是
+`profile ls` 里同名的那一行。某一行给出的不是 yes/no 而是 `denied`、`unreadable`、`?` 时，
 `client inspect <id>` 会说清楚是哪个文件、为什么。
 
 写好的配置文件说明的只是意图。真正的确认是客户端自己：重启它，让它用一次某个 tool。

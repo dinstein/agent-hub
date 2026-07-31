@@ -154,9 +154,10 @@ agenthub profile use research    # fallback for every unbound client ("-" clears
 
 - `profile tools` takes the server's **own** names (`search`), not the exposed `brave__search`. Get names from `server test <id> --tools`.
 - A misspelled name is stored and only warned about. `--only` is an intersection — one typo lets **nothing** through. `server test --tools` first is what makes the check real.
-- Binding to a nonexistent profile is accepted and **fail-closes to an empty scope**. Client seeing nothing → check `client ls` for `MISSING` before suspecting servers.
+- Binding to a nonexistent profile is accepted and **fail-closes to an empty scope**. Client seeing nothing → check `client ls` for `MISSING` before suspecting servers. An active profile that does not exist fail-closes every *unbound* client the same way, marked on the `(default)` row.
+- `(default)` in either listing is the fallback an unbound client follows, not a profile: `profile ls` heads its table with it, `client ls` prints it in the PROFILE column (`(default) -> research` when one is active), and `profile use` is the only thing that moves it. Profile names may not start with `(`.
 
-**Discovery** changes how tools are surfaced, not which are in scope:
+**Discovery** changes how tools are surfaced, not which are in scope. `profile ls` prints the mode each profile is actually served in — `lazy (inherited)` means the profile sets none and the global default decides:
 
 | mode | `tools/list` returns |
 |---|---|
