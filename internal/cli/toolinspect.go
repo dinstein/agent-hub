@@ -14,10 +14,10 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// `tool inspect` answers the question the two listings can only answer by
+// `server tool inspect` answers the question the two listings can only answer by
 // elimination: WHY is this one tool in, or out.
 //
-// `tool ls` says a tool is blocked, `profile ls` shows the profiles, and
+// `server tool ls` says a tool is blocked, `profile ls` shows the profiles, and
 // joining them is left to the reader — per tool, in their head, in the same
 // way `server inspect`'s visibility section was written to stop them doing
 // for servers. This is that section at tool granularity, and it exists
@@ -195,7 +195,7 @@ func resolveTool(cat offlineCatalog, args []string) (discovery.Tool, error) {
 			}
 		}
 		e := NotFoundf(CodeToolNotFound, "server %q has no cached tool %q", args[0], args[1])
-		e.Hint = "run 'agenthub tool ls " + args[0] + " --all' to see what it has"
+		e.Hint = "run 'agenthub server tool ls " + args[0] + " --all' to see what it has"
 		return discovery.Tool{}, e
 	}
 	for _, t := range all {
@@ -204,7 +204,7 @@ func resolveTool(cat offlineCatalog, args []string) (discovery.Tool, error) {
 		}
 	}
 	e := NotFoundf(CodeToolNotFound, "no tool exposed as %q", args[0])
-	e.Hint = "run 'agenthub tool ls --all' to see the exposed names, " +
+	e.Hint = "run 'agenthub server tool ls --all' to see the exposed names, " +
 		"or name the server and its own tool name as two arguments"
 	return discovery.Tool{}, e
 }

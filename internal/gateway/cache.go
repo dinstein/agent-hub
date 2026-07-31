@@ -70,7 +70,7 @@ func (c *toolCache) seal() {
 const toolCacheSubdir = "tools"
 
 // LoadToolCache reads every persisted per-server tool list for an OFFLINE
-// reader — `agenthub tool ls`, which must be able to show the catalog
+// reader — `agenthub server tool ls`, which must be able to show the catalog
 // without spawning a gateway or connecting to anything.
 //
 // The format stays owned by this file: one writer, and one decode. This is
@@ -129,7 +129,7 @@ func LoadToolCacheEntries(resolver *platform.Resolver, log *slog.Logger) (map[st
 }
 
 // ForgetToolCache deletes the persisted tool list of one server — the
-// cleanup half of `agenthub server rm`. Without it `agenthub tool ls`, which
+// cleanup half of `agenthub server rm`. Without it `agenthub server tool ls`, which
 // reads this cache offline by design, keeps listing a removed server's tools
 // forever, and a server re-added under the same id starts life showing
 // another server's catalog.

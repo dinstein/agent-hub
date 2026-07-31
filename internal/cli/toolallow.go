@@ -10,7 +10,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/confops"
 )
 
-// `tool allow` is the global half of the tool model: which of a server's
+// `server tool allow` is the global half of the tool model: which of a server's
 // tools this machine offers at all, before any profile narrows it further.
 //
 // It is an ALLOW list, not a kill switch, and the difference shows up on the
@@ -19,7 +19,7 @@ import (
 // server ships it. Only one of those is a decision the operator actually
 // made, so there is only one verb here.
 //
-// IT IS `profile tools`, ONE LAYER UP. Both narrow one server's tools, both
+// IT IS `profile tool allow`, ONE LAYER UP. Both narrow one server's tools, both
 // are allow lists over the server's OWN tool names, both take
 // --only/--all/--none through parseSelectorFlags, both cross-check spelling
 // through unknownToolWarning, and both resolve the three states through one
@@ -33,7 +33,7 @@ import (
 // entry beside `enabled`, and a running gateway adopts it through the
 // registry watch that already exists.
 
-// ToolAllowResult is the `tool allow` result.
+// ToolAllowResult is the `server tool allow` result.
 type ToolAllowResult struct {
 	Server string `json:"server"`
 	// Tools is the allow list now in force: null = every tool the server
@@ -58,10 +58,10 @@ func (r ToolAllowResult) Human(w io.Writer) error {
 	}
 }
 
-// newToolAllowCmd builds `tool allow <server> (--only … | --all | --none)`.
+// newToolAllowCmd builds `server tool allow <server> (--only … | --all | --none)`.
 //
 // The flag trio replaced a positional tool list, and the missing form is the
-// reason: `tool allow github` with the names forgotten used to mean "expose
+// reason: `server tool allow github` with the names forgotten used to mean "expose
 // NOTHING from github". It was one slip away from the opposite of the intent,
 // it was silent — the command reported success and no listing showed the rule
 // — and it was spelled differently from the same edit one layer up. Requiring
@@ -84,9 +84,9 @@ func (a *App) newToolAllowCmd() *cobra.Command {
 			"later. --only fixes the set: a tool the server adds afterwards stays out\n" +
 			"until you add it.\n\n" +
 			"Use the server's own tool names (get_issue), not the longer github__get_issue\n" +
-			"your client displays; 'agenthub tool ls <server>' lists them. Same flags, same\n" +
-			"names and same allow-list semantics as 'agenthub profile tools', which applies\n" +
-			"the next layer down.",
+			"your client displays; 'agenthub server tool ls <server>' lists them. Same flags,\n" +
+			"same names and same allow-list semantics as 'agenthub profile tool allow', which\n" +
+			"applies the next layer down.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			server := args[0]

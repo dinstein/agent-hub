@@ -11,7 +11,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// `tool ls --rules` reads the allow lists themselves, rather than their
+// `server tool ls --rules` reads the allow lists themselves, rather than their
 // effect.
 //
 // WHY IT IS NOT ANOTHER COLUMN ON THE TOOL TABLE. One state has no tools to
@@ -20,7 +20,7 @@ import (
 // nothing" at all — the very state most worth finding. The rule table has one
 // row per SERVER, so all three states have somewhere to be printed.
 //
-// It is also what makes `tool allow` safe to script against: the write
+// It is also what makes `server tool allow` safe to script against: the write
 // REPLACES the list, so anything editing it has to read it first, and until
 // this existed there was no command that could.
 
@@ -61,7 +61,7 @@ func ruleOf(tools []string) string {
 	}
 }
 
-// ToolRuleList is the `tool ls --rules` result. JSON shape: a plain array.
+// ToolRuleList is the `server tool ls --rules` result. JSON shape: a plain array.
 type ToolRuleList []ToolRuleRow
 
 func (l ToolRuleList) MarshalJSON() ([]byte, error) {

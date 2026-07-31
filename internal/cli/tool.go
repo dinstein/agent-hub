@@ -19,7 +19,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/scope"
 )
 
-// `tool ls` is the OFFLINE view of the aggregated catalog: it reads the
+// `server tool ls` is the OFFLINE view of the aggregated catalog: it reads the
 // registry (which servers are configured and enabled) plus the gateway's
 // persisted tool cache, and never connects to anything. That is the same
 // pair of inputs a cold gateway answers tools/list from (docs/flows.md), so
@@ -31,8 +31,8 @@ import (
 // the one the agent gets.
 //
 // THREE STATES, because listing only one of them was the bug this file used
-// to have. It applied no allow list at all, so a server narrowed by `tool
-// allow` still listed every tool it had ever cached: the one command that
+// to have. It applied no allow list at all, so a server narrowed by an allow
+// list still listed every tool it had ever cached: the one command that
 // answers "what does this machine offer" answered a different question, and
 // it was the only reader a rule with no other reader had. A tool is now `on`
 // (offered), `blocked` (a rule exists and does not name it) or `pending`
@@ -74,7 +74,7 @@ type ToolRow struct {
 	Score int    `json:"score,omitempty"`
 }
 
-// ToolList is the `tool ls` result. Ranked selects the search rendering,
+// ToolList is the `server tool ls` result. Ranked selects the search rendering,
 // ShowAll the state column; the JSON shape is a plain array in every mode.
 type ToolList struct {
 	Rows   []ToolRow
@@ -113,7 +113,7 @@ func (l ToolList) Human(w io.Writer) error {
 			// holding all of them back, which is a different repair.
 			_, err := fmt.Fprintf(w,
 				"no tools offered: an allow list holds back all %d cached tool(s) "+
-					"('--all' shows them, 'agenthub tool allow <server> --all' drops the rule)\n", l.Held)
+					"('--all' shows them, 'agenthub server tool allow <server> --all' drops the rule)\n", l.Held)
 			return err
 		default:
 			_, err := fmt.Fprintln(w, "no tools cached yet (connect a client once so the gateway can populate the cache)")

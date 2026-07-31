@@ -5,7 +5,7 @@
 //   - Depends on the api client + internal/registry (plus the
 //     zero-dependency foundations internal/platform and the sibling output
 //     package); the daemon/gateway entry subcommands additionally assemble
-//     internal/daemon and internal/gateway, and `tool ls` reads the catalog
+//     internal/daemon and internal/gateway, and `server tool ls` reads the catalog
 //     through internal/router + internal/discovery so the CLI ranks with the
 //     SAME ranker the gateway's search_tools uses. Registry writes go
 //     offline-direct through registry.Store.Update (cross-process .lock +
@@ -205,7 +205,7 @@ func (a *App) newRoot() *cobra.Command {
 	// `profile` and `client` reads as a third required step.
 	addGrouped(root, groupWire, a.newProfileCmd(), a.newClientCmd())
 	// Hidden takes these two groups off the help page only: cobra still
-	// resolves and runs them, so `agenthub tool ls` or `agenthub audit tail`
+	// resolves and runs them, so `agenthub config ls` or `agenthub audit tail`
 	// behaves identically in a release build. Routing them through the same
 	// call as every other group is what keeps a newly added member of one of
 	// them from being left visible.

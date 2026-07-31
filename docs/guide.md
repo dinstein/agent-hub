@@ -12,7 +12,7 @@ Three nouns, one sentence each:
 - **Server** — a downstream MCP server you registered. Registering and
   switching on are two steps: `server add` writes the definition and leaves it
   off, `server enable` connects and puts it into service. A server offers all
-  of its tools unless you name a subset (`tool allow`). The set of *enabled*
+  of its tools unless you name a subset (`server tool allow`). The set of *enabled*
   servers, with those names applied, is everything agenthub could offer anyone.
 - **Profile** — a named subset of that: which servers, which of their tools,
   and how the result is presented.
@@ -295,7 +295,7 @@ anything is being traced — that is where to look when you cannot remember.
 |---|---|
 | a server you added never shows up | `server add` leaves it switched off — check `server ls`, then `agenthub server enable <id>` |
 | client sees no tools at all | bound to a profile that does not exist (`client ls` shows `MISSING`), or it was never restarted after `client connect` |
-| a tool disappeared | a `tool allow` list on the server, or a profile's `--only` list — check both with `agenthub server inspect <id>` before suspecting the server |
+| a tool disappeared | an allow list took it — `agenthub server tool inspect <exposed-name>` names which layer, and answers it in one command rather than reading `server tool ls --rules` and `profile ls` against each other |
 | a server works in `server test` but not in the client | the client has not been restarted, or its profile does not include that server |
 | `client connect` seems to do nothing | it edits a file; the client reads that file at startup |
 | a legacy `projects` block in `clients.json` | per-project bindings were retired. The block is preserved but inert — it used to narrow, so leaving it does not restrict anything now |

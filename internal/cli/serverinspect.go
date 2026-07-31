@@ -26,7 +26,7 @@ import (
 // server from every profile's effective set at once (docs/modules/controlplane.md) — the
 // global switch, above any per-profile narrowing.
 //
-// inspect is offline-capable and reads the SAME cache `tool ls` reads: the
+// inspect is offline-capable and reads the SAME cache `server tool ls` reads: the
 // operator's view of what a cold gateway would answer. When the daemon is
 // up its live state is added on top; when it is not, the report says so
 // rather than pretending the cache is a live handshake.
