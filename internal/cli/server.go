@@ -649,18 +649,14 @@ func (a *App) newServerRmCmd() *cobra.Command {
 			if derr != nil {
 				return derr
 			}
-			opts := confops.RemoveOptions{Credentials: deps.chain}
-			// State cleanups are best-effort by construction: each missing
-			// store simply contributes nothing. A state dir that will not
-			// resolve is reported once, as a warning, rather than blocking a
-			// delete the registry has already accepted.
-			stateDir, serr := a.stateDir()
-			if serr != nil {
-				warnings = append(warnings, fmt.Sprintf(
-					"could not resolve the state directory (%v); integrity baselines and "+
-						"approval grants of %q may survive", serr, id))
-			} else {
-				opts.State = a.serverStateForgetters(stateDir)
+			// State cleanups are best-effort by construction: each store that
+			// cannot be opened simply contributes nothing, and RemoveServer
+			// reports it as a warning naming what survived. They are built
+			// unconditionally, exactly as the daemon builds them, because the
+			// two front ends have to agree on what deleting a server means.
+			opts := confops.RemoveOptions{
+				Credentials: deps.chain,
+				State:       a.serverStateForgetters(),
 			}
 			res, err := confops.RemoveServer(cmd.Context(), store, id, noPrecondition, opts)
 			warnings = append(warnings, res.Warnings...)
@@ -676,7 +672,7 @@ func (a *App) newServerRmCmd() *cobra.Command {
 // runs. A store that cannot even be OPENED is skipped rather than failing the
 // command: the registry entry is already gone by the time these run, and
 // RemoveServer reports whatever fails as a warning naming what survived.
-func (a *App) serverStateForgetters(stateDir string) []confops.StateForgetter {
+func (a *App) serverStateForgetters() []confops.StateForgetter {
 	var out []confops.StateForgetter
 	out = append(out,
 		confops.StateFunc{

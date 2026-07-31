@@ -477,3 +477,38 @@ func TestServerTraceRejectsUnknownState(t *testing.T) {
 		t.Errorf("tracing an unknown server: exit = %d, want %d\n%s", code, ExitNotFound, out)
 	}
 }
+
+// TestServerRemoveForgetsTheToolCache covers the one out-of-registry cleanup
+// `server rm` actually has. Nothing exercised it before: the roundtrip test
+// checks the registry entry is gone, and `agenthub server tool ls` reads this
+// cache offline by design, so a stale entry keeps listing a removed server's
+// tools and a server re-added under the same id starts life showing another
+// server's catalog.
+func TestServerRemoveForgetsTheToolCache(t *testing.T) {
+	dir := setDataDir(t)
+
+	if code, _, stderr := runCLI(t, "", "server", "add", "github", "--cmd", "npx"); code != ExitOK {
+		t.Fatalf("add exit = %d, stderr: %s", code, stderr)
+	}
+
+	// A cache entry as a real gateway session would have left it.
+	cacheDir := filepath.Join(dir, "cache", "tools")
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		t.Fatalf("mkdir cache: %v", err)
+	}
+	entry := filepath.Join(cacheDir, "github.json")
+	if err := os.WriteFile(entry, []byte(`{"server":"github","tools":[]}`), 0o600); err != nil {
+		t.Fatalf("seed cache: %v", err)
+	}
+
+	code, out, stderr := runCLI(t, "", "server", "rm", "github")
+	if code != ExitOK {
+		t.Fatalf("rm exit = %d, stderr: %s", code, stderr)
+	}
+	if strings.Contains(out, "approval grants") || strings.Contains(stderr, "approval grants") {
+		t.Errorf("rm warns about state that does not exist: %q / %q", out, stderr)
+	}
+	if _, err := os.Stat(entry); !os.IsNotExist(err) {
+		t.Fatalf("stat cached tool list after rm = %v, want it removed", err)
+	}
+}

@@ -30,7 +30,7 @@ func (f *recordingForgetter) StateName() string { return f.name }
 // TestServerDeleteClearsState pins that the DAEMON strips the same footprint
 // `agenthub server rm` does. The two front ends disagreeing is the failure
 // this guards: an operator who removes a server through the GUI would
-// otherwise leave integrity baselines and approval grants behind for a
+// otherwise leave a re-added server's predecessor state behind for a
 // re-added id to inherit, with nothing on screen saying so.
 func TestServerDeleteClearsState(t *testing.T) {
 	pins := &recordingForgetter{name: "tool pins"}

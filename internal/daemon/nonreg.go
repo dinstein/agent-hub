@@ -41,9 +41,7 @@ import (
 // Same optional-dependency discipline as the rest of this file: a store that
 // will not open is omitted rather than failing the daemon, and confops turns
 // whatever is missing into a warning on the response.
-func serverStateForgetters(
-	stateDir string, resolver *platform.Resolver,
-) []confops.StateForgetter {
+func serverStateForgetters(resolver *platform.Resolver) []confops.StateForgetter {
 	var out []confops.StateForgetter
 	out = append(out, confops.StateFunc{
 		Name: "the cached tool list",

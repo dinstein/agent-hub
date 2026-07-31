@@ -364,8 +364,8 @@ func UpdateServer(ctx context.Context, st *registry.Store, spec ServerSpec, pre 
 
 // RemoveServer deletes a server and everything the hub knows about it: the
 // registry entry, every reference to it in the surviving registry documents,
-// its stored credentials, and its out-of-registry state (fingerprint pins,
-// approval records, tool cache).
+// its stored credentials, and its out-of-registry state (today: the cached
+// tool list).
 //
 // "Everything" is the point. An earlier version deleted the entry alone and
 // left the rest, on the reasoning that a dangling reference resolves to
@@ -481,9 +481,11 @@ type CredentialPurger interface {
 }
 
 // StateForgetter drops one out-of-registry store's records for a server.
-// Implemented by the integrity pin/approval stores, the approval allowlist
-// and the gateway tool cache — each of which is keyed by server id and would
-// otherwise pre-trust or pre-populate a server re-added under that id.
+// Implemented today by the gateway tool cache alone — the integrity pin,
+// approval-record and allowlist stores this once also named went with the
+// removed governance surface. The interface stays plural because the reason
+// does: any store keyed by server id would pre-trust or pre-populate a server
+// re-added under that id, and both front ends build the list the same way.
 //
 // StateName names the store in operator-facing warnings ("tool pins"), so a
 // failed cleanup says what survived rather than leaking a file path.

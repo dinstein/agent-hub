@@ -247,7 +247,7 @@ func Run(ctx context.Context, cfg Config) error {
 		StateDir: stateDir,
 		// Deleting a server must strip its whole footprint here exactly as it
 		// does from the CLI; these are the stores that outlive the registry.
-		ServerStateForgetters: serverStateForgetters(stateDir, resolver),
+		ServerStateForgetters: serverStateForgetters(resolver),
 	})
 	if err != nil {
 		return fmt.Errorf("daemon: %w", err)
