@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/dinstein/agent-hub/internal/discovery"
 	"github.com/dinstein/agent-hub/internal/logx"
@@ -389,6 +390,14 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 			g.replyBusy(req.ID)
 			return
 		}
+		// Listable but not callable: the catalog entry came from the tool
+		// cache and its server never connected. The client is answered the
+		// same "unknown tool" every other miss gets — an anti-probing rule,
+		// docs/flows.md — so the log is the only place the difference between
+		// "no such tool" and "that server is down" can be recorded, and it is
+		// the difference between an agent's bug and an operator's.
+		g.log.Warn("tools/call routed to a tool no connected server serves",
+			logx.Tool(exposed), "cached_entry", ok)
 		g.replyUnknownTool(req.ID, exposed)
 		return
 	}
@@ -483,22 +492,69 @@ func (g *gateway) runCall(ctx context.Context, req *mcp.Request, t callTarget, a
 		}, &callReq)
 	}
 
+	started := time.Now()
 	res, err := g.pipe.Execute(ctx, callReq)
 	if ctx.Err() != nil {
 		// Cancelled: the downstream cancellation was already forwarded by
 		// the transport; the upstream client gets no response by contract.
-		g.log.Info("tools/call cancelled",
-			logx.Server(route.ServerID), logx.Tool(route.RawTool), "id", req.ID.String())
+		g.log.Info("tools/call cancelled", g.callFields(req, route, started)...)
 		return
 	}
 	if err != nil {
+		g.logCallFailure(req, route, started, err)
 		g.reply(mcp.NewErrorResponse(req.ID, callError(err)))
 		return
 	}
+	g.log.Debug("tools/call served", g.callFields(req, route, started)...)
 	// replyResult owns the marshal so resultType normalization (session
 	// generation, not downstream generation) has exactly one enforcement
 	// point for every result-shaped answer.
 	g.replyResult(req.ID, res)
+}
+
+// callFields is the identity every call outcome is reported under: the
+// ROUTED server and tool (RouteOf provenance, never the exposed name — a
+// renamed tool must not become a different tool in the log), the upstream
+// request id, and how long the whole pipeline took.
+//
+// The id is what ties the outcome to the client's own record of the call,
+// and it is what tells two concurrent calls apart: every tools/call runs on
+// its own goroutine, so without it the lines of an agent making six calls at
+// once interleave into one unreadable sequence.
+//
+// Arguments are deliberately absent, here and everywhere: they are the one
+// part of a call that carries the user's data, and a log that records them is
+// a log that cannot be attached to a bug report.
+func (g *gateway) callFields(req *mcp.Request, route router.Route, started time.Time) []any {
+	return []any{
+		logx.Server(route.ServerID), logx.Tool(route.RawTool),
+		"id", req.ID.String(), "dur_ms", time.Since(started).Milliseconds(),
+	}
+}
+
+// logCallFailure records a call that did not produce a result.
+//
+// Before this line the whole class was silent: a downstream error, a dead
+// transport, an open circuit, exhausted retries and a gate rejection were all
+// turned into a JSON-RPC error and answered upstream without a word, so the
+// first question after "the tool failed" — which server, which tool, why —
+// had no answer in the file at all, and the only way to get one was to turn
+// on frame tracing and reproduce it.
+//
+// A gate rejection is reported apart from a failure because it is not one:
+// nothing broke, the call was refused by configuration written before the
+// client connected. It carries the gate and the stable rejection code, which
+// is the same thing internal/ratelimit's rejection line does, and for the
+// reason recorded there: a governance decision that never fires and a
+// governance decision that is not running must not look alike from outside.
+func (g *gateway) logCallFailure(req *mcp.Request, route router.Route, started time.Time, err error) {
+	fields := g.callFields(req, route, started)
+	var be *pipeline.BlockedError
+	if errors.As(err, &be) {
+		g.log.Warn("tools/call denied", append(fields, "gate", be.Gate, "code", be.Code)...)
+		return
+	}
+	g.log.Warn("tools/call failed", append(fields, "error", err)...)
 }
 
 // callError maps a pipeline/downstream failure to the upstream JSON-RPC
@@ -571,6 +627,11 @@ func (g *gateway) replyUnknownTool(id mcp.ID, name string) {
 // replyBusy answers a retryable "still connecting" error (docs/flows.md:
 // the catalog can be served from cache, but calls need a live connection).
 func (g *gateway) replyBusy(id mcp.ID) {
+	// Debug: an agent that asks early gets one of these per attempt, and a
+	// retryable non-answer during startup is the system working. It is worth
+	// recording at all because "the tool did nothing for the first ten
+	// seconds" is otherwise unattributable.
+	g.log.Debug("tools/call answered busy: downstreams still connecting", "id", id.String())
 	g.reply(mcp.NewErrorResponse(id, &mcp.Error{
 		Code:    codeRetryBusy,
 		Message: "downstream servers are still connecting; retry shortly",
