@@ -379,30 +379,6 @@ func offlineCatalogOf(
 	return out, nil
 }
 
-// unknownRuleNames names the entries of an allow list that no cached tool
-// matches — the spelling mistakes, and the only lasting symptom they have.
-//
-// An EMPTY catalog yields nothing, deliberately: every name would be
-// reported, and a server no gateway has connected to yet is not a typo. That
-// is the same silence unknownToolWarning keeps at write time, for the same
-// reason, and the two must not disagree about it.
-func unknownRuleNames(rule []string, defs []mcp.ToolDef) []string {
-	if len(rule) == 0 || len(defs) == 0 {
-		return nil
-	}
-	known := make(map[string]bool, len(defs))
-	for _, d := range defs {
-		known[d.Name] = true
-	}
-	var out []string
-	for _, name := range rule {
-		if !known[name] {
-			out = append(out, name)
-		}
-	}
-	return out
-}
-
 // surfaceOf wraps a tool set in the full-mode discovery surface --search
 // ranks against.
 func surfaceOf(tools []discovery.Tool, generation uint64) *discovery.Surface {

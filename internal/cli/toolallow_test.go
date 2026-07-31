@@ -71,10 +71,12 @@ func TestToolAllowRefusesAnUnspecifiedEdit(t *testing.T) {
 	if !strings.Contains(stderr, "--only") || !strings.Contains(stderr, "--none") {
 		t.Errorf("the error must name the ways out, got %s", stderr)
 	}
-	// And nothing may have been written on the way to refusing.
-	_, out, _ := runCLI(t, "", "server", "ls", "--json")
-	if strings.Contains(out, `"tools"`) {
-		t.Errorf("a refused edit still wrote a rule: %s", out)
+	// And nothing may have been written on the way to refusing. The rule is
+	// read off `server ls` — which reports it in all three states, so the
+	// assertion is that it is still the "no rule" one rather than that the
+	// field is absent.
+	if got := decodeServerRows(t, mustRun(t, "", "server", "ls", "--json"))["fs"].ToolRule; got.Rule != toolRuleAll {
+		t.Errorf("a refused edit still wrote a rule: %+v", got)
 	}
 
 	code, _, stderr = runCLI(t, "", "server", "tool", "allow", "fs", "--all", "--none")

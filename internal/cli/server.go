@@ -68,6 +68,12 @@ type ServerRow struct {
 	// SERVER will accept — a claim only a live 401 can make, and the one that
 	// goes stale the moment a token expires.
 	Auth *ServerAuth `json:"auth,omitempty"`
+	// ToolRule is the entry's global tool allow list, read against the cached
+	// catalog (serverrule.go). Like Auth it is filled in by `server ls` and
+	// `server inspect` alone — the rule is on the entry either way, but its
+	// count and spelling check need the tool cache, which `server add` has no
+	// business loading and whose --json output stays byte-identical without it.
+	ToolRule *ServerToolRule `json:"tool_rule,omitempty"`
 }
 
 // target is the connection target column: the command line for stdio, the
@@ -105,15 +111,24 @@ func (l ServerList) Human(w io.Writer) error {
 	// AUTH is absent on a machine whose servers are all local subprocesses,
 	// where "no credential" is not news; the moment one server has a
 	// credential, what every OTHER row lacks becomes information too.
-	traced, credentialed := false, false
+	//
+	// TOOLS follows the same rule for the same reason, and it is where the
+	// global allow list is read now: it appears as soon as one server narrows
+	// its tools, and on a machine where none does it says nothing anyone has
+	// to learn to skip.
+	traced, credentialed, narrowed := false, false, false
 	for _, r := range l {
 		traced = traced || r.Trace
 		credentialed = credentialed || (r.Auth != nil && r.Auth.Kind != authKindNone)
+		narrowed = narrowed || (r.ToolRule != nil && r.ToolRule.narrows())
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	head := []string{"ID", "TRANSPORT", "ENABLED"}
 	if credentialed {
 		head = append(head, "AUTH")
+	}
+	if narrowed {
+		head = append(head, "TOOLS")
 	}
 	if traced {
 		head = append(head, "TRACE")
@@ -125,6 +140,9 @@ func (l ServerList) Human(w io.Writer) error {
 		if credentialed {
 			cells = append(cells, r.Auth.cell())
 		}
+		if narrowed {
+			cells = append(cells, r.ToolRule.cell())
+		}
 		if traced {
 			cells = append(cells, traceMark(r.Trace))
 		}
@@ -134,7 +152,30 @@ func (l ServerList) Human(w io.Writer) error {
 	if err := tw.Flush(); err != nil {
 		return err
 	}
+	if err := l.writeRuleHint(w); err != nil {
+		return err
+	}
 	return l.writeAuthHints(w)
+}
+
+// writeRuleHint explains the "!" the TOOLS column can carry. It names the
+// servers rather than the count: the repair is per server, and the reader has
+// to open one of them to find out which name is wrong.
+func (l ServerList) writeRuleHint(w io.Writer) error {
+	var ids []string
+	for _, r := range l {
+		if r.ToolRule != nil && len(r.ToolRule.Unknown) > 0 {
+			ids = append(ids, r.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := fmt.Fprintf(w,
+		"\n! an allow list names a tool no cached catalog has, so it lets nothing through: %s\n"+
+			"  'agenthub server inspect %s' spells the names out\n",
+		strings.Join(ids, ", "), ids[0])
+	return err
 }
 
 // authHintLimit bounds the footer. Past a handful, a list of repairs stops
@@ -549,12 +590,21 @@ func (a *App) newServerLsCmd() *cobra.Command {
 		Long: "This is what is registered, not what is working: a server listed here can\n" +
 			"still fail to start. 'agenthub server test <id>' answers that.\n\n" +
 			"The AUTH column reports the credential stored on THIS machine — not whether\n" +
-			"the server accepts it, which only a real call can tell you.",
+			"the server accepts it, which only a real call can tell you. TOOLS is the\n" +
+			"allow list set by 'agenthub server tool allow', and appears only once some\n" +
+			"server carries one; 'agenthub server tool ls' lists what that leaves offered.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, warnings, err := a.openStore()
 			if err != nil {
 				return err
+			}
+			// The cached catalog is an enrichment too: it supplies the count
+			// the rule is read against and the spelling check, and neither is
+			// worth failing a listing of the registry over.
+			cached, cacheErr := gateway.LoadToolCache(a.resolver, nil)
+			if cacheErr != nil {
+				warnings = append(warnings, "tool cache unreadable: "+cacheErr.Error())
 			}
 			// The credential state is an enrichment, never a precondition: its
 			// failures arrive as warnings and error cells, and the registry
@@ -569,6 +619,8 @@ func (a *App) newServerLsCmd() *cobra.Command {
 				row := rowFor(name, doc.V)
 				auth := probe.classify(cmd.Context(), name, doc.V, now)
 				row.Auth = &auth
+				rule := serverToolRuleOf(doc.V, cached[name])
+				row.ToolRule = &rule
 				rows = append(rows, row)
 			}
 			slices.SortFunc(rows, func(x, y ServerRow) int { return strings.Compare(x.ID, y.ID) })

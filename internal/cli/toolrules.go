@@ -4,61 +4,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 	"text/tabwriter"
 
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// `server tool ls --rules` reads the allow lists themselves, rather than their
-// effect.
+// `server tool ls --rules` reads the allow lists themselves rather than their
+// effect. It is the OLD home of that reading — the rule now belongs to the
+// views that describe a server (`server ls`, `server inspect`, see
+// serverrule.go) — and survives only so a script written against it keeps
+// working for one release.
 //
-// WHY IT IS NOT ANOTHER COLUMN ON THE TOOL TABLE. One state has no tools to
-// hang a column on: a server set to --none contributes zero rows, so a
-// per-tool listing cannot express "this server is configured to expose
-// nothing" at all — the very state most worth finding. The rule table has one
-// row per SERVER, so all three states have somewhere to be printed.
-//
-// It is also what makes `server tool allow` safe to script against: the write
-// REPLACES the list, so anything editing it has to read it first, and until
-// this existed there was no command that could.
+// Nothing new should be added here; this file goes away with the flag.
 
 // ToolRuleRow is one server's global allow list.
 type ToolRuleRow struct {
 	Server  string `json:"server"`
 	Enabled bool   `json:"enabled"`
-	// Rule names the state in one word: all, only or none. It is derived
-	// from Tools and duplicated on purpose — a consumer that switches on a
-	// string cannot accidentally read null as empty.
-	Rule string `json:"rule"`
-	// Tools is the rule verbatim: null = no rule, [] = nothing, [...] =
-	// exactly those. Never omitted; the null/empty distinction IS the
-	// answer.
-	Tools []string `json:"tools"`
-	// Unknown are rule entries no cached tool matches. Absent when the
-	// cache is cold, which is not the same as "all spelled right".
-	Unknown []string `json:"unknown,omitempty"`
-	// Cached is how many tools the last recorded catalog had, so "only 2"
-	// can be read against a total rather than in a vacuum.
-	Cached int `json:"cached"`
-}
-
-const (
-	toolRuleAll  = "all"
-	toolRuleOnly = "only"
-	toolRuleNone = "none"
-)
-
-func ruleOf(tools []string) string {
-	switch {
-	case tools == nil:
-		return toolRuleAll
-	case len(tools) == 0:
-		return toolRuleNone
-	default:
-		return toolRuleOnly
-	}
+	// The rule itself is inlined, so the JSON this flag has always emitted
+	// is unchanged while the type behind it lives with the server.
+	ServerToolRule
 }
 
 // ToolRuleList is the `server tool ls --rules` result. JSON shape: a plain array.
@@ -88,48 +54,20 @@ func (l ToolRuleList) Human(w io.Writer) error {
 			// reach; saying so here stops it being read as the reason.
 			name += " (disabled)"
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", name, r.rule(), r.tools())
+		_, _ = fmt.Fprintf(tw, "%s\t(%s)\t%s\n", name, r.rule(), r.rowTools())
 	}
 	return tw.Flush()
 }
 
-// rule is the RULE cell, carrying the count so "only" is never read without
-// knowing how much it left out.
-func (r ToolRuleRow) rule() string {
-	if r.Rule != toolRuleOnly {
-		return "(" + r.Rule + ")"
-	}
-	if r.Cached == 0 {
-		// "2 of 0" is not a smaller total, it is the absence of one: no
-		// gateway has connected to this server, so there is nothing to read
-		// the count against and claiming a denominator would invent it.
-		return fmt.Sprintf("only (%d, nothing cached)", len(r.Tools))
-	}
-	return fmt.Sprintf("only (%d of %d)", len(r.Tools), r.Cached)
-}
-
-func (r ToolRuleRow) tools() string {
+// rowTools is this table's TOOLS cell, unchanged from the day it shipped.
+func (r ToolRuleRow) rowTools() string {
 	switch r.Rule {
 	case toolRuleAll:
 		return "every tool the server offers"
 	case toolRuleNone:
 		return "no tools — registered but exposes nothing"
 	}
-	unknown := make(map[string]bool, len(r.Unknown))
-	for _, u := range r.Unknown {
-		unknown[u] = true
-	}
-	parts := make([]string, 0, len(r.Tools))
-	for _, t := range r.Tools {
-		if unknown[t] {
-			// Marked inline rather than in a column of its own: the name is
-			// what has to be re-read to spot the typo, so the marker belongs
-			// against the name.
-			t = "!" + t
-		}
-		parts = append(parts, t)
-	}
-	out := strings.Join(parts, ", ")
+	out := r.names()
 	if len(r.Unknown) > 0 {
 		out += "   (! no cached tool by that name)"
 	}
@@ -152,12 +90,8 @@ func toolRulesOf(
 		}
 		e := servers[id].V
 		out = append(out, ToolRuleRow{
-			Server:  id,
-			Enabled: e.Enabled,
-			Rule:    ruleOf(e.Tools),
-			Tools:   e.Tools,
-			Unknown: unknownRuleNames(e.Tools, cached[id]),
-			Cached:  len(cached[id]),
+			Server: id, Enabled: e.Enabled,
+			ServerToolRule: serverToolRuleOf(e, cached[id]),
 		})
 	}
 	return out

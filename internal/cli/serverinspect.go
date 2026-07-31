@@ -157,6 +157,16 @@ func (i ServerInspect) Human(w io.Writer) error {
 	if r.Cwd != "" {
 		d.field("cwd", "%s", r.Cwd)
 	}
+	// Printed on every report, including "all", unlike the optional lines
+	// around it: the absence of a rule is exactly what a reader cannot tell
+	// from a missing line, and it is the question they came here with.
+	if r.ToolRule != nil {
+		d.field("tools", "%s", r.ToolRule.detail())
+		if len(r.ToolRule.Unknown) > 0 {
+			d.cont("! no cached tool by that name — an allow list is an intersection, " +
+				"so it lets nothing through")
+		}
+	}
 	i.writeRuntime(d)
 	// Provenance is reported only when it is the exception, because that is
 	// the only state worth a line: ProvenanceLocal is an operator-declared
@@ -607,6 +617,8 @@ func (a *App) newServerInspectCmd() *cobra.Command {
 			warnings = append(warnings, probeWarnings...)
 			auth := probe.classify(cmd.Context(), id, entry, time.Now())
 			row.Auth = &auth
+			rule := serverToolRuleOf(entry, defs)
+			row.ToolRule = &rule
 			out := ServerInspect{
 				Server:    row,
 				ToolCount: len(defs),
