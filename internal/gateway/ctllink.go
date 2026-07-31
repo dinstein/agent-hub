@@ -49,9 +49,8 @@ type ctlLink struct {
 	mu        sync.Mutex
 	sessionID string
 	// aliveCtx is cancelled whenever this link's connection to the daemon
-	// drops. Approval asks derive from it, so a broker that dies mid-wait
-	// releases them at once instead of leaving a gated call parked on a
-	// connection whose peer is gone.
+	// drops, so anything waiting on the daemon is released at once rather
+	// than parked on a connection whose peer is gone.
 	aliveCtx    context.Context
 	aliveCancel context.CancelFunc
 

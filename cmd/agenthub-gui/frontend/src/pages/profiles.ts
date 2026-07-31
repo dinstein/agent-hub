@@ -142,8 +142,7 @@ export function profilesPage(): Page {
   // -- per-server tool selector ---------------------------------------------
 
   async function toolsForm(p: Profile, server: string): Promise<Node> {
-    const tools = await knownTools(server);
-    const available = tools.map((t) => t.tool);
+    const available = await knownTools(server);
     const picker = triState(available, p.tools?.[server]);
     const errors = el("div", { class: "notice-slot" });
     const save = button("Apply selector", "btn", () => {

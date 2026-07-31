@@ -168,18 +168,22 @@ func TestServersList(t *testing.T) {
 	}
 }
 
-func TestServersQuarantineOutranksEnabled(t *testing.T) {
+// TestServersDisabledOutranksRuntimeState: the registry's enabled flag is
+// the only input to AdminState, and it is read before any runtime fact. A
+// connected server the operator switched off reports disabled, not
+// connected — the display must not contradict the switch.
+func TestServersDisabledOutranksRuntimeState(t *testing.T) {
 	client, env := startServer(t, func(o *Options) {
-		o.States = fakeStates{"github": {Quarantined: true, Conn: ConnConnected}}
+		o.States = fakeStates{"github": {Conn: ConnConnected, Tools: 4}}
 	})
-	seedServer(t, env.reg, "github", true)
+	seedServer(t, env.reg, "github", false)
 
 	servers, err := client.Servers.List(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	h := servers[0].Health
-	if h.AdminState != api.AdminStateQuarantined || h.Action != api.ActionApprove || h.Level != api.HealthLevelHealthy {
+	if h.AdminState != api.AdminStateDisabled || h.Action != api.ActionEnable || h.Level != api.HealthLevelHealthy {
 		t.Errorf("health = %+v", h)
 	}
 }

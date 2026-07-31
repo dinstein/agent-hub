@@ -574,8 +574,8 @@ func (a *App) newServerRmCmd() *cobra.Command {
 		Use:   "rm <id>",
 		Short: "Delete a server and everything stored for it",
 		Long: "Permanent, and it takes the whole footprint with it: credentials,\n" +
-			"profile membership, governance rules naming it, integrity baselines,\n" +
-			"approval grants and the cached tool list. Audit logs are kept.\n\n" +
+			"profile membership and tool rules, governance rules naming it, and\n" +
+			"the cached tool list. Its log file is kept.\n\n" +
 			"To stop a server being used without losing any of that, use\n" +
 			"'agenthub server disable' instead.",
 		Args: exactArgs(1),

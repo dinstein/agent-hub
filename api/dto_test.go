@@ -125,12 +125,11 @@ func TestDTOGoldenJSON(t *testing.T) {
 // These are ABI: GUI TS constants are generated from them.
 func TestFrozenConstants(t *testing.T) {
 	frozen := map[string]string{
-		HealthLevelHealthy:    "healthy",
-		HealthLevelDegraded:   "degraded",
-		HealthLevelUnhealthy:  "unhealthy",
-		AdminStateEnabled:     "enabled",
-		AdminStateDisabled:    "disabled",
-		AdminStateQuarantined: "quarantined",
+		HealthLevelHealthy:   "healthy",
+		HealthLevelDegraded:  "degraded",
+		HealthLevelUnhealthy: "unhealthy",
+		AdminStateEnabled:    "enabled",
+		AdminStateDisabled:   "disabled",
 	}
 	for got, want := range frozen {
 		if got != want {
@@ -141,7 +140,6 @@ func TestFrozenConstants(t *testing.T) {
 		{ActionLogin, "login"},
 		{ActionRestart, "restart"},
 		{ActionEnable, "enable"},
-		{ActionApprove, "approve"},
 		{ActionSetSecret, "set_secret"},
 		{ActionViewLogs, "view_logs"},
 		{ActionNone, ""},

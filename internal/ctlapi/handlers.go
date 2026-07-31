@@ -31,12 +31,7 @@ func (s *Server) serverList() []api.Server {
 			rt, haveRT = s.opts.States.ServerRuntime(id)
 		}
 		admin := api.AdminStateEnabled
-		switch {
-		case rt.Quarantined:
-			// Quarantine outranks the enabled flag: an isolated server must
-			// display as isolated even if still enabled in the registry.
-			admin = api.AdminStateQuarantined
-		case !entry.Enabled:
+		if !entry.Enabled {
 			admin = api.AdminStateDisabled
 		}
 		state := string(rt.Conn)

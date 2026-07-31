@@ -14,10 +14,10 @@
  * operator has to read the text anyway, which is the cost the colour was
  * supposed to remove.
  *
- * So: if a colour is carrying meaning here, that meaning is health. The
- * quarantine state deliberately does NOT get a fifth hue — it is warning-
- * coloured and the WORD "quarantined" carries the distinction from "degraded".
- * Adding a hue per state is how a palette stops being readable.
+ * So: if a colour is carrying meaning here, that meaning is health. Four
+ * hues is the whole budget — healthy, degraded, unhealthy, off — and a new
+ * state gets an existing hue plus a word, never a fifth colour. Adding a hue
+ * per state is how a palette stops being readable.
  *
  * Every semantic colour is also paired with a second channel (an icon shape, a
  * word, or a border) so the state survives a colour-blind reader and a
@@ -165,7 +165,6 @@
   --ok: var(--success);
   --warn: var(--warning);
   --bad: var(--danger);
-  --quarantine: var(--warning);
 }
 
 * {
@@ -213,13 +212,10 @@ body {
   height: 100vh;
 }
 
-/* Narrow windows tighten the sidebar; they never hide it. The counters on
- * Approvals and Tools are the un-dismissable backstop for pending decisions
- * and quarantine alerts (docs/modules/gui.md), so a layout that can put
- * them off-screen defeats the reason they exist. Collapsing to an icon rail
- * is the obvious alternative and is deliberately not done: there is no icon
- * set yet, and the labels are bare text nodes, so the rail would be a column
- * of unexplained badges. */
+/* Narrow windows tighten the sidebar; they never hide it — it is the only
+ * route between pages. Collapsing to an icon rail is the obvious alternative
+ * and is deliberately not done: there is no icon set yet, and the labels are
+ * bare text nodes, so the rail would be a column of unexplained badges. */
 @media (max-width: 900px) {
   :root {
     --sidebar-w: 164px;
@@ -268,22 +264,6 @@ a.nav.active {
   color: var(--fg);
   font-weight: 600;
   box-shadow: inset 2px 0 0 var(--accent);
-}
-
-/* The sidebar counters are the un-dismissable backstop for anything a page
- * can hide: a quarantine alert dismissed on the Tools page still shows up
- * here (docs/modules/gui.md). */
-.badge-count {
-  background: var(--accent);
-  color: var(--bg);
-  border-radius: 999px;
-  font-size: 11px;
-  padding: 1px 7px;
-  font-weight: 700;
-}
-
-.badge-count.alarm {
-  background: var(--danger);
 }
 
 .spacer {
@@ -493,8 +473,8 @@ tbody tr:hover {
   border-color: var(--line);
 }
 
-/* No fifth hue: the word does the distinguishing (see the header comment). */
-.badge-quarantined {
+/* No extra hue: warning plus the word (see the header comment). */
+.badge-attention {
   color: var(--warning);
   border-color: color-mix(in srgb, var(--warning) 40%, transparent);
 }
@@ -1108,7 +1088,7 @@ details.cli-block[open] > summary {
   align-items: flex-start;
 }
 
-/* --- cards / approvals ---------------------------------------------------- */
+/* --- cards ---------------------------------------------------------------- */
 
 .cards {
   display: flex;
@@ -1255,51 +1235,6 @@ kbd {
   border-radius: 5px;
   padding: 0 5px;
   background: var(--panel-2);
-}
-
-/* --- quarantine alerts (docs/modules/gui.md) ----------------------- */
-
-.alert {
-  border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent);
-  background: color-mix(in srgb, var(--warning) 10%, var(--panel));
-  border-radius: var(--radius);
-  padding: 12px 14px;
-  margin-bottom: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.alert > header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.alert-title {
-  font-weight: 700;
-  color: var(--warning);
-}
-
-.alert-item {
-  border-top: 1px solid var(--line);
-  padding-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-/* docs/modules/gui.md: protection nobody can see produces no trust. */
-.resting {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px dashed var(--line);
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  color: var(--muted);
-  margin-bottom: 12px;
 }
 
 .installs {

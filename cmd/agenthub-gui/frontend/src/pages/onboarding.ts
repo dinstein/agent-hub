@@ -4,14 +4,14 @@
 // THE ONE CLAIM THIS PAGE MAKES. The last step does not say "you are set up"
 // because the user clicked through four screens. It runs a real health probe
 // against every registered server and reports what came back, and then it
-// waits for a real call to reach the audit ledger from a real client. Those
-// are the two things that can actually be false at the end of a setup, and
-// "you finished the wizard therefore it works" is precisely the lie that
-// makes a user distrust everything else the UI says afterwards.
+// waits for a real client to open a session against the gateway. Those are
+// the two things that can actually be false at the end of a setup, and "you
+// finished the wizard therefore it works" is precisely the lie that makes a
+// user distrust everything else the UI says afterwards.
 //
 // APPEARING AT ALL. The wizard auto-appears only for a genuinely new
-// installation — no servers registered AND nothing in the call ledger — and
-// the answer is LATCHED for the lifetime of the window. Without the latch, the
+// installation — no server registered — and the answer is LATCHED for the
+// lifetime of the window. Without the latch, the
 // wizard would evaporate mid-flow the moment step 2 added the first server,
 // which is exactly when the user is relying on it. The decision also fails
 // CLOSED: if the freshness probe cannot be answered (daemon down, endpoint
@@ -91,12 +91,12 @@ function markSeen(): void {
 /**
  * Is this a genuinely new installation?
  *
- * Two conditions, both of which have to be readable:
+ * One condition, and it has to be readable: no server is registered. There
+ * used to be a second — an empty call ledger — and it went with the audit
+ * stream; an installation with servers already in it is not new whatever a
+ * ledger would have said.
  *
- *   - no server is registered, and
- *   - the call ledger is empty, i.e. no client has ever reached the gateway.
- *
- * Fail direction: FAIL-CLOSED toward "not new". Any failure to read either
+ * Fail direction: FAIL-CLOSED toward "not new". Any failure to read the
  * signal answers false, so an unreachable daemon leaves the user on the page
  * they asked for.
  */
@@ -350,8 +350,8 @@ export function onboardingPage(): Page {
         class: "hint",
         text:
           "One configuration and one set of credentials, shared by all of your clients; one place " +
-          "where a tool can be switched off, renamed or held for approval; and one ledger that " +
-          "records every call that was made — arguments hashed, never stored.",
+          "that decides in advance which servers and which of their tools each client may reach — " +
+          "settled before a client connects, never asked about mid-call.",
       }),
       el("h3", { text: "Clients detected on this machine" }),
       el("p", {
@@ -645,11 +645,11 @@ export function onboardingPage(): Page {
         el("li", { text: "Does the client list agenthub among its MCP servers? If it does not, step 3 did not write to the file that client actually reads." }),
         el("li", { text: "Did the assistant actually call a tool, or only talk about calling one? Only a real call reaches the ledger." }),
         el("li", { text: "Are any servers failing the health probe above? A gateway with no working server has no tool to offer." }),
-        el("li", { text: "Is a tool being held for approval? Check the Approvals page — a held call has not been decided, so it has not completed." }),
+        el("li", { text: "Is the client on a profile that excludes every server? Check the Profiles page — a client bound to a profile naming no server sees nothing, which is the fail-closed direction." }),
       ]),
       controls(
         el("a", { class: "btn btn-primary", href: "#/playground", text: "Try a tool directly in the Playground" }),
-        el("a", { class: "btn", href: "#/audit", text: "Open the Audit ledger" }),
+        el("a", { class: "btn", href: "#/sessions", text: "Open the Sessions list" }),
         button("Wait again", "btn btn-secondary", () => void startVerify()),
       ),
       el("p", {

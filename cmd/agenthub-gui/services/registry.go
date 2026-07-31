@@ -6,8 +6,8 @@ import (
 	"github.com/dinstein/agent-hub/api"
 )
 
-// Registry-backed configuration: servers, profiles, client bindings, the
-// governance switches, tool-level governance and the quarantine.
+// Registry-backed configuration: servers, profiles, client bindings and the
+// governance switches.
 //
 // Every write here takes an expectedGeneration and every write ANSWERS with
 // the generation the registry now stands at (api.WriteResult.Generation),

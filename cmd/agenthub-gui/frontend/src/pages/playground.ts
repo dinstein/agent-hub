@@ -720,7 +720,7 @@ export function playgroundPage(): Page {
         class: "hint",
         text:
           "This runs the tool for real on the downstream server. It is the daemon's self-test, not the " +
-          "gateway: scope, the per-tool kill switch and approval gates are NOT applied here, so a call " +
+          "gateway: scope and the per-tool allow lists are NOT applied here, so a call " +
           "that works on this page is not proof that a client would be allowed to make it.",
       }),
     );

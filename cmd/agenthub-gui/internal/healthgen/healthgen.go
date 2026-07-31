@@ -45,7 +45,7 @@ var Groups = []Group{
 	},
 	{
 		TSName: "AdminState", Prefix: "AdminState",
-		Doc: "Health.admin_state values. disabled/quarantined keep level=healthy on\npurpose — intentionally off is not broken.",
+		Doc: "Health.admin_state values. disabled keeps level=healthy on purpose —\nintentionally off is not broken.",
 	},
 	{
 		TSName: "HealthAction", Prefix: "Action",

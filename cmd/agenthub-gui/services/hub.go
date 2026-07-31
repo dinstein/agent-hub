@@ -48,18 +48,24 @@ const EventPrefix = "agenthub:"
 const (
 	// EventDaemon reports connection state changes to the daemon.
 	EventDaemon = EventPrefix + "daemon"
-	// EventServers/Sessions/Approvals/Activity/Skills mirror the SSE topics.
-	EventServers   = EventPrefix + api.TopicServers
-	EventSessions  = EventPrefix + api.TopicSessions
-	EventApprovals = EventPrefix + api.TopicApprovals
-	EventActivity  = EventPrefix + api.TopicActivity
-	EventSkills    = EventPrefix + api.TopicSkills
+	// EventServers/Sessions/Activity/Skills mirror the SSE topics.
+	EventServers  = EventPrefix + api.TopicServers
+	EventSessions = EventPrefix + api.TopicSessions
+	EventActivity = EventPrefix + api.TopicActivity
+	EventSkills   = EventPrefix + api.TopicSkills
 )
 
 // subscribedTopics is the closed set the bridge subscribes to. Each page
 // filters for the one it cares about on the frontend side.
+//
+// It must stay a subset of what the daemon serves. An unlisted name is a
+// 400 on the subscribe request, so one retired topic left here does not
+// degrade to "that topic is quiet" — it takes the entire event stream
+// down, and the UI falls back to whatever it loaded once. Every entry is
+// therefore an api.Topic* constant: retiring one there breaks this list at
+// compile time instead of at runtime.
 var subscribedTopics = []string{
-	api.TopicServers, api.TopicSessions, api.TopicApprovals,
+	api.TopicServers, api.TopicSessions,
 	api.TopicActivity, api.TopicSkills,
 }
 
@@ -409,9 +415,9 @@ func (h *Hub) startPump() {
 // a Wails event. The api client reconnects internally (with Last-Event-ID
 // resumption), so this loop only has to retry the initial subscribe.
 //
-// Args red line (docs/modules/controlplane.md): approval `pending` frames carry the call
-// arguments. They cross this bridge in memory only — never logged, never
-// written anywhere, and the frontend drops them once the card is gone.
+// The topics are a CLOSED set at the daemon, so subscribedTopics has to be a
+// subset of what it serves: an unlisted name is a 400 on the subscribe, and
+// this loop would then retry forever against an error that cannot clear.
 func (h *Hub) pump(ctx context.Context, c *api.Client) {
 	const (
 		retryMin = 250 * time.Millisecond
@@ -529,10 +535,10 @@ func (h *Hub) ListSkills(ctx context.Context) ([]api.Skill, error) {
 // failure ("this was changed somewhere else, reloaded").
 //
 // It is a kind and not a code because the code is already spoken for:
-// E_STALE_PRECONDITION is one of SEVERAL 409s (a duplicate name, an approval
-// another frontend decided, a skills target that drifted), and none of the
-// others gets better by re-reading. A page that branched on the status or on
-// "some 409" would send the user into a retry loop that cannot succeed.
+// E_STALE_PRECONDITION is one of SEVERAL 409s (a duplicate name, a skills
+// target that drifted, a login already in flight), and none of the others
+// gets better by re-reading. A page that branched on the status or on "some
+// 409" would send the user into a retry loop that cannot succeed.
 const ErrorKindConflict = "conflict"
 
 // MarshalError converts an error into the JSON value the frontend receives
@@ -604,8 +610,8 @@ func MarshalError(err error) []byte {
 // already tearing down, so there is no surface left to report on, and the
 // worst case is the pre-existing behaviour: a daemon outliving the GUI. It
 // is deliberately not escalated to SIGKILL — a daemon that needs longer to
-// drain is finishing work (an approval, a token write), and killing it to
-// speed up our own exit would be the wrong trade.
+// drain is finishing work (a tool call in flight, a token write), and killing
+// it to speed up our own exit would be the wrong trade.
 func stopDaemon(pid int) {
 	if pid <= 0 {
 		return

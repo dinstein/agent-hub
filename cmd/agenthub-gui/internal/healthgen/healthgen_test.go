@@ -49,19 +49,17 @@ func collect(t *testing.T) map[string]string {
 // : no drift between the three ends).
 func TestCollectedConstantsMatchGoPackage(t *testing.T) {
 	want := map[string]string{
-		"HealthLevelHealthy":    api.HealthLevelHealthy,
-		"HealthLevelDegraded":   api.HealthLevelDegraded,
-		"HealthLevelUnhealthy":  api.HealthLevelUnhealthy,
-		"AdminStateEnabled":     api.AdminStateEnabled,
-		"AdminStateDisabled":    api.AdminStateDisabled,
-		"AdminStateQuarantined": api.AdminStateQuarantined,
-		"ActionLogin":           api.ActionLogin,
-		"ActionRestart":         api.ActionRestart,
-		"ActionEnable":          api.ActionEnable,
-		"ActionApprove":         api.ActionApprove,
-		"ActionSetSecret":       api.ActionSetSecret,
-		"ActionViewLogs":        api.ActionViewLogs,
-		"ActionNone":            api.ActionNone,
+		"HealthLevelHealthy":   api.HealthLevelHealthy,
+		"HealthLevelDegraded":  api.HealthLevelDegraded,
+		"HealthLevelUnhealthy": api.HealthLevelUnhealthy,
+		"AdminStateEnabled":    api.AdminStateEnabled,
+		"AdminStateDisabled":   api.AdminStateDisabled,
+		"ActionLogin":          api.ActionLogin,
+		"ActionRestart":        api.ActionRestart,
+		"ActionEnable":         api.ActionEnable,
+		"ActionSetSecret":      api.ActionSetSecret,
+		"ActionViewLogs":       api.ActionViewLogs,
+		"ActionNone":           api.ActionNone,
 	}
 	got := collect(t)
 	for name, value := range want {

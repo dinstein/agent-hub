@@ -59,7 +59,6 @@ import type {
   TokenCreated,
   TokenRevoked,
   TokenSpec,
-  Tool,
 } from "./types";
 import { ErrCode, ErrorKindConflict } from "./types";
 
@@ -247,7 +246,7 @@ export const hub = {
  *  selector therefore offers free text and this returns nothing — a form that
  *  cannot enumerate is honest, one that enumerates from a stale cache is not.
  */
-export async function knownTools(_server: string): Promise<Tool[]> {
+export async function knownTools(_server: string): Promise<string[]> {
   return [];
 }
 
@@ -282,8 +281,8 @@ export function isOffline(err: CallError): boolean {
  *
  * It tests the `kind` the Go side stamps (services.ErrorKindConflict), not
  * the status and not "some 409". The daemon also answers 409 for a name
- * already taken, for an approval someone else decided and for a skills target
- * that drifted; re-reading and retrying fixes none of those, and treating them
+ * already taken, for a login already in flight and for a skills target that
+ * drifted; re-reading and retrying fixes none of those, and treating them
  * as "your view was stale" would send the page into a loop that can never
  * succeed (api/write.go, asConflict). The code is accepted as an equivalent
  * spelling for a services build that predates the kind field.
@@ -339,7 +338,6 @@ export const EVT = {
   daemon: "agenthub:daemon",
   servers: "agenthub:servers",
   sessions: "agenthub:sessions",
-  approvals: "agenthub:approvals",
   activity: "agenthub:activity",
   skills: "agenthub:skills",
 } as const;

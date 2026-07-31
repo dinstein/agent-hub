@@ -416,8 +416,6 @@ func TestRegistryBoundMethods(t *testing.T) {
 				return w.Generation, err
 			},
 		},
-
-		// Tool-level governance and the quarantine.
 	})
 }
 
@@ -539,7 +537,7 @@ func TestWritesEmitNoFrontendEvents(t *testing.T) {
 	if _, err := h.DeleteServer(ctx, "github", readGen); err != nil {
 		t.Fatalf("DeleteServer: %v", err)
 	}
-	for _, name := range []string{EventServers, EventSessions, EventApprovals, EventActivity, EventSkills} {
+	for _, name := range []string{EventServers, EventSessions, EventActivity, EventSkills} {
 		if got := r.byName(name); len(got) != 0 {
 			t.Errorf("a write emitted %d %s events", len(got), name)
 		}

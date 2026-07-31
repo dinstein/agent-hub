@@ -387,10 +387,11 @@ export interface ProfileWrite extends WriteResult {
 // ---------------------------------------------------------------------------
 
 /** api.Binding* — "no profile" is spelled followActive, never an empty name. */
+/** registry.ProfileBindingKind: the two spellings a stored binding has.
+ *  There is no third — "no profile" is followActive, never an empty name. */
 export const Binding = {
   Named: "named",
   FollowActive: "followActive",
-  Inherit: "inherit",
 } as const;
 export type Binding = (typeof Binding)[keyof typeof Binding];
 
@@ -470,77 +471,6 @@ export interface ConfigWrite extends WriteResult {
 
 /** api.ResultBudgetPrefix — the dynamic `resultBudget.<serverID|*>` family. */
 export const ResultBudgetPrefix = "resultBudget.";
-
-// ---------------------------------------------------------------------------
-// Tool-level governance and the integrity quarantine
-// ---------------------------------------------------------------------------
-
-/** One tool's governance state, keyed by (server, RAW tool name). */
-export interface Tool {
-  server: string;
-  tool: string;
-  status?: string;
-  disabled: boolean;
-  approved_hash?: string;
-  current_hash?: string;
-  override_name?: string;
-  override_description?: string;
-}
-
-/** Mirrors api.Tool.Drifted: both hashes must be known — an unknown one is
- *  "we cannot tell", which must not read as "unchanged". */
-export function toolDrifted(t: Tool): boolean {
-  return !!t.approved_hash && !!t.current_hash && t.approved_hash !== t.current_hash;
-}
-
-export interface ToolList {
-  generation: number;
-  tools: Tool[];
-}
-
-/** An override edit: an absent field is left untouched, `clear` drops the
- *  override entirely and is exclusive with the two field edits. */
-export interface ToolOverride {
-  name?: string;
-  description?: string;
-  clear?: boolean;
-}
-
-export interface ToolOverrideValue {
-  name?: string;
-  description?: string;
-}
-
-export interface ToolWrite extends WriteResult {
-  server: string;
-  tool: string;
-  enabled?: boolean;
-  status?: string;
-  override_cleared?: boolean;
-  override?: ToolOverrideValue;
-}
-
-/** One quarantined tool, keyed by the CLIENT-VISIBLE exposed name. */
-export interface QuarantineEntry {
-  exposed: string;
-  server: string;
-  tool: string;
-  reason?: string;
-  pinned_hash?: string;
-  current_hash?: string;
-  at: string;
-}
-
-export interface QuarantineList {
-  generation: number;
-  entries: QuarantineEntry[];
-}
-
-export interface QuarantineRelease extends WriteResult {
-  exposed: string;
-  entry: QuarantineEntry;
-  released: boolean;
-}
 
 // ---------------------------------------------------------------------------
 // Secrets — names only, never values
@@ -809,7 +739,7 @@ export interface AuthLogin {
 }
 
 // ---------------------------------------------------------------------------
-// Sessions / approvals / audit
+// Sessions
 // ---------------------------------------------------------------------------
 
 export interface SessionInfo {
@@ -819,35 +749,6 @@ export interface SessionInfo {
   root?: string;
   profile_name: string;
   last_seen: string;
-}
-
-export interface Approval {
-  token: string;
-  server: string;
-  tool: string;
-  /** Present only on SSE pending frames; displayed, then dropped. */
-  args?: unknown;
-  args_hash?: string;
-  fingerprint?: string;
-  gate_reason?: string;
-  client?: string;
-  session_id?: string;
-  deadline: string;
-  /** "" / absent while pending. */
-  decision?: string;
-  decided_at?: string;
-  decided_by?: string;
-}
-
-export interface ApprovalResolution {
-  token: string;
-  decision: string;
-  decided_by?: string;
-}
-
-export interface ApprovalDecision {
-  decision: string;
-  remember_error?: string;
 }
 
 /** Daemon connection state (services.Status). */

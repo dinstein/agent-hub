@@ -23,24 +23,12 @@ const (
 	// TopicServers carries server list/health changes; its payload is the
 	// full []Server with embedded Health, byte-identical to Servers.List.
 	TopicServers = "servers"
-	// TopicSessions carries session lifecycle and overlay changes.
+	// TopicSessions carries session lifecycle changes.
 	TopicSessions = "sessions"
-	// TopicApprovals carries approval pending/resolved frames.
-	TopicApprovals = "approvals"
-	// TopicActivity carries the live audit/security activity feed.
+	// TopicActivity carries the live token-savings activity feed.
 	TopicActivity = "activity"
 	// TopicSkills carries skills library/install changes.
 	TopicSkills = "skills"
-)
-
-// Event kinds on TopicApprovals. Unknown kinds (e.g. the grant surface's
-// frames) must be ignored, not treated as errors: the topic is shared and
-// the daemon may add kinds a given frontend does not implement.
-const (
-	// KindApprovalPending: payload is an Approval WITH arguments.
-	KindApprovalPending = "pending"
-	// KindApprovalResolved: payload is an ApprovalResolution.
-	KindApprovalResolved = "resolved"
 )
 
 // EventsService subscribes to the daemon event stream
@@ -54,8 +42,14 @@ type EventsService struct {
 }
 
 // Subscribe opens the SSE stream for the given topics ("servers",
-// "sessions", "approvals", "activity", "skills"; empty = all) and returns
-// a channel of decoded events.
+// "sessions", "activity", "skills"; empty = all) and returns a channel of
+// decoded events.
+//
+// The set is CLOSED at the daemon: an unlisted name is a 400, not a
+// subscription that quietly delivers nothing. So a topic retired on the
+// daemon side must be retired here in the same change — leaving the
+// constant behind does not degrade to "that topic is empty", it takes the
+// whole subscription down with it.
 //
 // The initial connection is made synchronously so callers learn
 // immediately when the daemon is down. Afterwards a goroutine keeps the

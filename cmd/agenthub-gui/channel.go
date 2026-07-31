@@ -76,9 +76,9 @@ func applyChannel() {
 // the variable already set above. A Windows control endpoint is a named pipe
 // whose name comes from the user's SID, so it follows nothing: without this, a
 // development GUI would dial \\.\pipe\agenthub-ctl-<sha8(SID)>, which is the
-// INSTALLED RELEASE's endpoint, and then operate on the release's servers,
-// credentials and approvals while its own data directory sat unused. Everything
-// would look like it worked.
+// INSTALLED RELEASE's endpoint, and then operate on the release's servers and
+// credentials while its own data directory sat unused. Everything would look
+// like it worked.
 //
 // AGENTHUB_SOCKET, rather than passing a path into api.StartOptions, for the
 // same reason applyChannel uses the environment at all: DialOrStart spawns

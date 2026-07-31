@@ -12,7 +12,7 @@ import (
 func fullStack(from int) HealthInput {
 	in := HealthInput{}
 	if from <= 1 {
-		in.AdminState = api.AdminStateQuarantined
+		in.AdminState = api.AdminStateDisabled
 	}
 	if from <= 2 {
 		in.MissingSecrets = []string{"API_KEY"}
@@ -74,9 +74,9 @@ func TestComputeHealthMatrix(t *testing.T) {
 			want: api.Health{Level: api.HealthLevelHealthy, AdminState: api.AdminStateDisabled, Summary: "disabled by operator", Action: api.ActionEnable},
 		},
 		{
-			name: "quarantined outranks everything",
+			name: "disabled outranks everything",
 			in:   fullStack(1),
-			want: api.Health{Level: api.HealthLevelHealthy, AdminState: api.AdminStateQuarantined, Summary: "quarantined pending approval", Action: api.ActionApprove},
+			want: api.Health{Level: api.HealthLevelHealthy, AdminState: api.AdminStateDisabled, Summary: "disabled by operator", Action: api.ActionEnable},
 		},
 		// Rung 2: missing secrets outrank OAuth config, connection, token.
 		{

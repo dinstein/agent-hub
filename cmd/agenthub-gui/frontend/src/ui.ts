@@ -88,10 +88,10 @@ export function button(label: string, cls: string, onClick: () => void): HTMLBut
  * the page repaints from what came back, so a write that was refused, lost
  * its precondition or never reached the daemon leaves the switch showing what
  * is actually stored rather than what the user hoped. An optimistic flip that
- * has to be walked back is the failure the approval rows already avoid by
- * greying out instead of vanishing (docs/modules/gui.md §5): for one moment
- * the interface states something untrue, and that is exactly the moment the
- * user looks away satisfied.
+ * has to be walked back is the same failure a removed row avoids by greying
+ * out instead of vanishing (docs/modules/gui.md §2): for one moment the
+ * interface states something untrue, and that is exactly the moment the user
+ * looks away satisfied.
  *
  * `label` names the THING, not the action — "clerk enabled", never "Enable
  * clerk". role="switch" carries on/off in aria-checked already, so a label

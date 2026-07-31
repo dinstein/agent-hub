@@ -162,17 +162,13 @@ const CLI_ACTIONS: Record<string, { label: string; command: string; note?: strin
 
 /** Actions that are just another page of this window. */
 const ROUTE_ACTIONS: Record<string, { label: string; route: string }> = {
-  [HealthAction.Approve]: { label: "Review approvals", route: "#/approvals" },
   [HealthAction.SetSecret]: { label: "Set secret", route: "#/secrets" },
 };
 
 function healthBadge(h: Health): HTMLElement {
-  // A disabled or quarantined server reports level=healthy on purpose
-  // (intentionally off is not broken), so admin state wins the badge.
+  // A disabled server reports level=healthy on purpose (intentionally off
+  // is not broken), so admin state wins the badge.
   const admin = h.admin_state;
-  if (admin === AdminState.Quarantined) {
-    return el("span", { class: "badge badge-quarantined", text: "quarantined" });
-  }
   if (admin === AdminState.Disabled) {
     return el("span", { class: "badge badge-disabled", text: "disabled" });
   }
@@ -205,13 +201,12 @@ type Bucket = "attention" | "active" | "disabled";
 
 /**
  * Bucketing is derived from the Health contract alone, never from the raw
- * connection state: "disabled" and "quarantined" report level=healthy on
- * purpose, and re-deriving severity here is exactly the frontend-invented
- * status docs/modules/controlplane.md forbids.
+ * connection state: "disabled" reports level=healthy on purpose, and
+ * re-deriving severity here is exactly the frontend-invented status
+ * docs/modules/controlplane.md forbids.
  */
 function bucketOf(s: Server): Bucket {
   if (s.health.admin_state === AdminState.Disabled) return "disabled";
-  if (s.health.admin_state === AdminState.Quarantined) return "attention";
   return s.health.level === HealthLevel.Healthy ? "active" : "attention";
 }
 
@@ -1043,18 +1038,6 @@ export function serversPage(): Page {
       ]);
     }
 
-    // quarantined reports level=healthy by contract, so it is handled after
-    // the level check and before the connected one.
-    if (admin === AdminState.Quarantined) {
-      return el("div", { class: "srv-status" }, [
-        el("div", { class: "state-line" }, [
-          dot("warning"),
-          el("span", { class: "state-text t-warning", text: "Quarantined" }),
-        ]),
-        suggestion(s),
-      ]);
-    }
-
     // connected: the TOOL COUNT, not the word "connected". "connected" is
     // already implied by the bucket the row is in and by the green dot; the
     // number is the only thing in this position that answers a question the
@@ -1427,9 +1410,9 @@ export function serversPage(): Page {
       title: `Remove ${s.id}?`,
       body: "The stored definition is deleted from the registry.",
       consequences: [
-        "Credentials stay where they are: nothing in the vault or the OS keychain is touched by this.",
-        "Profiles and client bindings that name this server are deliberately left alone — they resolve to nothing, which is the fail-closed direction.",
-        "Tool-governance records and approvals for it are not removed either.",
+        "Its stored credentials go with it, in the vault and in the OS keychain — an id re-added later must not inherit the last server's token.",
+        "Profiles lose it from their server list and their tool rules; client bindings are untouched, because they name a profile rather than a server.",
+        "Its log file is kept: a log that forgot deleted servers would be worthless as evidence.",
       ],
       confirmLabel: "Remove",
       danger: true,
@@ -1512,7 +1495,6 @@ export function serversPage(): Page {
   function spineTone(s: Server): string {
     const admin = s.health.admin_state;
     if (admin === AdminState.Disabled) return "off";
-    if (admin === AdminState.Quarantined) return "warning";
     if (s.health.level === HealthLevel.Healthy) return "ok";
     if (s.health.level === HealthLevel.Degraded) return "warning";
     return "bad";

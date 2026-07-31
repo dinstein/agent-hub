@@ -43,15 +43,15 @@ var errCacheSealed = errors.New("gateway: tool cache sealed")
 // progress to finish.
 //
 // WHY THIS EXISTS. connectAll starts one goroutine per downstream and nothing
-// joins them: shutdown waits on handlers, the watcher, the policy watcher, the
-// ctl link and the pool, but not on these. A connect that wins the race
+// joins them: shutdown waits on handlers, the watcher, the credential watcher,
+// the ctl link and the pool, but not on these. A connect that wins the race
 // against lifeCtx cancellation goes on to call persistTools, so "the gateway
 // has stopped" and "the gateway is still writing to disk" could both be true
-// at once. For a product that treats on-disk state as governance truth that is
-// worse than the test flake it usually shows up as (a TempDir cleanup failing
-// because <cache>/tools refilled itself): a shutdown triggered BY a policy
-// change could leave behind a tool cache collected under the policy that was
-// just revoked.
+// at once. For a product that treats on-disk state as the source of truth that
+// is worse than the test flake it usually shows up as (a TempDir cleanup
+// failing because <cache>/tools refilled itself): a shutdown triggered BY a
+// configuration change could leave behind a catalog collected under the
+// configuration that was just replaced.
 //
 // Sealing the resource is deliberately not the same fix as joining the
 // goroutines. downstream.Connect is bounded by ConnectTimeout — 120s by

@@ -123,7 +123,7 @@ function cliAdd(e: CatalogEntry, params: Record<string, string> = {}, name = "")
 // Servers page because both are lists of records and there is no reason for
 // them to align differently. It used to be two inline constants here on the
 // theory that this page should not extend the stylesheet; the result was a
-// card borrowing .card from the approvals queue, in a grid whose tracks let
+// card borrowing .card from an unrelated page, in a grid whose tracks let
 // long tokens overflow.
 
 /** internal/catalog.SourcePrefix: how a stored entry says which catalog id
@@ -349,7 +349,7 @@ export function catalogPage(): Page {
   function requirementChips(e: CatalogEntry): Node | null {
     const chips: Node[] = [];
     for (const k of e.required_keys ?? []) {
-      chips.push(el("span", { class: "badge badge-quarantined", text: k }));
+      chips.push(el("span", { class: "badge badge-attention", text: k }));
     }
     if (e.auth === CatalogAuthOAuth) {
       chips.push(el("span", { class: "badge badge-disabled", text: "browser sign-in" }));
@@ -369,7 +369,7 @@ export function catalogPage(): Page {
     // uniform token; a future remote-index or user entry is the case worth
     // interrupting the reader for.
     if (e.provenance && e.provenance !== CatalogProvenance.Curated) {
-      chips.push(el("span", { class: "badge badge-quarantined", text: PROVENANCE_TEXT[e.provenance] ?? e.provenance }));
+      chips.push(el("span", { class: "badge badge-attention", text: PROVENANCE_TEXT[e.provenance] ?? e.provenance }));
     }
     if (chips.length === 0) return null;
     return el("div", { class: "rec-needs" }, chips);

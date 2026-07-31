@@ -17,15 +17,18 @@ const (
 	HealthLevelUnhealthy = "unhealthy"
 )
 
-// AdminState constants (docs/modules/controlplane.md). A disabled or quarantined server
+// AdminState constants (docs/modules/controlplane.md). A disabled server
 // reports Level=healthy on purpose: intentionally off is not broken.
+//
+// There are two, because a server is either in service or switched off.
+// A third value once meant "isolated by the integrity subsystem", and it
+// outranked both — a state nothing can enter is worse than a missing one,
+// because the rung reading it looks like a live branch.
 const (
 	// AdminStateEnabled: the server participates in routing.
 	AdminStateEnabled = "enabled"
 	// AdminStateDisabled: turned off by the operator.
 	AdminStateDisabled = "disabled"
-	// AdminStateQuarantined: isolated by the integrity subsystem.
-	AdminStateQuarantined = "quarantined"
 )
 
 // Action constants (docs/modules/controlplane.md): the machine-readable suggested action
@@ -37,8 +40,6 @@ const (
 	ActionRestart = "restart"
 	// ActionEnable suggests re-enabling a disabled server.
 	ActionEnable = "enable"
-	// ActionApprove suggests resolving a pending approval.
-	ActionApprove = "approve"
 	// ActionSetSecret suggests providing a missing secret.
 	ActionSetSecret = "set_secret"
 	// ActionViewLogs suggests inspecting the per-server log.
@@ -64,7 +65,7 @@ type Health struct {
 	// Level is one of the HealthLevel* constants.
 	Level string `json:"level"`
 	// AdminState is one of the AdminState* constants. When it is
-	// disabled/quarantined, Level stays "healthy" (intentional != broken).
+	// disabled, Level stays "healthy" (intentional != broken).
 	AdminState string `json:"admin_state"`
 	// Summary is a one-line human-readable status.
 	Summary string `json:"summary"`
@@ -103,7 +104,7 @@ type SessionInfo struct {
 
 // Event is one daemon event as delivered over the SSE stream
 // (GET /v1/events). Topic selects the stream ("servers", "sessions",
-// "approvals", "activity", "skills"), Kind the event type within it, and
+// "activity", "skills"), Kind the event type within it, and
 // Rev the registry generation for registry-backed topics. Change events
 // are notifications only — they carry no snapshot; consumers re-read state
 // and apply it when the read generation is >= the applied one

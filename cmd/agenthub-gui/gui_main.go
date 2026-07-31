@@ -51,7 +51,7 @@ func main() {
 		// MarshalError keeps the control-plane error CODE reachable from the
 		// frontend (it arrives as the rejection's `cause`), so pages can tell
 		// "daemon offline" from "endpoint not served yet" from "someone else
-		// already decided this approval".
+		// wrote this first".
 		MarshalError: services.MarshalError,
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(dist),

@@ -75,8 +75,8 @@ export function settingsPage(): Page {
         el("ul", {}, [
           el("li", { text: "agenthub doctor — diagnose configuration and connectivity" }),
           el("li", { text: "agenthub server ls / add — manage downstream servers" }),
-          el("li", { text: "agenthub approval watch — the terminal counterpart of the Approvals page" }),
-          el("li", { text: "agenthub audit tail -f — the full activity stream" }),
+          el("li", { text: "agenthub tool allow — choose which of a server's tools are offered at all" }),
+          el("li", { text: "agenthub activity — the token-savings ledger" }),
           el("li", { text: "agenthub daemon start / stop / restart — lifecycle" }),
         ]),
       ),

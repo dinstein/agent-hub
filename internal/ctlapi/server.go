@@ -63,9 +63,6 @@ type ServerRuntime struct {
 	CallAuthFailed bool
 	// Token is the OAuth token lifecycle state.
 	Token TokenState
-	// Quarantined reports the integrity subsystem has isolated the server;
-	// it overrides the registry enabled flag in AdminState derivation.
-	Quarantined bool
 }
 
 // ServerStateSource supplies runtime state for /v1/servers and the servers

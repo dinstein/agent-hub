@@ -23,12 +23,11 @@ export const HealthLevelValues: readonly HealthLevel[] = [
   HealthLevel.Unhealthy,
 ];
 
-// Health.admin_state values. disabled/quarantined keep level=healthy on
-// purpose — intentionally off is not broken.
+// Health.admin_state values. disabled keeps level=healthy on purpose —
+// intentionally off is not broken.
 export const AdminState = {
   Enabled: "enabled",
   Disabled: "disabled",
-  Quarantined: "quarantined",
 } as const;
 
 export type AdminState = (typeof AdminState)[keyof typeof AdminState];
@@ -36,7 +35,6 @@ export type AdminState = (typeof AdminState)[keyof typeof AdminState];
 export const AdminStateValues: readonly AdminState[] = [
   AdminState.Enabled,
   AdminState.Disabled,
-  AdminState.Quarantined,
 ];
 
 // Health.action values: the machine-readable suggested action that drives
@@ -45,7 +43,6 @@ export const HealthAction = {
   Login: "login",
   Restart: "restart",
   Enable: "enable",
-  Approve: "approve",
   SetSecret: "set_secret",
   ViewLogs: "view_logs",
   None: "",
@@ -57,7 +54,6 @@ export const HealthActionValues: readonly HealthAction[] = [
   HealthAction.Login,
   HealthAction.Restart,
   HealthAction.Enable,
-  HealthAction.Approve,
   HealthAction.SetSecret,
   HealthAction.ViewLogs,
   HealthAction.None,

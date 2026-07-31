@@ -60,12 +60,12 @@ type HealthInput struct {
 // ComputeHealth is the pure function of docs/modules/controlplane.md: it maps one
 // HealthInput to the display contract every frontend renders verbatim.
 //
-// Priority ladder, first match wins (7.4, comment preserved verbatim):
-// admin state → missing secret → OAuth misconfiguration → connection state →
-// call-time OAuth → token state → healthy.
+// Priority ladder, first match wins: admin state → missing secret → OAuth
+// misconfiguration → connection state → call-time OAuth → token state →
+// healthy.
 //
-//  1. AdminState disabled/quarantined: Level=healthy ON PURPOSE — turned
-//     off intentionally is not broken
+//  1. AdminState disabled: Level=healthy ON PURPOSE — turned off
+//     intentionally is not broken
 //     (docs/modules/controlplane.md).
 //  2. Missing secrets: unhealthy, action set_secret.
 //  3. OAuth config error: unhealthy, action login.
@@ -93,20 +93,12 @@ func ComputeHealth(in HealthInput) api.Health {
 	}
 
 	// Rung 1: admin state.
-	switch admin {
-	case api.AdminStateDisabled:
+	if admin == api.AdminStateDisabled {
 		return api.Health{
 			Level:      api.HealthLevelHealthy,
 			AdminState: admin,
 			Summary:    "disabled by operator",
 			Action:     api.ActionEnable,
-		}
-	case api.AdminStateQuarantined:
-		return api.Health{
-			Level:      api.HealthLevelHealthy,
-			AdminState: admin,
-			Summary:    "quarantined pending approval",
-			Action:     api.ActionApprove,
 		}
 	}
 
