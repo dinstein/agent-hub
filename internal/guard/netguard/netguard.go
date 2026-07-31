@@ -21,8 +21,8 @@
 //	d := &net.Dialer{Control: netguard.DialControl}
 //
 // "Private" throughout means "not publicly routable": RFC1918, loopback,
-// link-local, ULA, CGNAT, unspecified, multicast, documentation/benchmark
-// ranges, and v4-mapped v6 forms of all of these.
+// link-local, ULA, deprecated IPv6 site-local, CGNAT, unspecified, multicast,
+// documentation/benchmark ranges, and v4-mapped v6 forms of all of these.
 //
 // Dependency constraint (canonical.md §2 rule 4, depguard-enforced): only
 // the standard library plus internal/guard.
@@ -78,6 +78,16 @@ var nonPublicPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("240.0.0.0/4"),     // reserved (includes broadcast)
 	netip.MustParsePrefix("100::/64"),        // discard-only (RFC 6666)
 	netip.MustParsePrefix("2001:db8::/32"),   // v6 documentation
+
+	// Deprecated IPv6 site-local. netip.Addr has no classifier for it —
+	// IsPrivate covers the ULA replacement fc00::/7 and stops there — so
+	// without this line fec0::1 was not private to AddrIsPrivate, and both
+	// the hostname-time screen and the dial-time DialControl consult that
+	// one function, which is what made a single gap close both doors at
+	// once. Deprecated by RFC 3879 and unroutable on the public internet,
+	// but hosts that still hold a route to it are exactly the hosts where
+	// reaching it means something.
+	netip.MustParsePrefix("fec0::/10"), // site-local (RFC 3879, deprecated)
 
 	// The v4-embedding ranges. All three carry an IPv4 address inside an IPv6
 	// one, so classifying the v6 form on its own merits answers the wrong

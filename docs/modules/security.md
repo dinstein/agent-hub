@@ -251,7 +251,13 @@ predicates and they must never be substituted for each other.
 invalid zero-value `Addr` (fail-closed) and calls `Unmap()` before deciding, so `::ffff:10.0.0.1` is
 classified as `10.0.0.1`. Beyond the standard library's own classifications it additionally covers
 `0.0.0.0/8`, CGNAT `100.64.0.0/10`, the three TEST-NET ranges, benchmark `198.18.0.0/15`,
-`240.0.0.0/4`, and the v6 documentation range.
+`240.0.0.0/4`, the v6 documentation range, and **deprecated IPv6 site-local `fec0::/10`**.
+
+That last one is the shape to watch for in this list: `netip.Addr.IsPrivate` covers the ULA range
+`fc00::/7` that *replaced* site-local, and stops there, so `fec0::1` was not private to
+`AddrIsPrivate` at all. Because the hostname-time screen and the dial-time `DialControl` both consult
+that single function, one missing prefix opened both doors at once — a range being deprecated
+(RFC 3879) makes it *less* likely to be filtered elsewhere on the host, not more.
 
 **Three "v4 wrapped in v6" prefixes need their own coverage**: `64:ff9b::/96` (NAT64), `::/96`
 (IPv4-compatible, deprecated by RFC 4291), and `2002::/16` (6to4, deprecated by RFC 7526). All three

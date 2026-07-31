@@ -62,6 +62,14 @@ func TestAddrIsPrivate(t *testing.T) {
 		// ULA
 		{"fc00::1", true},
 		{"fd12:3456::1", true},
+		// Deprecated site-local: the ULA range above replaced it, and
+		// netip.Addr's IsPrivate follows the replacement only. A host that
+		// still holds a route to fec0::/10 is precisely the host where
+		// reaching it is worth something.
+		{"fec0::1", true},
+		{"feff:ffff:ffff:ffff::1", true},
+		{"fe00::1", false}, // just below the range: still public
+		{"ff00::1", true},  // just above: multicast, already covered
 		// CGNAT
 		{"100.64.0.1", true},
 		{"100.127.255.255", true},
