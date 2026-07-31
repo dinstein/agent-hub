@@ -15,9 +15,15 @@ import (
 type ConnState string
 
 const (
-	ConnUnknown      ConnState = ""
-	ConnConnected    ConnState = "connected"
-	ConnConnecting   ConnState = "connecting"
+	ConnUnknown    ConnState = ""
+	ConnConnected  ConnState = "connected"
+	ConnConnecting ConnState = "connecting"
+	// ConnDisconnected is understood but never reported: no state source in
+	// the tree emits it (internal/downstream reports connecting/connected/
+	// error, and a gateway that drops a connection stops reporting rather
+	// than reporting a state). The handling stays because the fold and
+	// ComputeHealth would otherwise treat it as unrecognized the day
+	// something does.
 	ConnDisconnected ConnState = "disconnected"
 	ConnError        ConnState = "error"
 )

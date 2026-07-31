@@ -17,7 +17,14 @@ import (
 // ConnState is the observed connection condition of one downstream server.
 // The values are the wire strings of ctlapi.ConnState — this package must
 // not import the control plane, so the two are kept in sync by the string
-// values and by a contract test on the ctlapi side.
+// values alone, and by TestDownstreamConnStatesAreKnownHere on the ctlapi
+// side. That test is what makes this comment true; it did not exist for as
+// long as the comment claimed it.
+//
+// Adding a state here means adding it there too, in the same change: an
+// unrecognized value ranks above every known one in the control plane's
+// worst-wins fold, so a new state arrives as "unknown connection state" on a
+// server that is working.
 type ConnState string
 
 // Connection states reported by Health.
