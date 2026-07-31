@@ -37,6 +37,29 @@ type ProfileResult struct {
 	ActiveCleared bool
 }
 
+// validateProfileName rejects the names a front end cannot render
+// unambiguously. Empty is the obvious one; a leading "(" is the reserved
+// shape of the DISPLAY tokens — "(default)", "(all registered)", "(none)" —
+// which stand for things that are not profiles. A profile literally named
+// "(default)" would put two different meanings in one column of `profile ls`
+// and one of `client ls`, and the reader has no way to tell them apart.
+//
+// The rule is here rather than in the CLI because both front ends write
+// through these operations: a name the control plane accepts and the CLI
+// cannot display is the same ambiguity arriving by a different door.
+func validateProfileName(name, subject string) error {
+	if name == "" {
+		return usagef("%s must not be empty", subject)
+	}
+	if strings.HasPrefix(name, "(") {
+		e := usagef("%s must not start with \"(\"", subject)
+		e.Hint = "names in parentheses are reserved for what the listings mean by (default), " +
+			"(all registered) and (none)"
+		return e
+	}
+	return nil
+}
+
 // CreateProfile adds an empty (or pre-populated) profile.
 //
 // servers keeps the three-state distinction: nil means "no narrowing at all"
@@ -47,8 +70,8 @@ func CreateProfile(
 	ctx context.Context, st *registry.Store, name string, servers []string, pre Precondition,
 ) (ProfileResult, error) {
 	name = strings.TrimSpace(name)
-	if name == "" {
-		return ProfileResult{}, usagef("profile name must not be empty")
+	if err := validateProfileName(name, "profile name"); err != nil {
+		return ProfileResult{}, err
 	}
 	var p registry.Profile
 	res, err := apply(ctx, st, pre, func(tx *registry.Tx) error {
@@ -83,8 +106,8 @@ func RenameProfile(
 	ctx context.Context, st *registry.Store, oldName, newName string, pre Precondition,
 ) (ProfileResult, error) {
 	newName = strings.TrimSpace(newName)
-	if newName == "" {
-		return ProfileResult{}, usagef("the new profile name must not be empty")
+	if err := validateProfileName(newName, "the new profile name"); err != nil {
+		return ProfileResult{}, err
 	}
 	if oldName == newName {
 		return ProfileResult{}, usagef("the new profile name is the same as the old one")

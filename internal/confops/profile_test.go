@@ -455,3 +455,31 @@ func TestSetProfileDiscovery(t *testing.T) {
 	_, err = SetProfileDiscovery(ctx, st, "ghost", "lazy", Precondition{})
 	wantErrorKind(t, err, KindNotFound, CodeProfileNotFound)
 }
+
+// TestProfileNameCannotShadowADisplayToken: `profile ls` prints "(default)"
+// for the fallback an unbound client follows, and `client ls` prints the same
+// token in its PROFILE column. A profile that could be named "(default)" would
+// make those cells mean two things at once, so the name is refused on the way
+// in — by create AND by rename, since a rename is otherwise a second door to
+// the same name.
+func TestProfileNameCannotShadowADisplayToken(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+
+	for _, name := range []string{"(default)", "(none)", "(all registered)"} {
+		_, err := CreateProfile(ctx, st, name, nil, Precondition{})
+		wantErrorKind(t, err, KindUsage, CodeUsage)
+		if _, ok := st.Snapshot().Profiles.V.Profiles[name]; ok {
+			t.Errorf("profile %q was created anyway", name)
+		}
+	}
+
+	if _, err := CreateProfile(ctx, st, "work", nil, Precondition{}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	_, err := RenameProfile(ctx, st, "work", "(default)", Precondition{})
+	wantErrorKind(t, err, KindUsage, CodeUsage)
+	if _, ok := st.Snapshot().Profiles.V.Profiles["work"]; !ok {
+		t.Error("the refused rename removed the original profile")
+	}
+}
