@@ -74,16 +74,18 @@ Before profiles, there is the blunter tool. A server offers everything it has,
 including anything it gains in a later version; naming tools fixes the set:
 
 ```bash
-agenthub server tool ls --rules                 # what the rules are today
+agenthub server ls                              # what the rules are today
 agenthub server tool allow github --only get_issue,list_prs
 agenthub server tool allow github --none        # offer nothing from this server
 agenthub server tool allow github --all         # back to offering everything
 ```
 
-Read the rules before writing one: `allow` **replaces** the list rather than
-adding to it. And say which of the three you mean — a bare `server tool allow
-github` is a usage error, because the reading it would otherwise have had
-("offer nothing") sits one forgotten argument from the opposite of the intent.
+Read the rule before writing one: `allow` **replaces** the list rather than
+adding to it. `server ls` grows a TOOLS column as soon as any server carries a
+rule, and `agenthub server inspect github` spells that one out, names included.
+And say which of the three you mean — a bare `server tool allow github` is a
+usage error, because the reading it would otherwise have had ("offer nothing")
+sits one forgotten argument from the opposite of the intent.
 
 This is **for every client at once**, the tool-level twin of `server disable`.
 It is an allow list and never a deny list, and the difference shows up on the
@@ -91,10 +93,12 @@ day the server adds a tool: with a rule in place the new tool stays out until
 you add it, which is the closed direction. No profile can put back what this
 takes away.
 
-`agenthub server tool ls` lists what is offered after the rule and counts what
-it holds back; `--all` shows those too, with the state of each. When one tool
-is missing from a client and it is not clear which layer took it, `agenthub
-server tool inspect github__get_issue` names the one that did.
+The rules and their effect are two questions with two answers. `agenthub server
+ls` and `server inspect` say what the rules *are*; `agenthub server tool ls`
+lists what is actually offered after them and counts what they hold back, and
+`--all` shows those too with the state of each. When one tool is missing from a
+client and it is not clear which layer took it, `agenthub server tool inspect
+github__get_issue` names the one that did.
 
 ## Profiles: when you want less than everything
 
@@ -104,6 +108,11 @@ agenthub profile server add research linear      # <profile> then <server>
 agenthub profile tool allow research linear --only list_issues,get_issue
 agenthub client bind cursor research
 ```
+
+The same three commands as one layer up, one argument deeper: `agenthub profile
+tool ls research` lists what the profile actually lets through — the machine's
+rules and the profile's own, intersected, which is what a bound client gets —
+and `--all` adds the ones held back, each with the layer that took it.
 
 `agenthub client ls` shows who is on which profile, and whether agenthub is
 in their config at all. `agenthub client unbind cursor` returns it to the
@@ -295,7 +304,7 @@ anything is being traced — that is where to look when you cannot remember.
 |---|---|
 | a server you added never shows up | `server add` leaves it switched off — check `server ls`, then `agenthub server enable <id>` |
 | client sees no tools at all | bound to a profile that does not exist (`client ls` shows `MISSING`), or it was never restarted after `client connect` |
-| a tool disappeared | an allow list took it — `agenthub server tool inspect <exposed-name>` names which layer, and answers it in one command rather than reading `server tool ls --rules` and `profile ls` against each other |
+| a tool disappeared | an allow list took it — `agenthub server tool inspect <exposed-name>` names which layer, and answers it in one command rather than reading `server ls` and `profile ls` against each other |
 | a server works in `server test` but not in the client | the client has not been restarted, or its profile does not include that server |
 | `client connect` seems to do nothing | it edits a file; the client reads that file at startup |
 | a legacy `projects` block in `clients.json` | per-project bindings were retired. The block is preserved but inert — it used to narrow, so leaving it does not restrict anything now |

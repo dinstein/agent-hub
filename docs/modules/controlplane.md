@@ -706,8 +706,23 @@ violations); and **every command must be able to take `--json`** (it is a persis
 really asserts is that no command shadows or removes it). Action/streaming groups (daemon, auth, activity,
 events, config, doctor, connect) keep their names and get no plural alias. There is no `scope` group: binding a
 client to a profile is `client bind` / `client unbind` / `client ls`, and the narrowing itself is `profile server`
-/ `profile tool allow` / `profile discovery` — spelled exactly like `server tool allow`, the same edit one layer up. Every group invoked bare prints help and exits 0,
+/ `profile tool` / `profile discovery` — spelled exactly like `server tool`, the same commands one layer up. Every group invoked bare prints help and exits 0,
 and an unknown subcommand exits 2.
+
+**The `tool` group is `ls | inspect | allow` at BOTH altitudes, and the test lists both** (canonical.md §7.8). The pair had
+matching writers and a reader at the global altitude only, so "what does this profile actually let through" — the intersection,
+which is the sole thing a bound client gets — had no command and was left to the reader per tool. `profile tool ls` is the same
+rendering of the same catalog with one more layer merged in, and `TestBothToolListingsTakeTheSameFlags` compares the two flag
+sets directly: a flag added to one and forgotten on the other is how one mechanism quietly becomes two. `inspect` is the
+exception that proves the rule — it is inherently cross-layer, so there is ONE implementation and `profile tool inspect` is that
+report narrowed after it is computed, keeping the machine-wide verdict because that layer can still be the answer.
+
+**A rule is reported by the resource that stores it; a listing reports its effect.** The global allow list is a field on the
+server entry, so `server ls` carries it in a TOOLS column and `server inspect` spells it out with the names — as `profile ls`
+has carried a profile's selectors all along. It is why `server tool ls --rules` is hidden and going: a boolean that swaps the
+row type answers with two JSON contracts from one command, and it was the rule's only reader while the two views that describe
+a server had it in neither. The `ls` column follows the AUTH/TRACE rule and appears only when some server carries a rule; a
+column that reads the same on every row for the rest of time is one readers learn to skip.
 
 **`(default)` is one token across every listing that renders a binding.** The fallback an unbound client
 follows is a *display* row, not an object: `profile ls` heads its table with it (always, and carrying
@@ -756,7 +771,9 @@ authenticates something would start hiding ordinary configuration; the `--json` 
 hold the file.
 
 **`server inspect` is the one view of a WHOLE server, and it is laid out as four sections** (`internal/cli/serverinspect.go`):
-`configuration` (target, cwd, container run line, derive policy, a declared-local endpoint, the trace file, env and headers),
+`configuration` (target, cwd, the tool allow list, container run line, derive policy, a declared-local endpoint, the trace file,
+env and headers — the allow list on **every** report including "all", because unlike the rest of them the absence of a rule is
+exactly what a missing line cannot express),
 `credentials` (the classification below, the login hints, the per-key vault state), `visibility` (below), and `status` (the
 daemon's live view, then the dated tool cache). A section prints only when it has something to say, so a plain local subprocess
 still fits in a few lines. Two of its lines exist because nothing else prints them: **`spawns` is the exact `docker run` argv the
@@ -856,7 +873,12 @@ subscription can.
 offline path and a future daemon-mediated path won't lose each other's updates. `server tool ls` reads the catalog through
 `internal/router` + `internal/discovery`, **using the same ranker as the gateway's `search_tools`**, avoiding two rankings —
 and applies the global allow list by merging `scope.ServerToolsLayer`, so the listing screens through
-`pipeline.ScopeAllows` exactly as a live call does rather than re-deciding visibility for itself.
+`pipeline.ScopeAllows` exactly as a live call does rather than re-deciding visibility for itself. `profile tool ls` stacks
+`scope.PinnedProfileLayer` on top of that (fail-closed on a name that does not resolve, like every other reader of it) and
+**attributes the difference between the two merges** to the layer that closed it, so which layer blocked a tool is derived from
+the same merge as the verdict. Only one distinction is read off the profile document — server-not-included versus
+selector-excludes — and only for tools the merge has already dropped, because those two need different repair commands and no
+merge result can tell them apart.
 
 **`confops.go` is the bridge to `internal/confops`**: it translates confops' Kind + stable machine code into the
 CLI's own `*Error`, which is how the frozen exit code table and `--json` failure envelope stayed **word for word

@@ -198,11 +198,12 @@ func (a *App) newToolCmd() *cobra.Command {
 		Short:   "See and narrow the tools the servers contribute",
 		Long: "What the servers on this machine offer, and how much of it they are\n" +
 			"allowed to offer.\n\n" +
-			"  server tool ls           what is offered right now\n" +
-			"  server tool ls --rules   the allow lists themselves\n" +
-			"  server tool inspect      one tool, and every layer's verdict on it\n" +
-			"  server tool allow        change what a server offers, for every client\n\n" +
-			"'agenthub profile tool allow' is the same edit one layer down, with the\n" +
+			"  server tool ls        what is offered right now\n" +
+			"  server tool inspect   one tool, and every layer's verdict on it\n" +
+			"  server tool allow     change what a server offers, for every client\n\n" +
+			"The rules themselves are on the servers that hold them: 'agenthub server ls'\n" +
+			"has a TOOLS column and 'agenthub server inspect <server>' spells one out.\n\n" +
+			"'agenthub profile tool' is the same three commands one layer down, with the\n" +
 			"same flags: this decides what the machine offers at all, that decides what\n" +
 			"a profile passes on. The two intersect; neither can widen.",
 		Args: cobra.ArbitraryArgs,

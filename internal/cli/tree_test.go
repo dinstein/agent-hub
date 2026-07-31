@@ -104,7 +104,10 @@ func TestCommandTreeCoversDesign(t *testing.T) {
 		"agenthub server inspect", "agenthub server test",
 		"agenthub profile ls", "agenthub profile create", "agenthub profile rm",
 		"agenthub profile rename", "agenthub profile use",
-		"agenthub profile server add", "agenthub profile server rm", "agenthub profile tool allow",
+		"agenthub profile server add", "agenthub profile server rm",
+		// The tool group is the same three commands at both altitudes; a
+		// listing that existed at one and not the other is what this pins.
+		"agenthub profile tool ls", "agenthub profile tool inspect", "agenthub profile tool allow",
 		"agenthub profile discovery",
 		"agenthub client detect", "agenthub client inspect", "agenthub client connect",
 		"agenthub client disconnect",

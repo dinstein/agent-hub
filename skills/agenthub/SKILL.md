@@ -150,13 +150,14 @@ agenthub profile tool allow research brave --only search   # inside one profile
 **Layer 1 — the server.** `--only a,b` offers exactly those, `--none` offers nothing (the server stays registered), `--all` drops the rule.
 
 ```bash
-agenthub server tool ls --rules          # READ FIRST: every server's rule, all three states
+agenthub server ls                       # READ FIRST: the TOOLS column is every server's rule
+agenthub server inspect brave            # that one rule spelled out, names included
 agenthub server tool ls brave            # what it actually offers now
 agenthub server tool ls brave --all      # plus what the rule holds back, state per tool
 agenthub server tool allow brave --only search
 ```
 
-- **Read `--rules` before writing.** `allow` **replaces** the list, it does not add to it.
+- **Read the rule before writing.** `allow` **replaces** the list, it does not add to it. The rule lives on the server (`server ls` / `server inspect`); `server tool ls` is its effect.
 - A bare `server tool allow brave` is a **usage error**, not "allow nothing" — say `--none`.
 - `server tool inspect brave__search` says which layer blocks one tool, when a client cannot see it.
 
@@ -166,6 +167,8 @@ agenthub server tool allow brave --only search
 agenthub profile create research
 agenthub profile server add research brave
 agenthub profile tool allow research brave --only search    # or --all / --none
+agenthub profile tool ls research                           # what it lets through, both layers intersected
+agenthub profile tool ls research --all                     # plus what was held back, and by which layer
 agenthub profile discovery research lazy                    # or grouped / full / -
 agenthub client bind cursor research                        # takes effect on running sessions
 agenthub client unbind cursor
@@ -173,7 +176,8 @@ agenthub profile use research    # fallback for every unbound client ("-" clears
 ```
 
 - Both layers take the server's **own** names (`search`), not the exposed `brave__search`. Get names from `server tool ls <id>` or `server test <id> --tools`.
-- A misspelled name is stored and only warned about. `--only` is an intersection — one typo lets **nothing** through. It shows up as `pending` in `server tool ls` and marked `!` in `--rules`; nothing else ever mentions it again.
+- `ls | inspect | allow` exist at both altitudes and take the same flags. `profile tool ls --all` names the layer that took each tool — `global`, `profile:servers` (the profile omits that server) or `profile:tools` — because the three need different repairs.
+- A misspelled name is stored and only warned about. `--only` is an intersection — one typo lets **nothing** through. It shows up as `pending` in the `tool ls` of whichever layer holds it, and marked `!` in `server ls` / `server inspect`; nothing else ever mentions it again.
 - **These are allow lists.** A tool the server adds tomorrow stays out until you add it, and there is no `deny` form at either layer.
 - Binding to a nonexistent profile is accepted and **fail-closes to an empty scope**. Client seeing nothing → check `client ls` for `MISSING` before suspecting servers. An active profile that does not exist fail-closes every *unbound* client the same way, marked on the `(default)` row.
 - `(default)` in either listing is the fallback an unbound client follows, not a profile: `profile ls` heads its table with it, `client ls` prints it in the PROFILE column (`(default) -> research` when one is active), and `profile use` is the only thing that moves it. Profile names may not start with `(`.

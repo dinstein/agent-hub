@@ -84,6 +84,7 @@ the rule unprovable.
 | `agenthub tool allow <server>` (bare = block all) | `agenthub server tool allow <server> --none` |
 | `agenthub tool allow <server> --clear` | `agenthub server tool allow <server> --all` |
 | `agenthub profile tools <profile> <server>` | `agenthub profile tool allow …` (the one-release shim shipped in v0.14.0 and is gone; `tools` now aliases the group, per §3) |
+| `agenthub server tool ls --rules` | `agenthub server ls` (a TOOLS column) / `agenthub server inspect <server>` (hidden flag for one release, §7.8) |
 | the execute pipeline living inside `internal/gateway` | a standalone `internal/pipeline`; `gateway`/`daemon` only do assembly |
 | `catalog.Snapshot` (tool catalog snapshot) | `router.Catalog`; `internal/catalog` is the curated *server* catalog |
 
@@ -129,14 +130,20 @@ the change is sealed inside one package, rather than borrowing one now.
   hangs off `server`: `server tool ls` / `server tool inspect` / `server tool allow`. While it was at
   the top level it was also in the withheld group, which shipped a global allow list with no
   advertised way to read or write it
-- **The two narrowing layers are one command at two altitudes**: `server tool allow <server>` and
-  `profile tool allow <profile> <server>`, both taking `--only a,b | --all | --none`. They
-  intersect and neither can widen. Spelling them differently — which they were, `tool allow` with a
-  positional list against `profile tools --only` — invites a second mental model of one mechanism,
-  and the pair that must not be confused (`--all` drops the rule, `--none` stores the empty list) is
-  exactly the pair a second model gets backwards
+- **The two narrowing layers are one command at two altitudes**: `server tool ls | inspect | allow`
+  and `profile tool ls | inspect | allow`, the writes both taking `--only a,b | --all | --none` and
+  the listings both taking `--search | --all`. They intersect and neither can widen. Spelling them
+  differently — which they were, `tool allow` with a positional list against `profile tools --only`
+  — invites a second mental model of one mechanism, and the pair that must not be confused (`--all`
+  drops the rule, `--none` stores the empty list) is exactly the pair a second model gets backwards.
+  A command present at one altitude and missing at the other does the same thing more quietly
+- **A rule is read where it is stored; a listing reads its effect.** The global allow list is a
+  field on the server entry, so `server ls` and `server inspect` report it and `profile ls` reports
+  a profile's selectors; `server tool ls` and `profile tool ls` list the tools those rules leave
+  offered (§7.8). A flag that swaps a listing's row type is a second command wearing a flag — which
+  is what `server tool ls --rules` was, and why it is going
 - **There is no `scope` group.** Narrowing is what a profile *is*, so it lives on `profile`
-  (`profile server` / `profile tool allow` / `profile discovery`), and handing a surface out lives on
+  (`profile server` / `profile tool` / `profile discovery`), and handing a surface out lives on
   `client` (`client bind <client> <profile>` / `client unbind` / `client ls`). The retired group maps
   one-to-one: `scope set --client X --profile P` → `client bind X P`, `scope clear --client X` →
   `client unbind X`, `scope ls` → `client ls`
@@ -463,6 +470,33 @@ silently reopened, and the numbering is cited from code.
    list) is precisely what a second spelling gets backwards. There is still no `deny` verb at either
    altitude — allow and deny answer the arrival of a tool the downstream adds tomorrow in opposite
    directions.
+8. ~~Where the tool RULES are read, now that they are written identically at both altitudes~~ →
+   **Decided: a rule is reported by the resource that stores it; a listing reports the effect.**
+   `server ls` / `server inspect` carry the global allow list, `profile ls` carries a profile's
+   selectors as it always did, and `server tool ls` / `profile tool ls` list the tools each layer
+   leaves offered. `server tool ls --rules` is hidden and goes at the next release.
+
+   §7 fixed the writing and left the reading half-built. The rule got exactly one reader — a
+   `--rules` flag that swapped the row type, so one command answered with two JSON contracts (one
+   row per server, or one row per tool) — while the two commands that *describe* a server carried
+   the field in neither, which is the fault §7 itself recorded and did not repair. And the reading
+   existed at one altitude only: `server tool ls` said what the machine offered, `profile ls` said
+   what a profile narrowed, and the intersection — the only thing a bound client actually gets —
+   was left to the reader, per tool, in their head. That is the arithmetic `server tool inspect`
+   exists to stop them doing, and nothing was doing it at listing granularity.
+
+   Two consequences worth keeping: the rule appears in `server ls` **only when some server carries
+   one** (the AUTH/TRACE rule — a column that never varies is a column readers learn to skip), and
+   `profile tool ls --all` names WHICH layer took each tool, split three ways because the repairs
+   are three different commands (`server tool allow`, `profile server add`, `profile tool allow`).
+
+   What must not be re-simplified: the layer that blocked is derived from the same `scope.Merge` as
+   the verdict, never from a second reading of the rules — the split between "the profile excludes
+   the server" and "the profile's selector excludes the tool" is the only thing read off the
+   profile, and only for tools the merge has already dropped. And `inspect` stays ONE
+   implementation: it is inherently cross-layer, so `profile tool inspect` is that same report
+   narrowed after it is computed, with the machine-wide verdict deliberately kept — a report that
+   hid it would say a profile allows something no client can reach.
 
 ---
 

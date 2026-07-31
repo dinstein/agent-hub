@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/spf13/pflag"
 )
 
 func profileToolRows(t *testing.T, args ...string) map[string]ToolRow {
@@ -174,5 +177,34 @@ func TestProfileToolInspectDefaultLineStaysAboutThisProfile(t *testing.T) {
 	}
 	if !strings.Contains(out, `through profile "work"`) {
 		t.Errorf("the identity line must carry the focus:\n%s", out)
+	}
+}
+
+// The two listings are one mechanism at two altitudes, and the flags are half
+// of what makes that true: a flag added to one and forgotten on the other
+// leaves an operator holding two mental models of one thing.
+func TestBothToolListingsTakeTheSameFlags(t *testing.T) {
+	root := newTestRoot(t)
+	flagsOf := func(path ...string) []string {
+		t.Helper()
+		cmd, _, err := root.Find(path)
+		if err != nil {
+			t.Fatalf("%v: %v", path, err)
+		}
+		var names []string
+		cmd.Flags().VisitAll(func(f *pflag.Flag) {
+			if f.Hidden {
+				return // a deprecated spelling is not part of the contract
+			}
+			names = append(names, f.Name)
+		})
+		slices.Sort(names)
+		return names
+	}
+	server := flagsOf("server", "tool", "ls")
+	profile := flagsOf("profile", "tool", "ls")
+	if !slices.Equal(server, profile) {
+		t.Errorf("the two listings have drifted apart:\n  server tool ls:  %v\n  profile tool ls: %v",
+			server, profile)
 	}
 }
