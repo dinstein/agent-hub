@@ -2,7 +2,10 @@
 
 A read-only sweep over the tree, run as a **workflow**: Claude and Codex review the same shards
 concurrently and independently, every finding is then attacked by verifiers, and one adjudication
-pass merges what survives. Nothing writes to the tree until step 4.
+pass merges what survives.
+
+**The sweep ends at a report.** Steps 0–3 change nothing in the tree; step 3 hands the ranked list to
+the user and waits. Steps 4–5 run only over the findings they named.
 
 Not `/security-review`, which reviews the pending diff on a branch — that never finds anything older
 than the newest branch. Not [nightly-tidy.md](nightly-tidy.md), which may not change behaviour.
@@ -83,7 +86,7 @@ the sweep's health check — no overlap means the shards were cut wrong; near-to
 the brief was wrong, not that the tree is clean.
 
 Read the returned list yourself. That reading is not delegated: it is the only place the whole
-picture exists.
+picture exists — and step 3 cannot be written from the workflow's return value alone.
 
 ### The brief every finder gets
 
@@ -100,19 +103,35 @@ fix when both engines report the same non-bug:
 - Read the shard's [docs/modules/](../docs/modules/) file first. Several things here look redundant
   and are load bearing; that file is where the reason was written down.
 
-## 3. Reproduce
+## 3. Report and stop
 
-Every confirmed finding earns a **failing test on `main`** before it earns a patch. A test that fails
-confirms it and is the first half of the fix commit; one that passes refutes it and gets deleted.
+Per finding: title, `file:line`, the concrete failure path, the evidence, the fix direction, and
+`confirmed` or `single-engine`. Then adjudication's counts — four findings is a different claim after
+forty refutations than after four.
+
+**Nothing is fixed until the user names which findings to fix.** Approval covers the list as
+reported: not what the sweep raises afterwards, and not a fix that turns out to need an invariant
+relaxed. A sweep arriving with a branch already open has taken the one decision here that is not
+technical — whether a risk is worth changing the tree for — from the person who lives with both.
+
+Declined and unanswered findings get their `docs/modules/` line, beside the invariant they bend. That
+is a tree change like any other, so it lands on step 5's branch; if nothing was approved, it *is* the
+branch.
+
+## 4. Reproduce
+
+Only approved findings reach this step. Each earns a **failing test on `main`** before it earns a
+patch. A test that fails confirms it and is the first half of the fix commit; one that passes refutes
+it, gets deleted, and goes back to the user — they approved a fix for something that is not there.
 
 **A finding with neither a failing test nor quoted proof does not get fixed.** It gets a line in the
 owning `docs/modules/` file saying it was raised and could not be reproduced. An unverified fix to a
 fail-closed gate changes the failure direction of code nobody could demonstrate was wrong.
 
-## 4. Fix and land
+## 5. Fix and land
 
-One worktree by [new-feature.md](new-feature.md); the confirmed findings are the subtask list and
-therefore the PR body.
+One worktree by [new-feature.md](new-feature.md); the **approved** findings are the subtask list and
+therefore the PR body. Confirmed but unapproved is not the same set, and does not appear here.
 
 - **One commit per finding**, its test first, in the same commit.
 - **Parallel fixers only over non-overlapping file sets** — two in one package cost more to referee
@@ -121,7 +140,7 @@ therefore the PR body.
   identifier. Those are design decisions wearing a bug's clothes, and AGENTS.md already says which
   one bends.
 - **A fix that only works by relaxing an invariant is not a fix.** Record it beside the invariant and
-  leave it for its own branch, with its own argument.
+  bring it back: they approved closing a hole, not bending a rule. Its own branch, its own argument.
 - A fix changing a failure direction updates that `docs/modules/` file in the same commit.
 - A parser fix gets `make fuzz FUZZ=<target>` — `make ci` runs only the seed corpora.
 
@@ -130,10 +149,14 @@ therefore the PR body.
 **Per shard:** stop when Find returns nothing clearing the concrete-failure bar. Do not re-run hoping
 for a different answer — two engines disagreeing is signal, the same engine twice is noise.
 
-**Per sweep:** one branch, landed or discarded the same day. Confirmed findings sitting unfixed is
-the worst state this loop can end in — the knowledge exists and nothing in the tree records it.
+**Per sweep:** the sweep ends at step 3's report — a complete run, not an abandoned one. The approval
+starts a branch, and that branch lands or is discarded the same day.
 
-**Across sweeps:** fixed is in `git log`, refuted is in `docs/modules/`. A ledger goes stale first.
+**The bad end is a finding nobody wrote down, not one nobody fixed.** Waiting for an answer is the
+expected shape; closing the sweep with knowledge that lives only in a chat log is not.
+
+**Across sweeps:** fixed is in `git log`; refuted, declined and unanswered are in `docs/modules/`. A
+ledger goes stale first.
 
 ## When it goes wrong
 
@@ -149,3 +172,4 @@ the worst state this loop can end in — the knowledge exists and nothing in the
 | A finding calls a check redundant with the one above | Usually the second of two independent gates | Never collapse a fail-closed path |
 | A boundary returns nothing, twice, across sweeps | Possibly true, possibly unreviewable | Check the shard named files that exist — an empty shard and a mistyped path read identically |
 | `git status` dirty after step 2 | A finder wrote despite being read-only | Discard and re-run the whole sweep; every line number is now unverifiable |
+| A branch or a test exists before the user answered | Step 3's gate was skipped | Discard the branch, not the findings — the list is still good |
