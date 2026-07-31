@@ -607,9 +607,20 @@ func (g *gateway) inflightLen() int {
 	return len(g.inflight)
 }
 
-// callClient performs one gateway→client reverse RPC (roots/list) over the
-// upstream channel. Replies are matched by id in the read loop.
+// callClient performs one gateway→client reverse RPC (roots/list today) over
+// the upstream channel. Replies are matched by id in the read loop.
+//
+// A stateless (2026-07-28) session is refused HERE, not only at the call
+// site. 2026-07-28 removed server-initiated requests, so such a frame is a
+// wire error rather than a question, and this function takes the method as a
+// string: the next reverse RPC someone adds would otherwise inherit the
+// exemption silently. clientRoots.fetchFromClient checks the same flag first
+// — that one is the semantic answer ("do not ask"), this one makes it
+// unrepresentable.
 func (g *gateway) callClient(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	if g.statelessSession() {
+		return nil, fmt.Errorf("gateway: refusing %s reverse RPC: the session is stateless (2026-07-28 has no server-initiated requests)", method)
+	}
 	id := mcp.NewStringID(fmt.Sprintf("agenthub-%d", g.nextReqID.Add(1)))
 	ch := make(chan *mcp.Response, 1)
 	g.mu.Lock()

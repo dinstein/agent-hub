@@ -180,3 +180,35 @@ func TestLegacySessionNeverSeesResultType(t *testing.T) {
 		t.Fatalf("legacy session saw resultType: %s", resp.Result)
 	}
 }
+
+// TestCallClientRefusesAStatelessSession pins the invariant at the level the
+// documentation states it: "a stateless session is never sent a reverse RPC",
+// full stop, rather than "clientRoots remembers not to".
+//
+// The guard used to live only in clientRoots.fetchFromClient, which is the
+// single caller today. callClient takes the method as a STRING, so the second
+// reverse RPC anyone adds would have inherited the exemption without a
+// compiler or a test saying anything — and the symptom is a frame a
+// 2026-07-28 client is entitled to treat as a protocol error, from a session
+// that never agreed to receive requests at all.
+//
+// The gateway here is deliberately built with a nil FrameWriter: if the guard
+// ever stops firing, this test does not fail on an assertion, it panics on the
+// write, which is the loudest available proof that no frame was sent.
+func TestCallClientRefusesAStatelessSession(t *testing.T) {
+	g := &gateway{stateless: true}
+
+	got, err := g.callClient(context.Background(), mcp.MethodRootsList, nil)
+	if err == nil {
+		t.Fatal("callClient answered a stateless session; it must refuse before writing a frame")
+	}
+	if got != nil {
+		t.Fatalf("callClient returned %s alongside its refusal", got)
+	}
+	for _, want := range []string{mcp.MethodRootsList, "stateless"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal %q does not mention %q; an operator reading it "+
+				"has to know which call was dropped and why", err, want)
+		}
+	}
+}
