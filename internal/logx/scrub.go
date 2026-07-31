@@ -16,12 +16,34 @@ const Redacted = "[REDACTED]"
 // harmless value) are acceptable; a leaked credential is not. Do not narrow
 // these patterns to make log output prettier.
 var (
-	// Keys whose name contains a sensitive word, in key=value / key: value
-	// form (covers AGENTHUB_SECRET_*=..., api_key=..., Authorization: ...).
-	// An optional "Bearer " prefix of the value is consumed so header lines
-	// collapse to a single [REDACTED].
-	sensitiveKVRe = regexp.MustCompile(
-		`([A-Za-z0-9_.-]*(?i:secret|token|password|passwd|api[_-]?key|authorization|credential|access[_-]?key)[A-Za-z0-9_.-]*\s*[:=]\s*"?)((?i:bearer\s+)?[^\s"',;]+)`)
+	// sensitiveKeyRe is the key half both value patterns below share: a key
+	// whose name contains a sensitive word, its separator, and an optional
+	// opening quote (AGENTHUB_SECRET_*=..., api_key=..., Authorization: ...).
+	sensitiveKeyRe = `([A-Za-z0-9_.-]*(?i:secret|token|password|passwd|api[_-]?key|authorization|credential|access[_-]?key)[A-Za-z0-9_.-]*\s*[:=]\s*"?)`
+
+	// A value introduced by an HTTP auth SCHEME, consumed to end of line.
+	//
+	// This used to recognise "bearer" and nothing else, so every other
+	// scheme had its NAME redacted and its credential printed:
+	// `Authorization: Basic dXNlcjpwYXNz` became
+	// `Authorization: [REDACTED] dXNlcjpwYXNz`, which is worse than an
+	// obvious leak because the line reads as though the secret had been
+	// removed. Digest, Negotiate, NTLM and DPoP all landed the same way.
+	//
+	// Once one of these schemes is present, everything after it on the line
+	// belongs to the credential — Digest spreads it over several
+	// comma-separated parameters — so the match runs to end of line. That
+	// is only safe because the scheme set is CLOSED: matching any
+	// leading word would make `SECRET_GITHUB=<value> loaded` swallow the
+	// rest of every such message, which is real diagnostic loss rather than
+	// the harmless over-redaction the package header licenses.
+	sensitiveSchemeKVRe = regexp.MustCompile(
+		sensitiveKeyRe + `((?i:bearer|basic|digest|negotiate|ntlm|dpop|hawk|token|apikey|mutual|concealed|scram-sha-1|scram-sha-256|aws4-hmac-sha256)[ \t]+[^\r\n]*)`)
+
+	// The same key, with a value carrying no scheme: one whitespace- or
+	// delimiter-bounded token. Applied after the pattern above, so a
+	// scheme-introduced value never reaches it.
+	sensitiveKVRe = regexp.MustCompile(sensitiveKeyRe + `([^\s"',;]+)`)
 
 	// Bare bearer tokens in prose ("... sent Bearer abc123 ...").
 	bearerRe = regexp.MustCompile(`(?i)\b(bearer\s+)[A-Za-z0-9._~+/=-]+`)
@@ -67,6 +89,7 @@ func SensitiveKey(key string) bool {
 // with no environment dependence — in particular AGENTHUB_DEBUG has no
 // effect on it.
 func ScrubString(s string) string {
+	s = sensitiveSchemeKVRe.ReplaceAllString(s, "${1}"+Redacted)
 	s = sensitiveKVRe.ReplaceAllString(s, "${1}"+Redacted)
 	s = bearerRe.ReplaceAllString(s, "${1}"+Redacted)
 	s = tokenShapeRe.ReplaceAllString(s, Redacted)

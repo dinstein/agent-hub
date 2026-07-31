@@ -201,13 +201,28 @@ only lowers the level to Debug and has no effect on redaction; `ScrubString` its
 environment. Secrets, tokens, and credentials must not reach any sink at any level.
 
 **Redaction fails closed.** Over-masking (turning a harmless long random string into `[REDACTED]`) is
-acceptable; leaking one credential is not. Four pattern classes apply in order: `key=value`/
-`key: value` where the key contains a sensitive word (also consuming an optional `Bearer ` prefix, so
-a whole header line collapses to one `[REDACTED]`), bare bearer tokens loose in the body,
+acceptable; leaking one credential is not. Five pattern classes apply in order: `key=value`/
+`key: value` where the key contains a sensitive word **and the value opens with a known auth scheme**,
+consumed to end of line; the same key with a scheme-less value, kept whitespace-bounded; bare bearer
+tokens loose in the body,
 known-shaped credentials (`sk-`, `ghp_`/`gho_`/`github_pat_`, `xox[baprs]-`, `AKIA`, `ya29.`, JWTs),
 and generic `key=value` pairs whose value looks like a long random string (≥32 characters from a
 base64-ish alphabet, with `looksRandom` requiring both letters and digits so a long all-letter
 identifier isn't caught in the crossfire). **Don't narrow these patterns to make logs look nicer.**
+
+**The scheme half of that first class exists because recognising only `Bearer` produced the worst
+possible output.** Every other RFC 7235 scheme had its NAME consumed and its credential left in
+place, so `Authorization: Basic dXNlcjpwYXNz` was logged as `Authorization: [REDACTED] dXNlcjpwYXNz`
+— a line that reads as though the secret had been removed, which is worse than an obvious leak
+because nobody goes looking. `Digest`, `Negotiate`, `NTLM` and `DPoP` all landed the same way, and
+none of the later classes caught them: `bearerRe` wants a `bearer` prefix, `tokenShapeRe` wants a
+known vendor shape, and `genericKVRe` wants a literal `key=`. The scheme list is **closed** on
+purpose. Matching any leading word instead would let `SECRET_GITHUB=<value> loaded` swallow the rest
+of the message, and losing diagnostics is not the same trade as the harmless over-masking above.
+Running to end of line once a scheme is present is what covers `Digest`, whose credential is spread
+across comma-separated parameters. Note the division of labour: `ScrubString` works on message TEXT
+and never matched a quoted JSON key (`"authorization":`) — structured attrs are `SensitiveKey`'s job,
+below.
 
 **Sensitive key names are masked wholesale, regardless of value type.** `SensitiveKey` lowercases the
 key, strips `-`/`_`, and does substring matching
