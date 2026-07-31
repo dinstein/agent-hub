@@ -392,20 +392,6 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 		g.replyUnknownTool(req.ID, exposed)
 		return
 	}
-	// Derived instances (docs/modules/dataplane.md): which PROCESS runs this call is a
-	// connection-plane decision made per call, after routing and before the
-	// gates. The route — and therefore visibility, scope and audit — is the
-	// base server either way.
-	lease, err := g.acquire(ctx, srv, route.ServerID)
-	if err != nil {
-		g.log.Warn("derived instance unavailable",
-			logx.Server(route.ServerID), logx.Tool(route.RawTool), "error", err)
-		g.reply(mcp.NewErrorResponse(req.ID, callError(err)))
-		return
-	}
-	defer lease.Release()
-	target := lease.Server
-
 	// The routed tool's definition feeds the token tier gate (annotations;
 	// absent = destructive, fail-closed — see pipeline.ToolTier). The
 	// inputSchema travels with it and is read by NOTHING: the precheck gate
@@ -427,8 +413,22 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 		inputSchema: inputSchema,
 		annotations: annotations,
 		description: description,
+		// Derived instances (docs/modules/dataplane.md): which PROCESS runs
+		// this call is a connection-plane decision made per call. It is made
+		// INSIDE the call closure, so it happens after both gates and after
+		// rate-limit admission — acquiring can spawn a child or open an
+		// authenticated remote connection, and a call the scope gate is about
+		// to deny must not cause either. The route — and therefore
+		// visibility, scope and audit — is the base server either way.
 		call: func(ctx context.Context) (*mcp.CallResult, error) {
-			return target.Call(ctx, route.RawTool, args)
+			lease, err := g.acquire(ctx, srv, route.ServerID)
+			if err != nil {
+				g.log.Warn("derived instance unavailable",
+					logx.Server(route.ServerID), logx.Tool(route.RawTool), "error", err)
+				return nil, err
+			}
+			defer lease.Release()
+			return lease.Server.Call(ctx, route.RawTool, args)
 		},
 	}, args)
 }
