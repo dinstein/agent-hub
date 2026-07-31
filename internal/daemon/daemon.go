@@ -392,7 +392,7 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.OnHTTPReady(endpoint.Addrs())
 	}
 
-	log.Info("daemon ready", "socket", socket, "pid", info.Pid, "version", cfg.Version)
+	log.Info("daemon ready", "socket", socket, logx.PID(), "version", cfg.Version)
 	if cfg.OnReady != nil {
 		cfg.OnReady(info)
 	}

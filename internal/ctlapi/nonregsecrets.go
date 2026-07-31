@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
@@ -132,7 +133,7 @@ func (s *Server) handleSecretPut(w http.ResponseWriter, r *http.Request, server,
 		// Fixed message on purpose (see the file header): the underlying
 		// error is diagnostics for the daemon log, never response bytes.
 		s.log.Error("ctlapi: storing a credential failed",
-			"server", server, "key", key, "err", err, "requestId", reqID)
+			logx.Server(server), "key", key, "err", err, "requestId", reqID)
 		writeErr(w, http.StatusInternalServerError, CodeInternal,
 			"storing the credential failed",
 			"see the daemon log for the reason; the value was not recorded anywhere", reqID)

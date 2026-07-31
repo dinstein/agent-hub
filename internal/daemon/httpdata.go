@@ -11,6 +11,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/gateway"
 	"github.com/dinstein/agent-hub/internal/httpbridge"
+	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/platform"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -202,7 +203,7 @@ func (p *httpPlane) connFor(ctx context.Context, c *httpbridge.Caller) (*gateway
 		return nil, err
 	}
 	p.deps.Log.Info("http data plane gateway assembled",
-		"caller", string(c.Kind), "token", c.Token, "tier", string(c.Tier), "client", clientIDOf(c))
+		"caller", string(c.Kind), "token", c.Token, "tier", string(c.Tier), logx.Client(clientIDOf(c)))
 	return conn, nil
 }
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/event"
+	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/session"
 )
@@ -245,12 +246,12 @@ func (s *Server) handleGatewayRegister(w http.ResponseWriter, r *http.Request) {
 	}()
 	link.armAttachWatchdog(s.opts.LinkAttachTimeout, func() {
 		s.log.Warn("ctlapi: gateway never attached its link; closing session",
-			"session", sid, "client", hello.ClientID)
+			logx.Session(sid), logx.Client(hello.ClientID))
 		s.opts.Sessions.Close(sess.ID)
 	})
 
 	s.log.Info("ctlapi: gateway registered",
-		"session", sid, "client", hello.ClientID,
+		logx.Session(sid), logx.Client(hello.ClientID),
 		"gateway_pid", hello.Pid, "scope_hash", hello.ScopeHash)
 
 	writeOK(w, http.StatusOK, GatewayRegistered{SessionID: sid})

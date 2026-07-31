@@ -177,6 +177,15 @@ genuinely has none — a stdio gateway serves one terminal pipe with no id anywh
 by client and pid instead — the constant now says so, so that the absence reads as the answer rather
 than as an omission someone should fix.
 
+**And the convention is now enforced, because writing it down twice was not enough.**
+`TestMandatoryLogFieldsUseTheirConstants` (`test/buildrules`) walks every production file's AST and
+fails on a mandatory key spelled as a string literal inside a `slog` call — it found eight, in five
+files, including the second of the two `FieldSession` sites the paragraph above describes in the past
+tense. Being an AST walk and not a grep is what makes it usable: a cobra flag named `--client` and a
+table column named `server` are not log records. What it cannot see is a key assembled at runtime or
+routed through a caller's own helper; those stay a review question, and the cheap version of the
+mistake — the one that actually happens — is now impossible.
+
 **`pid` is mandatory on every gateway record, and is attached once at logger construction** rather
 than per call site — every line of a process carries the same value, and stamping it at each call is
 how one line ends up without it. It exists because the log FILE is named after the CLIENT, not the
