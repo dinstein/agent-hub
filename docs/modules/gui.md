@@ -129,7 +129,7 @@ rows you cannot see.
 
 **409 conflicts don't overwrite.** Control plane write endpoints carry a `Precondition`, and a
 conflict returns 409 plus the current generation (see
-[../flows.md §4](../flows.md#4-config-writes-five-writers-and-an-optimistic-lock)). On receiving one, the frontend re-fetches
+[../flows.md §3](../flows.md#3-config-writes-five-writers-and-an-optimistic-lock)). On receiving one, the frontend re-fetches
 and reports "configuration was modified elsewhere, refreshed" (`CONFLICT_MESSAGE` in `page.ts`)
 rather than writing back the view the user had a few minutes ago.
 
@@ -179,7 +179,8 @@ zero runtime dependency).
 
 - **No "junk drawer" page** — nine things at nine different levels of abstraction stacked vertically on
   one page, rescued only by default-collapsed sections, so answering "why did that call fail" means
-  scrolling past a pile of unrelated content. Audit is split into Overview / Calls / Security.
+  scrolling past a pile of unrelated content. One page answers one question, and a page with nothing
+  left to answer is deleted rather than kept as a heading.
 - **Marketing copy stays out of the product UI** — tokens saved is a reasonable metric, but dressing it
   up as a dollar estimate next to a Share button is soliciting the user for reach; and a hardcoded model
   price table is guaranteed to go stale. **A stale dollar figure is worse than no figure at all**: in a
@@ -198,7 +199,7 @@ zero runtime dependency).
 | `ui.ts` | Form widgets: inputs, tri-state selector, pair/lines editors, confirmation dialog, `toggleSwitch` (never optimistic) |
 | `types.ts` | TS mirror of the control plane DTOs |
 | `generated/health.ts` | **Generated**: Health's Level/AdminState/Action constants, via `go generate ./cmd/agenthub-gui/...` |
-| `pages/*.ts` | One page per resource, 17 pages |
+| `pages/*.ts` | One page per resource |
 | `style.css` | Semantic color variables, focus ring, the three widget classes, light/dark |
 
 Dark mode is applied by an inline bootstrap script in `index.html` — about 20 lines of vanilla JS,

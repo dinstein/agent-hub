@@ -1,6 +1,6 @@
 # Key flows
 
-This document uses sequence diagrams to explain the seven runtime flows most worth understanding. The
+This document uses sequence diagrams to explain the six runtime flows most worth understanding. The
 prose after each diagram covers the **failure branches** and **why it's designed this way** — the happy
 path is legible from the diagram; the hard part is always what happens when things go wrong. For the
 system's static decomposition see [architecture.md](architecture.md); for an overview of the three data
@@ -148,7 +148,7 @@ sequenceDiagram
     else match, or Precondition{}
         R->>R: no-op guard → atomic write → bump generation
         R-->>OPS: Result{Generation, Changed, Warnings}
-        Note over R: propagation continues as in §5
+        Note over R: propagation continues as in §4
     end
 ```
 

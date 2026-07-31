@@ -16,10 +16,10 @@ incident.
 
 | File | Packages covered |
 |---|---|
-| [foundation.md](foundation.md) | `platform`, `logx`, `tier`, `mcp` (+ four `transport` implementations), `registry` |
+| [foundation.md](foundation.md) | `platform`, `logx`, `jsonl`, `tier`, `mcp` (+ four `transport` implementations), `registry`, `savings` |
 | [config.md](config.md) | `scope`, `session`, `event`, `secrets` (+ `secureenv`), `clients`, `skills` |
 | [dataplane.md](dataplane.md) | `downstream`, `router`, `pipeline`, `gateway`, `discovery` (+ `toolsig`), `shaping` (+ `toonenc`), `ratelimit` |
-| [security.md](security.md) | `guard` (`injection`/`spawnguard`/`netguard`/`leakguard`), `integrity`, `approval`, `audit`, `oauthflow` |
+| [security.md](security.md) | `guard` (`spawnguard`/`netguard`), `oauthflow` |
 | [controlplane.md](controlplane.md) | `api`, `ctlapi`, `confops`, `catalog`, `daemon`, `httpbridge`, `cli` (+ `output`), the two `cmd/` binaries, `testutil/fakemcp`, `depguardtest`, `test/*` |
 | [oauth.md](oauth.md) | Topic: how well `oauthflow` conforms to the MCP authorization spec, which provider deployment shapes are supported, known gaps; `oauthlogin` (the same flow, as a pollable session) |
 | [gui.md](gui.md) | Topic: the GUI frontend's information architecture, state presentation, write operations, and what it deliberately does not do |
@@ -33,8 +33,10 @@ from going.
 
 **A capability existing ≠ it being wired up.** Some packages are feature-complete and well tested,
 but the assembly layer hasn't connected them yet. Those cases are called out explicitly under
-"current assembly status" in the relevant package section rather than glossed over.
-[../architecture.md §12](../architecture.md#12-assembly-status-implemented-but-not-yet-wired-up) has a summary.
+"current assembly status" in the relevant package section rather than glossed over. There is no
+central summary of them any more, and
+[../architecture.md §12](../architecture.md#12-assembly-status-implemented-but-not-yet-wired-up)
+says why: a list kept away from the code it describes is the one that goes stale unnoticed.
 
 **A gap already pinned down to a specific line belongs HERE**, in the section for the package that
 owns it — say plainly that it is owed rather than describing it as done. It is read by whoever

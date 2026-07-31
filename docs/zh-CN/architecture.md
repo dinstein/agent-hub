@@ -68,8 +68,9 @@ flowchart LR
 stdio 网关的 scope 完全来自注册表文件，杀掉 daemon 不改变任何客户端看到的东西；
 失去的是 `session ls` / `session kill`、事件流和共享 HTTP 池，OAuth 刷新退回文件锁。
 
-代价是多进程共写磁盘的纪律必须做对：日志每行一次 `O_APPEND` 写、指纹与隔离集用跨进程文件锁、
-安全事件跨进程去重。这些不是保险，是并发正确性依赖。
+代价是多进程共写磁盘的纪律必须做对：日志每行一次 `O_APPEND` 写（`internal/jsonl`，并有一个
+多进程测试证明它）、共享限流计数器外面套一把跨进程文件锁、registry 的每一次写都走原子改名。
+这些不是保险，是并发正确性依赖。
 
 **HTTP 数据面默认不存在。** `internal/httpbridge` 的 MCP 暴露面由 `agenthub daemon start
 --http-addr <host:port>` 显式开启；**没有地址就没有监听器**（不是「有个默认端口」）。非 loopback
@@ -134,8 +135,9 @@ flowchart TD
         MCP["internal/mcp<br/>协议门面（+transport）"]
         PLAT["internal/platform<br/>路径/socket/包身份"]
         LOGX["internal/logx<br/>slog + 不可绕过 scrubbing"]
-        GUARD["internal/guard/*<br/>injection/spawn/net/leak"]
+        GUARD["internal/guard/*<br/>spawn/net"]
         REG["internal/registry<br/>配置真源 + generation"]
+        JL["internal/jsonl<br/>追加式行写入器"]
         AUD["internal/savings<br/>token 节省账本"]
         EVT["internal/event"]
         TIER["internal/tier<br/>操作等级词汇表"]
@@ -213,7 +215,9 @@ flowchart LR
 任何**新增**执行路径都必须自带同样的计数断言，不能以「已经有测试了」为由免除。
 
 **成功与错误分支走同一条出口。** 整形对两个分支都生效，并且**只跑一次**——跑两次会重复消耗
-游标，还可能留下一个指向没人会收到的字节的截断提示。
+游标，还可能留下一个指向没人会收到的字节的截断提示。这一段在里面的防御被删掉之后仍叫
+`defend_and_shape`，而且是刻意的：stdio 面与 HTTP 面之间的门计数对等断言比的就是这些 stage
+键，改名会让那些测试继续通过、却什么都不再比。
 
 ---
 
@@ -245,11 +249,11 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph obs["③ 观测流：只写本地磁盘"]
-        P["pipeline / gateway / guard"] --> A1["audit.jsonl<br/>只记 argsHash"]
-        P --> A2["security.jsonl<br/>跨进程去重"]
-        P --> A3["savings.jsonl"]
-        DSX["downstream"] --> A4["logs/server-&lt;name&gt;.log<br/>每 server 一份 + stderr 尾窗"]
-        A1 & A2 & A3 & A4 -.->|"ctlapi 读<br/>/v1/audit /v1/security"| F["CLI / GUI"]
+        P["pipeline / gateway"] --> A3["logs/savings.jsonl<br/>token 节省 + 搜索轨迹"]
+        DSX["downstream"] --> A4["logs/server-&lt;name&gt;.log<br/>每 server 一份，默认关闭"]
+        GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log<br/>logs/daemon.log"]
+        A3 -.->|"agenthub activity<br/>（纯文件读，离线可用）"| F["CLI / GUI"]
+        A4 -.->|"agenthub server logs"| F
     end
 ```
 
@@ -259,8 +263,10 @@ flowchart LR
   事件只是通知、不带快照，多次快速连续写时按相等判定会卡在旧版本等一个永远不会再来的事件。
 - **凭据流**：vault 键从第一天就是复合键 `(serverID, scopeName)`。事后再改要动 token store、
   回调 server 与刷新协调器的全部单例，所以它不是可以「先简单做」的东西。
-- **观测流**：**审计永不记 args**——类型层面就没有那个字段，只有 `argsHash`。
-  参数原文只在内存与 SSE 通道里流动。
+- **观测流**：**这条路径上没有任何东西记录一次调用的参数。** 现在根本不存在按调用记录的账本
+  ——早期设计里有一份，它随着唯一会读它的治理面一起删掉了。剩下的要么描述成本
+  （`savings.jsonl`），要么是按 server 手动打开、用完就关的调试手段（`server trace`）；
+  trace 是唯一真正存下游原始字节的文件，这正是它默认关闭、并且在自己的帮助里说明这一点的原因。
 
 ---
 
@@ -321,7 +327,7 @@ lazy 模式下 `call_tool` 可按治理开关拆成 `call_tool_read` / `call_too
 这句话写在这里而不是只写在那边，是因为决定要不要打开它的人是在这一节里做这个决定的。
 
 搜索结果携带的是**紧凑签名**而不是完整 schema，agent 需要细节时再调 `describe_tool`。
-凡是不能展示的工具 id——不存在、作用域外、被隔离、被禁用——返回同一段文案，
+凡是不能展示的工具 id——不存在、作用域外、不在它所属 server 的白名单里——返回同一段文案，
 因为差异化的错误会把 `describe_tool` 变成一个枚举 oracle。
 
 ---

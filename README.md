@@ -83,8 +83,8 @@ again. Full walkthrough — profiles, narrowing, the whole model — in [docs/gu
 | File | Contents |
 |---|---|
 | [docs/guide.md](docs/guide.md) | **Using it**: the three nouns (server / profile / client), the everyday path, and the decisions you actually have to make |
-| [docs/architecture.md](docs/architecture.md) | **Changing it**: process model, core module map, layering and dependency constraints, what a single call passes through, the three data-flow directions, the three lines of defense |
-| [docs/flows.md](docs/flows.md) | Sequence diagrams and failure branches for seven key flows |
+| [docs/architecture.md](docs/architecture.md) | **Changing it**: process model, core module map, layering and dependency constraints, what a single call passes through, the three data-flow directions, the two lines of defense |
+| [docs/flows.md](docs/flows.md) | Sequence diagrams and failure branches for six key flows |
 | [docs/modules/](docs/modules/) | Per-package documentation: responsibilities, key types, invariants and failure directions |
 | [docs/canonical.md](docs/canonical.md) | The single source of truth for architectural conventions: frozen identifiers, package layout, dependency constraints, command naming rules, and every decision record |
 | [docs/windows.md](docs/windows.md) | Windows status: what is implemented, what still does not work, and acceptance criteria |

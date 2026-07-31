@@ -74,7 +74,8 @@ the rule unprovable.
 |---|---|
 | `internal/controlapi`, `internal/control` | `internal/ctlapi` (DTOs and client live in the public `api` package) |
 | `internal/vault` | `internal/secrets` |
-| `internal/secure/{integrity,injection,ssrf,audit}` | `internal/guard/*` |
+| `internal/secure/{integrity,injection,ssrf,audit}` | `internal/guard/*` — but only `ssrf` survived, as `netguard` |
+| `internal/integrity`, `internal/approval`, `internal/audit` | **Nothing.** Removed with the runtime governance surface rather than renamed, so there is no forwarding address: fingerprint pinning, the approval queue and the per-call ledger are gone, not relocated. `internal/audit`'s one surviving primitive — the multi-writer JSONL append — was extracted first and is `internal/jsonl` |
 | `internal/gatewaymode` | `internal/gateway` |
 | `internal/downstream/transport` | `internal/mcp/transport` |
 | `package skill` | `package skills` |
@@ -163,7 +164,7 @@ code, know which tier you are standing on.
 | skills materialization | **Client granularity only**, not per-session — the files live outside agenthub's read path |
 | skills from git sources | Records and pins a revision, but **never runs git and never touches the network**; update without a local checkout returns a typed unsupported error rather than claiming you are up to date |
 | TOON | A **one-way display projection with no decoder** (§7 #4); anything requiring a round trip never enters the encoder |
-| teams | Deliberately unimplemented; the `policy` layer reserves an `Effective()` (own OR forced, tighten-only) hook |
+| teams | Deliberately unimplemented, and **nothing in the tree reserves a seam for it**. There used to be a `policy` layer holding an `Effective()` hook for a forced team policy; it went with the rest of the runtime governance surface, and a hook nobody can reach is worse than none — it reads as a decision already half-made |
 | Telemetry / update checker | Decided against (§7 #6) — no data is collected |
 
 ### Three things that must never be retrofitted
@@ -176,7 +177,7 @@ place; keep them that way.
 2. **Registry self-write suppression** (§5c #1) — without it every self-write triggers a pointless
    reload cycle.
 3. **X-Request-Id end to end**: the response header is written before the handler runs, error bodies
-   carry it, audit records carry it.
+   carry it, and the log line for the failure carries the same value.
 
 ---
 
@@ -294,7 +295,9 @@ Three classes of test have been in CI from day one:
 1. **Golden tests** — the signature grammar, search ordering, error copy. **Determinism is the
    contract**: agents key retry logic and prompts off exact wording, so error text and ordering are
    frozen artifacts, not cosmetics.
-2. **Cross-process concurrency tests** — single-line `O_APPEND` writes, monotonic generations.
+2. **Cross-process concurrency tests** — single-line `O_APPEND` writes (`internal/jsonl`, which
+   re-executes the test binary as N appending children and asserts no line was torn), monotonic
+   generations.
 3. **Daemon `kill -9` injection tests** — the stdio data plane is unaffected.
 
 ---
@@ -361,8 +364,8 @@ none gets silently reopened, and the numbering is cited from code.
    (`status, search_tools, describe_tool, call_tool, fetch_result`); `describe_tool`'s visibility
    predicate is exactly `Surface.byExposed`, so it is structurally impossible for it to be wider than
    search/tools_list/call; and it emits **one per-id error only, `not_found`** — nonexistent, out of
-   scope, quarantined and disabled all share the copy, because differentiated errors would make it an
-   enumeration oracle. Same rule as `fetch_result`.
+   scope, and left out of an allow list all share the copy, because differentiated errors would make
+   it an enumeration oracle. Same rule as `fetch_result`.
 5. ~~A workable story for macOS keychain ACLs and unsigned development binaries~~ → **Decided (M1):
    yes, dev mode falls back to `secrets.enc` automatically.** Every `go build` produces a new unsigned
    binary, so the keychain ACL prompts again each time; when keyring availability detection fails, or
@@ -425,9 +428,9 @@ standing in for.
 | `#32` | `internal/mcp` is standard-library only — one first-party protocol facade | §2 rule 2 |
 | `A.2 #9` | The manual paste loop, for providers that cannot reach a loopback redirect | modules/oauth.md |
 | `A.2 #10` | Refresh is serialized: daemon singleflight online, a file lock offline | modules/oauth.md |
-| `A.3 #1` | Quarantine and pin writes take a **cross-process file lock**, proven by an N-process acceptance test | §6; modules/security.md |
+| `A.3 #1` | Cross-process shared state takes a **file lock** or an atomic rename, proven by an N-process acceptance test. Its original subject — quarantine and pin writes — was removed with `internal/integrity`; the rule outlived it and now governs the rate-limit counters and the registry | §6; modules/foundation.md |
 | `A.3 #2` | `kill -9` on the daemon: the stdio data plane is untouched and gateways re-register | §6; flows.md |
-| `A.3 #4` | A daemon restart makes the session overlay vanish on **both** sides — the observable half of `#6` | modules/config.md |
+| `A.3 #4` | A daemon restart makes the session overlay vanish on **both** sides. Retired by its own logic taken further: a session now carries no scope of its own at all, so there is nothing left to survive a restart or to fail to | modules/config.md |
 | `A.3 #5` | skills materialization is **client-granular**, never per-session | §4 |
 | `A.5 #23` | Windows is confined to a seam inside `internal/platform`; nothing outside it branches on the platform | §4; windows.md |
 | `A.5 #26` | The **composite vault key** `(serverID, scopeName)` from day one | §4 ("never retrofitted", item 1) |

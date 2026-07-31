@@ -11,8 +11,9 @@ Three nouns, one sentence each:
 
 - **Server** — a downstream MCP server you registered. Registering and
   switching on are two steps: `server add` writes the definition and leaves it
-  off, `server enable` connects and puts it into service. The set of *enabled*
-  servers is everything agenthub could offer anyone.
+  off, `server enable` connects and puts it into service. A server offers all
+  of its tools unless you name a subset (`tool allow`). The set of *enabled*
+  servers, with those names applied, is everything agenthub could offer anyone.
 - **Profile** — a named subset of that: which servers, which of their tools,
   and how the result is presented.
 - **Client** — an AI application (Claude Code, Cursor, Codex, …). A client is
@@ -20,10 +21,15 @@ Three nouns, one sentence each:
   can see.
 
 ```
-servers (enabled)          ← the maximum: everything that exists
-   └── profile             ← a subset you named
-         └── client        ← bound to exactly one profile
+servers (enabled, + tool allow)   ← the maximum: everything that exists
+   └── profile                    ← a subset you named
+         └── client               ← bound to exactly one profile
 ```
+
+Every level intersects with the one above it and **none of them can widen**.
+That is the whole access model: what a client may reach is settled by what you
+wrote down before it connected, and nothing is decided while a call is in
+flight.
 
 Two things follow from this that are worth stating outright:
 
@@ -61,6 +67,23 @@ server you add later is picked up without touching the client's config again.
 
 With no profile in play, a client sees every enabled server. For many setups
 that is the right answer and you can stop here.
+
+## Switching off a tool everywhere
+
+Before profiles, there is the blunter tool. A server offers everything it has,
+including anything it gains in a later version; naming tools fixes the set:
+
+```bash
+agenthub tool allow github get_issue list_prs   # offer exactly those two
+agenthub tool allow github                      # offer nothing from this server
+agenthub tool allow github --clear              # back to offering everything
+```
+
+This is **for every client at once**, the tool-level twin of `server disable`.
+It is an allow list and never a deny list, and the difference shows up on the
+day the server adds a tool: with a rule in place the new tool stays out until
+you add it, which is the closed direction. No profile can put back what this
+takes away.
 
 ## Profiles: when you want less than everything
 
@@ -177,7 +200,7 @@ agenthub config set discovery full
 
 | what | where |
 |---|---|
-| server definitions | `servers.json` |
+| server definitions, and their tool allow lists | `servers.json` |
 | profiles (servers, tools, discovery) | `profiles.json` |
 | client → profile bindings | `clients.json` |
 | global switches, active profile | `governance.json` |
@@ -261,7 +284,7 @@ anything is being traced — that is where to look when you cannot remember.
 |---|---|
 | a server you added never shows up | `server add` leaves it switched off — check `server ls`, then `agenthub server enable <id>` |
 | client sees no tools at all | bound to a profile that does not exist (`client ls` shows `MISSING`), or it was never restarted after `client connect` |
-| a tool disappeared | a profile's `--only` list, or the server changed it under a pin and it was quarantined — check the profile before suspecting the server |
+| a tool disappeared | a `tool allow` list on the server, or a profile's `--only` list — check both with `agenthub server inspect <id>` before suspecting the server |
 | a server works in `server test` but not in the client | the client has not been restarted, or its profile does not include that server |
 | `client connect` seems to do nothing | it edits a file; the client reads that file at startup |
 | a legacy `projects` block in `clients.json` | per-project bindings were retired. The block is preserved but inert — it used to narrow, so leaving it does not restrict anything now |

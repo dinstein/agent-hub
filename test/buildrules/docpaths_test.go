@@ -15,12 +15,24 @@ import (
 // are listed here rather than exempted by matching on the table's shape —
 // a heading or a table row is easy to reformat, and the exemption would
 // silently widen to whatever else moved next to it.
+//
+// The value is the package that answers to the name now, or "" for one that
+// was REMOVED rather than renamed. The two are worth keeping apart: a rename
+// leaves a forwarding address a reader should follow, and a removal leaves
+// none — writing one in anyway would send them to a package that never did
+// the job they came looking for.
 var retiredNames = map[string]string{
 	"internal/control":              "internal/ctlapi",
 	"internal/controlapi":           "internal/ctlapi",
 	"internal/vault":                "internal/secrets",
 	"internal/gatewaymode":          "internal/gateway",
 	"internal/downstream/transport": "internal/mcp/transport",
+	// Removed with the runtime governance surface. internal/audit's one
+	// surviving primitive was extracted to internal/jsonl first, which is a
+	// narrower claim than a rename and is why it is not spelled as one.
+	"internal/audit":     "",
+	"internal/integrity": "",
+	"internal/approval":  "",
 }
 
 // docPathRef matches a backticked path rooted at one of the repository's
@@ -73,8 +85,9 @@ func TestDocsCitePathsThatExist(t *testing.T) {
 				if canonical, ok := retiredNames[ref]; ok {
 					// Named on purpose. Assert the replacement still exists,
 					// so the table cannot quietly start pointing at a second
-					// name that has also since moved.
-					if !exists(root, canonical) {
+					// name that has also since moved. An empty replacement is
+					// a removal, and there is nothing to assert about it.
+					if canonical != "" && !exists(root, canonical) {
 						t.Errorf("%s:%d cites the retired name %q, but its canonical replacement %q "+
 							"does not exist either — canonical.md's retirement table is now wrong in both columns",
 							doc, i+1, ref, canonical)

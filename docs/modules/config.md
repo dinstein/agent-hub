@@ -207,8 +207,10 @@ rather than quietly rebind to a different connection.
 cleaned up when the daemon calls `Close` on link teardown, and the reaper skips them explicitly. Default TTL
 is 24 hours with a 5-minute sweep interval.
 
-**Root is a mutable attribute, not part of identity.** `SetRoots` updates it on `roots/list_changed`; it
-participates in the scope resolution cache key but not in the session ID.
+**Root is a mutable attribute, not part of identity.** `SetRoots` updates it on `roots/list_changed`.
+It is **not** in the scope resolver's cache key — no persisted layer reads it any more — and it was
+never in the session ID. What still consumes it is `internal/downstream`, which derives per-root
+server instances from it.
 
 **Derivation keys and scope live on two different planes.** Nothing in `derive.go` touches a scope type, and
 `DeriveKey` enters no scope hash: narrowing a session should not restart a process, and switching to another

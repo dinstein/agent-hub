@@ -57,11 +57,13 @@ integrations talk to the daemon through it.
 
 `Client` is the only entry point, constructed with `New(socketPath)`, `Default()`, or
 `DialOrStart(ctx)`. It swaps `http.Client`'s `DialContext` for a `unix` dialer and uses a fake host
-`http://agenthub` in URLs, since the hostname is never resolved. All capabilities hang off six typed
-services: `Servers`, `Sessions`, `Events`, `Skills`. **There is no raw request
-escape hatch** — deliberately: anything a frontend can do necessarily corresponds to an endpoint, and
-therefore is necessarily something the CLI can do too, so "the GUI is optional" is structural rather
-than a promise.
+`http://agenthub` in URLs, since the hostname is never resolved. Every capability hangs off a typed
+resource service — `Servers`, `Sessions`, `Events`, `Skills`, `Profiles`, `Scope`, `Config`,
+`Secrets`, `Tokens`, `Clients`, `Auth`, `Catalog`, `Parse`. **There is no raw request escape hatch**
+— deliberately: anything a frontend can do necessarily corresponds to an endpoint, and therefore is
+necessarily something the CLI can do too, so "the GUI is optional" is structural rather than a
+promise. The count is deliberately not written down here: it moves with the endpoint set, and a
+number in prose is the part that stops matching first.
 
 `DialOrStart` is the "start it if you can't connect" path. It dials once; on failure it runs
 `exec agenthub daemon start`, then polls `run/daemon.json` within a deadline and re-dials. If the child
@@ -92,9 +94,6 @@ processes), echoed on the response and carried into error bodies, so one id foll
 every surface that reports it.
 
 
-**Only `DecisionApproved` permits execution.** Empty, unknown, and any other decision are all
-rejections.
-
 **SSE consumption is tolerant and reconnection is automatic.** `EventsService.Subscribe` establishes
 the first connection synchronously (so the caller immediately knows whether the daemon is up), after
 which a goroutine maintains it: any stream error triggers exponential-backoff reconnection with
@@ -102,10 +101,13 @@ which a goroutine maintains it: any stream error triggers exponential-backoff re
 means "the subscription ended". A single frame that fails JSON parsing is skipped rather than fatal —
 the stream is still usable, and consumers were always going to realign by re-reading state.
 
-**The forward contract.** `SkillsService.List`'s
-`/v1/skills` **still does not exist** (there is no such entry in `ctlapi`'s route table). Calls get
-`E_NOT_FOUND`, and frontends should render that as "unavailable on this daemon" rather than an error.
-The Activity view's live data comes from the `activity` SSE topic; tail is only backfill.
+**The topic set is closed, and retiring one is a breaking change on both sides.** `TopicServers` /
+`TopicSessions` / `TopicActivity` / `TopicSkills` mirror `internal/ctlapi`'s own list, and the daemon
+answers an unlisted name with a **400 on the subscribe request** rather than an empty stream. So a
+constant left standing here after the daemon stopped serving it does not degrade to "that topic is
+quiet" — it takes the whole subscription down, and every other topic with it. That is exactly what a
+retired `TopicApprovals` did to the GUI: four working topics went silent together because the fifth
+was still in the list.
 
 `sseParser` implements the WHATWG spec: arbitrary read boundaries, CRLF/LF, comment lines (keep-alive),
 multi-line data concatenation, and `id` tracking (ids containing NUL are ignored). An incomplete line at
@@ -295,8 +297,9 @@ session closes.
 **The configuration face (`admin*.go`)** — the control plane's half of "one layer of semantics, two frontends":
 the CLI calls `internal/confops` in-process, the GUI goes through these routes, and both land on the same
 implementation. `GET|PUT /v1/scope/{client}` handles a client's static binding — *which profile it is on*,
-the only thing a client entry holds — and **must not be confused with `POST /v1/sessions/{id}/scope`**,
-which is read-only.
+the only thing a client entry holds. There is **no session-scope endpoint** to confuse it with: the
+`/v1/sessions/` prefix serves listing and `POST /v1/sessions/{id}/kill`, and nothing else. A live
+session carries no scope of its own, so there is neither a read nor a write for one.
 
 `PUT /v1/scope/{client}` accepts a `profile` and nothing else, but the retired `servers` / `tools` /
 `discovery` fields are still **declared** on the wire type so that a request carrying one gets a **400
@@ -700,7 +703,7 @@ and be spelled consistently; resource groups must be **singular canonical name +
 profile/profiles, client/clients, session/sessions, tool/tools, skill/skills, secret/secrets) and the alias must
 actually resolve; list subcommands are always called `ls` (`list`/`dump`/`ls-all` are all
 violations); and **every command must be able to take `--json`** (it is a persistent flag on the root, and what this test
-really asserts is that no command shadows or removes it). Action/streaming groups (daemon, auth, audit, activity,
+really asserts is that no command shadows or removes it). Action/streaming groups (daemon, auth, activity,
 events, config, doctor, connect) keep their names and get no plural alias. There is no `scope` group: binding a
 client to a profile is `client bind` / `client unbind` / `client ls`, and the narrowing itself is `profile server`
 / `profile tools` / `profile discovery`. Every group invoked bare prints help and exits 0,
@@ -730,8 +733,7 @@ classifiable error — agents and scripts use all four, so silently rewording is
 **The online/offline matrix is explicit.** Every command in the `session` group requires the daemon (a session is a runtime
 object that is never persisted), and offline is exit 4 rather **than** an invented offline answer. `events` is inherently
 online (the stream *is* the daemon), and offline is exit 4 rather than printing an empty stream that looks like "nothing
-happened". `audit tail -f` likewise: with no daemon no new records are being appended, and following would pretend to work
-forever. Conversely, `activity` is a pure read of an append-only file and **works offline** — the numbers describe things that
+happened". Conversely, `activity` is a pure read of an append-only file and **works offline** — the numbers describe things that
 already happened, and whether the daemon is up cannot change history; `tool allow` is offline-capable too, because
 choosing what a server offers must not require starting it first.
 
@@ -772,8 +774,8 @@ binding naming a profile that **does not exist** fail-closes to an empty scope �
 exclusion. What an *unbound* client gets is stated on every report rather than only when it changes the answer, because "which of my
 clients is bound" is what the reader does not know. It is computed from the **registry alone**: no client configuration file is
 opened (that is `client inspect`'s deliberate per-client act, with its macOS privacy prompt) and no daemon is required, so the
-answer survives on the machine that is broken. Since the scope chain only ever narrows, what it reports is an upper bound — a
-session scope can still take tools away below it.
+answer survives on the machine that is broken. Since the scope chain only ever narrows, what it reports is an upper bound —
+on the HTTP face an agent token's own server allowlist can still take servers away below it.
 
 **The `AUTH` column reports what is STORED, never whether it works** (`internal/cli/serverauth.go`). This is the line the ban on a
 persisted `needsAuth` draws: "this machine holds an OAuth token for notion" is a local fact readable with every downstream
@@ -884,8 +886,8 @@ remainder, usable against local state with nothing started. This replaced a them
 whose themes did not survive contact with their own membership: `token` is setup rather than
 governance, and `skill` and `activity` are not operations. A heading that mis-sorts its own members
 teaches the wrong model of the tool, which is why the fallback group is not given a theme it would then
-break. `audit` and `activity` are projections of `audit.jsonl` and `savings.jsonl` — files on disk, which
-is why neither sits under Daemon.
+break. `activity` is a projection of `savings.jsonl` — a file on disk, which is why it does not sit
+under Daemon.
 
 `skill` is deliberately not in Wire up: materializing skill packages is a separate job from giving a
 client MCP tools, and a shipped build's help page is a route recommendation — a third entry beside

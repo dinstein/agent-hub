@@ -1,8 +1,10 @@
 # Foundation and protocol layer
 
-This layer is the part of AgentHub that everything depends on and that depends on nothing: six
-packages that together answer five questions — **where do files go** (`internal/platform`),
+This layer is the part of AgentHub that everything depends on and that depends on nothing: eight
+packages that together answer six questions — **where do files go** (`internal/platform`),
 **what was said and how is it recorded** (`internal/logx`),
+**how does an append-only stream survive N processes writing it** (`internal/jsonl`, and
+`internal/savings`, its one first-party record type),
 **who defines the words "read / write / destructive"** (`internal/tier`),
 **how do we talk to downstreams** (`internal/mcp` and `internal/mcp/transport`), and
 **in what form does configuration live on disk and get shared across processes**
@@ -125,8 +127,8 @@ permissions. The `sha8(SID)` in the pipe name isn't obfuscation: pipe names live
 namespace, so two users would otherwise contend for the same name and the loser would connect to the
 winner's daemon. The actual access control is the `D:P(A;;GA;;;<SID>)` returned by `CtlPipeSDDL` —
 **owner only, not Administrators, not SYSTEM** — stricter than Windows convention, because the
-control plane hands out every downstream credential and approves tool calls, and "admins can connect
-too" is not a property worth having.
+control plane hands out every downstream credential and can rewrite what every client sees, and
+"admins can connect too" is not a property worth having.
 
 **`EnsureDir` doesn't tighten permissions on Windows.** Go's 0700 and Windows ACLs are not the same
 thing (`os.Chmod` there only toggles the read-only attribute), so that branch simply returns.
@@ -173,7 +175,7 @@ the other N; a record over it is replaced rather than written, because a bounded
 line that corrupts the stream for every consumer. The marker shares its `ts` field with a real
 record, so a reader that does not check `oversize` first unmarshals it into its own type without
 error and gets a zero value — a blank row asserting nothing happened, in place of the one record big
-enough to have been dropped. `audit.DecodeOversize` is the check; `server logs` runs it before
+enough to have been dropped. `jsonl.DecodeOversize` is the check; `server logs` runs it before
 decoding a frame and renders "frame dropped", the size, and the method recovered from the prefix.
 
 **A writer must fit the SERIALIZED line, not its raw payload.** Truncating a body to N raw bytes says
@@ -222,6 +224,69 @@ dumps).
 whatever record they later attach to, with no need to rescrub per record.
 
 **Log files are 0600, opened for append.** One JSON object per line.
+
+---
+
+## internal/jsonl
+
+### One-line responsibility
+
+The append-only JSONL writer every on-disk stream in the product goes through: the per-server wire
+trace (`internal/downstream`) and the token-savings ledger (`internal/savings`).
+
+It was **extracted from `internal/audit`**, which owned it while the governance streams existed. The
+streams were removed and the write discipline was not, because the discipline was never about audit
+— it is what any JSONL file written by N processes at once needs, and two of those files remain.
+Keeping the primitive inside the package that was being deleted would have meant either re-deriving
+it in `downstream` or keeping a governance package alive for one type.
+
+### Invariants and failure directions
+
+- **One record is one `write(2)` of one line, on a file opened `O_APPEND`.** That, plus a line bound
+  (`DefaultMaxLineBytes`), is the entire multi-writer story: N gateway processes and the daemon
+  append to the same file and cannot tear each other's lines. `main_test.go` proves it by
+  re-executing the test binary as several appending children and checking every line arrived whole —
+  a single-process test cannot observe this property at all.
+- **Rotation renames the active file; it never reads it back and truncates.** Truncation is what
+  breaks the guarantee above across processes that did not agree to rotate at the same instant.
+- **Backpressure drops, and never blocks.** Appends funnel through one writer goroutine behind a
+  buffered channel; overflow is counted (`Dropped`) and discarded. Fail-open, deliberately: a record
+  on its way to disk must never be able to slow down or fail the call that produced it.
+- **An oversized line becomes an `OversizeMarker`, never a truncated one.** A reader can then tell
+  "this record was too big" from "this file is corrupt"; half a JSON object cannot say either. The
+  marker shares its `ts` field with a real record, so a reader that does not check `oversize` first
+  decodes it into a zero value — a blank row asserting nothing happened, in place of the one record
+  large enough to have been dropped. `DecodeOversize` is the check, and `server logs` runs it before
+  decoding a frame.
+- **A writer must fit the SERIALIZED line, not the raw payload.** See `internal/logx` above for what
+  getting this wrong cost the trace log.
+- **Dependency budget**: standard library only.
+
+---
+
+## internal/savings
+
+### One-line responsibility
+
+The token-savings ledger — one JSONL line per shaped or discovery-assisted interaction, aggregated
+by `agenthub activity`.
+
+**It is accounting, not governance.** Nothing here decides anything about a call; it records what a
+call cost against what it would have cost. That is why it outlived the streams it used to sit beside:
+those existed to be read by a decision, and the decision went.
+
+### Invariants and failure directions
+
+- **`Record`'s field order is frozen** and golden-tested, for the reason every wire shape here is:
+  the file is parsed by things that are not this build.
+- **`SavedTokens` is recorded, not derived.** It is `BaselineTokens - ActualTokens`, written out
+  explicitly so two consumers cannot re-derive it inconsistently.
+- **`Mode` names the mechanism that produced the saving** (`lazy-discovery`, `grouped`, `shaping`,
+  `toon`), which is what makes the aggregate answerable — "how much did lazy mode buy me" is the
+  question, and it cannot be reconstructed from totals.
+- Everything else is `internal/jsonl`'s: same append discipline, same fail-open drop. A failure to
+  open the stream leaves it `nil`, and appending to a nil stream is a no-op — the ledger degrades to
+  nothing recorded, never to a failed call.
 
 ---
 
@@ -488,7 +553,7 @@ that `net/http` canonicalizes header names, so what actually goes out is `Mcp-Pr
 
 **Body snippets in error messages are bounded and flattened to one line.** `drainSnippet` reads only
 1 KiB, replaces `\n\r\t` with spaces, and strips other control characters — error strings end up in
-audit records and logs, and embedded newlines would amount to permitting a forged record.
+JSON log lines and trace frames, and embedded newlines would amount to permitting a forged record.
 
 **Concurrent reverse RPC has backpressure rather than unbounded fan-out.** The `maxPeerWorkers = 8`
 semaphore **blocks stream reading** when full, making a flooding peer slow itself down. `wg.Add` always

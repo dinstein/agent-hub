@@ -12,8 +12,8 @@ the conventions you don't get to change casually in [canonical.md](canonical.md)
 
 The client thinks it's connected to a single MCP server; it's actually connected to AgentHub's
 gateway. The gateway decides which tools it can see based on the current session's **effective
-scope**, every call passes through **the same execution pipeline** (gates → downstream → defenses and
-shaping), and the result goes back. Configuration and credentials converge
+scope**, every call passes through **the same execution pipeline** (gates → downstream → shaping),
+and the result goes back. Configuration and credentials converge
 at this layer, leaving the client side with a single line of `command`.
 
 ---
@@ -72,9 +72,9 @@ what a client sees. What is lost is `session ls` / `session kill`, the event str
 HTTP pool; OAuth refresh falls back to file locks.
 
 The price is that the discipline of multiple processes writing the same disk has to be right: one
-`O_APPEND` write per log line, cross-process file locks for fingerprints and the quarantine set,
-cross-process deduplication of security events. These aren't belt-and-braces; they're concurrency
-correctness dependencies.
+`O_APPEND` write per log line (`internal/jsonl`, with a multi-process test to prove it), a
+cross-process file lock around the shared rate-limit counters, atomic rename for every registry
+write. These aren't belt-and-braces; they're concurrency correctness dependencies.
 
 **The HTTP data plane doesn't exist by default.** The MCP exposure surface in `internal/httpbridge` is
 enabled explicitly by `agenthub daemon start --http-addr <host:port>`; **no address means no
@@ -146,8 +146,9 @@ flowchart TD
         MCP["internal/mcp<br/>protocol facade (+transport)"]
         PLAT["internal/platform<br/>paths/sockets/package identity"]
         LOGX["internal/logx<br/>slog + unbypassable scrubbing"]
-        GUARD["internal/guard/*<br/>injection/spawn/net/leak"]
+        GUARD["internal/guard/*<br/>spawn/net"]
         REG["internal/registry<br/>config source of truth + generation"]
+        JL["internal/jsonl<br/>append-only line writer"]
         AUD["internal/savings<br/>token-savings ledger"]
         EVT["internal/event"]
         TIER["internal/tier<br/>operation tier vocabulary"]
@@ -169,10 +170,10 @@ The nine packages worth knowing first:
 | `internal/confops` | The **one** semantic-write implementation (add a server, edit a profile, flip a governance switch) | CLI and control plane are two frontends over one rule set; the rules exist once |
 | `internal/scope` | Three-layer resolution chain + pure `Merge` + content-addressed `EffectiveScope` | Every "who can see what" decision; security fields can only get tighter |
 | `internal/router` | Namespace aggregation and `RouteOf` as sole provenance | The only legal way to recover `(server, tool)` from an exposed name |
-| `internal/pipeline` | ★ The one execution pipeline: four gates + defend_and_shape | Every call path converges here, so the gates cannot fork |
+| `internal/pipeline` | ★ The one execution pipeline: two gates + the shaping stage | Every call path converges here, so the gates cannot fork |
 | `internal/downstream` | Downstream connection lifecycle, serial queue, circuit breaker, derived instance pool | Downstream instability stops at this layer instead of leaking to callers |
 | `internal/gateway` | stdio gateway assembly and lifecycle (the implementation behind `connect`) | The data plane's assembly point; the HTTP surface reuses it too |
-| `internal/guard/*` | Injection scanning / spawn anti-smuggling / SSRF / leak detection | Zero business dependencies, safely reusable by any layer |
+| `internal/guard/*` | Spawn anti-smuggling / SSRF screening | Zero business dependencies, safely reusable by any layer. Neither is a permission: both refuse regardless of who asked |
 
 ---
 
@@ -228,9 +229,11 @@ the downstream answered is what the caller reads.
 counter identically — the gates cannot fork. Any **new** execution path must carry the same counter
 assertions; "there are already tests" is not an exemption.
 
-**Success and error branches share the defenses.** A malicious downstream can carry an injection
-payload in a JSON-RPC error, so `defend_and_shape` scans both branches, in the order injection →
-leakguard → shaping, meaning the shaper always sees already-scrubbed text.
+**Success and error branches are shaped alike.** `defend_and_shape` runs once over the outcome
+whichever branch it came back on, so a large JSON-RPC error is budgeted the same way a large result
+is. The stage kept its name after the defenses in it were removed, and deliberately: the gate-count
+parity assertions between the stdio and HTTP faces compare these stage keys, so renaming one would
+leave those tests passing while comparing nothing.
 
 ---
 
@@ -263,11 +266,11 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph obs["③ Observability flow: local disk only"]
-        P["pipeline / gateway / guard"] --> A1["audit.jsonl<br/>argsHash only"]
-        P --> A2["security.jsonl<br/>cross-process dedup"]
-        P --> A3["savings.jsonl"]
-        DSX["downstream"] --> A4["logs/server-&lt;name&gt;.log<br/>one per server + stderr tail window"]
-        A1 & A2 & A3 & A4 -.->|"read via ctlapi<br/>/v1/audit /v1/security"| F["CLI / GUI"]
+        P["pipeline / gateway"] --> A3["logs/savings.jsonl<br/>token savings + search traces"]
+        DSX["downstream"] --> A4["logs/server-&lt;name&gt;.log<br/>one per server, off by default"]
+        GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log<br/>logs/daemon.log"]
+        A3 -.->|"agenthub activity<br/>(a plain file read, works offline)"| F["CLI / GUI"]
+        A4 -.->|"agenthub server logs"| F
     end
 ```
 
@@ -279,8 +282,11 @@ Each flow has one property you must not forget:
   rulings, `modules/foundation.md` the mechanism).
 - **Credential flow**: the vault key is the composite `(serverID, scopeName)` and has been since day
   one — one of the three things canonical.md §4 says must never be retrofitted.
-- **Observability flow**: **the audit never records args** — the field doesn't exist at the type level,
-  only `argsHash`. The raw arguments only ever flow through memory and the SSE channel.
+- **Observability flow**: **nothing on this path records a call's arguments.** There is no
+  per-call ledger at all — an earlier design had one, and it went with the governance surface that
+  was its only reader. What is left describes cost (`savings.jsonl`) or is a debugging aid switched
+  on per server and off again (`server trace`); the trace is the one file that does hold raw
+  downstream bytes, which is why it defaults to off and says so in its own help.
 
 ---
 
@@ -361,9 +367,9 @@ in governance changes nothing today — see the unwired-faces appendix in
 this section is where someone decides to turn it on.
 
 Search results carry a **compact signature** rather than a full schema; the agent calls `describe_tool`
-when it needs detail. Every tool id that can't be shown — nonexistent, out of scope, quarantined, or
-disabled — returns the same copy, because differentiated errors would turn `describe_tool` into an
-enumeration oracle.
+when it needs detail. Every tool id that can't be shown — nonexistent, out of scope, or left out of
+its server's allow list — returns the same copy, because differentiated errors would turn
+`describe_tool` into an enumeration oracle.
 
 ---
 
@@ -446,19 +452,22 @@ property, and it must not become a prerequisite of the default build.
 
 ## 12. Assembly status: implemented but not yet wired up
 
-Package-level completeness and **whether the runtime actually reaches it** are two different things. The
-capabilities below are code-complete with tests of their own, but the assembly layer hasn't connected
-them. The docs call them out because "thought it was in effect but it wasn't" is far more dangerous than
-"known to be missing."
+Package-level completeness and **whether the runtime actually reaches it** are two different things: a
+package can be code-complete with tests of its own and still have nothing calling it. That gap is worth
+recording because "thought it was in effect but it wasn't" is far more dangerous than "known to be
+missing."
 
-| Capability | Implementation status | Assembly status |
-|---|---|---|
+This section used to carry a summary table of them, and the table is gone rather than emptied. Two
+reasons, and the second is the load-bearing one. A summary of an unwired list outlives its subject —
+every row here had to be retired by hand each time something was wired up or deleted, and the copy that
+gets forgotten is indistinguishable from the current one. And **every governance entry it once held was
+removed rather than wired**: a router policy with deny sets, a fail-closed HITL default, leak and
+self-heal hooks on `pipeline.Options`. An unwired governance seam is the most dangerous thing such a
+table can list, because it reads to a hurried operator as protection that is already there.
 
-This table is a summary, and a summary of an unwired list is exactly the sort of thing that outlives its
-subject. The authoritative inventory is the "Still without a non-test caller" sentence in
-[modules/security.md](modules/security.md), which `TestSecurityDocsUnwiredListIsStillTrue` checks in the
-forward direction: wire one of those symbols up and the test fails until the doc is corrected. Read that
-list, not this row, when the question is what is switched on today.
+What remains unwired is presentational, and each entry lives beside the code it is about: the appendix
+at the end of [modules/dataplane.md](modules/dataplane.md) is the inventory. Read that, not this
+section, when the question is what is switched on today.
 
 The following are **deliberate** boundaries, not to-dos: the GUI isn't part of the default build,
 skills materialization only reaches client granularity, TOON has no decoder, and teams is

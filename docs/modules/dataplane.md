@@ -1,7 +1,7 @@
 # Data Plane
 
 The data plane is all the code on the path from "a `tools/call` arrives from an upstream client" to
-"a result comes back from a downstream MCP server". It is made of ten packages, each responsible for
+"a result comes back from a downstream MCP server". It is made of nine packages, each responsible for
 exactly one layer, with the boundaries between layers enforced by **types and dependency direction**
 rather than by convention:
 
@@ -344,8 +344,8 @@ treats "does not exist" as "not visible" — the closed direction.
 
 ## internal/pipeline
 
-**Responsibility in one sentence**: the repository's only `execute_call` pipeline — four governance gates in frozen
-order, the downstream call, and the shaping post hook that spans both the success and error branches.
+**Responsibility in one sentence**: the repository's only `execute_call` pipeline — two gates in frozen order,
+the downstream call, and the shaping post hook that spans both the success and error branches.
 
 ### The request contract
 
@@ -383,6 +383,11 @@ argument pre-validator and a human approval gate; both were removed, and nothing
 leave a truncation banner pointing at bytes nobody receives. There used to be more in this hook — an injection scan
 and a leak scan ran ahead of the budget, and their relative order was load-bearing — and the ordering rules went with
 them. What is left bounds how much of the answer travels and retains the rest for `fetch_result`.
+
+**The stage key is still `defend_and_shape`, and that is deliberate.** It names a stage that no longer defends
+anything, which normally argues for a rename — but the gate-count parity assertions between the stdio face and
+`inproc.go`'s HTTP face compare exactly these keys. Renaming one side leaves those tests green while comparing
+nothing, which is a worse failure than an inherited name.
 
 **A tool with missing or unparseable annotations is destructive.** The reasoning belongs to the tier vocabulary —
 see [foundation.md](foundation.md).
@@ -436,12 +441,12 @@ knowing who is enabled, so "answer what we can".
 
 **Not writing to disk after shutdown is achieved by sealing the resource, not by waiting on goroutines.**
 `connectAll` starts one goroutine per downstream and **nothing joins them**: `shutdown()` waits on `handlers` / the
-watcher / the policy watcher / the ctl link / the pool, but not on those. A connect that happened to win the race
+watcher / the credential watcher / the ctl link / the pool, but not on those. A connect that happened to win the race
 against `lifeCtx` cancellation will go on to `persistTools`, so "the gateway has stopped" and "the gateway is still
 writing to disk" can both be true at once. For a product that treats disk state as the source of governance truth,
 this is more serious than the symptom it usually shows (a `<cache>/tools` growing back and breaking TempDir cleanup):
-after a shutdown **triggered by a policy change**, it may leave behind a tool cache collected under the policy that was
-just revoked.
+after a shutdown **triggered by a configuration change**, it may leave behind a catalog collected under the
+configuration that was just replaced.
 
 The fix is `toolCache.seal()`: `shutdown()` seals the cache as its very first act, after which `write` always returns
 `errCacheSealed` and never touches disk. `mu` covers the **entire** `write`, not just the flag check, so `seal()` waits
@@ -455,7 +460,7 @@ small race for an unbounded stall — the worse direction. On the sealing path, 
 and the invariant holds no matter how long the connect goroutines live.
 
 **Scope is a query-time projection and never touches connections.** The entire reason `scope.go` exists is this
-invariant: narrowing scope (a profile edit, a session overlay) never disturbs a downstream connection; only a spec
+invariant: narrowing scope (a profile edit, a rebind) never disturbs a downstream connection; only a spec
 change in `servers.json` triggers a reconnect. `currentScope()`'s failure direction: no registry store = no scope
 authority, return nil (the pipeline's scope gate treats nil as no-authority mode); a store that **exists** but fails to
 resolve returns an **empty** scope (zero visible servers) — an error must never widen visibility. `catalogFromRouter`
@@ -489,8 +494,8 @@ changed", and otherwise closes the freshly built connection — an expired defin
 **`execTool` is the gateway's only execution path.** Host-supplied providers (skills) are resolved **before** the
 readiness check: they have no downstream to wait for, and calling them busy while other servers connect would be a lie.
 Derived instance selection (`acquire`) happens **after routing and before the gate chain** — "which process executes" is
-a per-call connection-plane decision, while routing (and therefore visibility, scope, and audit) is always the baseline
-server. A routed tool's `inputSchema` / `annotations` are read from the **baseline** server's tool table, since a derived
+a per-call connection-plane decision, while routing — and therefore visibility, scope, and the quota key — is always
+the baseline server. A routed tool's `inputSchema` / `annotations` are read from the **baseline** server's tool table, since a derived
 instance by construction serves the same catalog.
 
 **Unknown names are dropped fail-closed and never reinterpreted as meta-tools.** The one exception is carefully drawn: if
@@ -771,7 +776,7 @@ daemon's HTTP face — cursors must survive a daemon restart within the session 
 
 `Savings` / `EstimateSavings` provide token savings estimates, with fields corresponding one-to-one to
 `savings.Record`, but this package **deliberately does not import** `internal/savings` (shaping is on the data path and
-must not drag an audit writer in with it); the caller copies the fields across.
+must not drag a file writer in with it); the caller copies the fields across.
 
 ### Invariants and failure directions
 
@@ -823,9 +828,9 @@ cursors out of another session's path; it is **not** isolation — `Entry.Owner`
 **`validID` is both a shape check and a path safety check**: `FileStore` turns an id into a filename, so anything with a separator,
 a dot segment, or an unexpected byte must be rejected before it reaches the filesystem.
 
-**The ordering invariant for format re-encoding.** `Reformat` runs on the **delivery path**, i.e. **after** the pipeline's defenses
-sits at the very end of the delivery path, so nothing after it can invalidate the budget the trailer describes.
-Moving it earlier would hand the scanner a notation it has never seen. Its rewrite scope is also fixed: it touches only `text`
+**The ordering invariant for format re-encoding.** `Reformat` sits at the very end of the delivery path, **after**
+the budget has been applied, so nothing downstream of it can invalidate the byte counts the truncation trailer
+describes. Its rewrite scope is also fixed: it touches only `text`
 blocks, and only those whose payload is a single JSON document; `structuredContent` is **never** re-encoded (that is the
 machine-readable channel, clients may parse it, and TOON does not round-trip); and the contract marker `toonenc.HeaderLine` is
 emitted at most once per result, on the first block actually re-encoded.
@@ -965,8 +970,8 @@ is exactly a **silent pass**: the counter file can't be read, the call runs anyw
 applying. So every uncounted pass **both logs and emits an `Event`**, and the assembler must wire up both `Logger` and `OnEvent` —
 "the quota didn't fire" and "the quota isn't running" must never look alike.
 
-**`Event` is only reported on DENIED or DEGRADED.** A quota that emits an event on every call would drown the audit log in non-events.
-Events carry identifiers only — no arguments, no payloads.
+**`Event` is only reported on DENIED or DEGRADED.** A quota that emits an event on every call would drown its own
+signal in non-events. Events carry identifiers only — no arguments, no payloads.
 
 **File size is self-limiting**: buckets idle beyond `idleTTL` (1 hour) are dropped (a bucket untouched that long has already refilled,
 so dropping it is equivalent to keeping it), and when the total exceeds `maxBuckets` (4096) the **least recently updated** are dropped
@@ -1013,7 +1018,12 @@ effect when it isn't" is far more dangerous than "knowing it isn't done".
    `discovery.Options.IntentVariants` and `Pins` are likewise unwired (the registry already has an `intentVariants` field and
    `IntentVariantsEnabled()`; the gateway just doesn't read it).
 
-This list used to be longer. Several entries described governance faces — a router policy with Allow/DenyDestructive
-seams, a fail-closed HITL default, leak and self-heal hooks on `pipeline.Options` — and every one of them was removed
-rather than wired. An unwired governance seam is the most dangerous thing this appendix can hold: it looks like a
-feature waiting to be switched on, and it reads to a hurried operator as protection that is already there.
+This list used to be longer, and it is also now the only one: `architecture.md` §12 carried a summary table of the
+same subject and the table was deleted rather than emptied, because a copy kept away from the code it describes is
+the one that rots unnoticed.
+
+Several entries described governance faces — a router policy with Allow/DenyDestructive seams, a fail-closed HITL
+default, leak and self-heal hooks on `pipeline.Options` — and every one of them was removed rather than wired. An
+unwired governance seam is the most dangerous thing this appendix can hold: it looks like a feature waiting to be
+switched on, and it reads to a hurried operator as protection that is already there. What is left is presentational,
+which is why it is allowed to wait.

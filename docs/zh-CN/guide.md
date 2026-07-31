@@ -9,17 +9,21 @@
 
 - **server** —— 你注册进来的一台下游 MCP server。「注册」和「打开」是两步：
   `server add` 只写下定义、保持关闭，`server enable` 才会去连接并把它投入使用。
-  所有**已启用**的 server 合起来，就是 agenthub 有可能提供给任何人的全部东西。
+  一台 server 默认提供它的全部 tool，除非你点名一个子集（`tool allow`）。
+  所有**已启用**的 server、应用了这些点名之后，就是 agenthub 有可能提供给任何人的全部东西。
 - **profile** —— 上面那个集合的一个具名子集：包含哪些 server、这些 server 的哪些 tool、
   以及结果怎么呈现。
 - **client** —— 一个 AI 应用（Claude Code、Cursor、Codex……）。一个 client **绑定**到一个
   profile 上，这条绑定就是「它能看见什么」的完整答案。
 
 ```
-servers (enabled)          ← 上限：所有已启用的 server
-   └── profile             ← 你命名的一个子集
-         └── client        ← 绑定到且只绑定到一个 profile
+servers (enabled, + tool allow)   ← 上限：所有已启用的 server
+   └── profile                    ← 你命名的一个子集
+         └── client               ← 绑定到且只绑定到一个 profile
 ```
+
+每一层都与它上面那层取交集，而且**没有任何一层能放宽**。这就是整套访问模型：
+一个 client 能碰到什么，由它连上来之前你写下的配置决定，调用进行中不再决定任何事情。
 
 由此直接推出两件值得说明白的事：
 
@@ -55,6 +59,22 @@ agenthub client connect claude-code
 
 没有 profile 参与时，一个 client 看见的就是全部已启用的 server。很多场景下这就是对的答案，
 读到这里就可以停了。
+
+## 在全局关掉一个 tool
+
+在 profile 之前，还有一件更钝的工具。一台 server 默认提供它拥有的一切，包括它日后版本里
+新增的那些；点名 tool 会把这个集合钉死：
+
+```bash
+agenthub tool allow github get_issue list_prs   # 只提供这两个
+agenthub tool allow github                      # 这台 server 什么都不提供
+agenthub tool allow github --clear              # 退回「提供全部」
+```
+
+这是**对所有 client 同时生效**的，是 `server disable` 在 tool 粒度上的孪生兄弟。
+它是白名单，永远不是黑名单；两者的区别会在 server 新增一个 tool 的那天显现：
+有规则在的时候，新 tool 会一直待在外面直到你把它加进来——这是关闭的方向。
+没有任何 profile 能把它拿走的东西放回来。
 
 ## profile：当你想要的比「全部」少
 
@@ -156,7 +176,7 @@ agenthub config set discovery full
 
 | 什么 | 在哪 |
 |---|---|
-| server 定义 | `servers.json` |
+| server 定义，以及它们的 tool 白名单 | `servers.json` |
 | profile（server、tool、discovery） | `profiles.json` |
 | client → profile 绑定 | `clients.json` |
 | 全局开关、激活的 profile | `governance.json` |
@@ -225,7 +245,7 @@ agenthub server trace linear off
 |---|---|
 | 加过的 server 一直不出现 | `server add` 之后它是关着的——看 `server ls`，再 `agenthub server enable <id>` |
 | client 一个 tool 都看不见 | 绑到了一个不存在的 profile（`client ls` 里显示 `MISSING`），或者 `client connect` 之后从没重启过 |
-| 某个 tool 消失了 | 某个 profile 的 `--only` 列表，或者 server 在 pin 之下改了它、被隔离了——先查 profile，再去怀疑 server |
+| 某个 tool 消失了 | server 上的 `tool allow` 名单，或者某个 profile 的 `--only` 列表——先用 `agenthub server inspect <id>` 把两处都看一遍，再去怀疑 server |
 | `server test` 通得过，但客户端里用不了 | 客户端没重启，或者它的 profile 里没有这台 server |
 | `client connect` 看起来什么都没干 | 它改的是一个文件；客户端在启动时才读那个文件 |
 | `clients.json` 里有遗留的 `projects` 块 | per-project 绑定已经退役。这个块被保留下来但不生效——它当初是用来收窄的，所以留着它现在不会限制任何东西 |

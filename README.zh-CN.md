@@ -80,8 +80,8 @@ agenthub client connect claude-code
 | 文件 | 内容 |
 |---|---|
 | [docs/zh-CN/guide.md](docs/zh-CN/guide.md) | **怎么用**：三个名词（server / profile / client）、日常路径，以及你真正要做的那几个决定 |
-| [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md) | **要改代码先看这个**：进程模型、核心模块地图、分层与依赖约束、一次调用穿过什么、三条数据流向、三道防线 |
-| [docs/flows.md](docs/flows.md) | 七个关键流程的时序图与失败分支（英文） |
+| [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md) | **要改代码先看这个**：进程模型、核心模块地图、分层与依赖约束、一次调用穿过什么、三条数据流向、两道防线 |
+| [docs/flows.md](docs/flows.md) | 六个关键流程的时序图与失败分支（英文） |
 | [docs/modules/](docs/modules/) | 逐包文档：职责、关键类型、不变量与失败方向（英文） |
 | [docs/canonical.md](docs/canonical.md) | 架构约定的唯一真源：冻结标识符、依赖约束、命令名规则、全部裁决记录（英文） |
 | [docs/windows.md](docs/windows.md) | Windows 现状：已实现什么、还有什么完全不能用、验收标准（英文） |
