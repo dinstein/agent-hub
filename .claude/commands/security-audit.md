@@ -1,14 +1,15 @@
 ---
-description: The two-engine security sweep — Claude and Codex review the tree independently, then fixes are dispatched
+description: The security sweep — a workflow of parallel finders, adversarial verifiers and one adjudication pass, then fixes are dispatched
 argument-hint: [path or theme to audit, or blank for the whole repo]
 ---
 
 Read `runbooks/security-audit.md` and follow it from step 0. Scope: $ARGUMENTS
 
-If no scope is given, sweep the whole repo by the runbook's step 2. Probe both engines first: with
-only one available the run continues and says so, with neither it stops. Steps 1–6 write nothing to
-the tree — the reviewers are sandboxed read-only, and a finding nobody can reproduce does not get
-fixed.
+If no scope is given, sweep the whole repo by the runbook's step 1. Run it as a `Workflow` — this
+invocation is the opt-in. Do not pin a model anywhere; the workflow inherits the session's. Probe
+`codex` first: present, it runs the same shards as a second independent engine; absent, the sweep
+continues single-engine and says so. Steps 0–3 write nothing to the tree, and a finding nobody can
+reproduce with a failing test does not get fixed.
 
 This wrapper carries no procedure of its own. If a step here would differ from the runbook, the
 runbook wins — edit that file instead.

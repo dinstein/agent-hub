@@ -9,7 +9,7 @@ are about to perform the action, and follow it from the top.
 | [new-feature.md](new-feature.md) | Building anything — the worktree, the PR, the commits, the gates, and landing on `main` |
 | [nightly-tidy.md](nightly-tidy.md) | The recurring pass: simplify the logic, refactor the shape, make docs and code agree |
 | [releasing.md](releasing.md) | Cutting a release, from preflight to checking what actually shipped |
-| [security-audit.md](security-audit.md) | Sweeping the tree for security defects with two independent engines, then dispatching the fixes |
+| [security-audit.md](security-audit.md) | Sweeping the tree for security defects — a workflow of parallel finders, adversarial verifiers and one adjudication pass — then dispatching the fixes |
 
 Each has a slash-command wrapper under `.claude/commands/` that does nothing but point here, so
 `/new-feature`, `/nightly-tidy`, `/release` and `/security-audit` reach the same text an agent
