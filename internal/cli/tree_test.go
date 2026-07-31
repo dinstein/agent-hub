@@ -61,16 +61,15 @@ var withheldCommands = []string{
 	// asserted separately, below.
 }
 
-// deprecatedCommands are hidden in EVERY build, dev included. They are a
-// third category beside "shipped" and "withheld", and they need one: a
-// withheld command is a feature the release does not teach yet, a deprecated
-// one is a spelling the release is trying to retire. Testing them against
-// either of the other two lists would assert the opposite of the intent.
-var deprecatedCommands = []string{"tool"}
-
-func isDeprecated(name string) bool {
-	return slices.Contains(deprecatedCommands, name)
-}
+// There was a third category here beside "shipped" and "withheld":
+// deprecated, for a spelling hidden in every build including dev, because a
+// withheld command is a feature the release does not teach YET and a
+// deprecated one is a spelling it is trying to retire — asserting either
+// against the other's list says the opposite of the intent. It held exactly
+// one member, the top-level `tool` alias, and emptied when that alias was
+// removed. The distinction is recorded rather than kept as an empty list: the
+// next shim needs the reasoning, and a predicate no caller consults would
+// only look like coverage.
 
 // walk visits every command in the tree, root included.
 func walk(cmd *cobra.Command, fn func(*cobra.Command)) {
@@ -159,17 +158,23 @@ func TestEveryCommandHasJSON(t *testing.T) {
 }
 
 // TestResourceGroupsAreSingularWithPluralAlias pins the naming rule for the
-// resource groups. The action/stream groups (daemon, scope, auth,
-// activity, events, config, doctor, connect) keep their names unchanged and
-// are deliberately NOT in this list.
+// resource groups. The action/flow groups (daemon, auth, activity, events,
+// config, doctor, connect, catalog) keep their names unchanged and are
+// deliberately NOT in this list.
+//
+// Addressed by PATH, not by name, because `tool` is a resource group at two
+// altitudes and at neither is it top-level: a name-only lookup could only ask
+// about the spelling that was just retired.
 func TestResourceGroupsAreSingularWithPluralAlias(t *testing.T) {
 	root := newTestRoot(t)
-	for _, name := range []string{
-		"server", "profile", "client", "session", "tool", "skill", "secret",
+	for _, path := range [][]string{
+		{"server"}, {"profile"}, {"client"}, {"session"}, {"skill"}, {"secret"}, {"token"},
+		{"server", "tool"}, {"profile", "tool"},
 	} {
-		cmd, _, err := root.Find([]string{name})
+		name := path[len(path)-1]
+		cmd, _, err := root.Find(path)
 		if err != nil || cmd.Name() != name {
-			t.Errorf("group %q not found (found %v, err %v)", name, cmd.Name(), err)
+			t.Errorf("group %q not found (found %v, err %v)", strings.Join(path, " "), cmd.Name(), err)
 			continue
 		}
 		plural := name + "s"
@@ -183,9 +188,14 @@ func TestResourceGroupsAreSingularWithPluralAlias(t *testing.T) {
 		if !found {
 			t.Errorf("group %q must carry the plural alias %q, aliases=%v", name, plural, cmd.Aliases)
 		}
-		// The alias must actually resolve, not merely be declared.
-		if aliased, _, aerr := root.Find([]string{plural}); aerr != nil || aliased.Name() != name {
-			t.Errorf("alias %q does not resolve to %q (got %v, err %v)", plural, name, aliased.Name(), aerr)
+		// The alias must actually resolve, not merely be declared — and at
+		// the altitude the group lives at, so `server tools` is what is
+		// asked about rather than a bare `tools` nothing answers.
+		aliasPath := slices.Clone(path)
+		aliasPath[len(aliasPath)-1] = plural
+		if aliased, _, aerr := root.Find(aliasPath); aerr != nil || aliased.Name() != name {
+			t.Errorf("alias %q does not resolve to %q (got %v, err %v)",
+				strings.Join(aliasPath, " "), name, aliased.Name(), aerr)
 		}
 	}
 }
@@ -215,21 +225,22 @@ func TestListingsAreNamedLs(t *testing.T) {
 // exits 0, an unknown subcommand is a usage error (exit 2). Both are the
 // groupRunE contract, and both must hold for every group, old and new.
 func TestEveryGroupShowsHelpOnBareInvocation(t *testing.T) {
-	groups := []string{
-		"server", "profile", "client", "session", "secret", "token",
-		"tool", "skill", "config", "daemon", "auth",
+	groups := [][]string{
+		{"server"}, {"profile"}, {"client"}, {"session"}, {"secret"}, {"token"},
+		{"server", "tool"}, {"skill"}, {"config"}, {"daemon"}, {"auth"},
 	}
-	for _, g := range groups {
+	for _, path := range groups {
+		g := strings.Join(path, " ")
 		t.Run(g, func(t *testing.T) {
 			setDataDir(t)
-			code, out, _ := runCLI(t, "", g)
+			code, out, _ := runCLI(t, "", path...)
 			if code != ExitOK {
 				t.Fatalf("bare %q exit = %d", g, code)
 			}
 			if !strings.Contains(out, "Usage:") {
 				t.Errorf("bare %q did not print help:\n%s", g, out)
 			}
-			code, _, stderr := runCLI(t, "", g, "definitely-not-a-subcommand")
+			code, _, stderr := runCLI(t, "", append(slices.Clone(path), "definitely-not-a-subcommand")...)
 			if code != ExitUsage {
 				t.Errorf("unknown %q subcommand exit = %d, want %d (stderr %s)", g, code, ExitUsage, stderr)
 			}
@@ -407,9 +418,6 @@ func TestReleaseHidesExactlyTheWithheldCommands(t *testing.T) {
 		if c.Name() == "help" || c.Name() == "completion" {
 			continue
 		}
-		if isDeprecated(c.Name()) {
-			continue // hidden in every build; TestNestedToolGroup… owns it
-		}
 		if want := hidden[c.Name()]; c.Hidden != want {
 			t.Errorf("release build: %q Hidden = %v, want %v", c.Name(), c.Hidden, want)
 		}
@@ -451,9 +459,6 @@ func TestReleaseHidesExactlyTheWithheldCommands(t *testing.T) {
 // the channel check.
 func TestDevShowsEveryCommand(t *testing.T) {
 	for _, c := range newTestRoot(t).Commands() {
-		if isDeprecated(c.Name()) {
-			continue // a retired spelling is never advertised, dev or not
-		}
 		if c.Hidden {
 			t.Errorf("dev build: %q is hidden, want visible", c.Name())
 		}
@@ -463,13 +468,13 @@ func TestDevShowsEveryCommand(t *testing.T) {
 // TestHiddenCommandsStillRun is the load-bearing one: hiding must not become
 // disabling. A hidden command that stopped resolving would look exactly like a
 // correctly hidden one on the help page, and only show up as a broken
-// `agenthub tool ls` in a shipped binary.
+// `agenthub token ls` in a shipped binary.
 func TestHiddenCommandsStillRun(t *testing.T) {
 	// Every withheld group still RESOLVES — cobra's Find must reach past
 	// Hidden, at the group and at the leaf.
 	root := newReleaseTestRoot(t)
 	for _, path := range [][]string{
-		{"tool", "ls"}, {"token"},
+		{"token", "ls"}, {"token"},
 		{"config", "ls"},
 		{"daemon", "status"}, {"session", "ls"}, {"events"}, {"activity"}, {"doctor"},
 	} {
@@ -507,8 +512,9 @@ func TestHiddenCommandsStillRun(t *testing.T) {
 // so `server tool` could be hidden by one field on one line and the release
 // help page would lose a whole group in silence.
 //
-// The old top-level `tool` is the complement: hidden in EVERY build, dev
-// included, because it is a deprecated alias rather than a withheld feature.
+// The old top-level `tool` is the complement: it is not in the tree at all
+// any more, in either build. It was hidden rather than absent for one
+// release, and that release has shipped.
 func TestNestedToolGroupShipsAndTheOldSpellingDoesNot(t *testing.T) {
 	for _, root := range []*cobra.Command{newTestRoot(t), newReleaseTestRoot(t)} {
 		have := commandPaths(root)
@@ -524,12 +530,9 @@ func TestNestedToolGroupShipsAndTheOldSpellingDoesNot(t *testing.T) {
 				t.Errorf("%s is hidden; the group ships in every build", path)
 			}
 		}
-		c, ok := have["agenthub tool"]
-		if !ok {
-			t.Fatal("the deprecated top-level 'tool' alias is gone; scripted callers break")
-		}
-		if !c.Hidden {
-			t.Error("the deprecated top-level 'tool' must never be advertised")
+		if _, ok := have["agenthub tool"]; ok {
+			t.Error("the retired top-level 'tool' is back in the tree; it was granted " +
+				"one release, that release was v0.14.0, and it shipped")
 		}
 	}
 
@@ -541,23 +544,30 @@ func TestNestedToolGroupShipsAndTheOldSpellingDoesNot(t *testing.T) {
 	}
 }
 
-// The deprecated spelling has to reach the same code, not a copy of it, and
-// its notice must stay off stdout: the root has SetOut(stdout), so a notice
-// printed there would corrupt --json for the callers the alias exists for.
-func TestDeprecatedToolSpellingStillRuns(t *testing.T) {
+// TestRetiredToolSpellingIsRefused is the other half of the removal, and the
+// half a tree walk cannot give: `agenthub tool ls` must now FAIL rather than
+// answer. The two are different claims — the shim was hidden, so a walk that
+// only asked "is it advertised?" passed for the whole year it kept working —
+// and this is the one a scripted caller actually experiences.
+//
+// The new spelling is asserted alongside it, on the same fixture, because
+// what makes the refusal correct is that the capability moved rather than
+// disappeared. A test pinning only the failure would still pass if
+// `server tool ls` broke too.
+func TestRetiredToolSpellingIsRefused(t *testing.T) {
 	seedCatalog(t)
 
-	code, out, stderr := runCLI(t, "", "tool", "ls", "--json")
+	code, _, stderr := runCLI(t, "", "tool", "ls", "--json")
+	if code != ExitUsage {
+		t.Errorf("exit = %d, want %d: the retired spelling must be refused, stderr = %q",
+			code, ExitUsage, stderr)
+	}
+
+	code, out, stderr := runCLI(t, "", "server", "tool", "ls", "--json")
 	if code != ExitOK {
-		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+		t.Fatalf("the surviving spelling exits %d, stderr = %s", code, stderr)
 	}
 	if env := decodeEnvelope(t, out); !env.OK {
-		t.Fatalf("the deprecated spelling did not produce a clean envelope: %s", out)
-	}
-	if !strings.Contains(stderr, "server tool") {
-		t.Errorf("stderr must name the new spelling, got %q", stderr)
-	}
-	if strings.Contains(out, "server tool") {
-		t.Errorf("the notice leaked onto stdout: %s", out)
+		t.Fatalf("`server tool ls` did not produce a clean envelope: %s", out)
 	}
 }

@@ -180,47 +180,6 @@ func (a *App) newToolCmd() *cobra.Command {
 	return cmd
 }
 
-// newToolShim keeps `agenthub tool …` working for one release after the group
-// moved under `server`. That release is v0.14.0, which shipped it — so this
-// function goes before the next version is cut (canonical.md §2, retired
-// names). Naming the release is the point: "one release" cannot tell a reader
-// whether it has already elapsed, so a deadline written that way expires
-// without anyone being able to see that it did.
-//
-// It wraps each RunE rather than hanging a PersistentPreRunE on the group:
-// cobra runs only the CLOSEST persistent hook up the chain, so a hook here
-// would silently suppress any hook the root grows later. The notice goes to
-// stderr, never stdout — the root has SetOut(stdout), so printing it there
-// would corrupt --json for exactly the scripted callers this exists for.
-func (a *App) newToolShim() *cobra.Command {
-	shim := a.newToolCmd()
-	shim.Hidden = true
-	shim.Short = "Deprecated: use 'agenthub server tool'"
-	walkCommands(shim, func(c *cobra.Command) {
-		inner := c.RunE
-		if inner == nil {
-			return
-		}
-		c.RunE = func(cmd *cobra.Command, args []string) error {
-			// Advisory, like the profile shim's: a stderr that will not take
-			// the note must not turn a successful command into a failure.
-			_, _ = fmt.Fprint(a.stderr,
-				"note: 'agenthub tool' is now 'agenthub server tool'; "+
-					"the old spelling still works but will be removed\n")
-			return inner(cmd, args)
-		}
-	})
-	return shim
-}
-
-// walkCommands visits a command and everything under it.
-func walkCommands(cmd *cobra.Command, fn func(*cobra.Command)) {
-	fn(cmd)
-	for _, c := range cmd.Commands() {
-		walkCommands(c, fn)
-	}
-}
-
 func (a *App) newToolLsCmd() *cobra.Command {
 	var (
 		search  string
