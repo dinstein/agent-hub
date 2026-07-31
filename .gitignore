@@ -52,10 +52,12 @@ node_modules/
 *.swp
 
 # Agent session state stays local; skills are a deliverable and ship with the
-# repo. The rule has to re-include the chain step by step, because git will
-# not look inside a directory it has already excluded — and .claude IS
-# excluded here, by a global ~/.gitignore rather than by this file. A negation
-# on the leaf alone would silently do nothing.
+# repo, and the command wrappers point at runbooks/ that everyone shares. The
+# rule has to re-include the chain step by step, because git will not look
+# inside a directory it has already excluded — and .claude IS excluded here,
+# by a global ~/.gitignore rather than by this file. A negation on the leaf
+# alone would silently do nothing.
 !.claude/
 .claude/*
 !.claude/skills/
+!.claude/commands/
