@@ -380,8 +380,9 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, payload any, hdr
 
 func isRedirectStatus(code int) bool { return code >= 300 && code < 400 }
 
-// redactLocation keeps only scheme+host of a redirect target: a Location
-// header on a credential request can echo back query parameters we sent.
+// redactLocation keeps scheme, host and path of a redirect target and drops
+// the rest: a Location header on a credential request can echo back the
+// query parameters we sent, and those are the credential.
 func redactLocation(loc string) string {
 	if loc == "" {
 		return "(no Location)"
@@ -432,9 +433,10 @@ func classifyTransportError(err error) error {
 	if errors.As(err, &flow) {
 		return flow
 	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return newFlowError(ErrorTypeTransport, err)
-	}
+	// Everything else, context cancellation and deadlines included, is
+	// transport: this package has no error type that separates "gave up
+	// waiting" from "the request failed", and errors.Is on the wrapped cause
+	// still tells a caller which it was.
 	return newFlowError(ErrorTypeTransport, err)
 }
 
