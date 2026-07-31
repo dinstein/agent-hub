@@ -27,10 +27,11 @@ regardless of who asked.
 | [docs/canonical.md](docs/canonical.md) | Whether a name/dependency/convention may change, and why it was decided |
 | [runbooks/](runbooks/) | You are about to **do** one of the standard things, and want the steps in order |
 
-`docs/` explains how the system works; `runbooks/` is what you execute. Three of them today —
+`docs/` explains how the system works; `runbooks/` is what you execute. Four of them today —
 [new-feature.md](runbooks/new-feature.md) (build anything, and land it), [nightly-tidy.md](runbooks/nightly-tidy.md)
-(the recurring simplify / refactor / docs-agree pass), and [releasing.md](runbooks/releasing.md)
-(cut a release). Each has a `.claude/commands/` wrapper that only points at it.
+(the recurring simplify / refactor / docs-agree pass), [releasing.md](runbooks/releasing.md)
+(cut a release), and [security-audit.md](runbooks/security-audit.md) (the recurring two-engine
+security sweep). Each has a `.claude/commands/` wrapper that only points at it.
 
 Confirmed gaps, pinned to a line but not yet fixed, live in the `docs/modules/` file of the package
 that owns them — under "current assembly status", or beside the invariant they bend — and, for one
@@ -163,3 +164,6 @@ the sequence from the bullets below.
 
 Go 1.26+, golangci-lint v2, make, node v22 / npm 10, the `gh` CLI (authenticated — the branch flow
 opens and updates PRs through it), and the wails3 CLI (only needed for GUI builds).
+
+The `claude` and `codex` CLIs are needed only by [security-audit.md](runbooks/security-audit.md),
+which probes for both and runs whichever it finds. Neither is a build dependency.
