@@ -365,8 +365,27 @@ func Run(ctx context.Context, cfg Config) error {
 			watcher.Close()
 		}
 		bgStop()
-		// The listener close (via Shutdown/Close) unlinks the socket; the
-		// remove here is a best-effort backstop for abnormal paths.
+		// Both paths are SHARED, and by the time this runs they may belong
+		// to somebody else. Shutdown closes the listener before it drains,
+		// so for up to ShutdownGrace a replacement daemon can start, find
+		// no stale socket, bind, and write its own daemon.json — and the
+		// removes below would then unlink a LIVE control socket and delete
+		// a readiness file that had nothing to do with this process. The
+		// replacement keeps running with its registry watch and refresher,
+		// unreachable and invisible, and the next `daemon start` binds a
+		// fresh socket beside it.
+		//
+		// daemon.json still naming this pid is the proof of ownership, and
+		// it covers the socket too: a replacement writes the file as part
+		// of coming up, so a foreign pid means the paths are no longer
+		// ours. Anything else — unreadable, missing, another pid — leaves
+		// both alone. The listener close already unlinked the socket on
+		// every ordinary path; this remove was only ever a backstop.
+		if !ownsRunFiles(runDir) {
+			log.Info("run directory no longer belongs to this daemon; leaving the socket and daemon.json alone",
+				"socket", socket, "info", infoPath)
+			return
+		}
 		_ = os.Remove(socket)
 		if err := os.Remove(infoPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			log.Warn("removing daemon.json failed", "error", err)
@@ -494,6 +513,23 @@ func startWatch(ctx context.Context, store *registry.Store, opts registry.WatchO
 		}
 	}()
 	return w
+}
+
+// ownsRunFiles reports whether daemon.json at path still names THIS
+// process, which is what makes the shared run-directory paths ours to
+// delete.
+//
+// Failure direction: FAIL-CLOSED, in the sense that matters here — every
+// doubt (unreadable, unparsable, missing, a different pid) answers false
+// and leaves the files in place. Deleting a live daemon's socket is
+// unrecoverable for that daemon; leaving a stale file behind costs the
+// next start one cleanup pass, and removeStaleSocket already handles it.
+func ownsRunFiles(runDir string) bool {
+	info, err := ReadInfo(runDir)
+	if err != nil {
+		return false
+	}
+	return info.Pid == os.Getpid()
 }
 
 // writeInfoFile atomically writes daemon.json (0600): temp file in the same

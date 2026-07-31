@@ -907,6 +907,15 @@ reported is its real failure plus a 4 KiB stderr tail rather than a bare timeout
 kill as the fallback for foreground starts. `daemonAlive` probes with signal 0, and **any error (ESRCH, EPERM, …) reads as
 false** — stop/status must never signal a pid whose ownership it cannot confirm.
 
+**Shutdown deletes the run directory's shared paths only while they are still this daemon's.** `Shutdown` closes the
+listener *before* it drains, and Go's unix listener unlinks the socket on close — so for up to `ShutdownGrace` the run
+directory looks free, a replacement can bind and write its own `daemon.json`, and the departing daemon's cleanup would then
+unlink a **live** control socket and delete a readiness file it never wrote. The replacement survives that with its registry
+watch and refresher still running, unreachable and invisible, and the next `daemon start` binds a fresh socket beside it.
+`ownsRunFiles` gates both removes on `daemon.json` still naming this pid, and every doubt — unreadable, unparsable, missing,
+another pid — answers false and leaves the paths alone: deleting a live daemon's socket cannot be undone, while a stale file
+costs the next start one `removeStaleSocket` pass.
+
 **The pid `stop` signals comes from the ping, never from `run/daemon.json`.** That file names a process, it does not identify
 one: an abrupt death leaves it behind, and the OS is then free to reuse the number. Reading a pid out of it and signalling that
 pid is how `daemon stop` came to SIGTERM an unrelated process — and, with `--force`, that process's whole group. A successful
