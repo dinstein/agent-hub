@@ -34,6 +34,19 @@ type sseEvent struct {
 //   - comment lines (":" prefix) and unknown fields are ignored, never
 //     fatal — a heartbeat comment must not kill a stream.
 //
+// ONE DELIBERATE DEVIATION from the dispatch rule, and every caller depends on
+// knowing it: the spec drops an event whose data buffer is empty, and this
+// scanner dispatches it. A bare `id: 5` followed by a blank line — the shape a
+// resumable stream uses to advance Last-Event-ID without carrying a message —
+// arrives here as an sseEvent named "message" with no data. It works this way
+// because lastID must advance for resumption whether or not anything is
+// dispatched, and one rule that always dispatches is easier to hold in the
+// head than two paths that both have to remember to update it. THE COST IS
+// PAID BY THE CALLER: all three consumers (httpsse.go, and streamablehttp.go
+// twice) skip an empty-data event before parsing, and deleting one of those
+// guards hands ParseMessage an empty frame — a malformed-frame error, which
+// takes the stream down, on a keep-alive.
+//
 // It is not safe for concurrent use; one stream reader owns it.
 type sseScanner struct {
 	br         *bufio.Reader

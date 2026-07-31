@@ -170,6 +170,15 @@ func (s *sseWriter) message(id string, msg any) {
 	s.event("message", id, data)
 }
 
+// idOnly writes an event carrying nothing but an id — the shape a resumable
+// stream uses to advance Last-Event-ID without sending a message. The SSE
+// dispatch rule drops it for having an empty data buffer; sseScanner
+// dispatches it, and the consumers skip it (see the sseScanner doc).
+func (s *sseWriter) idOnly(id string) {
+	_, _ = fmt.Fprintf(s.w, "id: %s\n\n", id)
+	s.f.Flush()
+}
+
 func (s *sseWriter) comment(text string) {
 	_, _ = fmt.Fprintf(s.w, ": %s\n\n", text)
 	s.f.Flush()

@@ -552,6 +552,15 @@ its analogue: a single event whose accumulated data exceeds the cap yields `mcp.
 SSE dispatch rules, and comment lines (`:` heartbeats) and unknown fields are ignored rather than
 fatal. `readBounded` / `encodeMessage` apply the same cap to HTTP bodies.
 
+**The one place `sseScanner` does not follow the dispatch rules is an empty data buffer**, which the
+spec drops and this scanner dispatches — so a bare `id:` line and a blank line, the way a resumable
+stream advances `Last-Event-ID` without sending a message, surfaces as a `message` event with no
+data. `lastID` has to advance for resumption either way, and one always-dispatch rule beats two paths
+that both have to remember to update it. **The three consumers pay for it**: `httpsse.go` and both
+stream readers in `streamablehttp.go` skip an empty-data event before parsing. That guard is not
+defensive tidiness — without it `ParseMessage` is handed an empty frame, returns
+`ErrMalformedFrame`, and the reader tears down the stream on a keep-alive.
+
 **A reverse-RPC reply's id is forcibly overwritten by the transport with the request id**, whatever
 the handler set. With no handler registered we answer method-not-found; when the handler errors or
 returns nil we answer internal-error; and when the reply itself exceeds the frame limit we substitute
@@ -731,7 +740,7 @@ stateDiagram-v2
 | `httpcommon.go` | Everything the two HTTP transports share: header constants, `HTTPConfig`, `DialContextFunc`, `httpError`/`requestError` classification, `readBounded`/`encodeMessage`/`decodeMessages`, `sameOrigin`, backoff |
 | `streamablehttp.go` | Streamable HTTP: the POST main path, JSON and SSE responses, session headers, `Last-Event-ID` resumption, the optional GET notification stream and reconnect loop, DELETE on `Close` |
 | `httpsse.go` | Legacy HTTP+SSE: the long-lived GET plus endpoint event parsing (cross-origin fails closed), POST sending, the terminal failure model |
-| `ssescan.go` | `sseScanner`: bounded, sticky, dispatching events per the SSE spec, ignoring comments and unknown fields |
+| `ssescan.go` | `sseScanner`: bounded, sticky, dispatching events per the SSE spec except for the empty-data rule (see above), ignoring comments and unknown fields |
 | `initialize.go` | `Initialize`: handshake + version negotiation + `notifications/initialized`, always `ClassFatal` on failure |
 | `tailbuf.go` | `tailBuffer`: a concurrency-safe ring writer holding the last N bytes, backing `Stderr()` |
 | `testdata/*.txt,*.json` | Goldens: docker argv and the on-the-wire bytes of both HTTP transports. `wiregolden_test.go -update` rewrites them; **fix the code, don't edit the goldens** |

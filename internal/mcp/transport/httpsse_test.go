@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -474,5 +475,57 @@ func TestHTTPSSEOversizedEvent(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("oversized event did not release the pending call")
+	}
+}
+
+// TestHTTPSSEIDOnlyEventDoesNotKillTheStream pins the guard every consumer of
+// sseScanner carries. The scanner dispatches an event whose data buffer is
+// empty — the SSE dispatch rule drops it — and a bare `id:` line is exactly
+// that shape, which is how a resumable stream advances Last-Event-ID without
+// sending a message. Reaching ParseMessage it would be an empty frame, and
+// TestHTTPSSEMalformedMessageIsTerminal shows what a frame ParseMessage
+// rejects does to the stream. So the skip in the reader is load-bearing, and
+// this is the test that fails if someone reads it as defensive tidying.
+func TestHTTPSSEIDOnlyEventDoesNotKillTheStream(t *testing.T) {
+	ids := make(chan mcp.ID, 1)
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			body, rerr := io.ReadAll(r.Body)
+			if rerr != nil {
+				t.Errorf("read post body: %v", rerr)
+			}
+			msg, perr := mcp.ParseMessage(body)
+			req, ok := msg.(*mcp.Request)
+			if perr != nil || !ok {
+				t.Errorf("posted body = %s (%v), want a request", body, perr)
+			} else {
+				select {
+				case ids <- req.ID:
+				default:
+				}
+			}
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		s := startSSE(t, w)
+		s.event("endpoint", "", []byte("/messages"))
+		id := <-ids
+		s.idOnly("42") // the keep-alive under test
+		s.message("43", mcp.NewResponse(id, json.RawMessage(`{"tools":[]}`)))
+		<-r.Context().Done()
+	})
+
+	tr, err := DialHTTPSSE(testCtx(t), HTTPConfig{URL: fs.URL + "/sse"})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = tr.Close() }()
+
+	raw, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+	if err != nil {
+		t.Fatalf("call after an id-only event: %v", err)
+	}
+	if string(raw) != `{"tools":[]}` {
+		t.Fatalf("result = %s", raw)
 	}
 }
