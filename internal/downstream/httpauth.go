@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
@@ -54,6 +55,12 @@ type authRoundTripper struct {
 	// TokenSource reports one (credentialEpoch). It is what turns a credential
 	// announcement into a cache drop without a request having to be rejected
 	// first — see token().
+	//
+	// The credential DEADLINE is deliberately not cached here: like the
+	// epoch, it is re-read from the source on every request. The source is
+	// the only thing that knows when its own value stops being good, and a
+	// copy taken at load time would keep serving a token past a deadline the
+	// source had already moved.
 	mu     sync.Mutex
 	tok    string
 	loaded bool
@@ -68,6 +75,28 @@ type authRoundTripper struct {
 // another process, and "different from what I last saw" is the only
 // comparison this needs to support.
 type credentialEpoch interface{ Epoch() uint64 }
+
+// credentialDeadline is the optional face of a TokenSource that knows when
+// the credential it last handed out stops being worth sending.
+//
+// It exists because the other three cache rules are all REACTIVE: a miss, a
+// 401, or an announcement by another process. None of them fires for a token
+// that simply ages out inside a live connection while no other process is
+// running — the standalone gateway's case, since there is no daemon there to
+// rotate the vault and announce it. Worse, a server that answers an expired
+// token with 200 and an error *result* rather than 401 (they exist; see
+// docs/modules/oauth.md) never produces the rejection the second rule waits
+// for, so without a deadline such a connection stays broken until the client
+// restarts.
+//
+// A deadline is a wall-clock instant rather than a TTL because the value it
+// comes from is one: `expires_at` in the stored OAuth state. It is the
+// instant a REFRESH becomes due, not the hard expiry — the point is to drop
+// the cache early enough that the re-read has somewhere to go.
+//
+// The zero instant means "no deadline" and is what a source that cannot know
+// reports; the cache then behaves exactly as it did before this face existed.
+type credentialDeadline interface{ NotAfter() time.Time }
 
 // EpochFunc reports the current credential epoch of one server.
 type EpochFunc func() uint64
@@ -93,6 +122,23 @@ type epochTokenSource struct {
 }
 
 func (e epochTokenSource) Epoch() uint64 { return e.epoch() }
+
+// NotAfter forwards the wrapped source's deadline, because a decorator that
+// embeds the TokenSource *interface* does not carry the wrapped value's other
+// methods: the credentialDeadline assertion in the round tripper is made
+// against the outermost value, and without this it would silently miss a
+// deadline the innermost source does report. A source with no deadline
+// reports the zero instant, which is what "no deadline" already means.
+func (e epochTokenSource) NotAfter() time.Time { return deadlineOf(e.TokenSource) }
+
+// deadlineOf reports a source's credential deadline, or the zero instant when
+// it has none.
+func deadlineOf(ts TokenSource) time.Time {
+	if d, ok := ts.(credentialDeadline); ok {
+		return d.NotAfter()
+	}
+	return time.Time{}
+}
 
 func newAuthRoundTripper(base http.RoundTripper, auth TokenSource, endpoint *url.URL) *authRoundTripper {
 	return &authRoundTripper{base: base, auth: auth, endpoint: endpoint}
@@ -156,21 +202,48 @@ func (a *authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 // connection — the new token would sit in the vault until the old one was
 // finally rejected, which is correct but late, and late is what the
 // announcement plane exists to fix.
+//
+// It is dropped a fourth time when the source reports a credentialDeadline
+// that has passed. That is the only rule of the four which needs neither a
+// rejection nor another process: it is what lets a standalone gateway renew a
+// token that ages out mid-connection, including against a server that answers
+// an expired credential with 200 rather than 401.
 func (a *authRoundTripper) token(ctx context.Context) string {
 	epoch, versioned := a.currentEpoch()
+	deadline := deadlineOf(a.auth)
 
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.loaded && (!versioned || a.epoch == epoch) {
-		return a.tok
+	usable := a.loaded &&
+		(!versioned || a.epoch == epoch) &&
+		(deadline.IsZero() || time.Now().Before(deadline))
+	if usable {
+		cur := a.tok
+		a.mu.Unlock()
+		return cur
 	}
+	a.mu.Unlock()
+
+	// Loaded OUTSIDE the lock. A source that reports a deadline renews inside
+	// Token, and that is a network round trip; holding mu across it would
+	// queue every concurrent request to this server behind it, which is the
+	// same reason refresh() below unlocks before renewing. Two callers racing
+	// here cost one extra vault read at worst — the serialization that
+	// actually matters, a one-time refresh token spent twice, belongs to the
+	// TokenSource and not to this cache.
 	tok, ok, err := a.auth.Token(ctx)
 	if err != nil || !ok {
 		return ""
 	}
+	// The epoch is re-read AFTER the load, for the same reason refresh() does
+	// after renewing: a source that renewed inside Token has already moved
+	// it, and caching under the pre-load value would discard the new
+	// credential on the very next request.
+	epoch, _ = a.currentEpoch()
+	a.mu.Lock()
 	a.tok = tok
 	a.loaded = true
 	a.epoch = epoch
+	a.mu.Unlock()
 	return tok
 }
 
