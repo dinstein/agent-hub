@@ -590,6 +590,17 @@ The narrowing was real, correct, and unreachable in the one configuration where 
 than dropping the flag) is the "delivered or refused" rule: an operator who asked for unauthenticated access on a public
 address asked for something this build will not do, and silently ignoring it leaves them believing it took effect.
 
+**The channel is not encrypted, and a non-loopback bind is told so.** This package terminates no TLS — there is no
+certificate, no TLS configuration and no `ServeTLS` in it — so everything above insists on a credential for a
+network-reachable listener and that credential then crosses the network in the clear, along with every tool call and
+result. An on-path observer reads the bearer and replays it at its tier. **Terminating TLS is deliberately out of
+scope**: certificate material, rotation and trust configuration are a feature with their own argument, not something a
+bind check should invent, and the usual deployment answer is a TLS-terminating proxy or a private network. Silence was
+not acceptable either — "delivered or refused" applies to the channel as much as to a container runtime — so
+`AuthorizeBind` sets `BindDecision.Cleartext` on every non-loopback bind and the daemon logs it at WARN. Loopback binds
+are not warned, because a warning printed on every ordinary start is one nobody reads. `TestNonLoopbackBindIsToldItIsUnencrypted`
+is where this decision is written down; if TLS is ever implemented, that test changes with it.
+
 **`Authenticate` re-checks the peer, and `peerIsLoopback` fails toward false.** The no-credential path requires *both*
 `InsecureLoopback` and a loopback `RemoteAddr`. This is deliberate duplication: `InsecureLoopback` reaches the
 `Authenticator` as a bare bool carrying no evidence of the address the listener actually got, which is precisely how the

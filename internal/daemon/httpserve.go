@@ -145,6 +145,14 @@ func startHTTPPlane(ctx context.Context, cfg Config, deps httpPlaneDeps, tokens 
 		}
 	}()
 
+	// A network-reachable bind says plainly what it does not protect. The
+	// layer above insists on a credential for exactly this case and then
+	// puts it on the wire in the clear; an operator who is never told that
+	// cannot decide to put a proxy in front of it. WARN, not Info: it is
+	// the one line here anybody needs to act on.
+	if decision.Cleartext != "" {
+		log.Warn("MCP data plane is unencrypted", "addr", addr, "bound", ep.addrs, "warning", decision.Cleartext)
+	}
 	log.Info("MCP data plane serving",
 		"addr", addr, "bound", ep.addrs, "reason", decision.Reason, "loopback", decision.Loopback)
 	return ep, nil

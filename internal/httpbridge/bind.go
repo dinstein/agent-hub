@@ -23,7 +23,30 @@ type BindDecision struct {
 	Reason string
 	// Loopback records whether Addr resolves to a loopback host.
 	Loopback bool
+	// Cleartext warns that the bind carries credentials over an unencrypted
+	// channel. Set for every non-loopback bind, because this package
+	// terminates no TLS: see CleartextWarning.
+	Cleartext string
 }
+
+// CleartextWarning is what a non-loopback bind is told about its channel.
+//
+// This package serves plain HTTP and has no TLS configuration, certificate
+// or ServeTLS anywhere in it. Everything above insists on a credential for a
+// network-reachable listener — AuthorizeBind refuses without one — and then
+// that credential crosses the network in the clear, along with every tool
+// call and result. An on-path observer can read the bearer and replay it at
+// its tier.
+//
+// Terminating TLS is deliberately out of scope: it needs certificate
+// material, rotation and trust configuration, which is a feature with its
+// own argument and not something a bind check should invent. What is NOT
+// acceptable is silence. The "isolation a config claims must be delivered or
+// refused" rule applies to the channel too, and the honest form here is to
+// deliver the bind and say plainly what it does not protect, so the operator
+// can put it behind a TLS-terminating proxy or a private network.
+const CleartextWarning = "this endpoint serves plain HTTP: bearer tokens and all MCP traffic cross the network unencrypted. " +
+	"Put it behind a TLS-terminating proxy, or restrict it to a trusted network"
 
 // BindConfig is the input of AuthorizeBind.
 type BindConfig struct {
@@ -79,6 +102,10 @@ func AuthorizeBind(cfg BindConfig) (BindDecision, error) {
 				"The hatch covers a developer's own machine, never a network-reachable "+
 				"listener — drop the flag and authenticate with a token, or bind loopback",
 			ErrBindUnauthorized, cfg.Addr)
+	}
+
+	if !loopback {
+		dec.Cleartext = CleartextWarning
 	}
 
 	switch {
