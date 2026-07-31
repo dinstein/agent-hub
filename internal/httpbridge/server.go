@@ -123,15 +123,26 @@ func New(opts Options) (*Server, error) {
 	}, nil
 }
 
-// Handler returns the http.Handler for this server. Mount it directly; the
-// per-request limits live inside, not in middleware a caller could forget.
+// Handler returns the http.Handler for this server. The per-request limits
+// live inside it rather than in middleware a caller could forget — but the two
+// HEAD-side ones do not, and cannot: MaxHeaderBytes and ReadHeaderTimeout are
+// http.Server fields, and by the time any handler runs the head is already
+// read.
+//
+// This comment used to say "mount it directly", which is the one instruction
+// that quietly drops those two. Mounting it bare is a decision to serve
+// without them; the production path does not, and neither should an assembly
+// bringing its own listener. Serve goes through HTTPServer below. The single
+// caller that does mount this bare is a test on httptest.Server, where the
+// head comes from the test itself.
 func (s *Server) Handler() http.Handler { return http.HandlerFunc(s.serveHTTP) }
 
 // HTTPServer wraps Handler in an http.Server carrying the head-side ingress
 // limits (MaxHeaderBytes, ReadHeaderTimeout). Those two CANNOT be enforced
 // from inside a handler — by the time a handler runs, the head has already
-// been read — which is why assemblies must use this constructor rather than
-// building their own http.Server.
+// been read — which is why an assembly bringing its own listener must build
+// through this constructor rather than an http.Server of its own. Serve is
+// the normal path and already does.
 func (s *Server) HTTPServer() *http.Server {
 	return &http.Server{
 		Handler:           s.Handler(),

@@ -639,9 +639,12 @@ memory sink).
 
 **Ingress hard limits** (header size, header read deadline, body size, body read deadline, concurrency) are constants
 in `ingress.go`. The two header limits **cannot be enforced inside the handler** (by the time the handler runs, the
-headers are already read), so the assembler must use `Server.HTTPServer()` rather than building its own `http.Server`. The body
-read deadline is set per request via `ResponseController` — a server-level `ReadTimeout` would also limit long-lived
-connections.
+headers are already read): they are `http.Server` fields, so they come from `Server.HTTPServer()` and from nothing else.
+`Serve` already builds through it, which is why the daemon does not have to know; an assembly bringing its own listener
+does, and one that mounts `Handler()` bare is choosing to serve without a header-size limit or a head read deadline.
+`Handler()`'s own comment used to invite exactly that ("mount it directly") — the one instruction that drops them
+silently — and now says what it costs. The body read deadline is set per request via `ResponseController` — a
+server-level `ReadTimeout` would also limit long-lived connections.
 
 **Only Streamable HTTP is exposed.** canonical.md §5b freezes the transport asymmetry: agenthub **reads** legacy HTTP+SSE
 downstreams but **never grows a new SSE exposure surface**, so GET returns 405 rather than upgrading to a stream.
