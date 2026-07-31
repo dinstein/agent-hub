@@ -36,9 +36,22 @@
 // production paths use AGENTHUB_SECRET_KEY or the OS keyring.
 //
 // Concurrency: a Chain serializes its own operations with an in-process
-// mutex. Cross-process write coordination (CLI writing while the daemon
-// runs) is the caller's concern and arrives with the M1 wiring; the vault
-// sibling lock for OAuth refresh (docs/modules/oauth.md) lives in oauthflow.
+// mutex, and THAT IS THE ONLY SERIALIZATION THERE IS. No cross-process lock
+// guards a vault write, and both write paths are whole-file
+// read-modify-write cycles — setLocked loads the entire secrets.enc map,
+// mutates one key and saves it back, and registryAdd does the same to
+// keyring-keys.json. Two processes writing different entries at once
+// therefore lose one of them: the daemon's refresher rotating a token while
+// an operator runs `agenthub secret set` is the shape that reaches it.
+//
+// The one cross-process lock near the vault is oauthflow's per-server
+// <server>.refresh.lock (docs/modules/oauth.md), and it does not cover this:
+// it serializes REFRESHES of one server, so it neither guards a plain write
+// nor helps when the racing writers name different servers. Recorded, with
+// the trade-off, in docs/modules/config.md under internal/secrets.
+//
+// This paragraph used to say the coordination "arrives with the M1 wiring".
+// M1 shipped; nothing arrived.
 //
 // Tests never touch the real OS keychain: the keyring sits behind the
 // Backend interface with a fake injected everywhere. Real-backend smoke

@@ -395,9 +395,24 @@ produces precisely this kind of store, and `TestBackendIgnoresEnvironmentLevels`
 through a migration that the destination can't be written is exactly how you get a half-migrated vault. So the CLI
 resolves both ends before moving anything.
 
-**Concurrency.** `Chain` serializes its own read-modify-write of the encrypted file and registry updates with an
-in-process mutex; cross-process write coordination is the caller's business (the vault sibling lock used by OAuth
-refresh lives in `oauthflow`).
+**Concurrency, and the gap in it.** `Chain` serializes its own read-modify-write of the encrypted file and
+registry updates with an in-process mutex, and that is the only serialization there is: **no cross-process lock
+guards a vault write**. Both write paths are whole-file read-modify-write cycles — `store.go`'s `setLocked` loads
+the entire `secrets.enc` map, mutates one key and saves it back, and `registryAdd` does the same to
+`keyring-keys.json` — so two processes writing *different* entries at the same time lose one of them. The daemon's
+refresh coordinator rotating a token while an operator runs `agenthub secret set` is the shape that reaches it, and
+the loser is a credential, silently.
+
+The sibling lock used by OAuth refresh (`<server>.refresh.lock`, in `oauthflow`) does not close this: it serializes
+**refreshes of one server**, so it neither guards a plain `Set` nor helps when the two writers name different
+servers. What keeps the window small today is that vault writes are rare and short, not that anything prevents the
+race.
+
+Owed rather than fixed, because the fix is a decision with a cost: a cross-process lock on every vault write is the
+kind of thing `Announce` deliberately refused for the credentials-rev hint ("a lock here would be a cross-process
+lock taken on the hot path of every token refresh, to protect a hint"). A write is not a hint, so the answer is
+probably different — but it is an argument to have, not a rung to add on a tidy night. `internal/secrets/doc.go`
+carries the same note beside the code.
 
 **Tests never touch the real keychain.** The keyring hides behind the `Backend` interface, and tests inject fakes
 everywhere; the smoke test against the real backend only runs under `AGENTHUB_TEST_REAL_KEYRING=1`.
