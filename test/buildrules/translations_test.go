@@ -34,8 +34,18 @@ var contributorOnlyDocs = []struct{ Path, Why string }{
 	{"docs/flows.md", "runtime sequences and failure branches, restated whenever a flow changes"},
 	{"docs/modules/", "per-package invariants and the gaps recorded beside them; each moves with its package"},
 	{"docs/windows.md", "one platform's implementation status, rewritten on every change to it"},
-	{"docs/releasing.md", "the release procedure, read at the machine cutting the release"},
+	{"runbooks/", "procedures run at the machine; every step is a command or gate this tree defines"},
 }
+
+// translatedRoots are the directories walked for English documents. Each
+// mirrors its translations at <root>/zh-CN/<the same relative path>.
+//
+// runbooks/ is walked even though every file in it is exempt above. The
+// exemption is then a decision this test can see and check — the subtree has
+// to exist, and a zh-CN copy of a runbook is reported — rather than an
+// accident of which directories the walk happened to visit. Drop the
+// exemption and the demand for translations starts on the next run.
+var translatedRoots = []string{"docs", "runbooks"}
 
 // englishOnly reports whether rel is declared contributor-only.
 func englishOnly(rel string) bool {
@@ -55,47 +65,49 @@ func englishOnly(rel string) bool {
 }
 
 // translationPairs are the documents kept in two languages. README sits at the
-// repo root with a suffixed name; everything under docs/ mirrors its path
-// beneath docs/zh-CN/.
+// repo root with a suffixed name; everything under a translatedRoots directory
+// mirrors its path beneath that directory's zh-CN/.
 //
 // The pairing is derived rather than listed, so a NEW English document under
-// docs/ is picked up the moment it exists — which is the direction that
-// matters. A translation that was never started is exactly the case a
-// hand-maintained list would omit. What IS listed is the exemption
+// one of those roots is picked up the moment it exists — which is the
+// direction that matters. A translation that was never started is exactly the
+// case a hand-maintained list would omit. What IS listed is the exemption
 // (contributorOnlyDocs), because declining to translate something is a
 // decision that should have to be written down.
 func translationPairs(t *testing.T, root string) [][2]string {
 	t.Helper()
 	var out [][2]string
-	docs := filepath.Join(root, "docs")
-	err := filepath.WalkDir(docs, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if d.Name() == "zh-CN" {
-				return filepath.SkipDir
+	for _, top := range translatedRoots {
+		base := filepath.Join(root, top)
+		err := filepath.WalkDir(base, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
 			}
+			if d.IsDir() {
+				if d.Name() == "zh-CN" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(d.Name(), ".md") {
+				return nil
+			}
+			rel, err := filepath.Rel(base, path)
+			if err != nil {
+				return err
+			}
+			if englishOnly(filepath.Join(top, rel)) {
+				return nil
+			}
+			out = append(out, [2]string{
+				filepath.Join(top, rel),
+				filepath.Join(top, "zh-CN", rel),
+			})
 			return nil
-		}
-		if !strings.HasSuffix(d.Name(), ".md") {
-			return nil
-		}
-		rel, err := filepath.Rel(docs, path)
-		if err != nil {
-			return err
-		}
-		if englishOnly(filepath.Join("docs", rel)) {
-			return nil
-		}
-		out = append(out, [2]string{
-			filepath.Join("docs", rel),
-			filepath.Join("docs", "zh-CN", rel),
 		})
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking docs/: %v", err)
+		if err != nil {
+			t.Fatalf("walking %s/: %v", top, err)
+		}
 	}
 	out = append(out, [2]string{"README.md", "README.zh-CN.md"})
 	return out
@@ -214,27 +226,32 @@ func TestContributorOnlyDocsMatchTheTree(t *testing.T) {
 		}
 	}
 
-	zhRoot := filepath.Join(root, "docs", "zh-CN")
-	err := filepath.WalkDir(zhRoot, func(path string, e os.DirEntry, err error) error {
-		if err != nil {
-			return err
+	for _, top := range translatedRoots {
+		zhRoot := filepath.Join(root, top, "zh-CN")
+		if _, err := os.Stat(zhRoot); os.IsNotExist(err) {
+			continue // a root with no translations at all is the normal case for runbooks/
 		}
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+		err := filepath.WalkDir(zhRoot, func(path string, e os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+				return nil
+			}
+			rel, err := filepath.Rel(zhRoot, path)
+			if err != nil {
+				return err
+			}
+			if englishOnly(filepath.Join(top, rel)) {
+				t.Errorf("%s/zh-CN/%s translates a document declared English-only. "+
+					"Nothing checks that file, so delete it — an unchecked translation of the rules "+
+					"is worse than none.", top, filepath.ToSlash(rel))
+			}
 			return nil
-		}
-		rel, err := filepath.Rel(zhRoot, path)
+		})
 		if err != nil {
-			return err
+			t.Fatalf("walking %s/zh-CN: %v", top, err)
 		}
-		if englishOnly(filepath.Join("docs", rel)) {
-			t.Errorf("docs/zh-CN/%s translates a document declared English-only. "+
-				"Nothing checks that file, so delete it — an unchecked translation of the rules "+
-				"is worse than none.", filepath.ToSlash(rel))
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking docs/zh-CN: %v", err)
 	}
 }
 

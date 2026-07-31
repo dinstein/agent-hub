@@ -20,7 +20,7 @@ var versionBadge = regexp.MustCompile(`img\.shields\.io/badge/version-([0-9][0-9
 // TestReadmeBadgesMatchVERSION keeps the two hand-written copies of the
 // version number in step with the one that is authoritative.
 //
-// releasing.md opens by saying the VERSION file is the one source and that
+// runbooks/releasing.md opens by saying the VERSION file is the one source and that
 // changing it in one place makes three places agree. That is true of the
 // three it names — the binary's -ldflags, the .app's Info.plist, and the
 // Release title — and it is exactly why these two are dangerous: they look

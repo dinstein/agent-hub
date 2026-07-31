@@ -25,7 +25,12 @@ regardless of who asked.
 | [docs/modules/](docs/modules/) | Before touching a package — its invariants and failure directions |
 | [docs/modules/oauth.md](docs/modules/oauth.md) | An OAuth downstream will not connect, or which provider shapes are supported |
 | [docs/canonical.md](docs/canonical.md) | Whether a name/dependency/convention may change, and why it was decided |
-| [docs/releasing.md](docs/releasing.md) | Cutting a release — the runbook, start to finish |
+| [runbooks/](runbooks/) | You are about to **do** one of the standard things, and want the steps in order |
+
+`docs/` explains how the system works; `runbooks/` is what you execute. Three of them today —
+[new-feature.md](runbooks/new-feature.md) (build anything, and land it), [nightly-tidy.md](runbooks/nightly-tidy.md)
+(the recurring simplify / refactor / docs-agree pass), and [releasing.md](runbooks/releasing.md)
+(cut a release). Each has a `.claude/commands/` wrapper that only points at it.
 
 Confirmed gaps, pinned to a line but not yet fixed, live in the `docs/modules/` file of the package
 that owns them — under "current assembly status", or beside the invariant they bend — and, for one
@@ -129,23 +134,16 @@ failures look like, and what the correct behavior is.
 
 ## Collaboration conventions
 
+These are the rules. The commands that carry them out live in
+[runbooks/new-feature.md](runbooks/new-feature.md), in one copy — follow it rather than reconstructing
+the sequence from the bullets below.
+
 - **Do every feature in its own worktree; never edit code directly in the main work tree**:
   `git worktree add ../agent-hub-<topic> -b <topic>`. The main work tree only lands and pushes.
 - Inside the worktree, **one commit per subtask** — every commit compiles and passes tests.
 - Write commit messages in English.
 - **`main` is linear: rebase, never merge.** Several worktrees are normally in flight, and a merge
-  commit per branch makes "what landed, when, on top of what" unreadable from `git log`. Land like this:
-
-  ```bash
-  # in the worktree
-  git fetch origin && git rebase origin/main
-  make ci-landing
-
-  # in the main work tree
-  git merge --ff-only <topic> && git push origin main
-  git worktree remove ../agent-hub-<topic> && git branch -d <topic>
-  ```
-
+  commit per branch makes "what landed, when, on top of what" unreadable from `git log`.
 - **`make ci-landing` runs after the rebase, not before.** A rebase replays your commits onto code you
   never tested against. It also drops the test cache and then fails on any `(cached)` in its own log:
   `test/e2e` builds its binary inside `TestMain`, which the Go cache key does not cover, so the suite

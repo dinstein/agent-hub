@@ -19,8 +19,8 @@ git worktree list                       # anything here is NOT being released
 ```
 
 **A release ships `main` exactly as it stands.** Nothing is cherry-picked and no branch is landed as
-part of releasing. If a worktree holds work that belongs in this version, land it first by the
-procedure in [AGENTS.md](../AGENTS.md) — rebase, `make ci-landing`, `git merge --ff-only`, push,
+part of releasing. If a worktree holds work that belongs in this version, land it first by
+[new-feature.md](new-feature.md) step 5 — rebase, `make ci-landing`, `git merge --ff-only`, push,
 remove the worktree — and then start at step 0 again. Otherwise say out loud which branches are being
 left out, so "I thought that was in" is caught now rather than by a user.
 
@@ -33,7 +33,7 @@ lower one.
 |---|---|
 | Docs, comments, tests, internal refactors; help text corrections | patch — `0.13.0` → `0.13.1` |
 | A new command or flag, a new capability, a changed default | minor — `0.13.1` → `0.14.0` |
-| A removed command or flag, or a moved frozen identifier ([canonical.md](canonical.md) §1) | major |
+| A removed command or flag, or a moved frozen identifier ([canonical.md](../docs/canonical.md) §1) | major |
 
 A pre-release carries a `-` (`0.14.0-rc1`) and the workflow marks the GitHub Release accordingly.
 
