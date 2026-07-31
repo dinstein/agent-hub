@@ -83,7 +83,7 @@ the rule unprovable.
 | `agenthub tool allow <server> a b` (positional) | `agenthub server tool allow <server> --only a,b` |
 | `agenthub tool allow <server>` (bare = block all) | `agenthub server tool allow <server> --none` |
 | `agenthub tool allow <server> --clear` | `agenthub server tool allow <server> --all` |
-| `agenthub profile tools <profile> <server>` | `agenthub profile tool allow …` (hidden alias for one release) |
+| `agenthub profile tools <profile> <server>` | `agenthub profile tool allow …` (the one-release shim shipped in v0.14.0 and is gone; `tools` now aliases the group, per §3) |
 | the execute pipeline living inside `internal/gateway` | a standalone `internal/pipeline`; `gateway`/`daemon` only do assembly |
 | `catalog.Snapshot` (tool catalog snapshot) | `router.Catalog`; `internal/catalog` is the curated *server* catalog |
 

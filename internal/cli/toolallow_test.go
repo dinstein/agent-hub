@@ -85,7 +85,7 @@ func TestToolAllowRefusesAnUnspecifiedEdit(t *testing.T) {
 
 // The spelling cross-check is the only thing standing between a typo and a
 // server that silently offers nothing, and it must be identical to the one
-// `profile tools` runs — same helper, same sentence.
+// `profile tool allow` runs — same helper, same sentence.
 func TestToolAllowWarnsOnAnUnknownToolName(t *testing.T) {
 	seedCatalog(t)
 

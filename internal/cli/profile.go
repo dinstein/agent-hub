@@ -213,7 +213,6 @@ func (a *App) newProfileCmd() *cobra.Command {
 		a.newProfileUseCmd(),
 		a.newProfileServerCmd(),
 		a.newProfileToolCmd(),
-		a.newProfileToolsShim(),
 		a.newProfileDiscoveryCmd(),
 	)
 	return cmd
@@ -478,12 +477,11 @@ func (a *App) newProfileServerEditCmd(add bool) *cobra.Command {
 // beside its writer rather than as a flag on something else.
 func (a *App) newProfileToolCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "tool",
-		// No `tools` alias while the shim below occupies that name. It moves
-		// here when the shim is removed, matching `profile server`/`servers`.
-		Short: "Choose which of a server's tools a profile lets through",
-		Args:  cobra.ArbitraryArgs,
-		RunE:  groupRunE,
+		Use:     "tool",
+		Aliases: []string{"tools"},
+		Short:   "Choose which of a server's tools a profile lets through",
+		Args:    cobra.ArbitraryArgs,
+		RunE:    groupRunE,
 	}
 	cmd.AddCommand(a.newProfileToolAllowCmd())
 	return cmd
@@ -513,11 +511,27 @@ func (a *App) newProfileToolAllowCmd() *cobra.Command {
 			"decides what a profile passes on. The two intersect; neither can widen.",
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			profileName, serverID := args[0], args[1]
 			sel, err := parseSelectorFlags(cmd, only, all, none)
 			if err != nil {
 				return err
 			}
-			return a.setProfileTools(cmd, args[0], args[1], sel)
+			store, warnings, err := a.opsStore()
+			if err != nil {
+				return err
+			}
+			res, err := confops.SetProfileTools(cmd.Context(), store, profileName, serverID, sel, noPrecondition)
+			warnings = append(warnings, res.Warnings...)
+			if err != nil {
+				return opsError(err)
+			}
+			// After the write, never before it: the cross-check is advisory,
+			// and must not be able to decide whether the rule is stored.
+			warnings = append(warnings, a.unknownToolWarning(serverID, sel)...)
+			row := profileRow(res.Name, res.Profile, "", store.Snapshot())
+			return a.printer().Emit(ProfileChange{
+				Action: "tools updated", Name: profileName, Profile: &row,
+			}, warnings...)
 		},
 	}
 	addSelectorFlags(cmd, &only, &all, &none,
@@ -525,68 +539,6 @@ func (a *App) newProfileToolAllowCmd() *cobra.Command {
 		"drop the restriction: let all of this server's tools through again",
 		"let none of this server's tools through")
 	return cmd
-}
-
-// newProfileToolsShim keeps `profile tools <profile> <server>` working for one
-// release after the rename. It is hidden rather than aliased because a cobra
-// alias on the GROUP would make `profile tools work github` resolve "work" as
-// a subcommand and fail — the old form has to stay a leaf to keep parsing.
-//
-// The notice goes to stderr, never through cobra's Deprecated field: the root
-// has SetOut(stdout), so cobra would print it on stdout and corrupt --json for
-// exactly the scripted callers this shim exists to protect.
-func (a *App) newProfileToolsShim() *cobra.Command {
-	var (
-		only []string
-		all  bool
-		none bool
-	)
-	cmd := &cobra.Command{
-		Use:    "tools <profile> <server> (--only a,b | --all | --none)",
-		Short:  "Deprecated: use 'profile tool allow'",
-		Hidden: true,
-		Args:   exactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			sel, err := parseSelectorFlags(cmd, only, all, none)
-			if err != nil {
-				return err
-			}
-			// The note is advisory; a stderr that will not take it must not
-			// turn a successful edit into a failure.
-			_, _ = fmt.Fprintf(a.stderr,
-				"note: 'agenthub profile tools' is now 'agenthub profile tool allow'; "+
-					"the old spelling still works but will be removed\n")
-			return a.setProfileTools(cmd, args[0], args[1], sel)
-		},
-	}
-	addSelectorFlags(cmd, &only, &all, &none,
-		"let only these tools through, named as the server names them",
-		"drop the restriction: let all of this server's tools through again",
-		"let none of this server's tools through")
-	return cmd
-}
-
-// setProfileTools is the body both spellings share, so the deprecated one
-// cannot drift into answering differently from the one that replaced it.
-func (a *App) setProfileTools(
-	cmd *cobra.Command, profileName, serverID string, sel confops.ToolSelection,
-) error {
-	store, warnings, err := a.opsStore()
-	if err != nil {
-		return err
-	}
-	res, err := confops.SetProfileTools(cmd.Context(), store, profileName, serverID, sel, noPrecondition)
-	warnings = append(warnings, res.Warnings...)
-	if err != nil {
-		return opsError(err)
-	}
-	// After the write, never before it: the cross-check is advisory, and must
-	// not be able to decide whether the rule is stored.
-	warnings = append(warnings, a.unknownToolWarning(serverID, sel)...)
-	row := profileRow(res.Name, res.Profile, "", store.Snapshot())
-	return a.printer().Emit(ProfileChange{
-		Action: "tools updated", Name: profileName, Profile: &row,
-	}, warnings...)
 }
 
 // discoveryModeLines renders the mode list for `profile discovery --help`,

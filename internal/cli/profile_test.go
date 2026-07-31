@@ -466,30 +466,21 @@ func TestProfileLsDiscoveryIsResolved(t *testing.T) {
 	}
 }
 
-// The old `profile tools` spelling keeps working for one release, and the
-// notice it prints must not land on stdout: the root has SetOut(stdout), so
-// cobra's own Deprecated field would have corrupted --json for precisely the
-// scripted callers the shim exists to protect.
-func TestProfileToolsShimStillWorksAndKeepsJSONClean(t *testing.T) {
+// The one-release `profile tools <profile> <server>` shim shipped in v0.14.0
+// and is gone; `tools` is now the plural alias of the `profile tool` group,
+// like `profile server`/`servers`. Both halves matter: the alias must reach
+// the same command, and the retired leaf form must be REFUSED — the shim was
+// hidden precisely because an alias would have swallowed it, so if this
+// spelling ever answers again, the group has grown a leaf it should not have.
+func TestProfileToolsIsTheGroupAliasAndTheOldLeafIsGone(t *testing.T) {
 	setDataDir(t)
 	mustRun(t, "", "server", "add", "github", "--cmd", "gh-mcp")
 	mustRun(t, "", "profile", "create", "work")
 
-	code, out, stderr := runCLI(t, "", "profile", "tools", "work", "github", "--only", "list_prs", "--json")
-	if code != ExitOK {
-		t.Fatalf("exit = %d, stderr = %s", code, stderr)
-	}
+	out := mustRun(t, "", "profile", "tools", "allow", "work", "github", "--only", "list_prs", "--json")
 	if env := decodeEnvelope(t, out); !env.OK {
-		t.Fatalf("the deprecated spelling did not produce a clean envelope: %s", out)
+		t.Fatalf("the plural alias did not produce a clean envelope: %s", out)
 	}
-	if !strings.Contains(stderr, "profile tool allow") {
-		t.Errorf("stderr must name the new spelling, got %q", stderr)
-	}
-	if strings.Contains(out, "deprecated") || strings.Contains(out, "profile tool allow") {
-		t.Errorf("the notice leaked onto stdout, which breaks --json consumers: %s", out)
-	}
-
-	// Same edit, same result: the shim shares the body rather than repeating it.
 	var row ProfileList
 	decodeInto(t, mustRun(t, "", "profile", "ls", "--json"), &row)
 	found := false
@@ -499,6 +490,12 @@ func TestProfileToolsShimStillWorksAndKeepsJSONClean(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("the deprecated spelling did not write the rule: %+v", row.Profiles)
+		t.Errorf("the plural alias did not write the rule: %+v", row.Profiles)
+	}
+
+	code, _, stderr := runCLI(t, "", "profile", "tools", "work", "github")
+	if code != ExitUsage {
+		t.Errorf("exit = %d, want %d: the retired leaf spelling must be refused, stderr = %q",
+			code, ExitUsage, stderr)
 	}
 }

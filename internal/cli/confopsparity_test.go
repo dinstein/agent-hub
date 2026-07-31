@@ -119,10 +119,10 @@ func runScriptThroughConfops(t *testing.T, dataDir string) {
 	must("profile server add", err)
 	_, err = confops.SetProfileTools(ctx, st, "work", "github",
 		confops.ToolSelection{Mode: confops.ToolSelectOnly, Tools: []string{"list_prs", "create_pr"}}, no)
-	must("profile tools --only", err)
+	must("profile tool allow --only", err)
 	_, err = confops.SetProfileTools(ctx, st, "work", "linear",
 		confops.ToolSelection{Mode: confops.ToolSelectNone}, no)
-	must("profile tools --none", err)
+	must("profile tool allow --none", err)
 
 	_, err = confops.SetProfileDiscovery(ctx, st, "work", "grouped", no)
 	must("profile discovery", err)
