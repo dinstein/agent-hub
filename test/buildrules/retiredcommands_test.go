@@ -46,11 +46,15 @@ var commandDocRoots = []string{"docs", "skills", "internal", "cmd", "README.md"}
 // TestNoDocumentTeachesARetiredCommand keeps the prose, the help strings and
 // the GUI on the command tree that exists.
 //
-// Two exemptions, both narrow. canonical.md's retired-names table exists to
-// write these down — that is its whole job. And the deprecation shims name
-// the old spelling in the comment explaining what they forward and in the
-// notice telling the user what to type instead; a shim that could not say
-// which spelling it retires would be unreadable.
+// One exemption, and it is narrow: canonical.md's retired-names table exists
+// to write these down — that is its whole job.
+//
+// There was a second, for the deprecation shims themselves, which had to name
+// the spelling they forwarded to be worth reading. It matched any line
+// containing "shim" or "Deprecated:", and with the last shim retired it
+// stopped exempting anything and became a way for ordinary prose to opt out of
+// the check by mentioning the word. An exemption outliving the thing it
+// exempts is indistinguishable from coverage.
 func TestNoDocumentTeachesARetiredCommand(t *testing.T) {
 	repo := repoRoot(t)
 	var offences []string
@@ -81,9 +85,6 @@ func TestNoDocumentTeachesARetiredCommand(t *testing.T) {
 				return err
 			}
 			for n, line := range strings.Split(string(data), "\n") {
-				if shimLine(line) {
-					continue
-				}
 				for old, now := range retiredCommands {
 					if strings.Contains(line, old) {
 						rel, _ := filepath.Rel(repo, path)
@@ -120,12 +121,4 @@ func isCommandDoc(path string) bool {
 // one place these spellings BELONG.
 func isRetiredNamesExempt(path string) bool {
 	return filepath.Base(path) == "canonical.md"
-}
-
-// shimLine spots the deprecation shims themselves — the comment explaining
-// what a shim forwards, and the notice telling the user what to type. Both
-// have to name the retired spelling to be worth reading.
-func shimLine(line string) bool {
-	return strings.Contains(line, "Shim") || strings.Contains(line, "shim") ||
-		strings.Contains(line, "is now 'agenthub") || strings.Contains(line, "Deprecated:")
 }
