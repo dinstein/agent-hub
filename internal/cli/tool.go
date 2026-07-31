@@ -198,7 +198,9 @@ func (a *App) newToolShim() *cobra.Command {
 			return
 		}
 		c.RunE = func(cmd *cobra.Command, args []string) error {
-			fmt.Fprint(a.stderr,
+			// Advisory, like the profile shim's: a stderr that will not take
+			// the note must not turn a successful command into a failure.
+			_, _ = fmt.Fprint(a.stderr,
 				"note: 'agenthub tool' is now 'agenthub server tool'; "+
 					"the old spelling still works but will be removed\n")
 			return inner(cmd, args)

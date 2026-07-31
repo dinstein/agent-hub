@@ -306,7 +306,7 @@ session carries no scope of its own, so there is neither a read nor a write for 
 naming the offending field** instead of a 200. That choice has a direction: a caller sending `servers`
 was asking to *narrow*, so accepting the request while silently dropping that half would report success
 for a **wider** surface than it requested. The error names the field and points at the replacement
-(`agenthub profile server` / `profile tools` / `profile discovery`, then bind the client to that
+(`agenthub profile server` / `profile tool allow` / `profile discovery`, then bind the client to that
 profile).
 
 **The non-registry face (`nonreg*.go`)** — the half of the control plane that **doesn't land on the config
@@ -700,13 +700,13 @@ and unable to self-heal".
 
 **The command tree's shape is pinned by tests** (`tree_test.go`) rather than by review: every command in the tree must exist
 and be spelled consistently; resource groups must be **singular canonical name + plural cobra alias** (server/servers,
-profile/profiles, client/clients, session/sessions, tool/tools, skill/skills, secret/secrets) and the alias must
+profile/profiles, client/clients, session/sessions, skill/skills, secret/secrets, plus the nested server/tool) and the alias must
 actually resolve; list subcommands are always called `ls` (`list`/`dump`/`ls-all` are all
 violations); and **every command must be able to take `--json`** (it is a persistent flag on the root, and what this test
 really asserts is that no command shadows or removes it). Action/streaming groups (daemon, auth, activity,
 events, config, doctor, connect) keep their names and get no plural alias. There is no `scope` group: binding a
 client to a profile is `client bind` / `client unbind` / `client ls`, and the narrowing itself is `profile server`
-/ `profile tools` / `profile discovery`. Every group invoked bare prints help and exits 0,
+/ `profile tool allow` / `profile discovery` — spelled exactly like `server tool allow`, the same edit one layer up. Every group invoked bare prints help and exits 0,
 and an unknown subcommand exits 2.
 
 **`(default)` is one token across every listing that renders a binding.** The fallback an unbound client
@@ -734,8 +734,8 @@ classifiable error — agents and scripts use all four, so silently rewording is
 object that is never persisted), and offline is exit 4 rather **than** an invented offline answer. `events` is inherently
 online (the stream *is* the daemon), and offline is exit 4 rather than printing an empty stream that looks like "nothing
 happened". Conversely, `activity` is a pure read of an append-only file and **works offline** — the numbers describe things that
-already happened, and whether the daemon is up cannot change history; `tool allow` is offline-capable too, because
-choosing what a server offers must not require starting it first.
+already happened, and whether the daemon is up cannot change history; the whole `server tool` group is offline-capable
+too — choosing what a server offers must not require starting it first, and neither must reading back what was chosen.
 
 **Credentials are never printed, and that is guaranteed at the type level.** The `secret` group's result types **have no value
 field at all**, `ls` renders only key names and backends, and `auth status` reports only issuer/expiry/mode/whether a refresh
@@ -853,8 +853,10 @@ actionable rather than long-term noise.
 subscription can.
 
 **Registry writes go direct and offline.** `registry.Store.Update` brings its own cross-process `.lock` plus atomic writes, so the
-offline path and a future daemon-mediated path won't lose each other's updates. `tool ls` reads the catalog through
-`internal/router` + `internal/discovery`, **using the same ranker as the gateway's `search_tools`**, avoiding two rankings.
+offline path and a future daemon-mediated path won't lose each other's updates. `server tool ls` reads the catalog through
+`internal/router` + `internal/discovery`, **using the same ranker as the gateway's `search_tools`**, avoiding two rankings —
+and applies the global allow list by merging `scope.ServerToolsLayer`, so the listing screens through
+`pipeline.ScopeAllows` exactly as a live call does rather than re-deciding visibility for itself.
 
 **`confops.go` is the bridge to `internal/confops`**: it translates confops' Kind + stable machine code into the
 CLI's own `*Error`, which is how the frozen exit code table and `--json` failure envelope stayed **word for word

@@ -79,6 +79,11 @@ the rule unprovable.
 | `internal/gatewaymode` | `internal/gateway` |
 | `internal/downstream/transport` | `internal/mcp/transport` |
 | `package skill` | `package skills` |
+| `agenthub tool ls` / `tool inspect` / `tool allow` | `agenthub server tool …` (hidden alias for one release) |
+| `agenthub tool allow <server> a b` (positional) | `agenthub server tool allow <server> --only a,b` |
+| `agenthub tool allow <server>` (bare = block all) | `agenthub server tool allow <server> --none` |
+| `agenthub tool allow <server> --clear` | `agenthub server tool allow <server> --all` |
+| `agenthub profile tools <profile> <server>` | `agenthub profile tool allow …` (hidden alias for one release) |
 | the execute pipeline living inside `internal/gateway` | a standalone `internal/pipeline`; `gateway`/`daemon` only do assembly |
 | `catalog.Snapshot` (tool catalog snapshot) | `router.Catalog`; `internal/catalog` is the curated *server* catalog |
 
@@ -110,13 +115,24 @@ the change is sealed inside one package, rather than borrowing one now.
 ## 3. Command naming rules
 
 - **Resource groups are singular as the canonical name, with the plural as a cobra alias**:
-  `server` / `profile` / `client` / `session` / `tool` / `skill` / `secret`
+  `server` / `profile` / `client` / `session` / `skill` / `secret`
 - **Action/flow groups stay as they are**: `daemon`, `connect`, `auth`, `activity`, `events`,
   `config`, `doctor`. The OAuth group is **`auth`**, not `oauth`
 - List subcommands are always `ls`, and **every command supports `--json`**, with human and machine
   output rendered from the same data structure
+- **There is no top-level `tool` group.** A tool is something a server contributes, and the rule
+  deciding which of them it contributes lives on the server entry beside `enabled` — so the group
+  hangs off `server`: `server tool ls` / `server tool inspect` / `server tool allow`. While it was at
+  the top level it was also in the withheld group, which shipped a global allow list with no
+  advertised way to read or write it
+- **The two narrowing layers are one command at two altitudes**: `server tool allow <server>` and
+  `profile tool allow <profile> <server>`, both taking `--only a,b | --all | --none`. They
+  intersect and neither can widen. Spelling them differently — which they were, `tool allow` with a
+  positional list against `profile tools --only` — invites a second mental model of one mechanism,
+  and the pair that must not be confused (`--all` drops the rule, `--none` stores the empty list) is
+  exactly the pair a second model gets backwards
 - **There is no `scope` group.** Narrowing is what a profile *is*, so it lives on `profile`
-  (`profile server` / `profile tools` / `profile discovery`), and handing a surface out lives on
+  (`profile server` / `profile tool allow` / `profile discovery`), and handing a surface out lives on
   `client` (`client bind <client> <profile>` / `client unbind` / `client ls`). The retired group maps
   one-to-one: `scope set --client X --profile P` → `client bind X P`, `scope clear --client X` →
   `client unbind X`, `scope ls` → `client ls`
@@ -304,8 +320,8 @@ Three classes of test have been in CI from day one:
 
 ## 7. Decision records
 
-The six items that were once "to be decided". **All six are decided**; each is registered here so
-none gets silently reopened, and the numbering is cited from code.
+The items that were once "to be decided". **All are decided**; each is registered here so none gets
+silently reopened, and the numbering is cited from code.
 
 1. ~~Whether to pull lazy-connect forward into M1~~ → **Decided (M2): no.** Keep eager connect plus
    "answer from cache first" fast startup.
@@ -394,6 +410,24 @@ none gets silently reopened, and the numbering is cited from code.
    request anywhere in `internal/*` to an agenthub-owned domain or version manifest. Network egress
    falls into exactly three categories — downstream MCP servers, OAuth authorization servers, and
    endpoints the user configured explicitly. **Adding a fourth violates this decision.**
+7. ~~Where the tool commands live, and how the two narrowing layers are spelled~~ → **Decided: under
+   `server`, and identically.** `server tool ls | inspect | allow`, with `server tool allow <server>`
+   and `profile tool allow <profile> <server>` taking the same `--only | --all | --none`.
+
+   Three faults, one cause — the command tree disagreed with where the rule is stored. The rule is a
+   field on the server entry beside `enabled`, so **`tool` at the top level was in the withheld
+   group**: a shipped build carried a global allow list it never advertised a way to reach.
+   **`tool ls` applied no allow list at all**, so the rule's only possible reader disagreed with the
+   rule — and it had no other reader, since `server ls` does not carry the field and `server inspect`
+   does not print it. And **a bare `tool allow <server>` meant "expose nothing"**, one forgotten
+   argument from the opposite of the intent, silent afterwards, and spelled unlike the same edit one
+   layer up.
+
+   What must not be re-simplified: the two layers stay ONE vocabulary. They are an intersection, and
+   the pair that decides whether it fails open (`--all` drops the rule, `--none` stores the empty
+   list) is precisely what a second spelling gets backwards. There is still no `deny` verb at either
+   altitude — allow and deny answer the arrival of a tool the downstream adds tomorrow in opposite
+   directions.
 
 ---
 

@@ -416,7 +416,7 @@ catalog and visibility, but **implements no governance decision**.
 
 `Run(ctx, Config) error` is the only exported run entry point; `Config` requires `ClientID` / `In` / `Out`, and
 everything else has production defaults. Two readers are additionally exported so the offline CLI reads the same
-cache format the gateway writes: `LoadToolCache` for `agenthub tool ls`, and `LoadToolCacheEntries` for
+cache format the gateway writes: `LoadToolCache` for `agenthub server tool ls`, and `LoadToolCacheEntries` for
 `agenthub server inspect`, which reports a cached catalog beside a live one and so must also say how old the
 cached answer is. **One writer, and one decode** — the first is a projection of the second, dropping each entry's
 `SavedAt`, which is what keeps two readers from disagreeing about the same files. `RootSource` is the migration seam frozen by A.5

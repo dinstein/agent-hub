@@ -74,10 +74,16 @@ Before profiles, there is the blunter tool. A server offers everything it has,
 including anything it gains in a later version; naming tools fixes the set:
 
 ```bash
-agenthub tool allow github get_issue list_prs   # offer exactly those two
-agenthub tool allow github                      # offer nothing from this server
-agenthub tool allow github --clear              # back to offering everything
+agenthub server tool ls --rules                 # what the rules are today
+agenthub server tool allow github --only get_issue,list_prs
+agenthub server tool allow github --none        # offer nothing from this server
+agenthub server tool allow github --all         # back to offering everything
 ```
+
+Read the rules before writing one: `allow` **replaces** the list rather than
+adding to it. And say which of the three you mean — a bare `server tool allow
+github` is a usage error, because the reading it would otherwise have had
+("offer nothing") sits one forgotten argument from the opposite of the intent.
 
 This is **for every client at once**, the tool-level twin of `server disable`.
 It is an allow list and never a deny list, and the difference shows up on the
@@ -85,12 +91,17 @@ day the server adds a tool: with a rule in place the new tool stays out until
 you add it, which is the closed direction. No profile can put back what this
 takes away.
 
+`agenthub server tool ls` lists what is offered after the rule and counts what
+it holds back; `--all` shows those too, with the state of each. When one tool
+is missing from a client and it is not clear which layer took it, `agenthub
+server tool inspect github__get_issue` names the one that did.
+
 ## Profiles: when you want less than everything
 
 ```bash
 agenthub profile create research
 agenthub profile server add research linear      # <profile> then <server>
-agenthub profile tools research linear --only list_issues,get_issue
+agenthub profile tool allow research linear --only list_issues,get_issue
 agenthub client bind cursor research
 ```
 

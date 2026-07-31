@@ -551,7 +551,9 @@ func (a *App) newProfileToolsShim() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(a.stderr,
+			// The note is advisory; a stderr that will not take it must not
+			// turn a successful edit into a failure.
+			_, _ = fmt.Fprintf(a.stderr,
 				"note: 'agenthub profile tools' is now 'agenthub profile tool allow'; "+
 					"the old spelling still works but will be removed\n")
 			return a.setProfileTools(cmd, args[0], args[1], sel)

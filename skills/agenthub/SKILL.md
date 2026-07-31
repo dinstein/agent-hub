@@ -140,20 +140,41 @@ Exceptions:
 
 ## 6. Narrow what each client sees
 
-Default is every enabled server. Narrowing lives on the **profile**; a client selects one and never carries servers or tools of its own.
+Default is every enabled server, offering every tool. **Two layers narrow it, they intersect, and neither can widen the other**: the server's own allow list applies to this machine (every client at once), a profile narrows further for the clients bound to it. Same command, same flags, two altitudes:
+
+```bash
+agenthub server  tool allow brave          --only search   # machine-wide
+agenthub profile tool allow research brave --only search   # inside one profile
+```
+
+**Layer 1 — the server.** `--only a,b` offers exactly those, `--none` offers nothing (the server stays registered), `--all` drops the rule.
+
+```bash
+agenthub server tool ls --rules          # READ FIRST: every server's rule, all three states
+agenthub server tool ls brave            # what it actually offers now
+agenthub server tool ls brave --all      # plus what the rule holds back, state per tool
+agenthub server tool allow brave --only search
+```
+
+- **Read `--rules` before writing.** `allow` **replaces** the list, it does not add to it.
+- A bare `server tool allow brave` is a **usage error**, not "allow nothing" — say `--none`.
+- `server tool inspect brave__search` says which layer blocks one tool, when a client cannot see it.
+
+**Layer 2 — the profile.** Same three flags; a client selects a profile and never carries servers or tools of its own.
 
 ```bash
 agenthub profile create research
 agenthub profile server add research brave
-agenthub profile tools research brave --only search      # or --all / --none
-agenthub profile discovery research lazy                 # or grouped / full / -
-agenthub client bind cursor research                     # takes effect on running sessions
+agenthub profile tool allow research brave --only search    # or --all / --none
+agenthub profile discovery research lazy                    # or grouped / full / -
+agenthub client bind cursor research                        # takes effect on running sessions
 agenthub client unbind cursor
 agenthub profile use research    # fallback for every unbound client ("-" clears it)
 ```
 
-- `profile tools` takes the server's **own** names (`search`), not the exposed `brave__search`. Get names from `server test <id> --tools`.
-- A misspelled name is stored and only warned about. `--only` is an intersection — one typo lets **nothing** through. `server test --tools` first is what makes the check real.
+- Both layers take the server's **own** names (`search`), not the exposed `brave__search`. Get names from `server tool ls <id>` or `server test <id> --tools`.
+- A misspelled name is stored and only warned about. `--only` is an intersection — one typo lets **nothing** through. It shows up as `pending` in `server tool ls` and marked `!` in `--rules`; nothing else ever mentions it again.
+- **These are allow lists.** A tool the server adds tomorrow stays out until you add it, and there is no `deny` form at either layer.
 - Binding to a nonexistent profile is accepted and **fail-closes to an empty scope**. Client seeing nothing → check `client ls` for `MISSING` before suspecting servers. An active profile that does not exist fail-closes every *unbound* client the same way, marked on the `(default)` row.
 - `(default)` in either listing is the fallback an unbound client follows, not a profile: `profile ls` heads its table with it, `client ls` prints it in the PROFILE column (`(default) -> research` when one is active), and `profile use` is the only thing that moves it. Profile names may not start with `(`.
 
