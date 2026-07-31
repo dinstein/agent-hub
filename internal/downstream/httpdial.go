@@ -54,8 +54,16 @@ func (d Deps) dialHTTP(ctx context.Context, spec Spec) (transport.Transport, err
 	if auth != nil && !explicitAuth {
 		// Client and DialContext are mutually exclusive in HTTPConfig (a
 		// caller-supplied client owns its own screening), so the screened
-		// dialer moves inside the client we build here.
-		cfg.Client = newAuthClient(dial, auth)
+		// dialer moves inside the client we build here — and with it the
+		// redirect policy that keeps the credential on its own origin.
+		endpoint, perr := url.Parse(strings.TrimSpace(spec.URL))
+		if perr != nil {
+			// screenEndpoint parsed this URL already, so a failure here is
+			// not reachable through it. Refuse anyway rather than build a
+			// credential-carrying client with no origin to compare against.
+			return nil, fmt.Errorf("downstream %q: parse url: %w", spec.ID, perr)
+		}
+		cfg.Client = newAuthClient(dial, auth, endpoint)
 	} else {
 		cfg.DialContext = dial
 	}
@@ -178,13 +186,43 @@ func isLiteralLoopbackHost(host string) bool {
 	return l == "localhost" || strings.HasSuffix(l, ".localhost")
 }
 
+// sameOrigin reports whether u may carry the credential minted for base.
+// Scheme and host (including port) must match exactly.
+//
+// Failure direction: FAIL-CLOSED. Anything unparsable, hostless, or merely
+// different answers false, so the credential stays home. It is deliberately
+// stricter than net/http's own redirect stripping, which keeps
+// Authorization across a subdomain change and across an https→http
+// downgrade; neither is a place this vault credential may go.
+//
+// transport.sameOrigin is the same predicate. It is duplicated rather than
+// shared because internal/mcp is standard-library only (canonical.md §2
+// rule 2) and this package must not reach into it for an unexported helper
+// — and because the two are independent gates, which AGENTS.md says are
+// never collapsed into one.
+func sameOrigin(base, u *url.URL) bool {
+	if base == nil || u == nil || base.Host == "" || u.Host == "" {
+		return false
+	}
+	return strings.EqualFold(base.Scheme, u.Scheme) && strings.EqualFold(base.Host, u.Host)
+}
+
 // newAuthClient builds the http.Client the HTTP transports use when a
 // credential is in play: the screened dialer at the bottom, the bearer
-// injection and the one-shot 401/403 refresh on top.
+// injection and the one-shot 401/403 refresh on top, and a redirect policy
+// that refuses to carry either off the configured origin.
+//
+// The redirect policy is load bearing, not hygiene. net/http strips
+// Authorization when a redirect leaves the domain — but the header this
+// package injects is not on the request when that stripping runs, because
+// authRoundTripper sits BELOW the redirect loop and runs again for the
+// redirected hop. Without this gate the stripping is undone by the very
+// layer meant to protect it, and a downstream answering 3xx chooses where
+// its own credential is delivered.
 //
 // No Client.Timeout is set, mirroring the transport facade: SSE streams are
 // long-lived and every request already carries a bounding context.
-func newAuthClient(dial transport.DialContextFunc, auth TokenSource) *http.Client {
+func newAuthClient(dial transport.DialContextFunc, auth TokenSource, endpoint *url.URL) *http.Client {
 	base := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           dial,
@@ -196,5 +234,15 @@ func newAuthClient(dial transport.DialContextFunc, auth TokenSource) *http.Clien
 		ExpectContinueTimeout: time.Second,
 		ResponseHeaderTimeout: 0, // SSE: headers may precede data by a lot
 	}
-	return &http.Client{Transport: newAuthRoundTripper(base, auth)}
+	return &http.Client{
+		Transport: newAuthRoundTripper(base, auth, endpoint),
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			if !sameOrigin(endpoint, req.URL) {
+				return fmt.Errorf(
+					"downstream redirect to %s://%s refused: a credential-carrying request never leaves its configured origin (%s://%s)",
+					req.URL.Scheme, req.URL.Host, endpoint.Scheme, endpoint.Host)
+			}
+			return nil
+		},
+	}
 }

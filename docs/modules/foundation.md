@@ -552,6 +552,15 @@ transport outright on a different origin — an endpoint event pointing elsewher
 exfiltration dressed up as a protocol event. Likewise, the notification stream's GET permanently gives
 up when it receives a non-SSE content type.
 
+**A cross-origin redirect fails closed too, for the same reason and by the same predicate.** An
+endpoint event is not the only way a server can name a destination — a `3xx` is the other one, and
+`HTTPConfig.Header` rides every request including a redirected one. `newHTTPClient` therefore installs
+a `CheckRedirect` that refuses any hop `sameOrigin` rejects. Relying on net/http's own stripping is not
+enough: it drops `Authorization` only when the redirect leaves the *domain*, so a subdomain or an
+`https`→`http` downgrade keeps the header. A caller-supplied `HTTPConfig.Client` is left alone — that
+caller owns its redirect policy, as the field says — which is why `internal/downstream` sets the same
+policy on the client it builds.
+
 **The SSRF screen is injected, and if it isn't injected it isn't there.** `HTTPConfig.DialContext` and
 `HTTPConfig.Client` are **mutually exclusive** (supplying both is rejected as `ClassFatal` in
 `newHTTPBase`), so a protective dialer can't be silently dropped. Supplying neither means

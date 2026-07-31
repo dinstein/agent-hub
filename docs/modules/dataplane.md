@@ -250,6 +250,18 @@ repository that repeats a non-idempotent call, and the justification is: the 401
 request is only rebuilt when `GetBody` makes it replayable. An explicitly configured `Authorization` header
 always beats a vault credential.
 
+**The injected credential never leaves the configured origin, and two independent gates say so.** The
+client built by `newAuthClient` carries a `CheckRedirect` that refuses any hop `sameOrigin` rejects, and
+`authRoundTripper.attach` independently declines to set `Authorization` on a request aimed anywhere but
+the endpoint's own scheme+host+port. Both fail closed; neither may be collapsed into the other, because
+they fail in different places. The reason there are two: `authRoundTripper` sits **below** net/http's
+redirect loop, so it runs again for a redirected hop and would re-attach the very header net/http had
+just stripped — the injection layer undoing the protection meant to bound it. A downstream that answers
+`3xx` would then be choosing where its own credential is delivered. The `sameOrigin` predicate in
+`internal/downstream` duplicates the one in `transport` rather than importing it: `internal/mcp` is
+standard-library only (canonical.md §2 rule 2), and these are two gates, not one shared with a seam
+through it.
+
 **The token cache is per connection, and it must never outlive the vault's version of the truth.** The
 credential is read once and held for the life of the round tripper — the alternative is a keychain round trip
 on macOS for every single request. But the writers of that vault are *other processes*: `agenthub auth login`,

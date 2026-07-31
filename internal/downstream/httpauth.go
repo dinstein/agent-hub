@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -37,6 +38,13 @@ import (
 type authRoundTripper struct {
 	base http.RoundTripper
 	auth TokenSource
+
+	// endpoint is the configured origin the credential belongs to. attach
+	// refuses to set Authorization on a request aimed anywhere else, which
+	// is the second of the two independent gates against a downstream
+	// redirecting its own credential away (the first is the client's
+	// CheckRedirect — see newAuthClient).
+	endpoint *url.URL
 
 	// mu guards the cached token. The cache exists because the alternative
 	// is a vault read — on macOS, a keychain round trip — on every single
@@ -86,8 +94,8 @@ type epochTokenSource struct {
 
 func (e epochTokenSource) Epoch() uint64 { return e.epoch() }
 
-func newAuthRoundTripper(base http.RoundTripper, auth TokenSource) *authRoundTripper {
-	return &authRoundTripper{base: base, auth: auth}
+func newAuthRoundTripper(base http.RoundTripper, auth TokenSource, endpoint *url.URL) *authRoundTripper {
+	return &authRoundTripper{base: base, auth: auth, endpoint: endpoint}
 }
 
 // currentEpoch reports the source's epoch and whether it has one at all.
@@ -104,7 +112,7 @@ func (a *authRoundTripper) currentEpoch() (uint64, bool) {
 // Authorization header is set on a clone.
 func (a *authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	tok := a.token(req.Context())
-	resp, err := a.base.RoundTrip(attachBearer(req, tok))
+	resp, err := a.base.RoundTrip(a.attach(req, tok))
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +131,7 @@ func (a *authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 		return resp, nil
 	}
 	drain(resp)
-	return a.base.RoundTrip(attachBearer(replay, fresh))
+	return a.base.RoundTrip(a.attach(replay, fresh))
 }
 
 // token returns the cached credential, loading it from the vault on first
@@ -226,14 +234,25 @@ func shouldRefreshOnStatus(code int) bool {
 	return code == http.StatusUnauthorized || code == http.StatusForbidden
 }
 
-// attachBearer clones req and sets Authorization when tok is non-empty and
-// the caller did not already provide the header (an explicit header always
+// attach clones req and sets Authorization when tok is non-empty and the
+// caller did not already provide the header (an explicit header always
 // wins — see Deps.buildHeader).
-func attachBearer(req *http.Request, tok string) *http.Request {
+//
+// Failure direction: FAIL-CLOSED on origin. A request aimed anywhere other
+// than the configured endpoint's origin goes out WITHOUT the credential
+// rather than with it, and a round tripper built with no endpoint at all
+// attaches nothing. This is the inner of the two gates that keep a
+// redirecting downstream from choosing where its credential is delivered;
+// the client's CheckRedirect is the outer one, and per AGENTS.md neither
+// is collapsed into the other.
+func (a *authRoundTripper) attach(req *http.Request, tok string) *http.Request {
 	if tok == "" {
 		return req
 	}
 	if req.Header.Get(headerAuthorization) != "" {
+		return req
+	}
+	if !sameOrigin(a.endpoint, req.URL) {
 		return req
 	}
 	clone := req.Clone(req.Context())

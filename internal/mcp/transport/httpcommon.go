@@ -174,7 +174,7 @@ func newHTTPBase(cfg HTTPConfig) (httpBase, error) {
 	}
 	b.client = cfg.Client
 	if b.client == nil {
-		b.client = newHTTPClient(cfg.DialContext)
+		b.client = newHTTPClient(cfg.DialContext, b.endpoint)
 	}
 	return b, nil
 }
@@ -182,11 +182,30 @@ func newHTTPBase(cfg HTTPConfig) (httpBase, error) {
 // newHTTPClient builds the default client. It deliberately sets no
 // Client.Timeout: SSE streams are long-lived and every request already
 // carries a context that bounds it.
-func newHTTPClient(dial DialContextFunc) *http.Client {
+//
+// It DOES set a redirect policy, because HTTPConfig.Header carries
+// caller-owned headers — Authorization among them — onto every request.
+// net/http drops sensitive headers only when a redirect leaves the domain,
+// so it would carry an operator's token to a subdomain, or down from https
+// to http, on nothing but the downstream's say-so. sameOrigin is the same
+// fail-closed predicate setPostURL applies to a server-supplied endpoint
+// event, for the same reason.
+//
+// A caller-supplied HTTPConfig.Client is left alone: that caller owns its
+// own redirect policy, as the field documents.
+func newHTTPClient(dial DialContextFunc, endpoint *url.URL) *http.Client {
 	if dial == nil {
 		dial = (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext
 	}
 	return &http.Client{
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			if !sameOrigin(endpoint, req.URL) {
+				return fmt.Errorf(
+					"http transport: redirect to %s://%s refused: caller headers never leave the configured origin (%s://%s)",
+					req.URL.Scheme, req.URL.Host, endpoint.Scheme, endpoint.Host)
+			}
+			return nil
+		},
 		Transport: &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
 			DialContext:           dial,
@@ -489,5 +508,8 @@ func backoffFor(base time.Duration, n int) time.Duration {
 // elsewhere would exfiltrate the Authorization header, so it is refused
 // rather than followed.
 func sameOrigin(base, u *url.URL) bool {
+	if base == nil || u == nil || base.Host == "" || u.Host == "" {
+		return false
+	}
 	return strings.EqualFold(base.Scheme, u.Scheme) && strings.EqualFold(base.Host, u.Host)
 }
