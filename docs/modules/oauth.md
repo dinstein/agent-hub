@@ -225,16 +225,35 @@ to a silently retained credential.
 
 ### Who refreshes, and what it logs
 
-Two processes can renew a token, and only one of them renews *early*:
+Two processes can renew a token, and both renew *early*. They differ in what they are looking at
+when they decide:
 
 | Process | Trigger | Serialization |
 |---|---|---|
 | daemon (`internal/daemon/oauth.go`) | proactive: a scan every ≤60s renews anything within the grace of `expires_at` | offline path (file lock) + an extra in-process singleflight |
-| stdio gateway (`internal/gateway/auth.go`) | passive only: a 401/403 from the downstream, refresh once and replay once | offline path — `<secrets>/<server>.refresh.lock`, then a re-read of `expires_at` |
+| stdio gateway (`internal/gateway/authfresh.go`) | proactive: a connection asking for the credential renews it when `expires_at` is inside the grace | offline path — `<secrets>/<server>.refresh.lock`, then a re-read of `expires_at` |
+| stdio gateway (`internal/gateway/auth.go`) | passive: a 401/403 from the downstream, refresh once and replay once | same |
 
-With **no daemon running there is no proactive refresh at all**: an expired token is discovered by
-the downstream rejecting it, which for the `initialize` handshake means the connect itself is what
-triggers the renewal. Servers that advertise no `expires_in` live on this path permanently.
+The daemon renews on a timer because it is long-lived and owns every server at once. A stdio gateway
+owns whatever its client dialed and has no timer, so it renews at the only moment it is guaranteed
+to be looking — and its retry schedule **is** the deadline it reports to the round tripper, so a
+failing provider cannot be asked once per request and there is no second timer to own. Both use the
+same ladder, `oauthflow.RetryBackoff`, for the same reason the `trigger` values are shared
+constants.
+
+Servers that advertise no `expires_in` stay on the passive path permanently: "no expiry" means
+"never expires", not "expired", so no deadline is reported for them at all. So do servers with no
+stored OAuth state — a hand-pasted token has nothing to renew.
+
+**Why the gateway does not simply rely on the 401.** Not every server issues one. A real downstream
+answers `initialize`, `tools/list` *and* `tools/call` with `200` for a bogus or expired bearer,
+returning `isError: true` and the text `Invalid token` inside an ordinary tool result; it answers
+`401` only when the `Authorization` header is missing entirely. Against such a server the passive
+path can never fire, and before the proactive one existed the credential stayed dead until the
+client was restarted — while `agenthub auth refresh` on the same vault succeeded, because the
+refresh token was fine and nothing had ever asked for it. Reading the downstream's *answer* to
+detect this is not an option and never was: nothing in the chain inspects what a call carries back
+(AGENTS.md). The gateway decides from its own vault instead.
 
 Both processes log the same four messages, and every record carries
 `trigger=expiry` (the daemon's scan) or `trigger=rejection` (a downstream 401/403) to say which one
@@ -246,7 +265,7 @@ separates them:
 | `refreshing a downstream access token` | DEBUG | the attempt; separates "hung on the sibling lock" from "never attempted" |
 | `access token refreshed` | INFO | `superseded=true` means another PROCESS got there first — the file lock working, not a double refresh. The daemon adds `shared`, the same statement about a caller inside its own process |
 | `token cannot be refreshed without a new login` | WARN | dead end; only `agenthub auth login` fixes it |
-| `access token refresh failed` | WARN | transient. `attempt` + `retry_in` appear only under `trigger=expiry`: the ladder is the daemon's, a gateway simply waits for the next rejection |
+| `access token refresh failed` | WARN | transient. `attempt` + `retry_in` appear only under `trigger=expiry`, on either process: a proactive refresher has a ladder to report, while under `trigger=rejection` the next try is simply whenever the downstream rejects again — their absence is the information |
 
 The symmetry is deliberate and load-bearing. Which process renewed a token is a property of the
 deployment, not of the event, and an operator reading a log usually does not know whether a daemon

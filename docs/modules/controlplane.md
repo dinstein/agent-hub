@@ -529,8 +529,9 @@ alternative" for each):
 3. **A token with no expiry is never proactively refreshed.** "No `expires_in`" means "never expires", not "already
    expired", and such servers are covered by `internal/downstream`'s passive 401/403 path.
 
-The backoff ladder: the first 3 consecutive failures retry flat at 15s, then it switches to the slow OAuth ladder
-(5m/15m/1h/4h/24h). `ErrNoRefreshToken`/`ErrNoState` jump straight to the slowest rung — only `agenthub auth login` can
+The backoff ladder (`oauthflow.RetryBackoff`, shared with the gateway's proactive refresher so the two cannot
+drift): the first `oauthflow.FastRetries` consecutive failures retry flat at 15s, then it switches to the slow OAuth
+ladder (5m/15m/1h/4h/24h). `ErrNoRefreshToken`/`ErrNoState` jump straight to the slowest rung — only `agenthub auth login` can
 fix those, and retrying is pointless. `backoffState` records the `expires_at` observed at failure time: a newer expiry
 appearing in the vault means someone logged in again, and the suppression window earned by the old credential is voided
 immediately. Backoff **only queries when the token has actually expired**, so a suppression window can only lower the

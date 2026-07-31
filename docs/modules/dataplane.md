@@ -268,7 +268,7 @@ on macOS for every single request. But the writers of that vault are *other proc
 and the daemon's proactive refresher, neither of which holds a handle on a live round tripper. Nor can the
 registry hot-reload plane help, because `specEqual` compares URL/args/env/headers and credentials are invisible
 to it — a vault write produces no diff and no reconnect, and that is deliberate: putting credentials into the
-registry's comparison surface would mean the registry holds secrets. So the cache has three rules, each pinned
+registry's comparison surface would mean the registry holds secrets. So the cache has four rules, each pinned
 by its own test:
 
 - **A miss is never cached.** Only a hit sets `loaded`. A server enabled before its credential existed
@@ -283,6 +283,18 @@ by its own test:
   rejection at all, so the daemon's refresher could never deliver its work to a live connection. The
   announcement plane below supplies the missing signal, and `WithEpoch` is how a source opts into it; a source
   without one keeps the reactive contract exactly.
+- **An elapsed credential deadline drops the cache.** The first three all need something to happen elsewhere:
+  a rejection, or another process writing the vault. Neither is available to a standalone gateway whose token
+  simply ages out mid-connection — and on a server that answers an expired bearer with `200` and an error
+  *result* rather than `401` (they exist: see [oauth.md](oauth.md)) the second rule can never fire at all.
+  A source that knows when its value stops being worth sending says so through `NotAfter`, and the cache
+  re-reads once that instant passes; the re-read is what gives the source a chance to renew. It is read fresh
+  per request, exactly like the epoch and for the same reason — the source is the only thing that knows, and a
+  copy taken at load time would keep serving a credential past a deadline the source had already moved. The
+  zero instant means "no deadline", which is what every source that does not implement the face reports, so
+  the daemon's and the CLI's keep the reactive contract exactly. `WithEpoch` forwards it: a decorator that
+  embeds the `TokenSource` *interface* does not carry the wrapped value's other methods, and the assertion is
+  made against the outermost value.
 
 **The announcement plane** (`internal/secrets/announce.go`) is what the vault has instead of the registry's
 revision counter. `<data>/secrets/credentials.rev` records server ids and a monotonic counter and **nothing
@@ -292,7 +304,8 @@ may live in the OS keyring, where replacing a value in place changes no file at 
 common case, a refreshed token.
 
 `Chain.Set` / `Chain.Delete` announce, because they are the one choke point every credential travels through:
-`auth login`, `secret set` and the daemon's refresher all land there, so no caller can forget. The failure
+`auth login`, `secret set` and both refreshers — the daemon's and the gateway's — all land there, so no caller
+can forget. The failure
 direction is fail-soft in both halves — an announcement that cannot be written, or a `credentials.rev` that
 cannot be parsed, degrades to exactly the behaviour of the release before it, because every consumer still has
 the reactive path it always had.
