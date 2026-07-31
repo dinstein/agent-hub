@@ -181,7 +181,11 @@ func (a *App) newToolCmd() *cobra.Command {
 }
 
 // newToolShim keeps `agenthub tool …` working for one release after the group
-// moved under `server`.
+// moved under `server`. That release is v0.14.0, which shipped it — so this
+// function goes before the next version is cut (canonical.md §2, retired
+// names). Naming the release is the point: "one release" cannot tell a reader
+// whether it has already elapsed, so a deadline written that way expires
+// without anyone being able to see that it did.
 //
 // It wraps each RunE rather than hanging a PersistentPreRunE on the group:
 // cobra runs only the CLOSEST persistent hook up the chain, so a hook here

@@ -79,7 +79,7 @@ the rule unprovable.
 | `internal/gatewaymode` | `internal/gateway` |
 | `internal/downstream/transport` | `internal/mcp/transport` |
 | `package skill` | `package skills` |
-| `agenthub tool ls` / `tool inspect` / `tool allow` | `agenthub server tool …` (hidden alias for one release) |
+| `agenthub tool ls` / `tool inspect` / `tool allow` | `agenthub server tool …`. The hidden shim (`newToolShim`) shipped in v0.14.0, and v0.14.0 **is** the one release it was granted — it goes before the next one is cut. "One release" dates nothing on its own; the sibling row below is what it should read like |
 | `agenthub tool allow <server> a b` (positional) | `agenthub server tool allow <server> --only a,b` |
 | `agenthub tool allow <server>` (bare = block all) | `agenthub server tool allow <server> --none` |
 | `agenthub tool allow <server> --clear` | `agenthub server tool allow <server> --all` |
