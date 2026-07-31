@@ -82,12 +82,20 @@ func SpawnStdio(cfg StdioConfig) (Transport, error) {
 // screen runs the injected spawn-guard predicate. A rejection is ClassFatal:
 // it is a verdict on the configuration, not a transient failure, so it must
 // never feed the circuit breaker and must never be retried.
+//
+// The command is named in the wrapped error because of WHEN this fires. The
+// screen sits on the spawn path, so its verdict arrives when a server is
+// connected — possibly long after the configuration that caused it was
+// written, and to someone reading a failing server rather than a rejected
+// `server add`. The guard's own message already names itself and the
+// offending token; this adds the one thing it cannot know, which is what was
+// being started.
 func screen(fn func(string, []string, []string) error, command string, args, env []string) error {
 	if fn == nil {
 		return nil
 	}
 	if err := fn(command, args, env); err != nil {
-		return &Error{Class: ClassFatal, Err: err}
+		return &Error{Class: ClassFatal, Err: fmt.Errorf("refusing to spawn %q: %w", command, err)}
 	}
 	return nil
 }
