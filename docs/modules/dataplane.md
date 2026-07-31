@@ -231,6 +231,37 @@ process's stderr (each line truncated to 400 bytes, joined with ` | `). This is 
 `transport`'s 4KiB byte window rather than a second capture; when the window fills, the first line is dropped,
 because a 4KiB cut lands mid-line and half a line is worse than no line.
 
+**A mid-life crash must too, and `respawn` is where that evidence used to be discarded.** The same window is read
+off the dying transport **before** it is closed and carried onto the `respawned` / `respawn failed` line as
+`child_stderr`, because the two deaths leave the same nothing behind: without it the log kept the transport's
+verdict (`broken pipe`, `unexpected EOF`) and lost the panic that produced it. It is attached only when a
+**failure** triggered the respawn — a manual `Reconnect` replaces a working connection whose stderr is the
+server's ordinary chatter, and plenty of MCP servers log there routinely.
+
+**What this package logs, and the rule behind it: state CHANGES, never verdicts.** The circuit breaker reports all
+three of its transitions (opening is a Warn carrying the cooldown and the failure count; half-open and closed are
+Info), and `healthTracker` reports its own (down is a Warn carrying `hard`, recovery an Info, and the first probe
+a Debug because the assembling layer already announces the handshake). Neither reports the individual outcome that
+did not move the state. This is not a style preference: the breaker's verdict is taken in `enqueue`, ahead of the
+owner queue, so during a cooldown every call is rejected before reaching any other line — one line per rejected
+call would be a storm, and none at all (which is what there was) makes an outage indistinguishable from a healthy
+server that nobody called. The same argument retired a warning that fired on every hard probe failure: a server
+with its plug pulled logged one per probe interval and never logged its recovery at all.
+
+A **retry** is the exception that proves the shape — it is an event, not a state, and it goes to Debug: a retry
+that works says nothing about the system, but without it a call slowed by two backoffs and a call to a slow
+downstream are the same observation from above.
+
+**`Server.Close` logs, because "downstream connected" needs a counterpart.** Without it a server that leaves the
+catalog — removed, redefined, or taken down with the process — left a log whose last word on it was that it
+connected.
+
+**Every line of one connection carries the same identity, bound once at `Connect`**: `logx.FieldServer` plus, for a
+derivation, `logx.FieldInstance` (the derive key, matching `TraceFrame`'s `inst`). `Spec.ID` does not change under
+derivation on purpose, so without the second field four derivations of one server write four connections' worth of
+lines under one `server` value and none of them can be attributed. Bound, not stamped per call site — that is how
+one line ends up without it.
+
 **Where frame logging lives.** `ServerLog` sits in this layer rather than in `internal/mcp/transport`, because
 transport depends only on the standard library and knows neither server identity nor the data directory,
 whereas here we have both and the frames are still complete (params going in, raw result coming out).
@@ -349,10 +380,18 @@ connection and can do nothing for a handshake that never completed. That case ne
 
 ### Current wiring status
 
-`internal/gateway` uses only three `Deps` fields — `Log` / `Dial` / `ConnectTimeout` — and `specsFromSnapshot`
-accepts only the stdio transport. So HTTP transport, secret resolution, OAuth refresh, background ping, and
-frame tracing are all **unwired** on the gateway path; they are used by `internal/cli` (`server test`, `doctor`,
-`vault`) and each has unit test coverage.
+`internal/gateway` wires `Log` / `Dial` / `ConnectTimeout` / `Secrets` / `AuthFor` / `TraceFor`, and
+`specsFromSnapshot` translates through `SpecFromEntry`, which accepts **every** transport. So HTTP transport,
+secret resolution, the OAuth bearer and frame tracing are all live on the gateway path — this paragraph claimed
+the opposite for several releases after they landed, which is worth remembering the next time it is read as
+authority.
+
+What remains unwired is **`PingInterval`**, and deliberately: at zero there is no background prober, which is the
+documented choice for a short-lived stdio gateway (`DefaultPingInterval` is the daemon's number). The consequence
+when reading a gateway log: `Health` moves only at connect, at respawn, and on call outcomes. Nothing polls, so a
+server that dies between calls is not reported as down until something calls it.
+
+`Breaker` / `Retry` / `Reconnect` are unset and run on this package's defaults.
 
 ---
 
@@ -589,6 +628,41 @@ continuation is already lost.
 **Every logging/metrics face degrades on failure without affecting service.** If the JSON log file won't open, it degrades
 to plain text; if the savings stream won't open, it becomes `nil`; if the tool cache directory is unavailable, caching is
 skipped. If the control socket path won't resolve, only coordination functionality is lost.
+
+**Every completed `tools/call` ends on exactly one line, and `runCall` is the only place that writes it.** That
+follows from there being one execute path: a second writer would mean a call that could complete without being
+recorded. The identity is the **routed** `(server, tool)` — `RouteOf` provenance, never the exposed name, so a
+rename does not become a different tool in the log — plus the upstream request id and the pipeline's duration. The
+id is load-bearing rather than decorative: every `tools/call` runs on its own goroutine, so without it the lines of
+an agent making six concurrent calls interleave into one unreadable sequence.
+
+The three outcomes are deliberately three messages at two levels:
+
+| Outcome | Level | Why |
+|---|---|---|
+| `tools/call served` | Debug | Exists so a call can be followed end to end on request; an agent making hundreds must not bury the failures at the level everyone reads |
+| `tools/call failed` | Warn | The class that was silent: downstream error, dead transport, open circuit, exhausted retries |
+| `tools/call denied` | Warn | Carries the gate and the stable rejection code |
+
+**A denial is not a failure, and the split is the point.** Nothing broke — the call was refused by configuration
+written before the client connected. `internal/ratelimit` already made this argument for its own rejection line
+("a quota that never fires and a quota that is not running must never look alike"), and the scope gate was the one
+whose silence made exactly that indistinguishable: a scope denying everything and `Options.Scope == nil` (the
+no-authority mode that allows) produced the same empty log.
+
+**Arguments are never logged**, here or anywhere else on this path. They are the part of a call that carries the
+user's data, and a log that records them cannot be attached to a bug report.
+
+The two non-answers also leave lines: the retryable busy reply (Debug — an agent asking early is the system
+working, but "it did nothing for ten seconds" would otherwise be unattributable), and a name routed to a cached
+catalog entry whose server never connected. The client is told `unknown tool` in that second case, by the
+anti-probing rule every miss follows, so the **log is the only place** the difference between "no such tool" and
+"that server is down" can be recorded — which is the difference between an agent's bug and an operator's.
+
+**A closed downstream is announced here, with the reason, before `Close` runs.** `downstream.Close` reports that a
+connection ended and cannot know whether the operator deleted the entry or edited it. Announcing first is also what
+makes the pair worth two lines: `Close` blocks on the owner goroutine, so this line without its counterpart is a
+teardown that did not finish.
 
 **`inproc.go` is why the HTTP face has no second execution path.** `Conn`/`Open` attach the same gateway body to an
 in-memory pipe, and requests are written into the **same frame reader** the stdio face uses. `Counters()` is the seam

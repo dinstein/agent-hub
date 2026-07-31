@@ -158,7 +158,24 @@ with `errors.Join` — **one sink failing never silences the other**. `Setup` wr
 
 Any log touching a downstream server, a tool call, a client, or a session must use the field
 constants in `fields.go`, because that's what lets the gateway's, daemon's, and CLI's log streams be
-joined together. **Don't invent synonyms** (`srv`, `toolName`, …).
+joined together. **Don't invent synonyms** (`srv`, `toolName`, …) — and the synonym is not
+hypothetical: the derive key was spelled `derive_key` in four places and `inst` in the frame log, so
+joining the two streams meant knowing both names. Both are now `FieldInstance`.
+
+**A key bound on the logger must never be passed again per record.** `slog`'s JSON handler does not
+deduplicate, so a record repeating a bound key emits the field twice on one line, and a reader taking
+the last of the two — `encoding/json` included — silently reads the second value. That happened to
+`client`: the gateway binds the configured client id, and both handshake lines passed the peer's
+self-reported name under the same key, so the mandatory join key read as a display name. The peer's
+name is now `client_name`. Note what this costs to test: an assertion on a **decoded** record cannot
+see this class of bug at all, because the decode is what discards the duplicate — the regression test
+greps the serialized line.
+
+**A field nothing sets is a convention that has already failed.** `FieldSession` had no users at all
+while the two call sites that hold a session id spelled `"session"` by hand. Where an assembly
+genuinely has none — a stdio gateway serves one terminal pipe with no id anywhere in it, and is keyed
+by client and pid instead — the constant now says so, so that the absence reads as the answer rather
+than as an omission someone should fix.
 
 **`pid` is mandatory on every gateway record, and is attached once at logger construction** rather
 than per call site — every line of a process carries the same value, and stamping it at each call is
