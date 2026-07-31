@@ -21,8 +21,13 @@
 //	GET/POST /v1/profiles, PATCH/DELETE /v1/profiles/{name}   profiles, membership, selectors
 //	GET/PUT/DELETE /v1/scope/{client}                         persistent client binding
 //	GET /v1/config, PUT /v1/config/{key}                      governance switches
-//	GET /v1/tools, PUT /v1/tools/{server}/{tool}              kill switch + local override
-//	GET /v1/quarantine, DELETE /v1/quarantine/{exposed}       isolation set and release
+//
+// This list once carried two more families — a per-tool kill switch under
+// /v1/tools and an isolation set under /v1/quarantine. They were REMOVED with
+// the rest of the runtime governance surface (AGENTS.md: no approval queue, no
+// runtime scope change, no scanning of what a downstream returned), and no
+// route, handler or store for either survives. They are named here only so
+// this list is not read as an implementation gap and filled back in.
 //
 // Every write there takes an optional expected_generation and answers a
 // lost compare-and-swap with 409 + CodeStalePrecondition carrying the

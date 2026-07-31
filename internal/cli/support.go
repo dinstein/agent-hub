@@ -22,9 +22,10 @@ import (
 // files, and the three-state selector parsing that profile and session
 // both speak.
 
-// stateDir resolves <data>/state, the home of the integrity stores and the
-// shared state files. It does NOT create the directory (readers must not
-// have side effects); writers call platform.EnsureDir themselves.
+// stateDir resolves <data>/state, the home of the shared state files that are
+// not the registry — the active-profile marker and the rate limiter's buckets.
+// It does NOT create the directory (readers must not have side effects);
+// writers call platform.EnsureDir themselves.
 func (a *App) stateDir() (string, error) { return a.resolver.StateDir() }
 
 // activeProfile reads the globally active profile name from the registry.

@@ -35,9 +35,8 @@ import (
 
 // serverStateForgetters builds the out-of-registry cleanups that
 // DELETE /v1/servers/{id} runs, so the daemon strips exactly the footprint
-// `agenthub server rm` does. Removing a server must not leave integrity
-// baselines or a cached catalog behind for whatever is
-// re-added under that id to inherit.
+// `agenthub server rm` does. Removing a server must not leave a cached
+// catalog behind for whatever is re-added under that id to inherit.
 //
 // Same optional-dependency discipline as the rest of this file: a store that
 // will not open is omitted rather than failing the daemon, and confops turns

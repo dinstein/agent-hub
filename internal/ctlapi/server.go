@@ -107,18 +107,20 @@ type Options struct {
 	// LinkAttachTimeout bounds registration-to-link-attach before the
 	// session is presumed dead (0 = DefaultLinkAttachTimeout).
 	LinkAttachTimeout time.Duration
-	// StateDir is <data>/state: the integrity stores and the tool-override
-	// file. "" disables the tool-governance and quarantine endpoints, which
-	// then answer the uniform 404 — a half-wired daemon must not pick a
-	// directory of its own, and "unavailable on this daemon" is a shape
-	// frontends already handle.
+	// StateDir is <data>/state, where the state that is not the registry
+	// lives: today the active-profile marker and the rate limiter's buckets.
+	// "" leaves the active-profile half of /v1/profiles unserved — the list
+	// answers with ActiveKnown false, and setting it answers the uniform 404
+	// — because a half-wired daemon must not pick a directory of its own, and
+	// "unavailable on this daemon" is a shape frontends already handle.
 	StateDir string
 	// StateLockTimeout bounds the state stores' cross-process locks
 	// (0 = the store default).
 	StateLockTimeout time.Duration
 	// ServerStateForgetters clear the out-of-registry stores keyed by server
-	// id when DELETE /v1/servers/{id} removes one — integrity baselines,
-	// quarantine entries, the cached tool list.
+	// id when DELETE /v1/servers/{id} removes one. Today that is the cached
+	// tool list and nothing else; the integrity baselines and quarantine
+	// entries this once listed went with the removed governance surface.
 	//
 	// They are INJECTED rather than opened here so this package keeps its
 	// distance from the concrete stores; the daemon assembles them next to

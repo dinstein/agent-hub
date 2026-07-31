@@ -486,12 +486,16 @@ func MigrateActiveProfile(ctx context.Context, st *registry.Store, stateDir stri
 // miniature, for the small state files) — including the fsync of the parent
 // directory that makes the rename itself durable.
 //
-// That last rung is not optional here. The files this writes are
-// tool-overrides.json and the active-profile pointer: an override is the
-// neutralization path for a poisoned tool description, and losing one to a
-// crash would put the poisoned description back while the operator was told
-// the write succeeded. Only a cache may skip this rung, because losing a cache
-// entry costs a re-fetch.
+// That last rung is not optional here. What this writes is the active-profile
+// pointer, and a profile is the whole of what a client may reach: losing the
+// write to a crash silently restores the previous profile — a wider one, if
+// the operator had just narrowed — while they were told it succeeded. Only a
+// cache may skip this rung, because losing a cache entry costs a re-fetch.
+//
+// It used to name tool-overrides.json here as well, on the grounds that an
+// override neutralizes a poisoned tool description. There is no such file: it
+// went with the removed governance surface, and the rung stands on the pointer
+// alone.
 func atomicWriteJSON(path string, v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {

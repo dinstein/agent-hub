@@ -40,15 +40,15 @@ var (
 // The ladder is written down in three places — security.md, foundation.md and
 // config.md all spell out "temp file in the same directory → chmod 0600 →
 // write → fsync → rename → fsync the parent directory" — and implemented
-// twelve times, on purpose: registry, integrity and their peers are forbidden
+// twelve times, on purpose: registry, skills and their peers are forbidden
 // from importing one another's document model to share a syscall wrapper, so
 // each carries its own copy. Deliberate duplication is a reasonable answer to
 // that constraint. Deliberate duplication with nothing checking the copies
 // agree is how one of them ends up a rung short.
 //
 // One had. confops/atomicWriteJSON stopped at rename, which on ext4 and xfs
-// makes the write atomic but not durable, and it writes tool-overrides.json —
-// the file whose entries neutralize a poisoned tool description.
+// makes the write atomic but not durable, and it writes the active-profile
+// pointer — the file that decides what a client may reach at all.
 //
 // WHAT THIS CHECKS, AND WHAT IT DOES NOT. For every function that both creates
 // a temp file and renames it, a sync call must appear in the text AFTER the
