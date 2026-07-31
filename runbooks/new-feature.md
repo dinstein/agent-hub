@@ -1,36 +1,31 @@
 # Developing a new feature
 
-A runbook: every step is a command to run or a fact to check.
+**One worktree, one PR open for the whole of it, one commit per subtask, rebase onto `main`, land
+fast-forward only.** The rules are in [AGENTS.md](../AGENTS.md); this file is the sequence.
 
-The shape is fixed — **one worktree, one PR open for the whole of it, one commit per subtask, rebase
-onto `main`, land fast-forward only**. The rules behind it are in [AGENTS.md](../AGENTS.md); this
-file is the sequence.
-
-The branch and its PR go public at step 3, and both stay undoable — the branch force-pushes, the PR
-closes. The one irreversible step is still step 5's `git push origin main`, which is why the
-expensive checks sit immediately in front of it.
+The branch and PR go public at step 3 and both stay undoable. The one irreversible step is step 5's
+`git push origin main`, which is why the expensive checks sit immediately in front of it.
 
 ---
 
 ## 0. Read before writing
 
-In this order, stopping as soon as the question is answered:
+Stop as soon as the question is answered:
 
 | Question | Read |
 |---|---|
 | What am I changing, and what does a call pass through on the way? | [docs/architecture.md](../docs/architecture.md) |
 | How does this flow behave at runtime, and which way does it fail? | [docs/flows.md](../docs/flows.md) |
-| What must not be touched in the package I am about to open? | [docs/modules/](../docs/modules/) — the file for that package |
+| What must not be touched in the package I am about to open? | [docs/modules/](../docs/modules/) — that package's file |
 | Is this name / dependency / convention allowed to move? | [docs/canonical.md](../docs/canonical.md) |
 
-**The `modules/` file is not optional reading.** It carries the invariants and the gaps recorded
-beside the code that owns them, and it is where "capability exists ≠ wired up" is written down. A
-change that looks correct against the source and wrong against that file is wrong.
+**The `modules/` file is not optional reading** — it carries the invariants and the recorded
+"capability exists ≠ wired up" gaps. A change that looks correct against the source and wrong against
+that file is wrong.
 
-If the feature touches a rule in AGENTS.md's *hard constraints* or *easiest things to get wrong* —
-the four dependency directions, the gate chain order, `RouteOf`, allow-list-not-deny-list, `nil` vs
-`[]` — decide **before** writing code whether the rule bends or the design does. It is almost always
-the design.
+If the feature touches a rule in AGENTS.md's *hard constraints* or *easiest things to get wrong*,
+decide **before** writing code whether the rule bends or the design does. It is almost always the
+design.
 
 ## 1. Open a worktree
 
@@ -40,23 +35,18 @@ git worktree add ../agent-hub-<topic> -b <topic> origin/main
 cd ../agent-hub-<topic>
 ```
 
-**Never edit code directly in the main work tree.** It only lands and pushes. Several branches are
-normally in flight; the main tree is the one place they all have to agree, and a dirty file there is
-indistinguishable from work someone else was mid-way through.
-
-Branching from `origin/main` rather than from whatever the main tree happens to be sitting on is what
-keeps step 5's rebase a no-op in the common case.
+**Never edit code in the main work tree** — it only lands and pushes. Branching from `origin/main`
+rather than from whatever the main tree sits on is what keeps step 5's rebase a no-op.
 
 ## 2. Cut it into subtasks
 
-Write the list down before writing code. Each entry must be a change that **compiles and passes tests
-on its own** — that is the definition of a subtask here, not a size estimate. A subtask that cannot
-stand alone is two subtasks with a shared prefix, or one that was cut in the wrong place.
+Each entry must **compile and pass tests on its own** — that is the definition, not a size estimate.
+A subtask that cannot stand alone is two subtasks with a shared prefix.
 
-A useful cut for anything non-trivial: the type or interface first, then the implementation, then the
-assembly that calls it, then the docs. Each of those compiles green with the next one absent.
+A useful cut: the type or interface first, then the implementation, then the assembly that calls it,
+then the docs. Each compiles green with the next absent.
 
-The list is also the PR body (step 3). Keep it where it stays untracked and per-worktree:
+The list is also the PR body. Keep it untracked and per-worktree:
 
 ```bash
 $EDITOR "$(git rev-parse --git-dir)/pr-body.md"    # one line of what changes, then "- [ ] 1. <subtask>"
@@ -65,32 +55,28 @@ $EDITOR "$(git rev-parse --git-dir)/pr-body.md"    # one line of what changes, t
 ## 3. The inner loop, once per subtask
 
 ```bash
-# write the code, then:
-make fmt                                # after ANY import block changes — see below
+make fmt                                # after ANY import block change — go build stays silent
 make ci                                 # build + test + lint
 git add -A && git commit                # message in English
 ```
 
-**`make fmt` is not cosmetic and `go build` will not catch it.** `.golangci.yml` enables
-`gofmt`/`goimports` under `formatters:`, not `linters:`, so only `make lint` reports them, and the
-error names the `import (` line rather than the offending import. Imports are alphabetical within a
-group (`"cmp"` before `"context"`, `"maps"` before `"os"`).
+`.golangci.yml` enables `gofmt`/`goimports` under `formatters:`, not `linters:`, so only `make lint`
+reports them, and the error names the `import (` line rather than the offending import.
 
-Extra work certain kinds of change pull in, none of which `make ci` will ask for:
+What `make ci` will not ask for:
 
 | If the subtask touched | Also do |
 |---|---|
 | A parser reading untrusted input | `make fuzz FUZZ=<target>` — `make ci` runs only the seed corpora |
-| A **new** fuzz target | Edit all three places (the target, `FUZZ_TARGETS`, AGENTS.md's list); `test/buildrules` fails until they agree |
-| A package's invariants or failure directions | The matching [docs/modules/](../docs/modules/) file, in the same commit |
-| A package name, command name, dependency direction, or frozen identifier | [docs/canonical.md](../docs/canonical.md), in the same commit |
-| A new `.md` under `docs/` | Either a `docs/zh-CN/` counterpart, or an entry in `contributorOnlyDocs` with the reason |
-| The GUI frontend | `make gui-frontend-ci` — `make gui` runs `npm install`, which repairs a lockfile CI's `npm ci` rejects |
-| Anything user-visible | The README badge is **not** derived; the release runbook bumps it, but new flags and commands are yours |
+| A **new** fuzz target | All three places (the target, `FUZZ_TARGETS`, AGENTS.md's list); `test/buildrules` fails until they agree |
+| A package's invariants or failure directions | The matching [docs/modules/](../docs/modules/) file, same commit |
+| A package/command name, dependency direction, or frozen identifier | [docs/canonical.md](../docs/canonical.md), same commit |
+| A new `.md` under `docs/` | A `docs/zh-CN/` counterpart, or a `contributorOnlyDocs` entry with the reason |
+| The GUI frontend | `make gui-frontend-ci` — `make gui` runs `npm install`, repairing a lockfile CI's `npm ci` rejects |
+| Anything user-visible | New flags and commands are yours; the README badge belongs to [releasing.md](releasing.md) |
 
 **Commit while nothing else is writing.** If a background agent is working in this tree, a clean
-`git status` means "nothing written *yet*", not "finished". Confirm the work is done before staging,
-and re-verify in a clean checkout afterwards.
+`git status` means "nothing written *yet*", not "finished".
 
 Then push and move the PR forward — every subtask, not one batch at the end:
 
@@ -105,17 +91,16 @@ git push && gh pr edit --body-file "$(git rev-parse --git-dir)/pr-body.md"
 gh pr comment --body "<why the plan changed>"      # only when it did
 ```
 
-Draft until step 4, because until then the branch cannot be landed. The PR cannot be opened any
-earlier than the first commit — GitHub refuses a head that does not differ from its base. `gh` infers
-it from the checked-out branch, so no PR number is needed anywhere.
+Draft until step 4, because until then the branch cannot be landed. It cannot be opened before the
+first commit — GitHub refuses a head that does not differ from its base.
 
-## 4. Before you mark it ready: the full run
+## 4. Before marking it ready: the full run
 
 ```bash
 make ci-full                            # everything the CI workflow runs
 ```
 
-**`make ci` is not CI.** Three ways a green `make ci` still goes red on the runner, all covered here:
+**`make ci` is not CI** — three gaps, all covered by `ci-full`:
 
 | Gap | Why `make ci` misses it |
 |---|---|
@@ -123,65 +108,45 @@ make ci-full                            # everything the CI workflow runs
 | The `gui` job | Deliberately outside `make ci`, so "the GUI is optional" does not become a prerequisite of the default build |
 | A stale `package-lock.json` | `make gui` runs `npm install` and repairs it; CI runs `npm ci` and rejects it |
 
-Then the end-to-end suite **both ways**, because one of them is the regression test for the other:
+Then e2e **both ways** — one is the regression test for the other:
 
 ```bash
 make e2e-ci                             # with XDG_RUNTIME_DIR set, as CI's Linux runner has it
 make e2e                                # this machine's environment
 ```
 
-`XDG_RUNTIME_DIR` must **not** move the run directory — only `AGENTHUB_DATA_DIR` does, along with
-everything else — and this suite exists to catch the day that stops being true.
-
-Then hand the branch to the runner and take the draft off:
+`XDG_RUNTIME_DIR` must **not** move the run directory — only `AGENTHUB_DATA_DIR` does — and this
+suite exists to catch the day that stops being true.
 
 ```bash
 git push
 gh pr ready
-gh pr checks --watch                    # the pull_request workflow — the same jobs main gets
+gh pr checks --watch                    # the same jobs main gets
 ```
-
-Those checks are the only run on CI's own machines: `make ci-full` reproduces them as far as this one
-can, and the gap between the two is exactly what step 4 is for.
 
 ## 5. Land it
 
-**The rebase comes first, and `make ci-landing` comes after it.** A rebase replays your commits onto
-code you never tested against; a green run from before it is a claim about a tree that no longer
-exists.
+**The rebase comes first, `make ci-landing` after it.** A rebase replays your commits onto code you
+never tested against.
 
 ```bash
 # in the worktree
 git fetch origin && git rebase origin/main
-make ci-landing
+make ci-landing >/tmp/landing.log 2>&1; echo $?      # 0, or read the log
 git push --force-with-lease             # the PR's head must be exactly what lands
 ```
 
-`ci-landing` drops the test cache and then fails on any `(cached)` in its own log — `test/e2e` builds
-its binary inside `TestMain`, which the Go cache key does not cover, so the suite would otherwise
-report `ok (cached)` for a tree it never ran.
+`ci-landing` drops the test cache and fails on any `(cached)` in its own log: `test/e2e` builds its
+binary inside `TestMain`, which the Go cache key does not cover.
 
-**Read its exit status, not its last screenful.** The target keeps its own log at `.make/ci.log` and
-arms `set -o pipefail` inside the recipe, so it needs no outer `tee` — and an outer `tee` is exactly
-what breaks the reading, because `$?` then reports `tee`'s status, and `tee` almost always succeeds.
-Redirect rather than pipe:
+**Read its exit status, not its last screenful — and redirect rather than pipe.** The target keeps
+`.make/ci.log` and arms `set -o pipefail` itself, so an outer `tee` only breaks the reading: `$?`
+then reports `tee`'s status. `${PIPESTATUS[0]}` is shell-specific — zsh spells it `$pipestatus` and
+indexes from 1, so the bash form silently evaluates to empty. A green run ends with `landing check:
+nothing came from cache, every package ran`.
 
-```bash
-make ci-landing >/tmp/landing.log 2>&1; echo $?      # 0, or read the log
-```
-
-`${PIPESTATUS[0]}` is the usual escape and it is **shell-specific**: bash indexes that array from 0,
-zsh spells it `$pipestatus` and indexes from 1, so the bash form evaluates to an empty string under
-zsh — indistinguishable at a glance from a run that said nothing because it passed. Not piping is the
-portable fix.
-
-A green run ends with `landing check: nothing came from cache, every package ran`. That line is the
-last thing the recipe does, after the cached-result check, so seeing it means the whole target
-succeeded.
-
-**That force-push is what closes the PR.** The rebase rewrote every commit, so the head GitHub holds
-is otherwise a set of commits that will never reach `main`, and the PR stays open with nothing to
-match against.
+**That force-push is what closes the PR.** The rebase rewrote every commit; without it GitHub holds
+commits that will never reach `main`.
 
 Then, in the main work tree:
 
@@ -195,37 +160,30 @@ git worktree remove ../agent-hub-<topic> && git branch -d <topic>
 Still `OPEN` means its head is not what landed; `main` is fine, only the link is missing:
 `gh pr close <topic> --comment "landed on main as <sha>"`.
 
-**`--ff-only` is the enforcement, not a formality.** If it refuses, either the rebase did not happen
-or `origin/main` moved while you were checking. Rebase again and re-run `ci-landing`. Never reach for
-a plain `git merge` to get past it — `main` is linear, and a merge commit per branch makes "what
-landed, when, on top of what" unreadable from `git log`.
+**`--ff-only` is the enforcement, not a formality.** If it refuses, rebase again and re-run
+`ci-landing`. Never reach for a plain `git merge` — `main` is linear.
 
-**Land promptly.** A finished branch left sitting is a branch that will need the whole of step 5
-again, against a `main` that has moved further each day.
+**Land promptly.** A finished branch left sitting needs the whole of step 5 again, against a `main`
+that has moved further each day.
+
+## Rebasing your own branch mid-flight
+
+```bash
+git fetch origin && git rebase origin/main && git push --force-with-lease
+```
+
+`main` moving under you is normal. Pull with `git pull --rebase` so an out-of-date `main` does not
+grow a merge commit. The PR follows the branch — same number, same body, checks re-run.
 
 ## When it goes wrong
 
 | Symptom | Meaning | Do |
 |---|---|---|
-| A depguard failure naming a path in *another* worktree | The lint cache is shared across checkouts, so the result came from a tree you are not in | `echo $GOLANGCI_LINT_CACHE` — the Makefile defaults it per checkout, an exported value overrides that. `make clean-cache` |
-| `make ci` green locally, PR checks red | Almost always the environment, not the code | `gh run view --log-failed` for the failing job, then re-run `make ci-full` and `make e2e-ci`; compare the runner's env before reading the diff |
-| `gh pr create`: "No commits between main and `<topic>`" | The PR is being opened before the first commit exists | Finish subtask 1, commit, push, then create — step 3, in that order |
-| The PR still reads `OPEN` after `main` was pushed | Its head is not the commit that landed — usually an amend after the last force-push | Nothing is wrong with `main`; `gh pr close <topic> --comment "landed on main as <sha>"` |
-| `git push --force-with-lease` refuses | Someone else pushed to your branch — it is not yours alone | Do not force it. Find out what was pushed first; a shared branch is not rebased at all |
-| A test hangs | — | Get evidence before changing code: an e2e timeout SIGQUITs the process under test and folds the goroutine stacks into the failure message |
-| A test "passes" by returning early | A precondition silently failed | Preconditions must **fail hard**. A silent skip disguises an environment difference as some other component failing |
+| A depguard failure naming a path in *another* worktree | The lint cache is shared across checkouts | `echo $GOLANGCI_LINT_CACHE` — the Makefile defaults it per checkout, an exported value overrides that. `make clean-cache` |
+| `make ci` green locally, PR checks red | Almost always the environment, not the code | `gh run view --log-failed`, then re-run `make ci-full` and `make e2e-ci`; compare the runner's env before reading the diff |
+| `gh pr create`: "No commits between main and `<topic>`" | Opened before the first commit exists | Commit, push, then create — step 3, in that order |
+| The PR reads `OPEN` after `main` was pushed | Its head is not what landed — usually an amend after the last force-push | `gh pr close <topic> --comment "landed on main as <sha>"` |
+| `git push --force-with-lease` refuses | Someone else pushed to your branch | Do not force it. A shared branch is not rebased at all |
+| A test hangs | — | Get evidence first: an e2e timeout SIGQUITs the process under test and folds the goroutine stacks into the failure |
+| A test "passes" by returning early | A precondition silently failed | Preconditions must **fail hard** — a silent skip disguises an environment difference as some other component failing |
 | `git merge --ff-only` refuses | The rebase did not happen, or `origin/main` moved | Rebase, re-run `ci-landing`, retry. Never plain-`merge` |
-| The branch is shared with someone else | Rebasing it rewrites history other people hold | Do not rebase it. Rebase only branches that are yours alone |
-
-## Rebasing your own branch mid-flight
-
-`main` moving under you is normal; several worktrees are usually open.
-
-```bash
-git fetch origin && git rebase origin/main
-```
-
-Pull with `git pull --rebase` so an out-of-date `main` does not grow a merge commit. Everything
-already pushed under `<topic>` is yours alone, so a force-push after the rebase is fine:
-`git push --force-with-lease`. The PR follows the branch — same number, same body, checks re-run on
-the new head — so a mid-flight rebase costs it nothing.

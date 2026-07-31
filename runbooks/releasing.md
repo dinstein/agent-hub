@@ -1,15 +1,11 @@
 # Releasing
 
-A runbook: every step is a command to run or a fact to check.
-
 One tag push does the work. Everything before it is local and reversible; everything after it is
 public within seconds, so the cheap checks come first.
 
 ---
 
-## Cut a release
-
-### 0. Preflight
+## 0. Preflight
 
 ```bash
 git fetch origin
@@ -18,13 +14,12 @@ git log --oneline -1 origin/main        # must equal local main
 git worktree list                       # anything here is NOT being released
 ```
 
-**A release ships `main` exactly as it stands.** Nothing is cherry-picked and no branch is landed as
-part of releasing. If a worktree holds work that belongs in this version, land it first by
-[new-feature.md](new-feature.md) step 5 — rebase, `make ci-landing`, force-push, `git merge
---ff-only`, push, confirm its PR closed, remove the worktree — and then start at step 0 again. Otherwise say out loud which branches are being
-left out, so "I thought that was in" is caught now rather than by a user.
+**A release ships `main` exactly as it stands.** Nothing is cherry-picked. If a worktree holds work
+that belongs in this version, land it first by [new-feature.md](new-feature.md) step 5 and start over
+at step 0. Otherwise say out loud which branches are being left out, so "I thought that was in" is
+caught now rather than by a user.
 
-### 1. Choose the number
+## 1. Choose the number
 
 Against the **user-visible surface**, not the size of the diff. When two rows could apply, take the
 lower one.
@@ -35,9 +30,9 @@ lower one.
 | A new command or flag, a new capability, a changed default | minor — `0.13.1` → `0.14.0` |
 | A removed command or flag, or a moved frozen identifier ([canonical.md](../docs/canonical.md) §1) | major |
 
-A pre-release carries a `-` (`0.14.0-rc1`) and the workflow marks the GitHub Release accordingly.
+A pre-release carries a `-` (`0.14.0-rc1`) and the workflow marks the Release accordingly.
 
-### 2. Bump it in all three places
+## 2. Bump it in all three places
 
 ```bash
 new=0.13.2 ; old=$(cat VERSION)
@@ -47,31 +42,23 @@ git diff --stat                         # exactly 3 files
 ```
 
 `VERSION` reaches the binary, the `.app`'s `Info.plist` and the Release title on its own. The two
-README badges do not derive from anything and are edited by hand. `TestReadmeBadgesMatchVERSION`
-fails when they disagree, which is why step 4 runs the tests before the tag exists.
+README badges derive from nothing and are edited by hand — `TestReadmeBadgesMatchVERSION` fails when
+they disagree, which is why step 4 runs the tests before the tag exists.
 
-### 3. Write the changelog
+## 3. Write the changelog
 
-**The changelog is the release commit message.** There is no `CHANGELOG.md`.
-
-The published Release notes are assembled from three sources; only the first is yours:
-
-| Part | From | Written by |
-|---|---|---|
-| What changed and whether it affects the reader | the `release: X.Y.Z` commit body | you |
-| The commit list since the previous tag | `generate_release_notes: true` | GitHub |
-| Per-platform install instructions | the `body:` block in `.github/workflows/release.yml` | already written; edit only when packaging changes |
-
-Read the material first, then write for a user — GitHub prints the commit list underneath you, so
-restating it is wasted:
+**The changelog is the release commit message.** There is no `CHANGELOG.md`. The published notes come
+from three sources; only the first is yours — the commit list is GitHub's
+(`generate_release_notes: true`), and the install instructions already live in
+`.github/workflows/release.yml`.
 
 ```bash
 git log --oneline "$(git describe --tags --abbrev=0)"..main
 ```
 
-The message has to answer "does this version affect me?". Lead with the one thing a user would feel;
-if nothing is observable, say so in a line — that is useful information, and "various fixes and
-improvements" is not.
+The message answers "does this version affect me?". Lead with the one thing a user would feel; if
+nothing is observable, say so in a line — that is useful, and "various fixes and improvements" is
+not. GitHub prints the commit list underneath you, so restating it is wasted.
 
 ```
 release: 0.13.1
@@ -84,7 +71,7 @@ two streaming commands where there are four, so an agent following it parsed
 NDJSON as a single object and failed on the first progress line.
 ```
 
-### 4. Verify, then commit and push
+## 4. Verify, commit, push
 
 ```bash
 make ci                                 # must be green BEFORE the tag exists
@@ -93,7 +80,7 @@ git commit                              # message from step 3
 git push origin main
 ```
 
-### 5. Tag and push
+## 5. Tag and push
 
 The tag is the trigger and the claim about what is being released, so it must equal `VERSION`.
 
@@ -102,25 +89,19 @@ git tag -a "v${new}" -m "v${new}"
 git push origin "v${new}"
 ```
 
-### 6. Watch the workflow
+## 6. Watch the workflow
 
 ```bash
 gh run list --workflow=release.yml --limit 1
 gh run watch <run-id> --exit-status
 ```
 
-Six jobs, about four minutes:
+Six jobs, about four minutes: `verify` (checks tag against `VERSION` and the tap token; gates the
+rest), `cli` (darwin/linux/windows tarballs), `gui-macos` (universal DMG), `gui-windows` (amd64 and
+arm64 zips), `publish` (the Release with every artifact), `homebrew` (formula and skill to the tap,
+one commit).
 
-| Job | Does |
-|---|---|
-| `verify` | checks the tag against `VERSION`, and the tap token if a tap is configured; gates the rest |
-| `cli` | cross-compiles darwin/linux/windows tarballs |
-| `gui-macos` | universal DMG |
-| `gui-windows` | amd64 and arm64 zips |
-| `publish` | creates the GitHub Release with every artifact attached |
-| `homebrew` | pushes the formula and the skill to the tap, in one commit |
-
-### 7. Check what shipped
+## 7. Check what shipped
 
 A green workflow is a weaker claim than a correct release.
 
@@ -142,18 +123,18 @@ gh api repos/dinstein/homebrew-agenthub/contents/Formula/agenthub.rb -q .content
 The `version` must be the new one, and every `url` must point at **`dinstein/agent-hub`**, not at the
 tap.
 
-### When it goes wrong
+## When it goes wrong
 
 | Symptom | Meaning | Do |
 |---|---|---|
-| `verify` fails on the tag | tag and `VERSION` disagree; nothing was built or published | `git tag -d` and `git push --delete`, fix `VERSION`, re-tag |
-| A build job fails | usually toolchain, not code — `v0.13.0` failed on `wails3` needing `CGO_ENABLED=0` | fix on `main`, move the tag to the new commit, force-push it. No Release exists yet |
-| `publish` green, `homebrew` red | the Release is complete; only the tap lagged | re-run that job. **Do not re-cut the release** |
-| A wrong Release is already public | `gh release delete` leaves the tag behind | cut the next patch forward rather than deleting |
+| `verify` fails on the tag | Tag and `VERSION` disagree; nothing was built or published | `git tag -d` and `git push --delete`, fix `VERSION`, re-tag |
+| A build job fails | Usually toolchain, not code — `v0.13.0` failed on `wails3` needing `CGO_ENABLED=0` | Fix on `main`, move the tag to the new commit, force-push it. No Release exists yet |
+| `publish` green, `homebrew` red | The Release is complete; only the tap lagged | Re-run that job. **Do not re-cut the release** |
+| A wrong Release is already public | `gh release delete` leaves the tag behind | Cut the next patch forward rather than deleting |
 | GitHub Actions unavailable | — | `scripts/release-local.sh vX.Y.Z` — without `--push` it stops before the two irreversible steps and prints them |
 
-Rehearse the whole pipeline without a tag by running the workflow with `workflow_dispatch`: every job
-runs and `publish` skips itself.
+Rehearse the whole pipeline without a tag via `workflow_dispatch`: every job runs and `publish` skips
+itself.
 
 ---
 
