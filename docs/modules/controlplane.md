@@ -750,9 +750,12 @@ errors (`ExitCodeFor`) and reports them (`Printer.Fail`); every `RunE` returns o
 the `--json` switch), so tests can run commands fully hermetically.
 
 `Error` is the typed CLI error, carrying a stable machine code (`Code*`), a process exit code (`Exit*`), and a
-human-facing hint all at once. The four constructors `Usagef`/`NotFoundf`/`DaemonDownf`/`AuthFailedf`/`Deniedf` cover the
-categories in the frozen table. `silentExitError` is for commands that already rendered their result through the output
-layer (doctor's per-item status), preventing Main from printing a second error.
+human-facing hint all at once. Five constructors — `Usagef`/`NotFoundf`/`DaemonDownf`/`AuthFailedf`/`Deniedf` — cover the
+categories in the frozen table, but only the first three have production callers: a command that needs a *hint* alongside
+the message builds the `Error` literally, and exits 5 and 6 always do. The last two are the table's declaration of those
+rows, exercised by `errors_test.go` and the failure-envelope golden, and that is what they are for. `silentExitError` is
+for commands that already rendered their result through the output layer (doctor's per-item status), preventing Main from
+printing a second error.
 
 `ctlClient` is raw control plane access, for the faces the typed `api` client does not cover. It
 speaks the same envelope over the same UDS, but its wire DTOs come straight from `internal/ctlapi` — the CLI is inside the
@@ -769,8 +772,8 @@ module and isn't constrained the way the public `api` package is.
 | 2 | Usage error | Arguments, unknown flag, unknown subcommand |
 | 3 | Resource not found | server/profile/secret/skill/session/tool |
 | 4 | Daemon offline but the command requires it | `DaemonDownf` |
-| 5 | Authentication/authorization failure | OAuth flows |
-| 6 | Rejected by configuration | a call the effective scope does not permit, a credential tier that does not cover the tool |
+| 5 | Authentication/authorization failure | the OAuth flows; a downstream answering 401/403 to `server test`; a secret file that will not decrypt |
+| 6 | Refused by a guard | a skill's integrity pin (tampered, drifted, or a directory carrying no agenthub marker) and the spawn guard screening a generated `docker run` |
 | 7 | Lock contention timeout, or a state file corrupt and **unable to self-heal** | The locks with a timeout ladder — registry, skills, the HTTP-bridge token store; plus `registry.UnreadableError`, the skills corrupt-state path, and `confops.KindState` |
 
 **"A cobra parse error = exit 2" is guaranteed by construction, not by convention.** The root sets

@@ -14,7 +14,7 @@ const (
 	ExitOK         = 0 // success
 	ExitGeneral    = 1 // generic error (downstream / network / internal)
 	ExitUsage      = 2 // usage error (bad args, unknown flag/command)
-	ExitNotFound   = 3 // resource not found (server/profile/secret/skill)
+	ExitNotFound   = 3 // resource not found (server/profile/secret/skill/session/tool/token)
 	ExitDaemonDown = 4 // daemon offline but the command requires it
 	ExitAuth       = 5 // authentication / authorization failure
 	ExitDenied     = 6 // refused by a guard (spawnguard, a skill integrity pin)
@@ -95,14 +95,27 @@ func DaemonDownf(format string, a ...any) *Error {
 	}
 }
 
-// AuthFailedf builds an authentication failure error (exit 5). Reserved for
-// the M1 OAuth flows; part of the frozen table.
+// AuthFailedf builds an authentication failure error (exit 5).
+//
+// It is the table's declaration of that row rather than the way the row is
+// normally reached: every production exit 5 — an OAuth flow, a downstream
+// answering 401/403 to `server test`, a secret file that will not decrypt —
+// carries a Hint as well, which this constructor has no parameter for, so
+// those sites build the Error literally. Deleting it would leave the row with
+// no named constructor while its siblings keep theirs.
 func AuthFailedf(format string, a ...any) *Error {
 	return &Error{Code: CodeAuthFailed, ExitCode: ExitAuth, Message: fmt.Sprintf(format, a...)}
 }
 
-// Deniedf builds a governance-rejection error (exit 6). Reserved for the M1
-// governance gates; part of the frozen table.
+// Deniedf builds a guard-refusal error (exit 6). Same standing as AuthFailedf
+// above: the two things that actually exit 6 — a skill's integrity pin and the
+// spawn guard screening a generated `docker run` — both need a Hint and build
+// the Error literally.
+//
+// It used to say "reserved for the M1 governance gates". There are none: the
+// approval queue and the runtime scope change were removed rather than left
+// half-wired (AGENTS.md), so a reader looking for the gate this constructor
+// names would be looking for something that does not exist.
 func Deniedf(format string, a ...any) *Error {
 	return &Error{Code: CodeDenied, ExitCode: ExitDenied, Message: fmt.Sprintf(format, a...)}
 }
