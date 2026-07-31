@@ -321,6 +321,39 @@ func (d *derived) closedNow(p *Pool) bool {
 	return p.closed || d.closed
 }
 
+// reap claims every instance pick accepts — marks it closed, unmaps it — and
+// returns the victims for the caller to close OUTSIDE p.mu. Every teardown
+// path goes through it (idle sweep, session cascade, server change, pool
+// shutdown), because the two halves are what those paths must not get wrong
+// and there is no reason for four copies of them:
+//
+//   - closing under p.mu would block on the instance's owner goroutine while
+//     holding the lock every other caller of this pool needs;
+//   - an entry marked closed but left in the map is handed to the next
+//     Acquire, which then waits on a connection nobody will ever build.
+//
+// An instance already closed is never claimed twice, so a victim list is
+// always disjoint from any other path's.
+func (p *Pool) reap(pick func(*derived) bool) []*derived {
+	var victims []*derived
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// Deleting during range is defined behaviour in Go: an entry removed
+	// before it is reached is simply not produced, and dropLocked only ever
+	// removes the entry it was handed.
+	for _, byKey := range p.inst {
+		for _, d := range byKey {
+			if d.closed || !pick(d) {
+				continue
+			}
+			d.closed = true
+			p.dropLocked(d)
+			victims = append(victims, d)
+		}
+	}
+	return victims
+}
+
 // dropLocked removes an entry from the registry. Caller holds p.mu.
 func (p *Pool) dropLocked(d *derived) {
 	byKey := p.inst[d.serverID]
@@ -338,23 +371,9 @@ func (p *Pool) dropLocked(d *derived) {
 // instead of running a second ticker.
 func (p *Pool) Sweep() int {
 	now := p.now()
-	var victims []*derived
-	p.mu.Lock()
-	for _, byKey := range p.inst {
-		for _, d := range byKey {
-			if d.refs > 0 || d.idleSince.IsZero() || d.closed {
-				continue
-			}
-			if now.Sub(d.idleSince) < p.idleTTL {
-				continue
-			}
-			d.closed = true
-			p.dropLocked(d)
-			victims = append(victims, d)
-		}
-	}
-	p.mu.Unlock()
-
+	victims := p.reap(func(d *derived) bool {
+		return d.refs == 0 && !d.idleSince.IsZero() && now.Sub(d.idleSince) >= p.idleTTL
+	})
 	for _, d := range victims {
 		p.closeInstance(d, "idle")
 	}
@@ -372,17 +391,7 @@ func (p *Pool) CloseKey(key DeriveKey) int {
 	if key == "" {
 		return 0
 	}
-	var victims []*derived
-	p.mu.Lock()
-	for _, byKey := range p.inst {
-		if d := byKey[key]; d != nil && !d.closed {
-			d.closed = true
-			p.dropLocked(d)
-			victims = append(victims, d)
-		}
-	}
-	p.mu.Unlock()
-
+	victims := p.reap(func(d *derived) bool { return d.key == key })
 	for _, d := range victims {
 		p.closeInstance(d, "cascade")
 	}
@@ -393,17 +402,7 @@ func (p *Pool) CloseKey(key DeriveKey) int {
 // entry changed or was removed — the base connection is the caller's to
 // close). Returns how many were closed.
 func (p *Pool) CloseServer(serverID string) int {
-	var victims []*derived
-	p.mu.Lock()
-	for _, d := range p.inst[serverID] {
-		if !d.closed {
-			d.closed = true
-			victims = append(victims, d)
-		}
-	}
-	delete(p.inst, serverID)
-	p.mu.Unlock()
-
+	victims := p.reap(func(d *derived) bool { return d.serverID == serverID })
 	for _, d := range victims {
 		p.closeInstance(d, "server changed")
 	}
@@ -420,21 +419,12 @@ func (p *Pool) Close() {
 			<-p.sweepDone
 		}
 	})
-	var victims []*derived
+	// Refuse new Acquires before reaping: with p.closed already set, nothing
+	// can register an entry behind the sweep below.
 	p.mu.Lock()
 	p.closed = true
-	for _, byKey := range p.inst {
-		for _, d := range byKey {
-			if !d.closed {
-				d.closed = true
-				victims = append(victims, d)
-			}
-		}
-	}
-	p.inst = make(map[string]map[DeriveKey]*derived)
 	p.mu.Unlock()
-
-	for _, d := range victims {
+	for _, d := range p.reap(func(*derived) bool { return true }) {
 		p.closeInstance(d, "shutdown")
 	}
 }
