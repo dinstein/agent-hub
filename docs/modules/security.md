@@ -181,6 +181,24 @@ degrading to host execution when the isolation an entry claims cannot be deliver
   `docker.sock`/`podman.sock`/`containerd.sock`. Subdirectories of `/etc` are allowed — the target is
   whole-tree exposure, not an enumeration of every possible secret. Named and anonymous volumes are
   not host binds.
+- **`--privileged` is judged by its value, not by its spelling, and the failure direction is ON.**
+  docker parses the attached form with `strconv.ParseBool`, so `--privileged=true`, `=1` and `=T` all
+  enable it; only an explicit parseable false is treated as off, and a value neither docker nor this
+  build can parse (`--privileged=yes`) is not evidence that isolation is intact. Matching the bare
+  token alone was a bypass — `containerBoolFlags` had carried a `--privileged=false` entry since the
+  beginning, so the attached form had been anticipated and only its harmless half was ever wired up.
+  The `=false` branch is also the one place in the flag loop that continues **without** consuming a
+  value, which is the shape `containerBoolFlags` was inverted to prevent; `TestPrivilegedFalseDoesNotBlindTheScan`
+  is the regression for it.
+- **`--device` is an allow list of pseudo-devices** (`/dev/null`, `/dev/zero`, `/dev/full`,
+  `/dev/random`, `/dev/urandom`, `/dev/tty`), matched on the host source — the first colon-separated
+  field of `host-src[:container-dest[:permissions]]`, cleaned. Refusing only the exact path `/dev` was
+  the wrong direction for the same reason a tool selector is never a deny list: the set of device
+  nodes that grants something dangerous is open-ended and machine-specific (`/dev/sda`,
+  `/dev/nvme0n1`, `/dev/mem`, whatever a driver installed this morning), and `--device=/dev/sda` hands
+  over the host filesystem as completely as the whole tree does. **The runtime never generates either
+  flag itself** — both can only arrive through an operator's `extraArgs` — so tightening them cannot
+  invalidate a configuration AgentHub produced.
 
 | File | Contents |
 |---|---|

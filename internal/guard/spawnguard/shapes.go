@@ -3,6 +3,7 @@ package spawnguard
 import (
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -412,7 +413,43 @@ var containerBoolFlags = map[string]bool{
 	"--no-healthcheck": true, "--oom-kill-disable": true,
 	"-P": true, "--publish-all": true, "--sig-proxy": true,
 	"--disable-content-trust": true, "-q": true, "--quiet": true,
-	"--help": true, "--no-cgroupns": true, "--privileged=false": true,
+	"--help": true, "--no-cgroupns": true,
+}
+
+// harmlessDevices are the only --device sources that may be passed into a
+// container.
+//
+// This table is an allow list for the same reason the tool selectors are:
+// --device hands the container direct access to a host device node, and the
+// set of nodes that grants something dangerous is open-ended and
+// machine-specific (/dev/sda, /dev/nvme0n1, /dev/mem, /dev/kvm, whatever a
+// driver installed this morning). A deny list would have to name all of them
+// and would answer the arrival of a new device node by allowing it.
+//
+// What is here is the pseudo-device set a container can already obtain from
+// its own image: they carry no host state. Anything else is refused, and a
+// legitimate device is a configuration decision an operator makes by not
+// using the container runtime for that server.
+var harmlessDevices = map[string]bool{
+	"/dev/null": true, "/dev/zero": true, "/dev/full": true,
+	"/dev/random": true, "/dev/urandom": true, "/dev/tty": true,
+}
+
+// privilegedIsOn reports whether a --privileged argument enables privileged
+// mode. arg is the whole token, bare ("--privileged") or attached
+// ("--privileged=true").
+//
+// Failure direction: ON. docker parses the attached value with
+// strconv.ParseBool, so --privileged=1, =t and =TRUE all enable it, and a
+// value neither this build nor docker can parse is not evidence that
+// isolation is intact. Only an explicit, parseable false is treated as off.
+func privilegedIsOn(arg string) bool {
+	_, val, attached := strings.Cut(arg, "=")
+	if !attached {
+		return true
+	}
+	on, err := strconv.ParseBool(val)
+	return err != nil || on
 }
 
 var dangerousCaps = map[string]bool{
@@ -460,8 +497,11 @@ func checkContainer(base string, args []string) error {
 	}
 	for ; i < len(args); i++ {
 		a := args[i]
-		if a == "--privileged" {
-			return blockedf(CodeContainerEscape, "%s %s --privileged disables container isolation", base, sub)
+		if k, _, _ := strings.Cut(a, "="); k == "--privileged" {
+			if privilegedIsOn(a) {
+				return blockedf(CodeContainerEscape, "%s %s %s disables container isolation", base, sub, a)
+			}
+			continue // an explicit --privileged=false is what it says
 		}
 		key, val := a, ""
 		hasVal := false
@@ -524,8 +564,14 @@ func checkContainerFlag(key, val string) error {
 			}
 		}
 	case "--device":
-		if path.Clean(val) == "/dev" {
-			return blockedf(CodeContainerEscape, "--device=/dev exposes every host device")
+		// The spec is host-src[:container-dest[:permissions]], so the host
+		// node is the first colon-separated field. Refusing everything
+		// outside harmlessDevices is the fail-closed direction: --device=/dev
+		// is the least likely form anyone writes, and --device=/dev/sda hands
+		// over the host filesystem just as completely.
+		src, _, _ := strings.Cut(val, ":")
+		if !harmlessDevices[path.Clean(src)] {
+			return blockedf(CodeContainerEscape, "--device=%s exposes a host device", val)
 		}
 	}
 	return nil

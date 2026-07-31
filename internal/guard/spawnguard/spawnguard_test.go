@@ -140,6 +140,51 @@ func TestCheckBlocksContainerEscape(t *testing.T) {
 		{name: "cap prefixed", cmd: "docker", args: []string{"run", "--cap-add=CAP_SYS_ADMIN", "img"}, wantCode: CodeContainerEscape},
 		{name: "seccomp unconfined", cmd: "docker", args: []string{"run", "--security-opt", "seccomp=unconfined", "img"}, wantCode: CodeContainerEscape},
 		{name: "exec privileged", cmd: "docker", args: []string{"exec", "--privileged", "ctr", "id"}, wantCode: CodeContainerEscape},
+		{name: "privileged attached true", cmd: "docker", args: []string{"run", "--privileged=true", "img"}, wantCode: CodeContainerEscape},
+		{name: "privileged attached 1", cmd: "docker", args: []string{"run", "--privileged=1", "img"}, wantCode: CodeContainerEscape},
+		{name: "privileged attached T", cmd: "docker", args: []string{"run", "--privileged=T", "img"}, wantCode: CodeContainerEscape},
+		{name: "privileged attached TRUE", cmd: "docker", args: []string{"run", "--privileged=TRUE", "img"}, wantCode: CodeContainerEscape},
+		{name: "privileged attached unparseable", cmd: "docker", args: []string{"run", "--privileged=yes", "img"}, wantCode: CodeContainerEscape},
+		{name: "device raw disk", cmd: "docker", args: []string{"run", "--device=/dev/sda", "img"}, wantCode: CodeContainerEscape},
+		{name: "device raw disk separate", cmd: "docker", args: []string{"run", "--device", "/dev/nvme0n1", "img"}, wantCode: CodeContainerEscape},
+		{name: "device with container path", cmd: "docker", args: []string{"run", "--device=/dev/sda:/dev/xvda", "img"}, wantCode: CodeContainerEscape},
+		{name: "device with permissions", cmd: "docker", args: []string{"run", "--device=/dev/sda:/dev/xvda:rwm", "img"}, wantCode: CodeContainerEscape},
+		{name: "device mem", cmd: "docker", args: []string{"run", "--device=/dev/mem", "img"}, wantCode: CodeContainerEscape},
+		{name: "device whole dev", cmd: "docker", args: []string{"run", "--device=/dev", "img"}, wantCode: CodeContainerEscape},
+		{name: "device traversal to disk", cmd: "docker", args: []string{"run", "--device=/dev/null/../sda", "img"}, wantCode: CodeContainerEscape},
+	})
+}
+
+// TestPrivilegedFalseAndHarmlessDevicesPass pins the OTHER direction of the
+// two checks above. Both were widened from a single hard-coded token
+// ("--privileged" exactly, "/dev" exactly), and a fix that simply refused
+// every form would be indistinguishable here from one that judges the value.
+func TestPrivilegedFalseAndHarmlessDevicesPass(t *testing.T) {
+	t.Parallel()
+	g := New(Config{})
+	runMatrix(t, g, []checkCase{
+		{name: "privileged explicit false", cmd: "docker", args: []string{"run", "--privileged=false", "img"}},
+		{name: "privileged false zero", cmd: "docker", args: []string{"run", "--privileged=0", "img"}},
+		{name: "device null", cmd: "docker", args: []string{"run", "--device=/dev/null", "img"}},
+		{name: "device urandom remapped", cmd: "docker", args: []string{"run", "--device=/dev/urandom:/dev/random", "img"}},
+	})
+}
+
+// TestPrivilegedFalseDoesNotBlindTheScan is the regression for the shape the
+// --privileged=false branch introduces: it is the one place in the flag loop
+// that continues without consuming a value, so a policy flag after it must
+// still be judged. This is the same failure containerBoolFlags was inverted
+// to prevent.
+func TestPrivilegedFalseDoesNotBlindTheScan(t *testing.T) {
+	t.Parallel()
+	g := New(Config{})
+	runMatrix(t, g, []checkCase{
+		{name: "then root mount", cmd: "docker",
+			args: []string{"run", "--privileged=false", "-v", "/:/host", "img"}, wantCode: CodeContainerEscape},
+		{name: "then pid host", cmd: "docker",
+			args: []string{"run", "--privileged=false", "--pid=host", "img"}, wantCode: CodeContainerEscape},
+		{name: "then device", cmd: "docker",
+			args: []string{"run", "--privileged=false", "--device=/dev/sda", "img"}, wantCode: CodeContainerEscape},
 	})
 }
 
