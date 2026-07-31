@@ -29,13 +29,7 @@ func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diag
 	// Global layer: governance.json. Plain bools become pointers only when
 	// set — an unset switch is "no intervention", and since merge is OR a
 	// false pointer would be inert anyway.
-	g := snap.Governance.V
-	gl := ScopeLayer{Kind: LayerGlobal, Origin: "governance.json"}
-	if g.Discovery != "" {
-		d := DiscoveryMode(g.Discovery)
-		gl.Discovery = &d
-	}
-	gl.ResultBudget = budgetsFromDocs(g.ResultBudget)
+	gl := globalLayer(snap.Governance.V)
 	// Server layer: the per-server tool allow lists from servers.json. It is
 	// a layer rather than a filter applied elsewhere so that the global rule
 	// and a profile's rule intersect through the SAME Merge — one place
@@ -76,18 +70,7 @@ func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diag
 	}
 
 	if profileName != "" {
-		if pdoc, ok := snap.Profiles.V.Profiles[profileName]; ok {
-			p := pdoc.V
-			pl := ScopeLayer{
-				Kind:    LayerProfile,
-				Origin:  "profiles.json#" + profileName,
-				Servers: cloneStrings(p.Servers),
-				Tools:   selectorsFromDocs(p.Tools),
-			}
-			if p.Discovery != "" {
-				d := DiscoveryMode(p.Discovery)
-				pl.Discovery = &d
-			}
+		if pl, ok := profileLayer(snap, profileName); ok {
 			layers = append(layers, pl)
 		} else {
 			dangling = true
@@ -110,6 +93,68 @@ func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diag
 	}
 
 	return layers, diags
+}
+
+// globalLayer builds the global layer out of governance.json. Plain bools
+// become pointers only when set — see FromRegistry.
+func globalLayer(g registry.GovernanceDoc) ScopeLayer {
+	gl := ScopeLayer{Kind: LayerGlobal, Origin: "governance.json"}
+	if g.Discovery != "" {
+		d := DiscoveryMode(g.Discovery)
+		gl.Discovery = &d
+	}
+	gl.ResultBudget = budgetsFromDocs(g.ResultBudget)
+	return gl
+}
+
+// profileLayer builds the profile layer for one named profile, discovery
+// included. ok=false means no such profile — the caller decides what that
+// means, which for FromRegistry is a dangling reference (fail-closed).
+func profileLayer(snap *registry.Snapshot, name string) (ScopeLayer, bool) {
+	pdoc, found := snap.Profiles.V.Profiles[name]
+	if !found {
+		return ScopeLayer{}, false
+	}
+	p := pdoc.V
+	pl := ScopeLayer{
+		Kind:    LayerProfile,
+		Origin:  "profiles.json#" + name,
+		Servers: cloneStrings(p.Servers),
+		Tools:   selectorsFromDocs(p.Tools),
+	}
+	if p.Discovery != "" {
+		d := DiscoveryMode(p.Discovery)
+		pl.Discovery = &d
+	}
+	return pl, true
+}
+
+// DiscoveryFor answers "which mode does this profile end up presented in",
+// for a front end listing profiles without a session to resolve — `profile
+// ls` printing an inherited mode rather than a dash. An empty name asks the
+// same question of no profile at all: the global default.
+//
+// It goes through the SAME layer construction and the SAME pick rule a
+// session does, because a listing that computed the answer a second way is a
+// listing that eventually disagrees with the gateway it describes. ok=false
+// means no layer set a mode, and the caller applies its own default
+// (discovery.DefaultMode) — this package deliberately does not know it.
+//
+// A name that does not resolve contributes no layer: what a dangling
+// reference costs is VISIBILITY, decided in Merge, and answering the
+// presentation question with the global mode keeps that the only place it is
+// decided.
+func DiscoveryFor(snap *registry.Snapshot, profileName string) (DiscoveryMode, LayerKind, bool) {
+	if snap == nil {
+		return "", LayerGlobal, false
+	}
+	layers := []ScopeLayer{globalLayer(snap.Governance.V)}
+	if profileName != "" {
+		if pl, ok := profileLayer(snap, profileName); ok {
+			layers = append(layers, pl)
+		}
+	}
+	return pickDiscovery(layers)
 }
 
 // PinnedProfileLayer builds the profile layer for an explicitly pinned

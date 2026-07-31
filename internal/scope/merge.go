@@ -7,6 +7,28 @@ import (
 	"github.com/dinstein/agent-hub/internal/router"
 )
 
+// pickDiscovery applies the discovery rule — most specific non-nil layer
+// wins, later layer wins ties — and reports which layer supplied the answer.
+// ok=false means no layer set one at all, which is NOT the same as a layer
+// setting "": the caller's default applies only in the first case.
+//
+// It is a function rather than eight lines inside Merge because `profile ls`
+// asks the same question without a session (DiscoveryFor), and two copies of
+// a precedence rule is how a listing starts describing a resolution that no
+// longer happens.
+func pickDiscovery(layers []ScopeLayer) (DiscoveryMode, LayerKind, bool) {
+	var disc DiscoveryMode
+	from := LayerGlobal
+	best := -1
+	for _, l := range layers {
+		if l.Discovery != nil && int(l.Kind) >= best {
+			best = int(l.Kind)
+			disc, from = *l.Discovery, l.Kind
+		}
+	}
+	return disc, from, best >= 0
+}
+
 // Merge folds the given layers over the tool catalog into an EffectiveScope
 // (docs/architecture.md §7). It is a PURE function: deterministic, no side
 // effects, inputs are never mutated and never aliased by the output.
@@ -92,15 +114,7 @@ func MergeWithDiagnostics(layers []ScopeLayer, cat router.Catalog, diags []Diagn
 		servers[id] = ToolView{Tools: tools}
 	}
 
-	// Discovery: most specific non-nil wins; later layer wins ties.
-	var disc DiscoveryMode
-	discKind := -1
-	for _, l := range layers {
-		if l.Discovery != nil && int(l.Kind) >= discKind {
-			discKind = int(l.Kind)
-			disc = *l.Discovery
-		}
-	}
+	disc, _, _ := pickDiscovery(layers)
 
 	// Budgets: most specific wins per key; Forced entries cap via min.
 	type budgetAcc struct {

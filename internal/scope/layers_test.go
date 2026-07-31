@@ -291,3 +291,95 @@ func TestServerToolAllowListReachesTheScope(t *testing.T) {
 		})
 	}
 }
+
+// TestDiscoveryForMatchesTheResolvedSession is the parity that justifies
+// DiscoveryFor existing at all: `profile ls` prints the mode a client bound
+// to that profile would actually be served, so the two answers must be the
+// same value for every combination of global and per-profile setting. A
+// listing that drifts from the resolution it describes is worse than the
+// dash it replaced — the dash at least admitted it was not the answer.
+func TestDiscoveryForMatchesTheResolvedSession(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		global   string
+		profile  string
+		want     DiscoveryMode
+		wantFrom LayerKind
+		wantSet  bool
+	}{
+		{name: "nothing set", wantFrom: LayerGlobal},
+		{name: "global only", global: "grouped", want: DiscoveryGrouped, wantFrom: LayerGlobal, wantSet: true},
+		{name: "profile only", profile: "full", want: DiscoveryFull, wantFrom: LayerProfile, wantSet: true},
+		{
+			name: "profile overrides global", global: "full", profile: "lazy",
+			want: DiscoveryLazy, wantFrom: LayerProfile, wantSet: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			snap := emptySnap()
+			snap.Governance.V.Discovery = tc.global
+			snap.Profiles.V.Profiles["dev"] = doc(registry.Profile{Discovery: tc.profile})
+			snap.Clients.V.Clients["claude-code"] = doc(registry.ClientEntry{Profile: "dev"})
+
+			got, from, ok := DiscoveryFor(snap, "dev")
+			if got != tc.want || from != tc.wantFrom || ok != tc.wantSet {
+				t.Errorf("DiscoveryFor = (%q, %s, %v), want (%q, %s, %v)",
+					got, from, ok, tc.want, tc.wantFrom, tc.wantSet)
+			}
+
+			layers, _ := FromRegistry(snap, SessionKey{ClientID: "claude-code"})
+			es, err := Merge(layers, testCatalog())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if es.Discovery != got {
+				t.Errorf("DiscoveryFor = %q but the resolved session gets %q", got, es.Discovery)
+			}
+		})
+	}
+}
+
+// An unbound client follows the active profile, and DiscoveryFor is asked
+// about the SAME name — including the empty one, which is what `profile use -`
+// leaves behind and what the `(default)` row of `profile ls` describes.
+func TestDiscoveryForFollowsTheActiveProfile(t *testing.T) {
+	snap := emptySnap()
+	snap.Governance.V.Discovery = "grouped"
+	snap.Governance.V.ActiveProfile = "dev"
+	snap.Profiles.V.Profiles["dev"] = doc(registry.Profile{Discovery: "full"})
+
+	got, from, ok := DiscoveryFor(snap, snap.Governance.V.ActiveProfile)
+	if got != DiscoveryFull || from != LayerProfile || !ok {
+		t.Errorf("active profile discovery = (%q, %s, %v), want (full, profile, true)", got, from, ok)
+	}
+
+	layers, _ := FromRegistry(snap, SessionKey{ClientID: "unbound"})
+	es, err := Merge(layers, testCatalog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if es.Discovery != got {
+		t.Errorf("DiscoveryFor = %q but an unbound session gets %q", got, es.Discovery)
+	}
+
+	// No active profile: the global layer is the whole chain.
+	snap.Governance.V.ActiveProfile = ""
+	if got, from, ok := DiscoveryFor(snap, ""); got != DiscoveryGrouped || from != LayerGlobal || !ok {
+		t.Errorf("no active profile = (%q, %s, %v), want (grouped, global, true)", got, from, ok)
+	}
+}
+
+// A name that resolves nowhere costs VISIBILITY, decided in Merge; the
+// presentation question still has the global answer, so DiscoveryFor must not
+// invent a third state for it.
+func TestDiscoveryForDanglingNameFallsBackToGlobal(t *testing.T) {
+	snap := emptySnap()
+	snap.Governance.V.Discovery = "full"
+	got, from, ok := DiscoveryFor(snap, "ghost")
+	if got != DiscoveryFull || from != LayerGlobal || !ok {
+		t.Errorf("dangling = (%q, %s, %v), want (full, global, true)", got, from, ok)
+	}
+	if _, _, ok := DiscoveryFor(nil, "ghost"); ok {
+		t.Error("a nil snapshot must report that no layer set a mode")
+	}
+}
