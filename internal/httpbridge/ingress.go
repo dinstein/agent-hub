@@ -101,25 +101,46 @@ func checkFetchMetadata(r *http.Request) error {
 	}
 }
 
-// checkOrigin rejects a cross-origin browser request and, with it, DNS
-// rebinding: an attacker page that resolves its own hostname to 127.0.0.1
-// still sends its own Origin.
+// checkOrigin rejects a browser request that did not come from a page this
+// endpoint could plausibly have served, and with it DNS rebinding.
+//
+// It used to accept any Origin equal to the request's Host, with the comment
+// that this stopped rebinding because "an attacker page that resolves its own
+// hostname to 127.0.0.1 still sends its own Origin". The premise is true and
+// the conclusion does not follow: under rebinding the Host header carries the
+// attacker's hostname too. A page served from http://evil.example:7777 whose
+// DNS has been rebound to 127.0.0.1 sends Origin AND Host as
+// evil.example:7777, they compare equal, and Sec-Fetch-Site reads
+// "same-origin" — because from the browser's point of view it IS same-origin,
+// which is also why no preflight is sent. Equality was the one relation
+// rebinding preserves.
+//
+// So both authorities must be provably loopback, not merely equal to each
+// other. That is what a local UI served from this endpoint sends, and it is
+// what an attacker cannot produce without already being on this machine.
+//
+// Failure direction: reject. AddrIsLoopback is false for anything it cannot
+// prove (a hostname such as 127.0.0.1.nip.io, an unparsable authority), and
+// the check runs before authentication, so a false positive costs a
+// browser-shaped client a 403 while a false negative costs tool execution.
 //
 // CORS INVARIANT: this server never reflects Origin and never emits
 // Access-Control-Allow-*. There is no browser client to enable, so the only
 // effect of a permissive CORS header would be to let a page read tool
-// results. A same-Host Origin passes because that is what a local UI served
-// from this very endpoint would send.
+// results.
 func checkOrigin(r *http.Request) error {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	if origin == "" {
 		return nil // non-browser client
 	}
 	host := strings.TrimPrefix(strings.TrimPrefix(origin, "https://"), "http://")
-	if host == r.Host {
-		return nil
+	if host != r.Host {
+		return errCrossSite
 	}
-	return errCrossSite
+	if !AddrIsLoopback(host) {
+		return errCrossSite
+	}
+	return nil
 }
 
 // readBody reads at most MaxBodyBytes with a read deadline, so neither a

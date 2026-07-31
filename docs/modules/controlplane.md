@@ -553,6 +553,16 @@ bug above stayed invisible from inside this package. `RemoteAddr` is the kernel'
 **no `X-Forwarded-For` handling belongs here**, as this package binds TCP itself and is never fronted by a proxy, so
 honouring that header would turn a header into an authentication bypass.
 
+**A browser Origin must be a provably loopback authority, not merely equal to `Host`.** The equality rule that preceded
+it carried a comment claiming it stopped DNS rebinding — "an attacker page that resolves its own hostname to 127.0.0.1
+still sends its own Origin". The premise is true; the conclusion does not follow, because under rebinding the `Host`
+header carries the attacker's hostname as well. A page from `http://evil.example:7777` whose DNS has been rebound sends
+both headers as `evil.example:7777`, they compare equal, and `Sec-Fetch-Site` reads `same-origin` — from the browser's
+point of view it *is* same-origin, which is also why no preflight is sent. **Equality is the one relation rebinding
+preserves.** Both authorities now have to pass `AddrIsLoopback`, which is false for anything it cannot prove
+(`127.0.0.1.nip.io`, `localhost.evil.example`, an unparsable authority). The check runs before authentication, so its
+false positives cost a browser-shaped client a 403 and its false negatives cost tool execution.
+
 **The per-request ordering invariant: ingress limits → authentication → session binding → dispatch.** Every level is
 fail-closed, and every rejection is distinguishable (413/401/403/404/503), so operations reading access logs can tell
 "body too large" from "token revoked" from "someone else's session". **Rate limiting happens before authentication** —
