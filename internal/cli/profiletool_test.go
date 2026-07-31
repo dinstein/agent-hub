@@ -129,3 +129,50 @@ func TestProfileToolLsRefusesAnUnknownProfile(t *testing.T) {
 		t.Errorf("the error must point at the listing of real profiles, got %s", stderr)
 	}
 }
+
+// inspect is inherently cross-layer, so the profile spelling is an alias with
+// a narrower FOCUS — not a second computation that would have to reproduce
+// the layer above it.
+func TestProfileToolInspectFocusesOnOneProfile(t *testing.T) {
+	seedCatalog(t)
+	mustRun(t, "", "profile", "create", "work", "--servers", "fs")
+	mustRun(t, "", "profile", "create", "other", "--servers", "git")
+
+	var focused ToolInspect
+	decodeInto(t, mustRun(t, "", "profile", "tool", "inspect", "work", "fs__read_file", "--json"), &focused)
+	if focused.Focus != "work" || len(focused.Profiles) != 1 || focused.Profiles[0].Layer != "work" {
+		t.Fatalf("report = %+v, want only the work verdict, marked as focused", focused)
+	}
+	// The layer above is kept: it decides the same tool, and a report that
+	// dropped it could claim a profile allows what no client can reach.
+	if focused.Global.Layer != "global" {
+		t.Errorf("the machine-wide verdict must survive the focus: %+v", focused.Global)
+	}
+
+	var whole ToolInspect
+	decodeInto(t, mustRun(t, "", "server", "tool", "inspect", "fs__read_file", "--json"), &whole)
+	if whole.Focus != "" || len(whole.Profiles) != 2 {
+		t.Errorf("the unfocused form must still answer for every profile: %+v", whole)
+	}
+	if whole.Global != focused.Global {
+		t.Errorf("one tool, two spellings, two different verdicts: %+v vs %+v", whole.Global, focused.Global)
+	}
+}
+
+// The default line answers "what does an unbound client get". Focused on a
+// profile nothing falls back to, the unfocused answer would be about a
+// different profile under a heading the reader holds as this one's.
+func TestProfileToolInspectDefaultLineStaysAboutThisProfile(t *testing.T) {
+	seedCatalog(t)
+	mustRun(t, "", "profile", "create", "work")
+	mustRun(t, "", "profile", "create", "other")
+	mustRun(t, "", "profile", "use", "other")
+
+	out := mustRun(t, "", "profile", "tool", "inspect", "work", "fs__read_file")
+	if !strings.Contains(out, `follows "other", not this profile`) {
+		t.Errorf("the default line must say this profile is not the fallback:\n%s", out)
+	}
+	if !strings.Contains(out, `through profile "work"`) {
+		t.Errorf("the identity line must carry the focus:\n%s", out)
+	}
+}

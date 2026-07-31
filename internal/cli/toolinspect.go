@@ -40,6 +40,11 @@ type ToolInspect struct {
 	Description string          `json:"description,omitempty"`
 	Schema      json.RawMessage `json:"schema,omitempty"`
 
+	// Focus names the profile the report was narrowed to, empty for the
+	// unfocused form. It is on the wire because Profiles carrying one entry
+	// is otherwise indistinguishable from a machine with one profile.
+	Focus string `json:"focus,omitempty"`
+
 	// Global is the machine-wide verdict: allowed, blocked or pending.
 	Global ToolVerdict `json:"global"`
 	// Profiles is every profile's verdict, in name order. A profile that
@@ -72,7 +77,14 @@ type ToolClientVerdict struct {
 
 func (i ToolInspect) Human(w io.Writer) error {
 	d := &detailWriter{w: w}
-	d.line("%s (%s/%s)", i.Name, i.Server, i.RawName)
+	if i.Focus != "" {
+		// Said on the identity line, not further down: every section below is
+		// narrowed, and a reader who missed the qualifier would take a report
+		// about one profile for a report about the machine.
+		d.line("%s (%s/%s), through profile %q", i.Name, i.Server, i.RawName, i.Focus)
+	} else {
+		d.line("%s (%s/%s)", i.Name, i.Server, i.RawName)
+	}
 
 	d.section("identity")
 	d.field("server", "%s (enabled=%s)", i.Server, boolText(i.Enabled))
@@ -138,44 +150,139 @@ func (a *App) newToolInspectCmd() *cobra.Command {
 			"list, each profile, and what each client therefore gets.\n\n" +
 			"The single-argument form takes the EXPOSED name a client sees\n" +
 			"(github__get_issue). The two-argument form takes the server and the\n" +
-			"server's own name, which is what to use when a name is ambiguous.",
+			"server's own name, which is what to use when a name is ambiguous.\n\n" +
+			"'agenthub profile tool inspect <profile> <tool>' asks the same question\n" +
+			"from inside one profile, and answers it out of this same report.",
 		Args: rangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, warnings, err := a.openStore()
-			if err != nil {
-				return err
-			}
-			snap := store.Snapshot()
-			cached, err := gateway.LoadToolCache(a.resolver, nil)
-			if err != nil {
-				return err
-			}
-			serverArg := ""
-			if len(args) == 2 {
-				serverArg = args[0]
-				if _, ok := snap.Servers.V.Servers[serverArg]; !ok {
-					e := NotFoundf(CodeServerNotFound, "no server %q", serverArg)
-					e.Hint = "run 'agenthub server ls' to see configured servers"
-					return e
-				}
-			}
-			cat, err := offlineCatalogOf(snap, cached, serverArg, "")
-			if err != nil {
-				return err
-			}
-			tool, err := resolveTool(cat, args)
-			if err != nil {
-				return err
-			}
-			out := toolInspectOf(tool, snap, cat)
-			if withSchema {
-				out.Schema = tool.Def.InputSchema
-			}
-			return a.printer().Emit(out, warnings...)
+			return a.emitToolInspect(cmd, "", args, withSchema)
 		},
 	}
 	cmd.Flags().BoolVar(&withSchema, "schema", false, "include the tool's raw input schema")
 	return cmd
+}
+
+// newProfileToolInspectCmd is the same report entered from the profile side.
+//
+// It is an ALIAS, not a second implementation: inspect is inherently a
+// cross-layer question — a tool the profile allows can still be missing
+// because the machine-wide rule took it — so a per-profile computation would
+// have to reproduce the layer above it and would eventually reproduce it
+// wrongly. What the profile form changes is the FOCUS: the profiles section
+// and the client list are narrowed to the one profile asked about, and the
+// global verdict stays, because it can still be the answer.
+func (a *App) newProfileToolInspectCmd() *cobra.Command {
+	var withSchema bool
+	cmd := &cobra.Command{
+		Use:   "inspect <profile> <tool> | <profile> <server> <tool>",
+		Short: "Show why this profile lets one tool through, or does not",
+		Long: "The verdicts that decide one tool for this profile: the machine-wide allow\n" +
+			"list above it, the profile's own two rules, and what the clients on this\n" +
+			"profile therefore get.\n\n" +
+			"The machine-wide layer is reported even though it is not the profile's:\n" +
+			"it can be the layer that took the tool, and a report that left it out\n" +
+			"would say a profile allows something no client can reach.\n\n" +
+			"'agenthub server tool inspect <tool>' is the unfocused form — every\n" +
+			"profile's verdict at once.",
+		Args: rangeArgs(2, 3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.emitToolInspect(cmd, args[0], args[1:], withSchema)
+		},
+	}
+	cmd.Flags().BoolVar(&withSchema, "schema", false, "include the tool's raw input schema")
+	return cmd
+}
+
+// emitToolInspect resolves and renders the report for both spellings. A
+// profileName narrows the report to that profile after it is computed, never
+// while: the layers that decide the tool are the same either way, and only
+// what is PRINTED differs.
+func (a *App) emitToolInspect(cmd *cobra.Command, profileName string, args []string, withSchema bool) error {
+	store, warnings, err := a.openStore()
+	if err != nil {
+		return err
+	}
+	snap := store.Snapshot()
+	cached, err := gateway.LoadToolCache(a.resolver, nil)
+	if err != nil {
+		return err
+	}
+	if profileName != "" {
+		if _, ok := snap.Profiles.V.Profiles[profileName]; !ok {
+			e := NotFoundf(CodeProfileNotFound, "no profile %q", profileName)
+			e.Hint = "run 'agenthub profile ls' to see the profiles you have"
+			return e
+		}
+	}
+	serverArg := ""
+	if len(args) == 2 {
+		serverArg = args[0]
+		if _, ok := snap.Servers.V.Servers[serverArg]; !ok {
+			e := NotFoundf(CodeServerNotFound, "no server %q", serverArg)
+			e.Hint = "run 'agenthub server ls' to see configured servers"
+			return e
+		}
+	}
+	// The catalog is built under the GLOBAL layer alone in both spellings, so
+	// a tool this profile blocks is still resolvable: "why can this profile
+	// not see it" is the question, and refusing the lookup answers it with
+	// silence (the same reason resolveTool searches the blocked set).
+	cat, err := offlineCatalogOf(snap, cached, serverArg, "")
+	if err != nil {
+		return err
+	}
+	tool, err := resolveTool(cat, args)
+	if err != nil {
+		return err
+	}
+	out := toolInspectOf(tool, snap, cat)
+	if withSchema {
+		out.Schema = tool.Def.InputSchema
+	}
+	if profileName != "" {
+		out = out.focus(profileName, snap.Governance.V.ActiveProfile)
+	}
+	return a.printer().Emit(out, warnings...)
+}
+
+// focus narrows a report to one profile: its verdict, and the clients that
+// end up on it. Everything above the profile is kept — it decides the same
+// tool, and hiding it is how a report comes to claim a profile allows
+// something no client can reach.
+func (i ToolInspect) focus(name, active string) ToolInspect {
+	i.Focus = name
+	for _, p := range i.Profiles {
+		if p.Layer == name {
+			i.Profiles = []ToolVerdict{p}
+			break
+		}
+	}
+	var clients []ToolClientVerdict
+	for _, c := range i.Clients {
+		// A client with no binding of its own follows the ACTIVE profile, so
+		// it belongs to this report exactly when this profile is the active
+		// one — which is also when Default below is about it.
+		if c.Profile == name || (c.Profile == "" && name == active) {
+			clients = append(clients, c)
+		}
+	}
+	i.Clients = clients
+	// The default line answers "what does a client with no binding get", and
+	// unfocused that is always about this report. Focused on a profile that
+	// is NOT the active one it would answer about a different profile
+	// entirely, under a heading the reader is holding as this one's.
+	if name != active {
+		if !i.Global.Allowed {
+			i.Default = "nothing sees it: the machine-wide rule blocks it above every profile"
+		} else if active == "" {
+			i.Default = fmt.Sprintf(
+				"no active profile — only a client bound to %q reads this verdict", name)
+		} else {
+			i.Default = fmt.Sprintf(
+				"an unbound client follows %q, not this profile", active)
+		}
+	}
+	return i
 }
 
 // resolveTool finds the named tool among everything cached, blocked included:

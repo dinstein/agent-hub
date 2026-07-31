@@ -490,7 +490,7 @@ func (a *App) newProfileToolCmd() *cobra.Command {
 		Args:    cobra.ArbitraryArgs,
 		RunE:    groupRunE,
 	}
-	cmd.AddCommand(a.newProfileToolLsCmd(), a.newProfileToolAllowCmd())
+	cmd.AddCommand(a.newProfileToolLsCmd(), a.newProfileToolInspectCmd(), a.newProfileToolAllowCmd())
 	return cmd
 }
 
