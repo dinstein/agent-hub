@@ -69,6 +69,36 @@ func TestAuthorizeBindMatrix(t *testing.T) {
 			cfg:     httpbridge.BindConfig{Addr: "my-laptop.local:7777", InsecureLoopback: true},
 			wantErr: true,
 		},
+		// The combination the matrix above never held: each dimension was
+		// covered alone — "non-loopback with the escape hatch" refused,
+		// "non-loopback with a token" allowed — and the pair was the
+		// configuration that mattered. A token authorized the bind through
+		// the switch, the hatch was never judged, and it went on to the
+		// Authenticator anyway, which answered every unauthenticated LAN
+		// request at the destructive tier.
+		{
+			name:    "non-loopback with the escape hatch AND an admin token",
+			cfg:     httpbridge.BindConfig{Addr: "0.0.0.0:7777", HasAdminToken: true, InsecureLoopback: true},
+			wantErr: true,
+		},
+		{
+			name:    "non-loopback with the escape hatch AND an agent token",
+			cfg:     httpbridge.BindConfig{Addr: "192.168.1.5:7777", ActiveAgentTokens: 3, InsecureLoopback: true},
+			wantErr: true,
+		},
+		{
+			name: "every interface with the escape hatch AND both token kinds",
+			cfg: httpbridge.BindConfig{
+				Addr: ":7777", HasAdminToken: true, ActiveAgentTokens: 2,
+				RegisteredClients: 1, InsecureLoopback: true,
+			},
+			wantErr: true,
+		},
+		{
+			name:       "loopback with the escape hatch AND a token still names the token",
+			cfg:        httpbridge.BindConfig{Addr: "127.0.0.1:7777", HasAdminToken: true, InsecureLoopback: true},
+			wantReason: "admin-token",
+		},
 	}
 	for _, tc := range cases {
 		dec, err := httpbridge.AuthorizeBind(tc.cfg)

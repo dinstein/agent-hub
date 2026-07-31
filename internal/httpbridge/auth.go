@@ -3,6 +3,7 @@ package httpbridge
 import (
 	"crypto/subtle"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -87,8 +88,16 @@ type Authenticator struct {
 	// Tokens is the agent-token store. nil means agent tokens are not
 	// available in this assembly.
 	Tokens *Store
-	// InsecureLoopback allows unauthenticated requests. It exists only for
-	// the documented escape hatch and must never be set by default.
+	// InsecureLoopback allows unauthenticated requests FROM A LOOPBACK PEER.
+	// It exists only for the documented escape hatch and must never be set
+	// by default.
+	//
+	// The peer check is made here as well as at bind time on purpose. This
+	// field is a bool travelling from the daemon's configuration to this
+	// struct, and it carries no evidence of the address the listener
+	// actually got; when AuthorizeBind's narrowing was reachable only in a
+	// branch that a configured token skipped, this bool arrived set on a
+	// 0.0.0.0 listener and nothing downstream could tell.
 	InsecureLoopback bool
 	// Now overrides the clock (tests).
 	Now func() time.Time
@@ -118,7 +127,7 @@ func (a *Authenticator) now() time.Time {
 func (a *Authenticator) Authenticate(r *http.Request) (*Caller, error) {
 	bearer := bearerOf(r)
 	if bearer == "" {
-		if a.InsecureLoopback {
+		if a.InsecureLoopback && peerIsLoopback(r) {
 			return &Caller{Kind: CallerLoopback, Tier: tier.Destructive}, nil
 		}
 		return nil, ErrUnauthorized
@@ -150,6 +159,32 @@ func (a *Authenticator) Authenticate(r *http.Request) (*Caller, error) {
 		return nil, ErrUnauthorized
 	}
 	return &Caller{Kind: CallerAdmin, Tier: tier.Destructive}, nil
+}
+
+// peerIsLoopback reports whether the request came from this machine.
+//
+// Failure direction: NOT loopback. It is used to grant the one
+// no-credential path in this package, so everything it cannot prove — an
+// unparsable RemoteAddr, an empty one, a non-IP host — must come out false.
+// That is the same direction as AddrIsLoopback, and for the same reason:
+// the two are the pair that decides whether an unauthenticated request is
+// answered, and if they ever disagree they must disagree towards refusing.
+//
+// RemoteAddr is the kernel's view of the peer, not a header, so it is not
+// something a proxy or a page can set. This package is never fronted by a
+// reverse proxy — it binds TCP itself (see Listen) — so no X-Forwarded-For
+// handling belongs here; adding it would turn a header into an
+// authentication bypass.
+func peerIsLoopback(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	host := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	ip := net.ParseIP(strings.Trim(strings.TrimSpace(host), "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 // bearerOf extracts the bearer credential from the Authorization header.

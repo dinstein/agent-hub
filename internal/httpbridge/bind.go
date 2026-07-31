@@ -58,6 +58,29 @@ func AuthorizeBind(cfg BindConfig) (BindDecision, error) {
 	loopback := AddrIsLoopback(cfg.Addr)
 	dec := BindDecision{Addr: cfg.Addr, Loopback: loopback}
 
+	// The escape hatch is judged BEFORE anything can authorize the bind, and
+	// it is judged on the address alone.
+	//
+	// It used to be judged only as a last-resort bind reason, which meant a
+	// token short-circuited the switch below and the hatch was never looked
+	// at: `--http-addr 0.0.0.0:7777 --http-allow-remote --insecure-loopback`
+	// with any token configured bound successfully AND handed
+	// InsecureLoopback to the Authenticator, so every unauthenticated LAN
+	// request was answered at the destructive tier. The narrowing was real
+	// but it lived in a branch the common configuration never reached.
+	//
+	// Refusing rather than ignoring the flag is the "delivered or refused"
+	// rule: an operator who asked for unauthenticated access on a public
+	// address has asked for something this build will not do, and silently
+	// dropping the flag would leave them believing it took effect.
+	if cfg.InsecureLoopback && !loopback {
+		return BindDecision{}, fmt.Errorf(
+			"%w: --insecure-loopback names %s, which is not a loopback address. "+
+				"The hatch covers a developer's own machine, never a network-reachable "+
+				"listener — drop the flag and authenticate with a token, or bind loopback",
+			ErrBindUnauthorized, cfg.Addr)
+	}
+
 	switch {
 	case cfg.HasAdminToken:
 		dec.Reason = "admin-token"

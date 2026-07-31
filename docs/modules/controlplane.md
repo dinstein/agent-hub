@@ -537,6 +537,22 @@ entries in `clients.json` are configuration, not credentials. `AddrIsLoopback` f
 (`:8080`, i.e. all interfaces), a hostname, or an unresolvable address is **not** loopback — this predicate is used to
 grant a weaker authorization, so it must be the one in the pair that is false when it cannot prove otherwise.
 
+**The escape hatch is judged before anything can authorize the bind, and refused rather than ignored.** That narrowing
+used to live only in the last-resort branch of `AuthorizeBind`'s switch, where `--insecure-loopback` was one *reason* a
+bind could be permitted. A configured token returned from the switch first, so on
+`--http-addr 0.0.0.0:7777 --http-allow-remote --insecure-loopback` the flag was never looked at — and it was passed
+through to the `Authenticator` regardless, which answered **every unauthenticated LAN request at the destructive tier**.
+The narrowing was real, correct, and unreachable in the one configuration where it mattered. Refusing to start (rather
+than dropping the flag) is the "delivered or refused" rule: an operator who asked for unauthenticated access on a public
+address asked for something this build will not do, and silently ignoring it leaves them believing it took effect.
+
+**`Authenticate` re-checks the peer, and `peerIsLoopback` fails toward false.** The no-credential path requires *both*
+`InsecureLoopback` and a loopback `RemoteAddr`. This is deliberate duplication: `InsecureLoopback` reaches the
+`Authenticator` as a bare bool carrying no evidence of the address the listener actually got, which is precisely how the
+bug above stayed invisible from inside this package. `RemoteAddr` is the kernel's view of the peer rather than a header —
+**no `X-Forwarded-For` handling belongs here**, as this package binds TCP itself and is never fronted by a proxy, so
+honouring that header would turn a header into an authentication bypass.
+
 **The per-request ordering invariant: ingress limits → authentication → session binding → dispatch.** Every level is
 fail-closed, and every rejection is distinguishable (413/401/403/404/503), so operations reading access logs can tell
 "body too large" from "token revoked" from "someone else's session". **Rate limiting happens before authentication** —
