@@ -320,11 +320,19 @@ if it can't parse an IP literal it refuses rather than guesses, and refusals ret
   paired with `DialControl`. `oauthflow.Client` uses them exactly that way: `checkURL` screens the
   URL's host before the request, and `dialControl` on the transport screens the actual IP at dial
   time.
-- `HostIsDefinitelyPrivate` has **no caller in the tree today**. Its only consumer was the retired
-  leak scanner, which used it to pick between two rules of equal severity — the one place where
-  uncertainty carried no security cost. It is kept because the pairing is the point: a predicate that
-  refuses on doubt and one that withholds trust on doubt are different functions, and collapsing them
-  is the mistake the pair exists to prevent.
+- `HostIsDefinitelyPrivate` is wired, and **both of its callers use it to REFUSE rather than to grant
+  trust** — the opposite of the role its own doc comment describes, deliberately.
+  `confops.ValidateOAuthURL` and `ValidateEndpoint` screen a URL at the moment the operator types it,
+  and there the fail-closed `HostIsPrivate` would reject a laptop with no network and a name that
+  only resolves inside a VPN: honest edits refused for being unresolvable at edit time. Refusing with
+  the fail-to-false predicate is sound *only* because this is not the boundary —
+  `internal/downstream` screens the name before it connects and the resolved address at dial time,
+  which is the pair DNS rebinding cannot walk around. **Reach for it to refuse only when you can name
+  the fail-closed check that runs after you**; with no such check the doubt it waves through is the
+  entire attack.
+- The pairing is the point, and is why this function survived a period with no caller at all: a
+  predicate that refuses on doubt and one that withholds trust on doubt are different functions, and
+  collapsing them is the mistake the pair exists to prevent.
 
 | File | Contents |
 |---|---|

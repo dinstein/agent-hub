@@ -12,6 +12,16 @@
 //     or a localhost name answers true; DNS is never believed for this
 //     direction, because DNS answers change (rebinding).
 //
+// Refusing with the fail-to-false one is a third and much narrower use, and
+// every caller it has today is of that kind: confops screens a URL as the
+// operator types it, where the fail-closed predicate would reject a laptop
+// with no network and a name that only resolves inside a VPN. That is sound
+// only IN FRONT OF a fail-closed screen that runs later — internal/downstream
+// screens the name before connecting and the address at dial time. On its own
+// it refuses the certain cases and waves everything else through, which is the
+// shape of no protection at all, so a caller reaching for it this way has to
+// be able to name the check that runs after it.
+//
 // A hostname check alone is TOCTOU-vulnerable to DNS rebinding: the name
 // resolves public at check time and private at dial time. DialControl closes
 // that hole — install it as net.Dialer.Control and every connection is
