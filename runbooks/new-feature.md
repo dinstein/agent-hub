@@ -128,11 +128,23 @@ make ci-landing
 its binary inside `TestMain`, which the Go cache key does not cover, so the suite would otherwise
 report `ok (cached)` for a tree it never ran.
 
-**Read its exit status, not its last screenful.** Piping through `tee` reports `tee`'s status:
+**Read its exit status, not its last screenful.** The target keeps its own log at `.make/ci.log` and
+arms `set -o pipefail` inside the recipe, so it needs no outer `tee` — and an outer `tee` is exactly
+what breaks the reading, because `$?` then reports `tee`'s status, and `tee` almost always succeeds.
+Redirect rather than pipe:
 
 ```bash
-make ci-landing 2>&1 | tee /tmp/landing.log; echo "${PIPESTATUS[0]}"   # NOT $?
+make ci-landing >/tmp/landing.log 2>&1; echo $?      # 0, or read the log
 ```
+
+`${PIPESTATUS[0]}` is the usual escape and it is **shell-specific**: bash indexes that array from 0,
+zsh spells it `$pipestatus` and indexes from 1, so the bash form evaluates to an empty string under
+zsh — indistinguishable at a glance from a run that said nothing because it passed. Not piping is the
+portable fix.
+
+A green run ends with `landing check: nothing came from cache, every package ran`. That line is the
+last thing the recipe does, after the cached-result check, so seeing it means the whole target
+succeeded.
 
 Then, in the main work tree:
 
