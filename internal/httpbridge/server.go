@@ -298,16 +298,29 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, c *Caller)
 // (-32022), and a second copy of the check would be a second place for it
 // to be wrong.
 func stateless2026Request(req *mcp.Request) bool {
-	if req.Method == mcp.MethodDiscover {
-		return true
-	}
-	if len(req.Params) == 0 {
+	return req.Method == mcp.MethodDiscover || carries2026Meta(req.Params)
+}
+
+// carries2026Meta reports whether params carry the per-request _meta with a
+// declared protocol version. It is the ONE decode of that question in this
+// file, for the same reason the version's value is decoded in none of them:
+// the predicate is asked twice — here, for routing a request that brings no
+// session, and in checkMcpHeaders, for deciding which requests owe an
+// Mcp-Method header — and two decodes are two places to disagree about what
+// "carries _meta" means.
+//
+// A params blob that will not unmarshal counts as NOT carrying it. That is
+// the safe direction: such a request is refused a few frames later by the
+// dispatcher that actually needs the params, with an error about the params
+// rather than about a header it was never obliged to send.
+func carries2026Meta(params json.RawMessage) bool {
+	if len(params) == 0 {
 		return false
 	}
 	var probe struct {
 		Meta *mcp.RequestMeta `json:"_meta"`
 	}
-	if err := json.Unmarshal(req.Params, &probe); err != nil || probe.Meta == nil {
+	if err := json.Unmarshal(params, &probe); err != nil || probe.Meta == nil {
 		return false
 	}
 	return probe.Meta.ProtocolVersion != ""
@@ -332,16 +345,15 @@ func checkMcpHeaders(r *http.Request, method string, params json.RawMessage) *mc
 		return &mcp.Error{Code: mcp.CodeHeaderMismatch, Message: fmt.Sprintf(
 			"%s header %q disagrees with the body method %q", MethodHeader, hdrMethod, method)}
 	}
-	var probe struct {
-		Meta *mcp.RequestMeta `json:"_meta"`
-		Name string           `json:"name"`
-	}
-	if len(params) > 0 {
-		_ = json.Unmarshal(params, &probe) // non-object params carry neither
-	}
-	if hdrMethod == "" && probe.Meta != nil && probe.Meta.ProtocolVersion != "" {
+	if hdrMethod == "" && carries2026Meta(params) {
 		return &mcp.Error{Code: mcp.CodeHeaderMismatch, Message: fmt.Sprintf(
 			"2026-07-28 requires the %s header on every request", MethodHeader)}
+	}
+	var probe struct {
+		Name string `json:"name"`
+	}
+	if len(params) > 0 {
+		_ = json.Unmarshal(params, &probe) // non-object params carry no name
 	}
 	if hdrName := r.Header.Get(NameHeader); hdrName != "" && probe.Name != "" && hdrName != probe.Name {
 		return &mcp.Error{Code: mcp.CodeHeaderMismatch, Message: fmt.Sprintf(
