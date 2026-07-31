@@ -186,6 +186,22 @@ silently falls back to the baseline instance**, because that would execute the c
 credentials, defeating precisely the isolation operations asked for; only the "cap", an operator's self-imposed
 limit, falls back.
 
+**That carve-out is contested, and the argument for it is weaker than the sentence above admits.** A security sweep
+found the fallback and read it as exactly the harm the rule forbids. Two corrections to the framing here: the cap is
+driven by **client-supplied roots**, not by operator configuration, so "an operator's self-imposed limit" understates
+who can reach it — any client rotating through more than `MaxPerServer` roots for one server inside the `IdleTTL`
+window gets there. And the degradation is not only cwd/env: the baseline instance resolves secrets under the **base
+`ScopeName`** rather than the derive key, so a scoped vault lookup silently returns another scope's answer. That is a
+credential crossing a boundary, which is a different class of harm from a shared working directory.
+
+Kept as-is for now because reversing it is a decision with a cost, not a bug fix: `pool.go:219-231` erroring at the cap
+turns a degraded call into a hard failure on **every tool of that server** until the sweeper reclaims, breaking
+configurations that work today, and `TestDerivedInstanceCapFallsBackToBase` pins the current behaviour with its
+rationale ("degraded sharing beats an unbounded process fan-out"). **The middle option, which needs no reversal of the
+rule above: keep the fallback, but refuse it when the baseline would resolve secrets under a different vault scope than
+the derivation asked for.** That closes the credential half and leaves the process-count argument intact. Whichever way
+it goes, this paragraph and that test move together.
+
 **A startup crash must leave evidence.** The handshake failure error embeds the last 20 **lines** of the child
 process's stderr (each line truncated to 400 bytes, joined with ` | `). This is a **projection** of
 `transport`'s 4KiB byte window rather than a second capture; when the window fills, the first line is dropped,

@@ -47,7 +47,7 @@ permutation.
 | Issuer has a path, metadata at the append position (older providers that implement only OIDC) | ✅ | Candidate 3 |
 | No metadata of any kind, but `/authorize` `/token` `/register` really do live under the issuer | ✅ | Synthesized fallback via `DefaultEndpoints`, recorded as `DiscoveryDefaults` |
 | PRM lists multiple `authorization_servers` | ⚠️ | **Only the first is used.** Deliberate: trying them one by one would widen the set of hosts a malicious RS can make us contact |
-| The `issuer` declared in AS metadata disagrees with where we fetched it from | ⚠️ | Not validated, but recorded as `DiscoveryResourceOrigin` — see the security boundaries below |
+| The `issuer` declared in AS metadata disagrees with where we fetched it from | ⚠️ | Not validated on **either** path. The resource-origin hop records `DiscoveryResourceOrigin`; the canonical `fetchMetadata` path carries no marker and no check — see the security boundaries below |
 
 ### Client identity
 
@@ -276,6 +276,21 @@ recorded nowhere at all.
   call `DefaultEndpoints`. Guessing `/authorize` on the RS's own origin would send the user's
   browser to a URL no provider ever declared. This one is nailed down by a mutation test
   (`TestDiscoverFromResourceOriginDoesNotSynthesize`).
+- **Open: the canonical path has the same unvalidated `issuer`, and no status marker to say so.**
+  `validateMetadata` (`discovery.go:449-458`) requires the endpoints to be present but never compares
+  `md.Issuer` against the issuer the candidate URLs were built from, which RFC 8414 §3.3 requires; the
+  callback then checks the returned `iss` against that same unvalidated value (`iss.go:41`). The
+  tolerance was a deliberate position for the resource-origin hop and is documented as such above —
+  but it was never argued for the canonical hop, where it silently applies too. The attack it leaves
+  open is narrow and real: a hostile resource server whose `authorization_servers[0]` names a host
+  that then declares itself a trusted issuer.
+
+  **Not closed with an exact-equality check, because that breaks working providers**: a trailing
+  slash, a host alias, or `http` vs `https` in a declared `issuer` is common real-world sloppiness,
+  and exact equality turns each into a login that stops working. The shape that closes the attack
+  without that cost is a **normalised** comparison — case-fold the host, drop a single trailing slash,
+  then require scheme, host and path to match. Needs its own branch and its own argument; changing
+  the resource-origin half is a separate decision from changing this one.
 
 ## Troubleshooting: start with `DiscoveryStatus`
 

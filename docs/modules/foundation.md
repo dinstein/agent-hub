@@ -390,6 +390,20 @@ frames don't interleave when the Call/Notify goroutines and the read loop (reply
 share a writer. `json.Marshal` escapes control characters inside strings, so a payload can't contain
 a bare newline, which makes appending `'\n'` safe.
 
+**A blocked `WriteFrame` does not honour its call's context, and that is deliberate.** A security
+sweep raised it as a shutdown deadlock: `Call` performs the write before selecting on `ctx.Done`, and
+`Notify` ignores its context entirely, so a stdio downstream that stops reading mid-frame was said to
+hang shutdown. **Not reproduced.** Handler goroutines never wait on the stuck write —
+`downstream/server.go:388-397` selects on the reply, the call context and the server lifetime, and
+shutdown cancels the gateway lifetime before joining handlers — while `Server.Close` closes the
+transport *before* joining the owner goroutine, and closing the child's stdin unwinds a blocked
+`Write` with an error. There is also no reachable trigger for the `Notify` half: it is used only
+during the handshake, against a fresh 64 KiB pipe, with a frame far below that. What remains true is
+the narrow statement that a blocked write outlives its per-call context, bounded to that server being
+unavailable until redial. **Making `WriteFrame` context-aware would be worse than the finding**: a
+write abandoned partway leaves a half-frame in the stream, and the atomicity guarantee above is what
+lets every other reader on that connection trust it.
+
 **Blank lines are skipped, and a final frame without a newline is still delivered.** The reader skips
 blank lines (including CRLF remnants), and at EOF, if there is non-empty unterminated content, it's
 delivered as the final frame with EOF returned on the next call.

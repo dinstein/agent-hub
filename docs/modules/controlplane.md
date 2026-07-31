@@ -379,6 +379,25 @@ each leaves the registry untouched rather than landing on a default the operator
 actual state change (its no-op guard compares parsed JSON values), so writing the same value twice naturally reports
 `Changed == false`.
 
+**Raised and not reproduced (security sweep) — the legacy active-profile marker, twice.** Both findings concern
+`MigrateActiveProfile` (`profile.go:434`) and the pre-migration `<state>/active-profile.json`:
+
+1. *that the migration runs only from the CLI's semantic-write path* (`internal/cli/confops.go:82-90`), so a daemon or
+   GUI start on an upgraded installation would read an empty `governance.activeProfile` and hand follow-active clients
+   the unrestricted server set;
+2. *that a truncated marker takes the same branch as a deliberately cleared one* (`profile.go:434-445`) — deleted, no
+   error, scopes then resolving as unrestricted.
+
+Both are sound as reasoning and **neither has a population**. No released build ever wrote that file: the only
+non-test references are the constant and the read, the sole writer is a test fixture (`profile_test.go:419`), and every
+tag from v0.1.0 to v0.14.0 carries the read-and-retire form. Reaching the state needs a machine that ran an
+*unreleased* dev build, executed `profile use` on it, upgraded, and then started the daemon without ever running a CLI
+write — and the first CLI write repairs it. The CLI-only placement is deliberate and reasoned where it sits, and pinned
+by `TestDoctorIsReadOnly`; moving it into daemon startup would add a registry write and a lock acquisition to every
+start for zero installations. Erroring on a corrupt marker instead of retiring it would make every CLI write command
+fail hard with no self-healing path, for the same empty population. **If a future version ever writes this file again,
+both findings become live and neither argument above survives.**
+
 ---
 
 ## internal/catalog
@@ -427,6 +446,18 @@ refuse, or the user will never learn that the `oauth` block they pasted vanished
 
 **Wrapper key paths come from `internal/clients`** — the same table that decides where on disk each client's servers
 live. So adding one client row extends this parser for free, instead of requiring a second inventory that would drift.
+
+**Raised and not reproduced (security sweep):** that `decodeAdminBody` uses `json.Unmarshal`, so a misspelled or
+unsupported narrowing key is dropped and the write then succeeds at the *wider* setting. The reasoning generalises from
+the `nil` vs `[]` rule and reads convincingly, but **no route on this API actually permits the widening**:
+`scopeBindingWire` declares the retired narrowing keys precisely so `retiredField()` can answer 400 by name
+(`adminscope.go:37-67`), `handleProfilePatch` refuses anything other than exactly one op, and `serverSetMode` /
+`toolSelectMode` map an unrecognised spelling to UNSET rather than to a permissive default. The one field genuinely
+ignored in silence is inside `PATCH /v1/servers/{id}`'s partial entry, where absent already means "keep the stored
+value" and the merged entry is echoed back in the response — an ergonomics wart, not a widening. A blanket
+`DisallowUnknownFields` was written and reverted: it would 400 bodies that work today (the precondition keys ride in the
+body while belonging to no handler's wire type) and would replace the specific retired-field hint above with a generic
+decode error. The per-route split immediately above is the recorded decision here.
 
 ---
 
