@@ -30,11 +30,38 @@ type ProfileRow struct {
 	Servers []string `json:"servers"`
 	// Tools maps serverID -> selector for the servers this profile narrows.
 	Tools map[string]registry.ToolSelector `json:"tools,omitempty"`
-	// Discovery is how this profile's tools are surfaced; "" inherits the
-	// global default.
+	// Discovery is how this profile's tools are surfaced AS CONFIGURED; ""
+	// inherits. It stays the configured value rather than the resolved one:
+	// a consumer that read this field and wrote it back would otherwise turn
+	// inheritance into a pin.
 	Discovery string `json:"discovery,omitempty"`
+	// EffectiveDiscovery is the mode this profile's tools are actually
+	// surfaced in, and DiscoverySource says which layer decided it
+	// (profile / global / builtin).
+	EffectiveDiscovery string `json:"effective_discovery,omitempty"`
+	DiscoverySource    string `json:"discovery_source,omitempty"`
 	// Active marks the globally active profile (`profile use`).
 	Active bool `json:"active"`
+}
+
+// DefaultProfileRow is the fallback a client with no profile of its own
+// follows: the active profile's content, or no narrowing at all while
+// `profile use` is unset.
+//
+// It is NOT a profile, and deliberately does not join ProfileList.Profiles:
+// a script walking that array must keep getting names it can hand back to
+// `profile rm` / `profile server add`.
+type DefaultProfileRow struct {
+	// Profile is the active profile this resolves to, "" when none is set.
+	Profile string `json:"profile,omitempty"`
+	// Dangling marks an active profile that does not exist: every unbound
+	// client fail-closes to an empty scope, which is why Servers is then the
+	// empty (block-all) list rather than nil.
+	Dangling           bool                             `json:"dangling,omitempty"`
+	Servers            []string                         `json:"servers"`
+	Tools              map[string]registry.ToolSelector `json:"tools,omitempty"`
+	EffectiveDiscovery string                           `json:"effective_discovery,omitempty"`
+	DiscoverySource    string                           `json:"discovery_source,omitempty"`
 }
 
 // ProfileList is the `profile ls` result.
@@ -42,33 +69,85 @@ type ProfileList struct {
 	Profiles []ProfileRow `json:"profiles"`
 	// ActiveProfile is "" when none is set (equivalent to `profile use -`).
 	ActiveProfile string `json:"active_profile"`
+	// Default is what a client with no binding of its own follows.
+	Default DefaultProfileRow `json:"default"`
+	// DefaultDiscovery is the mode a profile that sets none inherits, and
+	// DefaultDiscoverySource is global (governance.json) or builtin. That is
+	// the INHERITANCE target, not Default.EffectiveDiscovery: an active
+	// profile may set a mode of its own, and then the two differ.
+	DefaultDiscovery       string `json:"default_discovery,omitempty"`
+	DefaultDiscoverySource string `json:"default_discovery_source,omitempty"`
 }
 
-// Human renders the profile table.
-func (l ProfileList) Human(w io.Writer) error {
-	if len(l.Profiles) == 0 {
-		_, err := fmt.Fprintln(w, "no profiles configured")
-		return err
+// describeToolRules renders a profile's per-server selectors for the table.
+func describeToolRules(tools map[string]registry.ToolSelector) string {
+	if len(tools) == 0 {
+		return "-"
 	}
+	parts := make([]string, 0, len(tools))
+	for _, id := range sortedKeys(tools) {
+		parts = append(parts, id+": "+describeSelector(tools[id]))
+	}
+	return strings.Join(parts, " | ")
+}
+
+// Human renders the profile table, headed by the (default) row.
+//
+// That row is always present, including when there are no profiles at all:
+// the table's job is to answer "what does a client get", and the answer for
+// a client nobody bound was previously nowhere in it — `client ls` printed
+// "(active)" and this table had nothing by that name. The row repeats the
+// active profile's content rather than pointing at it, so the question is
+// answered without a second lookup.
+func (l ProfileList) Human(w io.Writer) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "NAME\tACTIVE\tSERVERS\tDISCOVERY\tTOOL RULES")
+	// The star marks the row in force, so exactly one row carries it: the
+	// named active profile, or (default) itself when there is none — and
+	// also when the active profile does not exist, since the row that would
+	// have carried it is precisely the one that is missing.
+	defaultActive := ""
+	if l.ActiveProfile == "" || l.Default.Dangling {
+		defaultActive = "*"
+	}
+	_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+		describeDefaultProfile(l.Default.Profile, l.Default.Dangling), defaultActive,
+		describeServers(l.Default.Servers),
+		describeDiscovery(l.Default.EffectiveDiscovery, l.Default.DiscoverySource == discoveryFromProfile),
+		describeToolRules(l.Default.Tools))
 	for _, p := range l.Profiles {
-		rules := "-"
-		if len(p.Tools) > 0 {
-			parts := make([]string, 0, len(p.Tools))
-			for _, id := range sortedKeys(p.Tools) {
-				parts = append(parts, id+": "+describeSelector(p.Tools[id]))
-			}
-			rules = strings.Join(parts, " | ")
-		}
 		active := ""
 		if p.Active {
 			active = "*"
 		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
-			p.Name, active, describeServers(p.Servers), dash(p.Discovery), rules)
+			p.Name, active, describeServers(p.Servers),
+			describeDiscovery(p.EffectiveDiscovery, p.DiscoverySource == discoveryFromProfile),
+			describeToolRules(p.Tools))
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if len(l.Profiles) == 0 {
+		if _, err := fmt.Fprintln(w,
+			"\nno profiles configured; create one with 'agenthub profile create <name>'"); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintf(w,
+		"\n%s is what a client with no profile of its own follows; set it with 'agenthub profile use'\n"+
+			"inherited discovery: %s (%s)\n",
+		defaultProfileToken, dash(l.DefaultDiscovery), describeDiscoverySource(l.DefaultDiscoverySource))
+	return err
+}
+
+// describeDiscoverySource spells out where an inherited mode came from, so
+// the reader knows which knob moves it.
+func describeDiscoverySource(source string) string {
+	if source == discoveryFromGlobal {
+		return "governance.json, from 'agenthub config set discovery'"
+	}
+	return "built in; 'agenthub config set discovery' overrides it"
 }
 
 // ProfileChange is the result of every mutating profile subcommand: the
@@ -139,11 +218,16 @@ func (a *App) newProfileCmd() *cobra.Command {
 	return cmd
 }
 
-// profileRow projects one registry profile into its rendered form.
-func profileRow(name string, p registry.Profile, active string) ProfileRow {
+// profileRow projects one registry profile into its rendered form. The
+// snapshot resolves the effective discovery mode and may be nil, which drops
+// those two fields rather than guessing them.
+func profileRow(name string, p registry.Profile, active string, snap *registry.Snapshot) ProfileRow {
 	row := ProfileRow{
 		Name: name, Servers: p.Servers, Discovery: p.Discovery,
 		Active: name == active && active != "",
+	}
+	if snap != nil {
+		row.EffectiveDiscovery, row.DiscoverySource = discoveryOf(snap, name)
 	}
 	if len(p.Tools) > 0 {
 		row.Tools = make(map[string]registry.ToolSelector, len(p.Tools))
@@ -154,13 +238,48 @@ func profileRow(name string, p registry.Profile, active string) ProfileRow {
 	return row
 }
 
+// defaultProfileRow resolves what an unbound client follows: the active
+// profile's own content, or no narrowing at all when none is set.
+//
+// A dangling active profile resolves to the EMPTY server list, not to nil:
+// that is what the scope chain does with it (fail-closed, block-all), and a
+// table that showed "(all registered)" there would describe the opposite of
+// what those clients get.
+func defaultProfileRow(snap *registry.Snapshot, active string) DefaultProfileRow {
+	row := DefaultProfileRow{Profile: active}
+	row.EffectiveDiscovery, row.DiscoverySource = discoveryOf(snap, active)
+	if active == "" {
+		return row
+	}
+	doc, ok := snap.Profiles.V.Profiles[active]
+	if !ok {
+		row.Dangling = true
+		row.Servers = []string{}
+		return row
+	}
+	row.Servers = doc.V.Servers
+	if len(doc.V.Tools) > 0 {
+		row.Tools = make(map[string]registry.ToolSelector, len(doc.V.Tools))
+		for id, sel := range doc.V.Tools {
+			row.Tools[id] = sel.V
+		}
+	}
+	return row
+}
+
 func (a *App) newProfileLsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "ls",
 		Short: "List your profiles and what each one includes",
-		Long: "In the servers column, \"(all registered)\" means the profile takes nothing away\n" +
-			"and \"(none)\" means a client bound to it sees nothing. For which client is on\n" +
-			"which profile, use 'agenthub client ls'.",
+		Long: "The first row, \"(default)\", is not a profile: it is what a client you have not\n" +
+			"bound follows — the active profile, or every enabled server while none is set.\n" +
+			"It is the row 'agenthub client ls' points at, and the star marks whichever row\n" +
+			"is in force.\n\n" +
+			"In the servers column, \"(all registered)\" means the profile takes nothing away\n" +
+			"and \"(none)\" means a client bound to it sees nothing. The discovery column is\n" +
+			"the mode that will actually be used; \"(inherited)\" means the profile does not\n" +
+			"set one and the global default decides. For which client is on which profile,\n" +
+			"use 'agenthub client ls'.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, warnings, err := a.openStore()
@@ -174,13 +293,13 @@ func (a *App) newProfileLsCmd() *cobra.Command {
 			snap := store.Snapshot()
 			list := ProfileList{ActiveProfile: active, Profiles: []ProfileRow{}}
 			for _, name := range sortedKeys(snap.Profiles.V.Profiles) {
-				list.Profiles = append(list.Profiles, profileRow(name, snap.Profiles.V.Profiles[name].V, active))
+				list.Profiles = append(list.Profiles, profileRow(name, snap.Profiles.V.Profiles[name].V, active, snap))
 			}
-			if active != "" {
-				if _, ok := snap.Profiles.V.Profiles[active]; !ok {
-					warnings = append(warnings, fmt.Sprintf(
-						"active profile %q does not exist; every followActive binding fail-closes to an empty scope", active))
-				}
+			list.DefaultDiscovery, list.DefaultDiscoverySource = discoveryOf(snap, "")
+			list.Default = defaultProfileRow(snap, active)
+			if list.Default.Dangling {
+				warnings = append(warnings, fmt.Sprintf(
+					"active profile %q does not exist; every followActive binding fail-closes to an empty scope", active))
 			}
 			return a.printer().Emit(list, warnings...)
 		},
@@ -206,7 +325,7 @@ func (a *App) newProfileCreateCmd() *cobra.Command {
 			if err != nil {
 				return opsError(err)
 			}
-			row := profileRow(res.Name, res.Profile, "")
+			row := profileRow(res.Name, res.Profile, "", store.Snapshot())
 			return a.printer().Emit(ProfileChange{Action: "created", Name: res.Name, Profile: &row}, warnings...)
 		},
 	}
@@ -290,7 +409,7 @@ func (a *App) newProfileUseCmd() *cobra.Command {
 			if err != nil {
 				return opsError(err)
 			}
-			row := profileRow(res.Name, res.Profile, res.Name)
+			row := profileRow(res.Name, res.Profile, res.Name, store.Snapshot())
 			return a.printer().Emit(ProfileChange{Action: "active", Name: res.Name, Profile: &row}, warnings...)
 		},
 	}
@@ -345,7 +464,7 @@ func (a *App) newProfileServerEditCmd(add bool) *cobra.Command {
 			if err != nil {
 				return opsError(err)
 			}
-			row := profileRow(res.Name, res.Profile, "")
+			row := profileRow(res.Name, res.Profile, "", store.Snapshot())
 			return a.printer().Emit(ProfileChange{Action: action, Name: profileName, Profile: &row}, warnings...)
 		},
 	}
@@ -389,7 +508,7 @@ func (a *App) newProfileToolsCmd() *cobra.Command {
 			// After the write, never before it: the cross-check is advisory,
 			// and must not be able to decide whether the rule is stored.
 			warnings = append(warnings, a.unknownToolWarning(serverID, sel)...)
-			row := profileRow(res.Name, res.Profile, "")
+			row := profileRow(res.Name, res.Profile, "", store.Snapshot())
 			return a.printer().Emit(ProfileChange{
 				Action: "tools updated", Name: profileName, Profile: &row,
 			}, warnings...)
@@ -452,7 +571,7 @@ func (a *App) newProfileDiscoveryCmd() *cobra.Command {
 			if err != nil {
 				return opsError(err)
 			}
-			row := profileRow(res.Name, res.Profile, "")
+			row := profileRow(res.Name, res.Profile, "", store.Snapshot())
 			return a.printer().Emit(ProfileChange{
 				Action: "discovery updated", Name: profileName, Profile: &row,
 			}, warnings...)

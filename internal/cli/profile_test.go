@@ -2,12 +2,49 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/dinstein/agent-hub/internal/discovery"
 )
+
+// pointActiveProfileAt rewrites the active-profile marker in governance.json
+// to a name the CLI would refuse to set, which is the only way to reach a
+// dangling active profile: `profile use` rejects an unknown name and
+// `profile rm` clears the marker along with the profile. The marker lives in
+// the registry rather than a state file because scope resolution is pure.
+func pointActiveProfileAt(t *testing.T, dataDir, name string) {
+	t.Helper()
+	path := filepath.Join(dataDir, "registry", "governance.json")
+	doc := map[string]any{}
+	// The document is written on first governance edit, so on a fresh data
+	// directory there is nothing to read yet — an absent file is the same
+	// starting point as an empty one, but a read error of any other kind is
+	// a real failure and must not be swallowed into it.
+	switch raw, err := os.ReadFile(path); {
+	case err == nil:
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+	case !os.IsNotExist(err):
+		t.Fatal(err)
+	default:
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	doc["activeProfile"] = name
+	edited, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, edited, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // decodeInto unmarshals a success envelope's data into v.
 func decodeInto(t *testing.T, out string, v any) envelope {
@@ -305,5 +342,126 @@ func TestProfileDiscoveryHelpMarksTheRealDefault(t *testing.T) {
 	want := []string{string(discovery.DefaultMode)}
 	if !slices.Equal(marked, want) {
 		t.Errorf("help marks %v as default, want exactly %v\n%s", marked, want, out)
+	}
+}
+
+// TestProfileLsDefaultRow pins the row that made `client ls` legible: the
+// PROFILE cell there says "(default)", and this table has to contain
+// something by that name. It also has to say what (default) RESOLVES to,
+// which is the active profile's own content — a reader should not have to
+// join two rows by hand.
+func TestProfileLsDefaultRow(t *testing.T) {
+	setDataDir(t)
+	mustRun(t, "", "server", "add", "github", "--cmd", "gh-mcp")
+	mustRun(t, "", "profile", "create", "work", "--servers", "github")
+
+	// No active profile: (default) is in force and takes nothing away.
+	var list ProfileList
+	decodeInto(t, mustRun(t, "", "profile", "ls", "--json"), &list)
+	if list.Default.Profile != "" || list.Default.Servers != nil || list.Default.Dangling {
+		t.Errorf("default with no active profile = %+v, want the empty, non-narrowing one", list.Default)
+	}
+	// The synthetic row must not leak into the array a script feeds back to
+	// 'profile rm'.
+	for _, p := range list.Profiles {
+		if strings.HasPrefix(p.Name, "(") {
+			t.Errorf("profiles[] carries the display token %q", p.Name)
+		}
+	}
+	out := mustRun(t, "", "profile", "ls")
+	if !strings.Contains(out, "(default)") {
+		t.Errorf("the human table has no (default) row:\n%s", out)
+	}
+
+	// With one: (default) points at it and repeats its content.
+	mustRun(t, "", "profile", "use", "work")
+	decodeInto(t, mustRun(t, "", "profile", "ls", "--json"), &list)
+	if list.Default.Profile != "work" || len(list.Default.Servers) != 1 || list.Default.Servers[0] != "github" {
+		t.Errorf("default = %+v, want it resolved to work's own servers", list.Default)
+	}
+	if out := mustRun(t, "", "profile", "ls"); !strings.Contains(out, "(default) -> work") {
+		t.Errorf("the human table does not point (default) at the active profile:\n%s", out)
+	}
+}
+
+// A (default) that resolves nowhere must be as loud as a client bound to a
+// missing profile: both fail-close to an empty scope, and the server column
+// has to show the empty set rather than "(all registered)" — the reader is
+// otherwise told the opposite of what those clients get.
+func TestProfileLsDefaultRowShowsADanglingActiveProfile(t *testing.T) {
+	dir := setDataDir(t)
+	// Neither `profile use` nor `profile rm` can produce this state — the
+	// first refuses an unknown name, the second clears the marker with the
+	// profile — so it is reached the only way a user reaches it: a stale or
+	// hand-edited governance document.
+	pointActiveProfileAt(t, dir, "ghost")
+
+	var list ProfileList
+	env := decodeInto(t, mustRun(t, "", "profile", "ls", "--json"), &list)
+	if !list.Default.Dangling {
+		t.Fatalf("default = %+v, want it marked dangling", list.Default)
+	}
+	if list.Default.Servers == nil || len(list.Default.Servers) != 0 {
+		t.Errorf("dangling default servers = %v, want the EMPTY block-all list", list.Default.Servers)
+	}
+	if len(env.Warnings) == 0 {
+		t.Error("a dangling active profile produced no warning")
+	}
+	out := mustRun(t, "", "profile", "ls")
+	if !strings.Contains(out, "(default) -> ghost") || !strings.Contains(out, "MISSING") {
+		t.Errorf("the human table does not flag the dangling default:\n%s", out)
+	}
+}
+
+// TestProfileLsDiscoveryIsResolved: the column used to print the configured
+// value, so "-" meant both "no mode here" and "decided elsewhere". It now
+// prints the mode that will be used, and marks the ones the profile does not
+// own — while the configured value stays in its own JSON field, or a
+// consumer round-tripping it would pin what was inherited.
+func TestProfileLsDiscoveryIsResolved(t *testing.T) {
+	setDataDir(t)
+	mustRun(t, "", "profile", "create", "pinned")
+	mustRun(t, "", "profile", "discovery", "pinned", "full")
+	mustRun(t, "", "profile", "create", "inherits")
+
+	byName := func(list ProfileList, name string) ProfileRow {
+		t.Helper()
+		for _, p := range list.Profiles {
+			if p.Name == name {
+				return p
+			}
+		}
+		t.Fatalf("profile %q not listed", name)
+		return ProfileRow{}
+	}
+
+	var list ProfileList
+	decodeInto(t, mustRun(t, "", "profile", "ls", "--json"), &list)
+	if got := byName(list, "pinned"); got.EffectiveDiscovery != "full" || got.DiscoverySource != "profile" {
+		t.Errorf("pinned = %+v, want full from the profile", got)
+	}
+	// Nothing set anywhere: the built-in default, named as such.
+	if got := byName(list, "inherits"); got.Discovery != "" ||
+		got.EffectiveDiscovery != string(discovery.DefaultMode) || got.DiscoverySource != "builtin" {
+		t.Errorf("inherits = %+v, want the built-in %s", got, discovery.DefaultMode)
+	}
+	if list.DefaultDiscovery != string(discovery.DefaultMode) || list.DefaultDiscoverySource != "builtin" {
+		t.Errorf("default discovery = %q/%q, want the built-in",
+			list.DefaultDiscovery, list.DefaultDiscoverySource)
+	}
+
+	// A global default moves every inheriting profile and nothing else.
+	mustRun(t, "", "config", "set", "discovery", "grouped")
+	decodeInto(t, mustRun(t, "", "profile", "ls", "--json"), &list)
+	if got := byName(list, "inherits"); got.EffectiveDiscovery != "grouped" || got.DiscoverySource != "global" {
+		t.Errorf("inherits = %+v, want grouped from governance.json", got)
+	}
+	if got := byName(list, "pinned"); got.EffectiveDiscovery != "full" {
+		t.Errorf("pinned = %+v, want its own mode to survive the global default", got)
+	}
+	out := mustRun(t, "", "profile", "ls")
+	if !strings.Contains(out, "grouped (inherited)") || !strings.Contains(out, "\tfull\t") &&
+		!strings.Contains(out, "full  ") {
+		t.Errorf("the human table does not distinguish inherited from owned:\n%s", out)
 	}
 }

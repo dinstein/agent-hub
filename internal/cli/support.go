@@ -11,8 +11,10 @@ import (
 
 	"github.com/dinstein/agent-hub/api"
 	"github.com/dinstein/agent-hub/internal/confops"
+	"github.com/dinstein/agent-hub/internal/discovery"
 	"github.com/dinstein/agent-hub/internal/gateway"
 	"github.com/dinstein/agent-hub/internal/registry"
+	"github.com/dinstein/agent-hub/internal/scope"
 )
 
 // Shared plumbing for the command groups added by the CLI completion task:
@@ -168,6 +170,84 @@ func describeServers(list []string) string {
 		return "(none)"
 	default:
 		return strings.Join(list, ",")
+	}
+}
+
+// defaultProfileToken is what every listing calls the fallback a client with
+// no profile of its own follows. It is ONE token in `profile ls` and in
+// `client ls` on purpose: the two tables previously named the same thing
+// "(active)" and nothing at all, so a reader had no way to connect a client
+// row to anything the profile table showed. confops refuses to create a
+// profile whose name could shadow it.
+const defaultProfileToken = "(default)"
+
+// describeDefaultProfile renders that fallback: the token alone when no
+// active profile is set, and the token pointing at the active one when there
+// is. A pointer that resolves nowhere carries the same MISSING marker a
+// bound-but-missing profile does — it fail-closes to an empty scope in
+// exactly the same way, and the two must not read differently.
+func describeDefaultProfile(active string, dangling bool) string {
+	if active == "" {
+		return defaultProfileToken
+	}
+	text := defaultProfileToken + " -> " + active
+	if dangling {
+		text += "  " + missingProfileMarker
+	}
+	return text
+}
+
+// missingProfileMarker is the loud form of a profile reference that resolves
+// nowhere: the resolver fail-closes it to an EMPTY scope, and a silent empty
+// set would read as "this client has nothing configured".
+const missingProfileMarker = "MISSING -> empty scope"
+
+// describeDiscovery renders a discovery cell as the mode that will actually
+// be used, marking the ones the row did not set itself.
+//
+// The column used to print the raw configured value, so "-" meant both "no
+// mode here" and "the mode is decided elsewhere" — while the answer is three
+// levels away (profile > governance.json > the built-in). Printing the
+// resolved mode makes the column answer the question it is named after; the
+// suffix keeps it from reading as a setting the profile owns.
+func describeDiscovery(effective string, own bool) string {
+	if own {
+		return effective
+	}
+	return effective + " (inherited)"
+}
+
+// The three sources a discovery mode can come from, as the JSON output
+// names them.
+const (
+	discoveryFromProfile = "profile"
+	discoveryFromGlobal  = "global"
+	discoveryFromBuiltin = "builtin"
+)
+
+// discoveryOf resolves how one profile's tools will be presented, and where
+// that answer came from. An empty name asks about no profile at all — the
+// global default, which is what an unbound client gets while 'profile use'
+// is unset.
+//
+// The layer chain is walked by scope.DiscoveryFor, the same construction and
+// the same precedence rule a live session goes through, and the built-in
+// default is applied by discovery, which owns it. This function composes
+// them; it decides nothing itself, because a listing that decided would
+// eventually describe a resolution that no longer happens.
+func discoveryOf(snap *registry.Snapshot, profileName string) (mode, source string) {
+	raw, from, set := scope.DiscoveryFor(snap, profileName)
+	// ModeOf also degrades a value no version of agenthub recognises — a
+	// hand-edited governance.json — to the built-in, so an unreadable mode
+	// is reported as the mode that will actually be used.
+	resolved := discovery.ModeOf(&scope.EffectiveScope{Discovery: raw})
+	switch {
+	case !set || string(resolved) != string(raw):
+		return string(resolved), discoveryFromBuiltin
+	case from == scope.LayerProfile:
+		return string(resolved), discoveryFromProfile
+	default:
+		return string(resolved), discoveryFromGlobal
 	}
 }
 

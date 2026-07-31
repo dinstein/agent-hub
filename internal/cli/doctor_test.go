@@ -357,25 +357,7 @@ func TestDoctorDanglingActiveProfile(t *testing.T) {
 	}
 	// `profile rm` clears the active marker; re-point it at the missing
 	// profile by hand to simulate a stale / hand-edited governance document.
-	// The marker lives in the registry, not a state file, because scope
-	// resolution is pure and never reads one.
-	govPath := filepath.Join(dir, "registry", "governance.json")
-	gov, err := os.ReadFile(govPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var doc map[string]any
-	if err := json.Unmarshal(gov, &doc); err != nil {
-		t.Fatal(err)
-	}
-	doc["activeProfile"] = "payments"
-	edited, err := json.Marshal(doc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(govPath, edited, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	pointActiveProfileAt(t, dir, "payments")
 	code, out, _ := runCLI(t, "", "doctor", "--json")
 	if code != ExitGeneral {
 		t.Fatalf("exit = %d, want 1\n%s", code, out)
