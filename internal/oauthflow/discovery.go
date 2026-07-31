@@ -460,8 +460,12 @@ func validateMetadata(md *AuthServerMetadata) error {
 // isFatalDiscoveryError reports whether an error must abort the candidate
 // walk instead of advancing to the next candidate. SSRF refusals and
 // insecure-transport refusals are fatal (the next candidate has the same
-// host, so it would just be refused again — loudly, N times); plain HTTP
-// status errors and context cancellation are handled by the caller.
+// host, so it would just be refused again — loudly, N times), and so is a
+// cancelled or expired context: the caller asked for the walk to end, and
+// trying the next candidate would spend a request answering a question
+// nobody is waiting for. What is NOT fatal, and is the reason a walk exists
+// at all, is a candidate that is merely absent — an HTTP status error or a
+// body that is not a metadata document.
 func isFatalDiscoveryError(err error) bool {
 	if errors.Is(err, ErrBlocked) || errors.Is(err, ErrInsecureTransport) {
 		return true
