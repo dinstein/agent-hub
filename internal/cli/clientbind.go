@@ -55,23 +55,22 @@ type ClientBindingView struct {
 type ClientBindingList struct {
 	Bindings      []ClientBindingView `json:"bindings"`
 	ActiveProfile string              `json:"active_profile"`
+	// ActiveDangling marks an active profile that does not exist, so every
+	// client following it fail-closes to an empty scope.
+	ActiveDangling bool `json:"active_dangling,omitempty"`
 }
 
 // Human renders the binding table.
 func (l ClientBindingList) Human(w io.Writer) error {
-	active := l.ActiveProfile
-	if active == "" {
-		active = "none (every enabled server is visible)"
-	}
 	if len(l.Bindings) == 0 {
-		_, err := fmt.Fprintf(w,
-			"no clients bound; every client follows the active profile: %s\n", active)
+		_, err := fmt.Fprintf(w, "no clients bound; every client follows %s\n",
+			describeDefaultProfile(l.ActiveProfile, l.ActiveDangling))
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "CLIENT\tPROFILE")
 	for _, b := range l.Bindings {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\n", b.Client, profileText(b, active))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\n", b.Client, profileText(b, l.ActiveProfile, l.ActiveDangling))
 	}
 	return tw.Flush()
 }
@@ -103,6 +102,11 @@ type ClientRow struct {
 	Binding  string `json:"binding"`
 	Profile  string `json:"profile,omitempty"`
 	Dangling bool   `json:"dangling,omitempty"`
+	// EffectiveProfile is the profile that decides this client's scope: its
+	// own when bound, the active one when not, "" when neither exists and
+	// nothing is narrowed. It saves a consumer the join against
+	// active_profile — the join the human table stopped making the reader do.
+	EffectiveProfile string `json:"effective_profile,omitempty"`
 
 	Note string `json:"note,omitempty"`
 }
@@ -111,6 +115,10 @@ type ClientRow struct {
 type ClientList struct {
 	Clients       []ClientRow `json:"clients"`
 	ActiveProfile string      `json:"active_profile"`
+	// ActiveDangling marks an active profile that does not exist: the
+	// unbound clients in this listing fail-close to an empty scope, and the
+	// per-row Dangling flag cannot say so — it only covers named bindings.
+	ActiveDangling bool `json:"active_dangling,omitempty"`
 	// StatOnly records that no configuration file was opened for this
 	// listing, so every unknown in it means "not looked at".
 	StatOnly bool `json:"stat_only,omitempty"`
@@ -119,13 +127,9 @@ type ClientList struct {
 // Human renders the overview. The NOTE column appears only when a row has
 // something to say, which on most machines is never.
 func (l ClientList) Human(w io.Writer) error {
-	active := l.ActiveProfile
-	if active == "" {
-		active = "none (every enabled server is visible)"
-	}
 	if len(l.Clients) == 0 {
-		_, err := fmt.Fprintf(w,
-			"no AI clients found here, and none bound; each would follow the active profile: %s\n", active)
+		_, err := fmt.Fprintf(w, "no AI clients found here, and none bound; each would follow %s\n",
+			describeDefaultProfile(l.ActiveProfile, l.ActiveDangling))
 		return err
 	}
 	notes := false
@@ -145,12 +149,14 @@ func (l ClientList) Human(w io.Writer) error {
 			c.Client,
 			connectedText(c.State),
 			joinOrDash(c.Placements),
-			// "(active)" rather than the profile's name and the whole
-			// fallback sentence: the footer states it once, and repeating
-			// it per row buries the column that actually varies.
+			// The same "(default)" token `profile ls` heads its table with,
+			// pointed at the active profile when there is one. This column
+			// used to read "(active)", a name that appeared in no other
+			// output — the reader was left to guess it meant the row
+			// `profile ls` did not have.
 			profileText(ClientBindingView{
 				Binding: c.Binding, Profile: c.Profile, Dangling: c.Dangling,
-			}, ""),
+			}, l.ActiveProfile, l.ActiveDangling),
 		}, "\t")
 		if notes {
 			row += "\t" + c.Note
@@ -160,8 +166,26 @@ func (l ClientList) Human(w io.Writer) error {
 	if err := tw.Flush(); err != nil {
 		return err
 	}
-	_, err := fmt.Fprintf(w, "\nactive profile: %s\n", active)
+	_, err := fmt.Fprintf(w,
+		"\n%s = the profile a client you have not bound follows: %s\n",
+		defaultProfileToken, describeActiveProfile(l.ActiveProfile, l.ActiveDangling))
 	return err
+}
+
+// describeActiveProfile spells the footer's half of the (default) token: the
+// active profile by name, or what an unset one means. The rows print the
+// token; this says once what it resolves to, since a client row has no room
+// for "every enabled server is visible".
+func describeActiveProfile(active string, dangling bool) string {
+	switch {
+	case active == "":
+		return "none set, so every enabled server is visible"
+	case dangling:
+		return active + ", which does not exist -> those clients see NOTHING " +
+			"(fix it with 'agenthub profile use')"
+	default:
+		return active
+	}
 }
 
 // connectedText renders a connect state for the table. The states that are
@@ -183,19 +207,21 @@ func connectedText(state string) string {
 	}
 }
 
-// profileText renders what a client may see: its own profile, or the active
-// one it follows, or the loud marker for a reference that resolves nowhere.
-// An empty active names it "(active)" without spelling it out, for callers
-// that state it elsewhere.
-func profileText(b ClientBindingView, active string) string {
+// profileText renders what a client may see: its own profile, or the
+// "(default)" it follows when it has none, either of them carrying the loud
+// marker when the reference resolves nowhere.
+//
+// Both halves go through the same marker on purpose. A client bound to a
+// missing profile and a client following a missing active profile end up in
+// the identical place — an empty scope — and printing one of them quietly
+// would leave a whole class of "my client sees no tools" unexplained by this
+// table.
+func profileText(b ClientBindingView, active string, activeDangling bool) string {
 	if b.Binding != string(registry.BindingNamed) {
-		if active == "" {
-			return "(active)"
-		}
-		return "(active: " + active + ")"
+		return describeDefaultProfile(active, activeDangling)
 	}
 	if b.Dangling {
-		return b.Profile + "  MISSING -> empty scope"
+		return b.Profile + "  " + missingProfileMarker
 	}
 	return b.Profile
 }
@@ -225,6 +251,17 @@ func (r ClientBindResult) Human(w io.Writer) error {
 	return ClientBindingList{Bindings: []ClientBindingView{*r.Binding}}.Human(w)
 }
 
+// effectiveProfileOf names the profile that decides a client's scope: its
+// own when bound, the active one when it follows, "" when neither exists.
+// A name that resolves nowhere is still returned — it is what the resolver
+// looked for, and the dangling flags beside it say it was not found.
+func effectiveProfileOf(b ClientBindingView, active string) string {
+	if b.Binding == string(registry.BindingNamed) {
+		return b.Profile
+	}
+	return active
+}
+
 // clientBindingOf projects one client entry, marking a dangling profile
 // reference against the profile set it must resolve in.
 func clientBindingOf(
@@ -251,9 +288,10 @@ func (a *App) newClientLsCmd() *cobra.Command {
 		Long: "Two answers per client. CONNECTED comes from the client's own config file,\n" +
 			"the only place that knows: 'yes' means agenthub's own entry is in it, and\n" +
 			"'denied' / 'unreadable' / '?' are never folded into 'no', because they call\n" +
-			"for a different fix than running connect. PROFILE is what it may see — a\n" +
-			"client on no profile of its own follows 'agenthub profile use', and one on a\n" +
-			"profile that no longer exists sees nothing and is flagged as a warning.\n\n" +
+			"for a different fix than running connect. PROFILE is what it may see: its own\n" +
+			"profile, or \"(default)\" — the row of the same name in 'agenthub profile ls',\n" +
+			"which is whatever 'agenthub profile use' points at. Either of them can carry\n" +
+			"MISSING, meaning the profile does not exist and that client sees nothing.\n\n" +
 			"Listed are the clients installed here plus any that are bound. Reading their\n" +
 			"config files can raise a macOS privacy prompt; only files the scan already\n" +
 			"found are opened, and --stat-only opens none at all.",
@@ -294,6 +332,17 @@ func (a *App) newClientLsCmd() *cobra.Command {
 			}
 
 			list := ClientList{ActiveProfile: active, Clients: []ClientRow{}, StatOnly: statOnly}
+			if active != "" {
+				if _, ok := snap.Profiles.V.Profiles[active]; !ok {
+					// Every unbound row in this listing fail-closes, and no
+					// per-row flag covers that case: the row is not bound to
+					// anything, so it has nothing of its own to mark.
+					list.ActiveDangling = true
+					warnings = append(warnings, fmt.Sprintf(
+						"active profile %q does not exist -> every client following it resolves to an "+
+							"EMPTY scope (fail-closed)", active))
+				}
+			}
 			for _, id := range sortedKeys(ids) {
 				b := clientBindingOf(id, snap.Clients.V.Clients[id].V, snap.Profiles.V.Profiles)
 				if b.Dangling {
@@ -303,6 +352,7 @@ func (a *App) newClientLsCmd() *cobra.Command {
 				}
 				row := ClientRow{
 					Client: id, Binding: b.Binding, Profile: b.Profile, Dangling: b.Dangling,
+					EffectiveProfile: effectiveProfileOf(b, active),
 					ConfigPlacements: config[id],
 					State:            string(clients.ConnectedUnknown),
 				}

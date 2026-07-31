@@ -69,8 +69,12 @@ type ClientInspectView struct {
 	Note   string `json:"note,omitempty"`
 	Manual string `json:"manual,omitempty"`
 
-	// ActiveProfile resolves the "(active: …)" a following client shows.
-	ActiveProfile string `json:"active_profile,omitempty"`
+	// ActiveProfile resolves the "(default)" a following client shows, and
+	// ActiveDangling marks it as naming a profile that does not exist — an
+	// empty scope for this client, which Dangling above cannot report
+	// because that flag only covers a binding of the client's own.
+	ActiveProfile  string `json:"active_profile,omitempty"`
+	ActiveDangling bool   `json:"active_dangling,omitempty"`
 }
 
 // Human renders the per-file detail: what agenthub saw in each location and
@@ -140,19 +144,26 @@ func (v ClientInspectView) Human(w io.Writer) error {
 	return nil
 }
 
-// inspectProfileText spells out what this client may see. One line, so the
-// fallback is written out rather than compressed into "(active: …)".
+// inspectProfileText spells out what this client may see. It leads with the
+// same token the two tables print, then spends the line they do not have on
+// what that token resolves to.
 func inspectProfileText(v ClientInspectView) string {
 	if v.Binding == string(registry.BindingNamed) {
 		if v.Dangling {
-			return v.Profile + "  MISSING -> resolves to an EMPTY scope"
+			return v.Profile + "  " + missingProfileMarker
 		}
 		return v.Profile
 	}
-	if v.ActiveProfile == "" {
-		return "follows the active profile (none set: every enabled server is visible)"
+	text := describeDefaultProfile(v.ActiveProfile, v.ActiveDangling)
+	switch {
+	case v.ActiveDangling:
+		// The marker already said what it costs; what is missing is the way out.
+		return text + "  (fix it with 'agenthub profile use')"
+	case v.ActiveProfile == "":
+		return text + " — none set, so every enabled server is visible"
+	default:
+		return text
 	}
-	return "follows the active profile: " + v.ActiveProfile
 }
 
 // connectedDetail spells out the connect state for a single client, where
@@ -204,13 +215,22 @@ func (a *App) newClientInspectCmd() *cobra.Command {
 					"client %q is bound to missing profile %q -> resolves to an EMPTY scope (fail-closed)",
 					clientID, b.Profile))
 			}
+			activeDangling := false
+			if active != "" && b.Binding != string(registry.BindingNamed) {
+				if _, ok := snap.Profiles.V.Profiles[active]; !ok {
+					activeDangling = true
+					warnings = append(warnings, fmt.Sprintf(
+						"active profile %q does not exist -> this client resolves to an EMPTY scope "+
+							"(fail-closed)", active))
+				}
+			}
 			state, where := insp.ConnectState()
 			view := ClientInspectView{
 				Client: insp.Client, Name: insp.Name, Shape: string(insp.Shape),
 				State: string(state), Connected: state == clients.ConnectedYes,
 				Binding: b.Binding, Profile: b.Profile, Dangling: b.Dangling,
 				Files: []ClientInspectFile{}, Note: insp.Note, Manual: insp.Manual,
-				ActiveProfile: active,
+				ActiveProfile: active, ActiveDangling: activeDangling,
 			}
 			for _, p := range where {
 				view.Placements = append(view.Placements, string(p))

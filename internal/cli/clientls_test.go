@@ -321,3 +321,67 @@ func TestClientConnectDelegatesToTheClientsOwnCLI(t *testing.T) {
 		t.Errorf("the delegate lost the rest of the file:\n%s", body)
 	}
 }
+
+// TestClientLsNamesTheDefaultProfile: the PROFILE cell of an unbound client
+// used to read "(active)", a token that appeared in no other command's
+// output — `profile ls` had no row by that name, so the cell pointed at
+// nothing the user could look up. It now prints the token that table heads
+// itself with, and names the profile it resolves to.
+func TestClientLsNamesTheDefaultProfile(t *testing.T) {
+	setDataDir(t)
+	t.Setenv("HOME", t.TempDir())
+	mustRun(t, "", "profile", "create", "work")
+
+	out := mustRun(t, "", "client", "ls", "--all")
+	if !strings.Contains(out, defaultProfileToken) || strings.Contains(out, "(active") {
+		t.Errorf("unbound rows do not name the default profile:\n%s", out)
+	}
+
+	mustRun(t, "", "profile", "use", "work")
+	out = mustRun(t, "", "client", "ls", "--all")
+	if !strings.Contains(out, defaultProfileToken+" -> work") {
+		t.Errorf("unbound rows do not point at the active profile:\n%s", out)
+	}
+
+	// A bound client shows its own profile and nothing about the fallback,
+	// and the JSON says which profile decides its scope either way.
+	mustRun(t, "", "client", "bind", "cursor", "own")
+	var list ClientList
+	decodeInto(t, mustRun(t, "", "client", "ls", "--all", "--json"), &list)
+	for _, c := range list.Clients {
+		want := "work"
+		if c.Client == "cursor" {
+			want = "own"
+		}
+		if c.EffectiveProfile != want {
+			t.Errorf("%s effective_profile = %q, want %q", c.Client, c.EffectiveProfile, want)
+		}
+	}
+}
+
+// An active profile that does not exist fail-closes every client that
+// follows it, and no per-row flag can say so — those rows are not bound to
+// anything. The listing must carry it on the list itself, and say it out
+// loud in both output modes.
+func TestClientLsFlagsADanglingActiveProfile(t *testing.T) {
+	dir := setDataDir(t)
+	t.Setenv("HOME", t.TempDir())
+	pointActiveProfileAt(t, dir, "ghost")
+
+	var list ClientList
+	env := decodeInto(t, mustRun(t, "", "client", "ls", "--all", "--json"), &list)
+	if !list.ActiveDangling {
+		t.Errorf("active_dangling = false with a missing active profile: %+v", list)
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "EMPTY scope") {
+		t.Errorf("no fail-closed warning: %v", env.Warnings)
+	}
+	for _, c := range list.Clients {
+		if c.Dangling {
+			t.Errorf("%s: the per-row flag is for a binding of its own, not the fallback", c.Client)
+		}
+	}
+	if out := mustRun(t, "", "client", "ls", "--all"); !strings.Contains(out, "MISSING") {
+		t.Errorf("the human table hides the dangling fallback:\n%s", out)
+	}
+}
