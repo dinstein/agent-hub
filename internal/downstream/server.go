@@ -353,7 +353,7 @@ func (s *Server) Reconnect(ctx context.Context) error {
 	s.reconnects.Store(0)
 	cctx, cancel := context.WithTimeout(ctx, s.connectTimeout)
 	defer cancel()
-	if _, err := s.respawn(cctx); err != nil {
+	if _, err := s.respawn(cctx, causeManual, nil); err != nil {
 		return err
 	}
 	s.reconnects.Store(0)
@@ -519,7 +519,11 @@ func (s *Server) execute(req callReq) (json.RawMessage, error) {
 			attempt++
 			continue
 		case cls == transport.ClassUnavailable && !respawned && (req.probe || deadConnection(err)):
-			ntr, rerr := s.respawn(req.ctx)
+			cause := causeDeadConn
+			if req.probe {
+				cause = causeProbe
+			}
+			ntr, rerr := s.respawn(req.ctx, cause, err)
 			if rerr != nil {
 				return nil, rerr
 			}
@@ -555,6 +559,29 @@ func (s *Server) callTransport(ctx context.Context, tr transport.Transport, meth
 	return raw, err
 }
 
+// respawnCause names what made a respawn happen. It exists because for as
+// long as every respawn logged "respawned after failed half-open probe",
+// the two automatic causes were indistinguishable in the log — and the
+// message named the rarer one. Four days of gateway logs held 163 respawns
+// under that message and not one of them was a half-open probe; they were
+// all causeDeadConn, which points at the network between here and the
+// downstream rather than at the downstream itself. Which cause fires decides
+// where the fix goes, so it is a field.
+type respawnCause string
+
+const (
+	// causeProbe is the half-open probe of an open circuit failing on the
+	// connection it was sent to test.
+	causeProbe respawnCause = "half-open-probe"
+	// causeDeadConn is an ordinary call the transport rejected before the
+	// wire because the connection had already died — a long-lived HTTP/SSE
+	// stream reaped between calls is the shape that produces it.
+	causeDeadConn respawnCause = "dead-connection"
+	// causeManual is Reconnect(), a human asking for a fresh connection.
+	// There is no failure behind it, so it carries no trigger error.
+	causeManual respawnCause = "manual"
+)
+
 // respawn rebuilds the connection through the dial factory: wait out the
 // reconnect backoff, close the dead transport, dial + initialize +
 // tools/list, swap the connection state. A failure is always reported as
@@ -567,7 +594,11 @@ func (s *Server) callTransport(ctx context.Context, tr transport.Transport, meth
 // re-dialing at the base delay forever. It is reset by a connection that
 // PROVED itself before dying (Server.served) and by Reconnect (a user
 // action) — never by the respawn itself.
-func (s *Server) respawn(ctx context.Context) (transport.Transport, error) {
+// cause and trigger are the log's account of why this happened: what kind of
+// failure reached the respawn decision, and the error that carried it
+// (trigger is nil for causeManual). They are recorded on the way out rather
+// than on the way in, so one respawn is one line whichever way it ends.
+func (s *Server) respawn(ctx context.Context, cause respawnCause, trigger error) (transport.Transport, error) {
 	if s.served.Swap(false) {
 		// The connection being replaced had answered at least once, so the
 		// failure history in front of it is not a crash loop and must not be
@@ -593,14 +624,25 @@ func (s *Server) respawn(ctx context.Context) (transport.Transport, error) {
 	defer cancel()
 	tr, initRes, tools, err := s.dialAndInit(cctx)
 	if err != nil {
-		s.log.Warn("respawn failed", "error", err, "reconnects", n)
+		s.log.Warn("respawn failed", append(respawnFields(cause, trigger, n), "error", err)...)
 		s.health.failure(time.Now(), err, hardConnError(err))
 		return nil, &transport.Error{Class: transport.ClassUnavailable, Err: fmt.Errorf("respawn: %w", err)}
 	}
 	s.attach(tr, initRes, tools)
 	s.health.success(time.Now())
-	s.log.Info("respawned after failed half-open probe", "reconnects", n)
+	s.log.Info("respawned", respawnFields(cause, trigger, n)...)
 	return tr, nil
+}
+
+// respawnFields renders the cause of one respawn for the log. The trigger is
+// flattened to its text and omitted when absent: a "trigger":null on every
+// manual reconnect would read as a failure nobody could name.
+func respawnFields(cause respawnCause, trigger error, n uint64) []any {
+	fields := []any{"cause", string(cause), "reconnects", n}
+	if trigger != nil {
+		fields = append(fields, "trigger", trigger.Error())
+	}
+	return fields
 }
 
 // dialAndInit performs dial + MCP handshake + initial tools/list. On

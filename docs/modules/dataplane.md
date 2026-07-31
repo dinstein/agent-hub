@@ -120,6 +120,16 @@ in a health failure, `execute` rebuilds the connection through the dial factory 
 on the new connection. This acknowledges a residual window: a process that dies mid-call may lead to double
 execution; that is the accepted price of probe semantics.
 
+**A respawn logs which of its causes fired.** `respawn` takes a `respawnCause` and the error that
+triggered it, and reports both on the single `respawned` line (or on `respawn failed`, if the rebuild
+did not work). The three causes are `half-open-probe`, `dead-connection` (an ordinary call the transport
+rejected pre-send) and `manual` (`Reconnect()`, which carries no trigger error — the `trigger` field is
+absent rather than empty). They are not interchangeable when reading a log: a failed probe points at the
+downstream, a dead connection points at the network between here and it, and the fix goes to a different
+place for each. The message used to be the constant string `respawned after failed half-open probe`,
+which named one cause for both — and in four days of gateway logs, 163 respawns under that message
+contained no half-open probes at all.
+
 **The reconnect counter survives a successful respawn; a connection that ANSWERED resets it.**
 `Server.reconnects` is the exponent for reconnect backoff, and `respawn` **does not reset it** just because
 it succeeded — a repeatedly crashing server must climb the whole backoff ladder rather than hammering the
