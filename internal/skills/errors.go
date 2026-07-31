@@ -40,6 +40,12 @@ var ErrNotFound = errors.New("skills: not found")
 // ErrExists reports an ID collision that the caller must resolve.
 var ErrExists = errors.New("skills: already exists")
 
+// ErrInvalidID reports an ID whose SHAPE is not legal. A skill ID is joined
+// into filesystem paths — the store directory a version is copied to, and
+// the tree a removal deletes — so the shape check is also the path safety
+// check, and it is made at the door rather than at each join.
+var ErrInvalidID = errors.New("skills: invalid skill id")
+
 // ErrConflict is matched by errors.Is when a write target is not ours: an
 // owned directory without our marker, a shadowing file, an over-cap render,
 // or damaged sentinels. The target is left untouched.

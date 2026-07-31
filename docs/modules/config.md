@@ -656,6 +656,16 @@ path. That difference forces a two-layer structure:
 
 - **The store**: agenthub's own canonical copy, placed content-addressed at
   `<skills>/store/<id>/<contentHash>/` and indexed by `skills.json`. This is the only source of truth.
+  **`<id>` is a path segment, so its shape check is a path safety check** (`validID`): 1–64 lowercase ASCII
+  letters, digits and single inner dashes — exactly what `slugify` mints — refused rather than sanitized,
+  because a sanitizer must be right about every escaping form while a shape check need only be right about
+  one. An explicit `--id` used to be stored verbatim, so `../../../some-dir` escaped the store both on the
+  copy and on the delete. Three properties are load-bearing rather than tidy: separators and `.`/`..` are
+  outside the character set; uppercase is excluded because two IDs differing only in case share one directory
+  on a case-insensitive filesystem while the index counts them as two skills; and the empty string is
+  excluded because it collapses the join onto the store directory itself, which a removal would then delete
+  whole. The two **deleting** paths (`Remove`, `pruneVersions`) re-check rather than trust the index they read
+  the ID from — dropping a library entry while leaving its files is recoverable, deleting the wrong tree is not.
 - **An install**: a **receipt** in `installs.json` recording that "this skill was materialized once, for this
   client, under this scope". Receipts go stale, so every one of them must be verifiable and repairable and
   **never blindly trusted**.
@@ -929,13 +939,6 @@ carried the findings both engines confirmed independently plus the two single-en
   client's model reads as its own instructions. This section already records why an index cannot vouch
   for itself: "`Verify` does a full recomputation … because an index a tamperer has edited cannot vouch
   for itself." The install path is the one that takes the index at its word.
-- **`skills/manager.go:120` — an explicit `--id` is stored and joined into filesystem paths with no
-  shape validation.** `Add` takes `req.ID` verbatim after a collision check, so `../../../some-dir`
-  escapes the skills store on write (`copyTree` to `SkillPath`) and again on delete
-  (`os.RemoveAll(filepath.Join(dir, storeDirName, sk.ID))`). It is medium rather than critical only
-  because `skills.AddRequest` is built in exactly one place today, from an operator-typed flag — so it
-  is a destructive footgun now and a hole the moment a GUI or ctlapi caller appears. `internal/shaping`'s
-  `validID` is the model this should follow: a shape check that is also a path safety check.
 - **`secrets/store.go:190` — a keyring credential is committed before its enumeration record.**
   `Chain.Set` writes the value to the OS keyring and only then calls `registryAdd`. If
   `keyring-keys.json` cannot be created, synced or renamed, the caller gets an error while the

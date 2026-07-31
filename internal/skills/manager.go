@@ -118,11 +118,19 @@ func (m *Manager) Add(ctx context.Context, req AddRequest) (*Skill, error) {
 	err = m.withState(ctx, func(st *state) error {
 		taken := func(id string) bool { _, ok := st.skills.Skills[id]; return ok }
 		id := req.ID
-		switch {
-		case id == "":
+		if id == "" {
 			id = uniqueID(slugify(name), taken)
-		case taken(id):
-			return fmt.Errorf("%w: skill %q", ErrExists, id)
+		} else {
+			// Shape before collision: an ID this store would never mint is
+			// answered with what is wrong with it, not with "already
+			// exists". req.ID reaches here verbatim from an operator's
+			// --id today and from whatever calls AddRequest tomorrow.
+			if err := checkID(id); err != nil {
+				return err
+			}
+			if taken(id) {
+				return fmt.Errorf("%w: skill %q", ErrExists, id)
+			}
 		}
 		now := m.now()
 		sk := Skill{
@@ -334,6 +342,14 @@ func (m *Manager) Remove(ctx context.Context, req RemoveRequest) (*RemoveResult,
 			}
 		}
 		delete(st.skills.Skills, sk.ID)
+		// The ID was shape-checked when it was added, but this is the one
+		// place where believing it costs a directory outside the store, and
+		// the index it came from is a file on disk. Re-check rather than
+		// join: dropping the library entry while leaving the files is a
+		// recoverable state, deleting the wrong tree is not.
+		if err := checkID(sk.ID); err != nil {
+			return err
+		}
 		return os.RemoveAll(filepath.Join(m.dir, storeDirName, sk.ID))
 	})
 	if err != nil {
@@ -913,6 +929,11 @@ func (m *Manager) verifyLibrary(st *state, sk Skill) (LibraryState, string, stri
 // a rollback and a drift diff read from, so pruning to exactly one would
 // save space by deleting the evidence.
 func (m *Manager) pruneVersions(id, keep string) error {
+	// Same reasoning as the removal path: this function deletes, and the ID
+	// reaching it came out of a file.
+	if err := checkID(id); err != nil {
+		return err
+	}
 	dir := filepath.Join(m.dir, storeDirName, id)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -953,6 +974,64 @@ func (m *Manager) pruneVersions(id, keep string) error {
 // storeRel is the library-relative path of one content-addressed version.
 func storeRel(id, contentHash string) string {
 	return storeDirName + "/" + id + "/" + contentHash
+}
+
+// maxIDLen bounds an ID so that the deepest path it appears in stays well
+// inside every platform's limit.
+const maxIDLen = 64
+
+// validID reports whether id is a legal skill ID.
+//
+// The shape is exactly what slugify produces: 1..64 lowercase ASCII letters
+// and digits, single inner dashes, no leading or trailing dash. Everything
+// outside that is refused rather than sanitized — a sanitizer has to be
+// right about every escaping form, while a shape check only has to be right
+// about one.
+//
+// This is a PATH SAFETY check wearing a shape check's clothes, which is why
+// it is this strict:
+//
+//   - `.` and `..` and every separator are excluded by the character set, so
+//     an ID cannot climb out of the store on a copy or take a directory
+//     outside it with a removal.
+//   - Uppercase is excluded because two IDs differing only in case share one
+//     directory on a case-insensitive filesystem while the index counts them
+//     as two skills — one skill's files would answer for the other's.
+//   - The empty string is excluded because it collapses a join: the store
+//     directory itself becomes the version directory, and a removal of it
+//     takes every skill.
+//
+// (internal/shaping's validID is the same discipline for a different id
+// space.)
+func validID(id string) bool {
+	if id == "" || len(id) > maxIDLen {
+		return false
+	}
+	if id[0] == '-' || id[len(id)-1] == '-' {
+		return false
+	}
+	for i := range len(id) {
+		c := id[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+		case c == '-':
+			if id[i-1] == '-' {
+				return false // no doubled dash; slugify never emits one
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// checkID is validID as a typed error, for the paths that report one.
+func checkID(id string) error {
+	if !validID(id) {
+		return fmt.Errorf("%w: %q (lowercase letters, digits and single dashes, up to %d characters)",
+			ErrInvalidID, id, maxIDLen)
+	}
+	return nil
 }
 
 func firstNonEmpty(vals ...string) string {
