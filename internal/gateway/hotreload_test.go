@@ -106,15 +106,30 @@ func waitForTools(t *testing.T, c *testClient, want ...string) {
 
 // callBlockedWithCode asserts a tools/call is rejected and the stable gate
 // code appears in the error message.
+//
+// It retries past codeRetryBusy for the same reason callToolOK does: an
+// unknown name while downstreams are still connecting is the RETRYABLE busy
+// condition, not a verdict, and a caller that treats it as one is asserting
+// on the wrong answer. A test that waits for a downstream's DIAL to be
+// recorded has not waited for its handshake, so this window is open on any
+// runner slow enough to fit a call into it — which is how it was found.
 func callBlockedWithCode(t *testing.T, c *testClient, tool, code string) {
 	t.Helper()
-	resp := c.call(mcp.MethodToolsCall, mcp.CallToolParams{Name: tool, Arguments: []byte(`{}`)})
-	if resp.Error == nil {
-		t.Fatalf("tools/call %s succeeded, want a %s rejection", tool, code)
-	}
-	if !strings.Contains(resp.Error.Message, code) {
-		t.Fatalf("tools/call %s error %q, want code %s", tool, resp.Error.Message, code)
-	}
+	var last *mcp.Error
+	waitFor(t, fmt.Sprintf("tools/call %s rejected with %s (last error %v)", tool, code, &last), func() bool {
+		resp := c.call(mcp.MethodToolsCall, mcp.CallToolParams{Name: tool, Arguments: []byte(`{}`)})
+		last = resp.Error
+		if resp.Error == nil {
+			t.Fatalf("tools/call %s succeeded, want a %s rejection", tool, code)
+		}
+		if resp.Error.Code == codeRetryBusy && !strings.Contains(resp.Error.Message, code) {
+			return false // still connecting: not yet an answer to assert on
+		}
+		if !strings.Contains(resp.Error.Message, code) {
+			t.Fatalf("tools/call %s error %q, want code %s", tool, resp.Error.Message, code)
+		}
+		return true
+	})
 }
 
 // callToolOK asserts one successful tools/call round trip for tool,
