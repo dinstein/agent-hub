@@ -814,8 +814,13 @@ field at all**, `ls` renders only key names and backends, and `auth status` repo
 token exists; there is no `--show` escape hatch. The one exception is `token create`: the plaintext must leave the process
 once or the token could never be handed to an agent — so it prints once with a "this is the only time" warning, and the store
 keeps only the HMAC. Reading a password from a terminal goes through `readNoEcho`, which **returns an error rather than reading
-from a non-terminal fd** (redirected stdin must not silently echo credentials into a log), and terminal state restoration is on
-a defer (an interrupted read never leaves the user's shell with echo off).
+from a non-terminal fd** (redirected stdin must not silently echo credentials into a log), and restores terminal state on every
+path so an interrupted read never leaves the user's shell with echo off. **A defer alone did not deliver that**, which is worth
+recording because it read as if it did: `readNoEcho` leaves `ISIG` enabled on purpose so Ctrl-C still works at a hidden prompt,
+and Go's default disposition for SIGINT terminates the process without running a single deferred function — so the one
+interruption the promise was about was the one it did not cover, and the operator was left typing blind until they thought of
+`stty sane`. `restoreOnSignal` now watches SIGINT/SIGTERM/SIGQUIT and restores the terminal **before** re-raising the signal with
+its default disposition. Re-raising rather than swallowing is not optional: Ctrl-C at a password prompt must stop the program.
 
 **`server ls` can safely display header values verbatim**, because a registry entry never contains a credential — the values are
 `${SECRET_X}` placeholders, and resolution happens at connect time inside `internal/downstream`. The **vault keys** an entry needs
