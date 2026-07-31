@@ -22,10 +22,12 @@
 // (aggregated by router.BuildFromCache — same exposed-name rules) and
 // tools/call answers a retryable busy error.
 //
-// Upstream surface: initialize / initialized / ping / tools/list /
-// tools/call / notifications/cancelled / roots reverse RPC, plus
-// shutdown+exit and EOF for termination. Unknown methods get
-// MethodNotFound; unknown notifications are ignored.
+// Upstream surface, both protocol generations: initialize / initialized /
+// ping / tools/list / tools/call / notifications/cancelled / roots reverse
+// RPC (≤ 2025-11-25), server/discover and per-request _meta acceptance
+// (2026-07-28 — a _meta-carrying request flips the session stateless, see
+// acceptRequestMeta), plus shutdown+exit and EOF for termination. Unknown
+// methods get MethodNotFound; unknown notifications are ignored.
 //
 // What tools/list SHOWS and what an incoming tools/call NAME means are the
 // discovery plane's business (discovery.go): the session's effective scope

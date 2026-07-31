@@ -67,7 +67,10 @@ type Options struct {
 // It answers exactly three verbs on one path:
 //
 //	POST   one JSON-RPC message in, one JSON-RPC message out (or 202 for a
-//	       notification). initialize binds a session and returns its id.
+//	       notification). initialize binds a session and returns its id
+//	       (≤ 2025-11-25); the stateless 2026-07-28 shapes — server/discover,
+//	       or any request carrying the per-request _meta — pass with no
+//	       session and mint none (see handleRequest).
 //	DELETE terminate the session named by Mcp-Session-Id.
 //	GET    405. canonical.md §5b freezes the transport asymmetry: agenthub
 //	       never grows a new SSE exposure face, so there is no server-
