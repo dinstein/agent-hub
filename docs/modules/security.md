@@ -89,6 +89,23 @@ real isolation story lives elsewhere, and it is shipped rather than pending: the
 (`internal/mcp/transport/docker.go`), reached by `runtime: docker`, which fails closed rather than
 degrading to host execution when the isolation an entry claims cannot be delivered.
 
+### Where it is attached
+
+**Every spawn is screened, and the default is the guard rather than nil.** `downstream.Deps.Spawn`
+resolves to the shared `spawnguard.Guard.Check` unless an assembly overrides it or sets
+`SpawnUnscreened`, and `dialStdio` hands that to `transport.StdioConfig.Screen`, which both spawn
+paths — plain stdio and the rewritten `docker run` line — consult on the **final** host command, after
+secret expansion and after any docker rewriting.
+
+It did not always work that way, and the shape of the omission is worth keeping: `Screen` was
+implemented and called, `spawnguard` was implemented and exhaustively tested, `Deps.Spawn` existed as
+`any` with the comment *"reserved for M1 spawnguard wiring; nil today"* — and nothing joined them.
+The guard's only production caller was `confops`, which sees **docker** entries at `server add` time
+and nothing else, so a host-runtime entry written straight into the registry was never screened at
+all, by anything, and every test on both sides stayed green. That is why the default here is the
+guard and the opt-out is an explicit field: a screen each assembly must remember to attach is one
+that will be missing from the next assembly.
+
 ### Invariants and failure directions
 
 - **The check order is fixed**: environment variables (a deterministic check, always first and always

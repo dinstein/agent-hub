@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/guard/spawnguard"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
@@ -208,8 +209,24 @@ type Deps struct {
 	// byte-for-byte unchanged.
 	AuthFor func(spec Spec) TokenSource
 
-	// Spawn is reserved for M1 spawnguard wiring; nil today.
-	Spawn any
+	// Spawn vets the FINAL host command line — after secret expansion and
+	// after any docker rewriting — immediately before the child is spawned,
+	// and refuses the spawn when it returns an error.
+	//
+	// nil selects the built-in spawnguard. It does NOT mean "do not screen".
+	// This field spent the whole of M1 declared as `Spawn any // reserved`
+	// with no reader, so transport.StdioConfig.Screen was never set by any
+	// production assembly and every host-runtime command spawned unscreened:
+	// spawnguard's only production caller was confops, which sees docker
+	// entries at `server add` time and nothing else. A screen each assembly
+	// has to remember to attach is one that will be missing from the next
+	// assembly, so the default here is the guard and the opt-out is explicit.
+	Spawn func(command string, args, env []string) error
+
+	// SpawnUnscreened disables Spawn entirely. It exists for the tests that
+	// spawn deliberately guard-tripping shapes to prove the guard is what
+	// stops them elsewhere; production never sets it.
+	SpawnUnscreened bool
 
 	// DialContext overrides the SSRF-screening dialer used by the HTTP
 	// transports. nil selects the netguard-screened dialer derived from
@@ -315,6 +332,7 @@ func (d Deps) dialStdio(ctx context.Context, spec Spec) (transport.Transport, er
 		Args:    spec.Args,
 		Env:     buildEnv(env),
 		Cwd:     spec.Cwd,
+		Screen:  d.spawnScreen(),
 	}
 	if spec.Docker != nil {
 		// Container isolation: the env the child sees is passed through the
@@ -327,6 +345,29 @@ func (d Deps) dialStdio(ctx context.Context, spec Spec) (transport.Transport, er
 	}
 	return transport.SpawnStdio(cfg)
 }
+
+// spawnScreen resolves the screen handed to the transport.
+//
+// The default is the shared spawnguard rather than nil, so that an assembly
+// which simply does not mention screening still gets it. transport screens
+// the final host command line in both spawn paths — plain stdio and the
+// rewritten `docker run` line — so one screen here covers both runtimes.
+func (d Deps) spawnScreen() func(command string, args, env []string) error {
+	switch {
+	case d.SpawnUnscreened:
+		return nil
+	case d.Spawn != nil:
+		return d.Spawn
+	default:
+		return defaultSpawnGuard.Check
+	}
+}
+
+// defaultSpawnGuard is shared: Guard is immutable after New and its Check is
+// safe for concurrent use, so every instance of every pool screens through
+// one policy. A per-Deps guard would let two assemblies disagree about what
+// a container escape is.
+var defaultSpawnGuard = spawnguard.New(spawnguard.Config{})
 
 // buildEnv assembles the child environment: parent env minus AGENTHUB_*
 // and minus any key overridden by extra, plus extra in sorted key order
