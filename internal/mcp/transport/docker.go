@@ -359,12 +359,64 @@ func validateDockerConfig(cfg DockerConfig) error {
 		}
 	}
 	for _, a := range cfg.ExtraRunArgs {
-		key, _, _ := strings.Cut(a, "=")
-		if ownedRunFlags[key] {
-			return configErr("extra run arg %q re-specifies a flag the isolation defaults own", a)
+		if owned, why := ownsRunFlag(a); owned {
+			return configErr("extra run arg %q re-specifies %s, a flag the isolation defaults own", a, why)
 		}
 	}
 	return nil
+}
+
+// dockerShortWithValue are `docker run` shorthand flags that consume a
+// value. They matter only for scanning PAST them: in a cluster like `-td`
+// the scan continues, but in `-p8080:80` everything after `p` is the port
+// spec and holds no further flags.
+//
+// Kept small on purpose — it needs to cover the shorthands that can precede
+// an owned one in a cluster, not all of docker's surface.
+var dockerShortWithValue = map[byte]bool{
+	'a': true, 'c': true, 'e': true, 'h': true, 'l': true,
+	'm': true, 'p': true, 'u': true, 'v': true, 'w': true,
+}
+
+// ownsRunFlag reports whether one ExtraRunArgs token re-specifies a flag
+// BuildDockerRunArgs emits itself, in ANY spelling docker accepts, and
+// names the flag it matched.
+//
+// Comparing the token up to '=' was not enough. docker's flag parser takes
+// a shorthand's value attached to the letter, so `--user 0:0`, `--user=0:0`,
+// `-u 0:0` and `-u0:0` are four spellings of one flag and only the first
+// three have `-u` as a prefix of a separate token. The isolation defaults
+// are emitted first and docker's last-wins parsing means the extra arg
+// won — `-u0:0` ran the container as root under a config that said
+// `user: 1000:1000`, and `-v/home/user/.ssh:/keys` added a host mount the
+// declared mounts never contained. That is the "isolation a config claims
+// must be delivered or refused" rule failing in the silent direction.
+//
+// Failure direction: FAIL-CLOSED for every flag it recognises — a doubtful
+// spelling is refused rather than passed to docker. It is fail-open past an
+// unrecognised shorthand, because guessing whether an unknown letter takes
+// a value would reject working configurations as docker's surface grows.
+// That residue is not the only gate: spawnguard inspects the assembled
+// command line for container-escape flags without consulting this table.
+func ownsRunFlag(arg string) (bool, string) {
+	key, _, _ := strings.Cut(arg, "=")
+	if ownedRunFlags[key] {
+		return true, key
+	}
+	// Long flags carry no attached-value spelling beyond `=`, already cut.
+	if strings.HasPrefix(arg, "--") || !strings.HasPrefix(arg, "-") || len(arg) < 2 {
+		return false, ""
+	}
+	for i := 1; i < len(key); i++ {
+		short := "-" + string(key[i])
+		if ownedRunFlags[short] {
+			return true, short
+		}
+		if dockerShortWithValue[key[i]] {
+			break // the rest of the token is this flag's value
+		}
+	}
+	return false, ""
 }
 
 // isAbsMountPath accepts POSIX absolute paths on every host: container

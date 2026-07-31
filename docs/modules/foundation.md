@@ -602,7 +602,16 @@ automatically.
   host namespaces, or capability grants.
 - **`ExtraRunArgs` must not restate a flag this file emits itself** (`ownedRunFlags`). Docker's
   last-wins semantics would let a stray `--network host` quietly erase the isolation defaults; a
-  self-contradictory configuration is a bug, not an override.
+  self-contradictory configuration is a bug, not an override. **The comparison is over every spelling
+  docker accepts, not over the token.** `ownsRunFlag` canonicalizes first, because docker's parser
+  takes a shorthand's value attached to the letter: `--user 0:0`, `--user=0:0`, `-u 0:0` and `-u0:0`
+  are one flag, and only the first three begin with a token equal to `-u`. Comparing the text up to
+  `=` refused three of them and let `-u0:0` run the container as root under a config that said
+  `user: 1000:1000` — the isolation silently degrading rather than being refused, which is the
+  highest-severity shape in this tree. Fail-closed for every flag it recognises; fail-open past an
+  unrecognised shorthand, since guessing whether an unknown letter takes a value would refuse working
+  configurations as docker grows. `spawnguard` inspects the assembled command line without consulting
+  that table, so the residue is not the only gate.
 - **Secrets never go in argv**: container environment variables are passed as `-e NAME` (no value),
   with values inherited from the docker CLI's own environment. `ps(1)` can see argv; it can't see the
   CLI's environment.
