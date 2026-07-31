@@ -142,6 +142,12 @@ the sequence from the bullets below.
   `git worktree add ../agent-hub-<topic> -b <topic>`. The main work tree only lands and pushes.
 - Inside the worktree, **one commit per subtask** — every commit compiles and passes tests.
 - Write commit messages in English.
+- **Every branch has a PR, opened as a draft on its first commit and updated per subtask** — body =
+  the subtask list, finished ones ticked. It is the only view of the branch from outside your
+  worktree, and where CI's own machines grade it (`pull_request` runs the jobs `main` gets).
+- **The landing closes the PR, not a merge button.** Force-push after the final rebase so its head is
+  exactly what lands; `main` then holds that commit and GitHub marks it merged. If they differ, close
+  it by hand naming the landed commit — an open PR claims work is still in flight.
 - **`main` is linear: rebase, never merge.** Several worktrees are normally in flight, and a merge
   commit per branch makes "what landed, when, on top of what" unreadable from `git log`.
 - **`make ci-landing` runs after the rebase, not before.** A rebase replays your commits onto code you
@@ -155,4 +161,5 @@ the sequence from the bullets below.
 
 ## Toolchain
 
-Go 1.26+, golangci-lint v2, make, node v22 / npm 10, and the wails3 CLI (only needed for GUI builds).
+Go 1.26+, golangci-lint v2, make, node v22 / npm 10, the `gh` CLI (authenticated — the branch flow
+opens and updates PRs through it), and the wails3 CLI (only needed for GUI builds).

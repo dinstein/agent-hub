@@ -6,7 +6,7 @@ are about to perform the action, and follow it from the top.
 
 | Runbook | Run it when |
 |---|---|
-| [new-feature.md](new-feature.md) | Building anything — the worktree, the commits, the gates, and landing on `main` |
+| [new-feature.md](new-feature.md) | Building anything — the worktree, the PR, the commits, the gates, and landing on `main` |
 | [nightly-tidy.md](nightly-tidy.md) | The recurring pass: simplify the logic, refactor the shape, make docs and code agree |
 | [releasing.md](releasing.md) | Cutting a release, from preflight to checking what actually shipped |
 

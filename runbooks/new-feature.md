@@ -2,11 +2,13 @@
 
 A runbook: every step is a command to run or a fact to check.
 
-The shape is fixed — **one worktree, one commit per subtask, rebase onto `main`, land fast-forward
-only**. The rules behind it are in [AGENTS.md](../AGENTS.md); this file is the sequence.
+The shape is fixed — **one worktree, one PR open for the whole of it, one commit per subtask, rebase
+onto `main`, land fast-forward only**. The rules behind it are in [AGENTS.md](../AGENTS.md); this
+file is the sequence.
 
-Nothing here is reversible-in-public until step 5's `git push origin main`. Everything before it is
-local, which is why the expensive checks sit immediately in front of it.
+The branch and its PR go public at step 3, and both stay undoable — the branch force-pushes, the PR
+closes. The one irreversible step is still step 5's `git push origin main`, which is why the
+expensive checks sit immediately in front of it.
 
 ---
 
@@ -54,6 +56,12 @@ stand alone is two subtasks with a shared prefix, or one that was cut in the wro
 A useful cut for anything non-trivial: the type or interface first, then the implementation, then the
 assembly that calls it, then the docs. Each of those compiles green with the next one absent.
 
+The list is also the PR body (step 3). Keep it where it stays untracked and per-worktree:
+
+```bash
+$EDITOR "$(git rev-parse --git-dir)/pr-body.md"    # one line of what changes, then "- [ ] 1. <subtask>"
+```
+
 ## 3. The inner loop, once per subtask
 
 ```bash
@@ -84,7 +92,24 @@ Extra work certain kinds of change pull in, none of which `make ci` will ask for
 `git status` means "nothing written *yet*", not "finished". Confirm the work is done before staging,
 and re-verify in a clean checkout afterwards.
 
-## 4. Before you push: the full run
+Then push and move the PR forward — every subtask, not one batch at the end:
+
+```bash
+# first subtask only:
+git push -u origin <topic>
+gh pr create --draft --base main --title "<topic>: <what it changes>" \
+  --body-file "$(git rev-parse --git-dir)/pr-body.md"
+
+# every subtask after: tick its box in that file, then
+git push && gh pr edit --body-file "$(git rev-parse --git-dir)/pr-body.md"
+gh pr comment --body "<why the plan changed>"      # only when it did
+```
+
+Draft until step 4, because until then the branch cannot be landed. The PR cannot be opened any
+earlier than the first commit — GitHub refuses a head that does not differ from its base. `gh` infers
+it from the checked-out branch, so no PR number is needed anywhere.
+
+## 4. Before you mark it ready: the full run
 
 ```bash
 make ci-full                            # everything the CI workflow runs
@@ -108,9 +133,16 @@ make e2e                                # this machine's environment
 `XDG_RUNTIME_DIR` must **not** move the run directory — only `AGENTHUB_DATA_DIR` does, along with
 everything else — and this suite exists to catch the day that stops being true.
 
+Then hand the branch to the runner and take the draft off:
+
 ```bash
-git push -u origin <topic>
+git push
+gh pr ready
+gh pr checks --watch                    # the pull_request workflow — the same jobs main gets
 ```
+
+Those checks are the only run on CI's own machines: `make ci-full` reproduces them as far as this one
+can, and the gap between the two is exactly what step 4 is for.
 
 ## 5. Land it
 
@@ -122,6 +154,7 @@ exists.
 # in the worktree
 git fetch origin && git rebase origin/main
 make ci-landing
+git push --force-with-lease             # the PR's head must be exactly what lands
 ```
 
 `ci-landing` drops the test cache and then fails on any `(cached)` in its own log — `test/e2e` builds
@@ -146,12 +179,21 @@ A green run ends with `landing check: nothing came from cache, every package ran
 last thing the recipe does, after the cached-result check, so seeing it means the whole target
 succeeded.
 
+**That force-push is what closes the PR.** The rebase rewrote every commit, so the head GitHub holds
+is otherwise a set of commits that will never reach `main`, and the PR stays open with nothing to
+match against.
+
 Then, in the main work tree:
 
 ```bash
 git merge --ff-only <topic> && git push origin main
+gh pr view <topic> --json state,mergedAt    # MERGED — main holds its head commit verbatim
+git push origin --delete <topic>
 git worktree remove ../agent-hub-<topic> && git branch -d <topic>
 ```
+
+Still `OPEN` means its head is not what landed; `main` is fine, only the link is missing:
+`gh pr close <topic> --comment "landed on main as <sha>"`.
 
 **`--ff-only` is the enforcement, not a formality.** If it refuses, either the rebase did not happen
 or `origin/main` moved while you were checking. Rebase again and re-run `ci-landing`. Never reach for
@@ -166,7 +208,10 @@ again, against a `main` that has moved further each day.
 | Symptom | Meaning | Do |
 |---|---|---|
 | A depguard failure naming a path in *another* worktree | The lint cache is shared across checkouts, so the result came from a tree you are not in | `echo $GOLANGCI_LINT_CACHE` — the Makefile defaults it per checkout, an exported value overrides that. `make clean-cache` |
-| `make ci` green locally, CI red | Almost always the environment, not the code | Re-run `make ci-full`, then `make e2e-ci`; compare the runner's env before reading the diff |
+| `make ci` green locally, PR checks red | Almost always the environment, not the code | `gh run view --log-failed` for the failing job, then re-run `make ci-full` and `make e2e-ci`; compare the runner's env before reading the diff |
+| `gh pr create`: "No commits between main and `<topic>`" | The PR is being opened before the first commit exists | Finish subtask 1, commit, push, then create — step 3, in that order |
+| The PR still reads `OPEN` after `main` was pushed | Its head is not the commit that landed — usually an amend after the last force-push | Nothing is wrong with `main`; `gh pr close <topic> --comment "landed on main as <sha>"` |
+| `git push --force-with-lease` refuses | Someone else pushed to your branch — it is not yours alone | Do not force it. Find out what was pushed first; a shared branch is not rebased at all |
 | A test hangs | — | Get evidence before changing code: an e2e timeout SIGQUITs the process under test and folds the goroutine stacks into the failure message |
 | A test "passes" by returning early | A precondition silently failed | Preconditions must **fail hard**. A silent skip disguises an environment difference as some other component failing |
 | `git merge --ff-only` refuses | The rebase did not happen, or `origin/main` moved | Rebase, re-run `ci-landing`, retry. Never plain-`merge` |
@@ -182,4 +227,5 @@ git fetch origin && git rebase origin/main
 
 Pull with `git pull --rebase` so an out-of-date `main` does not grow a merge commit. Everything
 already pushed under `<topic>` is yours alone, so a force-push after the rebase is fine:
-`git push --force-with-lease`.
+`git push --force-with-lease`. The PR follows the branch — same number, same body, checks re-run on
+the new head — so a mid-flight rebase costs it nothing.

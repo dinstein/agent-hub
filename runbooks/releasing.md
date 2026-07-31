@@ -20,8 +20,8 @@ git worktree list                       # anything here is NOT being released
 
 **A release ships `main` exactly as it stands.** Nothing is cherry-picked and no branch is landed as
 part of releasing. If a worktree holds work that belongs in this version, land it first by
-[new-feature.md](new-feature.md) step 5 — rebase, `make ci-landing`, `git merge --ff-only`, push,
-remove the worktree — and then start at step 0 again. Otherwise say out loud which branches are being
+[new-feature.md](new-feature.md) step 5 — rebase, `make ci-landing`, force-push, `git merge
+--ff-only`, push, confirm its PR closed, remove the worktree — and then start at step 0 again. Otherwise say out loud which branches are being
 left out, so "I thought that was in" is caught now rather than by a user.
 
 ### 1. Choose the number

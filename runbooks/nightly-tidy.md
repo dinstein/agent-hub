@@ -64,6 +64,10 @@ Then open the worktree and read, exactly as step 0–1 of [new-feature.md](new-f
 git worktree add ../agent-hub-tidy-<slice> -b tidy-<slice> origin/main
 ```
 
+The three passes below are the subtask list; the draft PR opens on the first commit like any other
+(step 3 there). Title it `tidy-<slice>: <what was collapsed>` — "tidy" alone tells a reader nothing
+about whether it touches theirs.
+
 Read the slice's `docs/modules/` file **before** the code. Its invariants are what tells a
 simplification apart from a regression: several things in this tree look redundant and are load
 bearing, and that file is where the reason was written down.
@@ -152,9 +156,9 @@ What is left is what a human has to read for, and it is the whole point of this 
 
 ## 5. Land it
 
-By [new-feature.md](new-feature.md) steps 4 and 5, unchanged and unabbreviated — the rebase, then
-`make ci-landing`, then `git merge --ff-only`. A tidy branch gets no shortcut; it is the branch most
-likely to have touched something whose test lives somewhere else.
+By [new-feature.md](new-feature.md) steps 4 and 5, unchanged and unabbreviated — `gh pr ready`, green
+checks, the rebase, `make ci-landing`, the force-push, `git merge --ff-only`. A tidy branch gets no
+shortcut; it is the branch most likely to have touched something whose test lives somewhere else.
 
 If the slice touched a parser that reads untrusted input, this is a fuzz night too:
 
@@ -180,6 +184,8 @@ stale first.
 Then close the loop:
 
 ```bash
+gh pr view tidy-<slice> --json state,mergedAt    # MERGED, or close it by hand
+git push origin --delete tidy-<slice>
 git worktree remove ../agent-hub-tidy-<slice> && git branch -d tidy-<slice>
 ```
 

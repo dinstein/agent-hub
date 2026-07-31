@@ -256,9 +256,9 @@ these two rulings are what the mechanism exists to satisfy.
 
 ## 5d. Collaboration conventions
 
-**They live in [AGENTS.md](../AGENTS.md), not here** — worktree per feature, one commit per subtask,
-`main` stays linear (rebase, never merge), `make ci-landing` **after** the rebase, `--ff-only` as the
-enforcement.
+**They live in [AGENTS.md](../AGENTS.md), not here** — worktree per feature, a draft PR per branch
+kept current and closed by the landing, one commit per subtask, `main` stays linear (rebase, never
+merge), `make ci-landing` **after** the rebase, `--ff-only` as the enforcement.
 
 This section used to carry its own copy, and the copy was the older rule: *commit directly to `main`,
 push as soon as each commit is done*. That is the dangerous direction for a contradiction to fall in.
