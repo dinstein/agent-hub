@@ -208,12 +208,19 @@ place; keep them that way.
 | [smart-mcp-proxy/mcpproxy-go](https://github.com/smart-mcp-proxy/mcpproxy-go) | MIT / Go | **Reference only, never copy code** |
 | [tsouth89/toolport](https://github.com/tsouth89/toolport) | MIT / Rust | A different language; likewise a design reference only |
 
-What is inherited is the **list of problems**: which edge cases exist, what failure looks like, what
-the correct behavior is. Every implementation is written from scratch, because this project has its own
-coherent conventions — the `internal/mcp` facade, the generic `Doc[T]` envelope, a per-server owner
-goroutine plus `calls chan` serialization, content-addressed `EffectiveScope`, failure-direction
-comments — and pasted-in foreign implementations tear at them. The root `NOTICE` records the design
-references (academic honesty, not a license obligation).
+The rule and the reasoning behind it are in [AGENTS.md](../AGENTS.md) — read them, never copy them;
+what is inherited is the list of problems they hit. It is not restated here, because two copies of a
+policy eventually give two answers and a reader has no way to tell which is current.
+
+What that leaves for this file is the line the tree actually cites §5 for, which AGENTS.md does not
+draw: **a bound learned from them is not copied code.** Two constants come across verbatim —
+`internal/httpbridge`'s ingress limits from toolport's, and `clients.MaxConfigSize` — and both are
+what this policy permits rather than exceptions to it. A number is a finding *about* the problem
+(how large a hostile request gets before it costs you something), and arriving at a different one by
+rederivation would be worse, not more independent. What may never cross is the implementation around
+it.
+
+The root `NOTICE` records the design references (academic honesty, not a license obligation).
 
 ---
 
