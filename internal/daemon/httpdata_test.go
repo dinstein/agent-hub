@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -506,6 +508,45 @@ func TestHTTPDataPlaneRefusesUnauthorizedBind(t *testing.T) {
 	})
 	if !errors.Is(err, httpbridge.ErrBindUnauthorized) {
 		t.Fatalf("error = %v, want httpbridge.ErrBindUnauthorized", err)
+	}
+}
+
+// TestHTTPDataPlaneFailureLeavesNoRunFiles: a data plane that refuses to come
+// up must take the whole daemon down with it, run directory included. That path
+// used to write its own teardown instead of calling the shared one, and the
+// copy it wrote removed the socket and daemon.json with no ownership check —
+// the guard every other exit goes through.
+func TestHTTPDataPlaneFailureLeavesNoRunFiles(t *testing.T) {
+	dataDir := t.TempDir()
+	resolver := testResolver(t, dataDir)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// No token, no client: AuthorizeBind refuses, so startHTTPPlane fails
+	// after the control socket is already bound and daemon.json written.
+	if err := daemon.Run(ctx, daemon.Config{
+		Version:       "test-daemon",
+		Resolver:      resolver,
+		Log:           slog.New(slog.DiscardHandler),
+		ShutdownGrace: 200 * time.Millisecond,
+		HTTPAddr:      "127.0.0.1:0",
+	}); !errors.Is(err, httpbridge.ErrBindUnauthorized) {
+		t.Fatalf("error = %v, want httpbridge.ErrBindUnauthorized", err)
+	}
+
+	runDir, err := resolver.RunDir()
+	if err != nil {
+		t.Fatalf("RunDir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, daemon.InfoFileName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stat daemon.json after a failed start = %v, want it removed", err)
+	}
+	socket, err := resolver.CtlSocketPath()
+	if err != nil {
+		t.Fatalf("CtlSocketPath: %v", err)
+	}
+	if _, err := os.Stat(socket); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stat the control socket after a failed start = %v, want it removed", err)
 	}
 }
 

@@ -317,46 +317,12 @@ func Run(ctx context.Context, cfg Config) error {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(l) }()
 
-	// Data plane (opt-in; see Config.HTTPAddr — nothing listens by default).
-	// It starts AFTER the control socket is serving because every gateway it
-	// assembles registers over that socket: session listing and overlays
-	// then work for an HTTP caller exactly as they do for an stdio one.
-	endpoint, herr := startHTTPPlane(bgCtx, cfg, httpPlaneDeps{
-		Resolver: resolver,
-		Log:      log,
-		Version:  cfg.Version,
-		Registry: store,
-		Secrets:  dataPlaneSecrets(cfg.Secrets),
-		// The bearer half, chosen from the SAME vault as Secrets above: a
-		// dial must not resolve its placeholders against one vault and its
-		// bearer against another. Both nil (no vault configured) is the one
-		// case where the gateway builds the pair itself.
-		//
-		// Secrets alone is not enough — it resolves ${SECRET_X} placeholders
-		// written into a spec, while an OAuth server never appears in one.
-		Auth: planeAuth(cfg.Secrets, coordRef.Load),
-		Dial: cfg.Dial,
-	}, tokens, store.Snapshot(), log)
-	if herr != nil {
-		if watcher != nil {
-			watcher.Close()
-		}
-		bgStop()
-		_ = srv.Close()
-		<-serveErr
-		_ = os.Remove(socket)
-		_ = os.Remove(infoPath)
-		return herr
-	}
-	if endpoint != nil && cfg.OnHTTPReady != nil {
-		cfg.OnHTTPReady(endpoint.Addrs())
-	}
-
-	log.Info("daemon ready", "socket", socket, "pid", info.Pid, "version", cfg.Version)
-	if cfg.OnReady != nil {
-		cfg.OnReady(info)
-	}
-
+	// Teardown, shared by every exit below — a clean stop, a serve failure,
+	// and a data plane that could not come up. It is defined before the
+	// endpoint it closes because that last path needs it too: when the two
+	// were written out separately, the startup-failure copy removed the run
+	// files with no ownership check at all.
+	var endpoint *httpEndpoint
 	cleanup := func() {
 		// The data plane goes first: it holds downstream processes, and they
 		// must be released before the coordination state they report into.
@@ -392,14 +358,54 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 	}
 
+	// Data plane (opt-in; see Config.HTTPAddr — nothing listens by default).
+	// It starts AFTER the control socket is serving because every gateway it
+	// assembles registers over that socket: session listing and overlays
+	// then work for an HTTP caller exactly as they do for an stdio one.
+	endpoint, herr := startHTTPPlane(bgCtx, cfg, httpPlaneDeps{
+		Resolver: resolver,
+		Log:      log,
+		Version:  cfg.Version,
+		Registry: store,
+		Secrets:  dataPlaneSecrets(cfg.Secrets),
+		// The bearer half, chosen from the SAME vault as Secrets above: a
+		// dial must not resolve its placeholders against one vault and its
+		// bearer against another. Both nil (no vault configured) is the one
+		// case where the gateway builds the pair itself.
+		//
+		// Secrets alone is not enough — it resolves ${SECRET_X} placeholders
+		// written into a spec, while an OAuth server never appears in one.
+		Auth: planeAuth(cfg.Secrets, coordRef.Load),
+		Dial: cfg.Dial,
+	}, tokens, store.Snapshot(), log)
+	if herr != nil {
+		// Same teardown as every other exit, in the same order: stop serving,
+		// then release what was assembled. Nothing is draining here — the
+		// daemon never announced itself — so the force-close is the whole of
+		// phase one.
+		_ = srv.Close()
+		<-serveErr
+		cleanup()
+		return herr
+	}
+	if endpoint != nil && cfg.OnHTTPReady != nil {
+		cfg.OnHTTPReady(endpoint.Addrs())
+	}
+
+	log.Info("daemon ready", "socket", socket, "pid", info.Pid, "version", cfg.Version)
+	if cfg.OnReady != nil {
+		cfg.OnReady(info)
+	}
+
 	select {
 	case <-ctx.Done():
 		// Graceful stop: end the long-lived streams, stop accepting, drain
 		// in-flight requests, then force-close whatever is still left.
 		log.Info("daemon stopping", "reason", context.Cause(ctx))
-		// The data plane goes first: it holds downstream processes, and they
-		// must be released before the coordination state they report into.
-		// (Close is idempotent; cleanup calls it again below.)
+		// The data plane goes first, for the reason cleanup states, and it
+		// goes here rather than only in cleanup so that the downstream
+		// processes are released before the drain rather than after it.
+		// Close is idempotent; cleanup calls it again below.
 		endpoint.Close()
 		// Then the streams, and this call is what makes the drain a drain.
 		// Every long-lived connection on the control socket — each stdio

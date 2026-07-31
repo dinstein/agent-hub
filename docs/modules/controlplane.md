@@ -955,7 +955,10 @@ unlink a **live** control socket and delete a readiness file it never wrote. The
 watch and refresher still running, unreachable and invisible, and the next `daemon start` binds a fresh socket beside it.
 `ownsRunFiles` gates both removes on `daemon.json` still naming this pid, and every doubt — unreadable, unparsable, missing,
 another pid — answers false and leaves the paths alone: deleting a live daemon's socket cannot be undone, while a stale file
-costs the next start one `removeStaleSocket` pass.
+costs the next start one `removeStaleSocket` pass. **Every exit goes through that one `cleanup`** — the clean stop, the serve
+failure, and a data plane that refused to come up. The last of those used to carry its own copy of the teardown, and the copy
+removed both paths with no ownership check at all; `TestHTTPDataPlaneFailureLeavesNoRunFiles` pins that the shared one runs
+there.
 
 **The pid `stop` signals comes from the ping, never from `run/daemon.json`.** That file names a process, it does not identify
 one: an abrupt death leaves it behind, and the OS is then free to reuse the number. Reading a pid out of it and signalling that
