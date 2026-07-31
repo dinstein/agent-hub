@@ -147,10 +147,23 @@ type jsonObject struct {
 	members     []jsonMember
 }
 
+// member returns the member that DECIDES the value of name — the LAST one
+// with that key, not the first.
+//
+// JSON leaves duplicate keys to the implementation, and every reader in
+// this story resolves them the same way: encoding/json, which this package
+// uses in read() and again in verifySplice's decodeExact, keeps the last
+// value it decodes, and so do the client applications whose files these
+// are. Walking to the first occurrence instead sent the splice into an
+// object nobody reads: the edit landed on a shadowed section, the document
+// came back byte-identical, and verifySplice could not see it because both
+// of its own decodes went through encoding/json and agreed with each
+// other. Disconnect then reported an entry removed that was still there —
+// a revocation that silently did nothing.
 func (o *jsonObject) member(name string) (jsonMember, bool) {
-	for _, m := range o.members {
-		if m.name == name {
-			return m, true
+	for i := len(o.members) - 1; i >= 0; i-- {
+		if o.members[i].name == name {
+			return o.members[i], true
 		}
 	}
 	return jsonMember{}, false

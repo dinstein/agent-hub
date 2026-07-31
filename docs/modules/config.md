@@ -601,6 +601,16 @@ get. A shape the locator cannot walk — a section key that is not an object, a 
 refused for the same reason rather than guessed at. Both hand-written passes are fuzzed (`FuzzBlankJSONC`,
 `FuzzSpliceEntryKeepsEverythingElse`).
 
+**A duplicated key resolves to the LAST occurrence, because that is the one the file's owner reads.** JSON
+leaves duplicate keys to the implementation; `encoding/json` — which this package uses to find the entry, and
+uses again inside `verifySplice` — keeps the last, and so do the client applications these files belong to. The
+locator has to agree, and once did not: it walked to the first occurrence, so an edit landed in a section
+nobody reads. That failure was invisible by construction rather than merely unlucky — the document came back
+byte-identical, and `verifySplice` could not object because both of its decodes went through `encoding/json`
+and agreed with each other. `Disconnect` then reported an entry removed that the client still spawned. This is
+the one case where proving the result cannot save a wrong locator, which is why the rule is written down here
+rather than left to the verifier.
+
 **That rule is about writing, and reading is a separate power.** A row may carry `readTable`, and codex does:
 `scanTOMLServers` reads `~/.codex/config.toml` well enough to answer "is our entry in here?" while `Connect` still
 refuses it. Refusing to read bought nothing — it made `client ls` say "?" for a client that was plainly connected,
