@@ -499,11 +499,22 @@ quarantined and self-healed is only a warning. A JSON log file that won't open d
 that can't write logs should still coordinate. A registry watch that can't be established also only degrades: external changes are seen
 on the next explicit reload.
 
-**Graceful shutdown has two phases.** After the ctx ends, first `srv.Shutdown(grace)` (stop accepting, drain in-flight
-requests), and once grace is spent, `srv.Close()` forcibly closes the rest — long-lived SSE links never drain on their
-own. Then cleanup: close the watcher, stop the background ctx, best-effort remove the socket, remove `daemon.json`.
-Internal goroutines (session reaper, watch pump, refresher) run on a **separate background ctx** so they
-survive the drain phase and stop only at cleanup.
+**Graceful shutdown has three phases, and the first is what makes the second work.** After the ctx ends:
+`srv.CloseStreams()` ends every long-lived SSE handler, then `srv.Shutdown(grace)` (stop accepting, drain in-flight
+requests), and only if grace is spent does `srv.Close()` force the rest. Then cleanup: close the watcher, stop the
+background ctx, best-effort remove the socket, remove `daemon.json`. Internal goroutines (session reaper, watch pump,
+refresher) run on a **separate background ctx** so they survive the drain phase and stop only at cleanup.
+
+**`CloseStreams` is not an optimization.** `http.Server.Shutdown` waits for handlers to return and never cancels their
+request contexts, while both long-lived handlers — each stdio gateway's `/v1/gateway/{sid}/link` and whoever holds
+`/v1/events` — are parked until their client hangs up. Without it phase two can finish nothing: every stop spends the
+whole `ShutdownGrace` and then force-closes precisely the connections it spent it waiting for. That was the behavior
+until it was fixed. The daemon closed the *data plane* first, in the belief that the gateway links hung off it — they
+never did; the data plane is opt-in and normally not even listening, so the call was a no-op and the drain always ran
+to its deadline. Two streams, two doors: a link ends through its own `closed` channel, `/v1/events` through a
+server-wide `draining` channel, and both are needed because `/v1/events` belongs to no link.
+`TestGracefulStopDrainsWithAGatewayAttached` pins it at the production grace, and the `ctlapi` tests pin both that a
+drain completes after `CloseStreams` and that it does not without.
 
 **The stdio gateway depends on nothing here.** The package comment states it outright: a dead daemon (even `kill -9`)
 costs only coordination — the session list, the event stream, centralized refresh. A stdio gateway's scope comes

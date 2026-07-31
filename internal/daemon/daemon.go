@@ -13,9 +13,10 @@
 //     only AFTER a successful bind, so a well-formed daemon.json always
 //     describes an endpoint that was live at write time (no TOCTOU probe);
 //  4. serve until ctx is done (the CLI cancels it on SIGTERM/SIGINT);
-//  5. graceful stop: close the listener (no new connections), drain
-//     in-flight requests for ShutdownGrace, then force-close stragglers
-//     (long-lived SSE links never drain by themselves), remove daemon.json.
+//  5. graceful stop: end the long-lived SSE streams (they never drain by
+//     themselves, and Shutdown cannot interrupt them), close the listener
+//     (no new connections), drain in-flight requests for ShutdownGrace,
+//     force-close any straggler, remove daemon.json.
 //
 // stdio gateways depend on NONE of this: the daemon dying (even kill -9,
 // A.3 #2) only loses coordination — session listing, dynamic overlays,
@@ -393,16 +394,29 @@ func Run(ctx context.Context, cfg Config) error {
 
 	select {
 	case <-ctx.Done():
-		// Graceful stop: stop accepting, drain in-flight requests, then
-		// force-close whatever is left (SSE links never drain on their own).
+		// Graceful stop: end the long-lived streams, stop accepting, drain
+		// in-flight requests, then force-close whatever is still left.
 		log.Info("daemon stopping", "reason", context.Cause(ctx))
-		// The data plane goes FIRST, before the control-plane drain: each of
-		// its gateways holds a control link on this very socket, and those
-		// links are exactly the connections that never drain by themselves.
-		// Closing them here turns the drain below into a short one instead of
-		// making every shutdown spend the full grace period. (Close is
-		// idempotent; cleanup calls it again on the other branch.)
+		// The data plane goes first: it holds downstream processes, and they
+		// must be released before the coordination state they report into.
+		// (Close is idempotent; cleanup calls it again below.)
 		endpoint.Close()
+		// Then the streams, and this call is what makes the drain a drain.
+		// Every long-lived connection on the control socket — each stdio
+		// gateway's link, plus whatever holds /v1/events — is parked until
+		// its client hangs up, and Shutdown cannot interrupt them: it waits
+		// for handlers to return and never cancels their request contexts.
+		// Without it the drain below has nothing it can finish, so it spends
+		// the full ShutdownGrace and then force-closes exactly the
+		// connections it spent that period waiting for.
+		//
+		// This used to be attempted by closing the data plane, on the belief
+		// that the gateway links hung off it. They do not: `endpoint` is the
+		// MCP data plane (opt-in — nothing listens by default), while the
+		// links are served by `srv` on the control socket. Every measured
+		// stop took the whole grace period, and the gateways logged `control
+		// link stream ended` at the force-close rather than here.
+		srv.CloseStreams()
 		shutCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
 		defer cancel()
 		if err := srv.Shutdown(shutCtx); err != nil {

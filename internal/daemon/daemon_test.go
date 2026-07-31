@@ -109,9 +109,12 @@ func startDaemon(t *testing.T, mutate func(*daemon.Config)) *daemonHandle {
 		Log:      slog.New(slog.DiscardHandler),
 		OnReady:  func(i daemon.Info) { ready <- i },
 		Watch:    registry.WatchOptions{Debounce: 20 * time.Millisecond, Poll: 100 * time.Millisecond},
-		// Tests must not spend the full production drain grace on every
-		// stop while a gateway link SSE connection is open.
-		ShutdownGrace: 200 * time.Millisecond,
+		// ShutdownGrace is left at the production default on purpose. It used
+		// to be shrunk to 200ms here, because with a gateway link open every
+		// stop spent the whole grace — the workaround was the bug, seen from
+		// inside the suite. A stop now ends the streams and drains in
+		// milliseconds, so a suite that suddenly slows down is a regression
+		// worth noticing rather than one worth hiding.
 	}
 	if mutate != nil {
 		mutate(&cfg)
