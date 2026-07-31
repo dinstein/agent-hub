@@ -3,6 +3,7 @@ package daemon_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -58,6 +59,28 @@ func TestShutdownLeavesAReplacementsFilesAlone(t *testing.T) {
 	if err := os.WriteFile(infoPath, body, 0o600); err != nil {
 		t.Fatalf("writing the replacement's %s: %v", daemon.InfoFileName, err)
 	}
+	// Wait for the departing daemon's listener to unlink the socket before
+	// planting the replacement's. That is the real sequence — Shutdown
+	// closes the listener, and only then drains — and it is the window a
+	// replacement actually starts in: it finds no stale socket and binds.
+	// Planting earlier raced the unlink, which removed the stand-in and, on
+	// Linux, could not even create it (writing over a live unix socket inode
+	// is ENXIO).
+	freed := false
+	for deadline := time.Now().Add(testTimeout); time.Now().Before(deadline); {
+		if _, err := os.Stat(h.socket); errors.Is(err, os.ErrNotExist) {
+			freed = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !freed {
+		t.Fatal("precondition: the departing daemon never unlinked its socket, so the replacement's window never opened")
+	}
+
+	// The replacement would bind its own socket here. The assertion below
+	// is only that the departing daemon leaves the path alone, so a plain
+	// file standing in for a bound socket is enough.
 	if err := os.WriteFile(h.socket, []byte("stand-in for a bound socket"), 0o600); err != nil {
 		t.Fatalf("creating the replacement's socket file: %v", err)
 	}
