@@ -150,12 +150,17 @@ func Connect(ctx context.Context, spec Spec, deps Deps) (*Server, error) {
 		timeout = DefaultConnectTimeout
 	}
 
+	// One bound logger for the whole connection, built before the struct so
+	// the breaker writes under the same identity as every other line this
+	// server produces.
+	srvLog := log.With(logx.FieldServer, spec.ID)
+
 	lifeCtx, stop := context.WithCancel(context.Background())
 	s := &Server{
 		spec:           spec,
-		log:            log.With(logx.FieldServer, spec.ID),
+		log:            srvLog,
 		dial:           dial,
-		br:             newBreaker(deps.Breaker),
+		br:             newBreaker(deps.Breaker, srvLog),
 		retry:          deps.Retry.withDefaults(),
 		reconnect:      deps.Reconnect.withReconnectDefaults(),
 		connectTimeout: timeout,
