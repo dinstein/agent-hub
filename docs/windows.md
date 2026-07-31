@@ -138,8 +138,23 @@ These are the checks that would graduate Windows from "experimental" to "support
 ## 4. How to check for yourself
 
 ```bash
-GOOS=windows go build ./...                       # full cross-compile
-GOOS=windows go vet $(go list ./... | grep -v '/test/e2e')  # vet everything except the Unix-only e2e suite
+make cross-windows                                # GOOS=windows build + vet, minus the Unix-only e2e suite
+make gui-frontend && make cross-windows-gui       # the OTHER gate — see the note below about the first half
 go test ./internal/platform/ ./api/ ./internal/ctlapi/  # injection-based Windows unit tests, run on macOS/Linux
 make release-windows                              # build the portable zip (cross-compiles on any host)
 ```
+
+**`cross-windows` alone is half the check.** The GUI is excluded from the default build ("the GUI is optional" is a
+compile-time constraint), so its Windows build is a separate target — and it is the half where wails v3 diverges
+most from the macOS build this project develops on. AGENTS.md names both as the complete set of Windows gates.
+
+**`cross-windows-gui` needs the frontend bundle first, and says so badly.** `gui_main.go` embeds
+`frontend/dist`, which is gitignored, so on a fresh checkout the target fails before it compiles anything Windows
+at all:
+
+```
+cmd/agenthub-gui/gui_main.go:26:12: pattern all:frontend/dist: no matching files found
+```
+
+That is a missing `make gui-frontend`, not a Windows problem. `make ci-full` orders the two correctly, which is
+why it is only ever seen by someone running the gate by hand.
