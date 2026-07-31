@@ -267,3 +267,48 @@ func TestDevAndReleaseDirectoriesDiffer(t *testing.T) {
 		t.Fatalf("dev and release resolve to the same directory %q: the channel split is a no-op", release)
 	}
 }
+
+// TestAPITopicsMatchTheServedSet pins the other cross-package contract in
+// this direction: api's four Topic constants and the set this server actually
+// serves must be the same set, in both directions.
+//
+// api/events.go states the rule and why it is not a soft one — the daemon's
+// set is CLOSED, so an unlisted name is a 400 rather than a subscription that
+// quietly delivers nothing, and "leaving the constant behind does not degrade
+// to 'that topic is empty', it takes the whole subscription down with it."
+// Until this test existed nothing checked it, and neither direction is
+// visible from the side that breaks it:
+//
+//   - a constant left in api after the daemon retires the topic makes every
+//     Subscribe that includes it fail, including the ones asking for
+//     unrelated topics in the same call;
+//   - a topic the daemon starts serving without a constant here is one no
+//     api consumer — the GUI included — can name.
+//
+// It lives in this package because api may not import internal/* (depguard
+// rule 1) while internal/ctlapi may import both sides, the same reason
+// TestAPIDefaultSocketPathContract is here.
+func TestAPITopicsMatchTheServedSet(t *testing.T) {
+	declared := map[string]string{
+		api.TopicServers:  "api.TopicServers",
+		api.TopicSessions: "api.TopicSessions",
+		api.TopicActivity: "api.TopicActivity",
+		api.TopicSkills:   "api.TopicSkills",
+	}
+	if len(declared) != 4 {
+		t.Fatalf("api declares %d distinct topics, want 4 — two constants collided", len(declared))
+	}
+	for name, constant := range declared {
+		if !sseTopics[name] {
+			t.Errorf("%s = %q is not in the served set, so Subscribe(%q) is a 400 that "+
+				"fails the whole call — including its unrelated topics. Retire the constant "+
+				"in the same change that retires the topic.", constant, name, name)
+		}
+	}
+	for name := range sseTopics {
+		if _, ok := declared[name]; !ok {
+			t.Errorf("this server serves %q and api declares no constant for it, so no api "+
+				"consumer can name it. Add it to api/events.go in the same change.", name)
+		}
+	}
+}

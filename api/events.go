@@ -49,7 +49,10 @@ type EventsService struct {
 // subscription that quietly delivers nothing. So a topic retired on the
 // daemon side must be retired here in the same change — leaving the
 // constant behind does not degrade to "that topic is empty", it takes the
-// whole subscription down with it.
+// whole subscription down with it, including the unrelated topics named in
+// the same call. TestAPITopicsMatchTheServedSet (internal/ctlapi) enforces
+// the agreement in both directions; it lives there because this package may
+// not import internal/*.
 //
 // The initial connection is made synchronously so callers learn
 // immediately when the daemon is down. Afterwards a goroutine keeps the
