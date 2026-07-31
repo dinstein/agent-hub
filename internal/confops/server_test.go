@@ -697,3 +697,54 @@ func TestAddServerRefusesBadOAuthHint(t *testing.T) {
 		t.Error("a rejected entry was persisted anyway")
 	}
 }
+
+// TestSetServerToolsThreeStates is TestSetProfileToolsThreeStates one layer
+// up, and deliberately asserts the same three outcomes: the two layers are
+// one mechanism, so the state that fails open — block-all persisting as the
+// EMPTY list rather than being dropped — has to be pinned at both altitudes
+// or the shared resolver can regress on the untested one.
+func TestSetServerToolsThreeStates(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	seedServers(t, st, "github")
+
+	res, err := SetServerTools(ctx, st, "github",
+		ToolSelection{Mode: ToolSelectOnly, Tools: []string{"list_prs", "create_pr", "list_prs"}}, Precondition{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Servers[0].Entry.Tools; len(got) != 2 || got[0] != "create_pr" {
+		t.Errorf("--only rule = %v, want the deduplicated sorted subset", got)
+	}
+
+	res, err = SetServerTools(ctx, st, "github", ToolSelection{Mode: ToolSelectNone}, Precondition{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Servers[0].Entry.Tools; got == nil || len(got) != 0 {
+		t.Errorf("block-all must store the EMPTY allow list, got %v", got)
+	}
+	// And it must SURVIVE a round trip through the document: omitzero keeps
+	// an empty list on disk where omitempty would drop it, turning
+	// expose-nothing into expose-everything on the next read.
+	if got := st.Snapshot().Servers.V.Servers["github"].V.Tools; got == nil || len(got) != 0 {
+		t.Errorf("block-all did not survive the round trip, got %v", got)
+	}
+
+	res, err = SetServerTools(ctx, st, "github", ToolSelection{Mode: ToolSelectAll}, Precondition{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Servers[0].Entry.Tools; got != nil {
+		t.Errorf("all-tools must clear the rule, got %v", got)
+	}
+
+	// Validation, in the same order confops requires: arguments first, so an
+	// unset mode is refused before the server is even looked up.
+	_, err = SetServerTools(ctx, st, "github", ToolSelection{}, Precondition{})
+	wantErrorKind(t, err, KindUsage, CodeUsage)
+	_, err = SetServerTools(ctx, st, "github", ToolSelection{Mode: ToolSelectOnly}, Precondition{})
+	wantErrorKind(t, err, KindUsage, CodeUsage)
+	_, err = SetServerTools(ctx, st, "ghost", ToolSelection{Mode: ToolSelectAll}, Precondition{})
+	wantErrorKind(t, err, KindNotFound, CodeServerNotFound)
+}

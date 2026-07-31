@@ -47,28 +47,49 @@ func (s ToolSelection) validate() error {
 	}
 }
 
-// applySelector writes the requested three-state edit into a selector map,
-// deleting entries that became fully inert so the document does not
-// accumulate `{}` noise.
+// allowList turns a three-state edit into the allow list it stores, and it is
+// the ONLY place either narrowing layer answers that question. The global
+// layer (ServerEntry.Tools) and the profile layer (ToolSelector.Allow) hold
+// the same three states in the same encoding, so a second translation would
+// be a second chance to get the pair below the wrong way round.
 //
 // The pair to be careful with is ToolSelectAll-drops-the-rule against
-// ToolSelectNone-keeps-the-empty-list: nil Allow means "no narrowing", an
-// empty one means "block everything", and a re-implementation that collapses
-// the two fails OPEN. There is exactly one selector map left in the registry
-// documents — a profile's — so this is the only writer, and any second one
-// belongs here rather than beside it.
-func applySelector(m map[string]registry.Doc[registry.ToolSelector], server string, sel ToolSelection) {
-	cur := m[server].V
+// ToolSelectNone-keeps-the-empty-list: nil means "no narrowing", an empty
+// list means "block everything", and collapsing the two fails OPEN.
+//
+// ok=false is the unset mode, which writes nothing at all. It cannot be
+// folded into the nil return: nil is a decision to drop an existing rule,
+// unset is the absence of a decision.
+func allowList(sel ToolSelection) (list []string, ok bool) {
 	switch sel.Mode {
 	case ToolSelectAll:
-		cur.Allow = nil
+		return nil, true
 	case ToolSelectOnly:
-		cur.Allow = dedupSorted(sel.Tools)
+		out := dedupSorted(sel.Tools)
+		if out == nil {
+			// dedupSorted answers nil for an empty input, which is the one
+			// value that must not round-trip here: validate() rejects an
+			// empty --only, and this is the second door.
+			out = []string{}
+		}
+		return out, true
 	case ToolSelectNone:
-		cur.Allow = []string{}
-	case ToolSelectUnset:
+		return []string{}, true
+	default:
+		return nil, false
+	}
+}
+
+// applySelector writes the requested three-state edit into a profile's
+// selector map, deleting entries that became fully inert so the document does
+// not accumulate `{}` noise.
+func applySelector(m map[string]registry.Doc[registry.ToolSelector], server string, sel ToolSelection) {
+	allow, ok := allowList(sel)
+	if !ok {
 		return
 	}
+	cur := m[server].V
+	cur.Allow = allow
 	if cur.Allow == nil {
 		delete(m, server)
 		return
