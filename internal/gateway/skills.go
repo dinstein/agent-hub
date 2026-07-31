@@ -26,10 +26,14 @@ import (
 //     intersection); one that stays silent leaves it visible. That is the
 //     docs/modules/config.md skillScope chain expressed in the chain that already
 //     exists, instead of a parallel one.
-//   - the injection scanner runs over skill text on the way out, because
-//     defend_and_shape runs over every pipeline result. SKILL.md is a
-//     first-class injection carrier (5.1.5) and this path does not get to
-//     opt out of the scan.
+//   - NOTHING scans the skill text on the way out. This once read "the
+//     injection scanner runs over skill text ... this path does not get to opt
+//     out of the scan", which was true when defend_and_shape still defended;
+//     it does not (internal/pipeline/shape.go), so the sentence promised a
+//     protection that is not there. SKILL.md is a first-class injection
+//     carrier, and what actually holds the line is the switch below being off
+//     by default plus the import-time refusals in internal/skills — not
+//     anything on the way out.
 //   - the face is CALLABLE while downstreams are still connecting: it has
 //     nothing to connect to. execTool checks providers before the busy gate.
 //

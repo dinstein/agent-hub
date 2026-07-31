@@ -843,7 +843,8 @@ scan and copy, the import aborts rather than producing a library copy whose `Con
 `Options.ContentScanner` is the seam for injecting a scanner — SKILL.md is a first-class prompt injection carrier. A
 hit **rejects the import outright** rather than importing and flagging — an imported skill is one `sync` away from
 being materialized into a client directory. This hook lives in Options so that this package depends on no guard
-package.
+package. **Nothing sets it today**: the scanner it was shaped for went with the removed governance surface, so the
+sentence above describes what the seam would do, not a check an import currently passes.
 
 **An unreadable entry inside `hashDir` is an error, never a skipped file.** Silently skipping would let a permissions
 trick hide drift. A symlink or device file appearing where a skill file belongs is drift by definition, and gets

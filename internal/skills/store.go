@@ -73,10 +73,11 @@ type Options struct {
 	AgentVersion string
 	// ContentScanner, when set, is called on import and update with the
 	// package's untrusted text (field is "name", "description" or a file
-	// path). Returning an error REFUSES the import. This is the seam for
-	// the injection scanner of docs/modules/config.md — SKILL.md is a first-class
-	// prompt-injection carrier — kept as a hook so this package stays free
-	// of guard dependencies.
+	// path). Returning an error REFUSES the import. It is a SEAM and nothing
+	// sets it today: the injection scanner it was shaped for went with the
+	// removed governance surface. Kept because SKILL.md is a first-class
+	// prompt-injection carrier and the refusal has to happen at import, and
+	// kept as a hook so this package stays free of guard dependencies.
 	ContentScanner func(field, text string) error
 	// MaxFileSize, MaxTotalSize and MaxFiles bound an import. Zero values
 	// use the defaults below.

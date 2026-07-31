@@ -208,9 +208,13 @@ type ServerEntry struct {
 	// of clients that never asked for it. An isolation a field cannot honor
 	// is refused here rather than approximated.
 	//
-	// The capture point is the downstream boundary, which is BEFORE leakguard
-	// redacts anything, so a trace holds raw results. That is the cost of
-	// turning it on, and the reason it stays off until someone says otherwise.
+	// The capture point is the downstream boundary, so a trace holds raw
+	// results. That is the cost of turning it on, and the reason it stays off
+	// until someone says otherwise — and it is the whole cost, because nothing
+	// downstream of the capture redacts them either. This used to say "BEFORE
+	// leakguard redacts anything", which read as though a trace were the one
+	// unredacted copy; there is no leakguard, and a delivered result is as raw
+	// as a traced one.
 	Trace bool `json:"trace,omitempty"`
 }
 

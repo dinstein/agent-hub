@@ -70,11 +70,14 @@ var toonOptions = toonenc.Options{
 //     that does not win keeps its original bytes. A result can therefore
 //     only shrink.
 //
-// ORDERING INVARIANT: Reformat runs on the delivery path, i.e. AFTER the
-// pipeline's defences have scanned the downstream text (docs/modules/security.md
-// sequencing: leakguard and the injection scanner read the PRE-encoding
-// text). Moving it earlier would hand the scanners a notation they were not
-// written against.
+// WHERE IT RUNS: on the delivery path, inside defend_and_shape, which no
+// longer defends (internal/pipeline/shape.go). This used to be stated as an
+// ordering INVARIANT owed to the scanners that ran before it — leakguard and
+// the injection scanner reading the pre-encoding text — and both went with
+// the removed governance surface, so nothing is sequenced against this any
+// more. It is recorded rather than dropped because the constraint returns the
+// day anything reads a result again: a stage reading downstream text has to
+// see it in the notation it was written against, which is JSON, not TOON.
 //
 // Failure direction is open: an undecodable content array, a block that is
 // not JSON, an encoder error — all deliver the original.
