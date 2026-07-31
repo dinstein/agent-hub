@@ -70,8 +70,13 @@ type ToolRow struct {
 	// --tools` renders the same row type from one server's cache alone —
 	// rather than defaulting to a verdict that was never reached.
 	State string `json:"state,omitempty"`
-	Rank  int    `json:"rank,omitempty"`
-	Score int    `json:"score,omitempty"`
+	// BlockedBy names the layer that took a blocked tool away: global, or
+	// which half of a profile. It is set only on a blocked or pending row —
+	// on an offered one there is no layer to name, and printing the last one
+	// consulted would read as one that decided something.
+	BlockedBy string `json:"blockedBy,omitempty"`
+	Rank      int    `json:"rank,omitempty"`
+	Score     int    `json:"score,omitempty"`
 }
 
 // ToolList is the `server tool ls` result. Ranked selects the search rendering,
@@ -83,6 +88,11 @@ type ToolList struct {
 	// column on the table. It is not derivable from the rows: a listing
 	// where every tool happens to be `on` looks identical either way.
 	ShowAll bool
+	// Layered records that more than one layer could have blocked a row,
+	// which is what puts the BY column on the table. Under the global layer
+	// alone every blocked row would read "global", and a column with one
+	// value in it is not an answer.
+	Layered bool
 	// Held is how many tools an allow list kept out of Rows. It is reported
 	// even though the rows are gone, because a listing that quietly drops
 	// part of its subject reads as a complete answer.
@@ -123,9 +133,15 @@ func (l ToolList) Human(w io.Writer) error {
 	// Writes to a tabwriter only fail at Flush, which is where the error is
 	// surfaced.
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	// BY rides with STATE: it says which layer produced the state, so on its
+	// own it would be a column of reasons for verdicts the table is not
+	// showing.
+	withBy := l.ShowAll && l.Layered
 	switch {
 	case l.Ranked:
 		_, _ = fmt.Fprintln(tw, "RANK\tSCORE\tNAME\tSERVER\tTOOL\tDESCRIPTION")
+	case withBy:
+		_, _ = fmt.Fprintln(tw, "STATE\tBY\tNAME\tSERVER\tTOOL\tDESCRIPTION")
 	case l.ShowAll:
 		_, _ = fmt.Fprintln(tw, "STATE\tNAME\tSERVER\tTOOL\tDESCRIPTION")
 	default:
@@ -141,6 +157,9 @@ func (l ToolList) Human(w io.Writer) error {
 		switch {
 		case l.Ranked:
 			_, _ = fmt.Fprintf(tw, "%d\t%d\t%s\t%s\t%s\t%s\n", r.Rank, r.Score, name, r.Server, r.RawName, desc)
+		case withBy:
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				r.State, dashOr(r.BlockedBy, "-"), name, r.Server, r.RawName, desc)
 		case l.ShowAll:
 			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.State, name, r.Server, r.RawName, desc)
 		default:
@@ -235,7 +254,7 @@ func (a *App) newToolLsCmd() *cobra.Command {
 				return a.printer().Emit(
 					toolRulesOf(snap.Servers.V.Servers, cached, serverArg), warnings...)
 			}
-			cat, err := offlineCatalogOf(snap, cached, serverArg)
+			cat, err := offlineCatalogOf(snap, cached, serverArg, "")
 			if err != nil {
 				return err
 			}
@@ -252,7 +271,7 @@ func (a *App) newToolLsCmd() *cobra.Command {
 			if !showAll {
 				list.Held = len(cat.blocked)
 			}
-			list.mark(cat.blocked)
+			list.mark(cat)
 			// Ranking has nothing to rank a pending name against — there is
 			// no description, no schema, no ToolDef at all — so it stays out
 			// of --search rather than being scored against an empty string.
@@ -275,35 +294,47 @@ func (a *App) newToolLsCmd() *cobra.Command {
 	return cmd
 }
 
-// mark stamps the state column. Rows are `on` unless the blocked set names
-// them, which is the fail-safe direction for a LABEL: a row wrongly marked
-// blocked is a visible puzzle, one wrongly marked on is a lie about what a
-// client can reach.
-func (l *ToolList) mark(blocked []discovery.Tool) {
-	out := make(map[string]bool, len(blocked))
-	for _, t := range blocked {
+// mark stamps the state column, and for a blocked row the layer that took it.
+// Rows are `on` unless the blocked set names them, which is the fail-safe
+// direction for a LABEL: a row wrongly marked blocked is a visible puzzle, one
+// wrongly marked on is a lie about what a client can reach.
+func (l *ToolList) mark(cat offlineCatalog) {
+	out := make(map[string]bool, len(cat.blocked))
+	for _, t := range cat.blocked {
 		out[t.Exposed] = true
 	}
 	for i := range l.Rows {
 		if out[l.Rows[i].Name] {
 			l.Rows[i].State = toolStateBlocked
+			l.Rows[i].BlockedBy = cat.blockedBy[l.Rows[i].Name]
 			continue
 		}
 		l.Rows[i].State = toolStateOn
 	}
 }
 
+// The layers an offline catalog can be computed under, and therefore the
+// answers to "which one took this tool away". They are strings on the wire
+// because the set grows downward: a client layer would join it, and a numeric
+// depth would silently renumber every consumer when it did.
+const (
+	blockedByGlobal         = "global"
+	blockedByProfileServers = "profile:servers"
+	blockedByProfileTools   = "profile:tools"
+)
+
 // offlineCatalog aggregates the cached tools of the ENABLED servers (only
 // serverArg when given) under the same exposed-name rules the gateway uses,
-// and splits them by the global allow list.
+// and splits them by the narrowing layers it was asked for.
 //
-// The split is done by MERGING the layer, not by filtering the slice: a rule
+// The split is done by MERGING the layers, not by filtering the slice: a rule
 // read straight off servers.json here would be a second implementation of
 // what pipeline.ScopeAllows decides for every live call, and the two would
 // eventually disagree about the case nobody tested. Only the CLIENT-specific
 // layers are left out — there is no session to resolve them against — which
-// is exactly what makes this "what the machine offers", the common prefix of
-// what every client sees.
+// is what makes the global answer "what the machine offers", the common
+// prefix of what every client sees, and the profile answer the same thing one
+// layer down.
 //
 // The router is built from the FULL cached set before the split, because
 // exposed names come from collision handling across the whole catalog: a
@@ -313,13 +344,22 @@ func (l *ToolList) mark(blocked []discovery.Tool) {
 type offlineCatalog struct {
 	visible []discovery.Tool
 	blocked []discovery.Tool
-	pending []ToolRow // named by a rule, absent from every cached catalog
+	// blockedBy names the layer each blocked tool was taken by, keyed by
+	// exposed name. The VERDICT always comes from the merge; only the label
+	// is read off the rules, and only for tools the merge already dropped.
+	blockedBy map[string]string
+	pending   []ToolRow // named by a rule, absent from every cached catalog
 }
 
+// offlineCatalogOf computes the catalog under the global layer, and under the
+// named profile too when profileName is not empty. The profile is resolved
+// through scope.PinnedProfileLayer, so a name that does not exist fail-closes
+// to a block-all layer here exactly as it does for a session.
 func offlineCatalogOf(
 	snap *registry.Snapshot,
 	cached map[string][]mcp.ToolDef,
 	serverArg string,
+	profileName string,
 ) (offlineCatalog, error) {
 	servers := snap.Servers.V.Servers
 	selected := make(map[string][]mcp.ToolDef, len(cached))
@@ -338,13 +378,6 @@ func offlineCatalogOf(
 	if err != nil {
 		return offlineCatalog{}, fmt.Errorf("aggregate cached tools: %w", err)
 	}
-
-	all := discovery.Visible(rt, nil)
-	out := offlineCatalog{visible: all}
-	layer, ok := scope.ServerToolsLayer(snap)
-	if !ok {
-		return out, nil // no server carries a rule: everything is offered
-	}
 	// The catalog scope intersects against is keyed by RAW tool names, which
 	// is why it is rebuilt from the cache rather than read off the router:
 	// the router speaks exposed names, and seeding an intersection with those
@@ -357,20 +390,47 @@ func offlineCatalogOf(
 		}
 		raw[id] = names
 	}
-	eff, err := scope.Merge([]scope.ScopeLayer{layer}, router.NewCatalog(raw))
+	catalog := router.NewCatalog(raw)
+
+	all := discovery.Visible(rt, nil)
+	out := offlineCatalog{visible: all, blockedBy: map[string]string{}}
+
+	var layers []scope.ScopeLayer
+	if layer, ok := scope.ServerToolsLayer(snap); ok {
+		layers = append(layers, layer)
+	}
+	// Each layer is applied on top of the ones above it and the difference
+	// attributed to it, so the label is derived from the same merge as the
+	// verdict rather than from a second reading of the rules.
+	survivors, err := visibleUnder(rt, catalog, layers)
 	if err != nil {
 		return offlineCatalog{}, fmt.Errorf("resolve the global allow list: %w", err)
 	}
-	kept := discovery.Visible(rt, eff)
-	live := make(map[string]bool, len(kept))
-	for _, t := range kept {
-		live[t.Exposed] = true
-	}
-	out.visible = kept
-	for _, t := range all {
-		if !live[t.Exposed] {
-			out.blocked = append(out.blocked, t)
+	out.visible = survivors
+	out.attribute(all, survivors, func(discovery.Tool) string { return blockedByGlobal })
+
+	var profile registry.Profile
+	if profileName != "" {
+		layer, ok := scope.PinnedProfileLayer(snap, profileName)
+		layers = append(layers, layer)
+		if ok {
+			profile = snap.Profiles.V.Profiles[profileName].V
 		}
+		afterProfile, perr := visibleUnder(rt, catalog, layers)
+		if perr != nil {
+			return offlineCatalog{}, fmt.Errorf("resolve profile %q: %w", profileName, perr)
+		}
+		out.visible = afterProfile
+		// A profile narrows on two axes and they need different repairs:
+		// `profile server add` puts the server back, `profile tool allow`
+		// widens the selector. Which of the two applies is read off the
+		// profile, but only for tools the merge has already dropped.
+		out.attribute(survivors, afterProfile, func(t discovery.Tool) string {
+			if !profileIncludesServer(profile, t.ServerID) {
+				return blockedByProfileServers
+			}
+			return blockedByProfileTools
+		})
 	}
 
 	// Pending: a rule naming a tool no cached catalog has. It cannot come
@@ -391,8 +451,48 @@ func offlineCatalogOf(
 				Description: "named by the allow list; no cached catalog has it",
 			})
 		}
+		if profileName == "" {
+			continue
+		}
+		for _, name := range unknownRuleNames(profile.Tools[id].V.Allow, selected[id]) {
+			out.pending = append(out.pending, ToolRow{
+				Server: id, RawName: name, State: toolStatePending,
+				BlockedBy:   blockedByProfileTools,
+				Description: "named by the profile's allow list; no cached catalog has it",
+			})
+		}
 	}
 	return out, nil
+}
+
+// visibleUnder resolves what survives a set of layers. No layers at all means
+// no narrowing, which is a merge that would have nothing to do — and a nil
+// scope is what discovery.Visible already reads as "everything".
+func visibleUnder(rt *router.Router, catalog router.Catalog, layers []scope.ScopeLayer) ([]discovery.Tool, error) {
+	if len(layers) == 0 {
+		return discovery.Visible(rt, nil), nil
+	}
+	eff, err := scope.Merge(layers, catalog)
+	if err != nil {
+		return nil, err
+	}
+	return discovery.Visible(rt, eff), nil
+}
+
+// attribute records everything present in before and absent from after as
+// blocked, labelled by the layer that closed between the two.
+func (c *offlineCatalog) attribute(before, after []discovery.Tool, by func(discovery.Tool) string) {
+	live := make(map[string]bool, len(after))
+	for _, t := range after {
+		live[t.Exposed] = true
+	}
+	for _, t := range before {
+		if live[t.Exposed] {
+			continue
+		}
+		c.blocked = append(c.blocked, t)
+		c.blockedBy[t.Exposed] = by(t)
+	}
 }
 
 // surfaceOf wraps a tool set in the full-mode discovery surface --search

@@ -159,7 +159,7 @@ func (a *App) newToolInspectCmd() *cobra.Command {
 					return e
 				}
 			}
-			cat, err := offlineCatalogOf(snap, cached, serverArg)
+			cat, err := offlineCatalogOf(snap, cached, serverArg, "")
 			if err != nil {
 				return err
 			}

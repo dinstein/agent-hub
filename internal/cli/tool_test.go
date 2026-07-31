@@ -277,6 +277,12 @@ func TestToolLsAppliesTheGlobalAllowList(t *testing.T) {
 	states := map[string]string{}
 	for _, r := range rows {
 		states[r.Name] = r.State
+		if r.State == "blocked" && r.BlockedBy != blockedByGlobal {
+			t.Errorf("%s was blocked by %q, want the global layer named", r.Name, r.BlockedBy)
+		}
+		if r.State == "on" && r.BlockedBy != "" {
+			t.Errorf("%s is offered and still names a layer (%q)", r.Name, r.BlockedBy)
+		}
 	}
 	if states["fs__write_file"] != "blocked" || states["fs__read_file"] != "on" {
 		t.Errorf("--all states = %v, want write_file blocked and read_file on", states)
@@ -284,6 +290,11 @@ func TestToolLsAppliesTheGlobalAllowList(t *testing.T) {
 	_, out, _ = runCLI(t, "", "server", "tool", "ls", "--all")
 	if !strings.Contains(out, "STATE") {
 		t.Errorf("--all must add the state column:\n%s", out)
+	}
+	// One layer, one possible answer: a BY column would be the same word on
+	// every blocked row, which is not an answer to anything.
+	if strings.Contains(out, "BY") {
+		t.Errorf("the global listing must not grow a BY column:\n%s", out)
 	}
 }
 
