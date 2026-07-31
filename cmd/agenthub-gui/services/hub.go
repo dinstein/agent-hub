@@ -272,16 +272,31 @@ func (h *Hub) connect(ctx context.Context, allowStart bool) (*api.Client, error)
 		c   *api.Client
 		err error
 	)
+	// Every connect WRITES the ownership claim, it never merely raises it.
+	// dialOrStart answers "did this call start the daemon" both ways, and
+	// only the true half used to be recorded — so a false, which is
+	// dialOrStart saying "I found one already running", was discarded and
+	// whatever the claim happened to hold survived. Combined with the
+	// clearing in dropClient below, h.spawned now describes the daemon this
+	// Hub is talking to RIGHT NOW rather than one it once started.
 	if allowStart {
 		var spawned bool
 		c, spawned, err = h.dialer.dialOrStart(ctx)
-		if err == nil && spawned {
+		if err == nil {
 			h.mu.Lock()
-			h.spawned = true
+			h.spawned = spawned
 			h.mu.Unlock()
 		}
 	} else {
 		c, err = h.dialer.dial(ctx)
+		if err == nil {
+			// dial only ever FINDS a daemon. Reaching here means the
+			// previous client was dropped, so anything answering now
+			// started without us.
+			h.mu.Lock()
+			h.spawned = false
+			h.mu.Unlock()
+		}
 	}
 	if err != nil {
 		h.setStatus(Status{Error: err.Error()})
@@ -360,6 +375,13 @@ func (h *Hub) dropClient(err error) {
 	h.mu.Lock()
 	c := h.client
 	h.client = nil
+	// The ownership claim dies with the client that carried it. It named a
+	// daemon reached over THIS connection, and a transport-level failure
+	// means that daemon is gone or unreachable; leaving the claim standing
+	// let the next connect — a plain dial, which cannot spawn — inherit it
+	// and point it at somebody else's daemon, which the GUI then SIGTERMed
+	// on window close.
+	h.spawned = false
 	h.status = Status{Socket: h.status.Socket, Error: err.Error()}
 	cancel, done := h.pumpCancel, h.pumpDone
 	h.pumpCancel, h.pumpDone = nil, nil

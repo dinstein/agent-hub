@@ -1117,6 +1117,16 @@ repeatedly crashing daemon doesn't get resurrected on every click.
 plane error (a well-formed error envelope) means the daemon answered and merely said no — the connection is left alone; only a
 transport-level failure clears the client and makes the next call re-dial.
 
+**The ownership claim describes the daemon on the other end right now, never one this process once started.** `stop` SIGTERMs
+the daemon only when `h.spawned` says the GUI started it — a daemon that was already running belongs to whoever started it,
+and taking it down would end their session to tidy up after ours. That claim was only ever written `true`: `dialOrStart`
+answers the question both ways and the "I found one already running" half was discarded, while `dropClient` cleared every
+field except this one. A GUI that started a daemon, lost it, and reconnected by plain dial therefore still believed a stranger's
+daemon was its own. So **every connect writes the claim** (including `false` from the dial-only path, which cannot spawn), and
+**`dropClient` clears it alongside the client that carried it**. The pid is not the weak part: it comes from `Hello.Pid` over
+the control socket, the same verified identity `daemon stop` uses. One door is still open and recorded below — `DialOrStartSpawned`
+can report `true` for a daemon someone else started concurrently, and the claim is now only as good as that answer.
+
 **Health is rendered, never derived.** `ServerHealth` is a filter over the result of `ListServers` rather than a call to a
 per-server endpoint: the list payload and the `servers` SSE payload are the same bytes, so Health has exactly one source and
 no second endpoint that could drift.
