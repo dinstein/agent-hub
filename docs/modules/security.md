@@ -207,15 +207,29 @@ that will be missing from the next assembly.
   The `=false` branch is also the one place in the flag loop that continues **without** consuming a
   value, which is the shape `containerBoolFlags` was inverted to prevent; `TestPrivilegedFalseDoesNotBlindTheScan`
   is the regression for it.
-- **`--device` is an allow list of pseudo-devices** (`/dev/null`, `/dev/zero`, `/dev/full`,
-  `/dev/random`, `/dev/urandom`, `/dev/tty`), matched on the host source — the first colon-separated
-  field of `host-src[:container-dest[:permissions]]`, cleaned. Refusing only the exact path `/dev` was
-  the wrong direction for the same reason a tool selector is never a deny list: the set of device
-  nodes that grants something dangerous is open-ended and machine-specific (`/dev/sda`,
-  `/dev/nvme0n1`, `/dev/mem`, whatever a driver installed this morning), and `--device=/dev/sda` hands
-  over the host filesystem as completely as the whole tree does. **The runtime never generates either
-  flag itself** — both can only arrive through an operator's `extraArgs` — so tightening them cannot
-  invalidate a configuration AgentHub produced.
+- **`--device` is a DENY list of block and memory devices**, matched on the cleaned host source — the
+  first colon-separated field of `host-src[:container-dest[:permissions]]`. Refusing only the exact
+  path `/dev` blocked the one form docker itself rejects, while `--device=/dev/sda` handed over the
+  host filesystem and `/dev/mem` handed over its RAM. What is denied now: the `/dev` tree, `/dev/mem`,
+  `/dev/kmem`, `/dev/kcore`, `/dev/port`, and the block-device families (`sd`, `hd`, `vd`, `xvd`,
+  `nvme`, `dm-`, `md`, `loop`, plus the `mapper/` and `disk/` symlink trees).
+
+  **This is the deliberate exception to "never a deny list", and the exception is what the rule is
+  actually about.** That rule governs *tool selectors*, where the question is "what may this client
+  reach" and an unknown answer must be no. Here the layer's own stated direction is the opposite —
+  *deterministic checks always block; shape checks fail open* — because spawnguard judges a command
+  line the **operator wrote**, and it is anti-smuggling rather than a sandbox. An allow list of device
+  nodes cannot be completed: `/dev/dri`, `/dev/kvm`, `/dev/fuse`, `/dev/net/tun`, `/dev/snd`,
+  `/dev/ttyUSB0` are all ordinary requests from a real server, and each new driver adds more. The
+  denied set is the opposite shape — enumerable, stable across machines, and with no use inside an
+  MCP server.
+
+  **The cost of a false positive changed when the guard moved onto the spawn path**, which is why the
+  width matters more than it used to: a refused device is now a server that dies at connect with
+  `ClassFatal`, not a configuration rejected at `server add`. A narrow allow list shipped after that
+  move would have taken working GPU, VM, FUSE and serial-device servers down at their next connect.
+- **The runtime never generates `--privileged` or `--device` itself** — both can only arrive through
+  an operator's `extraArgs` — so neither rule can invalidate a configuration AgentHub produced.
 
 | File | Contents |
 |---|---|

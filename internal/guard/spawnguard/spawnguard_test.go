@@ -146,20 +146,35 @@ func TestCheckBlocksContainerEscape(t *testing.T) {
 		{name: "privileged attached TRUE", cmd: "docker", args: []string{"run", "--privileged=TRUE", "img"}, wantCode: CodeContainerEscape},
 		{name: "privileged attached unparseable", cmd: "docker", args: []string{"run", "--privileged=yes", "img"}, wantCode: CodeContainerEscape},
 		{name: "device raw disk", cmd: "docker", args: []string{"run", "--device=/dev/sda", "img"}, wantCode: CodeContainerEscape},
+		{name: "device disk partition", cmd: "docker", args: []string{"run", "--device=/dev/sda1", "img"}, wantCode: CodeContainerEscape},
 		{name: "device raw disk separate", cmd: "docker", args: []string{"run", "--device", "/dev/nvme0n1", "img"}, wantCode: CodeContainerEscape},
+		{name: "device nvme partition", cmd: "docker", args: []string{"run", "--device=/dev/nvme0n1p2", "img"}, wantCode: CodeContainerEscape},
 		{name: "device with container path", cmd: "docker", args: []string{"run", "--device=/dev/sda:/dev/xvda", "img"}, wantCode: CodeContainerEscape},
 		{name: "device with permissions", cmd: "docker", args: []string{"run", "--device=/dev/sda:/dev/xvda:rwm", "img"}, wantCode: CodeContainerEscape},
 		{name: "device mem", cmd: "docker", args: []string{"run", "--device=/dev/mem", "img"}, wantCode: CodeContainerEscape},
+		{name: "device kcore", cmd: "docker", args: []string{"run", "--device=/dev/kcore", "img"}, wantCode: CodeContainerEscape},
+		{name: "device port", cmd: "docker", args: []string{"run", "--device=/dev/port", "img"}, wantCode: CodeContainerEscape},
+		{name: "device luks mapper", cmd: "docker", args: []string{"run", "--device=/dev/mapper/root", "img"}, wantCode: CodeContainerEscape},
+		{name: "device by-uuid symlink", cmd: "docker", args: []string{"run", "--device=/dev/disk/by-uuid/1234", "img"}, wantCode: CodeContainerEscape},
+		{name: "device lvm", cmd: "docker", args: []string{"run", "--device=/dev/dm-0", "img"}, wantCode: CodeContainerEscape},
+		{name: "device loop", cmd: "docker", args: []string{"run", "--device=/dev/loop0", "img"}, wantCode: CodeContainerEscape},
 		{name: "device whole dev", cmd: "docker", args: []string{"run", "--device=/dev", "img"}, wantCode: CodeContainerEscape},
 		{name: "device traversal to disk", cmd: "docker", args: []string{"run", "--device=/dev/null/../sda", "img"}, wantCode: CodeContainerEscape},
 	})
 }
 
-// TestPrivilegedFalseAndHarmlessDevicesPass pins the OTHER direction of the
+// TestPrivilegedFalseAndOrdinaryDevicesPass pins the OTHER direction of the
 // two checks above. Both were widened from a single hard-coded token
 // ("--privileged" exactly, "/dev" exactly), and a fix that simply refused
 // every form would be indistinguishable here from one that judges the value.
-func TestPrivilegedFalseAndHarmlessDevicesPass(t *testing.T) {
+//
+// The device half matters more than it looks. spawnguard now runs at SPAWN
+// time, not only at `server add` time, so a device this table refuses is a
+// server that dies at connect with ClassFatal rather than a configuration
+// rejected when it was written. Every entry below is something a real MCP
+// server asks for — GPU inference, a VM, a FUSE mount, a VPN tunnel, audio, a
+// USB serial device — and none of them hands over the host.
+func TestPrivilegedFalseAndOrdinaryDevicesPass(t *testing.T) {
 	t.Parallel()
 	g := New(Config{})
 	runMatrix(t, g, []checkCase{
@@ -167,6 +182,15 @@ func TestPrivilegedFalseAndHarmlessDevicesPass(t *testing.T) {
 		{name: "privileged false zero", cmd: "docker", args: []string{"run", "--privileged=0", "img"}},
 		{name: "device null", cmd: "docker", args: []string{"run", "--device=/dev/null", "img"}},
 		{name: "device urandom remapped", cmd: "docker", args: []string{"run", "--device=/dev/urandom:/dev/random", "img"}},
+		{name: "device gpu", cmd: "docker", args: []string{"run", "--device=/dev/dri", "img"}},
+		{name: "device gpu render node", cmd: "docker", args: []string{"run", "--device=/dev/dri/renderD128", "img"}},
+		{name: "device nvidia", cmd: "docker", args: []string{"run", "--device=/dev/nvidia0", "img"}},
+		{name: "device kvm", cmd: "docker", args: []string{"run", "--device=/dev/kvm", "img"}},
+		{name: "device fuse", cmd: "docker", args: []string{"run", "--device=/dev/fuse", "img"}},
+		{name: "device tun", cmd: "docker", args: []string{"run", "--device=/dev/net/tun", "img"}},
+		{name: "device sound", cmd: "docker", args: []string{"run", "--device=/dev/snd", "img"}},
+		{name: "device usb serial", cmd: "docker", args: []string{"run", "--device=/dev/ttyUSB0", "img"}},
+		{name: "device usb acm with perms", cmd: "docker", args: []string{"run", "--device=/dev/ttyACM0:/dev/ttyACM0:rw", "img"}},
 	})
 }
 

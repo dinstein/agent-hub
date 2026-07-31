@@ -416,23 +416,63 @@ var containerBoolFlags = map[string]bool{
 	"--help": true, "--no-cgroupns": true,
 }
 
-// harmlessDevices are the only --device sources that may be passed into a
-// container.
+// escapeDevices and escapeDevicePrefixes name the --device sources that hand
+// a container the host itself. Everything else passes.
 //
-// This table is an allow list for the same reason the tool selectors are:
-// --device hands the container direct access to a host device node, and the
-// set of nodes that grants something dangerous is open-ended and
-// machine-specific (/dev/sda, /dev/nvme0n1, /dev/mem, /dev/kvm, whatever a
-// driver installed this morning). A deny list would have to name all of them
-// and would answer the arrival of a new device node by allowing it.
+// This one is a DENY list, and it is the deliberate exception to the allow-list
+// rule — which is about tool selectors, where the question is "what may this
+// client reach" and an unknown answer must be no. Here the layer's own stated
+// failure direction is the opposite: "deterministic checks always block; shape
+// checks fail open" (docs/modules/security.md), because spawnguard is
+// anti-smuggling over a command line the OPERATOR wrote, not a sandbox. An
+// allow list of device nodes could never be complete — /dev/dri, /dev/kvm,
+// /dev/fuse, /dev/net/tun, /dev/snd, /dev/ttyUSB0 are all ordinary things a
+// server legitimately asks for — so it would refuse working configurations,
+// which after the guard moved onto the spawn path means the server is dead at
+// connect rather than rejected at `server add`.
 //
-// What is here is the pseudo-device set a container can already obtain from
-// its own image: they carry no host state. Anything else is refused, and a
-// legitimate device is a configuration decision an operator makes by not
-// using the container runtime for that server.
-var harmlessDevices = map[string]bool{
-	"/dev/null": true, "/dev/zero": true, "/dev/full": true,
-	"/dev/random": true, "/dev/urandom": true, "/dev/tty": true,
+// What is denied is the set whose grant is the host: raw block devices (the
+// filesystem, bypassing every permission on it) and the memory/port devices
+// (kernel memory, arbitrary I/O). Those are enumerable, they do not grow with
+// each new driver, and none of them has a use inside an MCP server.
+var escapeDevices = map[string]bool{
+	"/dev":       true, // the whole tree
+	"/dev/mem":   true, // physical memory
+	"/dev/kmem":  true, // kernel virtual memory
+	"/dev/kcore": true,
+	"/dev/port":  true, // I/O ports
+}
+
+// escapeDevicePrefixes are the block-device families, matched on the node name
+// so /dev/sda, /dev/sda1 and /dev/nvme0n1p2 are all covered.
+var escapeDevicePrefixes = []string{
+	"/dev/sd",   // SCSI/SATA disks
+	"/dev/hd",   // legacy IDE disks
+	"/dev/vd",   // virtio disks
+	"/dev/xvd",  // Xen disks
+	"/dev/nvme", // NVMe namespaces
+	"/dev/dm-",  // device-mapper (LVM, LUKS)
+	"/dev/md",   // software RAID
+	"/dev/loop", // loop devices
+	"/dev/mapper/",
+	"/dev/disk/", // the by-id/by-uuid symlink trees
+}
+
+// deviceIsEscape reports whether a --device host source hands over the host.
+//
+// Failure direction: allow, matching this layer's shape checks. The path is
+// cleaned first so /dev/null/../sda is judged as /dev/sda.
+func deviceIsEscape(src string) bool {
+	clean := path.Clean(src)
+	if escapeDevices[clean] {
+		return true
+	}
+	for _, p := range escapeDevicePrefixes {
+		if strings.HasPrefix(clean, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // privilegedIsOn reports whether a --privileged argument enables privileged
@@ -565,13 +605,11 @@ func checkContainerFlag(key, val string) error {
 		}
 	case "--device":
 		// The spec is host-src[:container-dest[:permissions]], so the host
-		// node is the first colon-separated field. Refusing everything
-		// outside harmlessDevices is the fail-closed direction: --device=/dev
-		// is the least likely form anyone writes, and --device=/dev/sda hands
-		// over the host filesystem just as completely.
+		// node is the first colon-separated field.
 		src, _, _ := strings.Cut(val, ":")
-		if !harmlessDevices[path.Clean(src)] {
-			return blockedf(CodeContainerEscape, "--device=%s exposes a host device", val)
+		if deviceIsEscape(src) {
+			return blockedf(CodeContainerEscape,
+				"--device=%s exposes a host block or memory device", val)
 		}
 	}
 	return nil
