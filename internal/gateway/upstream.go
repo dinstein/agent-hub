@@ -217,6 +217,7 @@ func (g *gateway) acceptRequestMeta(req *mcp.Request) bool {
 	g.clientCaps = probe.Meta.ClientCapabilities
 	wasInitialized := g.initialized
 	g.initialized = true
+	ready := g.ready
 	g.mu.Unlock()
 	if first {
 		g.log.Info("stateless upstream session", "client", clientName(probe.Meta.ClientInfo))
@@ -224,6 +225,16 @@ func (g *gateway) acceptRequestMeta(req *mcp.Request) bool {
 	if first && !wasInitialized {
 		// The first stateless request plays the role notifications/initialized
 		// plays on the stateful path: deferred change signals may flow now.
+		//
+		// The live catalog may have arrived while the session was still
+		// uninitialized, in which case swapCatalog DROPPED its notification
+		// and nothing else will resend it: swapCatalog re-baselines lastScope
+		// on the way past, so the refresh below sees no content change and
+		// stays silent. Deliver it here, exactly as the stateful path does on
+		// notifications/initialized.
+		if ready {
+			g.notifyToolsChanged()
+		}
 		// No roots prefetch — 2026-07-28 removed server-initiated RPCs, so
 		// the client can never be asked (see clientRoots.fetchFromClient).
 		go g.refreshScopeAndNotify()

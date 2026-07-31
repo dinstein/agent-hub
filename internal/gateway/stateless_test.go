@@ -127,6 +127,39 @@ func TestStatelessSessionEndToEnd(t *testing.T) {
 	}
 }
 
+// TestStatelessNotifiesWhenTheCatalogWentLiveFirst pins the deferred
+// notification at the order TestStatelessSessionEndToEnd only reaches by
+// luck: the live catalog arrives BEFORE the first _meta request, so
+// swapCatalog sees an uninitialized session and drops its list_changed.
+// Nothing resends it on the scope path — swapCatalog re-baselines lastScope
+// as it goes past, so refreshScopeAndNotify finds no content change — which
+// left a 2026-07-28 client holding the cold catalog until its 60s TTL
+// expired, and made the end-to-end test flaky in CI on exactly this race.
+func TestStatelessNotifiesWhenTheCatalogWentLiveFirst(t *testing.T) {
+	resolver := testResolver(t.TempDir())
+	seedRegistry(t, resolver, "fake")
+	g, c, _ := startGateway(t, Config{
+		ClientID: "test-client",
+		Resolver: resolver,
+		Dial:     scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
+	})
+
+	// No _meta has been sent yet, so the session is still uninitialized when
+	// the connection completes and publishes the live catalog.
+	waitFor(t, "the live catalog while the session is still uninitialized", func() bool {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		return g.ready
+	})
+
+	if resp := c.call(mcp.MethodToolsList, map[string]any{
+		"_meta": meta2026(mcp.ClientCapabilities{}),
+	}); resp.Error != nil {
+		t.Fatalf("tools/list: %v", resp.Error)
+	}
+	c.waitNotification(mcp.NotificationToolsListChanged)
+}
+
 // TestStatelessRejectsWrongMetaVersion pins the fail-closed direction: a
 // _meta declaring a version this gateway cannot serve statelessly is
 // rejected with the spec's code, not answered with semantics the session
