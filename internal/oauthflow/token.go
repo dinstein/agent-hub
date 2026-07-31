@@ -105,6 +105,61 @@ func BuildAuthorizeURL(req AuthorizeRequest) (string, error) {
 	return u.String(), nil
 }
 
+// AuthorizeURL renders the authorization request URL and screens where it
+// points BEFORE anyone can open it.
+//
+// BuildAuthorizeURL is the pure renderer and stays that way; this is the
+// method the flows call, because the endpoint being rendered normally comes
+// out of a metadata document a remote authorization server wrote.
+//
+// Why screen a destination this process never fetches: the browser fetches
+// it, carrying the user's ambient cookies to whatever the URL names. An AS
+// advertising `authorization_endpoint: http://10.0.0.5:8080/authorize`
+// would otherwise drive the user's browser at an internal service — an SSRF
+// whose client is the human's session instead of ours. An operator-PINNED
+// endpoint has always been screened, and `checkURL` says why in as many
+// words: this destination receives the user's authorization code, so it is
+// exactly as sensitive. The discovered endpoint is the same destination.
+//
+// This refuses an authorization server living on a private address, and
+// that costs nothing which worked before: the token endpoint of that same
+// server already goes through `checkURL` in `postForm`, so the flow could
+// never complete. It failed one step later, after the browser had already
+// been sent there.
+//
+// Two limits, stated rather than implied: the browser resolves the name
+// itself, so a rebind between this check and the navigation is out of
+// reach, and an injected `Flow.Open` can ignore all of it.
+func (c *Client) AuthorizeURL(req AuthorizeRequest) (string, error) {
+	raw, err := BuildAuthorizeURL(req)
+	if err != nil {
+		return "", err
+	}
+	if err := c.screenBrowserURL(req.Metadata.AuthorizationEndpoint); err != nil {
+		return "", err
+	}
+	return raw, nil
+}
+
+// screenBrowserURL screens a destination the USER'S BROWSER is about to be
+// sent to, under the same rules as one this process would fetch itself.
+//
+// Failure direction: fail-closed at every branch, inheriting checkURL's.
+func (c *Client) screenBrowserURL(raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return newFlowError(ErrorTypeAuthorization,
+			fmt.Errorf("oauthflow: bad browser destination %q: %w", raw, err))
+	}
+	err = c.checkURL(u)
+	var fe *FlowError
+	if errors.As(err, &fe) {
+		fe.Suggestion = "the authorization server advertised a destination we refuse to send a browser to; " +
+			"pin a trusted issuer, or allow loopback if this is a local authorization server"
+	}
+	return err
+}
+
 // TokenResponse is an RFC 6749 §5.1 successful token response.
 type TokenResponse struct {
 	AccessToken  string

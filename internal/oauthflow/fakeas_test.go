@@ -39,6 +39,10 @@ type fakeAS struct {
 	servedMetadata map[string]bool
 	// deviceEndpoint enables device_authorization_endpoint in metadata.
 	deviceEndpoint bool
+	// verificationURI overrides the verification_uri the device
+	// authorization response carries. It is a destination for the user's
+	// browser, named by the AS.
+	verificationURI string
 	// noRegistration omits registration_endpoint from metadata.
 	noRegistration bool
 	// plainOnlyPKCE advertises only the "plain" challenge method.
@@ -73,6 +77,11 @@ type fakeAS struct {
 	// authorization_endpoint. It models a provider whose per-resource
 	// document names a different authorize URL than its generic one.
 	authorizeSuffix string
+	// authorizeOverride, when set, REPLACES the advertised
+	// authorization_endpoint. It models an authorization server naming a
+	// destination it does not own: the user's browser is what would go
+	// there, carrying whatever cookies it holds for that address.
+	authorizeOverride string
 	// prmScopes overrides the protected-resource document's
 	// scopes_supported. nil keeps the default; an empty non-nil slice omits
 	// the member entirely.
@@ -138,6 +147,9 @@ func (f *fakeAS) metadata() *AuthServerMetadata {
 		TokenEndpoint:                 f.srv.URL + "/token",
 		CodeChallengeMethodsSupported: []string{"S256"},
 		AuthorizationResponseIssParameterSupported: true,
+	}
+	if f.authorizeOverride != "" {
+		md.AuthorizationEndpoint = f.authorizeOverride
 	}
 	if !f.noRegistration {
 		md.RegistrationEndpoint = f.srv.URL + "/register"
@@ -244,10 +256,14 @@ func (f *fakeAS) serveDevice(w http.ResponseWriter, r *http.Request) {
 	f.deviceCalls++
 	interval := f.deviceInterval
 	f.mu.Unlock()
+	uri := f.srv.URL + "/activate"
+	if f.verificationURI != "" {
+		uri = f.verificationURI
+	}
 	resp := map[string]any{
 		"device_code":      "device-code-1",
 		"user_code":        "WDJB-MJHT",
-		"verification_uri": f.srv.URL + "/activate",
+		"verification_uri": uri,
 		"expires_in":       1800,
 	}
 	if interval > 0 {

@@ -119,6 +119,19 @@ func (c *Client) StartDevice(ctx context.Context, req DeviceRequest) (*DeviceAut
 	if uri == "" {
 		uri = raw.VerificationURIAlt
 	}
+	// Both of these are opened in the user's browser and both came out of
+	// the AS's own response, so they are screened for the reason
+	// AuthorizeURL gives: the browser carries the user's ambient cookies to
+	// whatever this names. Fail-closed — a device flow that can only offer
+	// a destination we refuse to open is a device flow that does not start.
+	for _, u := range []string{uri, raw.VerificationURIComplete} {
+		if strings.TrimSpace(u) == "" {
+			continue
+		}
+		if err := c.screenBrowserURL(u); err != nil {
+			return nil, err
+		}
+	}
 	return &DeviceAuthorization{
 		DeviceCode:              raw.DeviceCode,
 		UserCode:                raw.UserCode,

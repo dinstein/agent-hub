@@ -372,7 +372,8 @@ discovery ──► registration ──► authorization ──► token exchang
   `NewDCRRegistrar` (RFC 7591, marked deprecated upstream), `NewClientIDMetadataRegistrar` (the
   successor mechanism; in M1 it's a seam only and `Register` returns `ErrNotImplemented`), and
   `NewStaticRegistrar` (an operator-provisioned client_id).
-- `PKCE`/`NewPKCE`/`NewState`/`SupportsS256` are the proof-key layer; `BuildAuthorizeURL`,
+- `PKCE`/`NewPKCE`/`NewState`/`SupportsS256` are the proof-key layer; `BuildAuthorizeURL`
+  (pure renderer) with `Client.AuthorizeURL` (renders and screens — what the flows call),
   `Client.Exchange`, `Client.Refresh`, and `TokenResponse` are the protocol layer.
 - Three modes: `LoopbackListener`/`LoopbackFlow` (bind → register → serve → open browser → wait),
   `ParseManualCallback`/`NewManualInstructions` (pasted callback), and
@@ -408,6 +409,21 @@ discovery ──► registration ──► authorization ──► token exchang
   refresh token — to whatever listens on this host's loopback interface. Requiring both halves is what
   keeps a poisoned `localhost` on the netguard branch. `isLiteralLoopbackHost` is DNS-free for this
   reason and had, until then, never been consulted on the dial path.
+- **A destination the USER'S BROWSER is sent to is screened by the same rules as one we would fetch
+  ourselves.** `Client.AuthorizeURL` (the method every flow calls; `BuildAuthorizeURL` stays a pure
+  renderer) and `StartDevice`'s two verification URIs all pass through `screenBrowserURL` →
+  `checkURL`. The endpoints come out of a metadata document or a token-endpoint response that a remote
+  authorization server wrote, and the browser carries the user's ambient cookies to whatever they
+  name: an AS advertising `authorization_endpoint: https://10.0.0.5:8080/authorize` was otherwise an
+  SSRF whose client is the human's session rather than ours. Only the operator-PINNED endpoint used to
+  be screened, and `checkURL` gives the reason that applies identically to the discovered one — this
+  destination receives the user's authorization code, so it is exactly as sensitive.
+  `internal/cli/browser.go` refuses a non-`http(s)` scheme, which closed the `file://` half and not the
+  private-address half, and `Flow.Open` is injectable, so no opener could be relied on as the backstop.
+  Refusing an AS on a private address breaks nothing that worked: that server's token endpoint is
+  already screened in `postForm`, so the flow died one step later — after the browser had been sent
+  there. Two limits this cannot reach, and they are the reason the screen is not the whole defence: the
+  browser resolves the name itself, and an injected `Open` can ignore the answer.
 - **PKCE is never downgraded.** `ChallengeMethodS256` is the only method ever sent, and there is no
   `plain` code path in the package. `randRead` is a package-level variable rather than a config
   option — making the entropy source configurable would be manufacturing exactly that downgrade path.
@@ -523,16 +539,6 @@ recorded beside the invariant they bend rather than in a backlog file, because t
 see them. None was fixed on the sweep's branch, whose scope was the findings both engines confirmed
 independently plus the two single-engine highs.
 
-- **`oauthflow/token.go:77` — a DISCOVERED `authorization_endpoint` is never SSRF-screened before the
-  browser opens it.** Only an operator-PINNED endpoint goes through `Client.checkURL`; `BuildAuthorizeURL`
-  merely `url.Parse`s what the metadata document said, and `LoopbackFlow.Run` hands the result to
-  `Flow.Open`. A public AS advertising `authorization_endpoint: http://10.0.0.5:8080/authorize` thus
-  drives the user's browser, with its ambient intranet cookies, at an internal destination.
-  `validateMetadata` checks presence, not scheme or destination. `internal/cli/browser.go` refuses
-  non-`http(s)` schemes, which closes the `file://` half but not the private-address half — and
-  `Flow.Open` is injectable, so other openers get no backstop. The pinned path is screened and says
-  why, in as many words: "this destination receives the user's authorization code, so it is exactly as
-  sensitive". The discovered path is the same destination.
 - **`netguard.go:103` — the non-public prefix table omits RFC 8215's local-use NAT64 prefix
   `64:ff9b:1::/48`.** The v4-embedding group lists `64:ff9b::/96`, `::/96` and `2002::/16` and nothing
   else, so on a network routing the local-use prefix through a NAT64 translator, a literal from it

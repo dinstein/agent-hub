@@ -352,7 +352,7 @@ func (f *Flow) loginLoopback(ctx context.Context, req LoginRequest, disc *Discov
 		if rerr != nil {
 			return "", rerr
 		}
-		return BuildAuthorizeURL(AuthorizeRequest{
+		return f.Client.AuthorizeURL(AuthorizeRequest{
 			Metadata:    disc.Metadata,
 			ClientID:    creds.ClientID,
 			RedirectURI: redirectURI,
@@ -419,7 +419,7 @@ func (f *Flow) loginManual(ctx context.Context, req LoginRequest, disc *Discover
 	if err != nil {
 		return nil, withServer(err, req.ServerID)
 	}
-	authURL, err := BuildAuthorizeURL(AuthorizeRequest{
+	authURL, err := f.Client.AuthorizeURL(AuthorizeRequest{
 		Metadata:    disc.Metadata,
 		ClientID:    creds.ClientID,
 		RedirectURI: redirect,
