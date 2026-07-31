@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,12 +67,30 @@ func (c *Caller) AllowsServer(serverID string) bool {
 // fail-closed and validates the whole identity") — a
 // token whose tier or allowlist was narrowed since must not keep riding the
 // old session or gateway at its old authority.
+//
+// The allowlist is rendered as a TRI-STATE, not as a joined list. nil means
+// "every server" and an empty slice means "no server at all" — opposite
+// authorities that strings.Join renders identically, so the one narrowing
+// that matters most would be invisible here and a token cut down to nothing
+// would keep reaching everything through its cached gateway until that
+// gateway went idle. The length prefix is what separates [] from [""], the
+// only other pair that would collide.
 func (c *Caller) Identity() string {
 	if c == nil {
 		return ""
 	}
 	return string(c.Kind) + "\x00" + c.Token + "\x00" + string(c.Tier) +
-		"\x00" + strings.Join(c.Servers, ",") + "\x00" + c.Profile
+		"\x00" + serversFingerprint(c.Servers) + "\x00" + c.Profile
+}
+
+// serversFingerprint renders an allowlist so that nil, [] and any list of
+// names are pairwise distinct. "nil" carries no ':' and therefore cannot
+// equal any rendering of a present list.
+func serversFingerprint(servers []string) string {
+	if servers == nil {
+		return "nil"
+	}
+	return strconv.Itoa(len(servers)) + ":" + strings.Join(servers, ",")
 }
 
 // ErrUnauthorized is the single authentication failure. It is deliberately

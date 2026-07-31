@@ -685,7 +685,13 @@ appearing in `token ls`), so a name always resolves back to exactly one credenti
 **Session binding is fail-closed and validates the whole identity.** `Caller.Identity()` composes kind, token name, tier,
 allowlist, and profile into a fingerprint; a session freezes the fingerprint at creation and **compares the whole thing on
 every request** — a token whose tier or allowlist was later narrowed cannot keep riding an old session with old
-privileges. Not found, expired, and owned by someone else all return the same false, and the handler answers the same
+privileges. **The allowlist enters that fingerprint as a tri-state, never as a joined list**: nil (every server), `[]`
+(no server at all) and any list of names are pairwise distinct, with a length prefix separating `[]` from `[""]`. A join
+renders the first two identically, which made the single most consequential edit an operator can make to
+`<data>/tokens.json` — `"servers": null` to `"servers": []` — invisible to both this check and the per-credential
+gateway cache below, so a token cut down to nothing kept reaching every server until its gateway went 30 minutes idle.
+This is the nil-vs-`[]` distinction AGENTS.md calls load-bearing, on the one path where the two are opposite
+authorities rather than opposite spellings of the same one; `TestIdentitySeparatesEveryAllowlistState` pins it. Not found, expired, and owned by someone else all return the same false, and the handler answers the same
 frozen 404 text (anti-probing). **A session owned by someone else is deliberately not deleted**: an outside prober must not
 be able to destroy other people's sessions by guessing ids. When the table is full, **creation fails rather than evicting**
 — quietly discarding someone else's live session to make room for a new connection would turn a load spike into a data
@@ -1354,16 +1360,6 @@ contract, written the way an agent would read it.
 
 ## Raised by the 2026-07-31 sweep, not fixed on that branch
 
-- **`httpbridge/auth.go:74` — `Caller.Identity()` renders a nil and an empty `Servers` allowlist to the
-  same fingerprint.** It joins the slice, and `strings.Join(nil, ",")` and `strings.Join([]string{}, ",")`
-  are both `""`. So the one credential change that matters most — allow-all becoming allow-nothing — is
-  invisible to both the session owner check and the per-credential gateway cache. An operator narrowing
-  a live token by editing `<data>/tokens.json` from `"servers": null` to `"servers": []` (the natural
-  spelling of "this token reaches nothing", and the store exposes only Create/Revoke so hand edits are
-  anticipated) gets a token that keeps reaching every server through the cached gateway until it goes
-  30 minutes idle. This fails on exactly the nil-vs-`[]` distinction AGENTS.md calls load-bearing and
-  that `token.go` keeps off `omitempty` to preserve. Encoding the tri-state — a distinct marker for nil
-  versus a joined list — is a one-line fix with a one-line test.
 - **`api/dialorstart.go:193` — `DialOrStartSpawned` reports `spawned=true` for any daemon that becomes
   reachable after it launches the start command.** The launcher exits 0 both when it detached its own
   daemon and when it found one already running, so a daemon started concurrently by a terminal or a
