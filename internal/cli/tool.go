@@ -133,13 +133,18 @@ func (l ToolList) Human(w io.Writer) error {
 	}
 	for _, r := range l.Rows {
 		desc := oneLine(r.Description, descriptionColumnBytes)
+		// A pending row has no exposed name to print: nothing routes to it,
+		// and manufacturing one here would be exactly the guess RouteOf
+		// exists to prevent. An empty cell reads as a rendering fault, so
+		// the absence is spelled out.
+		name := dashOr(r.Name, "-")
 		switch {
 		case l.Ranked:
-			_, _ = fmt.Fprintf(tw, "%d\t%d\t%s\t%s\t%s\t%s\n", r.Rank, r.Score, r.Name, r.Server, r.RawName, desc)
+			_, _ = fmt.Fprintf(tw, "%d\t%d\t%s\t%s\t%s\t%s\n", r.Rank, r.Score, name, r.Server, r.RawName, desc)
 		case l.ShowAll:
-			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.State, r.Name, r.Server, r.RawName, desc)
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.State, name, r.Server, r.RawName, desc)
 		default:
-			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", r.Name, r.Server, r.RawName, desc)
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", name, r.Server, r.RawName, desc)
 		}
 	}
 	if err := tw.Flush(); err != nil {
@@ -161,6 +166,7 @@ func (a *App) newToolCmd() *cobra.Command {
 		RunE:    groupRunE,
 	}
 	cmd.AddCommand(a.newToolLsCmd())
+	cmd.AddCommand(a.newToolInspectCmd())
 	cmd.AddCommand(a.newToolAllowCmd())
 	return cmd
 }
@@ -169,14 +175,19 @@ func (a *App) newToolLsCmd() *cobra.Command {
 	var (
 		search  string
 		showAll bool
+		rules   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "ls [<server>]",
 		Short: "List cached tools, optionally ranked by a search query",
 		Long: "List the tools of the configured servers from the gateway's tool cache.\n\n" +
 			"With --search the results are ranked by the same lexical ranker the\n" +
-			fmt.Sprintf("lazy-mode search_tools meta-tool uses, best match first, capped at %d results.",
-				discovery.MaxSearchLimit),
+			fmt.Sprintf("lazy-mode search_tools meta-tool uses, best match first, capped at %d results.\n\n",
+				discovery.MaxSearchLimit) +
+			"What is listed is what this machine OFFERS: a tool an allow list holds back\n" +
+			"is counted, not listed, and --all brings it back with the state of each.\n" +
+			"--rules reads the allow lists themselves — do that before 'tool allow', which\n" +
+			"replaces a rule rather than adding to it.",
 		Args: rangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serverArg := ""
@@ -199,6 +210,10 @@ func (a *App) newToolLsCmd() *cobra.Command {
 			cached, err := gateway.LoadToolCache(a.resolver, nil)
 			if err != nil {
 				return err
+			}
+			if rules {
+				return a.printer().Emit(
+					toolRulesOf(snap.Servers.V.Servers, cached, serverArg), warnings...)
 			}
 			cat, err := offlineCatalogOf(snap, cached, serverArg)
 			if err != nil {
@@ -230,6 +245,8 @@ func (a *App) newToolLsCmd() *cobra.Command {
 	cmd.Flags().StringVar(&search, "search", "", "rank the tools against a keyword query")
 	cmd.Flags().BoolVar(&showAll, "all", false,
 		"list the tools an allow list holds back too, with the state of each")
+	cmd.Flags().BoolVar(&rules, "rules", false,
+		"list the allow lists themselves, one row per server, instead of the tools")
 	return cmd
 }
 
@@ -340,24 +357,41 @@ func offlineCatalogOf(
 		if serverArg != "" && id != serverArg {
 			continue
 		}
-		entry := servers[id].V
-		if !entry.Enabled || len(entry.Tools) == 0 || len(selected[id]) == 0 {
+		if !servers[id].V.Enabled {
 			continue
 		}
-		known := make(map[string]bool, len(selected[id]))
-		for _, d := range selected[id] {
-			known[d.Name] = true
-		}
-		for _, name := range entry.Tools {
-			if !known[name] {
-				out.pending = append(out.pending, ToolRow{
-					Server: id, RawName: name, State: toolStatePending,
-					Description: "named by the allow list; no cached catalog has it",
-				})
-			}
+		for _, name := range unknownRuleNames(servers[id].V.Tools, selected[id]) {
+			out.pending = append(out.pending, ToolRow{
+				Server: id, RawName: name, State: toolStatePending,
+				Description: "named by the allow list; no cached catalog has it",
+			})
 		}
 	}
 	return out, nil
+}
+
+// unknownRuleNames names the entries of an allow list that no cached tool
+// matches — the spelling mistakes, and the only lasting symptom they have.
+//
+// An EMPTY catalog yields nothing, deliberately: every name would be
+// reported, and a server no gateway has connected to yet is not a typo. That
+// is the same silence unknownToolWarning keeps at write time, for the same
+// reason, and the two must not disagree about it.
+func unknownRuleNames(rule []string, defs []mcp.ToolDef) []string {
+	if len(rule) == 0 || len(defs) == 0 {
+		return nil
+	}
+	known := make(map[string]bool, len(defs))
+	for _, d := range defs {
+		known[d.Name] = true
+	}
+	var out []string
+	for _, name := range rule {
+		if !known[name] {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // surfaceOf wraps a tool set in the full-mode discovery surface --search
