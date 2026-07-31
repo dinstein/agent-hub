@@ -1065,6 +1065,18 @@ Diagnose is what to run when a step did not take, and filing it under either wou
 required step in a path that has two. A second diagnostic belongs here only if it clears the same bar:
 a user following the everyday path is stuck without it.
 
+**The browser is launched with detached streams AND a detached environment** (`browser.go`). The stream
+half is about output: a handler that chatters on stdout would corrupt the NDJSON progress stream. The
+environment half is about credentials — `auth login` runs holding `AGENTHUB_SECRET_KEY`, every
+`AGENTHUB_SECRET_*` value and any bare secret variable the operator opted in, and the browser is the one
+child this process starts whose descendants it does not control. `browserEnvNames` is an **allow list**
+for the reason AGENTS.md gives for tool selectors: a bare opted-in secret is named by the operator, so no
+deny list can enumerate what appears tomorrow. Its failure direction is a handler that misbehaves, never
+a token in a browser's environment, and `browserEnv` never returns nil because os/exec reads a nil `Env`
+as "inherit everything" — the exact failure being closed. The URL check is the other half of the same
+door: a non-`http(s)` scheme is refused outright, because the URL came from an authorization-server
+metadata document.
+
 ---
 
 ## internal/cli/output
@@ -1368,10 +1380,3 @@ contract, written the way an agent would read it.
   and now that the Hub records the dialer's answer faithfully, the claim is exactly as good as this
   one. Ownership has to come from the launcher rather than from a successful dial: pass a startup nonce
   the daemon echoes back, or have the launcher report "already running" distinctly.
-- **`cli/browser.go:49` — the browser opener inherits the CLI's complete environment.** `openBrowser`
-  runs `open` / `rundll32` / `xdg-open` with `Env` untouched, so `AGENTHUB_SECRET_KEY`, the
-  `AGENTHUB_SECRET_*` values and any opted-in bare secret variables are inherited by the opener and by
-  whatever handler it launches — readable through `/proc/<pid>/environ`, and by anything the browser
-  itself spawns, for as long as they live. The child's stdio is already deliberately detached; the
-  environment is the half that was not. A minimal allowlist (PATH, HOME, DISPLAY/WAYLAND_DISPLAY,
-  XAUTHORITY, DBUS_SESSION_BUS_ADDRESS, USER) is the same discipline applied one field over.
