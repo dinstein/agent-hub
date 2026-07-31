@@ -86,22 +86,19 @@ func (f *jsonFormat) Connect(path string, entry Entry) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	raw, err := json.Marshal(struct {
-		Command string   `json:"command"`
-		Args    []string `json:"args"`
-	}{Command: entry.Command, Args: entry.Args})
+	gw := gatewayEntry(entry)
+	if cfg.jsonc {
+		// The splice edits the original bytes; cfg.servers is not consulted on
+		// this path, so nothing is encoded for it.
+		return f.spliceWrite(cfg, func(src []byte) ([]byte, error) {
+			return spliceEntry(src, loc.Section, entryName, gw)
+		}, []string{entryName})
+	}
+	raw, err := json.Marshal(gw)
 	if err != nil {
 		return Result{}, fmt.Errorf("clients: encode gateway entry: %w", err)
 	}
 	cfg.servers[entryName] = raw
-	if cfg.jsonc {
-		return f.spliceWrite(cfg, func(src []byte) ([]byte, error) {
-			return spliceEntry(src, loc.Section, entryName, struct {
-				Command string   `json:"command"`
-				Args    []string `json:"args"`
-			}{Command: entry.Command, Args: entry.Args})
-		}, []string{entryName})
-	}
 	return f.write(cfg)
 }
 
@@ -145,6 +142,22 @@ func (f *jsonFormat) Disconnect(path string) (Result, error) {
 	}
 	res.Removed = removed
 	return res, nil
+}
+
+// gatewayEntry is Entry in the form a client's config file spells it: the
+// same fields, carrying the JSON names. It is one type because Connect writes
+// it two ways — spliced into a JSONC document byte by byte, or re-encoded with
+// the rest of the file — and the two paths produce the same entry only for as
+// long as they are built from the same value. Spelled out separately, a field
+// added to the entry lands in whichever path the author was looking at, and
+// the difference does not surface until a JSONC client and a plain-JSON client
+// disagree about what agenthub installed. ownedBy below reads this shape back.
+//
+// It converts from Entry rather than restating it, so the two cannot diverge
+// in fields either.
+type gatewayEntry struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
 }
 
 // ownedBy reports whether a server entry was written by agenthub for
