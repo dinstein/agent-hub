@@ -24,12 +24,12 @@ func decodeToolRules(t *testing.T, out string) ToolRuleList {
 // show it at all — and that is the state most worth finding.
 func TestToolRulesReportsAllThreeStates(t *testing.T) {
 	seedCatalog(t)
-	mustRun(t, "", "tool", "allow", "fs", "--only", "read_file")
-	mustRun(t, "", "tool", "allow", "git", "--none")
+	mustRun(t, "", "server", "tool", "allow", "fs", "--only", "read_file")
+	mustRun(t, "", "server", "tool", "allow", "git", "--none")
 	mustRun(t, "", "server", "add", "idle", "--cmd", "idle-server")
 
 	byServer := map[string]ToolRuleRow{}
-	for _, r := range decodeToolRules(t, mustRun(t, "", "tool", "ls", "--rules", "--json")) {
+	for _, r := range decodeToolRules(t, mustRun(t, "", "server", "tool", "ls", "--rules", "--json")) {
 		byServer[r.Server] = r
 	}
 	if got := byServer["fs"]; got.Rule != "only" || len(got.Tools) != 1 || got.Cached != 2 {
@@ -47,7 +47,7 @@ func TestToolRulesReportsAllThreeStates(t *testing.T) {
 		t.Errorf("every configured server needs a row, got %d", len(byServer))
 	}
 
-	out := mustRun(t, "", "tool", "ls", "--rules")
+	out := mustRun(t, "", "server", "tool", "ls", "--rules")
 	if !strings.Contains(out, "exposes nothing") {
 		t.Errorf("the human table must spell out the block-all state:\n%s", out)
 	}
@@ -57,13 +57,13 @@ func TestToolRulesReportsAllThreeStates(t *testing.T) {
 // the one warning at write time nothing else ever mentions it again.
 func TestToolRulesMarksUnknownNames(t *testing.T) {
 	seedCatalog(t)
-	mustRun(t, "", "tool", "allow", "fs", "--only", "read_file,reed_file")
+	mustRun(t, "", "server", "tool", "allow", "fs", "--only", "read_file,reed_file")
 
-	rows := decodeToolRules(t, mustRun(t, "", "tool", "ls", "--rules", "fs", "--json"))
+	rows := decodeToolRules(t, mustRun(t, "", "server", "tool", "ls", "--rules", "fs", "--json"))
 	if len(rows) != 1 || len(rows[0].Unknown) != 1 || rows[0].Unknown[0] != "reed_file" {
 		t.Fatalf("rule row = %+v, want reed_file reported unknown", rows)
 	}
-	if out := mustRun(t, "", "tool", "ls", "--rules", "fs"); !strings.Contains(out, "!reed_file") {
+	if out := mustRun(t, "", "server", "tool", "ls", "--rules", "fs"); !strings.Contains(out, "!reed_file") {
 		t.Errorf("the human table must mark the unknown name:\n%s", out)
 	}
 }
@@ -77,7 +77,7 @@ func TestToolInspectNamesTheLayerThatBlocked(t *testing.T) {
 	mustRun(t, "", "profile", "use", "work")
 
 	var blockedByProfile ToolInspect
-	decodeInto(t, mustRun(t, "", "tool", "inspect", "fs__write_file", "--json"), &blockedByProfile)
+	decodeInto(t, mustRun(t, "", "server", "tool", "inspect", "fs__write_file", "--json"), &blockedByProfile)
 	if !blockedByProfile.Global.Allowed {
 		t.Errorf("no global rule exists, so the global layer must allow it: %+v", blockedByProfile.Global)
 	}
@@ -95,9 +95,9 @@ func TestToolInspectNamesTheLayerThatBlocked(t *testing.T) {
 	}
 
 	// Now the other layer, on a tool the profile would have allowed.
-	mustRun(t, "", "tool", "allow", "fs", "--none")
+	mustRun(t, "", "server", "tool", "allow", "fs", "--none")
 	var blockedByGlobal ToolInspect
-	decodeInto(t, mustRun(t, "", "tool", "inspect", "fs__read_file", "--json"), &blockedByGlobal)
+	decodeInto(t, mustRun(t, "", "server", "tool", "inspect", "fs__read_file", "--json"), &blockedByGlobal)
 	if blockedByGlobal.Global.Allowed {
 		t.Errorf("the global layer must now block: %+v", blockedByGlobal.Global)
 	}
@@ -110,22 +110,22 @@ func TestToolInspectNamesTheLayerThatBlocked(t *testing.T) {
 // the lookup must reach blocked tools too.
 func TestToolInspectResolvesBlockedAndAmbiguousNames(t *testing.T) {
 	seedCatalog(t)
-	mustRun(t, "", "tool", "allow", "fs", "--none")
+	mustRun(t, "", "server", "tool", "allow", "fs", "--none")
 
 	var i ToolInspect
-	decodeInto(t, mustRun(t, "", "tool", "inspect", "fs__read_file", "--json"), &i)
+	decodeInto(t, mustRun(t, "", "server", "tool", "inspect", "fs__read_file", "--json"), &i)
 	if i.RawName != "read_file" || i.Server != "fs" {
 		t.Errorf("a blocked tool must still resolve, got %+v", i)
 	}
 
 	// The two-argument form takes the server's own name, and is what makes
 	// a name containing the join separator addressable at all.
-	decodeInto(t, mustRun(t, "", "tool", "inspect", "fs", "read_file", "--json"), &i)
+	decodeInto(t, mustRun(t, "", "server", "tool", "inspect", "fs", "read_file", "--json"), &i)
 	if i.Name != "fs__read_file" {
 		t.Errorf("two-argument form resolved to %+v", i)
 	}
 
-	code, _, stderr := runCLI(t, "", "tool", "inspect", "no_such_tool")
+	code, _, stderr := runCLI(t, "", "server", "tool", "inspect", "no_such_tool")
 	if code != ExitNotFound {
 		t.Fatalf("exit = %d, want not-found; stderr = %s", code, stderr)
 	}

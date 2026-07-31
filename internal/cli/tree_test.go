@@ -52,8 +52,24 @@ var withheldGroups = []*cobra.Group{groupDaemon, groupManage}
 // fails, or the user's next move after a failed handshake is unspoken.
 var withheldCommands = []string{
 	"daemon", "session", "events", "token",
-	"config", "tool", "activity",
+	"config", "activity",
 	"skill",
+	// `tool` is NOT here any more: it hangs off `server`, which is visible,
+	// so the group ships. That was the point of moving it — a global allow
+	// list with no advertised way to read or write it.
+	// The deprecated top-level alias is hidden unconditionally and is
+	// asserted separately, below.
+}
+
+// deprecatedCommands are hidden in EVERY build, dev included. They are a
+// third category beside "shipped" and "withheld", and they need one: a
+// withheld command is a feature the release does not teach yet, a deprecated
+// one is a spelling the release is trying to retire. Testing them against
+// either of the other two lists would assert the opposite of the intent.
+var deprecatedCommands = []string{"tool"}
+
+func isDeprecated(name string) bool {
+	return slices.Contains(deprecatedCommands, name)
 }
 
 // walk visits every command in the tree, root included.
@@ -99,7 +115,7 @@ func TestCommandTreeCoversDesign(t *testing.T) {
 		"agenthub secret set", "agenthub secret rm", "agenthub secret ls",
 		"agenthub auth login", "agenthub auth status",
 		"agenthub auth refresh", "agenthub auth logout",
-		"agenthub tool ls", "agenthub tool allow",
+		"agenthub server tool ls", "agenthub server tool inspect", "agenthub server tool allow",
 		"agenthub activity",
 		"agenthub skill ls", "agenthub skill inspect", "agenthub skill add",
 		"agenthub skill rm", "agenthub skill enable", "agenthub skill disable",
@@ -245,7 +261,7 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		// sits with the daemon rather than with the other governance verbs.
 		{"daemon", []string{"daemon", "session", "events", "token"}},
 		{"manage", []string{
-			"config", "tool", "activity",
+			"config", "activity",
 			"skill",
 		}},
 		// One member, and visible even in a shipped build: Setup and Wire up
@@ -270,7 +286,7 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 	byGroup := map[string][]string{}
 	var order []string
 	for _, c := range root.Commands() {
-		if c.Name() == "help" || c.Name() == "completion" {
+		if c.Name() == "help" || c.Name() == "completion" || c.Hidden {
 			continue
 		}
 		if _, seen := byGroup[c.GroupID]; !seen {
@@ -331,6 +347,13 @@ func TestEveryTopLevelCommandIsGrouped(t *testing.T) {
 		if c.Name() == "help" || c.Name() == "completion" {
 			continue
 		}
+		if c.Hidden {
+			// A hidden command renders under no heading at all, so it has
+			// no group to be in. Requiring one would put a retired spelling
+			// into a section it must never appear in if it were ever
+			// unhidden by accident.
+			continue
+		}
 		switch {
 		case c.GroupID == "":
 			ungrouped = append(ungrouped, c.Name())
@@ -384,6 +407,9 @@ func TestReleaseHidesExactlyTheWithheldCommands(t *testing.T) {
 		if c.Name() == "help" || c.Name() == "completion" {
 			continue
 		}
+		if isDeprecated(c.Name()) {
+			continue // hidden in every build; TestNestedToolGroup… owns it
+		}
 		if want := hidden[c.Name()]; c.Hidden != want {
 			t.Errorf("release build: %q Hidden = %v, want %v", c.Name(), c.Hidden, want)
 		}
@@ -425,6 +451,9 @@ func TestReleaseHidesExactlyTheWithheldCommands(t *testing.T) {
 // the channel check.
 func TestDevShowsEveryCommand(t *testing.T) {
 	for _, c := range newTestRoot(t).Commands() {
+		if isDeprecated(c.Name()) {
+			continue // a retired spelling is never advertised, dev or not
+		}
 		if c.Hidden {
 			t.Errorf("dev build: %q is hidden, want visible", c.Name())
 		}
@@ -470,5 +499,65 @@ func TestHiddenCommandsStillRun(t *testing.T) {
 	setDataDir(t)
 	if code, _, stderr := runCLIReleaseHelp(t, "", "session", "ls"); code != ExitDaemonDown {
 		t.Errorf("release build: `session ls` exit = %d, want %d (stderr %s)", code, ExitDaemonDown, stderr)
+	}
+}
+
+// The withheld-command assertions above walk the TOP LEVEL only — Hidden is
+// checked with root.Commands() and c.Name(). Nothing covered nested commands,
+// so `server tool` could be hidden by one field on one line and the release
+// help page would lose a whole group in silence.
+//
+// The old top-level `tool` is the complement: hidden in EVERY build, dev
+// included, because it is a deprecated alias rather than a withheld feature.
+func TestNestedToolGroupShipsAndTheOldSpellingDoesNot(t *testing.T) {
+	for _, root := range []*cobra.Command{newTestRoot(t), newReleaseTestRoot(t)} {
+		have := commandPaths(root)
+		for _, path := range []string{
+			"agenthub server tool", "agenthub server tool ls",
+			"agenthub server tool inspect", "agenthub server tool allow",
+		} {
+			c, ok := have[path]
+			if !ok {
+				t.Fatalf("%s is missing from the tree", path)
+			}
+			if c.Hidden {
+				t.Errorf("%s is hidden; the group ships in every build", path)
+			}
+		}
+		c, ok := have["agenthub tool"]
+		if !ok {
+			t.Fatal("the deprecated top-level 'tool' alias is gone; scripted callers break")
+		}
+		if !c.Hidden {
+			t.Error("the deprecated top-level 'tool' must never be advertised")
+		}
+	}
+
+	// And it must not appear on the shipped help page under either spelling.
+	setDataDir(t)
+	_, out, _ := runCLIReleaseHelp(t, "", "--help")
+	if strings.Contains(out, "\n  tool ") || strings.Contains(out, "\n  tools ") {
+		t.Errorf("release --help still lists the deprecated top-level group:\n%s", out)
+	}
+}
+
+// The deprecated spelling has to reach the same code, not a copy of it, and
+// its notice must stay off stdout: the root has SetOut(stdout), so a notice
+// printed there would corrupt --json for the callers the alias exists for.
+func TestDeprecatedToolSpellingStillRuns(t *testing.T) {
+	seedCatalog(t)
+
+	code, out, stderr := runCLI(t, "", "tool", "ls", "--json")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+	if env := decodeEnvelope(t, out); !env.OK {
+		t.Fatalf("the deprecated spelling did not produce a clean envelope: %s", out)
+	}
+	if !strings.Contains(stderr, "server tool") {
+		t.Errorf("stderr must name the new spelling, got %q", stderr)
+	}
+	if strings.Contains(out, "server tool") {
+		t.Errorf("the notice leaked onto stdout: %s", out)
 	}
 }

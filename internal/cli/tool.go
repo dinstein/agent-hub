@@ -161,14 +161,58 @@ func (a *App) newToolCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "tool",
 		Aliases: []string{"tools"}, // singular canonical, plural alias (canonical.md §3)
-		Short:   "Inspect the aggregated tool catalog",
-		Args:    cobra.ArbitraryArgs,
-		RunE:    groupRunE,
+		Short:   "See and narrow the tools the servers contribute",
+		Long: "What the servers on this machine offer, and how much of it they are\n" +
+			"allowed to offer.\n\n" +
+			"  server tool ls           what is offered right now\n" +
+			"  server tool ls --rules   the allow lists themselves\n" +
+			"  server tool inspect      one tool, and every layer's verdict on it\n" +
+			"  server tool allow        change what a server offers, for every client\n\n" +
+			"'agenthub profile tool allow' is the same edit one layer down, with the\n" +
+			"same flags: this decides what the machine offers at all, that decides what\n" +
+			"a profile passes on. The two intersect; neither can widen.",
+		Args: cobra.ArbitraryArgs,
+		RunE: groupRunE,
 	}
 	cmd.AddCommand(a.newToolLsCmd())
 	cmd.AddCommand(a.newToolInspectCmd())
 	cmd.AddCommand(a.newToolAllowCmd())
 	return cmd
+}
+
+// newToolShim keeps `agenthub tool …` working for one release after the group
+// moved under `server`.
+//
+// It wraps each RunE rather than hanging a PersistentPreRunE on the group:
+// cobra runs only the CLOSEST persistent hook up the chain, so a hook here
+// would silently suppress any hook the root grows later. The notice goes to
+// stderr, never stdout — the root has SetOut(stdout), so printing it there
+// would corrupt --json for exactly the scripted callers this exists for.
+func (a *App) newToolShim() *cobra.Command {
+	shim := a.newToolCmd()
+	shim.Hidden = true
+	shim.Short = "Deprecated: use 'agenthub server tool'"
+	walkCommands(shim, func(c *cobra.Command) {
+		inner := c.RunE
+		if inner == nil {
+			return
+		}
+		c.RunE = func(cmd *cobra.Command, args []string) error {
+			fmt.Fprint(a.stderr,
+				"note: 'agenthub tool' is now 'agenthub server tool'; "+
+					"the old spelling still works but will be removed\n")
+			return inner(cmd, args)
+		}
+	})
+	return shim
+}
+
+// walkCommands visits a command and everything under it.
+func walkCommands(cmd *cobra.Command, fn func(*cobra.Command)) {
+	fn(cmd)
+	for _, c := range cmd.Commands() {
+		walkCommands(c, fn)
+	}
 }
 
 func (a *App) newToolLsCmd() *cobra.Command {

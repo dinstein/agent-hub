@@ -226,8 +226,12 @@ func (a *App) newRoot() *cobra.Command {
 	// write within each pair, decide -> inspect -> repair across them.
 	addGroupedHidden(root, a.reducedHelp, groupManage,
 		a.newConfigCmd(),
-		a.newToolCmd(), a.newActivityCmd(),
+		a.newActivityCmd(),
 		a.newSkillCmd())
+	// The old top-level `tool` spelling, always hidden — the group now hangs
+	// off `server`. It is added outside every group so it cannot reappear on
+	// a help page by being swept up with one.
+	root.AddCommand(a.newToolShim())
 	// `doctor` is VISIBLE, in a shipped build too, and it is alone.
 	//
 	// It was in Manage, which made a release build teach a linear path —

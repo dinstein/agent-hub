@@ -25,7 +25,7 @@ func decodeToolAllow(t *testing.T, out string) ToolAllowResult {
 func TestToolAllowThreeStatesOverJSON(t *testing.T) {
 	seedCatalog(t)
 
-	code, out, stderr := runCLI(t, "", "tool", "allow", "fs", "--only", "read_file", "--json")
+	code, out, stderr := runCLI(t, "", "server", "tool", "allow", "fs", "--only", "read_file", "--json")
 	if code != ExitOK {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
@@ -33,7 +33,7 @@ func TestToolAllowThreeStatesOverJSON(t *testing.T) {
 		t.Errorf("--only tools = %v, want [read_file]", got)
 	}
 
-	code, out, stderr = runCLI(t, "", "tool", "allow", "fs", "--none", "--json")
+	code, out, stderr = runCLI(t, "", "server", "tool", "allow", "fs", "--none", "--json")
 	if code != ExitOK {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
@@ -46,7 +46,7 @@ func TestToolAllowThreeStatesOverJSON(t *testing.T) {
 		t.Errorf("--none must put an empty array on the wire, got %s", out)
 	}
 
-	code, out, stderr = runCLI(t, "", "tool", "allow", "fs", "--all", "--json")
+	code, out, stderr = runCLI(t, "", "server", "tool", "allow", "fs", "--all", "--json")
 	if code != ExitOK {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
@@ -64,7 +64,7 @@ func TestToolAllowThreeStatesOverJSON(t *testing.T) {
 func TestToolAllowRefusesAnUnspecifiedEdit(t *testing.T) {
 	seedCatalog(t)
 
-	code, _, stderr := runCLI(t, "", "tool", "allow", "fs")
+	code, _, stderr := runCLI(t, "", "server", "tool", "allow", "fs")
 	if code != ExitUsage {
 		t.Fatalf("exit = %d, want a usage error; stderr = %s", code, stderr)
 	}
@@ -77,7 +77,7 @@ func TestToolAllowRefusesAnUnspecifiedEdit(t *testing.T) {
 		t.Errorf("a refused edit still wrote a rule: %s", out)
 	}
 
-	code, _, stderr = runCLI(t, "", "tool", "allow", "fs", "--all", "--none")
+	code, _, stderr = runCLI(t, "", "server", "tool", "allow", "fs", "--all", "--none")
 	if code != ExitUsage {
 		t.Fatalf("exit = %d, want a usage error for two modes at once; stderr = %s", code, stderr)
 	}
@@ -89,7 +89,7 @@ func TestToolAllowRefusesAnUnspecifiedEdit(t *testing.T) {
 func TestToolAllowWarnsOnAnUnknownToolName(t *testing.T) {
 	seedCatalog(t)
 
-	code, out, stderr := runCLI(t, "", "tool", "allow", "fs", "--only", "read_fil", "--json")
+	code, out, stderr := runCLI(t, "", "server", "tool", "allow", "fs", "--only", "read_fil", "--json")
 	if code != ExitOK {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}

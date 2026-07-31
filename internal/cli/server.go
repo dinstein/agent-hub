@@ -231,6 +231,14 @@ func (a *App) newServerCmd() *cobra.Command {
 		a.newServerLsCmd(), a.newServerInspectCmd(), a.newServerAddCmd(), a.newServerRmCmd(),
 		a.newServerToggleCmd(true), a.newServerToggleCmd(false),
 		a.newServerTestCmd(), a.newServerTraceCmd(), a.newServerLogsCmd(),
+		// `tool` lives HERE, not at the top level, because the rule it
+		// writes lives on the server entry beside `enabled` and answers the
+		// same question: what this machine offers at all. It was the one
+		// place where the storage and the command tree disagreed, and the
+		// cost was not tidiness — a top-level group withheld from the
+		// release help page meant the global allow list was shipped with no
+		// advertised way to read or write it.
+		a.newToolCmd(),
 	)
 	return cmd
 }

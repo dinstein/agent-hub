@@ -74,7 +74,7 @@ func decodeToolRows(t *testing.T, out string) []ToolRow {
 func TestToolLsGolden(t *testing.T) {
 	seedCatalog(t)
 
-	code, out, stderr := runCLI(t, "", "tool", "ls")
+	code, out, stderr := runCLI(t, "", "server", "tool", "ls")
 	if code != ExitOK {
 		t.Fatalf("exit = %d, stderr: %s", code, stderr)
 	}
@@ -86,7 +86,7 @@ func TestToolLsGolden(t *testing.T) {
 		t.Errorf("tool ls =\n%q\nwant\n%q", out, want)
 	}
 
-	rows := decodeToolRowsFromCLI(t, "tool", "ls", "--json")
+	rows := decodeToolRowsFromCLI(t, "server", "tool", "ls", "--json")
 	if len(rows) != 3 {
 		t.Fatalf("rows = %+v, want 3", rows)
 	}
@@ -117,7 +117,7 @@ func decodeToolRowsFromCLI(t *testing.T, args ...string) []ToolRow {
 func TestToolLsSearchGolden(t *testing.T) {
 	seedCatalog(t)
 
-	code, out, stderr := runCLI(t, "", "tool", "ls", "--search", "read file")
+	code, out, stderr := runCLI(t, "", "server", "tool", "ls", "--search", "read file")
 	if code != ExitOK {
 		t.Fatalf("exit = %d, stderr: %s", code, stderr)
 	}
@@ -128,13 +128,13 @@ func TestToolLsSearchGolden(t *testing.T) {
 		t.Errorf("tool ls --search =\n%q\nwant\n%q", out, want)
 	}
 
-	rows := decodeToolRowsFromCLI(t, "tool", "ls", "--search", "read file", "--json")
+	rows := decodeToolRowsFromCLI(t, "server", "tool", "ls", "--search", "read file", "--json")
 	if len(rows) != 2 || rows[0].Rank != 1 || rows[0].Name != "fs__read_file" || rows[0].Score <= rows[1].Score {
 		t.Fatalf("search rows = %+v", rows)
 	}
 
 	// A query nothing matches is an empty list, not an error.
-	code, out, _ = runCLI(t, "", "tool", "ls", "--search", "kubernetes")
+	code, out, _ = runCLI(t, "", "server", "tool", "ls", "--search", "kubernetes")
 	if code != ExitOK {
 		t.Fatalf("exit = %d, want %d", code, ExitOK)
 	}
@@ -148,12 +148,12 @@ func TestToolLsSearchGolden(t *testing.T) {
 func TestToolLsServerArgument(t *testing.T) {
 	seedCatalog(t)
 
-	rows := decodeToolRowsFromCLI(t, "tool", "ls", "git", "--json")
+	rows := decodeToolRowsFromCLI(t, "server", "tool", "ls", "git", "--json")
 	if len(rows) != 1 || rows[0].Name != "git__log" {
 		t.Fatalf("rows = %+v, want only git__log", rows)
 	}
 
-	code, out, _ := runCLI(t, "", "tool", "ls", "ghost", "--json")
+	code, out, _ := runCLI(t, "", "server", "tool", "ls", "ghost", "--json")
 	if code != ExitNotFound {
 		t.Fatalf("exit = %d, want %d", code, ExitNotFound)
 	}
@@ -172,7 +172,7 @@ func TestToolLsSkipsDisabledServers(t *testing.T) {
 		{"name": "log", "description": "Show the commit log."},
 	})
 
-	rows := decodeToolRowsFromCLI(t, "tool", "ls", "--json")
+	rows := decodeToolRowsFromCLI(t, "server", "tool", "ls", "--json")
 	for _, r := range rows {
 		if r.Server == "git" {
 			t.Fatalf("unregistered server surfaced in the listing: %+v", rows)
@@ -184,7 +184,7 @@ func TestToolLsSkipsDisabledServers(t *testing.T) {
 // connected yet is a state, not a failure.
 func TestToolLsEmptyCache(t *testing.T) {
 	setDataDir(t)
-	code, out, stderr := runCLI(t, "", "tool", "ls")
+	code, out, stderr := runCLI(t, "", "server", "tool", "ls")
 	if code != ExitOK {
 		t.Fatalf("exit = %d, stderr: %s", code, stderr)
 	}
@@ -192,7 +192,7 @@ func TestToolLsEmptyCache(t *testing.T) {
 	if out != want {
 		t.Errorf("output = %q, want %q", out, want)
 	}
-	code, out, _ = runCLI(t, "", "tool", "ls", "--json")
+	code, out, _ = runCLI(t, "", "server", "tool", "ls", "--json")
 	if code != ExitOK {
 		t.Fatalf("exit = %d", code)
 	}
@@ -205,7 +205,7 @@ func TestToolLsEmptyCache(t *testing.T) {
 // frozen message — the CLI and the meta-tool must say the same thing.
 func TestToolLsRejectsInvalidQuery(t *testing.T) {
 	seedCatalog(t)
-	code, out, _ := runCLI(t, "", "tool", "ls", "--search", "!!!", "--json")
+	code, out, _ := runCLI(t, "", "server", "tool", "ls", "--search", "!!!", "--json")
 	if code != ExitUsage {
 		t.Fatalf("exit = %d, want %d", code, ExitUsage)
 	}
@@ -249,9 +249,9 @@ func TestOneLine(t *testing.T) {
 // rule.
 func TestToolLsAppliesTheGlobalAllowList(t *testing.T) {
 	seedCatalog(t)
-	mustRun(t, "", "tool", "allow", "fs", "--only", "read_file")
+	mustRun(t, "", "server", "tool", "allow", "fs", "--only", "read_file")
 
-	rows := decodeToolRowsFromCLI(t, "tool", "ls", "--json")
+	rows := decodeToolRowsFromCLI(t, "server", "tool", "ls", "--json")
 	for _, r := range rows {
 		if r.Name == "fs__write_file" {
 			t.Errorf("a blocked tool is still listed: %+v", rows)
@@ -267,13 +267,13 @@ func TestToolLsAppliesTheGlobalAllowList(t *testing.T) {
 
 	// The human table says how many it held back rather than dropping them
 	// quietly.
-	_, out, _ := runCLI(t, "", "tool", "ls")
+	_, out, _ := runCLI(t, "", "server", "tool", "ls")
 	if !strings.Contains(out, "held back by an allow list") {
 		t.Errorf("the footer must count what was held back:\n%s", out)
 	}
 
 	// --all brings them back, with the verdict spelled out.
-	rows = decodeToolRowsFromCLI(t, "tool", "ls", "--all", "--json")
+	rows = decodeToolRowsFromCLI(t, "server", "tool", "ls", "--all", "--json")
 	states := map[string]string{}
 	for _, r := range rows {
 		states[r.Name] = r.State
@@ -281,7 +281,7 @@ func TestToolLsAppliesTheGlobalAllowList(t *testing.T) {
 	if states["fs__write_file"] != "blocked" || states["fs__read_file"] != "on" {
 		t.Errorf("--all states = %v, want write_file blocked and read_file on", states)
 	}
-	_, out, _ = runCLI(t, "", "tool", "ls", "--all")
+	_, out, _ = runCLI(t, "", "server", "tool", "ls", "--all")
 	if !strings.Contains(out, "STATE") {
 		t.Errorf("--all must add the state column:\n%s", out)
 	}
@@ -291,13 +291,13 @@ func TestToolLsAppliesTheGlobalAllowList(t *testing.T) {
 // of the server would be listed as offered while the gateway serves none.
 func TestToolLsShowsABlockedServerAsOfferingNothing(t *testing.T) {
 	seedCatalog(t)
-	mustRun(t, "", "tool", "allow", "fs", "--none")
+	mustRun(t, "", "server", "tool", "allow", "fs", "--none")
 
-	rows := decodeToolRowsFromCLI(t, "tool", "ls", "fs", "--json")
+	rows := decodeToolRowsFromCLI(t, "server", "tool", "ls", "fs", "--json")
 	if len(rows) != 0 {
 		t.Fatalf("a --none server must offer nothing, got %+v", rows)
 	}
-	_, out, _ := runCLI(t, "", "tool", "ls", "fs")
+	_, out, _ := runCLI(t, "", "server", "tool", "ls", "fs")
 	if !strings.Contains(out, "holds back all 2") {
 		t.Errorf("the empty listing must say a RULE emptied it, not that the cache is cold:\n%s", out)
 	}
@@ -307,9 +307,9 @@ func TestToolLsShowsABlockedServerAsOfferingNothing(t *testing.T) {
 // write only warns once, and every listing afterwards is silent about it.
 func TestToolLsSurfacesAPendingRuleName(t *testing.T) {
 	seedCatalog(t)
-	mustRun(t, "", "tool", "allow", "fs", "--only", "read_file,reed_file")
+	mustRun(t, "", "server", "tool", "allow", "fs", "--only", "read_file,reed_file")
 
-	rows := decodeToolRowsFromCLI(t, "tool", "ls", "fs", "--json")
+	rows := decodeToolRowsFromCLI(t, "server", "tool", "ls", "fs", "--json")
 	var pending *ToolRow
 	for i := range rows {
 		if rows[i].State == "pending" {
@@ -326,8 +326,8 @@ func TestToolLsSurfacesAPendingRuleName(t *testing.T) {
 	// name would be reported and none of them would be wrong.
 	mustRun(t, "", "server", "add", "cold", "--cmd", "cold-server")
 	mustRun(t, "", "server", "enable", "cold", "--no-probe")
-	mustRun(t, "", "tool", "allow", "cold", "--only", "anything")
-	rows = decodeToolRowsFromCLI(t, "tool", "ls", "cold", "--json")
+	mustRun(t, "", "server", "tool", "allow", "cold", "--only", "anything")
+	rows = decodeToolRowsFromCLI(t, "server", "tool", "ls", "cold", "--json")
 	if len(rows) != 0 {
 		t.Errorf("a server with no cached catalog must report nothing pending, got %+v", rows)
 	}
