@@ -29,7 +29,7 @@ func requestIDFrom(ctx context.Context) string {
 
 // validRequestID bounds what we echo back: header values are attacker-ish
 // input even on a same-uid socket, and the id lands in response headers,
-// error bodies and audit lines. Anything unverifiable is REPLACED with a
+// error bodies and the daemon's logs. Anything unverifiable is REPLACED with a
 // generated id, never echoed raw.
 var validRequestID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 
@@ -44,7 +44,7 @@ func newRequestID() string {
 // actor validates the X-Agenthub-Actor header against the three allowed
 // forms of docs/architecture.md §2: "cli", "gui", "gateway:<sid>". Anything else
 // (including absence) is recorded as "cli" — the default caller class —
-// rather than letting arbitrary strings into audit lines.
+// rather than letting arbitrary strings into the daemon's logs.
 func actor(r *http.Request) string {
 	v := r.Header.Get(HeaderActor)
 	switch {
@@ -87,7 +87,7 @@ func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 //     (when it has, abort the connection instead of appending garbage);
 //   - reject incompatible X-Agenthub-Api-Version with a structured error;
 //   - stamp request id + validated actor into the request context for
-//     handlers and audit records.
+//     handlers and log records.
 func (s *Server) withMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get(api.HeaderRequestID)
@@ -133,7 +133,7 @@ func (s *Server) withMiddleware(next http.Handler) http.Handler {
 // wireError is the error object inside the envelope. It is
 // api.ErrorBody plus the request id (the error body itself
 // carries X-Request-Id; clients that only see the body can still correlate
-// with `agenthub audit tail --request-id`). The extra field is ignored by
+// it against the daemon log). The extra field is ignored by
 // api.ErrorBody decoding — additive, not a contract break.
 type wireError struct {
 	api.ErrorBody

@@ -26,8 +26,7 @@ func envelopeData(t *testing.T, raw []byte, out any) {
 }
 
 // TestKillSession covers POST /v1/sessions/{id}/kill: the session is gone
-// afterwards, and the action is audited like every other control-plane
-// write.
+// afterwards.
 func TestKillSession(t *testing.T) {
 	client, env := startServer(t, nil)
 	s := openSession(t, env.mgr, "cursor")

@@ -299,9 +299,9 @@ const TopicServerRuntime event.Topic = "server.runtime"
 // handleGatewayServers implements POST /v1/gateway/{sid}/servers: one
 // gateway's full runtime snapshot.
 //
-// Not audited on purpose. The audit stream records governance ACTIONS — an
-// observation that changes nothing an operator can be held to would only
-// drown it, and every connect/refresh of every client would land there.
+// Deliberately not recorded anywhere. It is an observation that changes
+// nothing an operator can be held to, and every connect and refresh of
+// every client would land there.
 func (s *Server) handleGatewayServers(w http.ResponseWriter, r *http.Request, sid string) {
 	reqID := requestIDFrom(r.Context())
 	link, ok := s.gatewayFor(sid)

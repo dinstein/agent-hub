@@ -21,7 +21,7 @@ import (
 // given to an agent at all.
 //
 // A revoke KEEPS the record (the name stays reserved and the row stays
-// visible) so an audit line naming a token keeps resolving to exactly one
+// visible) so a log line naming a token keeps resolving to exactly one
 // credential. That is why the endpoint is DELETE but the row does not
 // disappear.
 

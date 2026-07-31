@@ -20,8 +20,9 @@ import (
 // endpoints. NOTHING here validates a value, decides a side effect or writes
 // a document — every rule lives in confops, so the two front ends cannot
 // drift. This file owns transport concerns only: decoding, the optimistic-
-// concurrency guard, the error-to-status mapping, the audit record and the
-// change notification.
+// concurrency guard, the error-to-status mapping and the change
+// notification. No audit record is written here or anywhere else in the
+// package; see docs/modules/controlplane.md.
 //
 // Uniform 404 (anti-probing, same rule as the rest of the package): an
 // unknown route, an unknown method AND an unknown resource id all answer the

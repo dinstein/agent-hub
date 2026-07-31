@@ -20,7 +20,7 @@ import (
 // behind the user's back would be worse.
 //
 // The add path goes through internal/confops like every other write: same
-// validation, same optimistic-concurrency guard, same audit line. A curated
+// validation, same optimistic-concurrency guard. A curated
 // entry gets no shortcut through the rules; the catalog only saves the
 // typing.
 

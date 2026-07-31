@@ -164,8 +164,8 @@ func TestClientConnect(t *testing.T) {
 	}
 }
 
-// TestClientConnectDryRunWritesNothing: a preview is a read, so it neither
-// touches the format nor produces an audit line.
+// TestClientConnectDryRunWritesNothing: a preview is a read, so it does not
+// touch the format.
 func TestClientConnectDryRunWritesNothing(t *testing.T) {
 	f := &nrFormat{id: "cursor", defaultPath: "/tmp/x"}
 	env := nrStart(t, nrClientDeps(f))

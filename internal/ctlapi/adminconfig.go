@@ -19,9 +19,15 @@ import (
 // These switches merge tighten-only downward, so no lower layer can undo
 // one. This endpoint is therefore the ONLY place that can relax them, and
 // relaxing is deliberately allowed here — refusing would leave an operator
-// unable to turn off a gate they turned on. What is not optional is the
-// evidence: every write is audited with the key and both values, so
-// "blockOnInjection went off at 03:00" is answerable after the fact.
+// unable to turn off a gate they turned on.
+//
+// THERE IS NO AUDIT TRAIL. This comment used to promise that every write
+// was recorded with the key and both values, so that "blockOnInjection went
+// off at 03:00" would be answerable after the fact. Nothing in the tree ever
+// wrote such a record, and that question is not answerable. Building
+// the trail is its own change with its own argument; describing one that
+// does not exist is how a reviewer concludes a control is in place when it
+// is not (docs/modules/controlplane.md records the gap).
 
 // configEntryWire is one governance key with its current value.
 type configEntryWire struct {

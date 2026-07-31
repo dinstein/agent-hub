@@ -102,7 +102,6 @@ func adminServer(t *testing.T, mutate func(*Options)) (*testEnv, string, string)
 	logsDir := filepath.Join(dir, "logs")
 	_, env := startServer(t, func(o *Options) {
 		o.StateDir = stateDir
-		o.LogsDir = logsDir
 		if mutate != nil {
 			mutate(o)
 		}

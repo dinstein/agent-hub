@@ -41,7 +41,7 @@ const (
 const notFoundMessage = "not found"
 
 // HeaderActor is the request header carrying the control-plane actor
-// identity for audit records: "cli", "gui" or "gateway:<sid>"
+// identity: "cli", "gui" or "gateway:<sid>"
 // (docs/architecture.md §2). Absent or unrecognized values fall back to "cli".
 const HeaderActor = "X-Agenthub-Actor"
 
@@ -116,9 +116,6 @@ type Options struct {
 	// StateLockTimeout bounds the state stores' cross-process locks
 	// (0 = the store default).
 	StateLockTimeout time.Duration
-	// LogsDir is <data>/logs: the JSONL governance streams read back by
-	// /v1/audit and /v1/security. "" disables both (uniform 404).
-	LogsDir string
 	// ServerStateForgetters clear the out-of-registry stores keyed by server
 	// id when DELETE /v1/servers/{id} removes one — integrity baselines,
 	// quarantine entries, the cached tool list.

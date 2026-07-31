@@ -12,9 +12,7 @@ import (
 //
 // IT WRITES NOTHING. No registry, no client file, no secret — the answer is
 // a proposal the user confirms, after which the normal POST /v1/servers path
-// stores it. That is also why the endpoint is not audited: an audit stream
-// records actions, and this one has no effect to record. (The write that
-// follows it is audited, as every write is.)
+// stores it.
 //
 // It exists because the alternative is retyping: internal/clients already
 // recognizes these shapes on disk, but "parse this string" was the one entry

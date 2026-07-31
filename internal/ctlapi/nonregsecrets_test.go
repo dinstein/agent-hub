@@ -12,7 +12,7 @@ import (
 )
 
 // nrSentinel is the value the leak assertions hunt for. It is deliberately
-// distinctive: if it appears ANYWHERE in a response body or an audit line,
+// distinctive: if it appears ANYWHERE in a response body or a log record,
 // a credential escaped the daemon.
 const nrSentinel = "S3NT1NEL-do-not-echo-me-9d41c2"
 
@@ -118,8 +118,8 @@ func TestSecretsListVaultErrorIsNotAnEmptyList(t *testing.T) {
 }
 
 // TestSecretPutNeverEchoesTheValue is THE test of this surface: a written
-// value must not appear in the write response, in any later read, or in the
-// audit stream — at any nesting depth, in any casing.
+// value must not appear in the write response or in any later read — at any
+// nesting depth, in any casing.
 func TestSecretPutNeverEchoesTheValue(t *testing.T) {
 	vault := newNRVault()
 	env := nrStart(t, func(d *NonRegistryDeps) { d.Secrets = vault })

@@ -239,12 +239,11 @@ func Run(ctx context.Context, cfg Config) error {
 		Logger:            log,
 		LinkAttachTimeout: cfg.LinkAttachTimeout,
 		NonRegistry:       nonReg,
-		// Tool governance, quarantine and the audit readers are gated on
-		// these directories being known: an empty one silently unregisters
-		// the routes, which is indistinguishable from an unimplemented
-		// feature to whoever is looking at the GUI.
+		// Tool governance and quarantine are gated on this directory being
+		// known: an empty one silently unregisters the routes, which is
+		// indistinguishable from an unimplemented feature to whoever is
+		// looking at the GUI.
 		StateDir: stateDir,
-		LogsDir:  logsDir,
 		// Deleting a server must strip its whole footprint here exactly as it
 		// does from the CLI; these are the stores that outlive the registry.
 		ServerStateForgetters: serverStateForgetters(stateDir, resolver),

@@ -262,7 +262,7 @@ func (s *Server) handleClientConnect(w http.ResponseWriter, r *http.Request, id 
 		Entry:   ClientEntryWire{Command: entry.Command, Args: entry.Args},
 	}
 	if req.DryRun {
-		// Nothing is written and nothing is audited: a preview is a read.
+		// Nothing is written: a preview is a read.
 		writeOK(w, http.StatusOK, out)
 		return
 	}

@@ -32,9 +32,11 @@ import (
 //     a vault answers /v1/secrets with the uniform "not found" body, exactly
 //     like a daemon too old to know the route — which is precisely what a
 //     newer frontend must render as "unavailable on this daemon".
-//  3. EVERY WRITE IS AUDITED, and the secrets path audits the REFERENCE
-//     only: server, key, operation. See auditNonReg on why not even a hash
-//     of the body is recorded there.
+//  3. A CREDENTIAL VALUE IS NEVER RECORDED ANYWHERE, not even as a hash.
+//     This item used to promise that every write was recorded, and pointed
+//     at a helper that has never existed in the tree. No audit trail is
+//     written; what survives from that claim is the rule the value itself
+//     must obey.
 
 // CodeForbidden reports an operation refused by the operating system rather
 // than by agenthub: today, a client configuration file this process may not

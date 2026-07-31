@@ -51,7 +51,7 @@ type SecretWire struct {
 // SecretPutRequest is the body of PUT /v1/secrets/{server}/{key}.
 //
 // Value is INPUT ONLY: it is handed to the vault and never echoed, logged
-// or hashed into an audit record.
+// or hashed into any record.
 type SecretPutRequest struct {
 	Value string `json:"value"`
 	// Scope is the vault scope ("" = secrets.DefaultScope).
