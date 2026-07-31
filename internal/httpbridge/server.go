@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
 )
 
@@ -254,7 +255,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request, c *Caller
 		sess = created
 		w.Header().Set(SessionHeader, sess.ID)
 		s.log.Info("http session bound",
-			"session", sess.ID, "caller", string(c.Kind), "token", c.Token, "tier", string(c.Tier))
+			logx.Session(sess.ID), "caller", string(c.Kind), "token", c.Token, "tier", string(c.Tier))
 	case r.Header.Get(SessionHeader) == "" && stateless2026Request(req):
 		// Sessionless by protocol. The declared _meta version is validated
 		// by the gateway behind the dispatcher (one enforcement point), so

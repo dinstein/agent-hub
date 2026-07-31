@@ -147,8 +147,14 @@ func (g *gateway) handleInitialize(req *mcp.Request) {
 		g.reply(mcp.NewErrorResponse(req.ID, &mcp.Error{Code: mcp.CodeInternalError, Message: err.Error()}))
 		return
 	}
+	// client_name, not client: logx.FieldClient is already bound on this
+	// logger and holds the CONFIGURED client id. slog's JSON handler does not
+	// deduplicate keys, so writing the peer's self-reported name under the
+	// same key emitted the field twice on one line — and a reader that takes
+	// the last wins (most do) silently read the mandatory join key as
+	// "Claude Code" instead of "claude-code".
 	g.log.Info("initialized upstream session",
-		"protocol_version", version, "client", p.ClientInfo.Name)
+		"protocol_version", version, "client_name", p.ClientInfo.Name)
 	g.reply(mcp.NewResponse(req.ID, raw))
 }
 
@@ -221,7 +227,7 @@ func (g *gateway) acceptRequestMeta(req *mcp.Request) bool {
 	ready := g.ready
 	g.mu.Unlock()
 	if first {
-		g.log.Info("stateless upstream session", "client", clientName(probe.Meta.ClientInfo))
+		g.log.Info("stateless upstream session", "client_name", clientName(probe.Meta.ClientInfo))
 	}
 	if first && !wasInitialized {
 		// The first stateless request plays the role notifications/initialized

@@ -17,6 +17,13 @@ const (
 	// FieldClient is the client identifier (AGENTHUB_CLIENT_ID).
 	FieldClient = "client"
 	// FieldSession is the session identifier.
+	//
+	// Not every assembly has one, and that is not an omission: a stdio
+	// gateway serves one terminal pipe with no id anywhere in it, so its
+	// records are keyed by client and pid instead. The two that do are the
+	// daemon-assigned session a gateway registers for over the control link,
+	// and the Streamable HTTP session. Both go through this constant —
+	// spelling it by hand is how a stream stops joining.
 	FieldSession = "session"
 	// FieldRev is the registry generation the record was produced under.
 	FieldRev = "rev"

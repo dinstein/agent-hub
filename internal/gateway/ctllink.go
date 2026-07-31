@@ -17,6 +17,7 @@ import (
 
 	"github.com/dinstein/agent-hub/api"
 	"github.com/dinstein/agent-hub/internal/ctlapi"
+	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
@@ -193,7 +194,7 @@ func (l *ctlLink) register(ctx context.Context) (ctlapi.GatewayRegistered, error
 	l.mu.Lock()
 	l.sessionID = reg.SessionID
 	l.mu.Unlock()
-	l.g.log.Info("registered with daemon", "session", reg.SessionID)
+	l.g.log.Info("registered with daemon", logx.Session(reg.SessionID))
 	return reg, nil
 }
 
