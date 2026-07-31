@@ -115,9 +115,13 @@ the change is sealed inside one package, rather than borrowing one now.
 ## 3. Command naming rules
 
 - **Resource groups are singular as the canonical name, with the plural as a cobra alias**:
-  `server` / `profile` / `client` / `session` / `skill` / `secret`
+  `server` / `profile` / `client` / `session` / `skill` / `secret` / `token` — one alias per group,
+  and `grep -n 'Aliases' internal/cli/*.go` is the whole list
 - **Action/flow groups stay as they are**: `daemon`, `connect`, `auth`, `activity`, `events`,
-  `config`, `doctor`. The OAuth group is **`auth`**, not `oauth`
+  `config`, `doctor`, `catalog`. The OAuth group is **`auth`**, not `oauth`, and `catalog` takes
+  **no plural alias**: there is one built-in list, so `catalogs` would name a thing that does not
+  exist. The rule is that the plural is an alias for a group you accumulate entries in, not
+  decoration applied to every noun
 - List subcommands are always `ls`, and **every command supports `--json`**, with human and machine
   output rendered from the same data structure
 - **There is no top-level `tool` group.** A tool is something a server contributes, and the rule
