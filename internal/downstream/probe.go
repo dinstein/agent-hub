@@ -134,12 +134,11 @@ func (s *Server) Ping(ctx context.Context) error {
 	_, err := s.enqueue(pctx, kindPing, mcp.MethodPing, nil)
 	now := time.Now()
 	switch {
-	case err == nil:
-		s.health.success(now)
-		s.served.Store(true)
-		return nil
-	case isAnswered(err):
-		// The server replied with a JSON-RPC error: liveness proven.
+	case err == nil, isAnswered(err):
+		// The two ways a probe succeeds record the same verdict because they
+		// prove the same thing: a JSON-RPC error RESPONSE means the round trip
+		// completed, and completing is all a liveness probe is entitled to
+		// conclude.
 		s.health.success(now)
 		s.served.Store(true)
 		return nil
