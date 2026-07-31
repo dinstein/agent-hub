@@ -136,10 +136,12 @@ func (s *Server) Ping(ctx context.Context) error {
 	switch {
 	case err == nil:
 		s.health.success(now)
+		s.served.Store(true)
 		return nil
 	case isAnswered(err):
 		// The server replied with a JSON-RPC error: liveness proven.
 		s.health.success(now)
+		s.served.Store(true)
 		return nil
 	case ctx.Err() != nil:
 		// The CALLER went away — neither proof of health nor of failure.

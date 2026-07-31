@@ -154,6 +154,65 @@ func TestReconnectCounterSurvivesSuccessfulRespawn(t *testing.T) {
 	}
 }
 
+// The other half of the rule: a connection that ANSWERED before it died is
+// not a crash loop, so the ladder starts over rather than climbing. The
+// shape is a downstream whose long-lived stream is reaped for idleness
+// between calls — every call after the first finds it dead pre-send, and
+// every respawn is preceded by a connection that worked.
+//
+// Without the reset this is the expensive case: nine such deaths reach the
+// 30s MaxDelay and every later call sleeps out ~22s of backoff before it is
+// allowed to redial, punishing a server that has never failed to answer.
+func TestServedConnectionRestartsTheReconnectLadder(t *testing.T) {
+	t.Parallel()
+	var dials atomic.Int64
+	// Each connection answers its FIRST echo and is dead pre-send for every
+	// echo after it — the idle reap, once per connection.
+	dial := func(context.Context, downstream.Spec) (transport.Transport, error) {
+		dials.Add(1)
+		return &scriptedTransport{answer: handshakeAnswer(func(method string, n int) (json.RawMessage, error) {
+			if method == mcp.MethodToolsCall && n == 1 {
+				return json.RawMessage(`{"content":[{"type":"text","text":"pong"}]}`), nil
+			}
+			return nil, &transport.Error{
+				Class: transport.ClassUnavailable,
+				Err:   fmt.Errorf("%w: sse stream: unexpected EOF", transport.ErrDeadConnection),
+			}
+		})}, nil
+	}
+	s, err := downstream.Connect(context.Background(), downstream.Spec{ID: "idle-reaped"}, downstream.Deps{
+		Dial:    dial,
+		Breaker: downstream.BreakerConfig{FailureThreshold: 5, Cooldown: time.Hour},
+		// A base delay big enough that a climbing ladder is unmistakable in
+		// the wall clock below: unfixed, these cycles sleep ~9.5s in total.
+		Reconnect: downstream.RetryConfig{BaseDelay: 200 * time.Millisecond, MaxDelay: 30 * time.Second},
+	})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(s.Close)
+
+	const cycles = 8
+	start := time.Now()
+	for i := range cycles {
+		if _, err := s.Call(context.Background(), "echo", nil); err != nil {
+			t.Fatalf("call %d on an idle-reaped connection: %v", i+1, err)
+		}
+		// Every respawn replaces a connection that had just answered, so the
+		// exponent never leaves its first rung.
+		if n := s.Reconnects(); n > 1 {
+			t.Fatalf("reconnects = %d after call %d, want <= 1 (the ladder climbed)", n, i+1)
+		}
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("%d cycles took %v, want < 2s (backoff was paid)", cycles, elapsed)
+	}
+	// One dial per death, and no death went unrepaired.
+	if n := dials.Load(); n != cycles {
+		t.Fatalf("dials = %d, want %d (one initial + one per reaped connection)", n, cycles)
+	}
+}
+
 // A manual reconnect also clears the breaker: the user asked for a working
 // connection, not for a fresh connection behind an open breaker.
 func TestManualReconnectClosesBreaker(t *testing.T) {

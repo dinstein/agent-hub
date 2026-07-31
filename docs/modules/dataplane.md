@@ -120,11 +120,25 @@ in a health failure, `execute` rebuilds the connection through the dial factory 
 on the new connection. This acknowledges a residual window: a process that dies mid-call may lead to double
 execution; that is the accepted price of probe semantics.
 
-**The reconnect counter survives successful reconnects.** `Server.reconnects` is the exponent for reconnect
-backoff, and `respawn` **does not reset it** on success — a repeatedly crashing server must climb the whole
-backoff ladder rather than hammering the launcher at base delay forever. Only `Reconnect()` (an explicit
-human action) resets it, and it resets both before and after: once so this attempt doesn't wait out the
-backoff, and once afterward so a manual reconnect isn't counted as an automatic one. The reconnect ladder
+**The reconnect counter survives a successful respawn; a connection that ANSWERED resets it.**
+`Server.reconnects` is the exponent for reconnect backoff, and `respawn` **does not reset it** just because
+it succeeded — a repeatedly crashing server must climb the whole backoff ladder rather than hammering the
+launcher at base delay forever. Dialing and handshaking is not the proof, because that is exactly what a
+crash loop does successfully every time.
+
+What resets it is `Server.served`: the connection being replaced had completed at least one round trip.
+That is the same liveness rule the rest of the package applies (`isAnswered` — a JSON-RPC error *response*
+counts, the connection carried it), and it is what tells the two deaths apart. A crash loop never serves
+anything, so it climbs unchanged. A long-lived HTTP/SSE stream reaped for idleness between calls is
+preceded by a connection that worked every time, so it starts over. Without the distinction the second case
+reaches the 30s `MaxDelay` within nine deaths and stays there for the life of the process, charging every
+later call ~22s of sleep before it may even redial — a flapping penalty levied on a server that has never
+once failed to answer. Both directions have a test: `TestReconnectCounterSurvivesSuccessfulRespawn` and
+`TestServedConnectionRestartsTheReconnectLadder`.
+
+`Reconnect()` (an explicit human action) also resets it, both before and after: once so this attempt
+doesn't wait out the backoff, and once afterward so a manual reconnect isn't counted as an automatic one.
+The reconnect ladder
 and in-call retries use **two separate parameter sets**: `withReconnectDefaults` gives 250ms base / 30s cap,
 because the cost of a reconnect is a process start. The first reconnect (`n == 1`) does not wait, and the
 exponent is capped by `min(n-1, 16)`.

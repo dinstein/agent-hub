@@ -78,13 +78,37 @@ type Server struct {
 	// "" is the base connection.
 	traceInst string
 
-	// reconnects counts AUTOMATIC reconnects and is deliberately NEVER
-	// reset by a successful reconnect: a server that dies right after every
-	// respawn must keep climbing the backoff ladder instead of hammering
-	// the launcher at the base delay forever ("reconnect preserves retryCount,
-	// so backoff cannot be defeated"). Only Reconnect — an explicit user action —
-	// zeroes it.
+	// reconnects counts AUTOMATIC reconnects and is the exponent of the
+	// respawn backoff ladder. A successful respawn does not by itself reset
+	// it: a server that dies right after every respawn must keep climbing
+	// instead of hammering the launcher at the base delay forever
+	// ("reconnect preserves retryCount, so backoff cannot be defeated").
+	// What does reset it is `served` below, and an explicit Reconnect.
 	reconnects atomic.Uint64
+
+	// served records whether the CURRENT connection has completed at least
+	// one round trip since it was built, and it is what lets the ladder tell
+	// apart the two deaths that otherwise look identical to it:
+	//
+	//   - the crash loop the ladder exists for — dial, handshake, die before
+	//     serving anything. `served` is false at every respawn, so the
+	//     exponent climbs exactly as before.
+	//   - a long-lived HTTP/SSE stream reaped for idleness between calls.
+	//     Every respawn is preceded by a connection that worked, so the
+	//     ladder starts over and the next death costs one dial, not a
+	//     half-minute of backoff in front of it.
+	//
+	// Without the distinction the second case climbs to the 30s MaxDelay
+	// within nine deaths and stays there for the life of the process, and a
+	// downstream behind an ingress with a three-minute idle timeout charges
+	// every later call ~22s of sleep before it may even redial — a penalty
+	// for flapping, levied on a server that has never once failed to answer.
+	//
+	// "Completed a round trip" is the same liveness rule the rest of this
+	// package applies (see isAnswered): a JSON-RPC error RESPONSE counts,
+	// because the connection carried it. A handshake does not — that is what
+	// the crash loop already does successfully every time.
+	served atomic.Bool
 
 	// inputID numbers the synthesized MRTR peer requests (never on the wire).
 	inputID   atomic.Int64
@@ -430,6 +454,7 @@ func (s *Server) serve(req callReq) {
 	switch {
 	case err == nil:
 		s.br.recordSuccess()
+		s.served.Store(true)
 	case req.ctx.Err() != nil:
 		// Cancelled by the caller: neither proof of health nor of failure.
 		if req.probe {
@@ -442,6 +467,7 @@ func (s *Server) serve(req callReq) {
 			// The server answered (error response or rate limit): liveness
 			// proven, reset the failure streak.
 			s.br.recordSuccess()
+			s.served.Store(true)
 		}
 	}
 	req.reply <- callResp{raw: raw, err: err}
@@ -536,11 +562,19 @@ func (s *Server) callTransport(ctx context.Context, tr transport.Transport, meth
 // classified differently (a server that dies during its own handshake is
 // not healthy).
 //
-// The backoff exponent is Server.reconnects, which survives successful
-// reconnects on purpose: a flapping server climbs the ladder instead of
-// re-dialing at the base delay forever. Only Reconnect (a user action)
-// resets it.
+// The backoff exponent is Server.reconnects, which survives a successful
+// respawn on purpose: a flapping server climbs the ladder instead of
+// re-dialing at the base delay forever. It is reset by a connection that
+// PROVED itself before dying (Server.served) and by Reconnect (a user
+// action) — never by the respawn itself.
 func (s *Server) respawn(ctx context.Context) (transport.Transport, error) {
+	if s.served.Swap(false) {
+		// The connection being replaced had answered at least once, so the
+		// failure history in front of it is not a crash loop and must not be
+		// charged to the connection about to be built. Swap rather than Load:
+		// that new connection has proven nothing yet.
+		s.reconnects.Store(0)
+	}
 	n := s.reconnects.Add(1)
 	if n > 1 {
 		// n == 1 is the first respawn since the last manual reset: no wait,
