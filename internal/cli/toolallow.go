@@ -113,8 +113,9 @@ func (a *App) newToolAllowCmd() *cobra.Command {
 			return a.printer().Emit(out, warnings...)
 		},
 	}
-	cmd.Flags().StringSliceVar(&only, "only", nil, "offer only these tools, named as the server names them")
-	cmd.Flags().BoolVar(&all, "all", false, "drop the rule: offer every tool the server has again")
-	cmd.Flags().BoolVar(&none, "none", false, "offer none of this server's tools")
+	addSelectorFlags(cmd, &only, &all, &none,
+		"offer only these tools, named as the server names them",
+		"drop the rule: offer every tool the server has again",
+		"offer none of this server's tools")
 	return cmd
 }

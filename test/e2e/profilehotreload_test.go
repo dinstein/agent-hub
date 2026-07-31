@@ -125,7 +125,7 @@ func TestProfileToolSelectorHotReload(t *testing.T) {
 	c.waitForTool("alpha__write_thing", 30*time.Second)
 
 	start := time.Now()
-	runAgenthub(t, dataDir, "", "profile", "tools", "narrow", "alpha", "--only", "read_thing")
+	runAgenthub(t, dataDir, "", "profile", "tool", "allow", "narrow", "alpha", "--only", "read_thing")
 
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {

@@ -46,8 +46,8 @@ func runScriptThroughCLI(t *testing.T) {
 
 	mustRun(t, "", "profile", "create", "work", "--servers", "github")
 	mustRun(t, "", "profile", "server", "add", "work", "linear")
-	mustRun(t, "", "profile", "tools", "work", "github", "--only", "list_prs,create_pr")
-	mustRun(t, "", "profile", "tools", "work", "linear", "--none")
+	mustRun(t, "", "profile", "tool", "allow", "work", "github", "--only", "list_prs,create_pr")
+	mustRun(t, "", "profile", "tool", "allow", "work", "linear", "--none")
 
 	mustRun(t, "", "profile", "discovery", "work", "grouped")
 

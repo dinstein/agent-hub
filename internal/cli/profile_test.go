@@ -115,25 +115,25 @@ func TestProfileLifecycle(t *testing.T) {
 	// merges into an existing map, which would let a previous assertion's
 	// data survive into the next one.
 	var onlyChange ProfileChange
-	decodeInto(t, mustRun(t, "", "profile", "tools", "work", "github", "--only", "list_prs,create_pr", "--json"), &onlyChange)
+	decodeInto(t, mustRun(t, "", "profile", "tool", "allow", "work", "github", "--only", "list_prs,create_pr", "--json"), &onlyChange)
 	if sel := onlyChange.Profile.Tools["github"]; len(sel.Allow) != 2 || sel.Allow[0] != "create_pr" {
 		t.Errorf("--only selector = %+v", sel)
 	}
 	var noneChange ProfileChange
-	decodeInto(t, mustRun(t, "", "profile", "tools", "work", "github", "--none", "--json"), &noneChange)
+	decodeInto(t, mustRun(t, "", "profile", "tool", "allow", "work", "github", "--none", "--json"), &noneChange)
 	if sel := noneChange.Profile.Tools["github"]; sel.Allow == nil || len(sel.Allow) != 0 {
 		t.Errorf("--none must store the EMPTY allow list (block-all), got %+v", sel)
 	}
 	var allChange ProfileChange
-	decodeInto(t, mustRun(t, "", "profile", "tools", "work", "github", "--all", "--json"), &allChange)
+	decodeInto(t, mustRun(t, "", "profile", "tool", "allow", "work", "github", "--all", "--json"), &allChange)
 	if _, ok := allChange.Profile.Tools["github"]; ok {
 		t.Errorf("--all must drop the (now inert) rule, got %+v", allChange.Profile.Tools)
 	}
 	// Exactly one of the three is required.
-	if code, _, _ := runCLI(t, "", "profile", "tools", "work", "github"); code != ExitUsage {
+	if code, _, _ := runCLI(t, "", "profile", "tool", "allow", "work", "github"); code != ExitUsage {
 		t.Errorf("tools with no mode exit = %d, want %d", code, ExitUsage)
 	}
-	if code, _, _ := runCLI(t, "", "profile", "tools", "work", "github", "--all", "--none"); code != ExitUsage {
+	if code, _, _ := runCLI(t, "", "profile", "tool", "allow", "work", "github", "--all", "--none"); code != ExitUsage {
 		t.Errorf("tools with two modes exit = %d, want %d", code, ExitUsage)
 	}
 
@@ -286,7 +286,7 @@ func TestProfileToolsWarnsOnUnknownTool(t *testing.T) {
 	})
 
 	var change ProfileChange
-	env := decodeInto(t, mustRun(t, "", "profile", "tools", "work", "fs",
+	env := decodeInto(t, mustRun(t, "", "profile", "tool", "allow", "work", "fs",
 		"--only", "read_file,raed_file", "--json"), &change)
 
 	warning := strings.Join(env.Warnings, "\n")
@@ -312,7 +312,7 @@ func TestProfileToolsSilentWithoutCatalog(t *testing.T) {
 	mustRun(t, "", "server", "add", "fs", "--cmd", "fs-server")
 	mustRun(t, "", "profile", "create", "work")
 
-	env := decodeInto(t, mustRun(t, "", "profile", "tools", "work", "fs",
+	env := decodeInto(t, mustRun(t, "", "profile", "tool", "allow", "work", "fs",
 		"--only", "read_file", "--json"), nil)
 	for _, w := range env.Warnings {
 		if strings.Contains(w, "no recorded tool") {
@@ -463,5 +463,42 @@ func TestProfileLsDiscoveryIsResolved(t *testing.T) {
 	if !strings.Contains(out, "grouped (inherited)") || !strings.Contains(out, "\tfull\t") &&
 		!strings.Contains(out, "full  ") {
 		t.Errorf("the human table does not distinguish inherited from owned:\n%s", out)
+	}
+}
+
+// The old `profile tools` spelling keeps working for one release, and the
+// notice it prints must not land on stdout: the root has SetOut(stdout), so
+// cobra's own Deprecated field would have corrupted --json for precisely the
+// scripted callers the shim exists to protect.
+func TestProfileToolsShimStillWorksAndKeepsJSONClean(t *testing.T) {
+	setDataDir(t)
+	mustRun(t, "", "server", "add", "github", "--cmd", "gh-mcp")
+	mustRun(t, "", "profile", "create", "work")
+
+	code, out, stderr := runCLI(t, "", "profile", "tools", "work", "github", "--only", "list_prs", "--json")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+	if env := decodeEnvelope(t, out); !env.OK {
+		t.Fatalf("the deprecated spelling did not produce a clean envelope: %s", out)
+	}
+	if !strings.Contains(stderr, "profile tool allow") {
+		t.Errorf("stderr must name the new spelling, got %q", stderr)
+	}
+	if strings.Contains(out, "deprecated") || strings.Contains(out, "profile tool allow") {
+		t.Errorf("the notice leaked onto stdout, which breaks --json consumers: %s", out)
+	}
+
+	// Same edit, same result: the shim shares the body rather than repeating it.
+	var row ProfileList
+	decodeInto(t, mustRun(t, "", "profile", "ls", "--json"), &row)
+	found := false
+	for _, p := range row.Profiles {
+		if p.Name == "work" && len(p.Tools["github"].Allow) == 1 && p.Tools["github"].Allow[0] == "list_prs" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the deprecated spelling did not write the rule: %+v", row.Profiles)
 	}
 }

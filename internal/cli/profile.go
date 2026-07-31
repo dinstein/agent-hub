@@ -212,7 +212,8 @@ func (a *App) newProfileCmd() *cobra.Command {
 		a.newProfileRenameCmd(),
 		a.newProfileUseCmd(),
 		a.newProfileServerCmd(),
-		a.newProfileToolsCmd(),
+		a.newProfileToolCmd(),
+		a.newProfileToolsShim(),
 		a.newProfileDiscoveryCmd(),
 	)
 	return cmd
@@ -470,14 +471,32 @@ func (a *App) newProfileServerEditCmd(add bool) *cobra.Command {
 	}
 }
 
-func (a *App) newProfileToolsCmd() *cobra.Command {
+// newProfileToolCmd is the profile half of the tool model, and it is named to
+// match the global half: `profile tool allow` and `server tool allow` are one
+// mechanism at two altitudes, so they are one spelling at two altitudes. The
+// group also leaves room for the reading half (`profile tool ls`) to land
+// beside its writer rather than as a flag on something else.
+func (a *App) newProfileToolCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use: "tool",
+		// No `tools` alias while the shim below occupies that name. It moves
+		// here when the shim is removed, matching `profile server`/`servers`.
+		Short: "Choose which of a server's tools a profile lets through",
+		Args:  cobra.ArbitraryArgs,
+		RunE:  groupRunE,
+	}
+	cmd.AddCommand(a.newProfileToolAllowCmd())
+	return cmd
+}
+
+func (a *App) newProfileToolAllowCmd() *cobra.Command {
 	var (
 		only []string
 		all  bool
 		none bool
 	)
 	cmd := &cobra.Command{
-		Use:   "tools <profile> <server> (--only a,b | --all | --none)",
+		Use:   "allow <profile> <server> (--only a,b | --all | --none)",
 		Short: "Choose which of one server's tools a profile lets through",
 		Long: "Restricts one server, inside one profile, to some of its tools. It does\n" +
 			"not change which servers the profile includes.\n\n" +
@@ -485,39 +504,87 @@ func (a *App) newProfileToolsCmd() *cobra.Command {
 			"  --none      let none through (the server stays in the profile)\n" +
 			"  --all       drop the restriction\n\n" +
 			"Use the server's own tool names (search_repositories), not the longer\n" +
-			"github__search_repositories your client displays; 'agenthub server test\n" +
-			"<server> --tools' lists them. A name the server does not have is stored\n" +
-			"anyway — its catalog may simply not have been fetched yet — but it is\n" +
-			"reported as a warning, because such a name lets nothing through.",
+			"github__search_repositories your client displays; 'agenthub server tool ls\n" +
+			"<server>' lists them. A name the server does not have is stored anyway —\n" +
+			"its catalog may simply not have been fetched yet — but it is reported as a\n" +
+			"warning, because such a name lets nothing through.\n\n" +
+			"'agenthub server tool allow' is this same edit one layer up, with the same\n" +
+			"flags and the same names: it decides what the machine offers at all, this\n" +
+			"decides what a profile passes on. The two intersect; neither can widen.",
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			profileName, serverID := args[0], args[1]
 			sel, err := parseSelectorFlags(cmd, only, all, none)
 			if err != nil {
 				return err
 			}
-			store, warnings, err := a.opsStore()
+			return a.setProfileTools(cmd, args[0], args[1], sel)
+		},
+	}
+	addSelectorFlags(cmd, &only, &all, &none,
+		"let only these tools through, named as the server names them",
+		"drop the restriction: let all of this server's tools through again",
+		"let none of this server's tools through")
+	return cmd
+}
+
+// newProfileToolsShim keeps `profile tools <profile> <server>` working for one
+// release after the rename. It is hidden rather than aliased because a cobra
+// alias on the GROUP would make `profile tools work github` resolve "work" as
+// a subcommand and fail — the old form has to stay a leaf to keep parsing.
+//
+// The notice goes to stderr, never through cobra's Deprecated field: the root
+// has SetOut(stdout), so cobra would print it on stdout and corrupt --json for
+// exactly the scripted callers this shim exists to protect.
+func (a *App) newProfileToolsShim() *cobra.Command {
+	var (
+		only []string
+		all  bool
+		none bool
+	)
+	cmd := &cobra.Command{
+		Use:    "tools <profile> <server> (--only a,b | --all | --none)",
+		Short:  "Deprecated: use 'profile tool allow'",
+		Hidden: true,
+		Args:   exactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sel, err := parseSelectorFlags(cmd, only, all, none)
 			if err != nil {
 				return err
 			}
-			res, err := confops.SetProfileTools(cmd.Context(), store, profileName, serverID, sel, noPrecondition)
-			warnings = append(warnings, res.Warnings...)
-			if err != nil {
-				return opsError(err)
-			}
-			// After the write, never before it: the cross-check is advisory,
-			// and must not be able to decide whether the rule is stored.
-			warnings = append(warnings, a.unknownToolWarning(serverID, sel)...)
-			row := profileRow(res.Name, res.Profile, "", store.Snapshot())
-			return a.printer().Emit(ProfileChange{
-				Action: "tools updated", Name: profileName, Profile: &row,
-			}, warnings...)
+			fmt.Fprintf(a.stderr,
+				"note: 'agenthub profile tools' is now 'agenthub profile tool allow'; "+
+					"the old spelling still works but will be removed\n")
+			return a.setProfileTools(cmd, args[0], args[1], sel)
 		},
 	}
-	cmd.Flags().StringSliceVar(&only, "only", nil, "let only these tools through, named as the server names them")
-	cmd.Flags().BoolVar(&all, "all", false, "drop the restriction: let all of this server's tools through again")
-	cmd.Flags().BoolVar(&none, "none", false, "let none of this server's tools through")
+	addSelectorFlags(cmd, &only, &all, &none,
+		"let only these tools through, named as the server names them",
+		"drop the restriction: let all of this server's tools through again",
+		"let none of this server's tools through")
 	return cmd
+}
+
+// setProfileTools is the body both spellings share, so the deprecated one
+// cannot drift into answering differently from the one that replaced it.
+func (a *App) setProfileTools(
+	cmd *cobra.Command, profileName, serverID string, sel confops.ToolSelection,
+) error {
+	store, warnings, err := a.opsStore()
+	if err != nil {
+		return err
+	}
+	res, err := confops.SetProfileTools(cmd.Context(), store, profileName, serverID, sel, noPrecondition)
+	warnings = append(warnings, res.Warnings...)
+	if err != nil {
+		return opsError(err)
+	}
+	// After the write, never before it: the cross-check is advisory, and must
+	// not be able to decide whether the rule is stored.
+	warnings = append(warnings, a.unknownToolWarning(serverID, sel)...)
+	row := profileRow(res.Name, res.Profile, "", store.Snapshot())
+	return a.printer().Emit(ProfileChange{
+		Action: "tools updated", Name: profileName, Profile: &row,
+	}, warnings...)
 }
 
 // discoveryModeLines renders the mode list for `profile discovery --help`,

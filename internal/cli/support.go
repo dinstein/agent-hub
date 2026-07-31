@@ -60,6 +60,18 @@ func (a *App) requireDaemon(ctx context.Context) (*ctlClient, api.Hello, error) 
 	return ctl, hello, nil
 }
 
+// addSelectorFlags declares the --only/--all/--none trio. Every command that
+// narrows a server's tools declares it HERE rather than beside its own RunE,
+// so the two layers cannot end up with the trio spelled two ways — a flag
+// that exists at one altitude and not the other reads as a difference in the
+// mechanism, which there is none of. Only the help strings differ, because
+// only the altitude does.
+func addSelectorFlags(cmd *cobra.Command, only *[]string, all, none *bool, onlyHelp, allHelp, noneHelp string) {
+	cmd.Flags().StringSliceVar(only, "only", nil, onlyHelp)
+	cmd.Flags().BoolVar(all, "all", false, allHelp)
+	cmd.Flags().BoolVar(none, "none", false, noneHelp)
+}
+
 // parseSelectorFlags validates the mutually exclusive --only/--all/--none
 // trio and returns the confops three-state selection. Exactly one must be
 // present: an edit command with no edit is a usage error, not a silent
