@@ -897,3 +897,49 @@ The cross-process lock is implemented for darwin/linux (`flock_unix.go`, `syscal
 (`flock_stub.go`, build tag `!darwin && !linux && !windows`). The Windows half has never run on a real Windows
 machine — see [../windows.md](../windows.md).
 
+
+## Raised by the 2026-07-31 sweep, not fixed on that branch
+
+Recorded beside the code they are about, not in a backlog file. Each survived three-lens adversarial
+verification and was re-read against the source; none was in scope for the sweep's branch, which
+carried the findings both engines confirmed independently plus the two single-engine highs.
+
+- **`clients/jsonc.go:542` — `dropChanged` unwinds only ONE created section level, which breaks the
+  DEFAULT `agenthub client connect vscode`.** VS Code's user placement is the two-level section
+  `["mcp","servers"]`. Against a settings.json that has comments (so the splice path is taken) and no
+  `mcp` key, `spliceEntry` correctly inserts `"mcp": {"servers": {"agenthub": …}}`; `verifySplice`
+  then removes `agenthub` from the leaf and deletes `parent["servers"]`, but the created `"mcp": {}`
+  survives in the after-document while `before` has no `mcp` at all, so the deep comparison fails and
+  the connect is refused with a message accusing the edit of changing something it did not. The fix is
+  to walk the section path back up, dropping every ancestor the deletion left empty. The single-level
+  cases (`mcpServers`, `context_servers`) pass, which is why the tests and
+  `FuzzSpliceEntryKeepsEverythingElse` — all one-element sections — miss it. Reproduced during the
+  sweep with exactly that document.
+- **`clients/jsonfile.go:319` — an unchecked read-to-rename window.** The rendered result is renamed
+  over the target without confirming the target is still the file that was read. VS Code, Zed and
+  Cursor all rewrite their settings on their own schedule, so a concurrent edit between the read into
+  `c.orig` and the rename is lost — and lost from the backup too, which preserves the stale `c.orig`
+  rather than what was actually on disk. Re-reading and comparing (content hash, or dev/ino+mtime+size)
+  immediately before the rename would let it refuse and back up what it observed.
+- **`skills/manager.go:406` — the documented fail-closed trust check compares index to index and never
+  re-reads the bytes.** `requireTrusted` compares `pins.Pins[id].Fingerprint` against `sk.Fingerprint`,
+  both read out of the index, so a stored `SKILL.md` modified after pinning — without touching
+  `skills.json` or `skill-pins.json` — still passes. `applySentinel` then reads that modified file
+  directly and writes the attacker-controlled instructions into a client's rule file, which the
+  client's model reads as its own instructions. This section already records why an index cannot vouch
+  for itself: "`Verify` does a full recomputation … because an index a tamperer has edited cannot vouch
+  for itself." The install path is the one that takes the index at its word.
+- **`skills/manager.go:120` — an explicit `--id` is stored and joined into filesystem paths with no
+  shape validation.** `Add` takes `req.ID` verbatim after a collision check, so `../../../some-dir`
+  escapes the skills store on write (`copyTree` to `SkillPath`) and again on delete
+  (`os.RemoveAll(filepath.Join(dir, storeDirName, sk.ID))`). It is medium rather than critical only
+  because `skills.AddRequest` is built in exactly one place today, from an operator-typed flag — so it
+  is a destructive footgun now and a hole the moment a GUI or ctlapi caller appears. `internal/shaping`'s
+  `validID` is the model this should follow: a shape check that is also a path safety check.
+- **`secrets/store.go:190` — a keyring credential is committed before its enumeration record.**
+  `Chain.Set` writes the value to the OS keyring and only then calls `registryAdd`. If
+  `keyring-keys.json` cannot be created, synced or renamed, the caller gets an error while the
+  credential survives in the keyring, unlisted: `List` reads that registry, so exhaustive server
+  removal and later migration both miss it, and reusing the same server id can resurrect it. Either
+  pre-register the key and keep that conservative record on an ambiguous write, or roll back a
+  confirmed keyring write when `registryAdd` fails.

@@ -1336,3 +1336,31 @@ contract, written the way an agent would read it.
 `go test ./...`.
 
 ---
+
+## Raised by the 2026-07-31 sweep, not fixed on that branch
+
+- **`httpbridge/auth.go:74` — `Caller.Identity()` renders a nil and an empty `Servers` allowlist to the
+  same fingerprint.** It joins the slice, and `strings.Join(nil, ",")` and `strings.Join([]string{}, ",")`
+  are both `""`. So the one credential change that matters most — allow-all becoming allow-nothing — is
+  invisible to both the session owner check and the per-credential gateway cache. An operator narrowing
+  a live token by editing `<data>/tokens.json` from `"servers": null` to `"servers": []` (the natural
+  spelling of "this token reaches nothing", and the store exposes only Create/Revoke so hand edits are
+  anticipated) gets a token that keeps reaching every server through the cached gateway until it goes
+  30 minutes idle. This fails on exactly the nil-vs-`[]` distinction AGENTS.md calls load-bearing and
+  that `token.go` keeps off `omitempty` to preserve. Encoding the tri-state — a distinct marker for nil
+  versus a joined list — is a one-line fix with a one-line test.
+- **`api/dialorstart.go:193` — `DialOrStartSpawned` reports `spawned=true` for any daemon that becomes
+  reachable after it launches the start command.** The launcher exits 0 both when it detached its own
+  daemon and when it found one already running, so a daemon started concurrently by a terminal or a
+  login item is claimed as this process's own. That claim is what the GUI's shutdown acts on, so this
+  is the remaining door into the same end state the `spawned`-latch fix closed from the other side —
+  and now that the Hub records the dialer's answer faithfully, the claim is exactly as good as this
+  one. Ownership has to come from the launcher rather than from a successful dial: pass a startup nonce
+  the daemon echoes back, or have the launcher report "already running" distinctly.
+- **`cli/browser.go:49` — the browser opener inherits the CLI's complete environment.** `openBrowser`
+  runs `open` / `rundll32` / `xdg-open` with `Env` untouched, so `AGENTHUB_SECRET_KEY`, the
+  `AGENTHUB_SECRET_*` values and any opted-in bare secret variables are inherited by the opener and by
+  whatever handler it launches — readable through `/proc/<pid>/environ`, and by anything the browser
+  itself spawns, for as long as they live. The child's stdio is already deliberately detached; the
+  environment is the half that was not. A minimal allowlist (PATH, HOME, DISPLAY/WAYLAND_DISPLAY,
+  XAUTHORITY, DBUS_SESSION_BUS_ADDRESS, USER) is the same discipline applied one field over.

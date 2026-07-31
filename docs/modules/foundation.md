@@ -987,3 +987,13 @@ On Windows the registry's cross-process lock is now implemented via `LockFileEx`
 `!darwin && !linux` to `!darwin && !linux && !windows`, and `internal/ratelimit` now sets
 `crossProcessLockSupported = true`. Nothing has run on a real Windows machine yet — see
 [../windows.md](../windows.md).
+
+## Raised by the 2026-07-31 sweep, not fixed on that branch
+
+- **`ScrubString` never matched a quoted JSON key.** The key half of the sensitive-key patterns is
+  `key`, separator, optional opening quote — but in `"authorization":"Basic …"` the key's own CLOSING
+  quote sits between the name and the separator, so no pattern matches at all. This is not a
+  regression and, on today's assembly, not a leak: structured logs go through `SensitiveKey`, which
+  masks by key name regardless of value kind, and `ScrubString` works on message TEXT. It is recorded
+  because it looks like a gap every time someone reads these patterns, and because it would become one
+  the day a JSON document is interpolated into a message string.

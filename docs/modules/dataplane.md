@@ -856,9 +856,17 @@ cursors out of another session's path; it is **not** isolation — `Entry.Owner`
 **`validID` is both a shape check and a path safety check**: `FileStore` turns an id into a filename, so anything with a separator,
 a dot segment, or an unexpected byte must be rejected before it reaches the filesystem.
 
-**The ordering invariant for format re-encoding.** `Reformat` sits at the very end of the delivery path, **after**
-the budget has been applied, so nothing downstream of it can invalidate the byte counts the truncation trailer
-describes. Its rewrite scope is also fixed: it touches only `text`
+**The ordering invariant for format re-encoding: re-encode FIRST, then bound.** `ShapeResult` calls `Reformat` and
+only then `shape`, and the order is load bearing in that direction: the budget is spent on the **cheaper**
+representation, so a result that fits once re-encoded is delivered whole instead of paginated, and the retained
+remainder is the text the agent actually saw, so a `fetch_result` page continues in the same notation rather than
+switching mid-stream. The recovery trailer still comes last either way — it is appended by the truncation step, which
+runs after re-encoding by construction. **This paragraph used to state the opposite** ("`Reformat` sits at the very end
+of the delivery path, after the budget has been applied"), which is worth recording because of who would have acted on
+it: `FormatTOON` is listed below as an unwired switch, so the next person to wire it reads this section first, and
+"restoring" the documented order would have re-encoded a page whose trailer already counted the pre-encoding payload —
+producing exactly the invalidated byte counts the old sentence claimed to prevent. Its rewrite scope is also fixed: it
+touches only `text`
 blocks, and only those whose payload is a single JSON document; `structuredContent` is **never** re-encoded (that is the
 machine-readable channel, clients may parse it, and TOON does not round-trip); and the contract marker `toonenc.HeaderLine` is
 emitted at most once per result, on the first block actually re-encoded.
@@ -1055,3 +1063,37 @@ default, leak and self-heal hooks on `pipeline.Options` — and every one of the
 unwired governance seam is the most dangerous thing this appendix can hold: it looks like a feature waiting to be
 switched on, and it reads to a hurried operator as protection that is already there. What is left is presentational,
 which is why it is allowed to wait.
+
+## Raised by the 2026-07-31 sweep, not fixed on that branch
+
+- **`gateway/gateway.go:433` — a credential's own scope narrowing is wired only when the registry store
+  opened.** The whole `scope.NewCachedResolver` construction, including the `Extra` closure that reads
+  `Config.ScopeLayers`, sits inside `if g.store != nil`. So when `loadRegistry` fails at that instant —
+  registry dir unresolved, or `registry.Open` returning a nil store — an agent token's server allowlist
+  and profile pin are never merged at all: `scopeGate` takes its `scopeOf == nil` allow branch,
+  `regOK=false` makes the catalog serve the unfiltered disk tool cache, and `discovery.Visible` passes
+  everything. A token scoped to one server receives the exposed names, descriptions and input schemas
+  of every server ever cached under `<data>/cache/tools`. With `g.store` nil no registry watcher
+  starts, so the Conn stays that way for its life. Execution is still blocked (no specs → `replyBusy`),
+  so the impact is catalog disclosure rather than call execution. This contradicts the failure
+  direction `Config.ScopeLayers` documents for itself — "layers can only tighten (Merge intersects
+  security fields), so a broken source costs visibility, never grants it" — because here they are not
+  merged at all. The fix: when `ScopeLayers` is non-nil, apply them regardless of `g.store` (build the
+  resolver against an empty registry snapshot so the Extra layers still intersect), or refuse to
+  assemble a gateway for a constrained credential when no registry authority exists.
+- **`downstream/httpdial.go:189` — `http.ProxyFromEnvironment` routes around the dial-time screen.**
+  Both HTTP clients set it, so with `HTTP_PROXY`/`HTTPS_PROXY` configured the guarded `DialContext`
+  screens the PROXY's address and the proxy then resolves and connects to the real destination. A
+  hostname that `screenEndpoint` saw resolve publicly can be reached privately through the proxy's own
+  DNS, and netguard never sees the address that matters. This one needs a decision rather than a patch:
+  disabling environment proxies for guarded downstream traffic breaks every operator behind a corporate
+  proxy, while keeping them means the SSRF screen is advisory whenever one is set. Whichever way it
+  goes, it should be stated here rather than left to inference.
+- **`mcp/transport/httpcommon.go:411` — legacy batch decoding materializes an attacker-sized slice
+  before validating any element.** A ~16 MiB JSON array of millions of one-byte values passes
+  `readBounded` (it is under `mcp.MaxFrameSize`), and `json.Unmarshal` into `[]json.RawMessage`
+  allocates per element — tens of megabytes of input becoming hundreds of megabytes of heap, plus
+  slice-growth copies — before `ParseMessage` rejects the first element. Availability only: the frame
+  is refused in the end, but the hub may be OOM-killed first, taking every client's session with it.
+  Decoding incrementally with `json.Decoder.Token`/`More` and rejecting past a small explicit message
+  count would bound it; batching was removed from MCP in 2025-06-18, so that ceiling can be low.

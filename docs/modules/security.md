@@ -504,3 +504,41 @@ discovery ──► registration ──► authorization ──► token exchang
   path would rather refuse to run than run unordered**: two processes racing for one single-use
   refresh token is worse than one "unsupported" refresh failure.
 
+
+## Raised by the 2026-07-31 sweep, not fixed on that branch
+
+Each of these survived three-lens adversarial verification and was re-read against the code. They are
+recorded beside the invariant they bend rather than in a backlog file, because that is who needs to
+see them. None was fixed on the sweep's branch, whose scope was the findings both engines confirmed
+independently plus the two single-engine highs.
+
+- **`oauthflow/client.go:131` — the `AllowLoopback` carve-out is decided from the RESOLVED address, so
+  a DNS rebind reopens it.** With the opt-in on, `dialControl` returns nil for any dial whose resolved
+  address is a loopback literal, without consulting `netguard.DialControl`. So a hostname that passed
+  `checkURL` as public and then resolves to `127.0.0.1` is dialed — the discovery GET, or a `postForm`
+  carrying `code_verifier`/`refresh_token`, delivered to a service on the agenthub host's loopback
+  interface. This contradicts the invariant stated above for that switch: "even when on it allows only
+  literal loopback addresses and RFC 6761's `localhost` name tree … and no hostname's DNS answer can
+  unlock this exception." `isLiteralLoopbackHost`, the DNS-free predicate written for exactly this, is
+  never consulted on the dial path. The fix has a shape: carry the already-screened hostname into the
+  dialer (a per-request `DialContext` closure, or a context value set by `checkURL`) and allow the
+  carve-out only when `isLiteralLoopbackHost` held for that host. The existing regressions cover the
+  URL layer and bare literals passed straight to `dialControl`, which is why neither caught it.
+- **`oauthflow/token.go:77` — a DISCOVERED `authorization_endpoint` is never SSRF-screened before the
+  browser opens it.** Only an operator-PINNED endpoint goes through `Client.checkURL`; `BuildAuthorizeURL`
+  merely `url.Parse`s what the metadata document said, and `LoopbackFlow.Run` hands the result to
+  `Flow.Open`. A public AS advertising `authorization_endpoint: http://10.0.0.5:8080/authorize` thus
+  drives the user's browser, with its ambient intranet cookies, at an internal destination.
+  `validateMetadata` checks presence, not scheme or destination. `internal/cli/browser.go` refuses
+  non-`http(s)` schemes, which closes the `file://` half but not the private-address half — and
+  `Flow.Open` is injectable, so other openers get no backstop. The pinned path is screened and says
+  why, in as many words: "this destination receives the user's authorization code, so it is exactly as
+  sensitive". The discovered path is the same destination.
+- **`netguard.go:103` — the non-public prefix table omits RFC 8215's local-use NAT64 prefix
+  `64:ff9b:1::/48`.** The v4-embedding group lists `64:ff9b::/96`, `::/96` and `2002::/16` and nothing
+  else, so on a network routing the local-use prefix through a NAT64 translator, a literal from it
+  encodes an RFC1918 destination that `AddrIsPrivate` answers false for — passing both the hostname
+  screen and the dial-time hook. The reasoning already written down for the v4-embedding block
+  ("classifying the v6 form on its own merits answers the wrong question") applies identically. The
+  paragraph above records that this set was widened once before, which makes this an incomplete
+  enumeration rather than a decision.
