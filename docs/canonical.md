@@ -215,20 +215,44 @@ references (academic honesty, not a license obligation).
 
 ## 5b. MCP protocol scope
 
-- **Target version `2025-11-25`** (the current stable release); `initialize` declares it
-- **Negotiates downward** for downstreams supporting only `2025-06-18` / `2025-03-26`
-- Transport support is asymmetric by direction: the **read side** (connecting to downstreams) speaks
-  `stdio` + `streamable-http` + **legacy HTTP+SSE**; the **exposure side** (daemon facing upstream
-  clients) speaks `streamable-http` only — no new SSE exposure surface
+**Two protocol generations are spoken, and on both faces.** `mcp.SupportedVersions` is the list,
+newest first — `2026-07-28`, `2025-11-25`, `2025-06-18`, `2025-03-26` — and it is the only place
+either direction reads what it accepts.
+
+- The **read side** (connecting to downstreams) probes with `server/discover`, and falls back to the
+  `initialize` handshake only on proof the server answered. A downstream speaking an older version
+  negotiates downward from the same list
+- The **exposure side** (the gateway facing upstream clients) answers `server/discover` with that
+  same list, and a request carrying the per-request `_meta` puts the session in stateless mode.
+  `initialize` negotiates the **stateful family only**: a client declaring `2026-07-28` *there* is
+  answered with the default instead, because echoing it would promise per-request `_meta` semantics
+  on a session that just used the handshake 2026 removed
+- Transport support stays asymmetric by direction: the read side speaks `stdio` +
+  `streamable-http` + **legacy HTTP+SSE**; the exposure side speaks `streamable-http` only — no new
+  SSE exposure surface
+- **Neither generation is offered an out-of-band notification stream on the HTTP face.**
+  `subscriptions/listen` — 2026's replacement for the GET stream — lands in the dispatch default, so
+  a conforming client reads it as "this server offers no stream", which is the stance already frozen
+  for the stream it replaces. The stdio face pushes notifications inline, as it always has
+
+**`mcp.ProtocolVersion` does not name the version this tree targets, and flipping it to 2026 is
+wrong.** It stays at `2025-11-25` because every context that reads it is definitionally pre-2026 —
+the legacy handshake, the exposure side's default answer, the HTTP header sent before negotiation.
+The 2026-07-28 declaration travels per-request in `_meta`, built from `Version2026` directly. The
+constant carries this warning too; [mcp-2026-07-28.md](mcp-2026-07-28.md) §6.1 records why the
+original "flip the constant" plan was dropped, and its §7 what is deliberately still absent.
 
 ### Upstream deprecation tracking
 
-Everything is implemented against the current state (the earliest removals are all after 2027-07-28),
-with the migration seams already in place. Every use site carries a
-`// DEPRECATED-UPSTREAM(<feature>, earliest-removal: <date>)` comment, so one grep finds them all.
+The removals themselves are all no earlier than 2027-07-28, and every seam is already in place —
+which is what makes the 2026-07-28 column read as history rather than as a plan. Every use site
+carries a `// DEPRECATED-UPSTREAM(<feature>, earliest-removal: <date>)` comment, so one grep finds
+them all.
 
 | Feature | Deprecated in | Dependency point | Migration seam |
 |---|---|---|---|
+| The `initialize` handshake | `2026-07-28` | The stateful session path, on both faces | **Landed**: `server/discover` plus per-request `_meta`. The handshake stays, because a downstream that speaks only the older generation still needs it |
+| `ping` | `2026-07-28` | Liveness on the stateful path | None needed — a stateless request carries its own context, so there is no session to keep alive |
 | Roots | `2026-07-28` | `${ROOT}` and derived-instance keying (`internal/downstream`). The dependency **shrank** when the per-project scope layer was retired: the root no longer selects anything and has left the resolver's cache key | **In place since M0**: `RootSource`, with one implementation for the roots protocol and one for an explicit root in `clients.json` |
 | Sampling | `2026-07-28` | One of the isolation arguments | None needed (the conclusion is independently supported by credentials, connection parameters and fault isolation) |
 | DCR | `2026-07-28` | The OAuth discovery chain; DCR credentials persisted alongside tokens | **In place since M1**: `ClientRegistrar`, with one implementation for DCR and one for Client ID Metadata Documents |
