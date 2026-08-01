@@ -25,3 +25,9 @@ func OAuthStateRef(serverID string) Ref {
 func UserRef(serverID, key string) Ref {
 	return Ref{ServerID: serverID, Scope: DefaultScope, Key: key}
 }
+
+// AuditEncryptionRef is the single machine-local access-ledger key. The
+// reserved server component keeps it out of every downstream namespace.
+func AuditEncryptionRef() Ref {
+	return Ref{ServerID: "_agenthub", Scope: DefaultScope, Key: KeyAuditEncryption}
+}

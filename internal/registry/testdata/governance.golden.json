@@ -1,4 +1,5 @@
 {
+  "audit": {"enabled": true, "future_audit": {"mode": "keep"}},
   "blockOnInjection": true,
   "denyDestructive": true,
   "discovery": "lazy",

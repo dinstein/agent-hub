@@ -107,9 +107,10 @@ func TestEnvNameGolden(t *testing.T) {
 // re-derived without a full login.
 func TestWellKnownRefsAreDistinctAndFrozen(t *testing.T) {
 	refs := map[string]Ref{
-		"agenthub/v1/gh/_global/__http_auth__":   HTTPAuthRef("gh"),
-		"agenthub/v1/gh/_global/__oauth_state__": OAuthStateRef("gh"),
-		"agenthub/v1/gh/_global/api_key":         UserRef("gh", "api_key"),
+		"agenthub/v1/gh/_global/__http_auth__":               HTTPAuthRef("gh"),
+		"agenthub/v1/gh/_global/__oauth_state__":             OAuthStateRef("gh"),
+		"agenthub/v1/gh/_global/api_key":                     UserRef("gh", "api_key"),
+		"agenthub/v1/_agenthub/_global/__audit_encryption__": AuditEncryptionRef(),
 	}
 	seen := map[string]string{}
 	for want, ref := range refs {

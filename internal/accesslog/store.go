@@ -2,6 +2,7 @@ package accesslog
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,15 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/platform"
 )
+
+// KeyID returns a non-secret stable identifier for one payload key.
+func KeyID(key []byte) (string, error) {
+	if len(key) != 32 {
+		return "", ErrBadKey
+	}
+	sum := sha256.Sum256(key)
+	return hex.EncodeToString(sum[:8]), nil
+}
 
 // Store owns one process's payload packs and its handles to the shared daily
 // event files. It is safe for concurrent calls.

@@ -16,7 +16,7 @@ func TestGovernanceKeyTableIsShared(t *testing.T) {
 	if GovernanceKeys()[0].Name == "tampered" {
 		t.Error("GovernanceKeys returned the live table")
 	}
-	for _, want := range []string{"discovery"} {
+	for _, want := range []string{"discovery", "audit.enabled", "audit.durability", "audit.results", "audit.resultBytes", "audit.retentionDays", "audit.maxBytes", "audit.minFreeBytes"} {
 		if _, ok := LookupGovernanceKey(want); !ok {
 			t.Errorf("key %q is missing", want)
 		}
@@ -25,6 +25,35 @@ func TestGovernanceKeyTableIsShared(t *testing.T) {
 	k, ok := LookupGovernanceKey("discovery_mode")
 	if !ok || k.Name != "discovery" {
 		t.Errorf("alias resolved to %+v", k)
+	}
+}
+
+func TestAuditGovernanceDefaultsValidationAndEnable(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	p := st.Snapshot().Governance.V.ResolvedAudit()
+	if p.Enabled || p.Durability != "sync" || p.ResultMode != "truncated" || p.RetentionDays <= 0 || p.MaxBytes <= 0 {
+		t.Fatalf("defaults = %+v", p)
+	}
+	if _, err := SetGovernance(ctx, st, "audit.enabled", "true", Precondition{}); err == nil {
+		t.Fatal("enabled without a key id")
+	}
+
+	res, err := SetAuditEnabled(ctx, st, true, "key-1", Precondition{})
+	if err != nil || !res.Changed || !res.Policy.Enabled || res.Policy.KeyID != "key-1" {
+		t.Fatalf("enable = %+v, %v", res, err)
+	}
+	if st.Snapshot().Governance.V.Audit == nil || st.Snapshot().Governance.V.Audit.V.RetentionDays == 0 {
+		t.Fatal("enable did not materialize bounded defaults")
+	}
+	if _, err := SetGovernance(ctx, st, "audit.enabled", "false", Precondition{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetGovernance(ctx, st, "audit.results", "full", Precondition{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Snapshot().Governance.V.ResolvedAudit(); got.Enabled || got.ResultMode != "full" || got.KeyID != "key-1" {
+		t.Fatalf("updated policy = %+v", got)
 	}
 }
 

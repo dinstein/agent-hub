@@ -439,6 +439,49 @@ type ClientsDoc struct {
 	Clients map[string]Doc[ClientEntry] `json:"clients"`
 }
 
+const (
+	// Audit policy defaults are conservative on both sides of the ledger:
+	// request arguments are always complete, result capture is bounded, and
+	// storage pressure refuses new calls instead of silently losing history.
+	DefaultAuditDurability          = "sync"
+	DefaultAuditResultMode          = "truncated"
+	DefaultAuditResultBytes         = 64 << 10
+	DefaultAuditRetentionDays       = 30
+	DefaultAuditMaxBytes      int64 = 5 << 30
+	DefaultAuditMinFree       int64 = 1 << 30
+)
+
+// AuditPolicy is the persisted access-ledger policy. Zero values other than
+// Enabled mean "use the built-in default" so an older governance document
+// remains bounded when a newer binary first reads it.
+//
+// Request arguments deliberately have no switch: an enabled ledger always
+// records them completely. Results may be omitted, limited to tool errors,
+// truncated, or stored in full up to the MCP frame bound.
+type AuditPolicy struct {
+	Enabled       bool   `json:"enabled,omitempty"`
+	Durability    string `json:"durability,omitempty"`
+	ResultMode    string `json:"results,omitempty"`
+	ResultBytes   int    `json:"resultBytes,omitempty"`
+	RetentionDays int    `json:"retentionDays,omitempty"`
+	MaxBytes      int64  `json:"maxBytes,omitempty"`
+	MinFreeBytes  int64  `json:"minFreeBytes,omitempty"`
+	KeyID         string `json:"keyId,omitempty"`
+}
+
+// ResolvedAuditPolicy is a complete immutable policy snapshot used by a
+// gateway and rendered by the CLI.
+type ResolvedAuditPolicy struct {
+	Enabled       bool
+	Durability    string
+	ResultMode    string
+	ResultBytes   int
+	RetentionDays int
+	MaxBytes      int64
+	MinFreeBytes  int64
+	KeyID         string
+}
+
 // GovernanceDoc is the typed view of governance.json: the global root layer
 // of the scope chain.
 //
@@ -512,6 +555,11 @@ type GovernanceDoc struct {
 	// is an ordinary scope subject — a profile or client layer that lists its
 	// servers explicitly hides it again.
 	SkillsOverMCP bool `json:"skillsOverMcp,omitempty"`
+	// Audit is global machine policy, not a permission layer. When enabled,
+	// every tools/call attempt is written before execution and storage
+	// failure blocks the call; it never changes which server or tool is in
+	// scope. The payload key lives in the secret vault, never this document.
+	Audit *Doc[AuditPolicy] `json:"audit,omitempty"`
 }
 
 // IntentVariantsEnabled resolves the tri-state IntentVariants switch:
@@ -521,6 +569,38 @@ func (g GovernanceDoc) IntentVariantsEnabled() bool {
 		return true
 	}
 	return *g.IntentVariants
+}
+
+// ResolvedAudit returns the complete audit policy with bounded defaults.
+func (g GovernanceDoc) ResolvedAudit() ResolvedAuditPolicy {
+	p := ResolvedAuditPolicy{
+		Durability: DefaultAuditDurability, ResultMode: DefaultAuditResultMode,
+		ResultBytes: DefaultAuditResultBytes, RetentionDays: DefaultAuditRetentionDays,
+		MaxBytes: DefaultAuditMaxBytes, MinFreeBytes: DefaultAuditMinFree,
+	}
+	if g.Audit == nil {
+		return p
+	}
+	p.Enabled, p.KeyID = g.Audit.V.Enabled, g.Audit.V.KeyID
+	if g.Audit.V.Durability != "" {
+		p.Durability = g.Audit.V.Durability
+	}
+	if g.Audit.V.ResultMode != "" {
+		p.ResultMode = g.Audit.V.ResultMode
+	}
+	if g.Audit.V.ResultBytes > 0 {
+		p.ResultBytes = g.Audit.V.ResultBytes
+	}
+	if g.Audit.V.RetentionDays > 0 {
+		p.RetentionDays = g.Audit.V.RetentionDays
+	}
+	if g.Audit.V.MaxBytes > 0 {
+		p.MaxBytes = g.Audit.V.MaxBytes
+	}
+	if g.Audit.V.MinFreeBytes > 0 {
+		p.MinFreeBytes = g.Audit.V.MinFreeBytes
+	}
+	return p
 }
 
 // Snapshot is an immutable view of the registry as of the last successful

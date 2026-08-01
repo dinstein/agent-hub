@@ -52,7 +52,7 @@ var withheldGroups = []*cobra.Group{groupDaemon, groupManage}
 // fails, or the user's next move after a failed handshake is unspoken.
 var withheldCommands = []string{
 	"daemon", "session", "events", "token",
-	"config", "activity",
+	"config", "audit", "activity",
 	"skill",
 	// `tool` is NOT here any more: it hangs off `server`, which is visible,
 	// so the group ships. That was the point of moving it — a global allow
@@ -119,6 +119,7 @@ func TestCommandTreeCoversDesign(t *testing.T) {
 		"agenthub auth refresh", "agenthub auth logout",
 		"agenthub server tool ls", "agenthub server tool inspect", "agenthub server tool allow",
 		"agenthub activity",
+		"agenthub audit status", "agenthub audit enable", "agenthub audit disable",
 		"agenthub skill ls", "agenthub skill inspect", "agenthub skill add",
 		"agenthub skill rm", "agenthub skill enable", "agenthub skill disable",
 		"agenthub skill install-to", "agenthub skill sync",
@@ -230,7 +231,7 @@ func TestListingsAreNamedLs(t *testing.T) {
 func TestEveryGroupShowsHelpOnBareInvocation(t *testing.T) {
 	groups := [][]string{
 		{"server"}, {"profile"}, {"client"}, {"session"}, {"secret"}, {"token"},
-		{"server", "tool"}, {"skill"}, {"config"}, {"daemon"}, {"auth"},
+		{"server", "tool"}, {"skill"}, {"config"}, {"audit"}, {"daemon"}, {"auth"},
 	}
 	for _, path := range groups {
 		g := strings.Join(path, " ")
@@ -275,7 +276,7 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		// sits with the daemon rather than with the other governance verbs.
 		{"daemon", []string{"daemon", "session", "events", "token"}},
 		{"manage", []string{
-			"config", "activity",
+			"config", "audit", "activity",
 			"skill",
 		}},
 		// One member, and visible even in a shipped build: Setup and Wire up
@@ -478,7 +479,7 @@ func TestHiddenCommandsStillRun(t *testing.T) {
 	root := newReleaseTestRoot(t)
 	for _, path := range [][]string{
 		{"token", "ls"}, {"token"},
-		{"config", "ls"},
+		{"config", "ls"}, {"audit", "status"},
 		{"daemon", "status"}, {"session", "ls"}, {"events"}, {"activity"}, {"doctor"},
 	} {
 		cmd, _, err := root.Find(path)
