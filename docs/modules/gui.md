@@ -122,6 +122,8 @@ are switched in place when Connection type changes, and `fieldset.group[hidden]`
 the group's authored `display:flex` would otherwise override the browser's default `[hidden]` style and
 put Command and URL on screen together even though the collected entry correctly accepted only one.
 Manual server creation and Catalog entries that need parameters open this editor in a focused modal.
+Manual creation starts on `http`; pasted and Catalog definitions keep the transport they declare (and
+the parser's absent transport retains the registry's `stdio` default).
 The list remains stable underneath, the dialog header names the object being configured, long forms
 scroll inside the available window height, and the save/cancel actions remain at the bottom edge. A
 Catalog entry with no missing configuration remains a single-click add; the modal is not a ritual
@@ -225,13 +227,21 @@ Two rules on it, both easy to undo by accident:
 
 The server overview is one keyboard-focusable disclosure target. Its chevron and `aria-expanded` state make the
 toggle explicit: one activation reveals the latest cached self-test detail underneath and the next collapses it.
-Expansion never performs I/O and occupies a separate grid row, so the original title, switch, status and actions
-do not move or vertically centre against the added content. Editing is a separate, always-visible **Edit** button
-in the action column, so a click whose visible affordance says “show me more” cannot unexpectedly open a write
-surface. The leading enable switch and trailing Edit / Test controls remain separate targets and never bubble into
-the disclosure. Destructive Remove sits in a compact overflow menu: it stays available without painting every
-healthy row as a red warning. A successful enable/disable writes no page-level notice because the switch and the
-row's own probe already show the stored and runtime outcomes; failures keep the shared error surface.
+Expansion never performs I/O. The summary and detail are separate sibling boxes: the summary retains its fixed
+geometry and health spine, while the detail adds a divider and quieter background underneath. Only the summary's
+non-control surface toggles the disclosure; interacting with cached detail cannot collapse it. Editing is a
+separate, always-visible **Edit** button in the action column, so a click whose visible affordance says “show me
+more” cannot unexpectedly open a write surface. The leading enable switch and trailing Edit / Test controls remain
+separate targets and never bubble into the disclosure. Destructive Remove sits in a compact overflow menu: it stays
+available without painting every healthy row as a red warning. A successful enable/disable writes no page-level
+notice because the switch and the row's own probe already show the stored and runtime outcomes; failures keep the
+shared error surface.
+
+The detail also includes cached OAuth metadata from the credential-status API: state, access-token expiry,
+issuer, scopes, and whether a refresh token exists. It never includes token values. When a stored OAuth credential
+exists, the fixed summary action group exposes **Log out**; the confirmation states that this deletes the local
+credential but does not revoke it at the provider. Logging out immediately re-runs the page-owned handshake so the
+row returns to its Authenticate action rather than retaining a stale connected result.
 
 The action column is deliberately compact. It may contain only the distilled status or direct health
 action plus the row controls; daemon detail, HTTP responses and recovery instructions live behind a

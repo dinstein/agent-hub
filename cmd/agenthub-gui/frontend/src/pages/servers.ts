@@ -54,6 +54,7 @@ import {
 } from "../ui";
 import type {
   AuthLogin,
+  AuthStatus,
   DockerMount,
   DockerRuntime,
   ParsedClientConfig,
@@ -64,7 +65,7 @@ import type {
   ServerTestResult,
   TopicEvent,
 } from "../types";
-import { ErrCode, LoginMode, LoginPhase, Provenance, Runtime, Transport } from "../types";
+import { AuthState, ErrCode, LoginMode, LoginPhase, Provenance, Runtime, Transport } from "../types";
 
 // ---------------------------------------------------------------------------
 // Health presentation
@@ -285,11 +286,12 @@ function isPackageRunner(command: string): boolean {
 
 type Collected = { ok: true; entry: ServerEntry } | { ok: false; message: string };
 
-/** The empty definition a new server starts from. Enabled and stdio are the
- *  defaults because they are what the registry's zero value already means. */
+/** The empty definition a manually-created server starts from. HTTP is the
+ *  useful GUI default because most operators arrive with a remote MCP URL;
+ *  imported definitions retain the registry's stdio zero-value semantics. */
 function blankEntry(): ServerEntry {
   return {
-    transport: Transport.Stdio,
+    transport: Transport.HTTP,
     command: "",
     args: null,
     env: null,
@@ -710,7 +712,7 @@ function parsedCommandLine(entry: Partial<ServerEntry>): string {
  */
 function fromParsed(partial: Partial<ServerEntry>): ServerEntry {
   const entry: ServerEntry = { ...blankEntry(), ...partial };
-  if (!entry.transport) entry.transport = Transport.Stdio;
+  if (!partial.transport) entry.transport = Transport.Stdio;
   return entry;
 }
 
@@ -752,6 +754,9 @@ export function serversPage(): Page {
   const probeVersions = new Map<string, number>();
   const inFlightProbes = new Map<string, ReturnType<typeof hub.testServer>>();
   const expandedServers = new Set<string>();
+  const authStatuses = new Map<string, AuthStatus>();
+  let authStatusLoaded = false;
+  let authStatusError = "";
   let listedServers: Server[] = [];
   let fleetProbeEpoch = 0;
   let lastServerRevision = 0;
@@ -810,6 +815,22 @@ export function serversPage(): Page {
     noteConnecting(servers);
     paint(servers);
     tick();
+  }
+
+  /** Refreshes credential metadata only. The API deliberately carries no
+   *  token values, so this cache can answer the disclosure without turning
+   *  an expansion click into a downstream request or a secret read. */
+  async function loadAuthStatuses(): Promise<void> {
+    try {
+      const statuses = (await hub.authStatus("")) ?? [];
+      authStatuses.clear();
+      for (const status of statuses) authStatuses.set(status.server, status);
+      authStatusError = "";
+    } catch (err) {
+      authStatusError = asCallError(err).message;
+    } finally {
+      authStatusLoaded = true;
+    }
   }
 
   /** Runs one authoritative page-owned handshake. An authentication refusal
@@ -1015,6 +1036,7 @@ export function serversPage(): Page {
       if (st.phase === LoginPhase.Complete) {
         finished = true;
         close();
+        await loadAuthStatuses();
         try {
           await probeOne(id);
         } catch {
@@ -1224,6 +1246,78 @@ export function serversPage(): Page {
         el("span", { class: "meta", text: checked }),
       ]),
       el("div", { class: "server-health-detail-body" }, [content, action]),
+      authDetails(s),
+    ]);
+  }
+
+  function authExpiry(status: AuthStatus): string {
+    if (status.expires_at === 0) return "No expiry advertised";
+    const deadline = new Date(status.expires_at * 1000).toLocaleString();
+    if (status.expires_in <= 0) {
+      return `${deadline} (expired ${Math.abs(Math.round(status.expires_in / 60))} min ago)`;
+    }
+    if (status.expires_in < 3600) {
+      return `${deadline} (in ${Math.round(status.expires_in / 60)} min)`;
+    }
+    if (status.expires_in < 86400) {
+      return `${deadline} (in ${Math.round(status.expires_in / 3600)} h)`;
+    }
+    return deadline;
+  }
+
+  function authStateBadge(state: string): HTMLElement {
+    const cls =
+      state === AuthState.Authorized
+        ? "badge-healthy"
+        : state === AuthState.Expiring
+          ? "badge-degraded"
+          : state === AuthState.None
+            ? "badge-disabled"
+            : "badge-unhealthy";
+    return el("span", { class: `badge ${cls}`, text: state });
+  }
+
+  function hasStoredCredential(id: string): boolean {
+    const status = authStatuses.get(id);
+    return status !== undefined && status.state !== AuthState.None;
+  }
+
+  /** Cached OAuth metadata belongs beside the cached self-test, but its
+   *  destructive action stays in the fixed summary where the operator asked
+   *  for it. No token or refresh token value exists in this API shape. */
+  function authDetails(s: Server): Node {
+    const status = authStatuses.get(s.id);
+    let body: Node;
+    let badge: Node;
+    if (!authStatusLoaded) {
+      badge = el("span", { class: "badge badge-disabled", text: "not loaded" });
+      body = el("p", { class: "meta", text: "Authorization status has not been loaded yet." });
+    } else if (authStatusError && !status) {
+      badge = el("span", { class: "badge badge-unhealthy", text: "unavailable" });
+      body = el("p", { class: "meta", text: authStatusError, title: authStatusError });
+    } else if (!status || status.state === AuthState.None) {
+      badge = el("span", { class: "badge badge-disabled", text: "not stored" });
+      body = el("p", {
+        class: "meta",
+        text: "No OAuth credential is stored for this server on this machine.",
+      });
+    } else {
+      badge = authStateBadge(status.state);
+      body = el("div", { class: "kvs" }, [
+        kv("Access token", authExpiry(status)),
+        kv("Refresh token", status.has_refresh_token ? "Available" : "Not available"),
+        kv("Issuer", status.issuer || "—"),
+        kv("Scope", status.scope || "—"),
+        status.client_registrar ? kv("Client registrar", status.client_registrar) : null,
+        status.detail ? kv("Detail", status.detail) : null,
+      ]);
+    }
+    return el("section", { class: "server-auth-detail" }, [
+      el("div", { class: "server-auth-detail-head" }, [
+        el("strong", { text: "Authorization" }),
+        badge,
+      ]),
+      el("div", { class: "server-auth-detail-body" }, [body]),
     ]);
   }
 
@@ -1614,6 +1708,38 @@ export function serversPage(): Page {
     slot.say(`${s.id} removed.`);
   }
 
+  async function logoutCredential(s: Server): Promise<void> {
+    const ok = await confirmAction({
+      title: `Remove the credential for ${s.id}?`,
+      body: "The stored OAuth tokens are deleted from this machine.",
+      consequences: [
+        "This does NOT revoke anything at the provider. Revoke it there as well if that is what you meant.",
+        "The server needs to be authenticated again before it works.",
+      ],
+      confirmLabel: "Log out",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await hub.logoutAuth(s.id);
+      authStatuses.delete(s.id);
+      authStatusError = "";
+      slot.clear();
+      if (s.enabled) {
+        try {
+          await probeOne(s.id);
+        } catch {
+          // The row owns the expected authentication result or concrete
+          // failure; logout needs no duplicate notice above the fleet.
+        }
+      } else {
+        repaint();
+      }
+    } catch (err) {
+      slot.fail(err);
+    }
+  }
+
   async function toggle(s: Server): Promise<void> {
     const next = !s.enabled;
     try {
@@ -1732,6 +1858,11 @@ export function serversPage(): Page {
     const remote = s.transport === Transport.HTTP || s.transport === Transport.SSE;
     const expanded = expandedServers.has(s.id);
     const detailID = `server-probe-${encodeURIComponent(s.id)}`;
+    const toggleDetails = (): void => {
+      if (expanded) expandedServers.delete(s.id);
+      else expandedServers.add(s.id);
+      repaint();
+    };
     const overview = el("button", {
       class: "rec-overview",
       type: "button",
@@ -1747,13 +1878,9 @@ export function serversPage(): Page {
       ]),
       el("span", { class: "rec-overview-cue", "aria-hidden": "true", text: "▸" }),
     ]) as HTMLButtonElement;
-    overview.addEventListener("click", () => {
-      if (expanded) expandedServers.delete(s.id);
-      else expandedServers.add(s.id);
-      repaint();
-    });
+    overview.addEventListener("click", toggleDetails);
 
-    return el("div", { class: "rec has-lead" }, [
+    const summary = el("div", { class: "server-summary-row" }, [
       el("div", { class: `spine ${spineTone(s)}${remote ? " remote" : ""}` }),
       // The global switch, in the leading position: enabling and disabling is
       // the setting this page exists to change, and it was previously a word
@@ -1772,11 +1899,27 @@ export function serversPage(): Page {
       el("div", { class: "rec-act" }, [
         statusCell(s),
         controls(
+          hasStoredCredential(s.id)
+            ? button("Log out", "btn btn-sm btn-deny", () => void logoutCredential(s))
+            : null,
           button("Edit", "btn btn-sm", () => void openEditor(s.id)),
           button("Test", "btn btn-sm", () => void test(s)),
           rowMenu(s),
         ),
       ]),
+    ]);
+    summary.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      // Controls keep their own meaning. Everything else in the fixed summary
+      // row is the disclosure target; the detail panel is a sibling and can
+      // never bubble into this listener.
+      if (target.closest("button, a, input, label, summary, details")) return;
+      toggleDetails();
+    });
+
+    return el("div", { class: "rec server-record" }, [
+      summary,
       expanded ? probeDetails(s, detailID) : null,
     ]);
   }
@@ -1819,6 +1962,9 @@ export function serversPage(): Page {
       servers,
       expanded: Array.from(expandedServers).sort(),
       probeDetails: servers.map((s) => [s.id, probeCache.get(s.id)]),
+      authDetails: servers.map((s) => [s.id, authStatuses.get(s.id)]),
+      authStatusLoaded,
+      authStatusError,
     });
     if (signature === paintedSignature) return;
     paintedSignature = signature;
@@ -1944,6 +2090,7 @@ export function serversPage(): Page {
       return;
     }
     listedServers = servers;
+    if (forceProbe || !authStatusLoaded) await loadAuthStatuses();
     const probing = probeFleet(servers, forceProbe, showChecking);
     repaint();
     if (waitForProbes) await probing;

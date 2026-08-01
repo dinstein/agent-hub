@@ -3725,43 +3725,28 @@ details.adv[open] > summary::before {
   border-top: none;
 }
 
-/* The lead column: a control that acts on the whole row, in the first place
- * the eye lands before it has read anything.
- *
- * It is a modifier and not part of .rec because the catalog ledger shares
- * these records and has no per-row setting to flip — an always-present track
- * would indent every catalog row past an empty column. */
-.rec.has-lead {
+/* Server records have two visibly separate boxes: an invariant summary row
+ * and, when requested, a cached diagnostic panel underneath. Catalog records
+ * continue to use .rec's own grid and never inherit this extra structure. */
+.server-record {
+  display: block;
+}
+
+.server-summary-row {
+  display: grid;
   grid-template-columns: 3px auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 var(--space-6);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
 }
 
-/* An expanded server keeps its original row intact. The disclosure occupies
- * a second grid row under the title/actions instead of making the first row
- * taller and vertically centring its switch and buttons beside diagnostics. */
-.rec.has-lead > .spine {
-  grid-column: 1;
-  grid-row: 1 / span 2;
+.rec.server-record:hover {
+  background: var(--panel);
 }
 
-.rec.has-lead > .rec-lead {
-  grid-column: 2;
-  grid-row: 1;
-}
-
-.rec.has-lead > .rec-body {
-  grid-column: 3;
-  grid-row: 1;
-}
-
-.rec.has-lead > .rec-act {
-  grid-column: 4;
-  grid-row: 1;
-}
-
-.rec.has-lead > .server-probe-detail {
-  grid-column: 3 / 5;
-  grid-row: 2;
-  margin: 0 var(--space-6) var(--space-5) 0;
+.server-summary-row:hover {
+  background: var(--panel-2);
 }
 
 .rec-lead {
@@ -3771,7 +3756,7 @@ details.adv[open] > summary::before {
 }
 
 /* The lead column supplies the indent, so the body stops adding its own. */
-.rec.has-lead > .rec-body {
+.server-summary-row > .rec-body {
   padding-left: 0;
 }
 
@@ -3974,6 +3959,18 @@ details.adv[open] > summary::before {
   font-size: var(--text-xs);
 }
 
+.server-record > .server-probe-detail {
+  max-width: none;
+  margin: 0;
+  padding: var(--space-4) var(--space-6) var(--space-5) 88px;
+  border-top: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--panel-2) 72%, var(--panel));
+}
+
+.server-record > .server-probe-detail > * {
+  max-width: 72ch;
+}
+
 .server-probe-detail-head {
   display: flex;
   align-items: center;
@@ -3995,6 +3992,34 @@ details.adv[open] > summary::before {
 }
 
 .server-health-detail-body > .meta {
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.server-auth-detail {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.server-auth-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--fg);
+}
+
+.server-auth-detail-body {
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--panel) 65%, transparent);
+}
+
+.server-auth-detail-body > .meta {
   margin: 0;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -4358,8 +4383,16 @@ details.adv[open] > summary::before {
   }
 
   .rec,
-  .rec.has-lead {
+  .server-summary-row {
     grid-template-columns: 3px auto minmax(0, 1fr);
+  }
+
+  .server-summary-row > .spine {
+    grid-row: 1 / span 2;
+  }
+
+  .server-record > .server-probe-detail {
+    padding-left: var(--space-5);
   }
 
   .rec-act {
