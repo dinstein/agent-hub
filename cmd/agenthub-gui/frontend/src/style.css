@@ -1298,21 +1298,6 @@ a.nav.active .nav-icon {
   background: var(--panel-2);
 }
 
-.command-list {
-  display: grid;
-  gap: var(--space-3);
-  margin-top: var(--space-6);
-}
-
-.command-list code {
-  padding: 7px 9px;
-  border: 1px solid var(--line-soft);
-  border-radius: 7px;
-  background: var(--panel-2);
-  color: var(--fg);
-  font-size: var(--text-sm);
-}
-
 @media (max-width: 720px) {
   .settings-layout {
     grid-template-columns: 1fr;
@@ -2133,74 +2118,6 @@ pre.raw-text {
   .srv-actions {
     align-items: flex-start;
   }
-}
-
-/* --- equivalent CLI command (docs/modules/gui.md) -------------------------- */
-
-/* One line, always. It used to wrap, and inside a narrow card that turned a
- * three-part hint into three stacked rows — the ⌘, then a full-width command
- * box, then the Copy button — which read as three unrelated controls. The
- * command is truncated rather than broken because it is never meant to be
- * retyped from the screen: Copy takes the whole thing, and the title carries
- * it for a reader who only wants to look. */
-.cli-hint {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: nowrap;
-  font-size: var(--text-sm);
-  min-width: 0;
-}
-
-.cli-hint > .cli-icon {
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
-  color: var(--muted);
-}
-
-.cli-hint > code {
-  font-family: var(--font-mono);
-  color: var(--muted);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 3px 8px;
-  user-select: all;
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.cli-hint > .cli-copy {
-  flex: 0 0 auto;
-  padding: 2px 8px;
-  line-height: 1.4;
-  font-size: var(--text-sm);
-}
-
-details.cli-block > summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 12px;
-  list-style: none;
-}
-
-details.cli-block > summary::-webkit-details-marker {
-  display: none;
-}
-
-details.cli-block[open] > summary {
-  margin-bottom: 6px;
-}
-
-.cli-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
 }
 
 /* --- cards ---------------------------------------------------------------- */
@@ -3214,8 +3131,8 @@ details.adv[open] > summary::before {
   background: color-mix(in srgb, var(--danger) 9%, transparent);
 }
 
-/* Diagnostics can contain an HTTP response, a JSON error and a CLI recovery
- * command. They belong to the flexible body column: putting them in the
+/* Diagnostics can contain an HTTP response, a JSON error and a recovery
+ * instruction. They belong to the flexible body column: putting them in the
  * trailing action column lets one error determine the width of every other
  * cell and collapses the server name at ordinary window sizes. */
 .server-health-detail {
@@ -3267,8 +3184,43 @@ details.adv[open] > summary::before {
   overflow-wrap: anywhere;
 }
 
-.server-health-detail-body .cli-hint {
-  max-width: 100%;
+.terminal-fallback {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.terminal-fallback code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+.verify-prompt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.verify-prompt > code {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 9px;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rec-title {
@@ -3514,8 +3466,7 @@ details.adv[open] > summary::before {
 /* Catalog rows have more explanatory copy than server rows. Their action
  * column is deliberately fixed and vertical: letting it float at the far end
  * of a flexible row produced a wide blank desert between the definition and
- * its Add button. The CLI hint is capped for the same reason — it is a command
- * to copy, not a progress bar that needs to span the card. */
+ * its Add button. */
 .catalog-list .rec {
   grid-template-columns: 3px minmax(0, 1fr) 148px;
   align-items: start;
@@ -3528,18 +3479,6 @@ details.adv[open] > summary::before {
 .catalog-list .rec-desc {
   max-width: 68ch;
   line-height: 1.5;
-}
-
-.catalog-list .cli-hint {
-  max-width: 640px;
-  margin-top: var(--space-5);
-  gap: var(--space-3);
-}
-
-.catalog-list .cli-hint > code {
-  min-height: 30px;
-  display: flex;
-  align-items: center;
 }
 
 .catalog-list .rec-act {

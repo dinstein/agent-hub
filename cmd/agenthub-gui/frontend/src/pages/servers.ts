@@ -39,8 +39,6 @@ import {
   advanced,
   button,
   checkboxInput,
-  cliBlock,
-  cliHint,
   confirmAction,
   controls,
   copyButton,
@@ -51,7 +49,6 @@ import {
   openModal,
   pairEditor,
   selectInput,
-  shellArg,
   textInput,
   toggleSwitch,
 } from "../ui";
@@ -70,87 +67,13 @@ import type {
 import { LoginMode, LoginPhase, Provenance, Runtime, Transport } from "../types";
 
 // ---------------------------------------------------------------------------
-// Equivalent CLI commands (docs/modules/gui.md)
-// ---------------------------------------------------------------------------
-//
-// Every command below exists in internal/cli. Nothing is invented: a command
-// that looks plausible and is not real would be worse than showing none,
-// because the operator finds out only after pasting it somewhere that matters.
-
-const cliRemove = (id: string): string => `agenthub server rm ${shellArg(id)}`;
-const cliEnable = (id: string): string => `agenthub server enable ${shellArg(id)}`;
-const cliDisable = (id: string): string => `agenthub server disable ${shellArg(id)}`;
-const cliTest = (id: string): string => `agenthub server test ${shellArg(id)}`;
-
-/**
- * The `server add` line that reproduces one stored definition.
- *
- * Rendered from the SAME entry the form is about to send, so the two cannot
- * drift: if a field is not representable as a flag it does not silently
- * disappear from the command, it is simply not in the entry either.
- */
-function cliAdd(id: string, e: ServerEntry): string {
-  const parts = ["agenthub server add", shellArg(id || "<id>")];
-  const push = (flag: string, value: string): void => {
-    parts.push(flag, shellArg(value));
-  };
-  if (e.transport && e.transport !== Transport.Stdio) push("--transport", e.transport);
-  if (e.command) push("--cmd", e.command);
-  if (e.args && e.args.length > 0) push("--args", e.args.join(","));
-  if (e.cwd) push("--cwd", e.cwd);
-  if (e.url) push("--url", e.url);
-  for (const [k, v] of Object.entries(e.env ?? {})) push("--env", `${k}=${v}`);
-  for (const [k, v] of Object.entries(e.headers ?? {})) push("--header", `${k}=${v}`);
-  if (e.provenance === Provenance.Local) parts.push("--local");
-  if (e.runtime === Runtime.Docker) {
-    push("--runtime", Runtime.Docker);
-    const d = e.docker;
-    if (d) {
-      if (d.image) push("--image", d.image);
-      if (d.network) push("--network", d.network);
-      for (const m of d.mounts ?? []) {
-        push("--mount", [m.source, m.target ?? "", m.write ? "rw" : "ro"].join(":"));
-      }
-      if (d.memory) push("--memory", d.memory);
-      if (d.cpus) push("--cpus", d.cpus);
-      if (d.user) push("--container-user", d.user);
-      if (d.workdir) push("--container-workdir", d.workdir);
-      for (const a of d.extraArgs ?? []) push("--docker-arg", a);
-    }
-  }
-  if (e.oauth?.issuer) push("--oauth-issuer", e.oauth.issuer);
-  for (const s of e.oauth?.scopes ?? []) push("--oauth-scope", s);
-  if (e.oauth?.resourceMetadataUrl) push("--oauth-resource-metadata", e.oauth.resourceMetadataUrl);
-  return parts.join(" ");
-}
-
-/**
- * There is no `server edit`: the CLI has add / rm / enable / disable /
- * test / inspect / logs and nothing else, so the honest equivalent of the
- * GUI's wholesale update is a remove followed by an add.
- *
- * Saying so is the point of this feature. Papering over the gap with a
- * pretend `server edit` would turn a teaching aid into a source of commands
- * that fail when pasted.
- */
-function cliUpdate(id: string, e: ServerEntry): string {
-  return `${cliRemove(id)} && ${cliAdd(id, e)}`;
-}
-
-// ---------------------------------------------------------------------------
 // Health presentation
 // ---------------------------------------------------------------------------
 
-/** Actions the daemon can suggest that this page cannot perform itself. The
- *  honest form of "GUI is optional": an affordance may not exist before the
- *  endpoint does, so the exact CLI command is offered instead of a button
- *  that pretends to work. */
-const CLI_ACTIONS: Record<string, { label: string; command: string; note?: string }> = {
-  [HealthAction.Login]: {
-    label: "Sign in",
-    command: "agenthub auth login <id>",
-    note: "interactive login is a CLI flow; refresh and logout are on the Auth page",
-  },
+/** Terminal fallbacks exist only where the control plane has no endpoint.
+ *  They are diagnostic escape hatches, not teaching chrome beside every
+ *  ordinary GUI action. */
+const TERMINAL_ACTIONS: Record<string, { label: string; command: string; note?: string }> = {
   [HealthAction.ViewLogs]: { label: "View logs", command: "agenthub server logs <id> --follow" },
   [HealthAction.Restart]: {
     label: "Restart",
@@ -169,10 +92,14 @@ function suggestion(server: Server): Node | null {
   if (action === HealthAction.None || action === HealthAction.Enable) return null;
   const route = ROUTE_ACTIONS[action];
   if (route) return el("a", { class: "btn btn-secondary", href: route.route, text: route.label });
-  const spec = CLI_ACTIONS[action];
+  const spec = TERMINAL_ACTIONS[action];
   if (!spec) return el("span", { class: "meta", text: action });
   const command = spec.command.replace("<id>", server.id);
-  return el("div", { class: "action" }, [cliHint(command, spec.note ? { note: spec.note } : {})]);
+  return el("p", { class: "terminal-fallback" }, [
+    el("span", { text: `${spec.label} from a terminal:` }),
+    el("code", { text: command }),
+    spec.note ? el("span", { text: spec.note }) : null,
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -853,10 +780,6 @@ export function serversPage(): Page {
       body.append(...nodes.filter((n): n is Node => n !== null));
     };
 
-    /** The equivalent command, on every state of this dialog — the same rule
-     *  every other action on this page follows. */
-    const equivalent = (): HTMLElement => cliHint(`agenthub auth login ${shellArg(id)}`);
-
     const remaining = (deadline: number | undefined): Node | null => {
       if (!deadline) return null;
       const left = Math.max(0, deadline * 1000 - Date.now());
@@ -868,13 +791,13 @@ export function serversPage(): Page {
       });
     };
 
-    show(el("p", { class: "muted", text: `Contacting ${id}…` }), equivalent());
+    show(el("p", { class: "muted", text: `Contacting ${id}…` }));
 
     try {
       const started = await hub.startLogin(id);
       session = started.id;
     } catch (err) {
-      show(failureBox(err), equivalent());
+      show(failureBox(err));
       return;
     }
 
@@ -884,7 +807,7 @@ export function serversPage(): Page {
       try {
         st = await hub.loginStatus(session);
       } catch (err) {
-        show(failureBox(err), equivalent());
+        show(failureBox(err));
         return;
       }
       if (stopped) return;
@@ -920,7 +843,6 @@ export function serversPage(): Page {
             }),
             button("Close", "btn btn-secondary", () => close()),
           ),
-          equivalent(),
         );
         return;
       }
@@ -944,7 +866,6 @@ export function serversPage(): Page {
           ),
           el("p", { class: "hint", text: "This window notices on its own once you have approved it." }),
           remaining(st.deadline),
-          equivalent(),
         );
       } else if (st.mode === LoginMode.Loopback && st.authorization_url) {
         // Opened once, not on every poll: re-opening a tab every 700ms would
@@ -968,13 +889,9 @@ export function serversPage(): Page {
           ),
           el("p", { class: "hint", text: "This window notices on its own once you have approved it." }),
           remaining(st.deadline),
-          equivalent(),
         );
       } else {
-        show(
-          el("p", { class: "muted", text: "Working out how this provider signs you in…" }),
-          equivalent(),
-        );
+        show(el("p", { class: "muted", text: "Working out how this provider signs you in…" }));
       }
       await sleep(LOGIN_POLL_MS);
     }
@@ -1361,28 +1278,6 @@ export function serversPage(): Page {
     const fields = entryForm(detail ? detail.entry : blankEntry());
     const errors = el("div", { class: "notice-slot" });
 
-    // The equivalent command, kept in step with the form as it is typed.
-    const cliSlot = el("div", { class: "cli-list" });
-    const refreshCli = (): void => {
-      clear(cliSlot);
-      const collected = fields.collect();
-      const entry = collected.ok ? collected.entry : blankEntry();
-      const name = idInput.value.trim() || "<id>";
-      cliSlot.append(
-        cliHint(creating ? cliAdd(name, entry) : cliUpdate(name, entry), {
-          note: creating
-            ? "same definition, from a terminal"
-            : "there is no `server edit`: an update is a remove plus an add",
-        }),
-      );
-      if (!collected.ok) {
-        cliSlot.append(el("span", { class: "hint", text: `incomplete: ${collected.message}` }));
-      }
-    };
-    fields.node.addEventListener("input", refreshCli);
-    fields.node.addEventListener("change", refreshCli);
-    idInput.addEventListener("input", refreshCli);
-
     const save = button(creating ? "Create server" : "Save changes", "btn btn-primary", () => {
       clear(errors);
       const name = idInput.value.trim();
@@ -1421,10 +1316,8 @@ export function serversPage(): Page {
       errors,
       field("Id", idInput, creating ? "the name clients and profiles refer to" : "ids are not renamed"),
       fields.node,
-      cliSlot,
       controls(save, button("Cancel", "btn btn-secondary", () => form.hide())),
     ]);
-    refreshCli();
     return node;
   }
 
@@ -1451,7 +1344,6 @@ export function serversPage(): Page {
       ],
       confirmLabel: "Remove",
       danger: true,
-      cli: cliRemove(s.id),
       perform: async () => {
         // The generation is re-read INSIDE the attempt, so a 409 caused by
         // an edit elsewhere is fixed simply by pressing Remove again.
@@ -1493,11 +1385,10 @@ export function serversPage(): Page {
             "agenthub sends secrets, it never reads them back.",
         }),
         testResultView(res),
-        cliHint(cliTest(s.id)),
       );
     } catch (err) {
       clear(body);
-      body.append(failureBox(err), cliHint(cliTest(s.id)));
+      body.append(failureBox(err));
     }
   }
 
@@ -1559,7 +1450,6 @@ export function serversPage(): Page {
   }
 
   function row(s: Server): HTMLElement {
-    const toggleLabel = s.enabled ? "Disable" : "Enable";
     // The spine's second channel: dashed means this definition is reached
     // over the network rather than run here. Same convention as the Catalog
     // ledger, because it is the same distinction.
@@ -1598,19 +1488,6 @@ export function serversPage(): Page {
       el("div", { class: "rec-body" }, [
         overview,
         statusDetails(s),
-        cliBlock(
-          [
-            { label: toggleLabel, command: s.enabled ? cliDisable(s.id) : cliEnable(s.id) },
-            { label: "Test", command: cliTest(s.id) },
-            { label: "Remove", command: cliRemove(s.id) },
-            {
-              label: "Edit",
-              command: `agenthub server inspect ${shellArg(s.id)}`,
-              note: "read the definition; writing it back is rm + add (see the editor)",
-            },
-          ],
-          "⌘ CLI",
-        ),
       ]),
       el("div", { class: "rec-act" }, [
         statusCell(s),

@@ -151,19 +151,18 @@ Two rules on it, both easy to undo by accident:
   walked back, and the moment they are wrong is exactly the moment the user looks away satisfied —
   the same reason a row grays out instead of vanishing (§5).
 
-The server overview above the CLI disclosure is one keyboard-focusable Edit target. Its hover, focus
-ring, cursor, and Edit cue (revealed only while hovering or focusing) all describe the same action;
-the disclosure below it only expands commands. This prevents the old split card where visually
-identical space in the upper half did nothing while only the lower label happened to accept a click.
-There is no second Edit button in the action column. The leading enable switch and trailing Test
-control remain separate targets and never bubble into Edit. Destructive Remove sits in a compact
-overflow menu: it stays available without painting every healthy row as a red warning.
+The server overview is one keyboard-focusable Edit target. Its hover, focus ring, cursor, and Edit cue
+(revealed only while hovering or focusing) all describe the same action. This prevents the old split
+card where visually identical space in the upper half did nothing while only the lower label happened
+to accept a click. There is no second Edit button in the action column. The leading enable switch and
+trailing Test control remain separate targets and never bubble into Edit. Destructive Remove sits in
+a compact overflow menu: it stays available without painting every healthy row as a red warning.
 
-The action column is deliberately compact. It may contain only the distilled status or direct
-health action plus the row controls; daemon detail, HTTP responses and CLI recovery instructions
-live behind a disclosure in the flexible record body. A diagnostic string must never participate in
-the action column's width calculation: one verbose failure would otherwise squeeze every server's
-identity and make the list unreadable at the application's normal window width.
+The action column is deliberately compact. It may contain only the distilled status or direct health
+action plus the row controls; daemon detail, HTTP responses and recovery instructions live behind a
+disclosure in the flexible record body. A diagnostic string must never participate in the action
+column's width calculation: one verbose failure would otherwise squeeze every server's identity and
+make the list unreadable at the application's normal window width.
 
 ### 2.1 The Authenticate button signs in
 
@@ -239,19 +238,17 @@ an explicit note that closing it makes the value unrecoverable.
 
 ---
 
-## 5. Show the equivalent CLI command next to every action
+## 5. CLI parity is an architectural boundary, not repeated page chrome
 
-```
-[Remove]  ⌘  agenthub server rm stripe
-```
+"The GUI may not have capabilities the CLI lacks" remains a hard boundary, but repeating an
+equivalent command beside every working GUI action duplicates the interface and weakens the visual
+hierarchy. Normal pages stay task-focused: one intent gets one primary control, without a second row
+of command text and Copy buttons teaching another interface.
 
-This is **differentiation handed to us by a hard constraint**. "The GUI may not have capabilities the
-CLI lacks" means every GUI action **necessarily has** an equivalent command — so display it and make
-it copyable. That incidentally solves two real needs: power users want to script things, and users
-want to paste the operation into a doc or a ticket.
-
-The side effect is that **the GUI becomes a teaching interface for the CLI** — a few clicks and the
-user knows what the commands look like.
+When the control plane genuinely lacks a GUI endpoint — currently following logs and restarting the
+daemon — a small, muted terminal fallback may appear inside the relevant diagnostic disclosure. It
+has no icon, call-to-action styling, or copy control. It is an escape hatch for the missing operation,
+not permanent chrome beside actions the window already performs.
 
 ---
 

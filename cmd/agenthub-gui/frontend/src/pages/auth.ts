@@ -1,10 +1,8 @@
 // Auth page: the stored OAuth credentials of downstream servers.
 //
-// SCOPE LIMIT (docs/modules/controlplane.md): only the non-interactive half
-// is here. An interactive login needs a local browser and a loopback callback
-// on a random port — a second, easily-broken code path with little to show
-// for it — so `login` stays a CLI flow and this page names the command
-// instead of offering a button that half works.
+// Interactive login is started from the Servers page, where the health action
+// that needs it lives. This page is the credential overview and handles the
+// non-interactive refresh and logout operations.
 //
 // RED LINE: no token, no client secret, no refresh token is ever rendered.
 // `has_refresh_token` is a boolean and that is all the page can say, because
@@ -71,7 +69,7 @@ export function authPage(): Page {
       body: "The stored tokens are deleted from this machine.",
       consequences: [
         "This does NOT revoke anything at the provider — agenthub cannot promise that. Revoke it there as well if that is what you meant.",
-        "The server needs an interactive `agenthub auth login` before it works again.",
+        "The server needs to be authenticated again from the Servers page before it works.",
       ],
       confirmLabel: "Remove from this machine",
       danger: true,
@@ -148,7 +146,7 @@ export function authPage(): Page {
               ),
         el("p", {
           class: "hint",
-          text: "Signing in is a CLI flow: `agenthub auth login <server> --device` or `--manual`. Only status, refresh and logout live on the control plane.",
+          text: "Start a new sign-in from the server's Authenticate action on the Servers page.",
         }),
       ),
     );

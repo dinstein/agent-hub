@@ -38,7 +38,6 @@ import {
   linesEditor,
   rawDetails,
   selectInput,
-  shellArg,
   textInput,
 } from "../ui";
 import type {
@@ -47,18 +46,6 @@ import type {
   ServerTestResult,
   ServerTestTool,
 } from "../types";
-
-// ---------------------------------------------------------------------------
-// Equivalent CLI commands (docs/modules/gui.md)
-// ---------------------------------------------------------------------------
-//
-// Both commands exist in internal/cli (server test). Nothing is invented.
-
-const cliList = (id: string): string => `agenthub server test ${shellArg(id)} --tools`;
-
-const cliCall = (id: string, tool: string, args: string): string =>
-  `agenthub server test ${shellArg(id)} --tool ${shellArg(tool)}` +
-  (args && args !== "{}" ? ` --args ${shellArg(args)}` : "");
 
 /** How long a call may run before the daemon gives up, in milliseconds.
  *  Generous on purpose: a cold `npx` cache genuinely takes a minute, and a
@@ -559,11 +546,6 @@ export function playgroundPage(): Page {
     return editor.value();
   }
 
-  function argsText(): string {
-    const got = currentArgs();
-    return got.ok ? JSON.stringify(got.args) : rawArea.value.trim() || "{}";
-  }
-
   function toForm(): void {
     if (!editor) return;
     const text = rawArea.value.trim();
@@ -764,10 +746,7 @@ export function playgroundPage(): Page {
     clear(runBox);
     if (!toolName) return;
     runBox.append(
-      controls(
-        button(`Call ${toolName}`, "btn btn-primary", () => void callTool()),
-        copyButton(() => cliCall(serverId, toolName, argsText()), "Copy CLI command", "btn btn-secondary"),
-      ),
+      controls(button(`Call ${toolName}`, "btn btn-primary", () => void callTool())),
       el("p", {
         class: "hint playground-call-note",
         text:
@@ -1036,7 +1015,6 @@ export function playgroundPage(): Page {
         el("div", { class: "panel panel-inset" }, [
           el("h3", { text: `${res.server} answered` }),
           connectionView(res),
-          controls(copyButton(() => cliList(serverId), "Copy CLI command", "btn btn-secondary")),
         ]),
       );
       drawTools();

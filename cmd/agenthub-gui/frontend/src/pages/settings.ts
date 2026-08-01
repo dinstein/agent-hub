@@ -2,15 +2,12 @@
 // GUI is allowed to be.
 //
 // There is no hub configuration here: every setting the hub has lives in the
-// daemon's registry and is reached through the control plane. Until the
-// corresponding endpoints exist, the page states the CLI command instead of
-// growing a second, GUI-only source of truth.
+// daemon's registry and is reached through the control plane.
 //
 // The theme is the one genuine exception and precisely because it is not hub
-// state: it is a property of THIS window on THIS machine, has no CLI
-// equivalent because there is nothing for a CLI to do with it, and is stored
-// in localStorage rather than the registry. Putting it anywhere else would
-// imply the daemon has an opinion about it.
+// state: it is a property of THIS window on THIS machine and is stored in
+// localStorage rather than the registry. Putting it anywhere else would imply
+// the daemon has an opinion about it.
 
 import { hub } from "../bridge";
 import { clear, el, icon, pageHeader } from "../dom";
@@ -100,23 +97,6 @@ export function settingsPage(): Page {
           el("p", {
             class: "hint",
             text: "System follows the OS live. This local preference is applied before the first frame is drawn.",
-          }),
-        ]),
-        el("section", { class: "settings-card" }, [
-          el("div", { class: "settings-icon" }, [icon("terminal")]),
-          el("h2", { text: "CLI parity" }),
-          el("p", {
-            class: "muted",
-            text: "The GUI is a control-plane client with no extra privileges and no private configuration store.",
-          }),
-          el("div", { class: "command-list" }, [
-            el("code", { text: "agenthub doctor" }),
-            el("code", { text: "agenthub server ls" }),
-            el("code", { text: "agenthub daemon restart" }),
-          ]),
-          el("p", {
-            class: "hint",
-            text: "If a capability is absent here, its control-plane endpoint is absent too — it is not a hidden permission.",
           }),
         ]),
       ]),

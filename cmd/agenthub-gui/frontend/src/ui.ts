@@ -19,7 +19,7 @@
 //     calls that got through are already through).
 
 import { copyText } from "./bridge";
-import { clear, el, errorBox, errorHeadline, icon } from "./dom";
+import { clear, el, errorBox, errorHeadline } from "./dom";
 import type { ProfileTools, ToolSelect, ToolSelector } from "./types";
 import { ToolSelect as Mode } from "./types";
 
@@ -459,8 +459,6 @@ export interface ConfirmOptions {
    *  for the writes that weaken enforcement rather than merely delete data. */
   acknowledge?: string;
   danger?: boolean;
-  /** The equivalent CLI command, shown inside the dialog (docs/modules/gui.md). */
-  cli?: string;
   /**
    * When set, the write runs INSIDE the dialog and a rejection keeps the
    * dialog open with the failure rendered in it. A dialog that closes on
@@ -541,7 +539,6 @@ export function confirmAction(opts: ConfirmOptions): Promise<boolean> {
               opts.consequences.map((c) => el("li", { text: c })),
             )
           : null,
-        opts.cli ? cliHint(opts.cli, { note: "the same thing from a terminal" }) : null,
         ack,
         failures,
         el("div", { class: "dlg-actions" }, [cancel, confirm]),
@@ -639,11 +636,11 @@ export function badge(text: string, cls: string): HTMLElement {
 }
 
 // ---------------------------------------------------------------------------
-// Copying, and the equivalent CLI command
+// Copying and raw details
 // ---------------------------------------------------------------------------
 
 /** A button that copies `text` and says so for a moment. Used everywhere a
- *  string's purpose is to end up somewhere else: an error, a command, a
+ *  string's purpose is to end up somewhere else, such as an error or a
  *  fingerprint. */
 export function copyButton(text: () => string, label = "Copy", cls = "btn btn-icon"): HTMLButtonElement {
   const b = button(label, cls, () => {
@@ -691,64 +688,6 @@ function rawOf(err: unknown): string {
 export function errorDetail(err: unknown): HTMLElement {
   const raw = rawOf(err);
   return errorBox(errorHeadline(raw), undefined, rawDetails(raw));
-}
-
-/**
- * Quotes one argument for a POSIX shell.
- *
- * The command strings this module renders are meant to be pasted and run, so
- * a server id with a space in it has to survive the round trip. Single quotes
- * with the standard '\'' escape is the only form that needs no knowledge of
- * what is inside the string.
- */
-export function shellArg(value: string): string {
-  if (value === "") return "''";
-  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value;
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-/**
- * The equivalent CLI command for a GUI action (docs/modules/gui.md).
- *
- * This is a property of the architecture rather than a feature: "the GUI can
- * do nothing the CLI cannot" means every button here HAS an exact command,
- * so showing it costs nothing and buys three things — a scriptable path for
- * the operator who wants one, something pasteable into a ticket, and a GUI
- * that teaches its own CLI. The command text must match the real command
- * (internal/cli); a plausible-looking command that does not exist would be
- * worse than showing none.
- */
-export function cliHint(command: string, opts: { note?: string } = {}): HTMLElement {
-  return el("div", { class: "cli-hint" }, [
-    icon("terminal", "cli-icon"),
-    el("code", { text: command }),
-    copyButton(() => command, "Copy", "btn btn-icon cli-copy"),
-    opts.note ? el("span", { class: "meta", text: opts.note }) : null,
-  ]);
-}
-
-export interface CliEntry {
-  label: string;
-  command: string;
-  note?: string;
-}
-
-/** Several equivalent commands behind one disclosure, for a row that has
- *  more than one write on it. */
-export function cliBlock(entries: CliEntry[], summary = "⌘ Equivalent CLI"): HTMLElement {
-  return el("details", { class: "cli-block" }, [
-    el("summary", { text: summary }),
-    el(
-      "div",
-      { class: "cli-list" },
-      entries.map((e) =>
-        el("div", { class: "action" }, [
-          el("span", { class: "meta", text: e.label }),
-          cliHint(e.command, e.note ? { note: e.note } : {}),
-        ]),
-      ),
-    ),
-  ]);
 }
 
 // ---------------------------------------------------------------------------

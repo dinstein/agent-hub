@@ -65,7 +65,7 @@ function showValueOnce(created: TokenCreated): void {
     [
       el("p", {
         class: "danger-hint",
-        text: "This is the only time this value is ever shown. agenthub stores only its hash — once this dialog is closed the value cannot be recovered, from here or from the CLI.",
+        text: "This is the only time this value is ever shown. agenthub stores only its hash — once this dialog is closed the value cannot be recovered anywhere.",
       }),
       value,
       controls(copy),

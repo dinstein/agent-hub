@@ -408,7 +408,7 @@ export function onboardingPage(): Page {
             class: "hint",
             text:
               "This build has no curated catalog yet, so a server is added by naming its command or URL " +
-              "on the Servers page. Anything you can run from a terminal, you can add there.",
+              "on the Servers page.",
           }),
       el("p", {
         class: "hint",
@@ -670,10 +670,10 @@ export function onboardingPage(): Page {
           "Paste this into the client you connected, then come back to this window. Nothing is claimed " +
           "here until that client opens a session against agenthub.",
       }),
-      el("div", { class: "cli-hint" }, [
+      el("div", { class: "verify-prompt" }, [
         el("span", { class: "meta", text: "❝" }),
         el("code", { text: VERIFY_PROMPT }),
-        copyButton(() => VERIFY_PROMPT, "Copy", "btn btn-icon cli-copy"),
+        copyButton(() => VERIFY_PROMPT, "Copy", "btn btn-icon"),
       ]),
     ];
     if (verifyState === "idle") {

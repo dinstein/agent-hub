@@ -37,14 +37,14 @@ export function failureBox(err: unknown): HTMLElement {
   if (isOffline(e)) {
     return errorBox(
       "The agenthub daemon is not reachable.",
-      e.hint ?? "Start it with `agenthub daemon start`, then use Retry on the Settings page.",
+      e.hint ?? "Open Settings and use Connect / retry.",
       rawDetails(rawText(e)),
     );
   }
   if (isUnavailable(e)) {
     return errorBox(
       "This daemon does not serve that endpoint yet.",
-      "The GUI is one control-plane client among several: everything shown here is also available from the CLI.",
+      "Upgrade or reconnect the daemon before retrying.",
       rawDetails(rawText(e)),
     );
   }

@@ -37,7 +37,7 @@ import { asCallError, hub, isStalePrecondition } from "../bridge";
 import { chip, chipRow, clear, el, emptyState, icon, loadingState, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { CONFLICT_MESSAGE, failureState, noticeSlot } from "../page";
-import { button, cliHint, controls, field, modalHost, shellArg, textInput } from "../ui";
+import { button, controls, field, modalHost, textInput } from "../ui";
 import type { CatalogAdded, CatalogEntry, CatalogList, CatalogParam } from "../types";
 import { CatalogAuthOAuth, CatalogProvenance, Transport } from "../types";
 
@@ -92,30 +92,6 @@ function invocation(e: CatalogEntry): string {
 }
 
 // ---------------------------------------------------------------------------
-// The equivalent CLI command (docs/modules/gui.md)
-// ---------------------------------------------------------------------------
-
-/**
- * `agenthub catalog add <id> [--param k=v …]`, mirroring
- * internal/cli.catalogAddCommand.
- *
- * With nothing typed the parameters render as `<placeholders>`, exactly as
- * `catalog show` prints them: a line the user can copy and run unchanged
- * with someone else's path in it is worse than a line they must obviously
- * fill in. Once they HAVE typed a value it goes in, because at that point
- * the command is the one this page is about to run.
- */
-function cliAdd(e: CatalogEntry, params: Record<string, string> = {}, name = ""): string {
-  let cmd = `agenthub catalog add ${shellArg(e.id)}`;
-  if (name && name !== e.id) cmd += ` --name ${shellArg(name)}`;
-  for (const p of e.params ?? []) {
-    const value = (params[p.name] ?? "").trim();
-    cmd += ` --param ${shellArg(`${p.name}=${value || `<${p.name}>`}`)}`;
-  }
-  return cmd;
-}
-
-// ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------
 
@@ -163,23 +139,37 @@ export function catalogPage(): Page {
   // -- adding ----------------------------------------------------------------
 
   /** What still has to happen before the server actually works. The daemon
-   *  words these, not us, so the GUI and the CLI say the same thing. */
+   *  returns CLI-shaped next steps because the API is shared; this page maps
+   *  the known operations back to the GUI instead of printing commands. */
   function nextSteps(added: CatalogAdded): HTMLElement | null {
     const steps = added.next_steps ?? [];
     if (steps.length === 0) return null;
+    const secretKeys = steps
+      .filter((s) => s.startsWith("agenthub secret set "))
+      .map((s) => s.trim().split(/\s+/).at(-1) ?? "credential");
+    const needsLogin = steps.some((s) => s.startsWith("agenthub auth login "));
+    const hasUnknown = steps.length > secretKeys.length + (needsLogin ? 1 : 0);
     return el("div", { class: "notice notice-warn" }, [
       el("div", {
-        text:
-          "The definition is stored, but the server cannot connect yet. " +
-          "These finish the job:",
+        text: "The definition is stored, but the server still needs setup:",
       }),
-      ...steps.map((s) => cliHint(s)),
-      // The link only appears when a credential is actually one of the
-      // steps. An "Open Secrets" button next to "log in with a browser"
-      // would send the user to the one page that cannot help them.
-      steps.some((s) => s.startsWith("agenthub secret set"))
-        ? el("a", { class: "btn btn-secondary", href: "#/secrets", text: "Open Secrets" })
+      secretKeys.length > 0
+        ? el("div", { class: "hint", text: `Store ${secretKeys.join(", ")} on the Secrets page.` })
         : null,
+      needsLogin
+        ? el("div", { class: "hint", text: `Authenticate ${added.id} from the Servers page.` })
+        : null,
+      hasUnknown
+        ? el("div", { class: "hint", text: "Open Servers to review the remaining connection status." })
+        : null,
+      controls(
+        secretKeys.length > 0
+          ? el("a", { class: "btn btn-secondary", href: "#/secrets", text: "Open Secrets" })
+          : null,
+        needsLogin || hasUnknown
+          ? el("a", { class: "btn btn-secondary", href: "#/servers", text: "Open Servers" })
+          : null,
+      ),
     ]);
   }
 
@@ -250,7 +240,6 @@ export function catalogPage(): Page {
     const inputs = new Map<string, HTMLInputElement>();
     const errors = el("div", { class: "notice-slot" });
     const preview = el("code", { class: "cmd" });
-    const cliSlot = el("div", { class: "cli-list" });
 
     const values = (): Record<string, string> => {
       const out: Record<string, string> = {};
@@ -271,12 +260,6 @@ export function catalogPage(): Page {
         if (v) line = line.split(`{{${p.name}}}`).join(v);
       }
       preview.textContent = line || "—";
-      clear(cliSlot);
-      cliSlot.append(
-        cliHint(cliAdd(e, typed, nameInput.value.trim()), {
-          note: "the same add, from a terminal",
-        }),
-      );
     };
 
     const paramField = (p: CatalogParam): Node => {
@@ -319,7 +302,6 @@ export function catalogPage(): Page {
       el("div", { class: "form" }, (e.params ?? []).map(paramField)),
       field("Will run", preview, `transport: ${e.transport || Transport.Stdio}`),
       credentialNotice(e),
-      cliSlot,
       controls(save, button("Cancel", "btn btn-secondary", () => form.hide())),
     ]);
     refresh();
@@ -385,7 +367,7 @@ export function catalogPage(): Page {
           "the stored definition only ever holds a ${SECRET_…} reference, never the credential.",
       );
     }
-    if (oauth) lines.push("Needs a browser sign-in afterwards: `agenthub auth login <id>`.");
+    if (oauth) lines.push("Needs a browser sign-in afterwards from the Servers page.");
     return el(
       "div",
       { class: "hint" },
@@ -440,7 +422,6 @@ export function catalogPage(): Page {
               text: `A server called “${e.id}” already exists and did not come from this catalog entry — adding this one needs a different id.`,
             })
           : null,
-        cliHint(cliAdd(e)),
       ]),
       el("div", { class: "rec-act" }, [
         home
