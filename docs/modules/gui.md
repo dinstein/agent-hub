@@ -133,7 +133,7 @@ content and transport metadata answer different questions.
 Activity is one page with three focused views rather than three navigation destinations. **Calls** joins
 the received/routed/finished lifecycle into one compact row; the collection endpoint returns metadata
 only and never exposes payload references. Calls use stable 50-row cursor pages, show the filtered total,
-and apply Client, Server, Tool and Outcome dropdowns plus a compact call-id search on the daemon before
+and apply Client, Server, Tool and Outcome dropdowns on the daemon before
 paging; filters never describe only the visible slice. Server and Tool are separate columns, and selecting
 a server narrows the Tool dropdown using range-wide statistics rather than whichever calls happen to be on
 the current page. Clicking anywhere on the row is the disclosure action: the detail drawer immediately

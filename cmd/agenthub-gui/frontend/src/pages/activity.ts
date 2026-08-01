@@ -261,7 +261,6 @@ export function activityPage(): Page {
   let root: HTMLElement | null = null;
   let tab: ActivityTab = "calls";
   let rangeHours = 24;
-  let search = "";
   let clientFilter = "";
   let serverFilter = "";
   let toolFilter = "";
@@ -276,7 +275,6 @@ export function activityPage(): Page {
   let loadError: unknown = null;
   let drawer: HTMLElement | null = null;
   let restoreFocus: HTMLElement | null = null;
-  let searchTimer = 0;
   let epoch = 0;
   let callsEpoch = 0;
   const notices = noticeSlot();
@@ -303,7 +301,7 @@ export function activityPage(): Page {
       const [nextStatus, nextCalls, nextStats] = await Promise.all([
         hub.auditStatus(),
         hub.auditCalls(
-          sinceMillis(rangeHours), pageSize, pageCursors[pageIndex], search.trim(),
+          sinceMillis(rangeHours), pageSize, pageCursors[pageIndex],
           clientFilter, serverFilter, toolFilter, outcome,
         ),
         hub.auditStats(sinceMillis(rangeHours)),
@@ -327,12 +325,12 @@ export function activityPage(): Page {
     nextCursor = "";
   }
 
-  async function loadCalls(focusSearch = false): Promise<void> {
+  async function loadCalls(): Promise<void> {
     const request = ++callsEpoch;
     loadError = null;
     try {
       const next = await hub.auditCalls(
-        sinceMillis(rangeHours), pageSize, pageCursors[pageIndex], search.trim(),
+        sinceMillis(rangeHours), pageSize, pageCursors[pageIndex],
         clientFilter, serverFilter, toolFilter, outcome,
       );
       if (!root || request !== callsEpoch) return;
@@ -344,11 +342,6 @@ export function activityPage(): Page {
       loadError = err;
     }
     draw();
-    if (focusSearch) {
-      const input = root?.querySelector<HTMLInputElement>("[data-activity-search]");
-      input?.focus();
-      input?.setSelectionRange(input.value.length, input.value.length);
-    }
   }
 
   async function action<T>(
@@ -434,22 +427,6 @@ export function activityPage(): Page {
       resetPages();
       void load();
     });
-    const query = el("input", {
-      class: "input activity-search",
-      type: "search",
-      value: search,
-      placeholder: "Call ID",
-      "aria-label": "Find call by ID",
-      "data-activity-search": "true",
-    });
-    query.addEventListener("input", () => {
-      search = query.value;
-      window.clearTimeout(searchTimer);
-      searchTimer = window.setTimeout(() => {
-        resetPages();
-        void loadCalls(true);
-      }, 260);
-    });
     const filterSelect = (
       label: string,
       allLabel: string,
@@ -510,18 +487,14 @@ export function activityPage(): Page {
       el("span", { text: "Time range" }),
       range,
     ]);
-    const searchField = el("label", { class: "activity-filter-field activity-search-field" }, [
-      el("span", { text: "Call ID" }),
-      query,
-    ]);
     const body = calls.length === 0
       ? empty(
-          callTotal === 0 && !search && !clientFilter && !serverFilter && !toolFilter && !outcome
+          callTotal === 0 && !clientFilter && !serverFilter && !toolFilter && !outcome
             ? "No calls in this range"
             : "No calls match these filters",
-          callTotal === 0 && !search && !clientFilter && !serverFilter && !toolFilter && !outcome
+          callTotal === 0 && !clientFilter && !serverFilter && !toolFilter && !outcome
             ? "New gateway calls will appear here while recording is enabled."
-            : "Try a broader search or clear one of the dropdown filters.",
+            : "Try clearing one of the dropdown filters.",
         )
       : el("div", { class: "activity-call-list" }, calls.map((call) => {
           const row = el("button", { class: "activity-call-row", type: "button" }, [
@@ -563,7 +536,7 @@ export function activityPage(): Page {
     const first = callTotal === 0 ? 0 : pageIndex * pageSize + 1;
     const last = callTotal === 0 ? 0 : first + calls.length - 1;
     return el("div", { class: "activity-workspace" }, [
-      el("div", { class: "activity-toolbar" }, [clientSelect, serverSelect, toolSelect, outcomeField, rangeField, searchField]),
+      el("div", { class: "activity-toolbar" }, [clientSelect, serverSelect, toolSelect, outcomeField, rangeField]),
       el("div", { class: "activity-table-head" }, [
         el("span", { text: "Time" }), el("span", { text: "Client" }), el("span", { text: "Server" }),
         el("span", { text: "Tool" }),
@@ -683,7 +656,6 @@ export function activityPage(): Page {
     dispose() {
       epoch++;
       callsEpoch++;
-      window.clearTimeout(searchTimer);
       closeDrawer();
       root = null;
     },

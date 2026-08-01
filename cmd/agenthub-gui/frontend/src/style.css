@@ -615,7 +615,7 @@ a.nav.active .nav-icon {
 
 .activity-toolbar {
   display: grid;
-  grid-template-columns: repeat(5, minmax(112px, 1fr)) minmax(132px, 0.75fr);
+  grid-template-columns: repeat(5, minmax(112px, 1fr));
   align-items: end;
   gap: var(--space-4);
   padding: 14px;
