@@ -156,17 +156,27 @@ Use one English, Conventional-Commits-shaped format:
   `gui` is a scope, not a type.
 - Summary is an imperative sentence fragment, normally lowercase, with no terminal punctuation;
   keep the complete title within 80 characters.
-- After one blank line, body is normally 1–3 short bullet points naming the concrete changes. Omit
-  it only when the title already says everything; keep each bullet to one sentence and include a
-  brief why only when it matters. Mark a breaking change with `!` and a `BREAKING CHANGE:` trailer.
+- After one blank line, body uses the compact narrative style established by the repository's
+  earlier commits: state the problem and why it matters, describe the concrete change, then note
+  verification or an important limitation when useful. Prefer 2–4 short paragraphs and roughly
+  80–150 words total; omit details obvious from the diff, and omit body only when the title already
+  says everything. Put attribution and issue trailers last. Mark a breaking change with `!` and a
+  `BREAKING CHANGE:` trailer.
 
 Examples:
 
 ```text
-feat(cli): show the resolved profile in client ls
+docs(windows): document both Windows verification gates
 
-- add the resolved profile to each client row
-- reuse the default-profile resolver for unbound clients
+The manual runbook named only cross-windows, so following it skipped the
+GUI path where Wails diverges most from the macOS build.
+
+On a fresh checkout, that GUI target also needs the gitignored frontend
+bundle. Running it alone therefore fails before compiling any Windows code,
+while ci-full hides the prerequisite by building the frontend first.
+
+The runbook now includes cross-windows-gui and names the frontend build
+prerequisite. Both targets were verified from a clean worktree.
 
 docs: define the contributor commit convention
 release: 0.18.0
