@@ -34,7 +34,7 @@
 // socket tells the user the directory is gone.
 
 import { asCallError, hub, isStalePrecondition } from "../bridge";
-import { chip, chipRow, clear, el, emptyState, loadingState, pageHeader } from "../dom";
+import { chip, chipRow, clear, el, emptyState, icon, loadingState, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { CONFLICT_MESSAGE, failureState, noticeSlot } from "../page";
 import { button, cliHint, controls, field, formHost, shellArg, textInput } from "../ui";
@@ -556,7 +556,7 @@ export function catalogPage(): Page {
       ]),
       el("div", { class: "page-toolbar" }, [
         el("div", { class: "toolbar-search toolbar-search-wide" }, [
-          el("span", { class: "search-glyph", "aria-hidden": "true", text: "⌕" }),
+          icon("search", "search-glyph"),
           box,
         ]),
         el("span", { class: "toolbar-hint", text: "Every search word must match." }),

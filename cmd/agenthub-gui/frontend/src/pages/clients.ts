@@ -13,7 +13,7 @@
 // remediation text for the second one.
 
 import { hub } from "../bridge";
-import { clear, el, empty, pageHeader, relTime } from "../dom";
+import { clear, el, empty, icon, pageHeader, relTime } from "../dom";
 import type { Page } from "../page";
 import { failureBox, noticeSlot } from "../page";
 import { button, checkboxInput, confirmAction, controls, field, selectInput, textInput } from "../ui";
@@ -224,7 +224,7 @@ export function clientsPage(): Page {
       target ? connectForm(target) : el("span", {}),
       preview,
       el("div", { class: "privacy-note" }, [
-        el("span", { class: "privacy-note-mark", text: "◌" }),
+        el("span", { class: "privacy-note-mark" }, [icon("privacy")]),
         el("span", {
           text: "Discovery reads file metadata only. File contents are opened only when you connect or disconnect a specific client.",
         }),

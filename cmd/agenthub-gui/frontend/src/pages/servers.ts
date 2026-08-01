@@ -31,7 +31,7 @@
 // read path and this page must not grow one.
 
 import { EVT, hub, on, openExternal } from "../bridge";
-import { chip, chipRow, clear, el, emptyState, loadingState, pageHeader } from "../dom";
+import { chip, chipRow, clear, el, emptyState, icon, loadingState, pageHeader } from "../dom";
 import { AdminState, HealthAction, HealthLevel } from "../generated/health";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot, runWrite } from "../page";
@@ -1674,7 +1674,7 @@ export function serversPage(): Page {
         ),
         el("div", { class: "page-toolbar" }, [
           el("div", { class: "toolbar-search" }, [
-            el("span", { class: "search-glyph", "aria-hidden": "true", text: "⌕" }),
+            icon("search", "search-glyph"),
             box,
           ]),
           el("span", {

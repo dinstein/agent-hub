@@ -27,7 +27,7 @@
 
 import { CANCEL_CAVEAT, asCallError, hub, isCancelled } from "../bridge";
 import type { Cancellable } from "../bridge";
-import { clear, el, emptyState, loadingState, pageHeader } from "../dom";
+import { clear, el, emptyState, icon, loadingState, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot } from "../page";
 import {
@@ -1062,7 +1062,7 @@ export function playgroundPage(): Page {
           el("div", { class: "workspace-label", text: "Result" }),
           resultBox,
           el("div", { class: "result-placeholder" }, [
-            el("span", { class: "result-placeholder-mark", "aria-hidden": "true", text: "▷" }),
+            el("span", { class: "result-placeholder-mark", "aria-hidden": "true" }, [icon("play")]),
             el("strong", { text: "Run a tool to inspect its response" }),
             el("span", { text: "Tool output, timing and raw JSON will appear here." }),
           ]),

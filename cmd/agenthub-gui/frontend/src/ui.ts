@@ -19,7 +19,7 @@
 //     calls that got through are already through).
 
 import { copyText } from "./bridge";
-import { clear, el, errorBox, errorHeadline } from "./dom";
+import { clear, el, errorBox, errorHeadline, icon } from "./dom";
 import type { ProfileTools, ToolSelect, ToolSelector } from "./types";
 import { ToolSelect as Mode } from "./types";
 
@@ -673,7 +673,7 @@ export function shellArg(value: string): string {
  */
 export function cliHint(command: string, opts: { note?: string } = {}): HTMLElement {
   return el("div", { class: "cli-hint" }, [
-    el("span", { class: "meta", text: "⌘" }),
+    icon("terminal", "cli-icon"),
     el("code", { text: command }),
     copyButton(() => command, "Copy", "btn btn-icon cli-copy"),
     opts.note ? el("span", { class: "meta", text: opts.note }) : null,

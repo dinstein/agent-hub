@@ -13,7 +13,7 @@
 // imply the daemon has an opinion about it.
 
 import { hub } from "../bridge";
-import { clear, el, pageHeader } from "../dom";
+import { clear, el, icon, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { failureBox } from "../page";
 import { themeControl } from "../ui";
@@ -93,7 +93,7 @@ export function settingsPage(): Page {
           el("div", { class: "settings-card-actions" }, [retry]),
         ]),
         el("section", { class: "settings-card" }, [
-          el("div", { class: "settings-icon", text: "◐" }),
+          el("div", { class: "settings-icon" }, [icon("theme")]),
           el("h2", { text: "Appearance" }),
           el("p", { class: "muted", text: "Choose how this window follows your workspace." }),
           el("div", { class: "settings-control" }, [themeControl()]),
@@ -103,7 +103,7 @@ export function settingsPage(): Page {
           }),
         ]),
         el("section", { class: "settings-card" }, [
-          el("div", { class: "settings-icon", text: "⌘" }),
+          el("div", { class: "settings-icon" }, [icon("terminal")]),
           el("h2", { text: "CLI parity" }),
           el("p", {
             class: "muted",

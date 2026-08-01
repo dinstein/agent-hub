@@ -14,7 +14,7 @@
 // in the write's `dangling` list so the page can say it out loud.
 
 import { hub, knownTools } from "../bridge";
-import { clear, el, empty, pageHeader } from "../dom";
+import { clear, el, empty, icon, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { failureBox, noticeSlot, runWrite } from "../page";
 import {
@@ -362,7 +362,7 @@ export function profilesPage(): Page {
       slot.node,
       form.node,
       el("div", { class: "scope-note" }, [
-        el("span", { class: "scope-note-mark", text: "∩" }),
+        el("span", { class: "scope-note-mark" }, [icon("scope")]),
         el("span", {
           text: "Profiles can only narrow what a server already exposes. An empty selection is deliberately block-all, never “no rule”.",
         }),

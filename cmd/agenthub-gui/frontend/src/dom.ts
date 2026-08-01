@@ -31,6 +31,34 @@ export function clear(node: Element): void {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
 
+export type IconName = "search" | "play" | "scope" | "privacy" | "theme" | "terminal";
+
+/** A tiny dependency-free icon set for application chrome. Centralising the
+ * paths keeps weight, baseline and platform rendering consistent. */
+export function icon(name: IconName, className = "ui-icon"): SVGSVGElement {
+  const paths: Record<IconName, string> = {
+    search: "M21 21l-4.35-4.35M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z",
+    play: "m8 5 11 7-11 7V5ZM4 5v14",
+    scope: "M12 3 5 6v5c0 4.8 2.8 8.3 7 10 4.2-1.7 7-5.2 7-10V6l-7-3Zm-3 9 2 2 4-4",
+    privacy: "M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6S2.5 12 2.5 12Zm12.5 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
+    theme: "M12 3a9 9 0 1 0 9 9c0-1-.2-1.9-.5-2.8A7 7 0 0 1 12 3Z",
+    terminal: "m4 6 5 6-5 6m8 0h8",
+  };
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", className);
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.75");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", paths[name]);
+  svg.append(path);
+  return svg;
+}
+
 export function section(title: string, ...children: (Node | null)[]): HTMLElement {
   return el("section", { class: "panel" }, [
     el("h2", { text: title }),
