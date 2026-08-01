@@ -160,11 +160,22 @@ func copyTree(t *testing.T, src, dst string) {
 		if err != nil {
 			return err
 		}
+		// A normal checkout has a .git directory, while a linked worktree has
+		// a regular .git file pointing back to the main checkout. Neither is
+		// part of the copied module: retaining the worktree pointer makes lint
+		// resolve the disposable tree as the original checkout and then report
+		// that the probe package has no Go files.
+		if skipAnywhere[d.Name()] {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if d.IsDir() {
 			if rel == "." {
 				return os.MkdirAll(dst, 0o755)
 			}
-			if skipAnywhere[d.Name()] || skipAtRoot[rel] {
+			if skipAtRoot[rel] {
 				return filepath.SkipDir
 			}
 			return os.MkdirAll(filepath.Join(dst, rel), 0o755)
