@@ -20,6 +20,11 @@ Profiles, Clients and Settings. Catalog is deliberately first-class and immediat
 the two are the configured and discoverable halves of the same task. Credentials live with the
 server that uses them, client bindings live with Clients, and appearance/daemon diagnostics live in
 Settings. A resource can still have a direct hash route without taking permanent navigation space.
+Activity is intentionally deferred from this first pass rather than represented by a decorative,
+partial page: when it returns, its source of truth must cover every gateway-to-server call and the
+aggregates must reconcile with those records. Tokens and a separate Governance destination are also
+outside this navigation until they own a concrete task that is not already expressed by server,
+profile, and client configuration.
 
 The daemon state is pinned at the bottom of the shell and an offline daemon also raises a global
 banner above the current page. A footer hidden below fourteen links failed at its only job: the

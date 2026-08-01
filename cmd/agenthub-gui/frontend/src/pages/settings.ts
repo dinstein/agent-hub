@@ -13,7 +13,7 @@
 // imply the daemon has an opinion about it.
 
 import { hub } from "../bridge";
-import { clear, el, section } from "../dom";
+import { clear, el, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { failureBox } from "../page";
 import { themeControl } from "../ui";
@@ -37,7 +37,17 @@ export function settingsPage(): Page {
 
   async function draw(): Promise<void> {
     if (!root) return;
-    const st = await hub.status();
+    let statusError: unknown = null;
+    let st: Status;
+    try {
+      st = await hub.status();
+    } catch (err) {
+      // Appearance is window-local and must remain usable while the daemon is
+      // offline. Represent the missing runtime answer explicitly instead of
+      // letting the router replace the entire Settings page with an error.
+      statusError = err;
+      st = { connected: false, socket: "", version: "", pid: 0, generation: 0 };
+    }
     clear(root);
 
     const retry = el("button", { class: "btn", type: "button", text: "Connect / retry" });
@@ -53,33 +63,63 @@ export function settingsPage(): Page {
           retry.removeAttribute("disabled");
         });
     });
+    if (statusError) slot.append(failureBox(statusError));
 
     root.append(
-      section("Daemon", statusTable(st), slot, el("div", { class: "controls" }, [retry])),
-      section(
-        "Appearance",
-        el("div", { class: "controls" }, [themeControl()]),
-        el("p", {
-          class: "hint",
-          text: "“System” follows the OS and keeps following it while the window is open. The choice is stored in this window's local storage, not in the hub, and applies before the first frame is drawn.",
-        }),
+      pageHeader(
+        "Settings",
+        "Window preferences, daemon diagnostics, and the boundaries of this control-plane client.",
       ),
-      section(
-        "What this window can do",
-        el("p", {
-          text:
-            "The GUI is a control-plane client with no privileges of its own: it cannot read the data " +
-            "directory, cannot speak MCP and cannot do anything the agenthub CLI cannot. If something is " +
-            "missing here, the endpoint is missing — not the permission.",
-        }),
-        el("ul", {}, [
-          el("li", { text: "agenthub doctor — diagnose configuration and connectivity" }),
-          el("li", { text: "agenthub server ls / add — manage downstream servers" }),
-          el("li", { text: "agenthub server tool allow — choose which of a server's tools are offered at all" }),
-          el("li", { text: "agenthub activity — the token-savings ledger" }),
-          el("li", { text: "agenthub daemon start / stop / restart — lifecycle" }),
+      el("div", { class: "settings-layout" }, [
+        el("section", { class: "settings-card settings-card-wide" }, [
+          el("div", { class: "settings-card-head" }, [
+            el("div", { class: `status-orb ${st.connected ? "online" : "offline"}` }),
+            el("div", {}, [
+              el("h2", { text: "AgentHub daemon" }),
+              el("p", {
+                class: "muted",
+                text: st.connected
+                  ? "The desktop control plane is connected and ready."
+                  : "The window cannot read or update runtime configuration.",
+              }),
+            ]),
+            el("span", {
+              class: `badge ${st.connected ? "badge-healthy" : "badge-unhealthy"}`,
+              text: st.connected ? "connected" : "offline",
+            }),
+          ]),
+          statusTable(st),
+          slot,
+          el("div", { class: "settings-card-actions" }, [retry]),
         ]),
-      ),
+        el("section", { class: "settings-card" }, [
+          el("div", { class: "settings-icon", text: "◐" }),
+          el("h2", { text: "Appearance" }),
+          el("p", { class: "muted", text: "Choose how this window follows your workspace." }),
+          el("div", { class: "settings-control" }, [themeControl()]),
+          el("p", {
+            class: "hint",
+            text: "System follows the OS live. This local preference is applied before the first frame is drawn.",
+          }),
+        ]),
+        el("section", { class: "settings-card" }, [
+          el("div", { class: "settings-icon", text: "⌘" }),
+          el("h2", { text: "CLI parity" }),
+          el("p", {
+            class: "muted",
+            text: "The GUI is a control-plane client with no extra privileges and no private configuration store.",
+          }),
+          el("div", { class: "command-list" }, [
+            el("code", { text: "agenthub doctor" }),
+            el("code", { text: "agenthub server ls" }),
+            el("code", { text: "agenthub daemon restart" }),
+          ]),
+          el("p", {
+            class: "hint",
+            text: "If a capability is absent here, its control-plane endpoint is absent too — it is not a hidden permission.",
+          }),
+        ]),
+      ]),
     );
   }
 
