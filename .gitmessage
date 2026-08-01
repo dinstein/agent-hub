@@ -1,0 +1,8 @@
+# <type>[(<scope>)][!]: <imperative summary>
+#
+# Optional body: explain why the change exists.
+#
+# Types: feat fix refactor perf test docs build ci chore release revert
+# Scope: stable owner such as cli, gateway, gui, or buildrules
+# Title: English, imperative, no terminal punctuation, <= 80 characters
+# Breaking: add ! before : and a BREAKING CHANGE: trailer

@@ -62,7 +62,7 @@ $EDITOR "$(git rev-parse --git-dir)/pr-body.md"    # one line of what changes, t
 ```bash
 make fmt                                # after ANY import block change — go build stays silent
 make ci                                 # build + test + lint
-git add -A && git commit                # message in English
+git add -A && git commit                # AGENTS.md's type(scope): summary convention
 ```
 
 `.golangci.yml` enables `gofmt`/`goimports` under `formatters:`, not `linters:`, so only `make lint`

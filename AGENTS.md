@@ -142,10 +142,38 @@ These are the rules. The commands that carry them out live in the
 [new-feature skill](.agents/skills/new-feature/SKILL.md), in one copy — follow it rather than
 reconstructing the sequence from the bullets below.
 
+### Commit messages
+
+Use one English, Conventional-Commits-shaped format:
+
+```text
+<type>[(<scope>)][!]: <summary>
+```
+
+- Type is one of `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`,
+  `release`, or `revert`.
+- Scope is optional and names a stable owner such as `cli`, `gateway`, `gui`, or `buildrules`;
+  `gui` is a scope, not a type.
+- Summary is an imperative sentence fragment, normally lowercase, with no terminal punctuation;
+  keep the complete title within 80 characters.
+- Body is optional. When needed, leave one blank line and explain why the change exists. Mark a
+  breaking change with `!` and a `BREAKING CHANGE:` trailer.
+
+Examples:
+
+```text
+feat(cli): show the resolved profile in client ls
+docs: define the contributor commit convention
+release: 0.18.0
+```
+
+Run `git config commit.template .gitmessage` once per clone to show the same rules in the editor;
+the template is a prompt, while CI is the authority.
+
 - **Do every feature in its own worktree; never edit code directly in the main work tree**:
   `git worktree add ../agent-hub-<topic> -b <topic>`. The main work tree only lands and pushes.
 - Inside the worktree, **one commit per subtask** — every commit compiles and passes tests.
-- Write commit messages in English.
+- Follow the commit-message convention above.
 - **Every branch has a PR, opened as a draft on its first commit and updated per subtask** — body =
   the subtask list, finished ones ticked. It is the only view of the branch from outside your
   worktree, and where CI's own machines grade it (`pull_request` runs the jobs `main` gets).
