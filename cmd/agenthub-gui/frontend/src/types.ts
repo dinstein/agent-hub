@@ -613,6 +613,44 @@ export interface ClientDetectResult {
   indirect?: string[];
 }
 
+export type ClientConnectState =
+  | "connected"
+  | "not_connected"
+  | "denied"
+  | "unreadable"
+  | "unknown";
+
+export interface ClientInspectedServer {
+  name: string;
+  transport?: string;
+  command?: string;
+  url?: string;
+  disabled?: boolean;
+  owned: boolean;
+}
+
+export interface ClientInspectedFile {
+  path: string;
+  placement: string;
+  exists: boolean;
+  parsed: boolean;
+  connected: boolean;
+  servers?: ClientInspectedServer[];
+  error?: string;
+}
+
+export interface ClientInspection {
+  client: string;
+  name?: string;
+  shape?: string;
+  state: ClientConnectState;
+  connected: boolean;
+  placements?: string[];
+  files: ClientInspectedFile[];
+  note?: string;
+  manual?: string;
+}
+
 export interface GatewayEntry {
   command: string;
   args: string[];

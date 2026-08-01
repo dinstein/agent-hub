@@ -118,6 +118,14 @@ func TestNonRegistryBoundMethods(t *testing.T) {
 			},
 		},
 		{
+			name: "InspectClient", method: http.MethodGet, path: "/v1/clients/claude/inspect",
+			data: api.ClientInspection{Client: "claude", State: api.ClientConnected, Connected: true},
+			invoke: func(ctx context.Context, h *Hub) (uint64, error) {
+				_, err := h.InspectClient(ctx, "claude")
+				return 0, err
+			},
+		},
+		{
 			name: "ConnectClient", method: http.MethodPost, path: "/v1/clients/claude/connect",
 			data: api.ClientConnection{Client: "claude", Changed: true},
 			invoke: func(ctx context.Context, h *Hub) (uint64, error) {

@@ -875,7 +875,27 @@ a.nav.active .nav-icon {
 }
 
 .client-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
   font-size: var(--text-md);
+}
+
+.client-capability {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--faint);
+  font-size: var(--text-sm);
+}
+
+.client-capability::before {
+  content: "";
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentcolor;
 }
 
 .client-path {
@@ -890,6 +910,12 @@ a.nav.active .nav-icon {
   color: var(--warning);
   font-size: var(--text-sm);
   margin-top: var(--space-3);
+}
+
+.client-state-detail {
+  max-width: 72ch;
+  margin-top: var(--space-3);
+  font-size: var(--text-sm);
 }
 
 .client-actions {

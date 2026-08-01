@@ -206,6 +206,16 @@ func (h *Hub) DetectClients(ctx context.Context) (api.ClientDetectResult, error)
 	})
 }
 
+// InspectClient opens one named client's configuration and reports whether
+// it contains an entry agenthub itself wrote. Unlike DetectClients this is a
+// deliberate content read, so the frontend calls it only after an explicit
+// per-row or "check connections" action.
+func (h *Hub) InspectClient(ctx context.Context, client string) (api.ClientInspection, error) {
+	return call(ctx, h, func(c *api.Client) (api.ClientInspection, error) {
+		return c.Clients.Inspect(ctx, client)
+	})
+}
+
 // ConnectClient writes the gateway entry into one client's configuration, or
 // previews it when the request sets DryRun.
 //

@@ -17,7 +17,12 @@ import { clear, el, empty, icon, pageHeader, relTime } from "../dom";
 import type { Page } from "../page";
 import { failureBox, noticeSlot } from "../page";
 import { button, checkboxInput, confirmAction, controls, field, selectInput, textInput } from "../ui";
-import type { ClientConnection, ClientDetected, ClientDetectResult } from "../types";
+import type { ClientConnection, ClientDetected, ClientDetectResult, ClientInspection } from "../types";
+
+type InspectionCheck =
+  | { phase: "checking" }
+  | { phase: "ready"; value: ClientInspection }
+  | { phase: "failed"; message: string };
 
 function connectionView(c: ClientConnection): Node {
   return el("div", { class: "kvs" }, [
@@ -42,7 +47,10 @@ export function clientsPage(): Page {
   const slot = noticeSlot();
   const preview = el("div", {});
   let detected: ClientDetectResult | null = null;
+  let detectError: unknown = null;
   let target = "";
+  let checkingAll = false;
+  const inspections = new Map<string, InspectionCheck>();
 
   async function connect(
     client: string,
@@ -74,7 +82,11 @@ export function clientsPage(): Page {
             ? `${client} now spawns agenthub as its single MCP server.`
             : `${client} already said exactly this — nothing changed.`,
       );
-      if (!dryRun) await draw();
+      if (!dryRun) {
+        target = "";
+        await draw();
+        await inspectOne(client);
+      }
     } catch (err) {
       slot.fail(err);
     }
@@ -98,7 +110,9 @@ export function clientsPage(): Page {
         `${res.client}: removed ${res.removed.length > 0 ? res.removed.join(", ") : "nothing"} from ${res.path}` +
           (res.backup ? ` (backup at ${res.backup})` : ""),
       );
+      target = "";
       await draw();
+      await inspectOne(client);
     } catch (err) {
       slot.fail(err);
     }
@@ -149,34 +163,133 @@ export function clientsPage(): Page {
   }
 
   function clientCard(c: ClientDetected): Node {
-    const access = c.denied ? "not readable" : c.writable ? "writable" : "read-only";
-    const accessClass = c.denied ? "badge-unhealthy" : c.writable ? "badge-healthy" : "badge-degraded";
+    const check = inspections.get(c.client);
+    let stateLabel = "Not checked";
+    let stateClass = "badge-disabled";
+    let stateDetail = "Connection status has not been read yet.";
+    if (check?.phase === "checking") {
+      stateLabel = "Checking…";
+      stateDetail = "Reading this client's MCP configuration.";
+    } else if (check?.phase === "failed") {
+      stateLabel = "Check failed";
+      stateClass = "badge-unhealthy";
+      stateDetail = check.message;
+    } else if (check?.phase === "ready") {
+      switch (check.value.state) {
+        case "connected":
+          stateLabel = "Connected";
+          stateClass = "badge-healthy";
+          stateDetail = "This client contains an AgentHub-owned gateway entry.";
+          break;
+        case "not_connected":
+          stateLabel = "Not connected";
+          stateDetail = "The configuration was read and contains no AgentHub-owned entry.";
+          break;
+        case "denied":
+          stateLabel = "Access denied";
+          stateClass = "badge-unhealthy";
+          stateDetail = check.value.note || "AgentHub could not read this client's configuration.";
+          break;
+        case "unreadable":
+          stateLabel = "Unreadable";
+          stateClass = "badge-unhealthy";
+          stateDetail = check.value.note || "The configuration exists but could not be interpreted safely.";
+          break;
+        case "unknown":
+          stateLabel = "Manual setup";
+          stateClass = "badge-degraded";
+          stateDetail = check.value.note || "AgentHub does not rewrite this configuration format.";
+          break;
+      }
+    }
+
+    const actions: Node[] = [];
+    if (!check || check.phase === "failed") {
+      actions.push(button(check ? "Retry status" : "Check status", "btn", () => void inspectOne(c.client)));
+    } else if (check.phase === "checking") {
+      const waiting = button("Checking…", "btn btn-secondary", () => {});
+      waiting.disabled = true;
+      actions.push(waiting);
+    } else if (check.value.state === "connected") {
+      actions.push(
+        button("Connection…", "btn", () => {
+          target = c.client;
+          renderPage();
+        }),
+        button("Disconnect", "btn btn-deny", () => void disconnect(c.client)),
+      );
+    } else if (check.value.state === "not_connected" || check.value.state === "unknown") {
+      actions.push(
+        button(check.value.state === "unknown" ? "Set up…" : "Connect…", "btn btn-primary", () => {
+          target = c.client;
+          renderPage();
+        }),
+      );
+    } else {
+      actions.push(button("Check again", "btn", () => void inspectOne(c.client)));
+    }
+
+    const capability = c.denied
+      ? "File access denied"
+      : c.writable
+        ? "Writable configuration"
+        : "Read-only configuration";
     return el("article", { class: "client-card" }, [
       el("div", { class: "client-mark", text: (c.name || c.client).slice(0, 1).toUpperCase() }),
       el("div", { class: "client-card-main" }, [
         el("div", { class: "client-card-head" }, [
           el("strong", { class: "access-title", text: c.name || c.client }),
-          el("span", { class: `badge ${accessClass}`, text: access }),
+          el("span", { class: `badge ${stateClass}`, text: stateLabel, title: stateDetail }),
         ]),
-        el("div", { class: "client-meta muted", text: `${c.client} · ${c.placement} · ${c.shape}` }),
+        el("div", { class: "client-meta muted" }, [
+          el("span", { text: `${c.client} · ${c.placement} · ${c.shape}` }),
+          el("span", { class: "client-capability", text: capability }),
+        ]),
         el("div", { class: "client-path" }, [
           el("span", { class: "mono", text: c.path }),
           el("span", { class: "muted", text: `${c.size} bytes · ${relTime(c.modified)}` }),
         ]),
+        check?.phase === "failed" ||
+        (check?.phase === "ready" && ["denied", "unreadable", "unknown"].includes(check.value.state))
+          ? el("div", {
+              class: check.phase === "failed" ? "client-remediation" : "client-state-detail muted",
+              text: stateDetail,
+              title: stateDetail,
+            })
+          : null,
         c.denied && c.remediation
           ? el("div", { class: "client-remediation", text: c.remediation })
           : c.note
             ? el("div", { class: "muted", text: c.note })
             : null,
       ]),
-      el("div", { class: "client-actions" }, [
-        button("Connect…", "btn", () => {
-          target = c.client;
-          void draw();
-        }),
-        button("Disconnect", "btn btn-deny", () => void disconnect(c.client)),
-      ]),
+      el("div", { class: "client-actions" }, actions),
     ]);
+  }
+
+  async function inspectOne(client: string): Promise<void> {
+    if (inspections.get(client)?.phase === "checking") return;
+    inspections.set(client, { phase: "checking" });
+    renderPage();
+    try {
+      inspections.set(client, { phase: "ready", value: await hub.inspectClient(client) });
+    } catch (err) {
+      inspections.set(client, {
+        phase: "failed",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+    renderPage();
+  }
+
+  async function inspectAll(): Promise<void> {
+    if (checkingAll) return;
+    checkingAll = true;
+    renderPage();
+    const ids = [...new Set((detected?.found ?? []).map((c) => c.client))];
+    for (const id of ids) await inspectOne(id);
+    checkingAll = false;
+    renderPage();
   }
 
   // supportedHint renders the line under the table. It used to read
@@ -197,26 +310,22 @@ export function clientsPage(): Page {
     return el("p", { class: "hint", text: parts.join(" ") });
   }
 
-  async function draw(): Promise<void> {
+  function renderPage(): void {
     if (!root) return;
-    let err: unknown = null;
-    try {
-      const answer = await hub.detectClients();
-      detected = {
-        found: answer.found ?? [],
-        supported: answer.supported ?? [],
-        indirect: answer.indirect ?? [],
-      };
-    } catch (e) {
-      err = e;
-      detected = null;
-    }
     clear(root);
+    const checkAll = button(checkingAll ? "Checking connections…" : "Check connections", "btn btn-primary", () => {
+      void inspectAll();
+    });
+    checkAll.disabled = checkingAll || (detected?.found ?? []).length === 0;
     root.append(
       pageHeader(
         "Clients",
         "Discover MCP-capable apps on this machine and connect each one to AgentHub.",
-        button("Re-scan", "btn btn-primary", () => void draw()),
+        checkAll,
+        button("Re-scan", "btn", () => {
+          inspections.clear();
+          void draw();
+        }),
       ),
       slot.node,
       target ? connectForm(target) : el("span", {}),
@@ -224,16 +333,35 @@ export function clientsPage(): Page {
       el("div", { class: "privacy-note" }, [
         el("span", { class: "privacy-note-mark" }, [icon("privacy")]),
         el("span", {
-          text: "Discovery reads file metadata only. File contents are opened only when you connect or disconnect a specific client.",
+          text:
+            "Discovery reads file metadata only. Use Check connections to read configuration contents " +
+            "and identify AgentHub-owned entries.",
         }),
       ]),
-      err
-        ? failureBox(err)
+      detectError
+        ? failureBox(detectError)
         : (detected?.found ?? []).length === 0
           ? empty("No client configuration found on this machine.")
           : el("div", { class: "client-card-list" }, (detected?.found ?? []).map(clientCard)),
       detected ? supportedHint(detected) : el("span", {}),
     );
+  }
+
+  async function draw(): Promise<void> {
+    if (!root) return;
+    try {
+      const answer = await hub.detectClients();
+      detected = {
+        found: answer.found ?? [],
+        supported: answer.supported ?? [],
+        indirect: answer.indirect ?? [],
+      };
+      detectError = null;
+    } catch (e) {
+      detectError = e;
+      detected = null;
+    }
+    renderPage();
   }
 
   return {

@@ -53,6 +53,15 @@ Geometry follows three shared lines rather than page-local guesses:
 - record content stays next to its state and actions. A flexible middle column may absorb spare width,
   but metadata or a button must not be pushed across an empty card merely to occupy both edges.
 
+The Clients page keeps **file capability** and **connection state** separate. `writable`/`read-only`
+describes whether AgentHub may rewrite a configuration file; it says nothing about whether that file
+already contains AgentHub's gateway. Connection state comes only from the per-client Inspect endpoint.
+The page never opens every client file merely because it was visited: rows begin as `Not checked`, and
+an explicit row check or `Check connections` action performs those reads. Once checked, the row shows
+`Connected`, `Not connected`, `Manual setup`, or a visible read failure, and only a connected row offers
+Disconnect. This preserves the macOS privacy boundary while avoiding the old pair of Connect and
+Disconnect buttons that appeared simultaneously for every client and claimed no state at all.
+
 ---
 
 ## 2. State is the action

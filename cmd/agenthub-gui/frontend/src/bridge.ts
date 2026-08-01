@@ -33,6 +33,7 @@ import type {
   ClientConnection,
   ClientDetectResult,
   ClientDisconnected,
+  ClientInspection,
   ConfigWrite,
   GovernanceList,
   ParsedClientConfig,
@@ -210,6 +211,9 @@ export const hub = {
 
   // -- client wiring --------------------------------------------------------
   detectClients: () => call<ClientDetectResult>("DetectClients"),
+  /** Opens one named client's configuration. This may trigger a host privacy
+   *  prompt, so pages call it only from an explicit check action. */
+  inspectClient: (client: string) => call<ClientInspection>("InspectClient", client),
   connectClient: (client: string, req: ClientConnectRequest) =>
     call<ClientConnection>("ConnectClient", client, req),
   disconnectClient: (client: string) => call<ClientDisconnected>("DisconnectClient", client),
