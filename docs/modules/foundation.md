@@ -1,10 +1,10 @@
 # Foundation and protocol layer
 
-This layer is the part of AgentHub that everything depends on and that depends on nothing: eight
+This layer is the part of AgentHub that everything depends on and that depends on nothing: nine
 packages that together answer six questions — **where do files go** (`internal/platform`),
 **what was said and how is it recorded** (`internal/logx`),
-**how does an append-only stream survive N processes writing it** (`internal/jsonl`, and
-`internal/savings`, its one first-party record type),
+**how does an append-only stream survive N processes writing it** (`internal/jsonl`,
+`internal/savings`, and the durable `internal/accesslog` ledger),
 **who defines the words "read / write / destructive"** (`internal/tier`),
 **how do we talk to downstreams** (`internal/mcp` and `internal/mcp/transport`), and
 **in what form does configuration live on disk and get shared across processes**
@@ -328,6 +328,47 @@ those existed to be read by a decision, and the decision went.
 - Everything else is `internal/jsonl`'s: same append discipline, same fail-open drop. A failure to
   open the stream leaves it `nil`, and appending to a nil stream is a no-op — the ledger degrades to
   nothing recorded, never to a failed call.
+
+---
+
+## internal/accesslog
+
+### One-line responsibility
+
+Persist a bounded, queryable metadata history for every `tools/call` lifecycle while retaining the
+complete accepted request bytes in encrypted payload packs.
+
+Metadata and payload are deliberately separate. Every UTC day has one shared `access.jsonl`; each
+gateway process owns payload packs named by a random boot id and pid. An event stays below 4096 bytes
+and is appended in one `O_APPEND` write, while a request may be as large as MCP's 16 MiB frame bound
+without weakening that atomic-line contract. Payload entries are gzip-compressed and then sealed with
+XChaCha20-Poly1305; metadata points at one by `(day, file, offset, length, key id)`.
+
+`Open(Options)` constructs the process writer, `PutPayload` stores exact bytes and returns their
+reference, and `Append` writes one immutable `received`, `routed`, or `finished` event. `ReadEvents`
+and `ReadPayload` are the offline reader half used by the CLI. `NewCallID` mints the cross-event join
+key; an upstream request id is not sufficient because clients may reuse it across sessions.
+
+### Invariants and failure directions
+
+- **Complete means every byte of an accepted request.** The store's 16 MiB payload bound equals the
+  MCP facade's accepted frame bound; it is not a second, narrower truncation policy.
+- **Metadata is bounded; payload is encrypted.** Full arguments never enter `slog`, a support bundle,
+  or a shared JSONL line. An oversized metadata event is an error, never an oversize marker claiming
+  the lifecycle was recorded.
+- **Payload first, reference second.** Assemblies must make the pack entry durable before appending
+  an event that names it. A crash may leave an orphan pack entry, which verification can reclaim; it
+  must never leave a committed event pointing at bytes that were never written.
+- **Each payload pack has one process writer.** Large writes therefore need no cross-process atomicity;
+  only the bounded event stream is shared. A cross-process acceptance test proves event lines arrive
+  whole and in the expected count.
+- **Durability is explicit.** `sync` acknowledges only after both the pack/event file has been synced;
+  `write` acknowledges the kernel write. Neither mode has an unbounded queue and neither silently
+  drops on backpressure. This differs intentionally from `internal/jsonl`, whose streams must never
+  slow the data plane.
+- **The package decides no permission.** An assembly may make a durable `received` record a
+  prerequisite for execution, but that wrapper does not enter or reorder the frozen pipeline gates
+  and it never inspects or modifies the arguments.
 
 ---
 
