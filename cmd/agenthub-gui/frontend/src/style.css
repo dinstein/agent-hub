@@ -1298,6 +1298,34 @@ a.nav.active .nav-icon {
   background: var(--panel-2);
 }
 
+.settings-appearance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  align-items: center;
+  gap: var(--space-7);
+}
+
+.settings-appearance-copy {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.settings-appearance-copy .settings-icon {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.settings-appearance-copy p,
+.settings-appearance-choice p {
+  margin: var(--space-2) 0 0;
+}
+
+.settings-appearance-choice .settings-control {
+  margin: 0;
+}
+
 @media (max-width: 720px) {
   .settings-layout {
     grid-template-columns: 1fr;
@@ -1305,6 +1333,11 @@ a.nav.active .nav-icon {
 
   .settings-card-wide .kvs {
     grid-template-columns: 1fr;
+  }
+
+  .settings-appearance {
+    grid-template-columns: 1fr;
+    gap: var(--space-5);
   }
 }
 

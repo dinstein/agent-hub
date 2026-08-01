@@ -89,15 +89,21 @@ export function settingsPage(): Page {
           slot,
           el("div", { class: "settings-card-actions" }, [retry]),
         ]),
-        el("section", { class: "settings-card" }, [
-          el("div", { class: "settings-icon" }, [icon("theme")]),
-          el("h2", { text: "Appearance" }),
-          el("p", { class: "muted", text: "Choose how this window follows your workspace." }),
-          el("div", { class: "settings-control" }, [themeControl()]),
-          el("p", {
-            class: "hint",
-            text: "System follows the OS live. This local preference is applied before the first frame is drawn.",
-          }),
+        el("section", { class: "settings-card settings-card-wide settings-appearance" }, [
+          el("div", { class: "settings-appearance-copy" }, [
+            el("div", { class: "settings-icon" }, [icon("theme")]),
+            el("div", {}, [
+              el("h2", { text: "Appearance" }),
+              el("p", { class: "muted", text: "Choose how this window follows your workspace." }),
+            ]),
+          ]),
+          el("div", { class: "settings-appearance-choice" }, [
+            el("div", { class: "settings-control" }, [themeControl()]),
+            el("p", {
+              class: "hint",
+              text: "System follows the OS live. This local preference is applied before the first frame is drawn.",
+            }),
+          ]),
         ]),
       ]),
     );
