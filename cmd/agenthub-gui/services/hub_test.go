@@ -319,6 +319,13 @@ func TestStartConnectsInTheBackground(t *testing.T) {
 	}
 }
 
+func TestApplicationVersionIsTheGUIBuild(t *testing.T) {
+	h := &Hub{buildVersion: "1.2.3-abcdef0"}
+	if got, want := h.ApplicationVersion(), "1.2.3-abcdef0"; got != want {
+		t.Fatalf("ApplicationVersion() = %q, want %q", got, want)
+	}
+}
+
 func TestConnectStartsDaemonAndPublishesStatus(t *testing.T) {
 	rec := &recorder{}
 	h, dl := newHub(t, newFakeDaemon(t, pingMux(t)), rec)

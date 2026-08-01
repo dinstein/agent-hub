@@ -43,10 +43,10 @@ func main() {
 	}
 
 	app := application.New(application.Options{
-		Name:        "agenthub",
+		Name:        "AgentHub",
 		Description: "Local agent service hub",
 		Services: []application.Service{
-			application.NewService(services.NewHubService()),
+			application.NewService(services.NewHubService(version)),
 		},
 		// MarshalError keeps the control-plane error CODE reachable from the
 		// frontend (it arrives as the rejection's `cause`), so pages can tell
@@ -63,7 +63,7 @@ func main() {
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      "main",
-		Title:     "agenthub",
+		Title:     "",
 		Width:     1240,
 		Height:    800,
 		MinWidth:  900,

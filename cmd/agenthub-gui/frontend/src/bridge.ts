@@ -7,10 +7,12 @@
 // Consequence: renaming a Go method without renaming it here fails at
 // runtime with a ReferenceError, so the names live in exactly one place.
 //
-// EVERY method here maps to exactly one control-plane call. There is no
-// method that composes two writes, because a composite the CLI cannot
-// perform would be a GUI privilege — and "the GUI is one control-plane
-// client among several" is the property this file exists to keep true.
+// Every configuration and runtime method here maps to exactly one
+// control-plane call. There is no method that composes two writes, because a
+// composite the CLI cannot perform would be a GUI privilege — and "the GUI
+// is one control-plane client among several" is the property this file exists
+// to keep true. ApplicationVersion is the sole local value: immutable build
+// identity supplied by the GUI process itself.
 //
 // PRECONDITIONS. Writes against the registry take the generation the caller
 // last read (api/write.go): 0 means "do not check", a non-zero value is
@@ -104,6 +106,8 @@ export function isCancelled(err: unknown): boolean {
 }
 
 export const hub = {
+  /** GUI build identity stamped from VERSION plus the source commit. */
+  applicationVersion: () => call<string>("ApplicationVersion"),
   /** Last known daemon connection state; does no I/O. */
   status: () => call<Status>("Status"),
   /** Force a connection attempt, starting the daemon if necessary. */

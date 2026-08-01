@@ -30,9 +30,10 @@ import (
 )
 
 func main() {
-	fmt.Fprintln(os.Stderr,
-		"agenthub-gui: this binary was built without the GUI.\n"+
+	fmt.Fprintf(os.Stderr,
+		"agenthub-gui %s: this binary was built without the GUI.\n"+
 			"Build the real one with `make gui` (frontend + `go build -tags wails ./cmd/agenthub-gui`).\n"+
-			"The agenthub CLI can do everything the GUI can — the GUI is optional by construction.")
+			"The agenthub CLI can do everything the GUI can — the GUI is optional by construction.\n",
+		version)
 	os.Exit(1)
 }

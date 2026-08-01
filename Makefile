@@ -373,7 +373,7 @@ gui-frontend-ci: ## The frontend as CI builds it: npm ci rejects a stale lockfil
 # Builds the tagged binary. gui-frontend must have run at least once: the
 # embed of frontend/dist fails loudly otherwise.
 gui-go: ## Build the wails-tagged binary → bin/agenthub-gui
-	$(GO) build -tags wails -o $(GUI_BIN) ./$(GUI_DIR)
+	$(GO) build -tags wails -ldflags "$(LDFLAGS)" -o $(GUI_BIN) ./$(GUI_DIR)
 
 # The tagged half is invisible to `make lint`, so vet is the only static check
 # it ever gets — and wails v3 is an alpha whose API does move.

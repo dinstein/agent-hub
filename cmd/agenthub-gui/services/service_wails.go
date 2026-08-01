@@ -23,8 +23,10 @@ type HubService struct {
 // NewHubService returns the service instance to register with the
 // application. The emitter is wired lazily in ServiceStartup, because the
 // application does not exist yet at construction time.
-func NewHubService() *HubService {
-	return &HubService{Hub: NewHub(nil)}
+func NewHubService(buildVersion string) *HubService {
+	h := NewHub(nil)
+	h.buildVersion = buildVersion
+	return &HubService{Hub: h}
 }
 
 // ServiceName names the service in Wails logs.

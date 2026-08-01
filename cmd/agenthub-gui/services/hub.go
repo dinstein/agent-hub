@@ -133,7 +133,8 @@ type dialer interface {
 // Safe for concurrent use: the webview calls methods from several goroutines
 // and the pump runs on its own.
 type Hub struct {
-	dialer dialer
+	dialer       dialer
+	buildVersion string
 	// emitter is fixed at construction; nil means "drop events" so that a
 	// Hub built without a webview (tests, headless probes) still works.
 	emitter Emitter
@@ -182,6 +183,11 @@ func (realDialer) dialOrStart(ctx context.Context) (*api.Client, bool, error) {
 // NewHub returns a Hub that talks to the platform-default control socket.
 // No I/O happens until start or the first method call.
 func NewHub(e Emitter) *Hub { return &Hub{dialer: realDialer{}, emitter: e} }
+
+// ApplicationVersion returns the immutable GUI build identity supplied by
+// main. It is deliberately separate from Status.Version, which describes the
+// daemon the GUI happens to be connected to and may name a different build.
+func (h *Hub) ApplicationVersion() string { return h.buildVersion }
 
 // start connects to the daemon (starting it if needed) and brings up the
 // SSE bridge. It never blocks the caller: the GUI window must open even when

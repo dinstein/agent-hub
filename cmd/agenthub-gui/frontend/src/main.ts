@@ -66,6 +66,7 @@ const dot = document.getElementById("daemon-dot") as HTMLElement;
 const statusText = document.getElementById("daemon-text") as HTMLElement;
 const statusDetail = document.getElementById("daemon-detail") as HTMLElement;
 const connectionBanner = document.getElementById("connection-banner") as HTMLElement;
+const appVersion = document.getElementById("app-version") as HTMLElement;
 
 let current: Page | null = null;
 let currentRoute: Route | null = null;
@@ -159,6 +160,17 @@ async function firstRoute(): Promise<void> {
 function boot(): void {
   initTheme();
   window.addEventListener("hashchange", () => void mount(routeFromHash()));
+
+  hub
+    .applicationVersion()
+    .then((version) => {
+      appVersion.textContent = version;
+    })
+    .catch(() => {
+      // A browser-only preview has no bound Go service. Leaving the second
+      // line blank is more honest than showing a frontend package version,
+      // which is deliberately unrelated to the shipped application build.
+    });
 
   on<Status>(EVT.daemon, (st) => {
     paintStatus(st);
