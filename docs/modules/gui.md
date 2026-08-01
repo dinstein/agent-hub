@@ -90,8 +90,12 @@ and otherwise reaches all enabled servers subject to global per-server tool rule
 profile is shown as a broken reference and an empty effective scope, preserving the runtime's
 fail-closed behavior. Keeping this row visible even when named profiles exist answers the page's
 first question — what an unbound client can reach — without making the user infer it from a footnote.
-Creating a named profile opens a focused modal: the profile list remains stable underneath while the
-operator names the profile and chooses either every registered server or a non-empty selected subset.
+Creating or editing a named profile opens a focused modal: the profile list remains stable underneath
+while the operator names or renames the profile, changes its members, or edits a per-server tool selector.
+These are object edits with their own Save / Cancel boundary; none expands an inline form between profile
+cards. Direct state changes such as making a profile the default remain direct actions, and destructive
+deletion keeps its confirmation dialog rather than being confused with an editor. Creation lets the
+operator name the profile and choose either every registered server or a non-empty selected subset.
 The server checklist and manual-name tail exist only for the subset choice; selecting every server
 collapses them instead of showing controls whose values have no effect. The GUI does not offer a
 first-class block-all member choice, although profiles written with an explicit empty set remain

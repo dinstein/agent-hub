@@ -17,6 +17,7 @@ import { hub, knownTools } from "../bridge";
 import { clear, el, icon, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { failureBox, noticeSlot, runWrite } from "../page";
+import type { NoticeSlot } from "../page";
 import {
   button,
   confirmAction,
@@ -24,7 +25,6 @@ import {
   describeSelector,
   describeServerSet,
   field,
-  formHost,
   modalHost,
   selectInput,
   textInput,
@@ -50,13 +50,20 @@ function describeServersChoice(servers: string[] | null): string {
 export function profilesPage(): Page {
   let root: HTMLElement | null = null;
   const slot = noticeSlot();
-  const form = formHost();
+  const form = modalHost();
   const create = modalHost();
   let list: ProfileList | null = null;
   let servers: Server[] = [];
 
   const serverIds = (): string[] => servers.map((s) => s.id);
   const generation = (): number => list?.generation ?? 0;
+
+  function closeAfterWrite(local: NoticeSlot, close: () => void, ok: boolean): void {
+    if (!ok) return;
+    slot.clear();
+    slot.node.append(...Array.from(local.node.childNodes));
+    close();
+  }
 
   // -- creation -------------------------------------------------------------
 
@@ -67,30 +74,28 @@ export function profilesPage(): Page {
       only: "Only selected servers",
       empty: "Select at least one server, or choose “Every registered server”.",
     });
-    const errors = el("div", { class: "notice-slot" });
+    const errors = noticeSlot();
     const save = button("Create profile", "btn btn-primary", () => {
-      clear(errors);
+      errors.clear();
       if (!name.value.trim()) {
-        errors.append(el("div", { class: "notice notice-warn", text: "A profile needs a name." }));
+        errors.say("A profile needs a name.", "warn");
         return;
       }
       const sel = members.value();
       if (!sel.ok) {
-        errors.append(el("div", { class: "notice notice-warn", text: sel.message }));
+        errors.say(sel.message, "warn");
         return;
       }
       const chosen = serversFrom(sel.selection);
       void runWrite(
-        slot,
+        errors,
         () => draw(),
         (r) => `Profile ${r.name} created (${describeServersChoice(chosen)}).`,
         () => hub.createProfile(name.value.trim(), chosen, generation()),
-      ).then((ok) => {
-        if (ok) create.hide();
-      });
+      ).then((ok) => closeAfterWrite(errors, () => create.hide(), ok));
     });
     return el("div", { class: "modal-form" }, [
-      errors,
+      errors.node,
       field("Name", name),
       field("Member servers", members.node),
       controls(save, button("Cancel", "btn btn-secondary", () => create.hide())),
@@ -105,17 +110,17 @@ export function profilesPage(): Page {
       only: "Only selected servers",
       empty: "Select at least one server, or choose “Every registered server”.",
     });
-    const errors = el("div", { class: "notice-slot" });
-    const save = button("Replace member set", "btn", () => {
-      clear(errors);
+    const errors = noticeSlot();
+    const save = button("Save members", "btn btn-primary", () => {
+      errors.clear();
       const sel = members.value();
       if (!sel.ok) {
-        errors.append(el("div", { class: "notice notice-warn", text: sel.message }));
+        errors.say(sel.message, "warn");
         return;
       }
       const chosen = serversFrom(sel.selection);
       void runWrite(
-        slot,
+        errors,
         () => draw(),
         (r) => `${r.name}: members are now ${describeServersChoice(chosen)}.`,
         () =>
@@ -124,13 +129,10 @@ export function profilesPage(): Page {
             { mode: ServerSet.Replace, servers: chosen },
             generation(),
           ),
-      ).then((ok) => {
-        if (ok) form.hide();
-      });
+      ).then((ok) => closeAfterWrite(errors, () => form.hide(), ok));
     });
-    return el("div", { class: "panel panel-inset" }, [
-      el("h3", { text: `Member servers of ${p.name}` }),
-      errors,
+    return el("div", { class: "modal-form" }, [
+      errors.node,
       members.node,
       controls(save, button("Cancel", "btn btn-secondary", () => form.hide())),
     ]);
@@ -141,26 +143,23 @@ export function profilesPage(): Page {
   async function toolsForm(p: Profile, server: string): Promise<Node> {
     const available = await knownTools(server);
     const picker = triState(available, p.tools?.[server]);
-    const errors = el("div", { class: "notice-slot" });
-    const save = button("Apply selector", "btn", () => {
-      clear(errors);
+    const errors = noticeSlot();
+    const save = button("Save rule", "btn btn-primary", () => {
+      errors.clear();
       const sel = picker.value();
       if (!sel.ok) {
-        errors.append(el("div", { class: "notice notice-warn", text: sel.message }));
+        errors.say(sel.message, "warn");
         return;
       }
       void runWrite(
-        slot,
+        errors,
         () => draw(),
         (r) => `${r.name}: ${server} is now "${sel.selection.mode}".`,
         () => hub.setProfileTools(p.name, server, sel.selection, generation()),
-      ).then((ok) => {
-        if (ok) form.hide();
-      });
+      ).then((ok) => closeAfterWrite(errors, () => form.hide(), ok));
     });
-    return el("div", { class: "panel panel-inset" }, [
-      el("h3", { text: `Tools of ${server} in ${p.name}` }),
-      errors,
+    return el("div", { class: "modal-form" }, [
+      errors.node,
       picker.node,
       el("p", {
         class: "hint",
@@ -175,12 +174,20 @@ export function profilesPage(): Page {
       serverIds().map((id) => ({ value: id, label: id })),
       serverIds()[0] ?? "",
     );
-    const open = button("Edit selector", "btn", () => {
+    const errors = el("div", { class: "notice-slot" });
+    const open = button("Continue", "btn btn-primary", () => {
       if (!server.value) return;
-      void toolsForm(p, server.value).then((node) => form.show(node));
+      clear(errors);
+      const selected = server.value;
+      open.setAttribute("aria-busy", "true");
+      void toolsForm(p, selected).then(
+        (node) => form.show(`Edit rules · ${p.name} · ${selected}`, node),
+        (err: unknown) => errors.append(failureBox(err)),
+      ).finally(() => open.removeAttribute("aria-busy"));
     });
-    return el("div", { class: "panel panel-inset" }, [
-      el("h3", { text: `Tool rules of ${p.name}` }),
+    open.disabled = !server.value;
+    return el("div", { class: "modal-form" }, [
+      errors,
       field("Server", server, "the rule applies to this server's tools inside this profile"),
       controls(open, button("Cancel", "btn btn-secondary", () => form.hide())),
     ]);
@@ -190,33 +197,29 @@ export function profilesPage(): Page {
 
   function rename(p: Profile): void {
     const input = textInput(p.name, "new name");
-    const errors = el("div", { class: "notice-slot" });
+    const errors = noticeSlot();
     form.show(
-      el("div", { class: "panel panel-inset" }, [
-        el("h3", { text: `Rename ${p.name}` }),
-        errors,
+      `Rename ${p.name}`,
+      el("div", { class: "modal-form" }, [
+        errors.node,
         field("New name", input, "every client and project reference is repointed automatically"),
         controls(
-          button("Rename", "btn", () => {
-            clear(errors);
+          button("Rename", "btn btn-primary", () => {
+            errors.clear();
             const next = input.value.trim();
             if (!next || next === p.name) {
-              errors.append(
-                el("div", { class: "notice notice-warn", text: "Enter a different name." }),
-              );
+              errors.say("Enter a different name.", "warn");
               return;
             }
             void runWrite(
-              slot,
+              errors,
               () => draw(),
               (r) =>
                 `${r.old_name ?? p.name} renamed to ${r.name}` +
                 (r.repointed?.length ? ` (repointed: ${r.repointed.join(", ")})` : "") +
                 ".",
               () => hub.renameProfile(p.name, next, generation()),
-            ).then((ok) => {
-              if (ok) form.hide();
-            });
+            ).then((ok) => closeAfterWrite(errors, () => form.hide(), ok));
           }),
           button("Cancel", "btn btn-secondary", () => form.hide()),
         ),
@@ -315,7 +318,8 @@ export function profilesPage(): Page {
         el("section", { class: "access-rule" }, [
           el("div", { class: "access-rule-head" }, [
             el("span", { class: "access-rule-label", text: "Member servers" }),
-            button("Edit members", "btn btn-secondary", () => form.show(membersForm(p))),
+            button("Edit members", "btn btn-secondary", () =>
+              form.show(`Edit members · ${p.name}`, membersForm(p))),
           ]),
           el("div", {
             class: p.servers?.length === 0 ? "access-rule-value danger" : "access-rule-value",
@@ -326,7 +330,8 @@ export function profilesPage(): Page {
         el("section", { class: "access-rule" }, [
           el("div", { class: "access-rule-head" }, [
             el("span", { class: "access-rule-label", text: "Tool selectors" }),
-            button("Edit rules", "btn btn-secondary", () => form.show(toolRuleChooser(p))),
+            button("Edit rules", "btn btn-secondary", () =>
+              form.show(`Edit rules · ${p.name}`, toolRuleChooser(p))),
           ]),
           toolsCell(p),
         ]),
@@ -426,7 +431,6 @@ export function profilesPage(): Page {
         button("New profile", "btn btn-primary", () => create.show("New profile", createForm())),
       ),
       slot.node,
-      form.node,
       el("div", { class: "scope-note" }, [
         el("span", { class: "scope-note-mark" }, [icon("scope")]),
         el("span", {
