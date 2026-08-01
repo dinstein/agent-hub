@@ -332,7 +332,8 @@ profile).
 **The non-registry face (`nonreg*.go`)** — the half of the control plane that **doesn't land on the config
 registry**: credentials, skills, agent tokens, client adapters, the OAuth lifecycle, and live connection
 self-tests. A few rules only visible here: **verifying that a credential works is `POST /v1/servers/{id}/test`,
-not part of the secrets face**; `POST /v1/servers/{id}/test` **probes a docker-runtime entry as a container**,
+not part of the secrets face**; a typed downstream 401/403 returns `E_AUTH_REQUIRED`, allowing a frontend to
+offer `Auth.StartLogin` without scraping the error copy; `POST /v1/servers/{id}/test` **probes a docker-runtime entry as a container**,
 because the dial carries `Spec.Docker` into the spawner instead of running the command on the host (this
 endpoint used to refuse such entries fail-closed, back when the dial could not);
 `POST /v1/clients/{id}/connect` may RUN that client's own configuration CLI for a format agenthub will not

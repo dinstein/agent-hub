@@ -30,7 +30,7 @@
 // resolves is "Test connection", which makes a REAL call — the vault has no
 // read path and this page must not grow one.
 
-import { EVT, hub, on, openExternal } from "../bridge";
+import { asCallError, EVT, hub, on, openExternal } from "../bridge";
 import { chip, chipRow, clear, el, emptyState, icon, loadingState, pageHeader } from "../dom";
 import { AdminState, HealthAction, HealthLevel } from "../generated/health";
 import type { Page } from "../page";
@@ -64,7 +64,7 @@ import type {
   ServerTestResult,
   TopicEvent,
 } from "../types";
-import { LoginMode, LoginPhase, Provenance, Runtime, Transport } from "../types";
+import { ErrCode, LoginMode, LoginPhase, Provenance, Runtime, Transport } from "../types";
 
 // ---------------------------------------------------------------------------
 // Health presentation
@@ -1271,6 +1271,40 @@ export function serversPage(): Page {
 
   // -- writes ----------------------------------------------------------------
 
+  function authenticationRequired(err: unknown): boolean {
+    return asCallError(err).code === ErrCode.AuthRequired;
+  }
+
+  /** Checks an enabled definition immediately after the operator creates,
+   *  edits, or switches it on. The probe is descriptive: the registry write
+   *  already succeeded, so a failed handshake must never roll it back.
+   *
+   *  An auth refusal is the actionable branch. It carries the daemon's typed
+   *  E_AUTH_REQUIRED code rather than being inferred from prose, and the
+   *  resulting button starts the same login session as the row status action. */
+  async function probeAfterWrite(id: string, changed: string): Promise<void> {
+    try {
+      const res = await hub.testServer(id, {});
+      slot.say(`${id} ${changed}; connection check passed with ${res.tool_count} tool(s).`);
+    } catch (err) {
+      slot.clear();
+      const auth = authenticationRequired(err);
+      slot.node.append(
+        el("div", { class: "notice notice-warn" }, [
+          el("div", {
+            text: auth
+              ? `${id} ${changed}, but it requires authentication.`
+              : `${id} ${changed}, but its connection check failed.`,
+          }),
+          failureBox(err),
+          auth
+            ? controls(button("Authenticate", "btn btn-primary", () => void login(id)))
+            : null,
+        ]),
+      );
+    }
+  }
+
   function editor(id: string, detail: ServerDetail | null): Node {
     const creating = detail === null;
     const idInput = textInput(id, "server id");
@@ -1303,8 +1337,12 @@ export function serversPage(): Page {
               // blocked by an unrelated edit elsewhere.
               hub.createServer(spec, 0)
             : hub.updateServer(spec, detail.generation),
-      ).then((ok) => {
-        if (ok) form.hide();
+      ).then(async (ok) => {
+        if (!ok) return;
+        form.hide();
+        if (collected.entry.enabled) {
+          await probeAfterWrite(name, creating ? "created" : "updated");
+        }
       });
     });
 
@@ -1366,7 +1404,11 @@ export function serversPage(): Page {
       return;
     }
     await draw();
-    slot.say(`${s.id} ${next ? "enabled" : "disabled"}.`);
+    if (next) {
+      await probeAfterWrite(s.id, "enabled");
+    } else {
+      slot.say(`${s.id} disabled.`);
+    }
   }
 
   async function test(s: Server): Promise<void> {
@@ -1389,6 +1431,9 @@ export function serversPage(): Page {
     } catch (err) {
       clear(body);
       body.append(failureBox(err));
+      if (authenticationRequired(err)) {
+        body.append(controls(button("Authenticate", "btn btn-primary", () => void login(s.id))));
+      }
     }
   }
 

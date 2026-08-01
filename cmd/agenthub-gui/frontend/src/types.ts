@@ -954,6 +954,9 @@ export const ErrCode = {
    *  "your paste is broken" — the hint carries the manual route, and the
    *  refusal is permanent by design (docs/modules/controlplane.md). */
   UnsupportedFormat: "E_UNSUPPORTED_FORMAT",
+  /** A live server self-test reached the downstream and its initial
+   *  handshake was rejected with 401/403. Offer the OAuth login action. */
+  AuthRequired: "E_AUTH_REQUIRED",
   Gui: "E_GUI",
 } as const;
 export type ErrCode = (typeof ErrCode)[keyof typeof ErrCode];

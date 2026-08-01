@@ -116,6 +116,12 @@ scroll inside the available window height, and the save/cancel actions remain at
 Catalog entry with no missing configuration remains a single-click add; the modal is not a ritual
 confirmation for work that needs no input.
 
+Creating or editing an enabled server, and switching a disabled server on, immediately performs the same
+handshake-only self-test as the row's Test action. The write has already succeeded and is never rolled back by
+the probe: a normal connection reports its tool count, a generic failure stays a visible diagnostic, and
+`E_AUTH_REQUIRED` renders an `Authenticate` button. Test's own failure dialog renders the same button for that
+code. The frontend branches on the daemon's code, never on whether prose happens to contain `401`.
+
 The Playground treats execution as the primary task, not the last step of a form. Its Call action is
 inside the argument header and remains visible while a long generated schema scrolls beneath it.
 Generated fields are split into explicit Required and Optional sections; a blank optional field is
@@ -235,6 +241,9 @@ drives it.
 - **The device code is large, monospaced and letter-spaced.** It is the one string in this
   application a person retypes into a different window, and `O`/`0` and `I`/`l` have to separate at a
   glance rather than after a failed attempt.
+
+The row status, the post-create/post-enable probe, and the Test dialog all call this one `login(id)` function;
+three entry points do not mean three OAuth implementations.
 
 ---
 
