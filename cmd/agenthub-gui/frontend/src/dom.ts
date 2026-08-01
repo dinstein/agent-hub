@@ -38,6 +38,24 @@ export function section(title: string, ...children: (Node | null)[]): HTMLElemen
   ]);
 }
 
+/** The title block shared by top-level pages. Actions stay outside the title
+ *  text so the hierarchy survives a narrow window and assistive technology
+ *  reads one unambiguous heading. */
+export function pageHeader(
+  title: string,
+  subtitle: string,
+  ...actions: (Node | null)[]
+): HTMLElement {
+  const kept = actions.filter((a): a is Node => a !== null);
+  return el("header", { class: "page-header" }, [
+    el("div", { class: "page-heading" }, [
+      el("h1", { text: title }),
+      el("p", { text: subtitle }),
+    ]),
+    kept.length > 0 ? el("div", { class: "page-actions" }, kept) : null,
+  ]);
+}
+
 export function table(headers: string[], rows: (Node | string)[][]): HTMLElement {
   const thead = el("thead", {}, [el("tr", {}, headers.map((h) => el("th", { text: h })))]);
   const tbody = el(

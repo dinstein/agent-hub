@@ -65,6 +65,7 @@ const view = document.getElementById("view") as HTMLElement;
 const dot = document.getElementById("daemon-dot") as HTMLElement;
 const statusText = document.getElementById("daemon-text") as HTMLElement;
 const statusDetail = document.getElementById("daemon-detail") as HTMLElement;
+const connectionBanner = document.getElementById("connection-banner") as HTMLElement;
 
 let current: Page | null = null;
 let currentRoute: Route | null = null;
@@ -96,6 +97,7 @@ async function mount(route: Route): Promise<void> {
 function paintStatus(st: Status): void {
   dot.className = `dot ${st.connected ? "ok" : "bad"}`;
   statusText.textContent = st.connected ? "daemon connected" : "daemon offline";
+  connectionBanner.hidden = st.connected;
   // The build and pid are what you need once something is wrong, not while
   // it is fine, so they sit on the quieter second line.
   statusDetail.textContent = st.connected ? `${st.version || "?"} · pid ${st.pid || "?"}` : "";
@@ -162,6 +164,7 @@ function boot(): void {
       // desktop app): leave the indicator in its initial state.
       dot.className = "dot bad";
       statusText.textContent = "runtime unavailable";
+      connectionBanner.hidden = false;
     });
 }
 

@@ -49,35 +49,39 @@
   </head>
   <body>
     <div class="shell">
-      <nav class="sidebar">
-        <div class="brand">agenthub</div>
-        <div class="nav-group">Configuration</div>
-        <a class="nav" href="#/servers" data-route="servers">Servers</a>
-        <!-- Catalog sits directly under Servers: it is the other half of
-             "add a server", and the half that does not require knowing an
-             npx line by heart (docs/modules/gui.md). -->
-        <a class="nav" href="#/catalog" data-route="catalog">Catalog</a>
-        <a class="nav" href="#/profiles" data-route="profiles">Profiles</a>
-        <a class="nav" href="#/scope" data-route="scope">Client scope</a>
-        <a class="nav" href="#/config" data-route="config">Governance</a>
-        <div class="nav-group">Credentials</div>
-        <a class="nav" href="#/secrets" data-route="secrets">Secrets</a>
-        <a class="nav" href="#/tokens" data-route="tokens">Agent tokens</a>
-        <a class="nav" href="#/auth" data-route="auth">Auth</a>
-        <div class="nav-group">Runtime</div>
-        <!-- Playground sits first: it is the "try one tool for real" surface,
-             and it is what the setup guide falls back to when a client cannot
-             be made to call anything (docs/modules/gui.md). -->
-        <a class="nav" href="#/playground" data-route="playground">Playground</a>
-        <a class="nav" href="#/sessions" data-route="sessions">Sessions</a>
-        <a class="nav" href="#/skills" data-route="skills">Skills</a>
-        <a class="nav" href="#/clients" data-route="clients">Clients</a>
-        <a class="nav" href="#/settings" data-route="settings">Settings</a>
-        <!-- The setup guide auto-opens once, on a genuinely new install. It
-             stays reachable afterwards because "check it actually works" is
-             worth re-running after any change to a client. -->
-        <a class="nav" href="#/onboarding" data-route="onboarding">Setup guide</a>
-        <div class="spacer"></div>
+      <nav class="sidebar" aria-label="Main navigation">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">A</span>
+          <span class="brand-copy">
+            <strong>agenthub</strong>
+            <small>MCP control plane</small>
+          </span>
+        </div>
+        <div class="nav-scroll">
+          <div class="nav-group">Core</div>
+          <a class="nav" href="#/servers" data-route="servers">
+            <span class="nav-icon" aria-hidden="true">⌁</span><span>Servers</span>
+          </a>
+          <!-- Catalog remains a first-class destination and sits immediately
+               below Servers: it is the discovery half of the same task. -->
+          <a class="nav" href="#/catalog" data-route="catalog">
+            <span class="nav-icon" aria-hidden="true">◇</span><span>Catalog</span>
+          </a>
+          <a class="nav" href="#/playground" data-route="playground">
+            <span class="nav-icon" aria-hidden="true">▷</span><span>Playground</span>
+          </a>
+          <div class="nav-group">Access</div>
+          <a class="nav" href="#/profiles" data-route="profiles">
+            <span class="nav-icon" aria-hidden="true">◎</span><span>Profiles</span>
+          </a>
+          <a class="nav" href="#/clients" data-route="clients">
+            <span class="nav-icon" aria-hidden="true">◫</span><span>Clients</span>
+          </a>
+          <div class="nav-group">System</div>
+          <a class="nav" href="#/settings" data-route="settings">
+            <span class="nav-icon" aria-hidden="true">⚙</span><span>Settings</span>
+          </a>
+        </div>
         <!-- Two lines, not one: "daemon <version> · pid <n>" does not fit the
              sidebar and was being clipped mid-word, so the one thing this
              footer exists to answer — is it connected — was the part that got
@@ -90,7 +94,17 @@
           </span>
         </div>
       </nav>
-      <main class="content" id="view"></main>
+      <main class="content">
+        <div class="connection-banner" id="connection-banner" role="status" hidden>
+          <span class="connection-banner-icon" aria-hidden="true">!</span>
+          <span>
+            <strong>AgentHub daemon is offline.</strong>
+            Configuration and runtime state cannot be read until it reconnects.
+          </span>
+          <a class="btn btn-sm" href="#/settings">Open Settings</a>
+        </div>
+        <div class="content-view" id="view"></div>
+      </main>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

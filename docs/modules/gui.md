@@ -12,11 +12,18 @@ item 3.
 
 ---
 
-## 1. Information architecture: organized by "does this need you?", not by domain model
+## 1. Information architecture: a short task spine, then state inside each page
 
 The sidebar started life as a one-to-one mapping of the CLI command tree — fourteen resource tables
-laid out along the domain model. That works for someone who already knows what they are looking for;
-for someone who just connected their first server, it demands you learn our object model first.
+laid out along the domain model. It now has six task destinations: Servers, Catalog, Playground,
+Profiles, Clients and Settings. Catalog is deliberately first-class and immediately follows Servers:
+the two are the configured and discoverable halves of the same task. Credentials live with the
+server that uses them, client bindings live with Clients, and appearance/daemon diagnostics live in
+Settings. A resource can still have a direct hash route without taking permanent navigation space.
+
+The daemon state is pinned at the bottom of the shell and an offline daemon also raises a global
+banner above the current page. A footer hidden below fourteen links failed at its only job: the
+connection state disappeared precisely when every page began failing.
 
 The current call is: **lists are bucketed by state, not alphabetized**. The server list has three
 buckets — needs attention / active / disabled — sorted within each bucket, **empty buckets are not
@@ -44,9 +51,12 @@ accessibility requirement and a guard against misreading:
 This is the single biggest saver of user time: it removes the "read status → figure out what to do →
 find the entry point" three-step.
 
-**Semantic colors are reserved for health.** Metadata like transport, source, and profile is always
-neutral (`ChipTone`'s `neutral`). Otherwise a healthy stdio server would show two unrelated green
-dots at once, and color would stop meaning anything.
+**Semantic colors are reserved for health; accent is reserved for interaction.** Metadata like
+transport, source, and profile is always neutral (`ChipTone`'s `neutral`). Green/yellow/red still
+answer health only. The indigo accent answers a different, closed question — which navigation item,
+primary action or focus target is active — and is never used for a health state. Without that split,
+a healthy stdio server would show two unrelated green dots at once and color would stop meaning
+anything.
 
 **Health is always rendered, never re-derived.** The level is computed by a pure function in the
 daemon; the frontend only displays it. The constants are generated from the `api` package into

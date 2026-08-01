@@ -3,8 +3,9 @@
  * ---------------------------------------------------------------------------
  * COLOUR DISCIPLINE (docs/modules/gui.md)
  * ---------------------------------------------------------------------------
- * There are exactly four semantic tokens — --success, --warning, --danger,
- * --info — and they are reserved for ONE question: is this thing healthy?
+ * The semantic tokens --success, --warning, --danger and --info answer ONE
+ * question: is this thing healthy? --accent is separate and carries only
+ * interaction hierarchy (selected navigation, primary actions, focus).
  *
  * Everything else (transport, source, provenance, profile name, session id,
  * fingerprints, counts) is metadata and is rendered in --muted / --fg. The
@@ -14,10 +15,8 @@
  * operator has to read the text anyway, which is the cost the colour was
  * supposed to remove.
  *
- * So: if a colour is carrying meaning here, that meaning is health. Four
- * hues is the whole budget — healthy, degraded, unhealthy, off — and a new
- * state gets an existing hue plus a word, never a fifth colour. Adding a hue
- * per state is how a palette stops being readable.
+ * A new STATE gets an existing semantic hue plus a word, never a new hue.
+ * Accent never paints health, and semantic colours never paint navigation.
  *
  * Every semantic colour is also paired with a second channel (an icon shape, a
  * word, or a border) so the state survives a colour-blind reader and a
@@ -36,6 +35,7 @@
   --font-sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --radius: 10px;
+  --radius-lg: 14px;
   font-family: var(--font-sans);
 
   /* Type scale. Six ad-hoc pixel values used to be written at their call
@@ -67,7 +67,7 @@
   --dur-fast: 90ms;
   --dur: 150ms;
 
-  --sidebar-w: 208px;
+  --sidebar-w: 224px;
   /* Tables of eight columns are unreadable at 2000px. The cap is on the
    * content column, not the window, so the chrome still fills the screen. */
   --content-max: 1180px;
@@ -77,29 +77,29 @@
 
 :root,
 :root[data-theme="dark"] {
-  --bg: #0d1014;
-  --panel: #14181e;
-  --panel-2: #1b2027;
-  --fg: #e8ecf2;
-  --muted: #868fa0;
-  --faint: #6b7383;
-  --line: #262d36;
+  --bg: #0b0d12;
+  --sidebar: #0e1118;
+  --panel: #131720;
+  --panel-2: #191e29;
+  --fg: #f2f4f8;
+  --muted: #9099aa;
+  --faint: #687286;
+  --line: #272e3b;
   /* Hairline between records inside one surface: quieter than --line, which
    * separates a surface from the page. */
-  --line-soft: #1e242c;
+  --line-soft: #1d232e;
 
-  /* There is no brand hue. --accent resolves to the ink colour, so emphasis
-   * is contrast rather than a fifth colour. The reason is the rule at the top
-   * of this file: every hue here is a health claim, so a blue primary button
-   * would be the one coloured thing on screen that means nothing — and the
-   * moment a colour can mean two things it means neither. */
-  --accent: var(--fg);
+  /* Accent is interaction only: selected navigation, primary actions and the
+   * focus ring. Health retains its separate green/yellow/red vocabulary. */
+  --accent: #7c8cff;
+  --accent-strong: #96a2ff;
+  --accent-soft: rgb(124 140 255 / 0.13);
 
   /* The four semantic tokens. Health only. */
-  --success: #46c06b;
-  --warning: #e0a02e;
-  --danger: #f0605a;
-  --info: #5aa9f0;
+  --success: #3bcb7a;
+  --warning: #f0b84b;
+  --danger: #f06464;
+  --info: #6eb5ff;
 
   /* Elevation is a per-theme token, not a shared one: on a dark surface a
    * black shadow is nearly invisible, so depth there comes mostly from a
@@ -113,15 +113,18 @@
 }
 
 :root[data-theme="light"] {
-  --bg: #f6f7f9;
+  --bg: #f5f6fa;
+  --sidebar: #ffffff;
   --panel: #ffffff;
-  --panel-2: #eef1f5;
-  --fg: #0e1116;
-  --muted: #5b6472;
+  --panel-2: #f0f2f7;
+  --fg: #111521;
+  --muted: #5f6878;
   --faint: #8a93a2;
-  --line: #dfe3ea;
-  --line-soft: #eaedf2;
-  --accent: var(--fg);
+  --line: #dfe3ec;
+  --line-soft: #e9ecf2;
+  --accent: #5365e8;
+  --accent-strong: #4355d8;
+  --accent-soft: rgb(83 101 232 / 0.1);
 
   --success: #167a3a;
   --warning: #8a6100;
@@ -175,7 +178,8 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font-size: 14px;
+  font-size: var(--text-base);
+  line-height: 1.45;
 }
 
 /* One focus ring for the whole application. */
@@ -200,13 +204,13 @@ body {
 .sidebar {
   width: var(--sidebar-w);
   flex: 0 0 var(--sidebar-w);
-  background: var(--panel);
+  background: var(--sidebar);
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  padding: var(--space-6) var(--space-5);
-  gap: var(--space-2);
-  overflow-y: auto;
+  padding: var(--space-6) var(--space-5) var(--space-5);
+  gap: var(--space-5);
+  overflow: hidden;
   position: sticky;
   top: 0;
   height: 100vh;
@@ -218,7 +222,7 @@ body {
  * bare text nodes, so the rail would be a column of unexplained badges. */
 @media (max-width: 900px) {
   :root {
-    --sidebar-w: 164px;
+    --sidebar-w: 184px;
   }
 
   .sidebar {
@@ -231,28 +235,66 @@ body {
 }
 
 .brand {
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  padding: 4px 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 8px var(--space-5);
+}
+
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: white;
+  background: linear-gradient(145deg, var(--accent-strong), var(--accent));
+  box-shadow: 0 7px 18px color-mix(in srgb, var(--accent) 24%, transparent);
+  font-weight: 750;
+}
+
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.brand-copy strong {
+  letter-spacing: -0.01em;
+}
+
+.brand-copy small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.nav-scroll {
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-right: 2px;
 }
 
 a.nav {
   color: var(--muted);
   text-decoration: none;
-  padding: var(--space-4) 10px;
-  border-radius: 8px;
+  padding: 9px 10px;
+  border-radius: 9px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-3);
-  font-size: var(--text-md);
+  font-size: var(--text-base);
   transition:
     background var(--dur-fast) var(--ease),
     color var(--dur-fast) var(--ease);
 }
 
 a.nav:hover {
-  background: var(--panel-2);
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
   color: var(--fg);
 }
 
@@ -260,10 +302,22 @@ a.nav:hover {
  * rest sit at --muted so that "where am I" is answerable peripherally,
  * without reading the labels. */
 a.nav.active {
-  background: var(--panel-2);
+  background: var(--accent-soft);
   color: var(--fg);
   font-weight: 600;
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.nav-icon {
+  width: 18px;
+  color: var(--muted);
+  font-size: var(--text-lg);
+  line-height: 1;
+  text-align: center;
+}
+
+a.nav.active .nav-icon {
+  color: var(--accent-strong);
 }
 
 .spacer {
@@ -276,7 +330,7 @@ a.nav.active {
   gap: var(--space-4);
   color: var(--muted);
   font-size: var(--text-sm);
-  padding: var(--space-4) 10px;
+  padding: var(--space-5) 8px 0;
   border-top: 1px solid var(--line);
   min-width: 0;
 }
@@ -347,7 +401,7 @@ a.nav.active {
 
 .content {
   flex: 1;
-  padding: var(--space-7) var(--space-7);
+  padding: 30px 32px 48px;
   overflow: auto;
   min-width: 0;
 }
@@ -355,22 +409,108 @@ a.nav.active {
 /* The cap lives on an inner wrapper so the scroll container still spans the
  * window: capping .content itself would strand the scrollbar in the middle
  * of a wide screen. */
-.content > * {
+.content-view > * {
   max-width: var(--content-max);
+}
+
+.content-view {
+  max-width: var(--content-max);
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-7);
+  margin: 0 0 22px;
+}
+
+.page-heading {
+  min-width: 0;
+}
+
+.page-heading > h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  font-weight: 680;
+}
+
+.page-heading > p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  max-width: 720px;
+}
+
+.page-actions {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 760px) {
+  .page-header {
+    flex-direction: column;
+    gap: var(--space-5);
+  }
+
+  .page-actions {
+    justify-content: flex-start;
+  }
+}
+
+.connection-banner {
+  max-width: var(--content-max);
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line));
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: var(--space-6);
+  color: var(--muted);
+}
+
+.connection-banner[hidden] {
+  display: none;
+}
+
+.connection-banner strong {
+  color: var(--fg);
+}
+
+.connection-banner > .btn {
+  margin-left: auto;
+}
+
+.connection-banner-icon {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+  font-weight: 750;
 }
 
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: var(--space-6) 18px;
-  margin-bottom: 18px;
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  margin-bottom: var(--space-6);
   box-shadow: var(--shadow-1);
 }
 
 .panel > h2 {
   margin: 0 0 var(--space-5);
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   letter-spacing: 0.01em;
 }
 
