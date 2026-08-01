@@ -59,7 +59,6 @@ import type {
   AuthLogin,
   DockerMount,
   DockerRuntime,
-  Health,
   ParsedClientConfig,
   ParsedSkip,
   Server,
@@ -164,22 +163,6 @@ const CLI_ACTIONS: Record<string, { label: string; command: string; note?: strin
 const ROUTE_ACTIONS: Record<string, { label: string; route: string }> = {
   [HealthAction.SetSecret]: { label: "Set secret", route: "#/secrets" },
 };
-
-function healthBadge(h: Health): HTMLElement {
-  // A disabled server reports level=healthy on purpose (intentionally off
-  // is not broken), so admin state wins the badge.
-  const admin = h.admin_state;
-  if (admin === AdminState.Disabled) {
-    return el("span", { class: "badge badge-disabled", text: "disabled" });
-  }
-  const cls =
-    h.level === HealthLevel.Healthy
-      ? "badge-healthy"
-      : h.level === HealthLevel.Degraded
-        ? "badge-degraded"
-        : "badge-unhealthy";
-  return el("span", { class: `badge ${cls}`, text: h.level });
-}
 
 function suggestion(server: Server): Node | null {
   const action = server.health.action ?? HealthAction.None;
@@ -1044,16 +1027,20 @@ export function serversPage(): Page {
       ]);
     }
 
-    // error: one distilled line, the daemon's own detail underneath.
+    // error: one distilled line only. The daemon's full detail and suggested
+    // recovery live in the record body, where they can grow vertically
+    // without stealing all available width from the server name.
     if (s.health.level !== HealthLevel.Healthy) {
       const tone = s.health.level === HealthLevel.Unhealthy ? "danger" : "warning";
       return el("div", { class: "srv-status" }, [
         el("div", { class: "state-line" }, [
           dot(tone),
-          el("span", { class: `state-text t-${tone}`, text: s.health.summary || s.state }),
+          el("span", {
+            class: `state-text t-${tone}`,
+            text: s.health.summary || s.state,
+            title: s.health.summary || s.state,
+          }),
         ]),
-        s.health.detail ? el("span", { class: "meta", text: s.health.detail }) : null,
-        suggestion(s),
       ]);
     }
 
@@ -1079,9 +1066,39 @@ export function serversPage(): Page {
     return el("div", { class: "srv-status" }, [
       el("div", { class: "state-line" }, [
         dot("neutral"),
-        el("span", { class: "state-text t-muted", text: s.health.summary || s.state }),
+        el("span", {
+          class: "state-text t-muted",
+          text: s.health.summary || s.state,
+          title: s.health.summary || s.state,
+        }),
       ]),
     ]);
+  }
+
+  /** Full diagnostics belong to the flexible body column, never the compact
+   *  status/action column. Keeping this collapsed preserves scan density for
+   *  the common case while making the daemon's exact answer one click away. */
+  function statusDetails(s: Server): Node | null {
+    if (s.health.admin_state === AdminState.Disabled || s.state === "connecting") return null;
+    const detail = s.health.detail?.trim() ?? "";
+    // Login already turns the status itself into the Authenticate action; a
+    // second CLI login instruction underneath would be a duplicate path.
+    const action = s.health.action === HealthAction.Login ? null : suggestion(s);
+    // Healthy-but-not-observed servers can carry explanatory daemon detail,
+    // but repeating a disclosure on every normal row defeats the purpose of
+    // keeping this list scan-friendly. The compact neutral status is enough.
+    if (s.health.level === HealthLevel.Healthy && action === null) return null;
+    if (!detail && action === null) return null;
+
+    const details = el("details", { class: "server-health-detail" });
+    details.append(
+      el("summary", { text: "Connection details" }),
+      el("div", { class: "server-health-detail-body" }, [
+        detail ? el("p", { class: "meta", text: detail, title: detail }) : null,
+        action,
+      ]),
+    );
+    return details;
   }
 
   // -- pasting another client's configuration --------------------------------
@@ -1496,6 +1513,51 @@ export function serversPage(): Page {
     return "bad";
   }
 
+  /** Destructive removal is intentionally one level below the frequent Test
+   *  action. Repeating a red outlined button on every healthy row makes the
+   *  whole list read as an alert surface even when nothing is wrong. */
+  function rowMenu(s: Server): HTMLElement {
+    const menu = el("details", { class: "server-row-menu" }) as HTMLDetailsElement;
+    const summary = el("summary", {
+      "aria-label": `More actions for ${s.id}`,
+      "aria-haspopup": "menu",
+      title: "More actions",
+      text: "⋯",
+    });
+    const removeButton = el("button", {
+      class: "server-row-menu-item server-row-menu-danger",
+      type: "button",
+      role: "menuitem",
+      text: "Remove server",
+    });
+    removeButton.addEventListener("click", () => {
+      menu.open = false;
+      void remove(s);
+    });
+    menu.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Escape") return;
+      ev.preventDefault();
+      menu.open = false;
+      summary.focus();
+    });
+    menu.addEventListener("toggle", () => {
+      menu.closest(".rec")?.classList.toggle("menu-open", menu.open);
+      if (!menu.open) return;
+      document.addEventListener(
+        "pointerdown",
+        (ev) => {
+          if (!menu.contains(ev.target as Node)) menu.open = false;
+        },
+        { once: true },
+      );
+    });
+    menu.append(
+      summary,
+      el("div", { class: "server-row-menu-popover", role: "menu" }, [removeButton]),
+    );
+    return menu;
+  }
+
   function row(s: Server): HTMLElement {
     const toggleLabel = s.enabled ? "Disable" : "Enable";
     // The spine's second channel: dashed means this definition is reached
@@ -1513,12 +1575,6 @@ export function serversPage(): Page {
         // Metadata is NEUTRAL: a green "stdio" next to a green health dot
         // would put two unrelated greens on one row (see style.css).
         el("span", { class: "id-chip", text: s.transport || "stdio" }),
-        // Where the definition came from. The invocation would be the more
-        // useful line here, but the list DTO does not carry it — only the
-        // detail endpoint does — and inventing one from the id would be a
-        // guess rendered as fact.
-        el("span", { class: "id-chip", text: s.source || "local" }),
-        healthBadge(s.health),
       ]),
       el("span", { class: "rec-overview-cue", text: "Edit" }),
     ]) as HTMLButtonElement;
@@ -1541,23 +1597,26 @@ export function serversPage(): Page {
       ]),
       el("div", { class: "rec-body" }, [
         overview,
-        cliBlock([
-          { label: toggleLabel, command: s.enabled ? cliDisable(s.id) : cliEnable(s.id) },
-          { label: "Test", command: cliTest(s.id) },
-          { label: "Remove", command: cliRemove(s.id) },
-          {
-            label: "Edit",
-            command: `agenthub server inspect ${shellArg(s.id)}`,
-            note: "read the definition; writing it back is rm + add (see the editor)",
-          },
-        ]),
+        statusDetails(s),
+        cliBlock(
+          [
+            { label: toggleLabel, command: s.enabled ? cliDisable(s.id) : cliEnable(s.id) },
+            { label: "Test", command: cliTest(s.id) },
+            { label: "Remove", command: cliRemove(s.id) },
+            {
+              label: "Edit",
+              command: `agenthub server inspect ${shellArg(s.id)}`,
+              note: "read the definition; writing it back is rm + add (see the editor)",
+            },
+          ],
+          "⌘ CLI",
+        ),
       ]),
       el("div", { class: "rec-act" }, [
         statusCell(s),
         controls(
-          button("Edit", "btn", () => void openEditor(s.id)),
-          button("Test", "btn", () => void test(s)),
-          button("Remove", "btn btn-deny", () => void remove(s)),
+          button("Test", "btn btn-sm", () => void test(s)),
+          rowMenu(s),
         ),
       ]),
     ]);
