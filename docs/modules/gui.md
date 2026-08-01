@@ -38,10 +38,14 @@ promise that every page remembered to add the same post-await guard.
 
 The Servers page consumes live events for **configuration membership only**. Every enabled row is checked through
 the page's own short-lived handshake, with four running at once; another client's gateway report never supplies or
-overwrites the row status. Runtime-only events may cause a configuration re-read but do not retrigger the probes.
-A newer registry revision does, because an external editor may have changed an endpoint without changing its id.
-The page signatures the resulting visible fleet and preserves the existing rows when the answer is unchanged,
-keeping scroll, focus and disclosures intact.
+overwrites the row status. Settled outcomes live in a process-local cache across route changes, so returning to the
+page paints the last page-owned observation immediately while a new fleet check runs silently in the background.
+Only a row with no prior observation, or an explicit **Refresh**, displays `Checking…`; the Refresh action waits for
+the forced fleet check to settle. Clicking a row toggles an expanded view of the latest settled handshake result;
+that disclosure is a cache read and never starts a request, and says so beside its check time. Runtime-only events
+may cause a configuration re-read but do not retrigger the probes. A newer registry revision does, because an
+external editor may have changed an endpoint without changing its id. The page signatures the resulting visible
+fleet and preserves the existing rows when the answer is unchanged, keeping scroll, focus and disclosures intact.
 
 The current call is: **lists are bucketed by state, not alphabetized**. The server list has three
 buckets — needs attention / active / disabled — sorted within each bucket, **empty buckets are not
@@ -182,10 +186,10 @@ identifies the problem and is the operation that repairs it. It uses the warning
 connection-failure spine: missing authorization is an expected setup state, not evidence that the endpoint or
 protocol is broken.
 
-That authentication observation is sticky for the life of the page. Gateway reports cannot touch it, and a later
-generic probe failure cannot downgrade it to `connection error`; only this page's own successful handshake clears
-it. Login completion immediately runs that handshake rather than trusting that storing a token made it usable. The
-observation is not persisted and it never parses error prose.
+That authentication observation is sticky across route changes for the life of the GUI process. Gateway reports
+cannot touch it, and a later generic probe failure cannot downgrade it to `connection error`; only this page's own
+successful handshake clears it. Login completion immediately runs that handshake rather than trusting that storing
+a token made it usable. The observation is not persisted to disk and it never parses error prose.
 
 **Semantic colors are reserved for health; accent is reserved for interaction.** Metadata like
 transport, source, and profile is always neutral (`ChipTone`'s `neutral`). Green/yellow/red still
@@ -219,14 +223,12 @@ Two rules on it, both easy to undo by accident:
   walked back, and the moment they are wrong is exactly the moment the user looks away satisfied —
   the same reason a row grays out instead of vanishing (§5).
 
-The server overview is one keyboard-focusable Edit target. The row already supplies the hover surface,
-so the target does not draw a second bordered box inside it: its cursor, subtle title-color change and
-Edit cue (revealed only while hovering or focusing) describe the action, while keyboard focus still
-gets an explicit outline. This prevents the old split card where visually identical space in the upper
-half did nothing while only the lower label happened to accept a click. There is no second Edit button
-in the action column. The leading enable switch and trailing Test control remain separate targets and
-never bubble into Edit. Destructive Remove sits in a compact overflow menu: it stays available without
-painting every healthy row as a red warning.
+The server overview is one keyboard-focusable disclosure target. Its chevron and `aria-expanded` state make the
+toggle explicit: one activation reveals the latest cached self-test detail underneath and the next collapses it.
+Expansion never performs I/O. Editing is a separate, always-visible **Edit** button in the action column, so a
+click whose visible affordance says “show me more” cannot unexpectedly open a write surface. The leading enable
+switch and trailing Edit / Test controls remain separate targets and never bubble into the disclosure. Destructive
+Remove sits in a compact overflow menu: it stays available without painting every healthy row as a red warning.
 
 The action column is deliberately compact. It may contain only the distilled status or direct health
 action plus the row controls; daemon detail, HTTP responses and recovery instructions live behind a

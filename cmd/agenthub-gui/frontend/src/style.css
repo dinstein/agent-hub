@@ -3821,19 +3821,27 @@ details.adv[open] > summary::before {
 
 .rec-overview-cue {
   flex: 0 0 auto;
-  color: var(--accent-strong);
-  font-size: var(--text-xs);
-  font-weight: 650;
-  opacity: 0;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  opacity: 0.72;
   transition:
     opacity var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
     transform var(--dur-fast) var(--ease);
 }
 
 .rec-overview:hover .rec-overview-cue,
 .rec-overview:focus-visible .rec-overview-cue {
   opacity: 1;
-  transform: translateX(2px);
+  color: var(--accent-strong);
+}
+
+.rec-overview[aria-expanded="true"] .rec-overview-cue {
+  transform: rotate(90deg);
 }
 
 .rec-act {
@@ -3930,36 +3938,20 @@ details.adv[open] > summary::before {
  * instruction. They belong to the flexible body column: putting them in the
  * trailing action column lets one error determine the width of every other
  * cell and collapses the server name at ordinary window sizes. */
-.server-health-detail {
+.server-probe-detail {
   max-width: 72ch;
-  margin: 1px 0 var(--space-3);
+  margin: var(--space-3) 0;
   color: var(--muted);
   font-size: var(--text-xs);
 }
 
-.server-health-detail > summary {
-  width: max-content;
-  max-width: 100%;
+.server-probe-detail-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-2);
-  cursor: pointer;
-  list-style: none;
-  font-weight: 600;
-}
-
-.server-health-detail > summary::-webkit-details-marker {
-  display: none;
-}
-
-.server-health-detail > summary::before {
-  content: "▸";
-  font-size: 10px;
-  transition: transform var(--dur-fast) var(--ease);
-}
-
-.server-health-detail[open] > summary::before {
-  transform: rotate(90deg);
+  color: var(--fg);
 }
 
 .server-health-detail-body {

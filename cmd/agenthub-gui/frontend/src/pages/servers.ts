@@ -144,9 +144,21 @@ const BUCKET_TITLES: Record<Bucket, string> = {
 
 type ProbeObservation =
   | { kind: "checking" }
-  | { kind: "connected"; tools: number }
-  | { kind: "auth" }
-  | { kind: "error"; summary: string; detail: string };
+  | { kind: "connected"; tools: number; result: ServerTestResult; checkedAt: number }
+  | { kind: "auth"; checkedAt: number }
+  | { kind: "error"; summary: string; detail: string; checkedAt: number };
+
+type SettledProbeObservation = Exclude<ProbeObservation, { kind: "checking" }>;
+
+/**
+ * The latest settled outcomes survive route changes for this GUI process.
+ * They still come only from this page's own handshakes: gateway reports never
+ * enter this cache. A newly mounted page silently rechecks every enabled row,
+ * so a cached result is the first paint rather than a claim that health can
+ * never change. "checking" is deliberately page-local; leaving halfway
+ * through a first probe must not strand that label on the next visit.
+ */
+const probeCache = new Map<string, SettledProbeObservation>();
 
 /**
  * Replaces gateway-observed runtime state with this page's own short-lived
@@ -734,11 +746,12 @@ export function serversPage(): Page {
   const slot = noticeSlot();
   const form = modalHost();
 
-  /** Runtime state owned by this page's short-lived handshakes. Gateway
-   *  reports never enter this map and therefore cannot repaint these rows. */
-  const probes = new Map<string, ProbeObservation>();
+  /** Runtime state owned by this page's short-lived handshakes. Seed settled
+   *  results from the prior mount so route changes do not flash "Checking…". */
+  const probes = new Map<string, ProbeObservation>(probeCache);
   const probeVersions = new Map<string, number>();
   const inFlightProbes = new Map<string, ReturnType<typeof hub.testServer>>();
+  const expandedServers = new Set<string>();
   let listedServers: Server[] = [];
   let fleetProbeEpoch = 0;
   let lastServerRevision = 0;
@@ -802,11 +815,13 @@ export function serversPage(): Page {
   /** Runs one authoritative page-owned handshake. An authentication refusal
    *  is sticky: a later generic failure cannot downgrade a known credential
    *  problem into "connection error". Only a successful handshake clears it. */
-  async function probeOne(id: string): Promise<ServerTestResult> {
+  async function probeOne(id: string, showChecking = true): Promise<ServerTestResult> {
     const version = (probeVersions.get(id) ?? 0) + 1;
     probeVersions.set(id, version);
     const previous = probes.get(id);
-    if (previous?.kind !== "auth") probes.set(id, { kind: "checking" });
+    if ((!previous || showChecking) && previous?.kind !== "auth") {
+      probes.set(id, { kind: "checking" });
+    }
     repaint();
 
     inFlightProbes.get(id)?.cancel();
@@ -815,7 +830,14 @@ export function serversPage(): Page {
     try {
       const result = await request;
       if (probeVersions.get(id) === version && root) {
-        probes.set(id, { kind: "connected", tools: result.tool_count });
+        const observation: SettledProbeObservation = {
+          kind: "connected",
+          tools: result.tool_count,
+          result,
+          checkedAt: Date.now(),
+        };
+        probes.set(id, observation);
+        probeCache.set(id, observation);
         repaint();
       }
       return result;
@@ -823,13 +845,18 @@ export function serversPage(): Page {
       if (probeVersions.get(id) === version && root) {
         const failure = asCallError(err);
         if (authenticationRequired(err)) {
-          probes.set(id, { kind: "auth" });
+          const observation: SettledProbeObservation = { kind: "auth", checkedAt: Date.now() };
+          probes.set(id, observation);
+          probeCache.set(id, observation);
         } else if (probes.get(id)?.kind !== "auth") {
-          probes.set(id, {
+          const observation: SettledProbeObservation = {
             kind: "error",
             summary: errorHeadline(failure.message),
             detail: [failure.message, failure.hint].filter(Boolean).join("\n"),
-          });
+            checkedAt: Date.now(),
+          };
+          probes.set(id, observation);
+          probeCache.set(id, observation);
         }
         repaint();
       }
@@ -843,19 +870,25 @@ export function serversPage(): Page {
    *  same registry revision finds observations already present and starts
    *  nothing; a real registry revision change asks every enabled definition
    *  again because an external editor may have changed its endpoint. */
-  function probeFleet(servers: Server[], force: boolean): void {
+  function probeFleet(
+    servers: Server[],
+    force: boolean,
+    showChecking: boolean,
+  ): Promise<void> {
     const present = new Set(servers.map((s) => s.id));
     for (const id of Array.from(probes.keys())) {
       const server = servers.find((s) => s.id === id);
       if (!present.has(id) || !server?.enabled) {
         probes.delete(id);
+        probeCache.delete(id);
         probeVersions.delete(id);
+        if (!present.has(id)) expandedServers.delete(id);
       }
     }
     const ids = servers
       .filter((s) => s.enabled && (force || !probes.has(s.id)))
       .map((s) => s.id);
-    if (ids.length === 0) return;
+    if (ids.length === 0) return Promise.resolve();
 
     const epoch = ++fleetProbeEpoch;
     let cursor = 0;
@@ -864,14 +897,16 @@ export function serversPage(): Page {
         const id = ids[cursor++];
         if (!id) return;
         try {
-          await probeOne(id);
+          await probeOne(id, showChecking);
         } catch {
           // The row owns the typed failure; fleet probing has no second
           // warning surface and must continue with the remaining servers.
         }
       }
     };
-    void Promise.all(Array.from({ length: Math.min(4, ids.length) }, () => worker()));
+    return Promise.all(Array.from({ length: Math.min(4, ids.length) }, () => worker())).then(
+      () => undefined,
+    );
   }
 
   // -- the interactive login -------------------------------------------------
@@ -1149,32 +1184,47 @@ export function serversPage(): Page {
     ]);
   }
 
-  /** Full diagnostics belong to the flexible body column, never the compact
-   *  status/action column. Keeping this collapsed preserves scan density for
-   *  the common case while making the daemon's exact answer one click away. */
-  function statusDetails(s: Server): Node | null {
-    if (s.health.admin_state === AdminState.Disabled || s.state === "connecting") return null;
-    // Authentication is already both explained and repaired by the row's
-    // Authenticate action. Repeating the rejected handshake underneath as a
-    // red connection diagnostic turns one state into two competing stories.
-    if (s.health.action === HealthAction.Login) return null;
-    const detail = s.health.detail?.trim() ?? "";
-    const action = suggestion(s);
-    // Healthy-but-not-observed servers can carry explanatory daemon detail,
-    // but repeating a disclosure on every normal row defeats the purpose of
-    // keeping this list scan-friendly. The compact neutral status is enough.
-    if (s.health.level === HealthLevel.Healthy && action === null) return null;
-    if (!detail && action === null) return null;
-
-    const details = el("details", { class: "server-health-detail" });
-    details.append(
-      el("summary", { text: "Connection details" }),
-      el("div", { class: "server-health-detail-body" }, [
-        detail ? el("p", { class: "meta", text: detail, title: detail }) : null,
-        action,
+  /**
+   * The expanded row is a read of the last SETTLED page-owned handshake. It
+   * never starts a request: Refresh and Test are the two explicit operations
+   * that do that. This distinction is stated in the UI because a cached
+   * diagnostic presented as live would be worse than no diagnostic.
+   */
+  function probeDetails(s: Server, detailID: string): Node {
+    const observation = probeCache.get(s.id);
+    const action = s.health.action === HealthAction.Login ? null : suggestion(s);
+    let content: Node;
+    if (!observation) {
+      content = el("p", {
+        class: "meta",
+        text: s.enabled
+          ? "No completed self-test is cached yet. Use Refresh or Test to run one."
+          : "This server is disabled, so there is no self-test result to show.",
+      });
+    } else if (observation.kind === "connected") {
+      content = testResultView(observation.result);
+    } else if (observation.kind === "auth") {
+      content = el("p", {
+        class: "meta",
+        text: "The latest self-test requires authentication. Authenticate, then the page will test the stored credential again.",
+      });
+    } else {
+      content = el("p", {
+        class: "meta",
+        text: observation.detail || observation.summary,
+        title: observation.detail || observation.summary,
+      });
+    }
+    const checked = observation
+      ? `Cached result · checked ${new Date(observation.checkedAt).toLocaleTimeString()}`
+      : "No cached result";
+    return el("div", { class: "server-probe-detail", id: detailID }, [
+      el("div", { class: "server-probe-detail-head" }, [
+        el("strong", { text: "Latest self-test" }),
+        el("span", { class: "meta", text: checked }),
       ]),
-    );
-    return details;
+      el("div", { class: "server-health-detail-body" }, [content, action]),
+    ]);
   }
 
   // -- pasting another client's configuration --------------------------------
@@ -1552,6 +1602,7 @@ export function serversPage(): Page {
     });
     if (!ok) return;
     probes.delete(s.id);
+    probeCache.delete(s.id);
     probeVersions.delete(s.id);
     await draw();
     slot.say(`${s.id} removed.`);
@@ -1571,6 +1622,7 @@ export function serversPage(): Page {
       await probeAfterWrite(s.id, "enabled");
     } else {
       probes.delete(s.id);
+      probeCache.delete(s.id);
       probeVersions.set(s.id, (probeVersions.get(s.id) ?? 0) + 1);
       slot.say(`${s.id} disabled.`);
     }
@@ -1670,10 +1722,14 @@ export function serversPage(): Page {
     // over the network rather than run here. Same convention as the Catalog
     // ledger, because it is the same distinction.
     const remote = s.transport === Transport.HTTP || s.transport === Transport.SSE;
+    const expanded = expandedServers.has(s.id);
+    const detailID = `server-probe-${encodeURIComponent(s.id)}`;
     const overview = el("button", {
       class: "rec-overview",
       type: "button",
-      "aria-label": `Edit ${s.id}`,
+      "aria-label": `${expanded ? "Hide" : "Show"} details for ${s.id}`,
+      "aria-expanded": String(expanded),
+      "aria-controls": detailID,
     }, [
       el("span", { class: "rec-title" }, [
         el("span", { class: "rec-name", text: s.id }),
@@ -1681,9 +1737,13 @@ export function serversPage(): Page {
         // would put two unrelated greens on one row (see style.css).
         el("span", { class: "id-chip", text: s.transport || "stdio" }),
       ]),
-      el("span", { class: "rec-overview-cue", text: "Edit" }),
+      el("span", { class: "rec-overview-cue", "aria-hidden": "true", text: "▸" }),
     ]) as HTMLButtonElement;
-    overview.addEventListener("click", () => void openEditor(s.id));
+    overview.addEventListener("click", () => {
+      if (expanded) expandedServers.delete(s.id);
+      else expandedServers.add(s.id);
+      repaint();
+    });
 
     return el("div", { class: "rec has-lead" }, [
       el("div", { class: `spine ${spineTone(s)}${remote ? " remote" : ""}` }),
@@ -1702,11 +1762,12 @@ export function serversPage(): Page {
       ]),
       el("div", { class: "rec-body" }, [
         overview,
-        statusDetails(s),
+        expanded ? probeDetails(s, detailID) : null,
       ]),
       el("div", { class: "rec-act" }, [
         statusCell(s),
         controls(
+          button("Edit", "btn btn-sm", () => void openEditor(s.id)),
           button("Test", "btn btn-sm", () => void test(s)),
           rowMenu(s),
         ),
@@ -1747,7 +1808,12 @@ export function serversPage(): Page {
     // SSE can publish several coordination events whose final visible fleet
     // is identical. Do not tear down and recreate every row in that case:
     // preserving the DOM also preserves scroll, focus and open disclosures.
-    const signature = JSON.stringify({ filter, servers });
+    const signature = JSON.stringify({
+      filter,
+      servers,
+      expanded: Array.from(expandedServers).sort(),
+      probeDetails: servers.map((s) => [s.id, probeCache.get(s.id)]),
+    });
     if (signature === paintedSignature) return;
     paintedSignature = signature;
     clear(listRoot);
@@ -1818,7 +1884,11 @@ export function serversPage(): Page {
     }
   }
 
-  async function draw(forceProbe = false): Promise<void> {
+  async function draw(
+    forceProbe = false,
+    waitForProbes = false,
+    showChecking = false,
+  ): Promise<void> {
     if (!root) return;
     if (!listRoot) {
       // First paint: build the frame once so the notice slot, the filter and
@@ -1832,10 +1902,15 @@ export function serversPage(): Page {
         void draw();
       });
       search = box;
+      const refresh = button("Refresh", "btn", () => {
+        refresh.setAttribute("aria-busy", "true");
+        void draw(true, true, true).finally(() => refresh.removeAttribute("aria-busy"));
+      });
       root.append(
         pageHeader(
           "Servers",
           "Configure every downstream MCP process and endpoint, then act on the ones that need attention.",
+          refresh,
           el("a", { class: "btn", href: "#/catalog", text: "Browse Catalog" }),
           button("Add server", "btn btn-primary", () => form.show("Add server", editor("", null))),
         ),
@@ -1863,8 +1938,9 @@ export function serversPage(): Page {
       return;
     }
     listedServers = servers;
-    probeFleet(servers, forceProbe);
+    const probing = probeFleet(servers, forceProbe, showChecking);
     repaint();
+    if (waitForProbes) await probing;
   }
 
   return {
@@ -1880,6 +1956,9 @@ export function serversPage(): Page {
         void draw(registryChanged);
       });
       ticker = window.setInterval(tick, 1000);
+      // Reuse settled observations immediately, then silently recheck them.
+      // The explicit Refresh action is the path that deliberately repaints
+      // every enabled row as Checking while its forced probes run.
       return draw(true);
     },
     dispose() {
