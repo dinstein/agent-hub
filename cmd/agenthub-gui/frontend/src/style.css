@@ -1539,11 +1539,13 @@ tbody tr:hover {
   box-shadow: var(--shadow-1), inset 0 1px 0 var(--hairline);
 }
 
-/* Pressing changes depth, never geometry. A translate or scale makes compact
- * controls jump against their neighbours and leaves text looking briefly
- * soft in the webview. */
+/* Pressing changes tone, never geometry or shadow direction. Replacing the
+ * outer shadow with an inset one produced a high-contrast flash when an
+ * async action immediately repainted the button into its busy state. */
 .btn:active:not([disabled]):not([aria-busy="true"]) {
-  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.16);
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--line));
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel-2));
+  box-shadow: var(--shadow-1), inset 0 1px 0 var(--hairline);
 }
 
 .btn:focus-visible {
@@ -1562,14 +1564,18 @@ tbody tr:hover {
   background: var(--panel-2);
 }
 
-/* Busy keeps the label in place and dims it rather than swapping in a
- * spinner-only button: the label is what tells the user which of several
- * pending actions this one was, and a width change on click makes the row
- * jump under the pointer. */
-.btn[aria-busy="true"] {
+/* Busy keeps the label's space while covering it with a centered spinner.
+ * The stable label width matters even while its text is hidden: replacing it
+ * with a differently sized button makes the row jump under the pointer. */
+.btn[aria-busy="true"],
+.btn[aria-busy="true"]:hover {
+  opacity: 1;
   cursor: progress;
   color: transparent;
   pointer-events: none;
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel-2));
+  box-shadow: var(--shadow-1), inset 0 1px 0 var(--hairline);
 }
 
 .btn[aria-busy="true"]::after {
@@ -1611,7 +1617,9 @@ tbody tr:hover {
 }
 
 .btn-primary:active:not([disabled]):not([aria-busy="true"]) {
-  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.2);
+  background: color-mix(in srgb, var(--accent) 88%, var(--fg));
+  border-color: color-mix(in srgb, var(--accent) 88%, var(--fg));
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .btn-primary[disabled]:hover {
@@ -1621,6 +1629,13 @@ tbody tr:hover {
 
 .btn-primary[aria-busy="true"]::after {
   border-top-color: var(--bg);
+}
+
+.btn-primary[aria-busy="true"],
+.btn-primary[aria-busy="true"]:hover {
+  background: color-mix(in srgb, var(--accent) 92%, var(--fg));
+  border-color: color-mix(in srgb, var(--accent) 92%, var(--fg));
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 /* Approve and deny are tonal, not filled: they sit side by side and filling

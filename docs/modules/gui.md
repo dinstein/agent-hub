@@ -61,8 +61,10 @@ Geometry follows three shared lines rather than page-local guesses:
 
 Buttons never translate or scale on hover or press. Moving a compact control by one pixel makes it
 jump against aligned neighbours, while scaling briefly softens its label in the webview. Hover uses a
-small tone and shadow change; press removes depth with an inset shadow; keyboard focus uses a translucent
-outer halo rather than a second solid border. The three states remain distinct without moving geometry.
+small tone and shadow change; press deepens the tone while keeping the shadow direction; keyboard focus
+uses a translucent outer halo rather than a second solid border. An asynchronous action keeps its label
+width and enters the shared busy treatment instead of being replaced by a dimmed, differently sized
+button. The states remain distinct without a one-frame contrast flash or moving geometry.
 
 The Clients page keeps **file capability** and **connection state** separate. `writable`/`read-only`
 describes whether AgentHub may rewrite a configuration file; it says nothing about whether that file

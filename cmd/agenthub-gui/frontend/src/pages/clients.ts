@@ -133,11 +133,12 @@ export function clientsPage(): Page {
     } else if (check.value.state === "not_connected" || check.value.state === "unknown") {
       const pending = connecting.has(c.client);
       const connectButton = button(
-        pending ? "Connecting…" : check.value.state === "unknown" ? "Show setup" : "Connect",
+        check.value.state === "unknown" ? "Show setup" : "Connect",
         "btn btn-primary",
         () => void connect(c.client),
       );
       connectButton.disabled = pending;
+      if (pending) connectButton.setAttribute("aria-busy", "true");
       actions.push(connectButton);
     } else {
       actions.push(button("Check again", "btn", () => void inspectOne(c.client)));
@@ -217,10 +218,11 @@ export function clientsPage(): Page {
   function renderPage(): void {
     if (!root) return;
     clear(root);
-    const refreshButton = button(refreshing ? "Refreshing…" : "Refresh", "btn btn-primary", () => {
+    const refreshButton = button("Refresh", "btn btn-primary", () => {
       void refresh();
     });
     refreshButton.disabled = refreshing;
+    if (refreshing) refreshButton.setAttribute("aria-busy", "true");
     root.append(
       pageHeader(
         "Clients",
