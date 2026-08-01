@@ -116,13 +116,17 @@ content and transport metadata answer different questions.
 
 Activity is one page with three focused views rather than three navigation destinations. **Calls** joins
 the received/routed/finished lifecycle into one compact row; the collection endpoint returns metadata
-only and never exposes payload references. Clicking anywhere on the row is the disclosure action: the
-detail drawer immediately loads decrypted Request, Effective arguments, and Result previews, with no
-second "decrypt" ritual. The drawer says that this is a local decrypted view and the page drops those
-strings when it closes. Valid JSON opens pretty and can be switched to Raw. **Insights** aggregates the
-same bounded time range by outcome, client, server, and tool. **Ledger** owns capture status, footprint,
-integrity verification, retention cleanup, and key rotation. Pausing capture is a direct reversible
-action and never deletes history or keys.
+only and never exposes payload references. Calls use stable 50-row cursor pages, show the filtered total,
+and apply search plus Client, Destination and Outcome dropdowns on the daemon before paging; filters never
+describe only the visible slice. Clicking anywhere on the row is the disclosure action: the detail drawer
+immediately loads decrypted previews, with no second "decrypt" ritual. Its header and Overview / Request /
+Arguments / Result tabs stay fixed while one content region scrolls, so a long result cannot trap the wheel
+inside a second vertical scroller or push the close and navigation controls away. The drawer says quietly
+that this is a local decrypted preview and the page drops those strings when it closes. Valid JSON opens
+pretty (including JSON text nested in an MCP content item), can be copied, and can be switched back to the
+exact Raw value. **Insights** aggregates the same bounded time range by outcome, client, server, and tool.
+**Ledger** owns capture status, footprint, integrity verification, retention cleanup, and key rotation.
+Pausing capture is a direct reversible action and never deletes history or keys.
 
 ---
 

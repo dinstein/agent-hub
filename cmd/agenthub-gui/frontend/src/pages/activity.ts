@@ -9,8 +9,10 @@ import type {
   AuditStats,
   AuditStatus,
 } from "../types";
+import { copyButton } from "../ui";
 
 type ActivityTab = "calls" | "insights" | "ledger";
+type CallDetailTab = "overview" | "request" | "arguments" | "result";
 
 const ranges = [
   { label: "1 hour", hours: 1 },
@@ -62,7 +64,19 @@ function outcomeLabel(call: AuditCallSummary): string {
 
 function prettyJSON(raw: string): string | null {
   try {
-    return JSON.stringify(JSON.parse(raw), null, 2);
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && "content" in parsed && Array.isArray(parsed.content)) {
+      for (const item of parsed.content) {
+        if (!item || typeof item !== "object" || !("text" in item) || typeof item.text !== "string") continue;
+        try {
+          item.text = JSON.parse(item.text);
+        } catch {
+          // Tool text is often ordinary prose. Only unfold nested JSON when it
+          // positively parses; Raw always preserves the exact ledger value.
+        }
+      }
+    }
+    return JSON.stringify(parsed, null, 2);
   } catch {
     return null;
   }
@@ -91,6 +105,11 @@ function payloadPanel(title: string, payload: AuditPayload): HTMLElement {
     });
     actions.push(toggle);
   }
+  actions.push(copyButton(
+    () => prettyMode && pretty !== null ? pretty : raw,
+    "Copy",
+    "activity-text-action",
+  ));
   return el("section", { class: "activity-payload" }, [
     el("header", { class: "activity-payload-head" }, [
       el("div", {}, [
@@ -100,9 +119,48 @@ function payloadPanel(title: string, payload: AuditPayload): HTMLElement {
           text: payload.bytes ? `${formatBytes(payload.bytes)}${payload.truncated ? " · preview truncated" : ""}` : "Not captured",
         }),
       ]),
-      ...actions,
+      el("div", { class: "activity-payload-actions" }, actions),
     ]),
     code,
+  ]);
+}
+
+function detailFacts(detail: AuditCallDetail): HTMLElement {
+  return el("div", { class: "activity-detail-facts" }, [
+    el("div", {}, [el("span", { text: "Client" }), el("strong", { text: detail.client || "Unknown" })]),
+    el("div", {}, [el("span", { text: "Started" }), el("strong", { text: formatTime(detail.time) })]),
+    el("div", {}, [el("span", { text: "Duration" }), el("strong", { text: detail.durationMs ? `${detail.durationMs} ms` : "—" })]),
+    el("div", {}, [el("span", { text: "Interface" }), el("strong", { text: detail.face || "—" })]),
+  ]);
+}
+
+function detailOverview(detail: AuditCallDetail): HTMLElement {
+  const timeline = el("section", { class: "activity-timeline" }, [
+    el("header", { class: "activity-section-head" }, [
+      el("h3", { text: "Lifecycle" }),
+      el("span", { class: "meta", text: `${detail.events.length} events` }),
+    ]),
+    el("div", { class: "activity-event-list" }, detail.events.map((event) =>
+      el("div", { class: "activity-event" }, [
+        el("i", { class: event.outcome && event.outcome !== "success" ? "event-bad" : "" }),
+        el("strong", { text: event.event }),
+        el("time", { text: formatTime(event.time) }),
+        event.server || event.tool
+          ? el("span", { text: [event.server, event.tool].filter(Boolean).join(" / ") })
+          : el("span", { class: "muted", text: "Gateway" }),
+        event.code ? el("span", { class: "event-code", text: event.code }) : null,
+      ]),
+    )),
+  ]);
+  return el("div", { class: "activity-overview" }, [
+    detailFacts(detail),
+    ...(detail.error
+      ? [el("div", { class: "activity-call-error" }, [
+          el("strong", { text: detail.code || "Call failed" }),
+          el("span", { text: detail.error }),
+        ])]
+      : []),
+    timeline,
   ]);
 }
 
@@ -112,8 +170,12 @@ function callDrawer(
   close: () => void,
 ): HTMLElement {
   const overlay = el("div", { class: "activity-drawer-layer" });
-  const drawer = el("aside", { class: "activity-drawer", role: "dialog", "aria-modal": "true" });
+  const titleID = `activity-call-${call.callId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  const drawer = el("aside", {
+    class: "activity-drawer", role: "dialog", "aria-modal": "true", "aria-labelledby": titleID,
+  });
   const body = el("div", { class: "activity-drawer-body" }, [loadingState("Opening call…", 5)]);
+  const nav = el("div", { class: "activity-detail-tabs", role: "tablist", hidden: true });
   const closeButton = el("button", {
     class: "activity-close",
     type: "button",
@@ -127,16 +189,36 @@ function callDrawer(
   });
   overlay.addEventListener("keydown", (event) => {
     if (event.key === "Escape") close();
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(drawer.querySelectorAll<HTMLElement>(
+      "button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])",
+    ));
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   });
   drawer.append(
     el("header", { class: "activity-drawer-head" }, [
       el("div", {}, [
-        el("span", { class: `badge ${outcomeTone(call)}`, text: outcomeLabel(call) }),
-        el("h2", { text: targetOf(call) }),
-        el("p", { class: "mono muted", text: call.callId }),
+        el("div", { class: "activity-drawer-titleline" }, [
+          el("h2", { id: titleID, text: targetOf(call) }),
+          el("span", { class: `badge ${outcomeTone(call)}`, text: outcomeLabel(call) }),
+        ]),
+        el("p", { class: "activity-drawer-meta" }, [
+          el("span", { class: "mono", text: call.callId }),
+          el("span", { text: "Local decrypted preview · cleared on close" }),
+        ]),
       ]),
       closeButton,
     ]),
+    nav,
     body,
   );
   overlay.append(drawer);
@@ -144,44 +226,47 @@ function callDrawer(
   void load()
     .then((detail) => {
       if (!overlay.isConnected) return;
-      clear(body);
-      const facts = el("div", { class: "activity-detail-facts" }, [
-        el("div", {}, [el("span", { text: "Client" }), el("strong", { text: detail.client || "Unknown" })]),
-        el("div", {}, [el("span", { text: "Started" }), el("strong", { text: formatTime(detail.time) })]),
-        el("div", {}, [el("span", { text: "Duration" }), el("strong", { text: detail.durationMs ? `${detail.durationMs} ms` : "—" })]),
-        el("div", {}, [el("span", { text: "Interface" }), el("strong", { text: detail.face || "—" })]),
-      ]);
-      const timeline = el("section", { class: "activity-timeline" }, [
-        el("h3", { text: "Lifecycle" }),
-        ...detail.events.map((event) =>
-          el("div", { class: "activity-event" }, [
-            el("i", { class: event.outcome && event.outcome !== "success" ? "event-bad" : "" }),
-            el("strong", { text: event.event }),
-            el("time", { text: formatTime(event.time) }),
-            event.server || event.tool
-              ? el("span", { text: [event.server, event.tool].filter(Boolean).join(" / ") })
-              : null,
-            event.code ? el("span", { class: "event-code", text: event.code }) : null,
-          ]),
-        ),
-      ]);
-      body.append(
-        el("div", { class: "activity-sensitive-note" }, [
-          el("span", { text: "Local decrypted view" }),
-          el("small", { text: "Payloads are loaded only for this call and cleared when you close it." }),
-        ]),
-        facts,
-        ...(detail.error
-          ? [el("div", { class: "activity-call-error" }, [
-              el("strong", { text: detail.code || "Call failed" }),
-              el("span", { text: detail.error }),
-            ])]
-          : []),
-        timeline,
-        payloadPanel("Request", detail.request),
-        payloadPanel("Effective arguments", detail.effectiveArguments),
-        payloadPanel("Result", detail.result),
-      );
+      const tabs: { id: CallDetailTab; label: string; render: () => HTMLElement }[] = [
+        { id: "overview", label: "Overview", render: () => detailOverview(detail) },
+        { id: "request", label: "Request", render: () => payloadPanel("Request", detail.request) },
+        { id: "arguments", label: "Arguments", render: () => payloadPanel("Effective arguments", detail.effectiveArguments) },
+        { id: "result", label: "Result", render: () => payloadPanel("Result", detail.result) },
+      ];
+      let active: CallDetailTab = "overview";
+      const buttons: HTMLButtonElement[] = [];
+      const paint = () => {
+        for (const button of buttons) {
+          const selected = button.dataset.tab === active;
+          button.setAttribute("aria-selected", String(selected));
+          button.tabIndex = selected ? 0 : -1;
+        }
+        clear(body);
+        body.append(tabs.find((item) => item.id === active)!.render());
+        body.scrollTop = 0;
+      };
+      clear(nav);
+      for (const item of tabs) {
+        const button = el("button", {
+          type: "button", role: "tab", text: item.label, "data-tab": item.id,
+        });
+        button.addEventListener("click", () => {
+          active = item.id;
+          paint();
+        });
+        button.addEventListener("keydown", (event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          event.preventDefault();
+          const step = event.key === "ArrowRight" ? 1 : -1;
+          const next = (tabs.findIndex((tab) => tab.id === active) + step + tabs.length) % tabs.length;
+          active = tabs[next].id;
+          paint();
+          buttons[next].focus();
+        });
+        buttons.push(button);
+        nav.append(button);
+      }
+      nav.hidden = false;
+      paint();
     })
     .catch((err) => {
       if (!overlay.isConnected) return;
@@ -211,48 +296,97 @@ function distribution(title: string, values: Record<string, number>, total: numb
 }
 
 export function activityPage(): Page {
+  const pageSize = 50;
   let root: HTMLElement | null = null;
   let tab: ActivityTab = "calls";
   let rangeHours = 24;
   let search = "";
+  let clientFilter = "";
+  let serverFilter = "";
   let outcome = "";
   let status: AuditStatus | null = null;
   let calls: AuditCallSummary[] = [];
+  let callTotal = 0;
+  let nextCursor = "";
+  let pageIndex = 0;
+  let pageCursors = [""];
   let stats: AuditStats | null = null;
   let loadError: unknown = null;
   let drawer: HTMLElement | null = null;
+  let restoreFocus: HTMLElement | null = null;
+  let searchTimer = 0;
   let epoch = 0;
+  let callsEpoch = 0;
   const notices = noticeSlot();
 
   function closeDrawer(): void {
     drawer?.remove();
     drawer = null;
+    restoreFocus?.focus();
+    restoreFocus = null;
   }
 
   function openCall(call: AuditCallSummary): void {
     closeDrawer();
+    restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     drawer = callDrawer(call, () => hub.auditCall(call.callId), closeDrawer);
     document.body.append(drawer);
   }
 
   async function load(): Promise<void> {
     const request = ++epoch;
+    const callsRequest = ++callsEpoch;
     loadError = null;
     try {
       const [nextStatus, nextCalls, nextStats] = await Promise.all([
         hub.auditStatus(),
-        hub.auditCalls(sinceMillis(rangeHours), 250),
+        hub.auditCalls(
+          sinceMillis(rangeHours), pageSize, pageCursors[pageIndex], search.trim(),
+          clientFilter, serverFilter, "", outcome,
+        ),
         hub.auditStats(sinceMillis(rangeHours)),
       ]);
-      if (!root || request !== epoch) return;
+      if (!root || request !== epoch || callsRequest !== callsEpoch) return;
       status = nextStatus;
       calls = nextCalls.calls ?? [];
+      callTotal = nextCalls.total ?? calls.length;
+      nextCursor = nextCalls.nextCursor ?? "";
       stats = nextStats;
     } catch (err) {
-      if (!root || request !== epoch) return;
+      if (!root || request !== epoch || callsRequest !== callsEpoch) return;
       loadError = err;
     }
     draw();
+  }
+
+  function resetPages(): void {
+    pageIndex = 0;
+    pageCursors = [""];
+    nextCursor = "";
+  }
+
+  async function loadCalls(focusSearch = false): Promise<void> {
+    const request = ++callsEpoch;
+    loadError = null;
+    try {
+      const next = await hub.auditCalls(
+        sinceMillis(rangeHours), pageSize, pageCursors[pageIndex], search.trim(),
+        clientFilter, serverFilter, "", outcome,
+      );
+      if (!root || request !== callsEpoch) return;
+      calls = next.calls ?? [];
+      callTotal = next.total ?? calls.length;
+      nextCursor = next.nextCursor ?? "";
+    } catch (err) {
+      if (!root || request !== callsEpoch) return;
+      loadError = err;
+    }
+    draw();
+    if (focusSearch) {
+      const input = root?.querySelector<HTMLInputElement>("[data-activity-search]");
+      input?.focus();
+      input?.setSelectionRange(input.value.length, input.value.length);
+    }
   }
 
   async function action<T>(
@@ -335,19 +469,58 @@ export function activityPage(): Page {
     }
     range.addEventListener("change", () => {
       rangeHours = Number(range.value);
-      draw();
+      resetPages();
       void load();
     });
     const query = el("input", {
       class: "input activity-search",
       type: "search",
       value: search,
-      placeholder: "Search client, server, or tool",
+      placeholder: "Search tool or call ID",
       "aria-label": "Search calls",
+      "data-activity-search": "true",
     });
     query.addEventListener("input", () => {
       search = query.value;
-      draw();
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(() => {
+        resetPages();
+        void loadCalls(true);
+      }, 260);
+    });
+    const filterSelect = (
+      label: string,
+      allLabel: string,
+      current: string,
+      values: Record<string, number>,
+      onChange: (value: string) => void,
+    ): HTMLElement => {
+      const select = el("select", { class: "input", "aria-label": label });
+      select.append(el("option", { value: "", text: allLabel }));
+      if (current && !(current in values)) {
+        select.append(el("option", { value: current, text: `${current} (0)`, selected: true }));
+      }
+      for (const [value, count] of Object.entries(values).sort((a, b) => a[0].localeCompare(b[0]))) {
+        if (!value) continue;
+        const option = el("option", { value, text: `${value || "Unknown"} (${count})` });
+        if (value === current) option.selected = true;
+        select.append(option);
+      }
+      select.addEventListener("change", () => {
+        onChange(select.value);
+        resetPages();
+        void loadCalls();
+      });
+      return el("label", { class: "activity-filter-field" }, [
+        el("span", { text: label }),
+        select,
+      ]);
+    };
+    const clientSelect = filterSelect("Client", "All clients", clientFilter, stats?.clients ?? {}, (value) => {
+      clientFilter = value;
+    });
+    const serverSelect = filterSelect("Destination", "All destinations", serverFilter, stats?.servers ?? {}, (value) => {
+      serverFilter = value;
     });
     const outcomeSelect = el("select", { class: "input activity-outcome", "aria-label": "Outcome" });
     for (const [value, label] of [["", "All outcomes"], ["success", "Success"], ["tool_error", "Tool error"], ["denied", "Denied"], ["protocol_error", "Protocol error"], ["cancelled", "Cancelled"]]) {
@@ -357,22 +530,31 @@ export function activityPage(): Page {
     }
     outcomeSelect.addEventListener("change", () => {
       outcome = outcomeSelect.value;
-      draw();
+      resetPages();
+      void loadCalls();
     });
-    const needle = search.trim().toLowerCase();
-    const filtered = calls.filter((call) => {
-      if (outcome && call.outcome !== outcome) return false;
-      return !needle || [call.client, call.server, call.tool, call.exposedTool, call.callId]
-        .filter(Boolean).some((value) => value!.toLowerCase().includes(needle));
-    });
-    const body = filtered.length === 0
+    const outcomeField = el("label", { class: "activity-filter-field" }, [
+      el("span", { text: "Outcome" }),
+      outcomeSelect,
+    ]);
+    const rangeField = el("label", { class: "activity-filter-field" }, [
+      el("span", { text: "Time range" }),
+      range,
+    ]);
+    const searchField = el("label", { class: "activity-filter-field activity-search-field" }, [
+      el("span", { text: "Search" }),
+      query,
+    ]);
+    const body = calls.length === 0
       ? empty(
-          calls.length === 0 ? "No calls in this range" : "No calls match these filters",
-          calls.length === 0
+          callTotal === 0 && !search && !clientFilter && !serverFilter && !outcome
+            ? "No calls in this range"
+            : "No calls match these filters",
+          callTotal === 0 && !search && !clientFilter && !serverFilter && !outcome
             ? "New gateway calls will appear here while recording is enabled."
-            : "Try a broader search or clear the outcome filter.",
+            : "Try a broader search or clear one of the dropdown filters.",
         )
-      : el("div", { class: "activity-call-list" }, filtered.map((call) => {
+      : el("div", { class: "activity-call-list" }, calls.map((call) => {
           const row = el("button", { class: "activity-call-row", type: "button" }, [
             el("time", { text: formatTime(call.time) }),
             el("div", { class: "activity-call-client" }, [
@@ -392,13 +574,35 @@ export function activityPage(): Page {
           row.addEventListener("click", () => openCall(call));
           return row;
         }));
+    const previous = el("button", { class: "btn btn-sm", type: "button", text: "Previous" });
+    previous.disabled = pageIndex === 0;
+    previous.addEventListener("click", () => {
+      if (pageIndex === 0) return;
+      pageIndex--;
+      void loadCalls();
+    });
+    const next = el("button", { class: "btn btn-sm", type: "button", text: "Next" });
+    next.disabled = nextCursor === "";
+    next.addEventListener("click", () => {
+      if (!nextCursor) return;
+      pageIndex++;
+      pageCursors[pageIndex] = nextCursor;
+      pageCursors.length = pageIndex + 1;
+      void loadCalls();
+    });
+    const first = callTotal === 0 ? 0 : pageIndex * pageSize + 1;
+    const last = callTotal === 0 ? 0 : first + calls.length - 1;
     return el("div", { class: "activity-workspace" }, [
-      el("div", { class: "activity-toolbar" }, [query, range, outcomeSelect]),
+      el("div", { class: "activity-toolbar" }, [searchField, clientSelect, serverSelect, outcomeField, rangeField]),
       el("div", { class: "activity-table-head" }, [
         el("span", { text: "Time" }), el("span", { text: "Client" }), el("span", { text: "Destination" }),
         el("span", { text: "Outcome" }), el("span", { text: "Duration" }), el("span", {}),
       ]),
       body,
+      el("footer", { class: "activity-pagination" }, [
+        el("span", { text: callTotal ? `${first}–${last} of ${callTotal} calls` : "0 calls" }),
+        el("div", { class: "activity-page-actions" }, [previous, next]),
+      ]),
     ]);
   }
 
@@ -478,6 +682,7 @@ export function activityPage(): Page {
     const refresh = el("button", { class: "btn", type: "button", text: "Refresh" });
     refresh.addEventListener("click", () => {
       refresh.setAttribute("aria-busy", "true");
+      resetPages();
       void load().finally(() => refresh.removeAttribute("aria-busy"));
     });
     root.append(
@@ -506,6 +711,8 @@ export function activityPage(): Page {
     },
     dispose() {
       epoch++;
+      callsEpoch++;
+      window.clearTimeout(searchTimer);
       closeDrawer();
       root = null;
     },
