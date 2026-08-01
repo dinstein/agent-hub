@@ -17,16 +17,17 @@ import (
 // AuditStatus is the public policy view. It deliberately carries the key ID
 // but never the encryption key.
 type AuditStatus struct {
-	Enabled       bool   `json:"enabled"`
-	Arguments     string `json:"arguments"`
-	Results       string `json:"results"`
-	ResultBytes   int    `json:"resultBytes"`
-	Durability    string `json:"durability"`
-	RetentionDays int    `json:"retentionDays"`
-	MaxBytes      int64  `json:"maxBytes"`
-	MinFreeBytes  int64  `json:"minFreeBytes"`
-	Pressure      string `json:"pressure"`
-	KeyID         string `json:"keyId,omitempty"`
+	Enabled       bool            `json:"enabled"`
+	Arguments     string          `json:"arguments"`
+	Results       string          `json:"results"`
+	ResultBytes   int             `json:"resultBytes"`
+	Durability    string          `json:"durability"`
+	RetentionDays int             `json:"retentionDays"`
+	MaxBytes      int64           `json:"maxBytes"`
+	MinFreeBytes  int64           `json:"minFreeBytes"`
+	Pressure      string          `json:"pressure"`
+	KeyID         string          `json:"keyId,omitempty"`
+	Storage       accesslog.Usage `json:"storage"`
 }
 
 func auditStatusOf(p registry.ResolvedAuditPolicy) AuditStatus {
@@ -36,6 +37,16 @@ func auditStatusOf(p registry.ResolvedAuditPolicy) AuditStatus {
 		RetentionDays: p.RetentionDays, MaxBytes: p.MaxBytes,
 		MinFreeBytes: p.MinFreeBytes, Pressure: "block", KeyID: p.KeyID,
 	}
+}
+
+func (a *App) auditStatus(p registry.ResolvedAuditPolicy) (AuditStatus, error) {
+	status := auditStatusOf(p)
+	root, err := accesslog.DefaultDir(a.resolver)
+	if err != nil {
+		return AuditStatus{}, err
+	}
+	status.Storage, err = accesslog.Inspect(root)
+	return status, err
 }
 
 // Human renders the effective policy, including defaults.
@@ -48,6 +59,10 @@ func (s AuditStatus) Human(w io.Writer) error {
 		s.Durability, s.RetentionDays, s.MaxBytes, s.MinFreeBytes,
 		s.Pressure, dash(s.KeyID),
 	)
+	if err == nil {
+		_, err = fmt.Fprintf(w, "stored: %d bytes across %d day(s), %d pack(s)\n",
+			s.Storage.Bytes, s.Storage.Days, s.Storage.PackFiles)
+	}
 	return err
 }
 
@@ -58,7 +73,11 @@ func (a *App) newAuditCmd() *cobra.Command {
 		Args:  cobra.ArbitraryArgs,
 		RunE:  groupRunE,
 	}
-	cmd.AddCommand(a.newAuditStatusCmd(), a.newAuditEnableCmd(), a.newAuditDisableCmd())
+	cmd.AddCommand(
+		a.newAuditStatusCmd(), a.newAuditTailCmd(), a.newAuditShowCmd(),
+		a.newAuditStatsCmd(), a.newAuditVerifyCmd(),
+		a.newAuditEnableCmd(), a.newAuditDisableCmd(),
+	)
 	return cmd
 }
 
@@ -72,7 +91,11 @@ func (a *App) newAuditStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.printer().Emit(auditStatusOf(store.Snapshot().Governance.V.ResolvedAudit()), warnings...)
+			status, err := a.auditStatus(store.Snapshot().Governance.V.ResolvedAudit())
+			if err != nil {
+				return err
+			}
+			return a.printer().Emit(status, warnings...)
 		},
 	}
 }
@@ -103,7 +126,11 @@ func (a *App) newAuditEnableCmd() *cobra.Command {
 			if err != nil {
 				return opsError(err)
 			}
-			return a.printer().Emit(auditStatusOf(res.Policy), warnings...)
+			status, err := a.auditStatus(res.Policy)
+			if err != nil {
+				return err
+			}
+			return a.printer().Emit(status, warnings...)
 		},
 	}
 }
@@ -123,7 +150,11 @@ func (a *App) newAuditDisableCmd() *cobra.Command {
 			if err != nil {
 				return opsError(err)
 			}
-			return a.printer().Emit(auditStatusOf(res.Policy), warnings...)
+			status, err := a.auditStatus(res.Policy)
+			if err != nil {
+				return err
+			}
+			return a.printer().Emit(status, warnings...)
 		},
 	}
 }
@@ -152,6 +183,10 @@ func (a *App) loadOrCreateAuditKey(cmd *cobra.Command) ([]byte, error) {
 		}
 		return key, nil
 	}
+	return decodeAuditKey(encoded)
+}
+
+func decodeAuditKey(encoded string) ([]byte, error) {
 	key, err := base64.RawStdEncoding.DecodeString(encoded)
 	if err != nil || len(key) != 32 {
 		return nil, &Error{

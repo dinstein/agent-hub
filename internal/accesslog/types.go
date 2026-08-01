@@ -75,6 +75,8 @@ type Event struct {
 	TS      time.Time `json:"ts"`
 	Kind    EventKind `json:"event"`
 	CallID  string    `json:"callId"`
+	KeyID   string    `json:"keyId"`
+	MAC     string    `json:"mac"`
 
 	Client     string `json:"client,omitempty"`
 	Session    string `json:"session,omitempty"`

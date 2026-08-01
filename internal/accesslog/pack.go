@@ -184,6 +184,9 @@ func readPayload(root string, ref PayloadRef, key []byte) ([]byte, packHeader, e
 	if h.Raw < 0 || h.Raw > MaxPayloadBytes || len(h.Nonce) != chacha20poly1305.NonceSizeX {
 		return nil, packHeader{}, fmt.Errorf("accesslog: invalid payload bounds")
 	}
+	if h.Raw != ref.RawBytes || int(cipherLen) != ref.StoredBytes {
+		return nil, packHeader{}, fmt.Errorf("accesslog: payload reference size mismatch")
+	}
 	ciphertext := make([]byte, cipherLen)
 	if _, err := io.ReadFull(r, ciphertext); err != nil {
 		return nil, packHeader{}, err
@@ -191,6 +194,10 @@ func readPayload(root string, ref PayloadRef, key []byte) ([]byte, packHeader, e
 	aead, err := chacha20poly1305.NewX(key)
 	if err != nil {
 		return nil, packHeader{}, ErrBadKey
+	}
+	keyID, err := KeyID(key)
+	if err != nil || keyID != ref.KeyID {
+		return nil, packHeader{}, fmt.Errorf("accesslog: payload key id mismatch")
 	}
 	compressed, err := aead.Open(nil, h.Nonce, ciphertext, header)
 	if err != nil {

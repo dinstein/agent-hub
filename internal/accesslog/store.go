@@ -1,6 +1,7 @@
 package accesslog
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -67,6 +68,13 @@ func Open(opts Options) (*Store, error) {
 	}
 	if opts.KeyID == "" {
 		return nil, errors.New("accesslog: empty key id")
+	}
+	keyID, err := KeyID(opts.Key)
+	if err != nil {
+		return nil, err
+	}
+	if keyID != opts.KeyID {
+		return nil, fmt.Errorf("accesslog: key id %q does not match key %q", opts.KeyID, keyID)
 	}
 	if opts.Durability == "" {
 		opts.Durability = DurabilitySync
@@ -185,6 +193,12 @@ func (s *Store) Append(e Event) error {
 	if e.BootID == "" {
 		e.BootID = s.bootID
 	}
+	e.KeyID = s.keyID
+	mac, err := eventMAC(e, s.key)
+	if err != nil {
+		return err
+	}
+	e.MAC = mac
 	line, err := json.Marshal(e)
 	if err != nil {
 		return fmt.Errorf("accesslog: encode event: %w", err)
@@ -209,6 +223,48 @@ func (s *Store) Append(e Event) error {
 		}
 	}
 	return nil
+}
+
+func eventMAC(e Event, key []byte) (string, error) {
+	if len(key) != 32 {
+		return "", ErrBadKey
+	}
+	e.MAC = ""
+	raw, err := json.Marshal(e)
+	if err != nil {
+		return "", fmt.Errorf("accesslog: encode event mac: %w", err)
+	}
+	h := hmac.New(sha256.New, key)
+	_, _ = h.Write(raw)
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// VerifyEvent authenticates one metadata event with its payload key.
+func VerifyEvent(e Event, key []byte) error {
+	if e.MAC == "" || e.KeyID == "" {
+		return errors.New("accesslog: event has no authentication tag")
+	}
+	keyID, err := KeyID(key)
+	if err != nil {
+		return err
+	}
+	if keyID != e.KeyID {
+		return fmt.Errorf("accesslog: event key id %q does not match key %q", e.KeyID, keyID)
+	}
+	want, err := eventMAC(e, key)
+	if err != nil {
+		return err
+	}
+	got, err := hex.DecodeString(e.MAC)
+	if err != nil || !hmac.Equal(got, mustDecodeHex(want)) {
+		return errors.New("accesslog: event authentication failed")
+	}
+	return nil
+}
+
+func mustDecodeHex(s string) []byte {
+	b, _ := hex.DecodeString(s)
+	return b
 }
 
 // Close fsyncs and closes every open daily writer. It is idempotent.

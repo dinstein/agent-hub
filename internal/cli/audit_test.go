@@ -1,11 +1,16 @@
 package cli
 
 import (
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/dinstein/agent-hub/internal/accesslog"
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
@@ -100,5 +105,123 @@ func TestAuditPolicyConfig(t *testing.T) {
 		if code, _, _ := runCLI(t, "", "config", "set", pair[0], pair[1]); code != ExitUsage {
 			t.Errorf("config set %s %s exit = %d, want %d", pair[0], pair[1], code, ExitUsage)
 		}
+	}
+}
+
+func seedCLIAuditCall(t *testing.T, dataDir, callID string) string {
+	t.Helper()
+	chain := secrets.NewChain(secrets.ChainConfig{Dir: filepath.Join(dataDir, "secrets")})
+	encoded, ok, err := chain.Get(context.Background(), secrets.AuditEncryptionRef())
+	if err != nil || !ok {
+		t.Fatalf("load audit key: ok=%v err=%v", ok, err)
+	}
+	key, err := base64.RawStdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zeroSecret(key)
+	keyID, err := accesslog.KeyID(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := accesslog.Open(accesslog.Options{
+		Root: filepath.Join(dataDir, accesslog.DirectoryName), Key: key, KeyID: keyID,
+		Durability: accesslog.DurabilitySync,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := time.Now().UTC().Add(-time.Minute)
+	request, err := store.PutPayload(ts, callID, accesslog.PayloadRequest, []byte(`{"name":"srv__tool","arguments":{"secret":"request-value"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(accesslog.Event{TS: ts, Kind: accesslog.EventReceived, CallID: callID, Client: "codex", Face: "stdio", Request: &request}); err != nil {
+		t.Fatal(err)
+	}
+	args, err := store.PutPayload(ts.Add(time.Millisecond), callID, accesslog.PayloadEffectiveArgs, []byte(`{"secret":"request-value"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(accesslog.Event{TS: ts.Add(time.Millisecond), Kind: accesslog.EventRouted, CallID: callID, Client: "codex", Exposed: "srv__tool", Server: "srv", Tool: "tool", EffectiveArgs: &args}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.PutPayload(ts.Add(2*time.Millisecond), callID, accesslog.PayloadResult, []byte(`{"content":[{"type":"text","text":"result-value"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(accesslog.Event{TS: ts.Add(2 * time.Millisecond), Kind: accesslog.EventFinished, CallID: callID, Client: "codex", Exposed: "srv__tool", Server: "srv", Tool: "tool", Outcome: "success", Result: &result, ResultMode: "full", ResultCapture: "full"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return ts.Format("2006-01-02")
+}
+
+func TestAuditReadCommandsAndIntegrityVerification(t *testing.T) {
+	dir := setDataDir(t)
+	t.Setenv(secrets.EnvDevSecrets, "1")
+	var enabled AuditStatus
+	decodeInto(t, mustRun(t, "", "audit", "enable", "--json"), &enabled)
+	day := seedCLIAuditCall(t, dir, "call-for-cli")
+
+	var tail AuditTail
+	decodeInto(t, mustRun(t, "", "audit", "tail", "--since", "all", "--json"), &tail)
+	if len(tail.Events) != 3 || tail.Events[1].Server != "srv" {
+		t.Fatalf("tail = %+v", tail)
+	}
+
+	var stats AuditStats
+	decodeInto(t, mustRun(t, "", "audit", "stats", "--since", "all", "--json"), &stats)
+	if stats.Calls != 1 || stats.Events != 3 || stats.Outcomes["success"] != 1 || stats.PayloadRaw == 0 {
+		t.Fatalf("stats = %+v", stats)
+	}
+
+	var metadata AuditCall
+	decodeInto(t, mustRun(t, "", "audit", "show", "call-for-cli", "--json"), &metadata)
+	if metadata.Request != "" || len(metadata.Events) != 3 {
+		t.Fatalf("metadata-only show = %+v", metadata)
+	}
+	var full AuditCall
+	out := mustRun(t, "", "audit", "show", "call-for-cli", "--payloads", "--json")
+	decodeInto(t, out, &full)
+	if !strings.Contains(full.Request, "request-value") || !strings.Contains(full.Result, "result-value") {
+		t.Fatalf("payload show = %+v", full)
+	}
+	if len(decodeEnvelope(t, out).Warnings) == 0 {
+		t.Fatal("payload show did not warn about sensitive data")
+	}
+
+	var verify AuditVerify
+	decodeInto(t, mustRun(t, "", "audit", "verify", "--json"), &verify)
+	if !verify.OK || verify.Events != 3 || verify.Payloads != 3 {
+		t.Fatalf("verify = %+v", verify)
+	}
+	var status AuditStatus
+	decodeInto(t, mustRun(t, "", "audit", "status", "--json"), &status)
+	if status.Storage.Bytes <= 0 || status.Storage.PackFiles != 1 {
+		t.Fatalf("status storage = %+v", status.Storage)
+	}
+
+	path := filepath.Join(dir, accesslog.DirectoryName, day, accesslog.EventFileName)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := strings.Replace(string(raw), `"outcome":"success"`, `"outcome":"failure"`, 1)
+	if tampered == string(raw) {
+		t.Fatal("test did not find the outcome to tamper")
+	}
+	if err := os.WriteFile(path, []byte(tampered), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := runCLI(t, "", "audit", "verify", "--json")
+	if code != ExitLocked {
+		t.Fatalf("tampered verify exit = %d, want %d (stderr %s)", code, ExitLocked, stderr)
+	}
+	decodeInto(t, stdout, &verify)
+	if verify.OK || verify.Failures == 0 {
+		t.Fatalf("tampered verify = %+v", verify)
 	}
 }

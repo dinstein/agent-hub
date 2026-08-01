@@ -39,7 +39,12 @@ func helperAppendEvents() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	s, err := Open(Options{Root: root, Key: key, KeyID: "k1", Durability: DurabilitySync})
+	keyID, err := KeyID(key)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	s, err := Open(Options{Root: root, Key: key, KeyID: keyID, Durability: DurabilitySync})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

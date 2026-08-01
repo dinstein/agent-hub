@@ -16,7 +16,11 @@ func testKey() []byte { return bytes.Repeat([]byte{0x42}, 32) }
 func openTestStore(t *testing.T, maxPack int64) (*Store, string) {
 	t.Helper()
 	root := t.TempDir()
-	s, err := Open(Options{Root: root, Key: testKey(), KeyID: "k1", Durability: DurabilitySync, MaxPackBytes: maxPack})
+	keyID, err := KeyID(testKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(Options{Root: root, Key: testKey(), KeyID: keyID, Durability: DurabilitySync, MaxPackBytes: maxPack})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,10 +55,36 @@ func TestPayloadRoundTripIsExactAndEncrypted(t *testing.T) {
 	if !bytes.Equal(got, raw) {
 		t.Fatalf("payload = %q, want exact %q", got, raw)
 	}
+	if err := VerifyPayload(root, ref, testKey(), "call-1", PayloadRequest); err != nil {
+		t.Fatalf("VerifyPayload: %v", err)
+	}
+	if err := VerifyPayload(root, ref, testKey(), "other-call", PayloadRequest); err == nil {
+		t.Fatal("payload passed with the wrong call binding")
+	}
 	bad := append([]byte(nil), testKey()...)
 	bad[0]++
 	if _, err := ReadPayload(root, ref, bad); err == nil {
 		t.Fatal("wrong key decrypted the payload")
+	}
+}
+
+func TestInspect(t *testing.T) {
+	t.Parallel()
+	s, root := openTestStore(t, 0)
+	ts := time.Date(2026, 8, 1, 2, 3, 4, 0, time.UTC)
+	ref, err := s.PutPayload(ts, "inspect-call", PayloadRequest, []byte(`{"x":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Append(Event{TS: ts, Kind: EventReceived, CallID: "inspect-call", Request: &ref}); err != nil {
+		t.Fatal(err)
+	}
+	usage, err := Inspect(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.Bytes <= 0 || usage.Days != 1 || usage.EventFiles != 1 || usage.PackFiles != 1 {
+		t.Fatalf("usage = %+v", usage)
 	}
 }
 
@@ -90,8 +120,16 @@ func TestEventRoundTripAndBound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if skipped != 0 || len(events) != 1 || events[0].BootID == "" || events[0].PID == 0 {
+	if skipped != 0 || len(events) != 1 || events[0].BootID == "" || events[0].PID == 0 || events[0].MAC == "" {
 		t.Fatalf("events=%+v skipped=%d", events, skipped)
+	}
+	if err := VerifyEvent(events[0], testKey()); err != nil {
+		t.Fatalf("VerifyEvent: %v", err)
+	}
+	tampered := events[0]
+	tampered.Client = "someone-else"
+	if err := VerifyEvent(tampered, testKey()); err == nil {
+		t.Fatal("tampered event passed authentication")
 	}
 	err = s.Append(Event{TS: ts, Kind: EventFinished, CallID: "c", Error: strings.Repeat("x", MaxEventLineBytes)})
 	if !errors.Is(err, ErrEventTooLarge) {
