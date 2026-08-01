@@ -3353,6 +3353,12 @@ select.input:active {
   padding-left: 10px;
 }
 
+/* Author-level display:flex beats the user agent's [hidden] rule. The member
+ * picker must genuinely disappear while "Every registered server" is active. */
+.tool-picker[hidden] {
+  display: none;
+}
+
 .tool-list {
   display: flex;
   flex-wrap: wrap;

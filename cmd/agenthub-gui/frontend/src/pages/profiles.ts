@@ -1,11 +1,11 @@
 // Profiles page: the named tier of the scope chain.
 //
-// Two three-state selectors live here and both have the same failure mode:
-// the difference between "no rule" and "an empty allow list" is the
-// difference between exposing everything and exposing nothing. The UI keeps
-// them as three visible, separately-named states — never as a list that
-// happens to be empty — and refuses "only these" with nothing ticked instead
-// of sending it (api/profiles.go, ui.triState).
+// Selectors here preserve the difference between "no rule" and an explicit
+// empty allow list. Tool rules expose all three states. The member-server
+// editor intentionally offers only "every" or a non-empty subset, and refuses
+// an empty subset instead of sending it (api/profiles.go, ui.triState). A
+// stored block-all profile remains accurately visible in the listing and
+// opens as an empty subset that must be resolved before it can be saved.
 //
 // A rename is an operation, not a delete-then-create: the daemon repoints
 // every client that referenced the old name, and reports which ones. A delete
@@ -64,8 +64,8 @@ export function profilesPage(): Page {
     const name = textInput("", "profile name");
     const members = triState(serverIds(), undefined, {
       all: "Every registered server",
-      only: "Only the ticked servers",
-      none: "No server at all (block-all)",
+      only: "Only selected servers",
+      empty: "Select at least one server, or choose “Every registered server”.",
     });
     const errors = el("div", { class: "notice-slot" });
     const save = button("Create profile", "btn btn-primary", () => {
@@ -102,8 +102,8 @@ export function profilesPage(): Page {
   function membersForm(p: Profile): Node {
     const members = triState(serverIds(), { allow: p.servers }, {
       all: "Every registered server",
-      only: "Only the ticked servers",
-      none: "No server at all (block-all)",
+      only: "Only selected servers",
+      empty: "Select at least one server, or choose “Every registered server”.",
     });
     const errors = el("div", { class: "notice-slot" });
     const save = button("Replace member set", "btn", () => {
@@ -132,10 +132,6 @@ export function profilesPage(): Page {
       el("h3", { text: `Member servers of ${p.name}` }),
       errors,
       members.node,
-      el("p", {
-        class: "hint",
-        text: "“No server at all” is stored as an explicit empty set. It is not the same thing as having no rule, which exposes everything.",
-      }),
       controls(save, button("Cancel", "btn btn-secondary", () => form.hide())),
     ]);
   }

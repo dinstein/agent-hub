@@ -8,10 +8,11 @@
 // Two widgets here carry governance meaning rather than convenience:
 //
 //   - triState() is the only way this UI expresses a tool or server selector.
-//     It keeps "every tool", "exactly these" and "none at all" as three
-//     separate, visible states, and refuses an empty subset instead of
-//     sending it — an empty `only` list is precisely the input that collapses
-//     block-all into allow-all if anything downstream normalises it away.
+//     Tool rules expose all three stored states. Callers that deliberately
+//     offer only "all" / "a non-empty subset" omit the `none` label; an empty
+//     subset is still refused instead of sent, because it is precisely the
+//     input that collapses block-all into allow-all if anything downstream
+//     normalises it away.
 //   - confirmAction() is the second step in front of every destructive or
 //     safety-relaxing write. Its `acknowledge` variant needs an explicit tick
 //     before the button works: relaxing a safety gate is the one thing in
@@ -304,14 +305,19 @@ export function namePicker(available: string[], chosen: string[] | undefined): N
 export function triState(
   available: string[],
   stored: ToolSelector | undefined,
-  labels: { all: string; only: string; none: string } = {
+  labels: { all: string; only: string; none?: string; empty?: string } = {
     all: "All tools (no rule)",
     only: "Only the ticked tools",
     none: "Block every tool",
   },
 ): TriState {
+  const offersNone = labels.none !== undefined;
   const initial: ToolSelect =
-    stored?.allow === undefined ? Mode.All : stored.allow.length === 0 ? Mode.None : Mode.Only;
+    stored?.allow === undefined
+      ? Mode.All
+      : stored.allow.length === 0 && offersNone
+        ? Mode.None
+        : Mode.Only;
 
   const radioName = `tri-${Math.random().toString(36).slice(2)}`;
   const radios: Record<string, HTMLInputElement> = {};
@@ -336,7 +342,7 @@ export function triState(
     el("div", { class: "radio-row" }, [
       radio(Mode.All, labels.all),
       radio(Mode.Only, labels.only),
-      radio(Mode.None, labels.none),
+      labels.none === undefined ? null : radio(Mode.None, labels.none),
     ]),
     onlyBlock,
   ]);
@@ -351,10 +357,10 @@ export function triState(
       if (tools.length === 0) {
         return {
           ok: false,
-          message:
+          message: labels.empty ??
             "“Only the ticked tools” with nothing ticked is not how a server is blocked — it is " +
-            "refused so it can never be read as “no rule”. Pick at least one tool, or choose " +
-            "“Block every tool”.",
+              "refused so it can never be read as “no rule”. Pick at least one tool, or choose " +
+              "“Block every tool”.",
         };
       }
       return { ok: true, selection: { mode: Mode.Only, tools } };

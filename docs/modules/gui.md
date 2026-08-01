@@ -91,7 +91,13 @@ profile is shown as a broken reference and an empty effective scope, preserving 
 fail-closed behavior. Keeping this row visible even when named profiles exist answers the page's
 first question — what an unbound client can reach — without making the user infer it from a footnote.
 Creating a named profile opens a focused modal: the profile list remains stable underneath while the
-operator names the profile and chooses the three-state member-server boundary.
+operator names the profile and chooses either every registered server or a non-empty selected subset.
+The server checklist and manual-name tail exist only for the subset choice; selecting every server
+collapses them instead of showing controls whose values have no effect. The GUI does not offer a
+first-class block-all member choice, although profiles written with an explicit empty set remain
+accurately described and must be changed to every server or a non-empty subset before the editor saves.
+Per-server tool selectors retain all three states because blocking every tool is a useful narrowing
+inside an otherwise participating server.
 
 The server editor is transport-shaped, not a union of every possible field. `stdio` shows the local
 process contract (`command`, arguments, environment, working directory and optional container runtime);
