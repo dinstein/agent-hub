@@ -11,11 +11,15 @@ are about to perform the action, and follow it from the top.
 | [releasing.md](releasing.md) | Cutting a release, from preflight to checking what actually shipped |
 | [security-audit.md](security-audit.md) | Sweeping the tree for security defects — a workflow of parallel finders, adversarial verifiers and one adjudication pass — ending in a report to approve before anything is fixed |
 
-Each has a slash-command wrapper under `.claude/commands/` that does nothing but point here, so
-`/new-feature`, `/nightly-tidy`, `/release` and `/security-audit` reach the same text an agent
-reading the repo does.
-The wrapper holds no procedure of its own — one copy, or the copy an agent happened to open decides
-which steps it followed.
+Each has a shared skill under `.agents/skills/` that does nothing but point here. Codex discovers
+that directory directly and invokes the skills as `$new-feature`, `$nightly-tidy`, `$release`, and
+`$security-audit`. Claude discovers the same directories through the symlinks under
+`.claude/skills/` and invokes them as `/new-feature`, `/nightly-tidy`, `/release`, and
+`/security-audit` (Claude Code 2.1.203 or newer is required for symlinked skill directories).
+
+The skill holds no procedure of its own — one copy, or the copy an agent happened to open decides
+which steps it followed. Keep `.agents/skills/` canonical; do not replace the Claude symlinks with
+copied files.
 
 ## Runbook or doc?
 
@@ -51,4 +55,5 @@ Something done once is a plan, not a runbook, and something with no failure mode
 - These files are **English only**. They track the tree closely enough that a translation would be a
   second file every change has to remember, and the forgotten copy is indistinguishable from the
   current one — the same reason `docs/` exempts its contributor-facing half.
-- Add the row to the table above and a wrapper under `.claude/commands/`.
+- Add the row to the table above, a wrapper under `.agents/skills/`, and a relative symlink to that
+  skill under `.claude/skills/`.

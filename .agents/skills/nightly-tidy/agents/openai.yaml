@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run Nightly Tidy"
+  short_description: "Simplify code and reconcile documentation"
+  default_prompt: "Use $nightly-tidy to tidy a focused slice of this repository."

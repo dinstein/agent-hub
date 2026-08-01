@@ -32,7 +32,8 @@ regardless of who asked.
 (the recurring simplify / refactor / docs-agree pass), [releasing.md](runbooks/releasing.md)
 (cut a release), and [security-audit.md](runbooks/security-audit.md) (the recurring security sweep —
 a workflow of parallel finders, adversarial verifiers and one adjudication pass). Each has a
-`.claude/commands/` wrapper that only points at it.
+shared skill under `.agents/skills/`; `.claude/skills/` contains symlinks to those same directories
+so Codex and Claude execute one wrapper rather than two copies.
 
 Confirmed gaps, pinned to a line but not yet fixed, live in the `docs/modules/` file of the package
 that owns them — under "current assembly status", or beside the invariant they bend — and, for one

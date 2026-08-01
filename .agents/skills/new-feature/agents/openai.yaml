@@ -1,0 +1,4 @@
+interface:
+  display_name: "Develop a Feature"
+  short_description: "Run the repository feature delivery workflow"
+  default_prompt: "Use $new-feature to build and land this repository change."

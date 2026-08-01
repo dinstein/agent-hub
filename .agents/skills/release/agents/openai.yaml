@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cut a Release"
+  short_description: "Run the repository release workflow safely"
+  default_prompt: "Use $release to cut the next repository release."
