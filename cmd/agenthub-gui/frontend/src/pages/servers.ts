@@ -659,6 +659,7 @@ export function serversPage(): Page {
   let listRoot: HTMLElement | null = null;
   let search: HTMLInputElement | null = null;
   let ticker: number | undefined;
+  let stabilityTimer: number | undefined;
   let filter = "";
   const slot = noticeSlot();
   const form = modalHost();
@@ -676,6 +677,59 @@ export function serversPage(): Page {
    *  servers. The dashboard payload does not carry the command and there is
    *  no reason to pull every definition to label one wait. */
   const commands = new Map<string, string>();
+
+  /** The last fleet actually painted. A gateway reports connecting before it
+   *  has rebuilt an already-live connection, but showing that sub-second
+   *  intermediate state makes the whole dashboard appear to refresh. */
+  const displayedServers = new Map<string, Server>();
+  const connectingObservedAt = new Map<string, number>();
+  let paintedSignature = "";
+  const CONNECTING_GRACE_MS = 1400;
+
+  /** Keeps an already-active row stable through a short gateway reconnect.
+   *  New servers still show Checking immediately, and an error is never
+   *  delayed. If connecting lasts beyond the grace, a scheduled draw makes
+   *  the real intermediate state visible. */
+  function stabilizeConnecting(servers: Server[]): Server[] {
+    let suppressed = false;
+    const now = Date.now();
+    const present = new Set<string>();
+    const stable = servers.map((s) => {
+      present.add(s.id);
+      const previous = displayedServers.get(s.id);
+      if (
+        previous?.state === "connected" &&
+        s.state === "connecting" &&
+        previous.enabled === s.enabled
+      ) {
+        const observedAt = connectingObservedAt.get(s.id) ?? now;
+        connectingObservedAt.set(s.id, observedAt);
+        if (now - observedAt >= CONNECTING_GRACE_MS) return s;
+        suppressed = true;
+        return {
+          ...s,
+          state: previous.state,
+          tools: previous.tools,
+          health: previous.health,
+        };
+      }
+      connectingObservedAt.delete(s.id);
+      return s;
+    });
+    for (const id of connectingObservedAt.keys()) {
+      if (!present.has(id)) connectingObservedAt.delete(id);
+    }
+    if (suppressed && stabilityTimer === undefined) {
+      stabilityTimer = window.setTimeout(() => {
+        stabilityTimer = undefined;
+        // The next read either reveals a connection that stayed transitional
+        // or confirms that the reconnect already settled. In the latter case
+        // the paint signature makes this a no-op.
+        void draw();
+      }, CONNECTING_GRACE_MS);
+    }
+    return stable;
+  }
 
   function noteConnecting(servers: Server[]): void {
     const now = Date.now();
@@ -1282,6 +1336,7 @@ export function serversPage(): Page {
     try {
       const res = await hub.testServer(id, {});
       probedAuth.delete(id);
+      await draw();
       slot.say(`${id} ${changed}; connection check passed with ${res.tool_count} tool(s).`);
     } catch (err) {
       const auth = authenticationRequired(err);
@@ -1429,6 +1484,7 @@ export function serversPage(): Page {
         testResultView(res),
       );
       probedAuth.delete(s.id);
+      await draw();
     } catch (err) {
       if (authenticationRequired(err)) {
         probedAuth.add(s.id);
@@ -1581,7 +1637,6 @@ export function serversPage(): Page {
 
   function paint(servers: Server[]): void {
     if (!listRoot) return;
-    clear(listRoot);
 
     // Prefer the daemon's Health contract. The only overlay is a typed
     // E_AUTH_REQUIRED result from this page's own live probe, which may beat
@@ -1598,6 +1653,16 @@ export function serversPage(): Page {
           },
         }
       : s);
+
+    // SSE can publish several coordination events whose final visible fleet
+    // is identical. Do not tear down and recreate every row in that case:
+    // preserving the DOM also preserves scroll, focus and open disclosures.
+    const signature = JSON.stringify({ filter, servers });
+    if (signature === paintedSignature) return;
+    paintedSignature = signature;
+    displayedServers.clear();
+    for (const s of servers) displayedServers.set(s.id, s);
+    clear(listRoot);
 
     const needle = filter.trim().toLowerCase();
     const shown = needle
@@ -1709,6 +1774,7 @@ export function serversPage(): Page {
       listRoot.append(failureState(err, "the server list", () => void draw()));
       return;
     }
+    servers = stabilizeConnecting(servers);
     noteConnecting(servers);
     paint(servers);
     tick();
@@ -1730,8 +1796,13 @@ export function serversPage(): Page {
       off = null;
       if (ticker !== undefined) window.clearInterval(ticker);
       ticker = undefined;
+      if (stabilityTimer !== undefined) window.clearTimeout(stabilityTimer);
+      stabilityTimer = undefined;
       connectingSince.clear();
       commands.clear();
+      displayedServers.clear();
+      connectingObservedAt.clear();
+      paintedSignature = "";
       root = null;
       listRoot = null;
       search = null;

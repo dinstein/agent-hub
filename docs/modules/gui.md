@@ -36,6 +36,12 @@ detached tree; it cannot clear or overlap the page now on screen. The router als
 failures by mount generation before displaying them. This is the shell's backstop rather than a
 promise that every page remembered to add the same post-await guard.
 
+The Servers page consumes live events but does not repaint merely because one arrived. It signatures the visible
+fleet and preserves the existing rows when the result is unchanged, keeping scroll, focus and disclosures intact.
+An already-active server also gets a short connecting grace while a gateway rebuilds its connection: a quick
+`connected → connecting → connected` report stays visually Active, while a new server shows Checking immediately
+and a connecting state that persists beyond the grace is shown. Errors are never delayed.
+
 The current call is: **lists are bucketed by state, not alphabetized**. The server list has three
 buckets — needs attention / active / disabled — sorted within each bucket, **empty buckets are not
 rendered**, and disabled is collapsed by default (collapse state lives in localStorage). A single row
