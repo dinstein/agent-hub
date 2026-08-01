@@ -34,8 +34,14 @@
 :root {
   --font-sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --radius: 10px;
-  --radius-lg: 14px;
+  /* Four radii, matched to component scale: compact controls, ordinary
+   * controls, cards, and modal surfaces. No component invents a fifth curve. */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --control-h: 36px;
+  --input-h: 38px;
   font-family: var(--font-sans);
 
   /* Type scale. Six ad-hoc pixel values used to be written at their call
@@ -71,7 +77,7 @@
   --sidebar-w: 224px;
   /* Tables of eight columns are unreadable at 2000px. The cap is on the
    * content column, not the window, so the chrome still fills the screen. */
-  --content-max: 1180px;
+  --content-max: 1120px;
 }
 
 /* -- dark (the default; the bootstrap resolves "system" to one of the two) -- */
@@ -85,10 +91,10 @@
   --fg: #f2f4f8;
   --muted: #9099aa;
   --faint: #687286;
-  --line: #272e3b;
+  --line: #293142;
   /* Hairline between records inside one surface: quieter than --line, which
    * separates a surface from the page. */
-  --line-soft: #1d232e;
+  --line-soft: #202735;
 
   /* Accent is interaction only: selected navigation, primary actions and the
    * focus ring. Health retains its separate green/yellow/red vocabulary. */
@@ -121,8 +127,8 @@
   --fg: #111521;
   --muted: #5f6878;
   --faint: #8a93a2;
-  --line: #dfe3ec;
-  --line-soft: #e9ecf2;
+  --line: #d9deea;
+  --line-soft: #e7eaf1;
   --accent: #5365e8;
   --accent-strong: #4355d8;
   --accent-soft: rgb(83 101 232 / 0.1);
@@ -285,9 +291,9 @@ textarea {
 }
 
 .brand-mark {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
   display: grid;
   place-items: center;
   color: white;
@@ -333,8 +339,9 @@ textarea {
 a.nav {
   color: var(--muted);
   text-decoration: none;
-  padding: 9px 10px;
-  border-radius: 9px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -518,7 +525,7 @@ a.nav.active .nav-icon {
 
 .page-heading > h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: 25px;
   line-height: 1.2;
   letter-spacing: -0.025em;
   font-weight: 680;
@@ -599,7 +606,7 @@ a.nav.active .nav-icon {
   border-radius: var(--radius-lg);
   background: var(--panel);
   box-shadow: var(--shadow-1);
-  padding: var(--space-6);
+  padding: 20px;
 }
 
 .workspace-label {
@@ -658,7 +665,7 @@ a.nav.active .nav-icon {
   height: 42px;
   display: grid;
   place-items: center;
-  border-radius: 12px;
+  border-radius: var(--radius);
   color: var(--accent-strong);
   background: var(--accent-soft);
   margin-bottom: var(--space-3);
@@ -759,7 +766,7 @@ a.nav.active .nav-icon {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-5);
-  padding: var(--space-5) var(--space-6);
+  padding: 16px 18px;
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -782,7 +789,7 @@ a.nav.active .nav-icon {
 
 .access-rule {
   min-width: 0;
-  padding: var(--space-5) var(--space-6);
+  padding: 16px 18px;
 }
 
 .access-rule + .access-rule {
@@ -834,7 +841,7 @@ a.nav.active .nav-icon {
   grid-template-columns: 38px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-5);
-  padding: var(--space-5) var(--space-6);
+  padding: 16px 18px;
 }
 
 .client-mark {
@@ -842,7 +849,7 @@ a.nav.active .nav-icon {
   height: 38px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--accent-soft);
   color: var(--accent-strong);
   font-weight: 700;
@@ -932,7 +939,7 @@ a.nav.active .nav-icon {
   border-radius: var(--radius-lg);
   background: var(--panel);
   box-shadow: var(--shadow-1);
-  padding: var(--space-6);
+  padding: 20px;
   transition:
     border-color var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease);
@@ -1000,7 +1007,7 @@ a.nav.active .nav-icon {
   display: grid;
   place-items: center;
   margin-bottom: var(--space-5);
-  border-radius: 10px;
+  border-radius: var(--radius);
   color: var(--accent-strong);
   background: var(--accent-soft);
 }
@@ -1050,8 +1057,8 @@ a.nav.active .nav-icon {
   gap: var(--space-5);
   border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line));
   background: color-mix(in srgb, var(--danger) 8%, var(--panel));
-  border-radius: var(--radius);
-  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  padding: 11px 13px;
   margin-bottom: var(--space-6);
   color: var(--muted);
 }
@@ -1084,7 +1091,7 @@ a.nav.active .nav-icon {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  padding: 18px 20px;
+  padding: 20px;
   margin-bottom: var(--space-6);
   box-shadow: var(--shadow-1);
 }
@@ -1213,9 +1220,9 @@ tbody tr:hover {
   background: var(--panel-2);
   color: var(--fg);
   border: 1px solid var(--line);
-  min-height: 34px;
-  border-radius: 9px;
-  padding: 6px 13px;
+  min-height: var(--control-h);
+  border-radius: var(--radius);
+  padding: 7px 14px;
   font: inherit;
   font-size: var(--text-md);
   line-height: 1.5;
@@ -1460,7 +1467,7 @@ tbody tr:hover {
   min-height: 28px;
   padding: 3px 10px;
   font-size: var(--text-sm);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .btn-lg {
@@ -1497,12 +1504,12 @@ code.cmd {
 }
 
 .input {
-  min-height: 36px;
+  min-height: var(--input-h);
   background: color-mix(in srgb, var(--panel-2) 88%, var(--panel));
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius);
   color: var(--fg);
-  padding: 7px 11px;
+  padding: 8px 12px;
   font: inherit;
   min-width: 160px;
   box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.04);
@@ -1533,7 +1540,7 @@ code.cmd {
   position: relative;
   border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
   background: color-mix(in srgb, var(--danger) 8%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 13px 15px 13px 18px;
   display: flex;
   flex-direction: column;
@@ -1645,7 +1652,7 @@ pre.raw-text {
   width: 38px;
   height: 38px;
   margin-bottom: 3px;
-  border-radius: 11px;
+  border-radius: var(--radius);
   background-color: var(--panel-2);
   background-position: center;
   background-repeat: no-repeat;
@@ -2280,7 +2287,7 @@ select.input:active {
   min-height: 34px;
   padding: 7px 10px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: var(--panel-2);
 }
 
@@ -2349,8 +2356,8 @@ select.input:active {
 .segmented {
   display: inline-flex;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 3px;
+  border-radius: var(--radius);
+  padding: 4px;
   gap: 2px;
   background: var(--panel-2);
   box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.05);
@@ -2360,8 +2367,9 @@ select.input:active {
   background: transparent;
   color: var(--muted);
   border: none;
-  border-radius: 7px;
-  padding: 6px 13px;
+  min-height: 30px;
+  border-radius: var(--radius-sm);
+  padding: 6px 14px;
   font: inherit;
   cursor: pointer;
   transition:
@@ -2421,7 +2429,7 @@ select.input:active {
 .modal {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
   width: min(640px, 100%);
   max-height: 85vh;
   overflow: auto;
@@ -2460,7 +2468,7 @@ dialog.dlg {
   background: var(--panel);
   color: var(--fg);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
   width: min(560px, calc(100vw - 48px));
   max-height: 85vh;
   overflow: auto;
@@ -2565,7 +2573,7 @@ dialog.dlg > h2 {
 
 details.adv {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--panel-2);
   overflow: hidden;
   transition:
@@ -2640,7 +2648,7 @@ details.adv[open] > summary::before {
 
 .ledger {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--panel);
   overflow: hidden;
   box-shadow: var(--shadow-1);
@@ -2832,7 +2840,7 @@ details.adv[open] > summary::before {
 /* --- v2 page chrome ------------------------------------------------------- */
 
 .page-toolbar {
-  min-height: 46px;
+  min-height: 50px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2840,7 +2848,7 @@ details.adv[open] > summary::before {
   padding: 7px 8px;
   margin-bottom: var(--space-6);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--panel);
   box-shadow: var(--shadow-1);
 }
@@ -2923,7 +2931,7 @@ details.adv[open] > summary::before {
 
 .server-list > .chips .chip,
 .catalog-list > .chips .chip {
-  border-radius: 9px;
+  border-radius: var(--radius);
   padding: 7px 11px;
   background: var(--panel);
   box-shadow: var(--shadow-1);
