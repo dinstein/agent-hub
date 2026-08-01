@@ -141,6 +141,11 @@ func (v *nrVault) Set(_ context.Context, ref secrets.Ref, val string) error {
 	return nil
 }
 
+func (v *nrVault) Get(_ context.Context, ref secrets.Ref) (string, bool, error) {
+	val, ok := v.stored[ref.StorageKey()]
+	return val, ok, nil
+}
+
 func (v *nrVault) Delete(_ context.Context, ref secrets.Ref) error {
 	if v.delErr != nil {
 		return v.delErr

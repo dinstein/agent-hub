@@ -56,6 +56,15 @@ type SecretVault interface {
 	Delete(ctx context.Context, ref secrets.Ref) error
 }
 
+// AuditKeyVault is the deliberately separate, inward-reading face used by
+// the local audit service. Unlike SecretVault, it may resolve key material,
+// but audit handlers never return that material: it is used only to decrypt
+// one selected call or authenticate the ledger.
+type AuditKeyVault interface {
+	Get(ctx context.Context, ref secrets.Ref) (string, bool, error)
+	Set(ctx context.Context, ref secrets.Ref, val string) error
+}
+
 // SkillLibrary is the ctlapi face of *skills.Manager: read the library,
 // flip the coarse enable switch, materialize one install point.
 type SkillLibrary interface {
@@ -122,6 +131,11 @@ type Connector func(ctx context.Context, spec downstream.Spec, deps downstream.D
 // answer the uniform 404), which is what lets a partially assembled daemon —
 // and every existing test — keep working unchanged.
 type NonRegistryDeps struct {
+	// AuditRoot is <data>/audit. Empty keeps every /v1/audit endpoint off.
+	AuditRoot string
+	// AuditKeys resolves the immutable encryption keys used by detail and
+	// verification operations. Metadata listing does not consult it.
+	AuditKeys AuditKeyVault
 	// Secrets is the credential vault behind /v1/secrets.
 	Secrets SecretVault
 	// SecretsDir is <data>/secrets. It is read (never written) to classify
@@ -176,6 +190,27 @@ func (s *Server) routeNonRegistry(w http.ResponseWriter, r *http.Request) bool {
 
 	// Collection endpoints (exact paths).
 	switch {
+	case p == "/v1/audit/status" && d.AuditRoot != "" && r.Method == http.MethodGet:
+		s.handleAuditStatus(w, r)
+		return true
+	case p == "/v1/audit/calls" && d.AuditRoot != "" && r.Method == http.MethodGet:
+		s.handleAuditCalls(w, r)
+		return true
+	case p == "/v1/audit/stats" && d.AuditRoot != "" && r.Method == http.MethodGet:
+		s.handleAuditStats(w, r)
+		return true
+	case p == "/v1/audit/enabled" && d.AuditRoot != "" && d.AuditKeys != nil && r.Method == http.MethodPut:
+		s.handleAuditEnabled(w, r)
+		return true
+	case p == "/v1/audit/rotate-key" && d.AuditRoot != "" && d.AuditKeys != nil && r.Method == http.MethodPost:
+		s.handleAuditRotateKey(w, r)
+		return true
+	case p == "/v1/audit/verify" && d.AuditRoot != "" && d.AuditKeys != nil && r.Method == http.MethodPost:
+		s.handleAuditVerify(w, r)
+		return true
+	case p == "/v1/audit/prune" && d.AuditRoot != "" && r.Method == http.MethodPost:
+		s.handleAuditPrune(w, r)
+		return true
 	case p == "/v1/secrets" && d.Secrets != nil && r.Method == http.MethodGet:
 		s.handleSecretsList(w, r)
 		return true
@@ -194,6 +229,12 @@ func (s *Server) routeNonRegistry(w http.ResponseWriter, r *http.Request) bool {
 	case p == "/v1/auth" && d.OAuth != nil && r.Method == http.MethodGet:
 		s.handleAuthStatus(w, r)
 		return true
+	}
+	if d.AuditRoot != "" && d.AuditKeys != nil {
+		if seg, ok := pathSegments(r, "/v1/audit/calls/", 1); ok && r.Method == http.MethodGet {
+			s.handleAuditCall(w, r, seg[0])
+			return true
+		}
 	}
 
 	// Item endpoints (one or two path parameters).

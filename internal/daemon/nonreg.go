@@ -67,6 +67,8 @@ func nonRegistryDeps(cfg Config, dataDir string, vault secrets.Store, log *slog.
 		vault = secrets.NewChain(secrets.ChainConfig{Dir: secretsDir})
 	}
 	deps := ctlapi.NonRegistryDeps{
+		AuditRoot:     filepath.Join(dataDir, "audit"),
+		AuditKeys:     vault,
 		SecretsDir:    secretsDir,
 		ClientBaseDir: cfg.ClientBaseDir,
 		Clients:       clients.Default(),
