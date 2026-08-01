@@ -310,7 +310,10 @@ func (s *Server) handleAuditStats(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, CodeBadRequest, "since must be an RFC3339 timestamp", "choose a valid time range", requestIDFrom(r.Context()))
 		return
 	}
-	out := api.AuditStats{Since: since, Outcomes: map[string]int{}, Clients: map[string]int{}, Servers: map[string]int{}, Tools: map[string]int{}}
+	out := api.AuditStats{
+		Since: since, Outcomes: map[string]int{}, Clients: map[string]int{},
+		Servers: map[string]int{}, Tools: map[string]int{}, ServerTools: map[string]map[string]int{},
+	}
 	received, finished := map[string]bool{}, map[string]bool{}
 	var err error
 	out.Skipped, err = accesslog.ScanEventsSince(s.opts.NonRegistry.AuditRoot, since, func(e accesslog.Event) error {
@@ -327,6 +330,12 @@ func (s *Server) handleAuditStats(w http.ResponseWriter, r *http.Request) {
 			}
 			if e.Tool != "" {
 				out.Tools[e.Tool]++
+			}
+			if e.Server != "" && e.Tool != "" {
+				if out.ServerTools[e.Server] == nil {
+					out.ServerTools[e.Server] = map[string]int{}
+				}
+				out.ServerTools[e.Server][e.Tool]++
 			}
 		}
 		for _, ref := range []*accesslog.PayloadRef{e.Request, e.EffectiveArgs, e.Result} {

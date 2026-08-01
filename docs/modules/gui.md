@@ -123,14 +123,18 @@ content and transport metadata answer different questions.
 Activity is one page with three focused views rather than three navigation destinations. **Calls** joins
 the received/routed/finished lifecycle into one compact row; the collection endpoint returns metadata
 only and never exposes payload references. Calls use stable 50-row cursor pages, show the filtered total,
-and apply search plus Client, Destination and Outcome dropdowns on the daemon before paging; filters never
-describe only the visible slice. Clicking anywhere on the row is the disclosure action: the detail drawer
-immediately loads decrypted previews, with no second "decrypt" ritual. Its header and Overview / Request /
-Arguments / Result tabs stay fixed while one content region scrolls, so a long result cannot trap the wheel
-inside a second vertical scroller or push the close and navigation controls away. The drawer says quietly
-that this is a local decrypted preview and the page drops those strings when it closes. Valid JSON opens
-pretty (including JSON text nested in an MCP content item), can be copied, and can be switched back to the
-exact Raw value. **Insights** aggregates the same bounded time range by outcome, client, server, and tool.
+and apply Client, Server, Tool and Outcome dropdowns plus a compact call-id search on the daemon before
+paging; filters never describe only the visible slice. Server and Tool are separate columns, and selecting
+a server narrows the Tool dropdown using range-wide statistics rather than whichever calls happen to be on
+the current page. Clicking anywhere on the row is the disclosure action: the detail drawer immediately
+loads decrypted previews, with no second "decrypt" ritual. Detail is one scrolling page rather than a set
+of tabs: Request and Result are the primary sections, compact call facts precede them, and Lifecycle is a
+secondary disclosure beneath them. The authenticated effective-arguments payload remains available to API
+consumers but is not duplicated as a GUI section because the request already carries the arguments and the
+gateway does not rewrite call payloads. The drawer says quietly that this is a local decrypted preview and
+the page drops those strings when it closes. Valid JSON opens pretty (including JSON text nested in an MCP
+content item), can be copied, and can be switched back to the exact Raw value. **Insights** aggregates the
+same bounded time range by outcome, client, server, and tool.
 **Ledger** owns capture status, footprint, integrity verification, retention cleanup, and key rotation.
 Pausing capture is a direct reversible action and never deletes history or keys.
 

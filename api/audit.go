@@ -93,17 +93,18 @@ type AuditCallDetail struct {
 }
 
 type AuditStats struct {
-	Since         time.Time      `json:"since,omitempty"`
-	Events        int            `json:"events"`
-	Calls         int            `json:"calls"`
-	Incomplete    int            `json:"incomplete"`
-	Skipped       int            `json:"skippedMalformed"`
-	PayloadRaw    int64          `json:"payloadRawBytes"`
-	PayloadStored int64          `json:"payloadStoredBytes"`
-	Outcomes      map[string]int `json:"outcomes"`
-	Clients       map[string]int `json:"clients"`
-	Servers       map[string]int `json:"servers"`
-	Tools         map[string]int `json:"tools"`
+	Since         time.Time                 `json:"since,omitempty"`
+	Events        int                       `json:"events"`
+	Calls         int                       `json:"calls"`
+	Incomplete    int                       `json:"incomplete"`
+	Skipped       int                       `json:"skippedMalformed"`
+	PayloadRaw    int64                     `json:"payloadRawBytes"`
+	PayloadStored int64                     `json:"payloadStoredBytes"`
+	Outcomes      map[string]int            `json:"outcomes"`
+	Clients       map[string]int            `json:"clients"`
+	Servers       map[string]int            `json:"servers"`
+	Tools         map[string]int            `json:"tools"`
+	ServerTools   map[string]map[string]int `json:"serverTools"`
 }
 
 type AuditVerify struct {

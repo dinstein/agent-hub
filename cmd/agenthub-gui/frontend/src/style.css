@@ -615,7 +615,7 @@ a.nav.active .nav-icon {
 
 .activity-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) repeat(4, minmax(122px, 0.55fr));
+  grid-template-columns: repeat(5, minmax(112px, 1fr)) minmax(132px, 0.75fr);
   align-items: end;
   gap: var(--space-4);
   padding: 14px;
@@ -642,7 +642,7 @@ a.nav.active .nav-icon {
 .activity-table-head,
 .activity-call-row {
   display: grid;
-  grid-template-columns: 92px minmax(120px, 0.8fr) minmax(210px, 1.5fr) 116px 72px 18px;
+  grid-template-columns: 92px minmax(110px, 0.8fr) minmax(100px, 0.7fr) minmax(150px, 1.2fr) 108px 68px 18px;
   align-items: center;
   gap: var(--space-5);
 }
@@ -692,7 +692,7 @@ a.nav.active .nav-icon {
 }
 
 .activity-call-client,
-.activity-call-target {
+.activity-call-tool {
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -700,7 +700,8 @@ a.nav.active .nav-icon {
 }
 
 .activity-call-client strong,
-.activity-call-target strong {
+.activity-call-tool strong,
+.activity-call-server {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -709,7 +710,7 @@ a.nav.active .nav-icon {
 }
 
 .activity-call-client span,
-.activity-call-target span {
+.activity-call-tool span {
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
@@ -938,7 +939,7 @@ a.nav.active .nav-icon {
 }
 
 .activity-drawer {
-  width: min(780px, calc(100vw - 56px));
+  width: min(860px, calc(100vw - 56px));
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -1021,52 +1022,6 @@ a.nav.active .nav-icon {
   background: var(--panel-2);
 }
 
-.activity-detail-tabs {
-  flex: 0 0 auto;
-  min-height: 50px;
-  display: flex;
-  align-items: stretch;
-  gap: var(--space-2);
-  padding: 0 24px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
-}
-
-.activity-detail-tabs[hidden] {
-  display: none;
-}
-
-.activity-detail-tabs > button {
-  position: relative;
-  padding: 0 12px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.activity-detail-tabs > button:hover {
-  color: var(--fg);
-}
-
-.activity-detail-tabs > button[aria-selected="true"] {
-  color: var(--fg);
-  font-weight: 650;
-}
-
-.activity-detail-tabs > button[aria-selected="true"]::after {
-  content: "";
-  position: absolute;
-  right: 10px;
-  bottom: -1px;
-  left: 10px;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--accent);
-}
-
 .activity-drawer-body {
   flex: 1;
   min-height: 0;
@@ -1076,10 +1031,10 @@ a.nav.active .nav-icon {
   scrollbar-gutter: stable;
 }
 
-.activity-overview {
+.activity-detail-page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-6);
 }
 
 .activity-detail-facts {
@@ -1146,12 +1101,30 @@ a.nav.active .nav-icon {
   gap: var(--space-5);
   padding: 0 16px;
   border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+  list-style: none;
 }
 
-.activity-section-head h3 {
-  margin: 0;
+.activity-section-head::-webkit-details-marker { display: none; }
+
+.activity-section-head::before {
+  content: "›";
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.activity-timeline[open] .activity-section-head::before {
+  transform: rotate(90deg);
+}
+
+.activity-section-head strong {
   font-size: var(--text-md);
 }
+
+.activity-section-head .meta { margin-left: auto; }
 
 .activity-event-list {
   padding: 8px 16px 10px;
@@ -1182,6 +1155,11 @@ a.nav.active .nav-icon {
 
 .activity-payload {
   overflow: hidden;
+}
+
+.activity-payload-primary {
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  box-shadow: var(--shadow-1);
 }
 
 .activity-payload-head {
@@ -1239,10 +1217,9 @@ a.nav.active .nav-icon {
 }
 
 @media (max-width: 900px) {
-  .activity-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .activity-search-field { grid-column: 1 / -1; }
+  .activity-toolbar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .activity-table-head { display: none; }
-  .activity-call-row { grid-template-columns: 84px minmax(110px, 0.75fr) minmax(180px, 1.3fr) 105px 18px; }
+  .activity-call-row { grid-template-columns: 84px minmax(105px, 0.75fr) minmax(90px, 0.65fr) minmax(140px, 1fr) 100px 18px; }
   .activity-call-row .activity-duration { display: none; }
   .activity-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .activity-ledger { grid-template-columns: 1fr; }
@@ -1251,12 +1228,12 @@ a.nav.active .nav-icon {
 @media (max-width: 680px) {
   .activity-status { grid-template-columns: auto 1fr; }
   .activity-status > .btn { grid-column: 1 / -1; }
-  .activity-call-row { grid-template-columns: 72px minmax(0, 1fr) auto 14px; }
-  .activity-call-target { display: none; }
+  .activity-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .activity-call-row { grid-template-columns: 72px minmax(0, 1fr) minmax(100px, 1fr) auto 14px; }
+  .activity-call-server { display: none; }
   .activity-breakdown-grid { grid-template-columns: 1fr; }
   .activity-drawer { width: 100vw; }
-  .activity-drawer-head,
-  .activity-detail-tabs { padding-right: 16px; padding-left: 16px; }
+  .activity-drawer-head { padding-right: 16px; padding-left: 16px; }
   .activity-drawer-body { padding: 18px 16px 32px; }
   .activity-detail-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .activity-event { grid-template-columns: 12px 72px minmax(0, 1fr); }

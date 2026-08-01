@@ -349,7 +349,9 @@ and `/stats` read metadata records only, aggregate lifecycle events by the opaqu
 return payload references or event error strings. The calls collection filters search, client, server, tool,
 and outcome before paging; its opaque cursor is the last call's `(received time, callId)` rather than an
 offset, so calls arriving at the front of a live ledger do not shift later pages underneath the reader. Its
-`total` is the filtered total for the selected time range. `GET /v1/audit/calls/{id}` is the explicit single-call
+`total` is the filtered total for the selected time range. Stats includes a range-wide server-to-tool count
+index so a frontend can narrow tool choices without deriving filters from one visible page.
+`GET /v1/audit/calls/{id}` is the explicit single-call
 disclosure: it resolves immutable key ids in the daemon's vault and returns Request, Effective arguments,
 and Result immediately with `Cache-Control: no-store`. Each rendered payload is capped to a 512 KiB preview
 and says when it was truncated, keeping the control plane's 16 MiB non-streaming response bound intact.

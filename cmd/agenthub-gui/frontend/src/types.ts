@@ -899,6 +899,7 @@ export interface AuditStats {
   clients: Record<string, number>;
   servers: Record<string, number>;
   tools: Record<string, number>;
+  serverTools?: Record<string, Record<string, number>>;
 }
 
 export interface AuditVerify {

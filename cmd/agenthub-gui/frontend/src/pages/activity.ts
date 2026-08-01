@@ -12,7 +12,6 @@ import type {
 import { copyButton } from "../ui";
 
 type ActivityTab = "calls" | "insights" | "ledger";
-type CallDetailTab = "overview" | "request" | "arguments" | "result";
 
 const ranges = [
   { label: "1 hour", hours: 1 },
@@ -82,7 +81,7 @@ function prettyJSON(raw: string): string | null {
   }
 }
 
-function payloadPanel(title: string, payload: AuditPayload): HTMLElement {
+function payloadPanel(title: string, payload: AuditPayload, primary = false): HTMLElement {
   const raw = payload.text ?? "";
   const pretty = prettyJSON(raw);
   let prettyMode = pretty !== null;
@@ -110,7 +109,7 @@ function payloadPanel(title: string, payload: AuditPayload): HTMLElement {
     "Copy",
     "activity-text-action",
   ));
-  return el("section", { class: "activity-payload" }, [
+  return el("section", { class: `activity-payload${primary ? " activity-payload-primary" : ""}` }, [
     el("header", { class: "activity-payload-head" }, [
       el("div", {}, [
         el("h3", { text: title }),
@@ -134,10 +133,10 @@ function detailFacts(detail: AuditCallDetail): HTMLElement {
   ]);
 }
 
-function detailOverview(detail: AuditCallDetail): HTMLElement {
-  const timeline = el("section", { class: "activity-timeline" }, [
-    el("header", { class: "activity-section-head" }, [
-      el("h3", { text: "Lifecycle" }),
+function detailPage(detail: AuditCallDetail): HTMLElement {
+  const timeline = el("details", { class: "activity-timeline" }, [
+    el("summary", { class: "activity-section-head" }, [
+      el("strong", { text: "Lifecycle" }),
       el("span", { class: "meta", text: `${detail.events.length} events` }),
     ]),
     el("div", { class: "activity-event-list" }, detail.events.map((event) =>
@@ -152,7 +151,7 @@ function detailOverview(detail: AuditCallDetail): HTMLElement {
       ]),
     )),
   ]);
-  return el("div", { class: "activity-overview" }, [
+  return el("div", { class: "activity-detail-page" }, [
     detailFacts(detail),
     ...(detail.error
       ? [el("div", { class: "activity-call-error" }, [
@@ -160,6 +159,8 @@ function detailOverview(detail: AuditCallDetail): HTMLElement {
           el("span", { text: detail.error }),
         ])]
       : []),
+    payloadPanel("Request", detail.request, true),
+    payloadPanel("Result", detail.result, true),
     timeline,
   ]);
 }
@@ -175,7 +176,6 @@ function callDrawer(
     class: "activity-drawer", role: "dialog", "aria-modal": "true", "aria-labelledby": titleID,
   });
   const body = el("div", { class: "activity-drawer-body" }, [loadingState("Opening call…", 5)]);
-  const nav = el("div", { class: "activity-detail-tabs", role: "tablist", hidden: true });
   const closeButton = el("button", {
     class: "activity-close",
     type: "button",
@@ -218,7 +218,6 @@ function callDrawer(
       ]),
       closeButton,
     ]),
-    nav,
     body,
   );
   overlay.append(drawer);
@@ -226,47 +225,9 @@ function callDrawer(
   void load()
     .then((detail) => {
       if (!overlay.isConnected) return;
-      const tabs: { id: CallDetailTab; label: string; render: () => HTMLElement }[] = [
-        { id: "overview", label: "Overview", render: () => detailOverview(detail) },
-        { id: "request", label: "Request", render: () => payloadPanel("Request", detail.request) },
-        { id: "arguments", label: "Arguments", render: () => payloadPanel("Effective arguments", detail.effectiveArguments) },
-        { id: "result", label: "Result", render: () => payloadPanel("Result", detail.result) },
-      ];
-      let active: CallDetailTab = "overview";
-      const buttons: HTMLButtonElement[] = [];
-      const paint = () => {
-        for (const button of buttons) {
-          const selected = button.dataset.tab === active;
-          button.setAttribute("aria-selected", String(selected));
-          button.tabIndex = selected ? 0 : -1;
-        }
-        clear(body);
-        body.append(tabs.find((item) => item.id === active)!.render());
-        body.scrollTop = 0;
-      };
-      clear(nav);
-      for (const item of tabs) {
-        const button = el("button", {
-          type: "button", role: "tab", text: item.label, "data-tab": item.id,
-        });
-        button.addEventListener("click", () => {
-          active = item.id;
-          paint();
-        });
-        button.addEventListener("keydown", (event) => {
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-          event.preventDefault();
-          const step = event.key === "ArrowRight" ? 1 : -1;
-          const next = (tabs.findIndex((tab) => tab.id === active) + step + tabs.length) % tabs.length;
-          active = tabs[next].id;
-          paint();
-          buttons[next].focus();
-        });
-        buttons.push(button);
-        nav.append(button);
-      }
-      nav.hidden = false;
-      paint();
+      clear(body);
+      body.append(detailPage(detail));
+      body.scrollTop = 0;
     })
     .catch((err) => {
       if (!overlay.isConnected) return;
@@ -303,6 +264,7 @@ export function activityPage(): Page {
   let search = "";
   let clientFilter = "";
   let serverFilter = "";
+  let toolFilter = "";
   let outcome = "";
   let status: AuditStatus | null = null;
   let calls: AuditCallSummary[] = [];
@@ -342,7 +304,7 @@ export function activityPage(): Page {
         hub.auditStatus(),
         hub.auditCalls(
           sinceMillis(rangeHours), pageSize, pageCursors[pageIndex], search.trim(),
-          clientFilter, serverFilter, "", outcome,
+          clientFilter, serverFilter, toolFilter, outcome,
         ),
         hub.auditStats(sinceMillis(rangeHours)),
       ]);
@@ -371,7 +333,7 @@ export function activityPage(): Page {
     try {
       const next = await hub.auditCalls(
         sinceMillis(rangeHours), pageSize, pageCursors[pageIndex], search.trim(),
-        clientFilter, serverFilter, "", outcome,
+        clientFilter, serverFilter, toolFilter, outcome,
       );
       if (!root || request !== callsEpoch) return;
       calls = next.calls ?? [];
@@ -392,12 +354,12 @@ export function activityPage(): Page {
   async function action<T>(
     button: HTMLButtonElement,
     work: () => Promise<T>,
-    message: string | ((result: T) => string),
+    message: string | ((result: T) => string) | null,
   ): Promise<void> {
     button.setAttribute("aria-busy", "true");
     try {
       const result = await work();
-      notices.say(typeof message === "function" ? message(result) : message);
+      if (message !== null) notices.say(typeof message === "function" ? message(result) : message);
       await load();
     } catch (err) {
       if (isStalePrecondition(asCallError(err))) {
@@ -443,7 +405,7 @@ export function activityPage(): Page {
       void action(
         toggle,
         () => hub.setAuditEnabled(!status!.enabled, status!.generation),
-        status.enabled ? "Recording paused. Existing history is unchanged." : "Recording enabled.",
+        null,
       );
     });
     return el("section", { class: `activity-status ${status.enabled ? "is-on" : "is-off"}` }, [
@@ -476,8 +438,8 @@ export function activityPage(): Page {
       class: "input activity-search",
       type: "search",
       value: search,
-      placeholder: "Search tool or call ID",
-      "aria-label": "Search calls",
+      placeholder: "Call ID",
+      "aria-label": "Find call by ID",
       "data-activity-search": "true",
     });
     query.addEventListener("input", () => {
@@ -519,8 +481,15 @@ export function activityPage(): Page {
     const clientSelect = filterSelect("Client", "All clients", clientFilter, stats?.clients ?? {}, (value) => {
       clientFilter = value;
     });
-    const serverSelect = filterSelect("Destination", "All destinations", serverFilter, stats?.servers ?? {}, (value) => {
+    const serverSelect = filterSelect("Server", "All servers", serverFilter, stats?.servers ?? {}, (value) => {
       serverFilter = value;
+      if (toolFilter && value && !(toolFilter in (stats?.serverTools?.[value] ?? {}))) {
+        toolFilter = "";
+      }
+    });
+    const toolValues = serverFilter ? stats?.serverTools?.[serverFilter] ?? {} : stats?.tools ?? {};
+    const toolSelect = filterSelect("Tool", "All tools", toolFilter, toolValues, (value) => {
+      toolFilter = value;
     });
     const outcomeSelect = el("select", { class: "input activity-outcome", "aria-label": "Outcome" });
     for (const [value, label] of [["", "All outcomes"], ["success", "Success"], ["tool_error", "Tool error"], ["denied", "Denied"], ["protocol_error", "Protocol error"], ["cancelled", "Cancelled"]]) {
@@ -542,15 +511,15 @@ export function activityPage(): Page {
       range,
     ]);
     const searchField = el("label", { class: "activity-filter-field activity-search-field" }, [
-      el("span", { text: "Search" }),
+      el("span", { text: "Call ID" }),
       query,
     ]);
     const body = calls.length === 0
       ? empty(
-          callTotal === 0 && !search && !clientFilter && !serverFilter && !outcome
+          callTotal === 0 && !search && !clientFilter && !serverFilter && !toolFilter && !outcome
             ? "No calls in this range"
             : "No calls match these filters",
-          callTotal === 0 && !search && !clientFilter && !serverFilter && !outcome
+          callTotal === 0 && !search && !clientFilter && !serverFilter && !toolFilter && !outcome
             ? "New gateway calls will appear here while recording is enabled."
             : "Try a broader search or clear one of the dropdown filters.",
         )
@@ -561,8 +530,9 @@ export function activityPage(): Page {
               el("strong", { text: call.client || "Unknown client" }),
               el("span", { text: call.face || "gateway" }),
             ]),
-            el("div", { class: "activity-call-target" }, [
-              el("strong", { text: targetOf(call) }),
+            el("strong", { class: "activity-call-server", text: call.server || "Unrouted" }),
+            el("div", { class: "activity-call-tool" }, [
+              el("strong", { text: call.tool || call.exposedTool || "—" }),
               call.exposedTool && call.exposedTool !== call.tool
                 ? el("span", { class: "mono", text: call.exposedTool })
                 : null,
@@ -593,9 +563,10 @@ export function activityPage(): Page {
     const first = callTotal === 0 ? 0 : pageIndex * pageSize + 1;
     const last = callTotal === 0 ? 0 : first + calls.length - 1;
     return el("div", { class: "activity-workspace" }, [
-      el("div", { class: "activity-toolbar" }, [searchField, clientSelect, serverSelect, outcomeField, rangeField]),
+      el("div", { class: "activity-toolbar" }, [clientSelect, serverSelect, toolSelect, outcomeField, rangeField, searchField]),
       el("div", { class: "activity-table-head" }, [
-        el("span", { text: "Time" }), el("span", { text: "Client" }), el("span", { text: "Destination" }),
+        el("span", { text: "Time" }), el("span", { text: "Client" }), el("span", { text: "Server" }),
+        el("span", { text: "Tool" }),
         el("span", { text: "Outcome" }), el("span", { text: "Duration" }), el("span", {}),
       ]),
       body,

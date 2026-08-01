@@ -114,6 +114,15 @@ func TestAuditCallsUseStableCursorAndServerSideFilters(t *testing.T) {
 	if filtered.Total != 1 || len(filtered.Calls) != 1 || filtered.Calls[0].CallID != "call-alpha" {
 		t.Fatalf("filtered calls = %+v", filtered)
 	}
+	toolFiltered, err := client.Audit.Calls(t.Context(), api.AuditCallFilter{
+		Since: base, Limit: 10, Tool: "get_project",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if toolFiltered.Total != 1 || len(toolFiltered.Calls) != 1 || toolFiltered.Calls[0].CallID != "call-gamma" {
+		t.Fatalf("tool-filtered calls = %+v", toolFiltered)
+	}
 
 	if status, _ := nrDo(t, env.sock, http.MethodGet, "/v1/audit/calls?cursor=not-a-cursor", nil); status != http.StatusBadRequest {
 		t.Fatalf("invalid cursor status = %d, want %d", status, http.StatusBadRequest)
@@ -170,7 +179,8 @@ func TestAuditListIsMetadataOnlyAndDetailDecryptsImmediately(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.Calls != 1 || stats.Outcomes["success"] != 1 || stats.PayloadRaw == 0 {
+	if stats.Calls != 1 || stats.Outcomes["success"] != 1 || stats.PayloadRaw == 0 ||
+		stats.ServerTools["srv"]["tool"] != 1 {
 		t.Fatalf("stats = %+v", stats)
 	}
 	verified, err := client.Audit.Verify(t.Context())
