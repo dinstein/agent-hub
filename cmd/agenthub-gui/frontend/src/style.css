@@ -1994,3 +1994,166 @@ details.adv[open] > summary {
   color: var(--muted);
   font-family: var(--font-sans);
 }
+
+/* --- v2 page chrome ------------------------------------------------------- */
+
+.page-toolbar {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: 7px 8px;
+  margin-bottom: var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+}
+
+.toolbar-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: min(320px, 100%);
+}
+
+.toolbar-search-wide {
+  width: min(520px, 100%);
+}
+
+.toolbar-search-wide .cat-search {
+  max-width: none;
+}
+
+.search-glyph {
+  color: var(--muted);
+  padding-left: var(--space-3);
+  font-size: var(--text-lg);
+}
+
+.input.search-input,
+.toolbar-search .input {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.input.search-input:focus,
+.toolbar-search .input:focus {
+  outline: none;
+  border-color: transparent;
+}
+
+.toolbar-hint {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  padding-right: var(--space-3);
+  text-align: right;
+}
+
+.catalog-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--info) 5%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--info) 22%, var(--line));
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: var(--space-5);
+  font-size: var(--text-md);
+}
+
+.catalog-note-icon {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--info) 14%, transparent);
+  color: var(--info);
+  font-weight: 700;
+  font-family: var(--font-serif, serif);
+}
+
+.server-list > .chips,
+.catalog-list > .chips {
+  margin-bottom: var(--space-5);
+}
+
+.server-list > .chips .chip,
+.catalog-list > .chips .chip {
+  border-radius: 9px;
+  padding: 7px 11px;
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+}
+
+.bucket {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-1);
+}
+
+.bucket > summary {
+  min-height: 42px;
+  padding: 10px 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.055em;
+  font-size: var(--text-xs);
+}
+
+.bucket > summary > .bucket-count {
+  margin-left: auto;
+  min-width: 24px;
+  text-align: center;
+  border-radius: 999px;
+  background: var(--panel-2);
+  padding: 2px 7px;
+}
+
+.bucket-body.ledger {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.rec {
+  min-height: 58px;
+}
+
+.rec-act > .controls .btn {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+@media (max-width: 760px) {
+  .page-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .toolbar-search {
+    width: 100%;
+  }
+
+  .toolbar-hint {
+    padding: 0 var(--space-3) var(--space-3);
+    text-align: left;
+  }
+
+  .rec,
+  .rec.has-lead {
+    grid-template-columns: 3px auto minmax(0, 1fr);
+  }
+
+  .rec-act {
+    grid-column: 2 / -1;
+    padding: 0 var(--space-5) var(--space-5);
+    justify-content: space-between;
+  }
+}

@@ -31,7 +31,7 @@
 // read path and this page must not grow one.
 
 import { EVT, hub, on, openExternal } from "../bridge";
-import { chip, chipRow, clear, el, emptyState, loadingState, section } from "../dom";
+import { chip, chipRow, clear, el, emptyState, loadingState, pageHeader } from "../dom";
 import { AdminState, HealthAction, HealthLevel } from "../generated/health";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot, runWrite } from "../page";
@@ -1658,23 +1658,33 @@ export function serversPage(): Page {
       // any open editor survive every later redraw.
       clear(root);
       listRoot = el("div", { class: "server-list" }, [loadingState("Reading the registry…")]);
-      const box = textInput(filter, "filter by server id");
+      const box = textInput(filter, "Search servers…");
+      box.classList.add("search-input");
       box.addEventListener("input", () => {
         filter = box.value;
         void draw();
       });
       search = box;
       root.append(
-        section(
+        pageHeader(
           "Servers",
-          controls(
-            button("Add server", "btn btn-primary", () => form.show(editor("", null))),
-            box,
-          ),
-          slot.node,
-          form.node,
-          listRoot,
+          "Configure every downstream MCP process and endpoint, then act on the ones that need attention.",
+          el("a", { class: "btn", href: "#/catalog", text: "Browse Catalog" }),
+          button("Add server", "btn btn-primary", () => form.show(editor("", null))),
         ),
+        el("div", { class: "page-toolbar" }, [
+          el("div", { class: "toolbar-search" }, [
+            el("span", { class: "search-glyph", "aria-hidden": "true", text: "⌕" }),
+            box,
+          ]),
+          el("span", {
+            class: "toolbar-hint",
+            text: "Health comes from gateways that are actually using each server.",
+          }),
+        ]),
+        slot.node,
+        form.node,
+        listRoot,
       );
     }
 

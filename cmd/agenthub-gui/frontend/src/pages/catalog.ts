@@ -34,7 +34,7 @@
 // socket tells the user the directory is gone.
 
 import { asCallError, hub, isStalePrecondition } from "../bridge";
-import { chip, chipRow, clear, el, emptyState, loadingState, section } from "../dom";
+import { chip, chipRow, clear, el, emptyState, loadingState, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { CONFLICT_MESSAGE, failureState, noticeSlot } from "../page";
 import { button, cliHint, controls, field, formHost, shellArg, textInput } from "../ui";
@@ -541,22 +541,29 @@ export function catalogPage(): Page {
     });
     searchBox = box;
     root.append(
-      section(
+      pageHeader(
         "Catalog",
-        el("p", {
-          class: "hint",
-          text:
-            "Definitions agenthub already knows how to write — the same ones `agenthub catalog add` " +
-            "stores, through the same validation. Being listed here says where the line came from, " +
-            "not that the server is safe: nothing is signed and nothing is checked at add time. " +
-            "Entries needing a key still add in one click; store the value on Secrets afterwards, " +
-            "because the definition only ever holds a ${SECRET_…} reference.",
-        }),
-        controls(box),
-        slot.node,
-        form.node,
-        listRoot,
+        "Discover definitions AgentHub already knows how to validate and store.",
+        el("a", { class: "btn", href: "#/servers", text: "Add manually" }),
       ),
+      el("div", { class: "catalog-note" }, [
+        el("span", { class: "catalog-note-icon", "aria-hidden": "true", text: "i" }),
+        el("span", {
+          text:
+            "Catalog provenance says who wrote a definition, not that the downstream is verified or safe. " +
+            "Credentials remain secret references and are resolved only when the server connects.",
+        }),
+      ]),
+      el("div", { class: "page-toolbar" }, [
+        el("div", { class: "toolbar-search toolbar-search-wide" }, [
+          el("span", { class: "search-glyph", "aria-hidden": "true", text: "⌕" }),
+          box,
+        ]),
+        el("span", { class: "toolbar-hint", text: "Every search word must match." }),
+      ]),
+      slot.node,
+      form.node,
+      listRoot,
     );
   }
 
