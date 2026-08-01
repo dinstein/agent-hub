@@ -30,7 +30,11 @@ const (
 // downstream never blocks the protocol channel (and stays cancellable via
 // notifications/cancelled).
 func (g *gateway) handleRequest(req *mcp.Request) {
-	if !g.acceptRequestMeta(req) {
+	// tools/call performs protocol-meta acceptance inside its handler, after
+	// the strict received record. Every other method keeps the fast inline
+	// path. This is what records even a tool access attempt whose declared
+	// protocol is rejected.
+	if req.Method != mcp.MethodToolsCall && !g.acceptRequestMeta(req) {
 		return // rejected with CodeUnsupportedProtocolVersion, reply sent
 	}
 	switch req.Method {
@@ -135,6 +139,7 @@ func (g *gateway) handleInitialize(req *mcp.Request) {
 	}
 	g.mu.Lock()
 	g.clientCaps = p.Capabilities
+	g.protocol = version
 	g.mu.Unlock()
 
 	res := mcp.InitializeResult{
@@ -221,6 +226,7 @@ func (g *gateway) acceptRequestMeta(req *mcp.Request) bool {
 	g.mu.Lock()
 	first := !g.stateless
 	g.stateless = true
+	g.protocol = mcp.Version2026
 	g.clientCaps = probe.Meta.ClientCapabilities
 	wasInitialized := g.initialized
 	g.initialized = true
@@ -308,6 +314,22 @@ func (g *gateway) handleToolsList(req *mcp.Request) {
 func (g *gateway) handleToolsCall(ctx context.Context, req *mcp.Request) {
 	defer g.handlers.Done()
 	defer g.unregisterInflight(req.ID)
+	defer func() {
+		if ctx.Err() != nil {
+			g.auditFinishCancelled(req.ID)
+		}
+	}()
+
+	// Strict ordering: persist the complete incoming params and the received
+	// event before parsing, routing, gates, or downstream work. A write
+	// failure refuses the call; discovery remains available for repair.
+	if err := g.auditBegin(req); err != nil {
+		g.reply(mcp.NewErrorResponse(req.ID, auditRPCError(err)))
+		return
+	}
+	if !g.acceptRequestMeta(req) {
+		return // rejection response was sent and finalized by reply
+	}
 
 	var p mcp.CallToolParams
 	if err := json.Unmarshal(req.Params, &p); err != nil {
@@ -316,6 +338,7 @@ func (g *gateway) handleToolsCall(ctx context.Context, req *mcp.Request) {
 		}))
 		return
 	}
+	g.auditSetExposed(req.ID, p.Name)
 
 	s := g.currentSurface()
 	switch s.Classify(p.Name) {
@@ -378,6 +401,7 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 			inputSchema: def.InputSchema,
 			annotations: def.Annotations,
 			description: def.Description,
+			provider:    "host",
 			call: func(ctx context.Context) (*mcp.CallResult, error) {
 				return prov.Call(ctx, route.RawTool, args)
 			},
@@ -459,6 +483,7 @@ type callTarget struct {
 	inputSchema json.RawMessage
 	annotations json.RawMessage
 	description string
+	provider    string
 	call        pipeline.CallFunc
 }
 
@@ -466,6 +491,13 @@ type callTarget struct {
 // outcome upstream.
 func (g *gateway) runCall(ctx context.Context, req *mcp.Request, t callTarget, args json.RawMessage) {
 	route := t.route
+	// The routed event (including the complete effective arguments) is also
+	// durable before the frozen gate chain runs. This observes provenance;
+	// it is not a gate and never inspects or rewrites args.
+	if err := g.auditRoute(req.ID, route, args, t.provider); err != nil {
+		g.reply(mcp.NewErrorResponse(req.ID, auditRPCError(err)))
+		return
+	}
 	callReq := pipeline.CallRequest{
 		Exposed:     t.exposed,
 		ServerID:    route.ServerID,
@@ -507,6 +539,7 @@ func (g *gateway) runCall(ctx context.Context, req *mcp.Request, t callTarget, a
 		return
 	}
 	if err != nil {
+		g.auditMarkFailure(req.ID, err)
 		g.logCallFailure(req, route, started, err)
 		g.reply(mcp.NewErrorResponse(req.ID, callError(err)))
 		return

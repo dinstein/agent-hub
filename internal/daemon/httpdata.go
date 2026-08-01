@@ -211,6 +211,7 @@ func (p *httpPlane) connFor(ctx context.Context, c *httpbridge.Caller) (*gateway
 func (p *httpPlane) gatewayConfig(c *httpbridge.Caller) gateway.Config {
 	return gateway.Config{
 		ClientID:    clientIDOf(c),
+		Face:        "http",
 		Resolver:    p.deps.Resolver,
 		Secrets:     p.deps.Secrets,
 		Auth:        p.deps.Auth,

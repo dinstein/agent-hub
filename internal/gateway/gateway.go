@@ -86,6 +86,9 @@ type Config struct {
 	// ClientID is the client identity this gateway serves (scope routing
 	// key, log field, log file name).
 	ClientID string
+	// Face names the transport-facing assembly for audit metadata. Empty is
+	// stdio; the daemon's shared in-process gateway sets http.
+	Face string
 	// In/Out is the upstream MCP channel (os.Stdin / os.Stdout in
 	// production). Out carries protocol frames only.
 	In  io.Reader
@@ -260,6 +263,9 @@ type gateway struct {
 	credEpochs  *credEpochs
 	credWatcher *secrets.CredWatcher
 	credWG      sync.WaitGroup
+	// audit is the strict tools/call ledger wrapper. It is outside pipe: it
+	// observes the one execute path without becoming a third governance gate.
+	audit *auditManager
 	// reloadMu serializes onRegistryChange (watcher + daemon link may fire
 	// concurrently; reload/diff/apply must not interleave).
 	reloadMu sync.Mutex
@@ -302,6 +308,7 @@ type gateway struct {
 	// notifications/initialized. Once set it never clears — a session
 	// cannot downgrade back to the handshake it skipped.
 	stateless bool
+	protocol  string // negotiated upstream protocol, guarded by mu
 
 	handlers sync.WaitGroup // per-request tools/call handler goroutines
 }
@@ -381,6 +388,7 @@ func newGateway(cfg Config) (*gateway, error) {
 		inflight:    make(map[string]context.CancelFunc),
 		pendingRPC:  make(map[string]chan *mcp.Response),
 	}
+	g.audit = newAuditManager()
 	g.roots = &clientRoots{g: g}
 	g.savings = openSavings(resolver, log)
 	// Before the pool: poolOptions closes over downstreamDeps, which reads
@@ -403,6 +411,10 @@ func newGateway(cfg Config) (*gateway, error) {
 	// Registry: docs/flows.md — a load failure must not kill the gateway.
 	specs, regOK := g.loadRegistry(resolver)
 	g.specs = specs
+	// The ledger is strict for calls but not for discovery: an invalid key or
+	// unwritable directory leaves the gateway up and makes auditBegin refuse
+	// every tools/call before execution.
+	g.syncAudit()
 
 	// Skills over MCP: opt-in governance switch, read from the snapshot the
 	// registry load just applied (nil snapshot = no governance = off).
@@ -651,6 +663,11 @@ func (g *gateway) shutdown() {
 	if g.linkDone != nil {
 		<-g.linkDone
 	}
+	if g.audit != nil {
+		if err := g.audit.close(); err != nil {
+			g.log.Error("audit close failed", "error", err)
+		}
+	}
 	if g.pool != nil {
 		g.pool.Close() // derived instances first: they are extra connections
 	}
@@ -678,8 +695,21 @@ func (g *gateway) shutdown() {
 // reply writes one frame upstream; write failures are logged, not fatal to
 // the caller (a dead pipe surfaces as EOF in the read loop).
 func (g *gateway) reply(msg any) {
+	if res, ok := msg.(*mcp.Response); ok {
+		if err := g.auditFinishResponse(res); err != nil {
+			g.log.Error("audit finish failed; replacing tools/call response", "id", res.ID.String(), "error", err)
+			msg = mcp.NewErrorResponse(res.ID, auditRPCError(err))
+		}
+	}
 	if err := g.fw.WriteFrame(msg); err != nil {
 		g.log.Warn("upstream write failed", "error", err)
+	}
+}
+
+func auditRPCError(err error) *mcp.Error {
+	return &mcp.Error{
+		Code:    mcp.CodeInternalError,
+		Message: "tool call blocked because the access ledger could not be written: " + boundedAuditText(err.Error()),
 	}
 }
 

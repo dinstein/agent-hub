@@ -90,6 +90,7 @@ func (g *gateway) onRegistryChange(kind registry.DocKind) {
 		g.syncServers(snap)
 	}
 	if kind == registry.DocGovernance {
+		g.syncAudit()
 		// Call quotas are a governance field too (ratelimit.go). Rebuilding
 		// keeps a tightened limit from waiting for the next gateway restart;
 		// a rule set that no longer parses keeps the previous one (the
