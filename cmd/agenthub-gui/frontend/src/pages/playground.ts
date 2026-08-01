@@ -27,7 +27,7 @@
 
 import { CANCEL_CAVEAT, asCallError, hub, isCancelled } from "../bridge";
 import type { Cancellable } from "../bridge";
-import { clear, el, emptyState, loadingState, section } from "../dom";
+import { clear, el, emptyState, loadingState, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot } from "../page";
 import {
@@ -491,11 +491,11 @@ export function playgroundPage(): Page {
   let inFlight: Cancellable<ServerTestResult> | null = null;
   let ticker: number | undefined;
 
-  const connBox = el("div", {});
-  const toolBox = el("div", {});
-  const argsBox = el("div", {});
-  const runBox = el("div", {});
-  const resultBox = el("div", {});
+  const connBox = el("div", { class: "playground-connection" });
+  const toolBox = el("div", { class: "playground-tool" });
+  const argsBox = el("div", { class: "playground-arguments" });
+  const runBox = el("div", { class: "playground-run" });
+  const resultBox = el("div", { class: "playground-result" });
 
   // -- arguments -------------------------------------------------------------
 
@@ -991,7 +991,13 @@ export function playgroundPage(): Page {
   async function draw(): Promise<void> {
     if (!root) return;
     clear(root);
-    root.append(section("Playground", loadingState("Reading the server list…", 3)));
+    root.append(
+      pageHeader(
+        "Playground",
+        "Connect to one downstream server, inspect its real schema, and run a tool without wiring a client first.",
+      ),
+      loadingState("Reading the server list…", 3),
+    );
     try {
       servers = await hub.listServers();
       listError = null;
@@ -1003,44 +1009,65 @@ export function playgroundPage(): Page {
     clear(root);
 
     if (listError) {
-      root.append(section("Playground", failureState(listError, "the server list", () => void draw())));
+      root.append(
+        pageHeader(
+          "Playground",
+          "Connect to one downstream server, inspect its real schema, and run a tool without wiring a client first.",
+        ),
+        failureState(listError, "the server list", () => void draw()),
+      );
       return;
     }
     if ((servers ?? []).length === 0) {
       root.append(
-        section(
+        pageHeader(
           "Playground",
-          emptyState({
-            kind: "empty",
-            title: "No servers to test",
-            body:
-              "The playground calls a tool on a server this machine already knows about, and there are " +
-              "none registered yet.",
-            actions: [el("a", { class: "btn btn-primary", href: "#/servers", text: "Add a server" })],
-          }),
+          "Connect to one downstream server, inspect its real schema, and run a tool without wiring a client first.",
         ),
+        emptyState({
+          kind: "empty",
+          title: "No servers to test",
+          body:
+            "The playground calls a tool on a server this machine already knows about, and there are " +
+            "none registered yet.",
+          actions: [el("a", { class: "btn btn-primary", href: "#/servers", text: "Add a server" })],
+        }),
       );
       return;
     }
 
     root.append(
-      section(
+      pageHeader(
         "Playground",
-        el("p", {
-          class: "hint",
-          text:
-            "Connect to one server, look at what it really offers, and call a tool with arguments you " +
-            "choose. When something does not work inside a client, this is how you find out whether the " +
-            "server or the wiring is at fault.",
-        }),
-        slot.node,
-        picker(),
-        connBox,
-        toolBox,
-        argsBox,
-        runBox,
-        resultBox,
+        "Connect to one downstream server, inspect its real schema, and run a tool without wiring a client first.",
       ),
+      el("div", { class: "direct-test-banner" }, [
+        el("span", { class: "direct-test-label", text: "DIRECT DOWNSTREAM TEST" }),
+        el("span", {
+          text:
+            "This bypasses Client/Profile scope and global tool allow-lists. Success proves the server works; it does not prove a client is allowed to call it.",
+        }),
+      ]),
+      slot.node,
+      el("div", { class: "playground-picker" }, [picker()]),
+      el("div", { class: "playground-grid" }, [
+        el("section", { class: "playground-setup" }, [
+          el("div", { class: "workspace-label", text: "Setup and arguments" }),
+          connBox,
+          toolBox,
+          argsBox,
+          runBox,
+        ]),
+        el("section", { class: "playground-output" }, [
+          el("div", { class: "workspace-label", text: "Result" }),
+          resultBox,
+          el("div", { class: "result-placeholder" }, [
+            el("span", { class: "result-placeholder-mark", "aria-hidden": "true", text: "▷" }),
+            el("strong", { text: "Run a tool to inspect its response" }),
+            el("span", { text: "Tool output, timing and raw JSON will appear here." }),
+          ]),
+        ]),
+      ]),
     );
     if (serverId) void loadTools();
   }
