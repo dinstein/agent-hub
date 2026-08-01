@@ -14,7 +14,7 @@
 // in the write's `dangling` list so the page can say it out loud.
 
 import { hub, knownTools } from "../bridge";
-import { clear, el, empty, icon, pageHeader } from "../dom";
+import { clear, el, icon, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { failureBox, noticeSlot, runWrite } from "../page";
 import {
@@ -256,7 +256,7 @@ export function profilesPage(): Page {
     if (!active) {
       const ok = await confirmAction({
         title: "Clear the active profile?",
-        body: "Every client that does not name a profile itself falls back to seeing every registered server.",
+        body: "Every client without an explicit profile binding falls back to all enabled servers.",
         confirmLabel: "Clear",
         danger: true,
       });
@@ -337,6 +337,75 @@ export function profilesPage(): Page {
     ]);
   }
 
+  /** The CLI always heads profile listings with `(default)`. It is a display
+   *  row, not persisted configuration: it explains what an unbound client
+   *  resolves to before the operator creates or selects any named profile. */
+  function defaultProfileCard(pl: ProfileList): Node {
+    const active = pl.active;
+    const activeExists = active !== "" && pl.profiles.some((p) => p.name === active);
+    let cls = "access-card access-card-system";
+    let badgeClass = "badge badge-disabled";
+    let badge = "fallback";
+    let description = "The built-in route for clients without an explicit profile binding.";
+    let access = "Unknown";
+    let detail = "This daemon cannot report the active profile.";
+
+    if (!pl.active_known) {
+      badgeClass = "badge badge-degraded";
+      badge = "status unknown";
+    } else if (active === "") {
+      cls += " access-card-effective";
+      badgeClass = "badge badge-healthy";
+      badge = "in effect";
+      access = "All enabled servers";
+      detail = "Global per-server tool rules still apply. Disabled servers remain unavailable.";
+    } else if (activeExists) {
+      badgeClass = "badge badge-healthy";
+      badge = `follows ${active}`;
+      access = `Profile “${active}”`;
+      detail = "Its member-server and tool selectors narrow the enabled server set.";
+    } else {
+      cls += " access-card-broken";
+      badgeClass = "badge badge-unhealthy";
+      badge = "broken reference";
+      description = `The active profile “${active}” no longer exists.`;
+      access = "No servers";
+      detail = "Unbound clients fail closed until the active profile is cleared or replaced.";
+    }
+
+    return el("article", { class: cls }, [
+      el("div", { class: "access-card-head" }, [
+        el("div", {}, [
+          el("div", { class: "access-title-row" }, [
+            el("span", { class: "access-default-mark", text: "D" }),
+            el("strong", { class: "access-title mono", text: "(default)" }),
+            el("span", { class: badgeClass, text: badge }),
+            el("span", { class: "id-chip", text: "built-in" }),
+          ]),
+          el("div", { class: "muted", text: description }),
+        ]),
+      ]),
+      el("div", { class: "access-card-grid" }, [
+        el("section", { class: "access-rule" }, [
+          el("div", { class: "access-rule-label", text: "Used by" }),
+          el("div", { class: "access-rule-value", text: "Every unbound client" }),
+          el("span", {
+            class: "hint",
+            text: "A client with its own profile binding does not use this fallback.",
+          }),
+        ]),
+        el("section", { class: "access-rule" }, [
+          el("div", { class: "access-rule-label", text: "Effective access" }),
+          el("div", {
+            class: `access-rule-value${pl.active_known && active !== "" && !activeExists ? " danger" : ""}`,
+            text: access,
+          }),
+          el("span", { class: "hint", text: detail }),
+        ]),
+      ]),
+    ]);
+  }
+
   async function draw(): Promise<void> {
     if (!root) return;
     try {
@@ -367,17 +436,23 @@ export function profilesPage(): Page {
           text: "Profiles can only narrow what a server already exposes. An empty selection is deliberately block-all, never “no rule”.",
         }),
       ]),
-      list.profiles.length === 0
-        ? empty("No profiles configured. Without one, every client sees every registered server.")
-        : el("div", { class: "access-card-list" }, list.profiles.map((p) => profileCard(p, active))),
-      el("p", {
-        class: "hint page-footnote",
-        text: list.active_known
-          ? active
-            ? `Clients that do not name a profile follow “${active}”.`
-            : "No default profile: clients that do not name one see every registered server."
-          : "This daemon cannot report the default profile at all — which is not the same as there being none.",
-      }),
+      el("div", { class: "access-card-list" }, [
+        defaultProfileCard(list),
+        el("div", { class: "profile-list-divider" }, [
+          el("span", { text: "Named profiles" }),
+          el("span", { class: "meta", text: String(list.profiles.length) }),
+        ]),
+        list.profiles.length === 0
+          ? el("div", { class: "named-profile-empty" }, [
+              el("strong", { text: "No named profiles yet" }),
+              el("span", {
+                class: "muted",
+                text: "The built-in default above is already usable; create a named profile when a client needs a narrower view.",
+              }),
+            ])
+          : null,
+        ...list.profiles.map((p) => profileCard(p, active)),
+      ]),
     );
   }
 

@@ -67,6 +67,13 @@ path/binary overrides remain explicit CLI operations. Read-only formats use the 
 return their authoritative manual setup instructions instead of opening a configuration form the daemon
 cannot apply.
 
+Profiles begin with the same virtual `(default)` row that the CLI prints. It is explanatory state,
+not an object in `profiles[]`: an unbound client follows the active named profile when one exists,
+and otherwise reaches all enabled servers subject to global per-server tool rules. A dangling active
+profile is shown as a broken reference and an empty effective scope, preserving the runtime's
+fail-closed behavior. Keeping this row visible even when named profiles exist answers the page's
+first question — what an unbound client can reach — without making the user infer it from a footnote.
+
 The server editor is transport-shaped, not a union of every possible field. `stdio` shows the local
 process contract (`command`, arguments, environment, working directory and optional container runtime);
 `http` and `sse` show the remote endpoint contract (`url`, headers and provenance). Enabled, OAuth hints
