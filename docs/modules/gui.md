@@ -37,6 +37,22 @@ of overview chips sits at the top (`20 servers · 13 connected · 1 needs attent
 **a chip whose count is zero simply doesn't appear** (`chip()` in `dom.ts` returns `null` for 0, and
 `chipRow` drops it). "0 needs attention" is noise, not information.
 
+### 1.1 Window and page geometry
+
+The desktop window opens at **1240 × 800** with a **900 × 620** minimum. The former leaves a useful
+content column beside the persistent navigation without turning every row into a full-screen strip;
+the latter is the smallest size at which navigation, a two-column form, and its actions can still be
+read without relying on accidental horizontal scrolling. Responsive rules may stack information
+inside that boundary, but they do not hide the navigation.
+
+Geometry follows three shared lines rather than page-local guesses:
+
+- the page heading, toolbar, notices, cards, and empty state share one left and right content edge;
+- ordinary buttons, text inputs, and selects share one control height, while compact row actions use
+  the one documented small variant;
+- record content stays next to its state and actions. A flexible middle column may absorb spare width,
+  but metadata or a button must not be pushed across an empty card merely to occupy both edges.
+
 ---
 
 ## 2. State is the action

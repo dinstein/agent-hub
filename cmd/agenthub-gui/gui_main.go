@@ -64,10 +64,10 @@ func main() {
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      "main",
 		Title:     "agenthub",
-		Width:     1100,
-		Height:    760,
-		MinWidth:  720,
-		MinHeight: 480,
+		Width:     1240,
+		Height:    800,
+		MinWidth:  900,
+		MinHeight: 620,
 		URL:       "/",
 	})
 
