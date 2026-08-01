@@ -59,6 +59,10 @@ Geometry follows three shared lines rather than page-local guesses:
 - record content stays next to its state and actions. A flexible middle column may absorb spare width,
   but metadata or a button must not be pushed across an empty card merely to occupy both edges.
 
+The native window title is blank. The sidebar is the single visible product identity: `AgentHub`
+with the release-plus-commit version stamped into this GUI build. That value comes from the process,
+not the connected daemon, because the two may legitimately be different builds.
+
 Buttons never translate or scale on hover or press. Moving a compact control by one pixel makes it
 jump against aligned neighbours, while scaling briefly softens its label in the webview. Hover uses a
 small tone and shadow change; press deepens the tone while keeping the shadow direction; keyboard focus
@@ -86,6 +90,8 @@ and otherwise reaches all enabled servers subject to global per-server tool rule
 profile is shown as a broken reference and an empty effective scope, preserving the runtime's
 fail-closed behavior. Keeping this row visible even when named profiles exist answers the page's
 first question — what an unbound client can reach — without making the user infer it from a footnote.
+Creating a named profile opens a focused modal: the profile list remains stable underneath while the
+operator names the profile and chooses the three-state member-server boundary.
 
 The server editor is transport-shaped, not a union of every possible field. `stdio` shows the local
 process contract (`command`, arguments, environment, working directory and optional container runtime);
