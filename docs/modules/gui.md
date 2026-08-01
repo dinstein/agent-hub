@@ -59,6 +59,11 @@ Geometry follows three shared lines rather than page-local guesses:
 - record content stays next to its state and actions. A flexible middle column may absorb spare width,
   but metadata or a button must not be pushed across an empty card merely to occupy both edges.
 
+Buttons never translate or scale on hover or press. Moving a compact control by one pixel makes it
+jump against aligned neighbours, while scaling briefly softens its label in the webview. Hover uses a
+small tone and shadow change; press removes depth with an inset shadow; keyboard focus uses a translucent
+outer halo rather than a second solid border. The three states remain distinct without moving geometry.
+
 The Clients page keeps **file capability** and **connection state** separate. `writable`/`read-only`
 describes whether AgentHub may rewrite a configuration file; it says nothing about whether that file
 already contains AgentHub's gateway. Connection state comes only from the per-client Inspect endpoint.
