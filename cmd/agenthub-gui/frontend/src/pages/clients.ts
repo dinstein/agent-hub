@@ -1,11 +1,11 @@
 // Clients page: detecting AI clients on this machine and wiring them to the
 // gateway.
 //
-// Detection reports STATS ONLY — never file content. On macOS, reading
-// another application's configuration triggers a privacy prompt, and a bulk
-// scan that prompts a dozen times is worse than no scan at all. Content is
-// read only by the single-client actions, where a prompt is expected and
-// explainable.
+// Detection reports STATS ONLY — never file content. The page follows that
+// metadata pass with one inspection per detected client so its first frame of
+// useful data already answers which clients are connected. Inspections stay
+// sequential: on macOS a protected configuration may trigger a privacy
+// prompt, and piling several prompts on top of each other is unusable.
 //
 // A location that exists but may not be inspected is rendered as its own
 // state, never folded into "not found": "the client is not installed" and
@@ -13,7 +13,7 @@
 // remediation text for the second one.
 
 import { hub } from "../bridge";
-import { clear, el, empty, icon, pageHeader, relTime } from "../dom";
+import { clear, el, empty, icon, loadingState, pageHeader, relTime } from "../dom";
 import type { Page } from "../page";
 import { failureBox, noticeSlot } from "../page";
 import { button, checkboxInput, confirmAction, controls, field, selectInput, textInput } from "../ui";
@@ -49,7 +49,8 @@ export function clientsPage(): Page {
   let detected: ClientDetectResult | null = null;
   let detectError: unknown = null;
   let target = "";
-  let checkingAll = false;
+  let refreshing = false;
+  let refreshRun = 0;
   const inspections = new Map<string, InspectionCheck>();
 
   async function connect(
@@ -282,16 +283,6 @@ export function clientsPage(): Page {
     renderPage();
   }
 
-  async function inspectAll(): Promise<void> {
-    if (checkingAll) return;
-    checkingAll = true;
-    renderPage();
-    const ids = [...new Set((detected?.found ?? []).map((c) => c.client))];
-    for (const id of ids) await inspectOne(id);
-    checkingAll = false;
-    renderPage();
-  }
-
   // supportedHint renders the line under the table. It used to read
   // "Directly supported: <every id>", which named codex, continue and
   // open-webui as directly handled while their own rows carried a "read-only"
@@ -313,19 +304,15 @@ export function clientsPage(): Page {
   function renderPage(): void {
     if (!root) return;
     clear(root);
-    const checkAll = button(checkingAll ? "Checking connections…" : "Check connections", "btn btn-primary", () => {
-      void inspectAll();
+    const refreshButton = button(refreshing ? "Refreshing…" : "Refresh", "btn btn-primary", () => {
+      void refresh();
     });
-    checkAll.disabled = checkingAll || (detected?.found ?? []).length === 0;
+    refreshButton.disabled = refreshing;
     root.append(
       pageHeader(
         "Clients",
         "Discover MCP-capable apps on this machine and connect each one to AgentHub.",
-        checkAll,
-        button("Re-scan", "btn", () => {
-          inspections.clear();
-          void draw();
-        }),
+        refreshButton,
       ),
       slot.node,
       target ? connectForm(target) : el("span", {}),
@@ -334,20 +321,22 @@ export function clientsPage(): Page {
         el("span", { class: "privacy-note-mark" }, [icon("privacy")]),
         el("span", {
           text:
-            "Discovery reads file metadata only. Use Check connections to read configuration contents " +
-            "and identify AgentHub-owned entries.",
+            "Refresh scans client metadata, then reads each detected configuration in sequence " +
+            "to identify AgentHub-owned entries.",
         }),
       ]),
       detectError
         ? failureBox(detectError)
-        : (detected?.found ?? []).length === 0
-          ? empty("No client configuration found on this machine.")
-          : el("div", { class: "client-card-list" }, (detected?.found ?? []).map(clientCard)),
+        : detected === null
+          ? loadingState("Discovering clients…", 4)
+          : detected.found.length === 0
+            ? empty("No client configuration found on this machine.")
+            : el("div", { class: "client-card-list" }, detected.found.map(clientCard)),
       detected ? supportedHint(detected) : el("span", {}),
     );
   }
 
-  async function draw(): Promise<void> {
+  async function draw(render = true): Promise<void> {
     if (!root) return;
     try {
       const answer = await hub.detectClients();
@@ -361,15 +350,51 @@ export function clientsPage(): Page {
       detectError = e;
       detected = null;
     }
+    if (render) renderPage();
+  }
+
+  async function refresh(): Promise<void> {
+    if (!root || refreshing) return;
+    const run = ++refreshRun;
+    refreshing = true;
     renderPage();
+    try {
+      await draw(false);
+      if (!root || run !== refreshRun) return;
+      const ids = [...new Set((detected?.found ?? []).map((c) => c.client))];
+      inspections.clear();
+      for (const id of ids) inspections.set(id, { phase: "checking" });
+      renderPage();
+      for (const id of ids) {
+        try {
+          const value = await hub.inspectClient(id);
+          if (!root || run !== refreshRun) return;
+          inspections.set(id, { phase: "ready", value });
+        } catch (err) {
+          if (!root || run !== refreshRun) return;
+          inspections.set(id, {
+            phase: "failed",
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+        renderPage();
+      }
+    } finally {
+      if (run === refreshRun) {
+        refreshing = false;
+        renderPage();
+      }
+    }
   }
 
   return {
     render(node) {
       root = node;
-      return draw();
+      return refresh();
     },
     dispose() {
+      refreshRun += 1;
+      refreshing = false;
       root = null;
       target = "";
       clear(preview);

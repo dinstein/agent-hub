@@ -56,11 +56,12 @@ Geometry follows three shared lines rather than page-local guesses:
 The Clients page keeps **file capability** and **connection state** separate. `writable`/`read-only`
 describes whether AgentHub may rewrite a configuration file; it says nothing about whether that file
 already contains AgentHub's gateway. Connection state comes only from the per-client Inspect endpoint.
-The page never opens every client file merely because it was visited: rows begin as `Not checked`, and
-an explicit row check or `Check connections` action performs those reads. Once checked, the row shows
-`Connected`, `Not connected`, `Manual setup`, or a visible read failure, and only a connected row offers
-Disconnect. This preserves the macOS privacy boundary while avoiding the old pair of Connect and
-Disconnect buttons that appeared simultaneously for every client and claimed no state at all.
+Entering the page performs a metadata scan and then inspects each detected client in sequence, so the
+first settled view already shows `Connected`, `Not connected`, `Manual setup`, or a visible read failure;
+the single `Refresh` action repeats both passes. Inspections stay sequential because protected files may
+raise a macOS privacy prompt and concurrent prompts would obscure which client requested access. Only a
+connected row offers Disconnect, avoiding the old pair of Connect and Disconnect buttons that appeared
+simultaneously for every client and claimed no state at all.
 
 The server editor is transport-shaped, not a union of every possible field. `stdio` shows the local
 process contract (`command`, arguments, environment, working directory and optional container runtime);
