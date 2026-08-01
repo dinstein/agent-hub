@@ -225,10 +225,13 @@ Two rules on it, both easy to undo by accident:
 
 The server overview is one keyboard-focusable disclosure target. Its chevron and `aria-expanded` state make the
 toggle explicit: one activation reveals the latest cached self-test detail underneath and the next collapses it.
-Expansion never performs I/O. Editing is a separate, always-visible **Edit** button in the action column, so a
-click whose visible affordance says “show me more” cannot unexpectedly open a write surface. The leading enable
-switch and trailing Edit / Test controls remain separate targets and never bubble into the disclosure. Destructive
-Remove sits in a compact overflow menu: it stays available without painting every healthy row as a red warning.
+Expansion never performs I/O and occupies a separate grid row, so the original title, switch, status and actions
+do not move or vertically centre against the added content. Editing is a separate, always-visible **Edit** button
+in the action column, so a click whose visible affordance says “show me more” cannot unexpectedly open a write
+surface. The leading enable switch and trailing Edit / Test controls remain separate targets and never bubble into
+the disclosure. Destructive Remove sits in a compact overflow menu: it stays available without painting every
+healthy row as a red warning. A successful enable/disable writes no page-level notice because the switch and the
+row's own probe already show the stored and runtime outcomes; failures keep the shared error surface.
 
 The action column is deliberately compact. It may contain only the distilled status or direct health
 action plus the row controls; daemon detail, HTTP responses and recovery instructions live behind a

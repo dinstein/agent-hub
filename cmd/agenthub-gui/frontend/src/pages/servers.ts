@@ -1493,10 +1493,16 @@ export function serversPage(): Page {
    *  authentication error code rather than being inferred from prose, and
    *  the resulting button starts the same login session as the row status
    *  action. */
-  async function probeAfterWrite(id: string, changed: string): Promise<void> {
+  async function probeAfterWrite(
+    id: string,
+    changed: string,
+    announceSuccess = true,
+  ): Promise<void> {
     try {
       const res = await probeOne(id);
-      slot.say(`${id} ${changed}; connection check passed with ${res.tool_count} tool(s).`);
+      if (announceSuccess) {
+        slot.say(`${id} ${changed}; connection check passed with ${res.tool_count} tool(s).`);
+      }
     } catch (err) {
       if (authenticationRequired(err)) {
         // The row is the single authentication surface. Do not create a
@@ -1617,14 +1623,16 @@ export function serversPage(): Page {
       slot.fail(err);
       return;
     }
+    // The switch already shows the stored answer. A second success notice
+    // only repeats the state while pushing the fleet down the page.
+    slot.clear();
     await draw();
     if (next) {
-      await probeAfterWrite(s.id, "enabled");
+      await probeAfterWrite(s.id, "enabled", false);
     } else {
       probes.delete(s.id);
       probeCache.delete(s.id);
       probeVersions.set(s.id, (probeVersions.get(s.id) ?? 0) + 1);
-      slot.say(`${s.id} disabled.`);
     }
   }
 
@@ -1760,10 +1768,7 @@ export function serversPage(): Page {
           onChange: () => toggle(s),
         }),
       ]),
-      el("div", { class: "rec-body" }, [
-        overview,
-        expanded ? probeDetails(s, detailID) : null,
-      ]),
+      el("div", { class: "rec-body" }, [overview]),
       el("div", { class: "rec-act" }, [
         statusCell(s),
         controls(
@@ -1772,6 +1777,7 @@ export function serversPage(): Page {
           rowMenu(s),
         ),
       ]),
+      expanded ? probeDetails(s, detailID) : null,
     ]);
   }
 

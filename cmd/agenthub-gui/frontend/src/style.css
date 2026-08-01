@@ -3735,6 +3735,35 @@ details.adv[open] > summary::before {
   grid-template-columns: 3px auto minmax(0, 1fr) auto;
 }
 
+/* An expanded server keeps its original row intact. The disclosure occupies
+ * a second grid row under the title/actions instead of making the first row
+ * taller and vertically centring its switch and buttons beside diagnostics. */
+.rec.has-lead > .spine {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+
+.rec.has-lead > .rec-lead {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.rec.has-lead > .rec-body {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.rec.has-lead > .rec-act {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+.rec.has-lead > .server-probe-detail {
+  grid-column: 3 / 5;
+  grid-row: 2;
+  margin: 0 var(--space-6) var(--space-5) 0;
+}
+
 .rec-lead {
   display: flex;
   align-items: center;

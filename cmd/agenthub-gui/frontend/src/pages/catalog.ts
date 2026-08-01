@@ -526,7 +526,6 @@ export function catalogPage(): Page {
       pageHeader(
         "Catalog",
         "Discover definitions AgentHub already knows how to validate and store.",
-        el("a", { class: "btn", href: "#/servers", text: "Add manually" }),
       ),
       el("div", { class: "catalog-note" }, [
         el("span", { class: "catalog-note-icon", "aria-hidden": "true", text: "i" }),
