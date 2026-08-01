@@ -69,7 +69,7 @@ func eventIntoSummary(out *api.AuditCallSummary, e accesslog.Event) {
 	}
 	if e.Kind == accesslog.EventFinished {
 		out.Complete = true
-		out.Outcome, out.DurationMs, out.Code, out.Error = e.Outcome, e.DurationMs, e.Code, e.Error
+		out.Outcome, out.DurationMs, out.Code = e.Outcome, e.DurationMs, e.Code
 		out.ResultCapture = e.ResultCapture
 	}
 }
@@ -201,6 +201,9 @@ func (s *Server) handleAuditCall(w http.ResponseWriter, r *http.Request, id stri
 	out := api.AuditCallDetail{}
 	for _, e := range events {
 		eventIntoSummary(&out.AuditCallSummary, e)
+		if e.Kind == accesslog.EventFinished {
+			out.Error = e.Error
+		}
 		out.Events = append(out.Events, auditEventView(e))
 	}
 	keys := &auditKeyCache{ctx: r.Context(), vault: s.opts.NonRegistry.AuditKeys, keys: map[string][]byte{}}

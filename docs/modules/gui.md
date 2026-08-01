@@ -15,14 +15,14 @@ item 3.
 ## 1. Information architecture: a short task spine, then state inside each page
 
 The sidebar started life as a one-to-one mapping of the CLI command tree — fourteen resource tables
-laid out along the domain model. It now has six task destinations: Servers, Catalog, Playground,
-Profiles, Clients and Settings. Catalog is deliberately first-class and immediately follows Servers:
+laid out along the domain model. It now has seven task destinations: Servers, Catalog, Playground,
+Profiles, Clients, Activity and Settings. Catalog is deliberately first-class and immediately follows Servers:
 the two are the configured and discoverable halves of the same task. Credentials live with the
 server that uses them, client bindings live with Clients, and appearance/daemon diagnostics live in
-Settings. A resource can still have a direct hash route without taking permanent navigation space.
-Activity is intentionally deferred from this first pass rather than represented by a decorative,
-partial page: when it returns, its source of truth must cover every gateway-to-server call and the
-aggregates must reconcile with those records. Tokens and a separate Governance destination are also
+Settings. Activity sits under System because it is the operator's evidence and maintenance workspace,
+not a permission layer: its source of truth is the encrypted access ledger covering every
+gateway-to-server call, and its aggregates are computed from those same lifecycle records. A resource
+can still have a direct hash route without taking permanent navigation space. Tokens and a separate Governance destination are also
 outside this navigation until they own a concrete task that is not already expressed by server,
 profile, and client configuration.
 
@@ -113,6 +113,16 @@ omitted rather than encoded as an empty value. A rejected field receives both an
 focus. Tool text that parses as JSON opens in Pretty mode with a reversible Raw view, while arbitrary
 text is left untouched. The raw daemon result remains a separate diagnostic disclosure because tool
 content and transport metadata answer different questions.
+
+Activity is one page with three focused views rather than three navigation destinations. **Calls** joins
+the received/routed/finished lifecycle into one compact row; the collection endpoint returns metadata
+only and never exposes payload references. Clicking anywhere on the row is the disclosure action: the
+detail drawer immediately loads decrypted Request, Effective arguments, and Result previews, with no
+second "decrypt" ritual. The drawer says that this is a local decrypted view and the page drops those
+strings when it closes. Valid JSON opens pretty and can be switched to Raw. **Insights** aggregates the
+same bounded time range by outcome, client, server, and tool. **Ledger** owns capture status, footprint,
+integrity verification, retention cleanup, and key rotation. Pausing capture is a direct reversible
+action and never deletes history or keys.
 
 ---
 

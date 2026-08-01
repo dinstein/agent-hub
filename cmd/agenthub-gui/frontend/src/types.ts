@@ -807,6 +807,121 @@ export interface TopicEvent<T = unknown> {
   payload?: T;
 }
 
+// ---------------------------------------------------------------------------
+// Encrypted access ledger
+// ---------------------------------------------------------------------------
+
+export interface AuditUsage {
+  bytes: number;
+  days: number;
+  eventFiles: number;
+  packFiles: number;
+}
+
+export interface AuditStatus {
+  generation: number;
+  enabled: boolean;
+  arguments: string;
+  results: string;
+  resultBytes: number;
+  durability: string;
+  retentionDays: number;
+  maxBytes: number;
+  minFreeBytes: number;
+  pressure: string;
+  keyId?: string;
+  storage: AuditUsage;
+}
+
+export interface AuditCallSummary {
+  callId: string;
+  time: string;
+  client?: string;
+  face?: string;
+  exposedTool?: string;
+  server?: string;
+  tool?: string;
+  outcome?: string;
+  durationMs?: number;
+  code?: string;
+  resultCapture?: string;
+  complete: boolean;
+}
+
+export interface AuditCalls {
+  since?: string;
+  calls: AuditCallSummary[];
+  skippedMalformed: number;
+}
+
+export interface AuditEvent {
+  time: string;
+  event: string;
+  requestId?: string;
+  session?: string;
+  policyRev?: number;
+  server?: string;
+  tool?: string;
+  outcome?: string;
+  durationMs?: number;
+  gate?: string;
+  rule?: string;
+  code?: string;
+  error?: string;
+  toolError?: boolean;
+}
+
+export interface AuditPayload {
+  text?: string;
+  bytes?: number;
+  truncated?: boolean;
+}
+
+export interface AuditCallDetail extends AuditCallSummary {
+  events: AuditEvent[];
+  error?: string;
+  request: AuditPayload;
+  effectiveArguments: AuditPayload;
+  result: AuditPayload;
+}
+
+export interface AuditStats {
+  since?: string;
+  events: number;
+  calls: number;
+  incomplete: number;
+  skippedMalformed: number;
+  payloadRawBytes: number;
+  payloadStoredBytes: number;
+  outcomes: Record<string, number>;
+  clients: Record<string, number>;
+  servers: Record<string, number>;
+  tools: Record<string, number>;
+}
+
+export interface AuditVerify {
+  ok: boolean;
+  events: number;
+  payloads: number;
+  skippedMalformed: number;
+  failures: number;
+  issues?: string[];
+}
+
+export interface AuditPrune {
+  dryRun: boolean;
+  before: string;
+  days: number;
+  bytes: number;
+  names?: string[];
+}
+
+export interface AuditKeyRotation {
+  previousKeyId: string;
+  keyId: string;
+  enabled: boolean;
+}
+
 /** Remember scopes accepted by Answer (api.Remember*). */
 export const Remember = {
   None: "none",

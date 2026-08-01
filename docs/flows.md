@@ -375,3 +375,8 @@ Metadata is independently HMAC-authenticated and payloads use XChaCha20-Poly1305
 edits, corruption, and reference substitution; it does not prove that a complete partition was deleted. That stronger
 claim needs an immutable anchor outside the same local directory. Key rotation stores keys by immutable key id and
 keeps historical keys, so retained partitions stay verifiable and decryptable.
+
+The GUI's Activity list and Insights view consume metadata only. Selecting one call is the explicit
+disclosure boundary: the daemon resolves that call's key ids, decrypts bounded previews of its request,
+effective arguments, and result, and marks the response `no-store`. The frontend displays them immediately
+— there is no separate decrypt button — and removes the payload-bearing drawer from the DOM on close.

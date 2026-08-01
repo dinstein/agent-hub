@@ -22,6 +22,13 @@
 
 import { Browser, Call, Clipboard, Events } from "@wailsio/runtime";
 import type {
+  AuditCallDetail,
+  AuditCalls,
+  AuditKeyRotation,
+  AuditPrune,
+  AuditStats,
+  AuditStatus,
+  AuditVerify,
   AuthLoggedOut,
   AuthLogin,
   AuthRefreshed,
@@ -112,6 +119,27 @@ export const hub = {
   status: () => call<Status>("Status"),
   /** Force a connection attempt, starting the daemon if necessary. */
   connect: () => call<Status>("Connect"),
+
+  // -- encrypted access ledger ---------------------------------------------
+  auditStatus: () => call<AuditStatus>("AuditStatus"),
+  auditCalls: (
+    sinceMillis: number,
+    limit: number,
+    client = "",
+    server = "",
+    tool = "",
+    outcome = "",
+  ) => call<AuditCalls>("AuditCalls", sinceMillis, limit, client, server, tool, outcome),
+  /** Selecting a row is the disclosure action: payload previews are returned
+   *  immediately, with no second decrypt control. */
+  auditCall: (id: string) => call<AuditCallDetail>("AuditCall", id),
+  auditStats: (sinceMillis: number) => call<AuditStats>("AuditStats", sinceMillis),
+  setAuditEnabled: (enabled: boolean, generation: number) =>
+    call<AuditStatus>("SetAuditEnabled", enabled, generation),
+  rotateAuditKey: (generation: number) =>
+    call<AuditKeyRotation>("RotateAuditKey", generation),
+  verifyAudit: () => call<AuditVerify>("VerifyAudit"),
+  pruneAudit: (dryRun: boolean) => call<AuditPrune>("PruneAudit", dryRun),
 
   // -- servers --------------------------------------------------------------
   listServers: () => call<Server[]>("ListServers"),

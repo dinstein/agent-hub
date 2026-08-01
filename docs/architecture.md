@@ -283,7 +283,7 @@ flowchart LR
         GW --> A6["audit/YYYY-MM-DD/<br/>authenticated metadata + encrypted payload packs"]
         A3 -.->|"agenthub activity<br/>(a plain file read, works offline)"| F["CLI / GUI"]
         A4 -.->|"agenthub server logs"| F
-        A6 -.->|"agenthub audit<br/>(offline reads; payloads opt-in)"| F
+        A6 -.->|"agenthub audit (offline)<br/>GUI Activity (selected-call detail)"| F
     end
 ```
 

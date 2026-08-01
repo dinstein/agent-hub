@@ -46,7 +46,6 @@ type AuditCallSummary struct {
 	Outcome       string    `json:"outcome,omitempty"`
 	DurationMs    int64     `json:"durationMs,omitempty"`
 	Code          string    `json:"code,omitempty"`
-	Error         string    `json:"error,omitempty"`
 	ResultCapture string    `json:"resultCapture,omitempty"`
 	Complete      bool      `json:"complete"`
 }
@@ -85,6 +84,7 @@ type AuditPayload struct {
 type AuditCallDetail struct {
 	AuditCallSummary
 	Events             []AuditEvent `json:"events"`
+	Error              string       `json:"error,omitempty"`
 	Request            AuditPayload `json:"request"`
 	EffectiveArguments AuditPayload `json:"effectiveArguments"`
 	Result             AuditPayload `json:"result"`

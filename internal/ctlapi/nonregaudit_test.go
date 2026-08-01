@@ -120,6 +120,13 @@ func TestAuditListIsMetadataOnlyAndDetailDecryptsImmediately(t *testing.T) {
 	if stats.Calls != 1 || stats.Outcomes["success"] != 1 || stats.PayloadRaw == 0 {
 		t.Fatalf("stats = %+v", stats)
 	}
+	verified, err := client.Audit.Verify(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !verified.OK || verified.Events != 3 || verified.Payloads != 3 {
+		t.Fatalf("verify = %+v", verified)
+	}
 }
 
 func TestAuditEnableCreatesKeyAndCanDisable(t *testing.T) {
@@ -140,11 +147,22 @@ func TestAuditEnableCreatesKeyAndCanDisable(t *testing.T) {
 	if !enabled.Enabled || enabled.KeyID == "" || len(vault.stored) != 2 {
 		t.Fatalf("enabled = %+v, stored keys = %d", enabled, len(vault.stored))
 	}
-	disabled, err := client.Audit.SetEnabled(t.Context(), false, enabled.Generation)
+	rotated, err := client.Audit.RotateKey(t.Context(), enabled.Generation)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if disabled.Enabled || len(vault.stored) != 2 {
+	if rotated.PreviousKeyID != enabled.KeyID || rotated.KeyID == enabled.KeyID || len(vault.stored) != 3 {
+		t.Fatalf("rotated = %+v, stored keys = %d", rotated, len(vault.stored))
+	}
+	status, err = client.Audit.Status(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled, err := client.Audit.SetEnabled(t.Context(), false, status.Generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disabled.Enabled || len(vault.stored) != 3 {
 		t.Fatalf("disabled = %+v, stored keys = %d", disabled, len(vault.stored))
 	}
 }

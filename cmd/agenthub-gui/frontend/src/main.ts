@@ -13,6 +13,7 @@ import type { Page } from "./page";
 import { failureBox } from "./page";
 import { initTheme } from "./ui";
 import { authPage } from "./pages/auth";
+import { activityPage } from "./pages/activity";
 import { catalogPage } from "./pages/catalog";
 import { clientsPage } from "./pages/clients";
 import { configPage } from "./pages/config";
@@ -30,6 +31,7 @@ import type { Status } from "./types";
 
 type Route =
   | "onboarding"
+  | "activity"
   | "playground"
   | "servers"
   | "catalog"
@@ -45,6 +47,7 @@ type Route =
   | "settings";
 
 const ROUTES: Record<Route, () => Page> = {
+  activity: activityPage,
   onboarding: onboardingPage,
   playground: playgroundPage,
   servers: serversPage,

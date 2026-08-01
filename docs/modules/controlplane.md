@@ -59,7 +59,7 @@ integrations talk to the daemon through it.
 `DialOrStart(ctx)`. It swaps `http.Client`'s `DialContext` for a `unix` dialer and uses a fake host
 `http://agenthub` in URLs, since the hostname is never resolved. Every capability hangs off a typed
 resource service — `Servers`, `Sessions`, `Events`, `Skills`, `Profiles`, `Scope`, `Config`,
-`Secrets`, `Tokens`, `Clients`, `Auth`, `Catalog`, `Parse`. **There is no raw request escape hatch**
+`Secrets`, `Tokens`, `Clients`, `Auth`, `Catalog`, `Parse`, `Audit`. **There is no raw request escape hatch**
 — deliberately: anything a frontend can do necessarily corresponds to an endpoint, and therefore is
 necessarily something the CLI can do too, so "the GUI is optional" is structural rather than a
 promise. The count is deliberately not written down here: it moves with the endpoint set, and a
@@ -344,6 +344,22 @@ filtered down — and a frontend given only that list labels it "writable", whic
 carrying their own read-only badge. `PATCH /v1/skills/{id}` exposes **only** the coarse library-level switch.
 `POST /v1/parse/client-config` is read-only: it produces an entry **preview** and writes nothing.
 
+The encrypted access ledger also enters through this face, with one deliberate split. `GET /v1/audit/calls`
+and `/stats` read metadata records only, aggregate lifecycle events by the opaque `callId`, and never
+return payload references or event error strings. `GET /v1/audit/calls/{id}` is the explicit single-call
+disclosure: it resolves immutable key ids in the daemon's vault and returns Request, Effective arguments,
+and Result immediately with `Cache-Control: no-store`. Each rendered payload is capped to a 512 KiB preview
+and says when it was truncated, keeping the control plane's 16 MiB non-streaming response bound intact.
+The GUI discards the response when its drawer closes. Status and metadata remain available with only an
+audit root; detail, verification, enablement and rotation additionally require the key vault, and a missing
+collaborator keeps those routes uniformly unavailable rather than guessing a directory or key source.
+
+`PUT /v1/audit/enabled` and `POST /v1/audit/rotate-key` are registry writes and therefore carry the same
+generation precondition as every other GUI registry edit. They still land on `confops.SetAuditEnabled` /
+`SetAuditKeyID`; key bytes are persisted before the registry points at their public id and never cross the
+wire. Verification authenticates every event and referenced payload. Pruning removes only complete expired
+UTC partitions according to the effective retention policy; its dry-run and applying forms share one route.
+
 ---
 
 ## internal/confops
@@ -551,9 +567,9 @@ attempt frequency and never mask the fact that this token needs renewal.
 **The crash marker is armed after a successful bind and resolved only on the graceful shutdown branch**, so an
 abrupt death leaves it armed and the next start can tell a crash from a clean exit.
 
-**The non-registry collaborators are all optional.** Credentials, skills, agent tokens, client adapters, and OAuth
-state each log and continue on failure rather than refusing to start: a vault that won't open costs only the
-secrets endpoints while everything else keeps coordinating.
+**The non-registry collaborators are all optional.** Credentials, skills, agent tokens, client adapters, OAuth
+state, and the audit root/key reader each log and continue on failure rather than refusing to start: a vault
+that won't open costs its secrets, audit detail and key-lifecycle endpoints while everything else keeps coordinating.
 
 **What the runtime state source is wired to**: a single `ctlapi.NewGatewayStates()` object is injected as both
 `Options.States` (read) and `Options.ServerReports` (write). The daemon **connects to no downstream while the data plane
