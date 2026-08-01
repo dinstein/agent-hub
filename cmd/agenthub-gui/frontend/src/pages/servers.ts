@@ -1502,6 +1502,28 @@ export function serversPage(): Page {
     // over the network rather than run here. Same convention as the Catalog
     // ledger, because it is the same distinction.
     const remote = s.transport === Transport.HTTP || s.transport === Transport.SSE;
+    const overview = el("button", {
+      class: "rec-overview",
+      type: "button",
+      "aria-label": `Edit ${s.id}`,
+      title: `Edit ${s.id}`,
+    }, [
+      el("span", { class: "rec-title" }, [
+        el("span", { class: "rec-name", text: s.id }),
+        // Metadata is NEUTRAL: a green "stdio" next to a green health dot
+        // would put two unrelated greens on one row (see style.css).
+        el("span", { class: "id-chip", text: s.transport || "stdio" }),
+        // Where the definition came from. The invocation would be the more
+        // useful line here, but the list DTO does not carry it — only the
+        // detail endpoint does — and inventing one from the id would be a
+        // guess rendered as fact.
+        el("span", { class: "id-chip", text: s.source || "local" }),
+        healthBadge(s.health),
+      ]),
+      el("span", { class: "rec-overview-cue", text: "Edit" }),
+    ]) as HTMLButtonElement;
+    overview.addEventListener("click", () => void openEditor(s.id));
+
     return el("div", { class: "rec has-lead" }, [
       el("div", { class: `spine ${spineTone(s)}${remote ? " remote" : ""}` }),
       // The global switch, in the leading position: enabling and disabling is
@@ -1518,18 +1540,7 @@ export function serversPage(): Page {
         }),
       ]),
       el("div", { class: "rec-body" }, [
-        el("div", { class: "rec-title" }, [
-          el("span", { class: "rec-name", text: s.id }),
-          // Metadata is NEUTRAL: a green "stdio" next to a green health dot
-          // would put two unrelated greens on one row (see style.css).
-          el("span", { class: "id-chip", text: s.transport || "stdio" }),
-          // Where the definition came from. The invocation would be the more
-          // useful line here, but the list DTO does not carry it — only the
-          // detail endpoint does — and inventing one from the id would be a
-          // guess rendered as fact.
-          el("span", { class: "id-chip", text: s.source || "local" }),
-          healthBadge(s.health),
-        ]),
+        overview,
         cliBlock([
           { label: toggleLabel, command: s.enabled ? cliDisable(s.id) : cliEnable(s.id) },
           { label: "Test", command: cliTest(s.id) },

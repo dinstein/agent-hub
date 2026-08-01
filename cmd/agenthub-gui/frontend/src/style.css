@@ -3049,6 +3049,61 @@ details.adv[open] > summary::before {
   min-width: 0;
 }
 
+.rec-overview {
+  width: calc(100% + 16px);
+  min-width: 0;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: -8px -8px 4px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.rec-overview:hover {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.rec-overview:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.rec-overview > .rec-title {
+  flex: 1;
+}
+
+.rec-overview-cue {
+  flex: 0 0 auto;
+  color: var(--accent-strong);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  opacity: 0.5;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rec-overview:hover .rec-overview-cue,
+.rec-overview:focus-visible .rec-overview-cue {
+  opacity: 1;
+  transform: translateX(2px);
+}
+
 .rec-act {
   padding: var(--space-5) var(--space-6) var(--space-5) 0;
   display: flex;

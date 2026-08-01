@@ -145,6 +145,12 @@ Two rules on it, both easy to undo by accident:
   walked back, and the moment they are wrong is exactly the moment the user looks away satisfied —
   the same reason a row grays out instead of vanishing (§5).
 
+The server overview above the Equivalent CLI disclosure is one keyboard-focusable Edit target. Its
+hover, focus ring, cursor, and small Edit cue all describe the same action; the disclosure below it
+only expands commands. This prevents the old split card where visually identical space in the upper
+half did nothing while only the lower label happened to accept a click. The leading enable switch
+and trailing Test/Remove controls remain separate targets and never bubble into Edit.
+
 ### 2.1 The Authenticate button signs in
 
 It used to open a dialog whose whole content was "the GUI has no endpoint that can do this, run
