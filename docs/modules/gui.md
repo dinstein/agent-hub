@@ -30,6 +30,12 @@ The daemon state is pinned at the bottom of the shell and an offline daemon also
 banner above the current page. A footer hidden below fourteen links failed at its only job: the
 connection state disappeared precisely when every page began failing.
 
+Each route renders into its own disposable DOM host. Navigation removes that host before mounting
+the next page, so a slow request or rejected render from the page being left can only write into a
+detached tree; it cannot clear or overlap the page now on screen. The router also grades render
+failures by mount generation before displaying them. This is the shell's backstop rather than a
+promise that every page remembered to add the same post-await guard.
+
 The current call is: **lists are bucketed by state, not alphabetized**. The server list has three
 buckets — needs attention / active / disabled — sorted within each bucket, **empty buckets are not
 rendered**, and disabled is collapsed by default (collapse state lives in localStorage). A single row

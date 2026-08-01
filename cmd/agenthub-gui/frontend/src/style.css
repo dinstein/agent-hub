@@ -505,6 +505,10 @@ a.nav.active .nav-icon {
   margin: 0 auto;
 }
 
+.page-mount {
+  width: 100%;
+}
+
 .content-view > :not(.connection-banner) {
   animation: page-in var(--dur-slow) var(--ease) both;
 }

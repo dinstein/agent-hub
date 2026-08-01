@@ -8,7 +8,7 @@
 
 import "./style.css";
 import { EVT, hub, on } from "./bridge";
-import { clear, loadingState } from "./dom";
+import { clear, el, loadingState } from "./dom";
 import type { Page } from "./page";
 import { failureBox } from "./page";
 import { initTheme } from "./ui";
@@ -69,6 +69,7 @@ const connectionBanner = document.getElementById("connection-banner") as HTMLEle
 
 let current: Page | null = null;
 let currentRoute: Route | null = null;
+let mountEpoch = 0;
 
 function routeFromHash(): Route {
   const name = window.location.hash.replace(/^#\/?/, "") as Route;
@@ -76,7 +77,8 @@ function routeFromHash(): Route {
 }
 
 async function mount(route: Route): Promise<void> {
-  if (route === currentRoute) return;
+  if (route === currentRoute && current !== null) return;
+  const epoch = ++mountEpoch;
   current?.dispose?.();
   current = null;
   currentRoute = route;
@@ -84,13 +86,23 @@ async function mount(route: Route): Promise<void> {
     link.classList.toggle("active", link.dataset.route === route);
   }
   clear(view);
+  // Every page owns a detached-able host. A slow answer from the page being
+  // left may still finish after dispose(); keeping its root out of the shared
+  // view makes that late DOM write invisible by construction instead of
+  // relying on every page to remember a post-await guard.
+  const host = el("div", { class: "page-mount" });
+  view.append(host);
   const page = ROUTES[route]();
   current = page;
   try {
-    await page.render(view);
+    await page.render(host);
   } catch (err) {
-    clear(view);
-    view.append(failureBox(err));
+    // A rejected render from an old route must not erase the page that
+    // replaced it. The host check also covers a mount detached by any future
+    // navigation mechanism that does not increment this counter.
+    if (epoch !== mountEpoch || current !== page || !host.isConnected) return;
+    clear(host);
+    host.append(failureBox(err));
   }
 }
 
