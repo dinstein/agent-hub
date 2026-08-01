@@ -14,7 +14,7 @@
 // in the write's `dangling` list so the page can say it out loud.
 
 import { hub, knownTools } from "../bridge";
-import { clear, el, empty, section, table } from "../dom";
+import { clear, el, empty, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { failureBox, noticeSlot, runWrite } from "../page";
 import {
@@ -290,6 +290,53 @@ export function profilesPage(): Page {
     );
   }
 
+  function profileCard(p: Profile, active: string): Node {
+    const isActive = active === p.name;
+    return el("article", { class: `access-card${isActive ? " access-card-active" : ""}` }, [
+      el("div", { class: "access-card-head" }, [
+        el("div", {}, [
+          el("div", { class: "access-title-row" }, [
+            el("strong", { class: "access-title", text: p.name }),
+            isActive ? el("span", { class: "badge badge-healthy", text: "active default" }) : null,
+          ]),
+          el("div", {
+            class: "muted",
+            text: isActive
+              ? "Used by clients that do not select a profile themselves."
+              : "A reusable access boundary for one or more clients.",
+          }),
+        ]),
+        controls(
+          isActive
+            ? button("Clear default", "btn btn-secondary", () => void setActive(p, false))
+            : button("Make default", "btn btn-secondary", () => void setActive(p, true)),
+          button("Rename", "btn btn-secondary", () => void rename(p)),
+          button("Delete", "btn btn-deny", () => void remove(p)),
+        ),
+      ]),
+      el("div", { class: "access-card-grid" }, [
+        el("section", { class: "access-rule" }, [
+          el("div", { class: "access-rule-head" }, [
+            el("span", { class: "access-rule-label", text: "Member servers" }),
+            button("Edit members", "btn btn-secondary", () => form.show(membersForm(p))),
+          ]),
+          el("div", {
+            class: p.servers?.length === 0 ? "access-rule-value danger" : "access-rule-value",
+            text: describeServerSet(p.servers),
+          }),
+          el("span", { class: "hint", text: "This is the first intersection in the profile scope." }),
+        ]),
+        el("section", { class: "access-rule" }, [
+          el("div", { class: "access-rule-head" }, [
+            el("span", { class: "access-rule-label", text: "Tool selectors" }),
+            button("Edit rules", "btn btn-secondary", () => form.show(toolRuleChooser(p))),
+          ]),
+          toolsCell(p),
+        ]),
+      ]),
+    ]);
+  }
+
   async function draw(): Promise<void> {
     if (!root) return;
     try {
@@ -306,42 +353,31 @@ export function profilesPage(): Page {
     }
     clear(root);
     const active = list.active;
-    const rows = list.profiles.map((p) => [
-      el("div", {}, [
-        el("strong", { text: p.name }),
-        active === p.name ? el("span", { class: "badge badge-healthy", text: "active" }) : null,
-      ]),
-      el("span", { class: p.servers?.length === 0 ? "badge badge-unhealthy" : "", text: describeServerSet(p.servers) }),
-      toolsCell(p),
-      controls(
-        button("Members", "btn", () => form.show(membersForm(p))),
-        button("Tool rules", "btn", () => form.show(toolRuleChooser(p))),
-        button("Rename", "btn", () => void rename(p)),
-        active === p.name
-          ? button("Clear active", "btn btn-secondary", () => void setActive(p, false))
-          : button("Make active", "btn btn-secondary", () => void setActive(p, true)),
-        button("Delete", "btn btn-deny", () => void remove(p)),
-      ),
-    ]);
-
     root.append(
-      section(
+      pageHeader(
         "Profiles",
-        controls(button("New profile", "btn", () => form.show(createForm()))),
-        slot.node,
-        form.node,
-        list.profiles.length === 0
-          ? empty("No profiles configured. Without one, every client sees every registered server.")
-          : table(["Profile", "Member servers", "Tool selectors", "Actions"], rows),
-        el("p", {
-          class: "hint",
-          text: list.active_known
-            ? active
-              ? `Clients that do not name a profile follow "${active}".`
-              : "No active profile: clients that do not name one see every registered server."
-            : "This daemon cannot report the active profile at all — which is not the same as there being none.",
-        }),
+        "Define reusable server and tool boundaries, then assign clients to the right one.",
+        button("New profile", "btn btn-primary", () => form.show(createForm())),
       ),
+      slot.node,
+      form.node,
+      el("div", { class: "scope-note" }, [
+        el("span", { class: "scope-note-mark", text: "∩" }),
+        el("span", {
+          text: "Profiles can only narrow what a server already exposes. An empty selection is deliberately block-all, never “no rule”.",
+        }),
+      ]),
+      list.profiles.length === 0
+        ? empty("No profiles configured. Without one, every client sees every registered server.")
+        : el("div", { class: "access-card-list" }, list.profiles.map((p) => profileCard(p, active))),
+      el("p", {
+        class: "hint page-footnote",
+        text: list.active_known
+          ? active
+            ? `Clients that do not name a profile follow “${active}”.`
+            : "No default profile: clients that do not name one see every registered server."
+          : "This daemon cannot report the default profile at all — which is not the same as there being none.",
+      }),
     );
   }
 

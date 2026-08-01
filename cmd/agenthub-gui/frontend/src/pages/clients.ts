@@ -13,7 +13,7 @@
 // remediation text for the second one.
 
 import { hub } from "../bridge";
-import { clear, el, empty, relTime, section, table } from "../dom";
+import { clear, el, empty, pageHeader, relTime } from "../dom";
 import type { Page } from "../page";
 import { failureBox, noticeSlot } from "../page";
 import { button, checkboxInput, confirmAction, controls, field, selectInput, textInput } from "../ui";
@@ -148,36 +148,37 @@ export function clientsPage(): Page {
     ]);
   }
 
-  function row(c: ClientDetected): (Node | string)[] {
-    return [
-      el("div", {}, [
-        el("strong", { text: c.name || c.client }),
-        el("div", { class: "muted", text: `${c.client} · ${c.placement} · ${c.shape}` }),
+  function clientCard(c: ClientDetected): Node {
+    const access = c.denied ? "not readable" : c.writable ? "writable" : "read-only";
+    const accessClass = c.denied ? "badge-unhealthy" : c.writable ? "badge-healthy" : "badge-degraded";
+    return el("article", { class: "client-card" }, [
+      el("div", { class: "client-mark", text: (c.name || c.client).slice(0, 1).toUpperCase() }),
+      el("div", { class: "client-card-main" }, [
+        el("div", { class: "client-card-head" }, [
+          el("div", {}, [
+            el("strong", { class: "access-title", text: c.name || c.client }),
+            el("div", { class: "muted", text: `${c.client} · ${c.placement} · ${c.shape}` }),
+          ]),
+          el("span", { class: `badge ${accessClass}`, text: access }),
+        ]),
+        el("div", { class: "client-path" }, [
+          el("span", { class: "mono", text: c.path }),
+          el("span", { class: "muted", text: `${c.size} bytes · ${relTime(c.modified)}` }),
+        ]),
+        c.denied && c.remediation
+          ? el("div", { class: "client-remediation", text: c.remediation })
+          : c.note
+            ? el("div", { class: "muted", text: c.note })
+            : null,
       ]),
-      el("div", {}, [
-        el("div", { class: "mono", text: c.path }),
-        el("div", { class: "muted", text: `${c.size} bytes · ${relTime(c.modified)}` }),
+      el("div", { class: "client-actions" }, [
+        button("Connect…", "btn", () => {
+          target = c.client;
+          void draw();
+        }),
+        button("Disconnect", "btn btn-deny", () => void disconnect(c.client)),
       ]),
-      c.denied
-        ? el("div", {}, [
-            el("span", { class: "badge badge-unhealthy", text: "not readable" }),
-            c.remediation ? el("span", { class: "hint", text: c.remediation }) : null,
-          ])
-        : el("span", {
-            class: c.writable ? "badge badge-healthy" : "badge badge-degraded",
-            text: c.writable ? "writable" : "read-only",
-          }),
-      el("div", {}, [
-        c.note ? el("div", { class: "muted", text: c.note }) : null,
-        controls(
-          button("Connect…", "btn", () => {
-            target = c.client;
-            void draw();
-          }),
-          button("Disconnect", "btn btn-deny", () => void disconnect(c.client)),
-        ),
-      ]),
-    ];
+    ]);
   }
 
   // supportedHint renders the line under the table. It used to read
@@ -214,23 +215,26 @@ export function clientsPage(): Page {
     }
     clear(root);
     root.append(
-      section(
+      pageHeader(
         "Clients",
-        controls(button("Re-scan", "btn", () => void draw())),
-        slot.node,
-        target ? connectForm(target) : el("span", {}),
-        preview,
-        err
-          ? failureBox(err)
-          : (detected?.found ?? []).length === 0
-            ? empty("No client configuration found on this machine.")
-            : table(["Client", "Configuration", "Access", "Actions"], (detected?.found ?? []).map(row)),
-        detected ? supportedHint(detected) : null,
-        el("p", {
-          class: "hint",
-          text: "Detection reads file metadata only. The contents are opened by connect and disconnect, where a permission prompt is expected.",
-        }),
+        "Discover MCP-capable apps on this machine and connect each one to AgentHub.",
+        button("Re-scan", "btn btn-primary", () => void draw()),
       ),
+      slot.node,
+      target ? connectForm(target) : el("span", {}),
+      preview,
+      el("div", { class: "privacy-note" }, [
+        el("span", { class: "privacy-note-mark", text: "◌" }),
+        el("span", {
+          text: "Discovery reads file metadata only. File contents are opened only when you connect or disconnect a specific client.",
+        }),
+      ]),
+      err
+        ? failureBox(err)
+        : (detected?.found ?? []).length === 0
+          ? empty("No client configuration found on this machine.")
+          : el("div", { class: "client-card-list" }, (detected?.found ?? []).map(clientCard)),
+      detected ? supportedHint(detected) : el("span", {}),
     );
   }
 

@@ -595,6 +595,339 @@ a.nav.active .nav-icon {
   }
 }
 
+/* --- Access pages -------------------------------------------------------- */
+
+.scope-note,
+.privacy-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 10px 12px;
+  margin-bottom: var(--space-5);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.scope-note-mark,
+.privacy-note-mark {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.access-card-list,
+.client-card-list {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.access-card,
+.client-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+}
+
+.access-card {
+  overflow: hidden;
+}
+
+.access-card-active {
+  border-color: color-mix(in srgb, var(--success) 36%, var(--line));
+}
+
+.access-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.access-title-row,
+.client-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.access-title {
+  color: var(--fg);
+  font-size: var(--text-lg);
+}
+
+.access-card-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.access-rule {
+  min-width: 0;
+  padding: var(--space-5) var(--space-6);
+}
+
+.access-rule + .access-rule {
+  border-left: 1px solid var(--line-soft);
+}
+
+.access-rule-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.access-rule-label {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.access-rule-value {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.access-rule-value.danger {
+  color: var(--danger);
+}
+
+.access-rule .rows {
+  gap: var(--space-3);
+}
+
+.access-rule .install {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  padding: 5px 8px;
+}
+
+.page-footnote {
+  margin-top: var(--space-5);
+}
+
+.client-card {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+}
+
+.client-mark {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 700;
+  font-size: var(--text-lg);
+}
+
+.client-card-main {
+  min-width: 0;
+}
+
+.client-card-head {
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.client-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3) var(--space-5);
+}
+
+.client-remediation {
+  color: var(--warning);
+  font-size: var(--text-sm);
+  margin-top: var(--space-3);
+}
+
+.client-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+@media (max-width: 860px) {
+  .access-card-head {
+    flex-direction: column;
+  }
+
+  .access-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .access-rule + .access-rule {
+    border-left: 0;
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .client-card {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .client-actions {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 580px) {
+  .access-card-head .controls,
+  .client-actions {
+    width: 100%;
+  }
+
+  .client-card {
+    grid-template-columns: 1fr;
+  }
+
+  .client-mark {
+    display: none;
+  }
+
+  .client-actions {
+    grid-column: 1;
+  }
+}
+
+/* --- Settings ------------------------------------------------------------ */
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
+}
+
+.settings-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+  padding: var(--space-6);
+}
+
+.settings-card-wide {
+  grid-column: 1 / -1;
+}
+
+.settings-card h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.settings-card > p {
+  margin: var(--space-3) 0 0;
+}
+
+.settings-card-head {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding-bottom: var(--space-5);
+  margin-bottom: var(--space-5);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.settings-card-head p {
+  margin: var(--space-2) 0 0;
+}
+
+.status-orb {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentcolor 12%, transparent);
+}
+
+.status-orb.online {
+  color: var(--success);
+  background: var(--success);
+}
+
+.status-orb.offline {
+  color: var(--danger);
+  background: var(--danger);
+}
+
+.settings-card-wide .kvs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--space-7);
+}
+
+.settings-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-5);
+}
+
+.settings-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--space-5);
+  border-radius: 10px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-size: var(--text-lg);
+}
+
+.settings-control {
+  margin-top: var(--space-6);
+  padding: var(--space-4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+
+.command-list {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.command-list code {
+  padding: 7px 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--fg);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 720px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-card-wide .kvs {
+    grid-template-columns: 1fr;
+  }
+}
+
 .connection-banner {
   max-width: var(--content-max);
   display: flex;
