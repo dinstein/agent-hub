@@ -31,7 +31,7 @@
 // read path and this page must not grow one.
 
 import { asCallError, EVT, hub, on, openExternal } from "../bridge";
-import { chip, chipRow, clear, el, emptyState, icon, loadingState, pageHeader } from "../dom";
+import { chip, chipRow, clear, el, emptyState, errorHeadline, icon, loadingState, pageHeader } from "../dom";
 import { AdminState, HealthAction, HealthLevel } from "../generated/health";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot, runWrite } from "../page";
@@ -663,6 +663,12 @@ export function serversPage(): Page {
   const slot = noticeSlot();
   const form = modalHost();
 
+  /** A successful live self-test can learn that credentials are required
+   *  before a connected gateway has reported the same fact. Keep that typed
+   *  observation long enough to put the recovery action in the row. It is
+   *  cleared only by a successful test or login; prose is never inspected. */
+  const probedAuth = new Set<string>();
+
   /** When each currently-connecting server was first seen connecting. Reset
    *  whenever it leaves that state, so a reconnect starts the clock again. */
   const connectingSince = new Map<string, number>();
@@ -814,28 +820,19 @@ export function serversPage(): Page {
 
       if (st.phase === LoginPhase.Complete) {
         finished = true;
+        probedAuth.delete(id);
         close();
         await draw();
-        slot.say(
-          `Signed in to ${id}.` +
-            (st.has_refresh_token
-              ? " agenthub will renew it on its own from here."
-              : " The provider issued no refresh token, so this will need signing in again when it expires."),
-        );
         return;
       }
 
       if (st.phase === LoginPhase.Failed) {
         finished = true;
         show(
-          el("div", { class: "error" }, [
-            el("strong", { text: st.error || "The sign-in did not complete." }),
+          el("div", { class: "login-failure" }, [
+            el("strong", { text: errorHeadline(st.error || "The sign-in did not complete.") }),
             st.hint ? el("span", { class: "hint", text: st.hint }) : null,
           ]),
-          el("p", {
-            class: "hint",
-            text: "Nothing was stored. The server is unchanged and can be signed in to again.",
-          }),
           controls(
             button("Try again", "btn btn-primary", () => {
               close();
@@ -924,9 +921,6 @@ export function serversPage(): Page {
       const authenticate = button("Authenticate", "btn btn-primary", () => void login(s.id));
       return el("div", { class: "srv-status" }, [
         el("div", { class: "state-line" }, [dot("warning"), authenticate]),
-        s.health.summary
-          ? el("span", { class: "meta", text: s.health.summary })
-          : null,
       ]);
     }
 
@@ -997,10 +991,12 @@ export function serversPage(): Page {
    *  the common case while making the daemon's exact answer one click away. */
   function statusDetails(s: Server): Node | null {
     if (s.health.admin_state === AdminState.Disabled || s.state === "connecting") return null;
+    // Authentication is already both explained and repaired by the row's
+    // Authenticate action. Repeating the rejected handshake underneath as a
+    // red connection diagnostic turns one state into two competing stories.
+    if (s.health.action === HealthAction.Login) return null;
     const detail = s.health.detail?.trim() ?? "";
-    // Login already turns the status itself into the Authenticate action; a
-    // second CLI login instruction underneath would be a duplicate path.
-    const action = s.health.action === HealthAction.Login ? null : suggestion(s);
+    const action = suggestion(s);
     // Healthy-but-not-observed servers can carry explanatory daemon detail,
     // but repeating a disclosure on every normal row defeats the purpose of
     // keeping this list scan-friendly. The compact neutral status is enough.
@@ -1285,21 +1281,25 @@ export function serversPage(): Page {
   async function probeAfterWrite(id: string, changed: string): Promise<void> {
     try {
       const res = await hub.testServer(id, {});
+      probedAuth.delete(id);
       slot.say(`${id} ${changed}; connection check passed with ${res.tool_count} tool(s).`);
     } catch (err) {
-      slot.clear();
       const auth = authenticationRequired(err);
+      if (auth) {
+        // The row is the single authentication surface. Do not create a
+        // second warning card above the fleet for the same typed condition.
+        probedAuth.add(id);
+        slot.clear();
+        await draw();
+        return;
+      }
+      slot.clear();
       slot.node.append(
         el("div", { class: "notice notice-warn" }, [
           el("div", {
-            text: auth
-              ? `${id} ${changed}, but it requires authentication.`
-              : `${id} ${changed}, but its connection check failed.`,
+            text: `${id} ${changed}, but its connection check failed.`,
           }),
           failureBox(err),
-          auth
-            ? controls(button("Authenticate", "btn btn-primary", () => void login(id)))
-            : null,
         ]),
       );
     }
@@ -1413,7 +1413,7 @@ export function serversPage(): Page {
 
   async function test(s: Server): Promise<void> {
     const body = el("div", {}, [el("p", { class: "muted", text: "Connecting…" })]);
-    openModal(`Test ${s.id}`, [body]);
+    const close = openModal(`Test ${s.id}`, [body]);
     try {
       // Handshake only: naming a tool here would CALL it, and a dashboard
       // button must not have side effects on a downstream system.
@@ -1428,12 +1428,17 @@ export function serversPage(): Page {
         }),
         testResultView(res),
       );
+      probedAuth.delete(s.id);
     } catch (err) {
+      if (authenticationRequired(err)) {
+        probedAuth.add(s.id);
+        close();
+        slot.clear();
+        await draw();
+        return;
+      }
       clear(body);
       body.append(failureBox(err));
-      if (authenticationRequired(err)) {
-        body.append(controls(button("Authenticate", "btn btn-primary", () => void login(s.id))));
-      }
     }
   }
 
@@ -1444,6 +1449,10 @@ export function serversPage(): Page {
   function spineTone(s: Server): string {
     const admin = s.health.admin_state;
     if (admin === AdminState.Disabled) return "off";
+    // A credential is missing, not a connection broken. The warning spine
+    // matches the Authenticate action and avoids painting a routine sign-in
+    // as the same red failure used for network and protocol faults.
+    if (s.health.action === HealthAction.Login) return "warning";
     if (s.health.level === HealthLevel.Healthy) return "ok";
     if (s.health.level === HealthLevel.Degraded) return "warning";
     return "bad";
@@ -1573,6 +1582,22 @@ export function serversPage(): Page {
   function paint(servers: Server[]): void {
     if (!listRoot) return;
     clear(listRoot);
+
+    // Prefer the daemon's Health contract. The only overlay is a typed
+    // E_AUTH_REQUIRED result from this page's own live probe, which may beat
+    // an older connected gateway's next runtime report to the screen.
+    servers = servers.map((s) => probedAuth.has(s.id)
+      ? {
+          ...s,
+          health: {
+            ...s.health,
+            level: HealthLevel.Unhealthy,
+            summary: "authentication required",
+            detail: "",
+            action: HealthAction.Login,
+          },
+        }
+      : s);
 
     const needle = filter.trim().toLowerCase();
     const shown = needle

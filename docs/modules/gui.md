@@ -119,8 +119,10 @@ confirmation for work that needs no input.
 Creating or editing an enabled server, and switching a disabled server on, immediately performs the same
 handshake-only self-test as the row's Test action. The write has already succeeded and is never rolled back by
 the probe: a normal connection reports its tool count, a generic failure stays a visible diagnostic, and
-`E_AUTH_REQUIRED` renders an `Authenticate` button. Test's own failure dialog renders the same button for that
-code. The frontend branches on the daemon's code, never on whether prose happens to contain `401`.
+`E_AUTH_REQUIRED` repaints the server row as its `Authenticate` action. Authentication has exactly that one
+surface: the page does not also grow a warning card above the list, and Test closes its transient result dialog
+before moving the condition into the row. The frontend branches on the daemon's code, never on whether prose
+happens to contain `401`.
 
 The Playground treats execution as the primary task, not the last step of a form. Its Call action is
 inside the argument header and remains visible while a long generated schema scrolls beneath it.
@@ -169,7 +171,14 @@ find the entry point" three-step.
 
 `needs-auth` arrives from the daemon's Health contract after a gateway preserves a typed handshake 401/403; the
 frontend does not infer it from an error string. Clicking `Authenticate` starts the control-plane login session
-below, so the status both identifies the problem and is the operation that repairs it.
+below, so the status both identifies the problem and is the operation that repairs it. It uses the warning spine,
+not the red connection-failure spine: missing authorization is an expected setup state, not evidence that the
+endpoint or protocol is broken.
+
+A self-test can observe the same typed refusal before a connected gateway's next runtime report. The Servers page
+keeps that `E_AUTH_REQUIRED` observation in memory and overlays only the row action until a test or login succeeds.
+It is not persisted and it never parses error prose. This closes the otherwise-visible gap where a create or Test
+said “authenticate” in a page-level warning while the row continued to say “connection error”.
 
 **Semantic colors are reserved for health; accent is reserved for interaction.** Metadata like
 transport, source, and profile is always neutral (`ChipTone`'s `neutral`). Green/yellow/red still
