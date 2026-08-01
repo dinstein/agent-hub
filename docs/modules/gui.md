@@ -61,7 +61,11 @@ first settled view already shows `Connected`, `Not connected`, `Manual setup`, o
 the single `Refresh` action repeats both passes. Inspections stay sequential because protected files may
 raise a macOS privacy prompt and concurrent prompts would obscure which client requested access. Only a
 connected row offers Disconnect, avoiding the old pair of Connect and Disconnect buttons that appeared
-simultaneously for every client and claimed no state at all.
+simultaneously for every client and claimed no state at all. A writable, disconnected row connects
+immediately with the daemon's safe defaults; profile selection remains on the Profiles page and uncommon
+path/binary overrides remain explicit CLI operations. Read-only formats use the same single action to
+return their authoritative manual setup instructions instead of opening a configuration form the daemon
+cannot apply.
 
 The server editor is transport-shaped, not a union of every possible field. `stdio` shows the local
 process contract (`command`, arguments, environment, working directory and optional container runtime);

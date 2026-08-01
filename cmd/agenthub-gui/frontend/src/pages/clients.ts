@@ -16,80 +16,42 @@ import { hub } from "../bridge";
 import { clear, el, empty, icon, loadingState, pageHeader, relTime } from "../dom";
 import type { Page } from "../page";
 import { failureBox, noticeSlot } from "../page";
-import { button, checkboxInput, confirmAction, controls, field, selectInput, textInput } from "../ui";
-import type { ClientConnection, ClientDetected, ClientDetectResult, ClientInspection } from "../types";
+import { button, confirmAction } from "../ui";
+import type { ClientDetected, ClientDetectResult, ClientInspection } from "../types";
 
 type InspectionCheck =
   | { phase: "checking" }
   | { phase: "ready"; value: ClientInspection }
   | { phase: "failed"; message: string };
 
-function connectionView(c: ClientConnection): Node {
-  return el("div", { class: "kvs" }, [
-    kv("Client", c.client),
-    kv("Profile", c.profile || "—"),
-    kv("Config file", c.path || "—"),
-    kv("Command", [c.entry.command, ...(c.entry.args ?? [])].join(" ")),
-    kv("Backup", c.backup || "—"),
-    kv("Changed", c.dry_run ? "nothing written (dry run)" : c.changed ? "yes" : "no (already wired)"),
-  ]);
-}
-
-function kv(k: string, v: string): HTMLElement {
-  return el("div", { class: "kv" }, [
-    el("span", { class: "k", text: k }),
-    el("span", { class: "v", text: v }),
-  ]);
-}
-
 export function clientsPage(): Page {
   let root: HTMLElement | null = null;
   const slot = noticeSlot();
-  const preview = el("div", {});
   let detected: ClientDetectResult | null = null;
   let detectError: unknown = null;
-  let target = "";
   let refreshing = false;
   let refreshRun = 0;
   const inspections = new Map<string, InspectionCheck>();
+  const connecting = new Set<string>();
 
-  async function connect(
-    client: string,
-    dryRun: boolean,
-    profile: string,
-    placement: string,
-    path: string,
-    bin: string,
-  ): Promise<void> {
+  async function connect(client: string): Promise<void> {
+    if (connecting.has(client)) return;
+    connecting.add(client);
+    slot.clear();
+    renderPage();
     try {
-      const res = await hub.connectClient(client, {
-        profile,
-        // An explicit path names the file outright, so the daemon rejects it
-        // together with a placement. The form sends one or the other.
-        placement: path === "" ? placement : "",
-        path,
-        bin,
-        dry_run: dryRun,
-      });
-      clear(preview);
-      preview.append(
-        el("h3", { text: dryRun ? `Preview for ${client}` : `Connected ${client}` }),
-        connectionView(res),
-      );
+      const res = await hub.connectClient(client, {});
       slot.say(
-        dryRun
-          ? `Dry run for ${client}: nothing was written.`
-          : res.changed
-            ? `${client} now spawns agenthub as its single MCP server.`
-            : `${client} already said exactly this — nothing changed.`,
+        res.changed
+          ? `${client} is connected to AgentHub. A backup was kept before the configuration changed.`
+          : `${client} was already connected — nothing changed.`,
       );
-      if (!dryRun) {
-        target = "";
-        await draw();
-        await inspectOne(client);
-      }
+      await inspectOne(client);
     } catch (err) {
       slot.fail(err);
+    } finally {
+      connecting.delete(client);
+      renderPage();
     }
   }
 
@@ -111,56 +73,11 @@ export function clientsPage(): Page {
         `${res.client}: removed ${res.removed.length > 0 ? res.removed.join(", ") : "nothing"} from ${res.path}` +
           (res.backup ? ` (backup at ${res.backup})` : ""),
       );
-      target = "";
       await draw();
       await inspectOne(client);
     } catch (err) {
       slot.fail(err);
     }
-  }
-
-  function connectForm(client: string): Node {
-    const profile = textInput("", "bind to a profile (optional)");
-    // User-level is the default because the entry carries this machine's
-    // absolute agenthub path, and a project-level file is meant to be
-    // committed. Which servers the client may see is a profile's job, not
-    // this field's.
-    const placement = selectInput(
-      [
-        { value: "user", label: "User — this machine's home directory" },
-        { value: "project", label: "Project — the daemon's working tree" },
-      ],
-      "user",
-    );
-    const path = textInput("", "configuration file override (optional)");
-    const bin = textInput("", "agenthub binary override (optional)");
-    const dry = checkboxInput("Dry run — show the entry, write nothing", true);
-    return el("div", { class: "panel panel-inset" }, [
-      el("h3", { text: `Connect ${client}` }),
-      el("div", { class: "form-inline" }, [
-        field("Profile", profile),
-        field("Placement", placement),
-        field("Config path", path),
-        field("Binary", bin),
-      ]),
-      dry.node,
-      controls(
-        button("Apply", "btn", () =>
-          void connect(
-            client,
-            dry.box.checked,
-            profile.value.trim(),
-            placement.value,
-            path.value.trim(),
-            bin.value.trim(),
-          ),
-        ),
-        button("Cancel", "btn btn-secondary", () => {
-          target = "";
-          void draw();
-        }),
-      ),
-    ]);
   }
 
   function clientCard(c: ClientDetected): Node {
@@ -212,20 +129,16 @@ export function clientsPage(): Page {
       waiting.disabled = true;
       actions.push(waiting);
     } else if (check.value.state === "connected") {
-      actions.push(
-        button("Connection…", "btn", () => {
-          target = c.client;
-          renderPage();
-        }),
-        button("Disconnect", "btn btn-deny", () => void disconnect(c.client)),
-      );
+      actions.push(button("Disconnect", "btn btn-deny", () => void disconnect(c.client)));
     } else if (check.value.state === "not_connected" || check.value.state === "unknown") {
-      actions.push(
-        button(check.value.state === "unknown" ? "Set up…" : "Connect…", "btn btn-primary", () => {
-          target = c.client;
-          renderPage();
-        }),
+      const pending = connecting.has(c.client);
+      const connectButton = button(
+        pending ? "Connecting…" : check.value.state === "unknown" ? "Show setup" : "Connect",
+        "btn btn-primary",
+        () => void connect(c.client),
       );
+      connectButton.disabled = pending;
+      actions.push(connectButton);
     } else {
       actions.push(button("Check again", "btn", () => void inspectOne(c.client)));
     }
@@ -315,8 +228,6 @@ export function clientsPage(): Page {
         refreshButton,
       ),
       slot.node,
-      target ? connectForm(target) : el("span", {}),
-      preview,
       el("div", { class: "privacy-note" }, [
         el("span", { class: "privacy-note-mark" }, [icon("privacy")]),
         el("span", {
@@ -396,8 +307,7 @@ export function clientsPage(): Page {
       refreshRun += 1;
       refreshing = false;
       root = null;
-      target = "";
-      clear(preview);
+      connecting.clear();
     },
   };
 }
