@@ -25,6 +25,7 @@ import {
   describeServerSet,
   field,
   formHost,
+  modalHost,
   selectInput,
   textInput,
   triState,
@@ -50,6 +51,7 @@ export function profilesPage(): Page {
   let root: HTMLElement | null = null;
   const slot = noticeSlot();
   const form = formHost();
+  const create = modalHost();
   let list: ProfileList | null = null;
   let servers: Server[] = [];
 
@@ -66,7 +68,7 @@ export function profilesPage(): Page {
       none: "No server at all (block-all)",
     });
     const errors = el("div", { class: "notice-slot" });
-    const save = button("Create profile", "btn", () => {
+    const save = button("Create profile", "btn btn-primary", () => {
       clear(errors);
       if (!name.value.trim()) {
         errors.append(el("div", { class: "notice notice-warn", text: "A profile needs a name." }));
@@ -84,15 +86,14 @@ export function profilesPage(): Page {
         (r) => `Profile ${r.name} created (${describeServersChoice(chosen)}).`,
         () => hub.createProfile(name.value.trim(), chosen, generation()),
       ).then((ok) => {
-        if (ok) form.hide();
+        if (ok) create.hide();
       });
     });
-    return el("div", { class: "panel panel-inset" }, [
-      el("h3", { text: "New profile" }),
+    return el("div", { class: "modal-form" }, [
       errors,
       field("Name", name),
       field("Member servers", members.node),
-      controls(save, button("Cancel", "btn btn-secondary", () => form.hide())),
+      controls(save, button("Cancel", "btn btn-secondary", () => create.hide())),
     ]);
   }
 
@@ -426,7 +427,7 @@ export function profilesPage(): Page {
       pageHeader(
         "Profiles",
         "Define reusable server and tool boundaries, then assign clients to the right one.",
-        button("New profile", "btn btn-primary", () => form.show(createForm())),
+        button("New profile", "btn btn-primary", () => create.show("New profile", createForm())),
       ),
       slot.node,
       form.node,
@@ -463,6 +464,7 @@ export function profilesPage(): Page {
     },
     dispose() {
       root = null;
+      create.hide();
       form.hide();
     },
   };
