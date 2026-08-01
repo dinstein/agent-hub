@@ -40,7 +40,9 @@
   --radius: 12px;
   --radius-lg: 16px;
   --radius-xl: 20px;
-  --control-h: 36px;
+  /* Ordinary controls share one optical row. A button beside a select must
+   * not sit two pixels shorter just because its browser default differs. */
+  --control-h: 38px;
   --input-h: 38px;
   font-family: var(--font-sans);
 
@@ -75,9 +77,12 @@
   --dur-slow: 220ms;
 
   --sidebar-w: 224px;
+  --page-gutter-x: 36px;
+  --page-gutter-top: 32px;
+  --page-gutter-bottom: 48px;
   /* Tables of eight columns are unreadable at 2000px. The cap is on the
    * content column, not the window, so the chrome still fills the screen. */
-  --content-max: 1120px;
+  --content-max: 1024px;
 }
 
 /* -- dark (the default; the bootstrap resolves "system" to one of the two) -- */
@@ -269,9 +274,11 @@ textarea {
  * route between pages. Collapsing to an icon rail is the obvious alternative
  * and is deliberately not done: there is no icon set yet, and the labels are
  * bare text nodes, so the rail would be a column of unexplained badges. */
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
   :root {
     --sidebar-w: 184px;
+    --page-gutter-x: 24px;
+    --page-gutter-top: 24px;
   }
 
   .sidebar {
@@ -481,7 +488,7 @@ a.nav.active .nav-icon {
 
 .content {
   flex: 1;
-  padding: 30px 32px 48px;
+  padding: var(--page-gutter-top) var(--page-gutter-x) var(--page-gutter-bottom);
   overflow: auto;
   min-width: 0;
   background:
@@ -492,12 +499,10 @@ a.nav.active .nav-icon {
 /* The cap lives on an inner wrapper so the scroll container still spans the
  * window: capping .content itself would strand the scrollbar in the middle
  * of a wide screen. */
-.content-view > * {
-  max-width: var(--content-max);
-}
-
 .content-view {
+  width: 100%;
   max-width: var(--content-max);
+  margin: 0 auto;
 }
 
 .content-view > :not(.connection-banner) {
@@ -516,10 +521,11 @@ a.nav.active .nav-icon {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-7);
-  margin: 0 0 22px;
+  margin: 0 0 var(--space-7);
 }
 
 .page-heading {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -538,10 +544,11 @@ a.nav.active .nav-icon {
 }
 
 .page-actions {
+  flex: 0 0 auto;
   display: flex;
   gap: var(--space-4);
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 
@@ -838,15 +845,16 @@ a.nav.active .nav-icon {
 
 .client-card {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-5);
-  padding: 16px 18px;
+  gap: var(--space-6);
+  min-height: 96px;
+  padding: 18px 20px;
 }
 
 .client-mark {
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   border-radius: var(--radius);
@@ -861,8 +869,13 @@ a.nav.active .nav-icon {
 }
 
 .client-card-head {
-  justify-content: space-between;
-  margin-bottom: var(--space-3);
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
+
+.client-meta {
+  font-size: var(--text-md);
 }
 
 .client-path {
@@ -870,6 +883,7 @@ a.nav.active .nav-icon {
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-3) var(--space-5);
+  margin-top: var(--space-3);
 }
 
 .client-remediation {
@@ -880,10 +894,11 @@ a.nav.active .nav-icon {
 
 .client-actions {
   display: flex;
-  gap: var(--space-3);
+  align-items: center;
+  gap: var(--space-4);
 }
 
-@media (max-width: 860px) {
+@media (max-width: 1000px) {
   .access-card-head {
     flex-direction: column;
   }
@@ -898,7 +913,7 @@ a.nav.active .nav-icon {
   }
 
   .client-card {
-    grid-template-columns: 38px minmax(0, 1fr);
+    grid-template-columns: 40px minmax(0, 1fr);
   }
 
   .client-actions {
@@ -1464,7 +1479,7 @@ tbody tr:hover {
 /* Size variants. Table rows carry actions at sm; a page's single leading
  * action gets lg. Both stay on the type and space scales. */
 .btn-sm {
-  min-height: 28px;
+  min-height: 30px;
   padding: 3px 10px;
   font-size: var(--text-sm);
   border-radius: var(--radius-sm);
@@ -2284,7 +2299,7 @@ select.input:active {
 }
 
 .radio-row > .check {
-  min-height: 34px;
+  min-height: var(--control-h);
   padding: 7px 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -2840,12 +2855,12 @@ details.adv[open] > summary::before {
 /* --- v2 page chrome ------------------------------------------------------- */
 
 .page-toolbar {
-  min-height: 50px;
+  min-height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-5);
-  padding: 7px 8px;
+  padding: 8px 10px;
   margin-bottom: var(--space-6);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -2973,6 +2988,82 @@ details.adv[open] > summary::before {
 .rec-act > .controls .btn {
   padding-top: 4px;
   padding-bottom: 4px;
+}
+
+/* Catalog rows have more explanatory copy than server rows. Their action
+ * column is deliberately fixed and vertical: letting it float at the far end
+ * of a flexible row produced a wide blank desert between the definition and
+ * its Add button. The CLI hint is capped for the same reason — it is a command
+ * to copy, not a progress bar that needs to span the card. */
+.catalog-list .rec {
+  grid-template-columns: 3px minmax(0, 1fr) 148px;
+  align-items: start;
+}
+
+.catalog-list .rec-body {
+  padding: var(--space-6) 0 var(--space-6) 18px;
+}
+
+.catalog-list .rec-desc {
+  max-width: 68ch;
+  line-height: 1.5;
+}
+
+.catalog-list .cli-hint {
+  max-width: 640px;
+  margin-top: var(--space-5);
+  gap: var(--space-3);
+}
+
+.catalog-list .cli-hint > code {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+}
+
+.catalog-list .rec-act {
+  min-width: 148px;
+  padding: var(--space-6) 18px var(--space-6) var(--space-5);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-4);
+}
+
+.catalog-list .rec-act > .btn {
+  width: 100%;
+}
+
+.catalog-list .rec-act > .cat-pub {
+  order: 2;
+  padding: var(--space-2) var(--space-3);
+  text-align: center;
+}
+
+.catalog-list .rec-act > .state-line {
+  align-items: stretch;
+  flex-direction: column;
+  gap: var(--space-4);
+  text-align: right;
+}
+
+@media (max-width: 1000px) {
+  .catalog-list .rec {
+    grid-template-columns: 3px minmax(0, 1fr);
+  }
+
+  .catalog-list .rec-act {
+    grid-column: 2;
+    min-width: 0;
+    padding: 0 var(--space-6) var(--space-6) 18px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  .catalog-list .rec-act > .btn {
+    width: auto;
+  }
+
 }
 
 @media (max-width: 760px) {

@@ -155,12 +155,10 @@ export function clientsPage(): Page {
       el("div", { class: "client-mark", text: (c.name || c.client).slice(0, 1).toUpperCase() }),
       el("div", { class: "client-card-main" }, [
         el("div", { class: "client-card-head" }, [
-          el("div", {}, [
-            el("strong", { class: "access-title", text: c.name || c.client }),
-            el("div", { class: "muted", text: `${c.client} · ${c.placement} · ${c.shape}` }),
-          ]),
+          el("strong", { class: "access-title", text: c.name || c.client }),
           el("span", { class: `badge ${accessClass}`, text: access }),
         ]),
+        el("div", { class: "client-meta muted", text: `${c.client} · ${c.placement} · ${c.shape}` }),
         el("div", { class: "client-path" }, [
           el("span", { class: "mono", text: c.path }),
           el("span", { class: "muted", text: `${c.size} bytes · ${relTime(c.modified)}` }),
