@@ -2705,7 +2705,7 @@ select.input:active {
   color: var(--danger);
 }
 
-/* --- modal (legacy overlay, still used for the non-confirm dialogs) ------- */
+/* --- focused configuration modal ----------------------------------------- */
 
 .overlay {
   position: fixed;
@@ -2720,13 +2720,14 @@ select.input:active {
 }
 
 .modal {
+  display: flex;
+  flex-direction: column;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-xl);
-  width: min(640px, 100%);
-  max-height: 85vh;
-  overflow: auto;
-  padding: var(--space-6) 18px;
+  width: min(760px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
   box-shadow: var(--shadow-2);
   animation: modal-in var(--dur-slow) var(--ease) both;
 }
@@ -2746,13 +2747,39 @@ select.input:active {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  min-height: 62px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.modal > header > strong {
+  font-size: var(--text-lg);
 }
 
 .modal-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.modal-form > .controls:last-child {
+  position: sticky;
+  bottom: -18px;
+  z-index: 2;
+  margin: 0 -18px -18px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  backdrop-filter: blur(10px);
 }
 
 /* --- native <dialog> confirm (docs/modules/gui.md) ----------------------- */

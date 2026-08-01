@@ -45,9 +45,9 @@ import {
   controls,
   copyButton,
   field,
-  formHost,
   group,
   linesEditor,
+  modalHost,
   openModal,
   pairEditor,
   selectInput,
@@ -751,7 +751,7 @@ export function serversPage(): Page {
   let ticker: number | undefined;
   let filter = "";
   const slot = noticeSlot();
-  const form = formHost();
+  const form = modalHost();
 
   /** When each currently-connecting server was first seen connecting. Reset
    *  whenever it leaves that state, so a reconnect starts the clock again. */
@@ -1396,8 +1396,7 @@ export function serversPage(): Page {
       });
     });
 
-    const node = el("div", { class: "panel panel-inset" }, [
-      el("h3", { text: creating ? "Add server" : `Edit ${id}` }),
+    const node = el("div", { class: "modal-form" }, [
       // Only when creating: pasting a configuration proposes NEW servers, so
       // offering it while editing an existing one would be an unrelated
       // action wearing the same form's clothes.
@@ -1415,7 +1414,7 @@ export function serversPage(): Page {
   async function openEditor(id: string): Promise<void> {
     try {
       const detail = await hub.getServer(id);
-      form.show(editor(id, detail));
+      form.show(`Edit ${id}`, editor(id, detail));
     } catch (err) {
       slot.fail(err);
     }
@@ -1610,7 +1609,9 @@ export function serversPage(): Page {
           title: "No servers configured yet.",
           body: "A server is one downstream MCP process or endpoint. Add one and agenthub will offer its tools to every client you connect.",
           actions: [
-            button("Add your first server", "btn btn-primary", () => form.show(editor("", null))),
+            button("Add your first server", "btn btn-primary", () =>
+              form.show("Add server", editor("", null)),
+            ),
           ],
         }),
       );
@@ -1667,7 +1668,7 @@ export function serversPage(): Page {
           "Servers",
           "Configure every downstream MCP process and endpoint, then act on the ones that need attention.",
           el("a", { class: "btn", href: "#/catalog", text: "Browse Catalog" }),
-          button("Add server", "btn btn-primary", () => form.show(editor("", null))),
+          button("Add server", "btn btn-primary", () => form.show("Add server", editor("", null))),
         ),
         el("div", { class: "page-toolbar" }, [
           el("div", { class: "toolbar-search" }, [
@@ -1680,7 +1681,6 @@ export function serversPage(): Page {
           }),
         ]),
         slot.node,
-        form.node,
         listRoot,
       );
     }

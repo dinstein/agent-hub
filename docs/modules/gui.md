@@ -81,6 +81,11 @@ and connection instancing are shared because the registry supports them across t
 are switched in place when Connection type changes, and `fieldset.group[hidden]` is an explicit CSS rule:
 the group's authored `display:flex` would otherwise override the browser's default `[hidden]` style and
 put Command and URL on screen together even though the collected entry correctly accepted only one.
+Manual server creation and Catalog entries that need parameters open this editor in a focused modal.
+The list remains stable underneath, the dialog header names the object being configured, long forms
+scroll inside the available window height, and the save/cancel actions remain at the bottom edge. A
+Catalog entry with no missing configuration remains a single-click add; the modal is not a ritual
+confirmation for work that needs no input.
 
 The Playground treats execution as the primary task, not the last step of a form. Its Call action is
 inside the argument header and remains visible while a long generated schema scrolls beneath it.

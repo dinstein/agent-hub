@@ -37,7 +37,7 @@ import { asCallError, hub, isStalePrecondition } from "../bridge";
 import { chip, chipRow, clear, el, emptyState, icon, loadingState, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { CONFLICT_MESSAGE, failureState, noticeSlot } from "../page";
-import { button, cliHint, controls, field, formHost, shellArg, textInput } from "../ui";
+import { button, cliHint, controls, field, modalHost, shellArg, textInput } from "../ui";
 import type { CatalogAdded, CatalogEntry, CatalogList, CatalogParam } from "../types";
 import { CatalogAuthOAuth, CatalogProvenance, Transport } from "../types";
 
@@ -146,7 +146,7 @@ export function catalogPage(): Page {
   let query = "";
   let timer: number | undefined;
   const slot = noticeSlot();
-  const form = formHost();
+  const form = modalHost();
 
   /** catalog id -> the server id it is stored as. */
   let installed = new Map<string, string>();
@@ -309,8 +309,7 @@ export function catalogPage(): Page {
 
     nameInput.addEventListener("input", refresh);
 
-    const node = el("div", { class: "panel panel-inset" }, [
-      el("h3", { text: `Add ${e.name || e.id}` }),
+    const node = el("div", { class: "modal-form" }, [
       errors,
       field(
         "Server id",
@@ -411,7 +410,9 @@ export function catalogPage(): Page {
         el("a", { class: "btn btn-secondary", href: "#/servers", text: "Open" }),
       ]);
     } else if (e.needs_config || collision) {
-      action = button("Configure & add", "btn btn-primary", () => form.show(paramForm(e)));
+      action = button("Configure & add", "btn btn-primary", () =>
+        form.show(`Configure ${e.name || e.id}`, paramForm(e)),
+      );
     } else {
       action = button("Add", "btn btn-primary", () => void add(e, "", {}));
     }
@@ -562,7 +563,6 @@ export function catalogPage(): Page {
         el("span", { class: "toolbar-hint", text: "Every search word must match." }),
       ]),
       slot.node,
-      form.node,
       listRoot,
     );
   }

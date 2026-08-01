@@ -386,19 +386,32 @@ export function openModal(
   body: (Node | null)[],
   opts: { danger?: boolean; onClose?: () => void } = {},
 ): () => void {
+  const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const titleID = `modal-title-${Math.random().toString(36).slice(2)}`;
   const overlay = el("div", { class: "overlay" });
   const close = (): void => {
     overlay.remove();
     document.removeEventListener("keydown", onKey);
     opts.onClose?.();
+    if (previousFocus?.isConnected) previousFocus.focus();
   };
   const onKey = (ev: KeyboardEvent): void => {
     if (ev.key === "Escape") close();
   };
-  const panel = el("div", { class: opts.danger ? "modal modal-danger" : "modal" }, [
+  const panel = el("div", {
+    class: opts.danger ? "modal modal-danger" : "modal",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-labelledby": titleID,
+    tabindex: "-1",
+  }, [
     el("header", {}, [
-      el("strong", { text: title }),
-      button("×", "btn btn-icon", close),
+      el("strong", { id: titleID, text: title }),
+      (() => {
+        const closeButton = button("×", "btn btn-icon", close);
+        closeButton.setAttribute("aria-label", "Close dialog");
+        return closeButton;
+      })(),
     ]),
     el("div", { class: "modal-body" }, body.filter((n): n is Node => n !== null)),
   ]);
@@ -408,6 +421,12 @@ export function openModal(
   });
   document.addEventListener("keydown", onKey);
   document.body.append(overlay);
+  window.setTimeout(() => {
+    const first = panel.querySelector<HTMLElement>(
+      "input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href]",
+    );
+    (first ?? panel).focus();
+  }, 0);
   return close;
 }
 
@@ -583,6 +602,29 @@ export function formHost(): { node: HTMLElement; show(content: Node): void; hide
     },
     hide() {
       clear(node);
+    },
+  };
+}
+
+/** A replaceable form host for focused configuration work. Unlike formHost,
+ *  it does not move the page or widen the listing when a long editor opens. */
+export function modalHost(): { show(title: string, content: Node): void; hide(): void } {
+  let current: (() => void) | null = null;
+  return {
+    show(title, content) {
+      current?.();
+      let close: (() => void) | null = null;
+      close = openModal(title, [content], {
+        onClose: () => {
+          if (current === close) current = null;
+        },
+      });
+      current = close;
+    },
+    hide() {
+      const close = current;
+      current = null;
+      close?.();
     },
   };
 }
