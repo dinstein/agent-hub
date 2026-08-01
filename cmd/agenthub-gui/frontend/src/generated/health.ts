@@ -2,12 +2,13 @@
 //
 // Source of truth: the Health display contract constants in the Go package
 // github.com/dinstein/agent-hub/api (docs/modules/controlplane.md). The daemon computes
-// Health with one pure function and every frontend only renders it; these
-// values are matched, never invented.
+// Health with one pure function. Frontends match these values when rendering
+// that DTO or a purpose-specific typed self-test outcome; they never invent
+// another spelling.
 //
 // Regenerate: go generate ./cmd/agenthub-gui/...
 
-// Health.level values. Rendered verbatim: a frontend never re-derives
+// Health.level values. A frontend rendering the Health DTO never re-derives
 // status from connection flags (docs/modules/controlplane.md).
 export const HealthLevel = {
   Healthy: "healthy",

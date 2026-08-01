@@ -36,11 +36,12 @@ detached tree; it cannot clear or overlap the page now on screen. The router als
 failures by mount generation before displaying them. This is the shell's backstop rather than a
 promise that every page remembered to add the same post-await guard.
 
-The Servers page consumes live events but does not repaint merely because one arrived. It signatures the visible
-fleet and preserves the existing rows when the result is unchanged, keeping scroll, focus and disclosures intact.
-An already-active server also gets a short connecting grace while a gateway rebuilds its connection: a quick
-`connected → connecting → connected` report stays visually Active, while a new server shows Checking immediately
-and a connecting state that persists beyond the grace is shown. Errors are never delayed.
+The Servers page consumes live events for **configuration membership only**. Every enabled row is checked through
+the page's own short-lived handshake, with four running at once; another client's gateway report never supplies or
+overwrites the row status. Runtime-only events may cause a configuration re-read but do not retrigger the probes.
+A newer registry revision does, because an external editor may have changed an endpoint without changing its id.
+The page signatures the resulting visible fleet and preserves the existing rows when the answer is unchanged,
+keeping scroll, focus and disclosures intact.
 
 The current call is: **lists are bucketed by state, not alphabetized**. The server list has three
 buckets — needs attention / active / disabled — sorted within each bucket, **empty buckets are not
@@ -122,13 +123,13 @@ scroll inside the available window height, and the save/cancel actions remain at
 Catalog entry with no missing configuration remains a single-click add; the modal is not a ritual
 confirmation for work that needs no input.
 
-Creating or editing an enabled server, and switching a disabled server on, immediately performs the same
-handshake-only self-test as the row's Test action. The write has already succeeded and is never rolled back by
-the probe: a normal connection reports its tool count, a generic failure stays a visible diagnostic, and
-`E_AUTH_REQUIRED` repaints the server row as its `Authenticate` action. Authentication has exactly that one
-surface: the page does not also grow a warning card above the list, and Test closes its transient result dialog
-before moving the condition into the row. The frontend branches on the daemon's code, never on whether prose
-happens to contain `401`.
+Entering the page, creating or editing an enabled server, and switching a disabled server on all perform the same
+handshake-only self-test as the row's Test action. A write has already succeeded and is never rolled back by the
+probe: a normal connection reports its tool count, a generic failure stays a visible diagnostic, and an
+authentication-class error (`E_AUTH_REQUIRED`, plus the mixed-version `E_AUTH_FAILED` spelling) repaints the row as
+its `Authenticate` action. Authentication has exactly that one surface: the page does not also grow a warning card
+above the list, and Test closes its transient result dialog before moving the condition into the row. The frontend
+branches on the daemon's code, never on whether prose happens to contain `401`.
 
 The Playground treats execution as the primary task, not the last step of a form. Its Call action is
 inside the argument header and remains visible while a long generated schema scrolls beneath it.
@@ -175,16 +176,16 @@ accessibility requirement and a guard against misreading:
 This is the single biggest saver of user time: it removes the "read status → figure out what to do →
 find the entry point" three-step.
 
-`needs-auth` arrives from the daemon's Health contract after a gateway preserves a typed handshake 401/403; the
-frontend does not infer it from an error string. Clicking `Authenticate` starts the control-plane login session
-below, so the status both identifies the problem and is the operation that repairs it. It uses the warning spine,
-not the red connection-failure spine: missing authorization is an expected setup state, not evidence that the
-endpoint or protocol is broken.
+`needs-auth` arrives from this page's own self-test as a typed authentication error; the frontend does not infer it
+from an error string. Clicking `Authenticate` starts the control-plane login session below, so the status both
+identifies the problem and is the operation that repairs it. It uses the warning spine, not the red
+connection-failure spine: missing authorization is an expected setup state, not evidence that the endpoint or
+protocol is broken.
 
-A self-test can observe the same typed refusal before a connected gateway's next runtime report. The Servers page
-keeps that `E_AUTH_REQUIRED` observation in memory and overlays only the row action until a test or login succeeds.
-It is not persisted and it never parses error prose. This closes the otherwise-visible gap where a create or Test
-said “authenticate” in a page-level warning while the row continued to say “connection error”.
+That authentication observation is sticky for the life of the page. Gateway reports cannot touch it, and a later
+generic probe failure cannot downgrade it to `connection error`; only this page's own successful handshake clears
+it. Login completion immediately runs that handshake rather than trusting that storing a token made it usable. The
+observation is not persisted and it never parses error prose.
 
 **Semantic colors are reserved for health; accent is reserved for interaction.** Metadata like
 transport, source, and profile is always neutral (`ChipTone`'s `neutral`). Green/yellow/red still
@@ -193,10 +194,11 @@ primary action or focus target is active — and is never used for a health stat
 a healthy stdio server would show two unrelated green dots at once and color would stop meaning
 anything.
 
-**Health is always rendered, never re-derived.** The level is computed by a pure function in the
-daemon; the frontend only displays it. The constants are generated from the `api` package into
-`generated/health.ts`, with a golden test watching for three-way drift. A frontend that assembles a
-status from connection flags is a second judgment.
+**Status classification never parses raw connection flags or error prose.** The ordinary control-plane Health
+contract is computed by the daemon's pure function. The Servers page deliberately replaces it for enabled rows with
+the typed outcome of its own self-test: success, authentication refusal, generic failure, or still checking. The
+shared level/action constants are generated from the `api` package into `generated/health.ts`, with a golden test
+watching for three-way drift.
 
 **The global switch is a switch, not a verb.** Enabling and disabling used to be a word in a row of
 four identically-shaped buttons at the far end of the row, which got the most-used setting on the

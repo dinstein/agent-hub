@@ -58,9 +58,12 @@ type Hello struct {
 }
 
 // Health is the display contract computed server-side by a single pure
-// function (docs/modules/controlplane.md). Frontends only render it; they must never
-// re-derive status from connection flags. The SSE `servers` event payload
-// embeds the same struct, so push and pull are byte-identical.
+// function (docs/modules/controlplane.md). A frontend presenting this DTO
+// renders it verbatim and never re-derives it from connection flags. A
+// purpose-specific live self-test may replace the whole observation with its
+// typed outcome; it must not remix individual Health fields. The SSE
+// `servers` event payload embeds the same struct, so push and pull are
+// byte-identical.
 type Health struct {
 	// Level is one of the HealthLevel* constants.
 	Level string `json:"level"`

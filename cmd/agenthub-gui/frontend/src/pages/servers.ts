@@ -1,11 +1,11 @@
 // Servers page: the dashboard, the definition editor and the live self-test.
 //
-// The listing NEVER derives status itself: level, admin_state and action come
-// from the daemon as one pure-function result (docs/modules/controlplane.md), and the
-// constants they are compared against are generated from the Go api package
-// (src/generated/health.ts). What this file DOES decide is presentation:
-// which of three buckets a row belongs in, and which of the five status
-// shapes its status cell takes.
+// Enabled rows are based only on this page's short-lived self-tests, never on
+// another gateway's connection report. The outcome is classified by the
+// typed success/error contract, not by parsing raw flags or prose. Disabled
+// state still comes from the registry-backed daemon row. Shared level/action
+// spellings come from the generated Go api constants
+// (src/generated/health.ts).
 //
 // INFORMATION ARCHITECTURE (docs/modules/gui.md / 2.2)
 //
@@ -141,6 +141,77 @@ const BUCKET_TITLES: Record<Bucket, string> = {
   active: "Active",
   disabled: "Disabled",
 };
+
+type ProbeObservation =
+  | { kind: "checking" }
+  | { kind: "connected"; tools: number }
+  | { kind: "auth" }
+  | { kind: "error"; summary: string; detail: string };
+
+/**
+ * Replaces gateway-observed runtime state with this page's own short-lived
+ * handshake. The daemon list remains authoritative for configuration and
+ * enabled/disabled state; it is deliberately not authoritative for whether
+ * this page can connect right now.
+ */
+function withProbe(s: Server, observation: ProbeObservation | undefined): Server {
+  if (!s.enabled) return s;
+  const probe = observation ?? { kind: "checking" };
+  if (probe.kind === "connected") {
+    return {
+      ...s,
+      state: "connected",
+      tools: probe.tools,
+      health: {
+        level: HealthLevel.Healthy,
+        admin_state: AdminState.Enabled,
+        summary: "ok",
+        detail: "",
+        action: HealthAction.None,
+      },
+    };
+  }
+  if (probe.kind === "auth") {
+    return {
+      ...s,
+      state: "error",
+      tools: 0,
+      health: {
+        level: HealthLevel.Unhealthy,
+        admin_state: AdminState.Enabled,
+        summary: "authentication required",
+        detail: "",
+        action: HealthAction.Login,
+      },
+    };
+  }
+  if (probe.kind === "error") {
+    return {
+      ...s,
+      state: "error",
+      tools: 0,
+      health: {
+        level: HealthLevel.Unhealthy,
+        admin_state: AdminState.Enabled,
+        summary: probe.summary,
+        detail: probe.detail,
+        action: HealthAction.None,
+      },
+    };
+  }
+  return {
+    ...s,
+    state: "connecting",
+    tools: 0,
+    health: {
+      level: HealthLevel.Degraded,
+      admin_state: AdminState.Enabled,
+      summary: "checking",
+      detail: "",
+      action: HealthAction.None,
+    },
+  };
+}
 
 /** localStorage key for one bucket's collapse state. */
 const collapseKey = (b: Bucket): string => `agenthub.servers.bucket.${b}.collapsed`;
@@ -659,16 +730,18 @@ export function serversPage(): Page {
   let listRoot: HTMLElement | null = null;
   let search: HTMLInputElement | null = null;
   let ticker: number | undefined;
-  let stabilityTimer: number | undefined;
   let filter = "";
   const slot = noticeSlot();
   const form = modalHost();
 
-  /** A successful live self-test can learn that credentials are required
-   *  before a connected gateway has reported the same fact. Keep that typed
-   *  observation long enough to put the recovery action in the row. It is
-   *  cleared only by a successful test or login; prose is never inspected. */
-  const probedAuth = new Set<string>();
+  /** Runtime state owned by this page's short-lived handshakes. Gateway
+   *  reports never enter this map and therefore cannot repaint these rows. */
+  const probes = new Map<string, ProbeObservation>();
+  const probeVersions = new Map<string, number>();
+  const inFlightProbes = new Map<string, ReturnType<typeof hub.testServer>>();
+  let listedServers: Server[] = [];
+  let fleetProbeEpoch = 0;
+  let lastServerRevision = 0;
 
   /** When each currently-connecting server was first seen connecting. Reset
    *  whenever it leaves that state, so a reconnect starts the clock again. */
@@ -678,58 +751,7 @@ export function serversPage(): Page {
    *  no reason to pull every definition to label one wait. */
   const commands = new Map<string, string>();
 
-  /** The last fleet actually painted. A gateway reports connecting before it
-   *  has rebuilt an already-live connection, but showing that sub-second
-   *  intermediate state makes the whole dashboard appear to refresh. */
-  const displayedServers = new Map<string, Server>();
-  const connectingObservedAt = new Map<string, number>();
   let paintedSignature = "";
-  const CONNECTING_GRACE_MS = 1400;
-
-  /** Keeps an already-active row stable through a short gateway reconnect.
-   *  New servers still show Checking immediately, and an error is never
-   *  delayed. If connecting lasts beyond the grace, a scheduled draw makes
-   *  the real intermediate state visible. */
-  function stabilizeConnecting(servers: Server[]): Server[] {
-    let suppressed = false;
-    const now = Date.now();
-    const present = new Set<string>();
-    const stable = servers.map((s) => {
-      present.add(s.id);
-      const previous = displayedServers.get(s.id);
-      if (
-        previous?.state === "connected" &&
-        s.state === "connecting" &&
-        previous.enabled === s.enabled
-      ) {
-        const observedAt = connectingObservedAt.get(s.id) ?? now;
-        connectingObservedAt.set(s.id, observedAt);
-        if (now - observedAt >= CONNECTING_GRACE_MS) return s;
-        suppressed = true;
-        return {
-          ...s,
-          state: previous.state,
-          tools: previous.tools,
-          health: previous.health,
-        };
-      }
-      connectingObservedAt.delete(s.id);
-      return s;
-    });
-    for (const id of connectingObservedAt.keys()) {
-      if (!present.has(id)) connectingObservedAt.delete(id);
-    }
-    if (suppressed && stabilityTimer === undefined) {
-      stabilityTimer = window.setTimeout(() => {
-        stabilityTimer = undefined;
-        // The next read either reveals a connection that stayed transitional
-        // or confirms that the reconnect already settled. In the latter case
-        // the paint signature makes this a no-op.
-        void draw();
-      }, CONNECTING_GRACE_MS);
-    }
-    return stable;
-  }
 
   function noteConnecting(servers: Server[]): void {
     const now = Date.now();
@@ -767,6 +789,89 @@ export function serversPage(): Page {
         isPackageRunner(commands.get(id) ?? "");
       node.textContent = installing ? "Installing…" : "Checking…";
     }
+  }
+
+  function repaint(): void {
+    if (!listRoot) return;
+    const servers = listedServers.map((s) => withProbe(s, probes.get(s.id)));
+    noteConnecting(servers);
+    paint(servers);
+    tick();
+  }
+
+  /** Runs one authoritative page-owned handshake. An authentication refusal
+   *  is sticky: a later generic failure cannot downgrade a known credential
+   *  problem into "connection error". Only a successful handshake clears it. */
+  async function probeOne(id: string): Promise<ServerTestResult> {
+    const version = (probeVersions.get(id) ?? 0) + 1;
+    probeVersions.set(id, version);
+    const previous = probes.get(id);
+    if (previous?.kind !== "auth") probes.set(id, { kind: "checking" });
+    repaint();
+
+    inFlightProbes.get(id)?.cancel();
+    const request = hub.testServer(id, {});
+    inFlightProbes.set(id, request);
+    try {
+      const result = await request;
+      if (probeVersions.get(id) === version && root) {
+        probes.set(id, { kind: "connected", tools: result.tool_count });
+        repaint();
+      }
+      return result;
+    } catch (err) {
+      if (probeVersions.get(id) === version && root) {
+        const failure = asCallError(err);
+        if (authenticationRequired(err)) {
+          probes.set(id, { kind: "auth" });
+        } else if (probes.get(id)?.kind !== "auth") {
+          probes.set(id, {
+            kind: "error",
+            summary: errorHeadline(failure.message),
+            detail: [failure.message, failure.hint].filter(Boolean).join("\n"),
+          });
+        }
+        repaint();
+      }
+      throw err;
+    } finally {
+      if (inFlightProbes.get(id) === request) inFlightProbes.delete(id);
+    }
+  }
+
+  /** Probes a fleet at bounded concurrency. A runtime SSE repaint with the
+   *  same registry revision finds observations already present and starts
+   *  nothing; a real registry revision change asks every enabled definition
+   *  again because an external editor may have changed its endpoint. */
+  function probeFleet(servers: Server[], force: boolean): void {
+    const present = new Set(servers.map((s) => s.id));
+    for (const id of Array.from(probes.keys())) {
+      const server = servers.find((s) => s.id === id);
+      if (!present.has(id) || !server?.enabled) {
+        probes.delete(id);
+        probeVersions.delete(id);
+      }
+    }
+    const ids = servers
+      .filter((s) => s.enabled && (force || !probes.has(s.id)))
+      .map((s) => s.id);
+    if (ids.length === 0) return;
+
+    const epoch = ++fleetProbeEpoch;
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (root && epoch === fleetProbeEpoch) {
+        const id = ids[cursor++];
+        if (!id) return;
+        try {
+          await probeOne(id);
+        } catch {
+          // The row owns the typed failure; fleet probing has no second
+          // warning surface and must continue with the remaining servers.
+        }
+      }
+    };
+    void Promise.all(Array.from({ length: Math.min(4, ids.length) }, () => worker()));
   }
 
   // -- the interactive login -------------------------------------------------
@@ -874,9 +979,13 @@ export function serversPage(): Page {
 
       if (st.phase === LoginPhase.Complete) {
         finished = true;
-        probedAuth.delete(id);
         close();
-        await draw();
+        try {
+          await probeOne(id);
+        } catch {
+          // The page-owned probe has already kept the authentication action
+          // or replaced it with its own concrete failure.
+        }
         return;
       }
 
@@ -1322,7 +1431,8 @@ export function serversPage(): Page {
   // -- writes ----------------------------------------------------------------
 
   function authenticationRequired(err: unknown): boolean {
-    return asCallError(err).code === ErrCode.AuthRequired;
+    const code = asCallError(err).code;
+    return code === ErrCode.AuthRequired || code === ErrCode.AuthFailed;
   }
 
   /** Checks an enabled definition immediately after the operator creates,
@@ -1330,22 +1440,18 @@ export function serversPage(): Page {
    *  already succeeded, so a failed handshake must never roll it back.
    *
    *  An auth refusal is the actionable branch. It carries the daemon's typed
-   *  E_AUTH_REQUIRED code rather than being inferred from prose, and the
-   *  resulting button starts the same login session as the row status action. */
+   *  authentication error code rather than being inferred from prose, and
+   *  the resulting button starts the same login session as the row status
+   *  action. */
   async function probeAfterWrite(id: string, changed: string): Promise<void> {
     try {
-      const res = await hub.testServer(id, {});
-      probedAuth.delete(id);
-      await draw();
+      const res = await probeOne(id);
       slot.say(`${id} ${changed}; connection check passed with ${res.tool_count} tool(s).`);
     } catch (err) {
-      const auth = authenticationRequired(err);
-      if (auth) {
+      if (authenticationRequired(err)) {
         // The row is the single authentication surface. Do not create a
         // second warning card above the fleet for the same typed condition.
-        probedAuth.add(id);
         slot.clear();
-        await draw();
         return;
       }
       slot.clear();
@@ -1445,6 +1551,8 @@ export function serversPage(): Page {
       },
     });
     if (!ok) return;
+    probes.delete(s.id);
+    probeVersions.delete(s.id);
     await draw();
     slot.say(`${s.id} removed.`);
   }
@@ -1462,6 +1570,8 @@ export function serversPage(): Page {
     if (next) {
       await probeAfterWrite(s.id, "enabled");
     } else {
+      probes.delete(s.id);
+      probeVersions.set(s.id, (probeVersions.get(s.id) ?? 0) + 1);
       slot.say(`${s.id} disabled.`);
     }
   }
@@ -1472,7 +1582,7 @@ export function serversPage(): Page {
     try {
       // Handshake only: naming a tool here would CALL it, and a dashboard
       // button must not have side effects on a downstream system.
-      const res = await hub.testServer(s.id, {});
+      const res = await probeOne(s.id);
       clear(body);
       body.append(
         el("p", {
@@ -1483,14 +1593,10 @@ export function serversPage(): Page {
         }),
         testResultView(res),
       );
-      probedAuth.delete(s.id);
-      await draw();
     } catch (err) {
       if (authenticationRequired(err)) {
-        probedAuth.add(s.id);
         close();
         slot.clear();
-        await draw();
         return;
       }
       clear(body);
@@ -1638,30 +1744,12 @@ export function serversPage(): Page {
   function paint(servers: Server[]): void {
     if (!listRoot) return;
 
-    // Prefer the daemon's Health contract. The only overlay is a typed
-    // E_AUTH_REQUIRED result from this page's own live probe, which may beat
-    // an older connected gateway's next runtime report to the screen.
-    servers = servers.map((s) => probedAuth.has(s.id)
-      ? {
-          ...s,
-          health: {
-            ...s.health,
-            level: HealthLevel.Unhealthy,
-            summary: "authentication required",
-            detail: "",
-            action: HealthAction.Login,
-          },
-        }
-      : s);
-
     // SSE can publish several coordination events whose final visible fleet
     // is identical. Do not tear down and recreate every row in that case:
     // preserving the DOM also preserves scroll, focus and open disclosures.
     const signature = JSON.stringify({ filter, servers });
     if (signature === paintedSignature) return;
     paintedSignature = signature;
-    displayedServers.clear();
-    for (const s of servers) displayedServers.set(s.id, s);
     clear(listRoot);
 
     const needle = filter.trim().toLowerCase();
@@ -1730,7 +1818,7 @@ export function serversPage(): Page {
     }
   }
 
-  async function draw(): Promise<void> {
+  async function draw(forceProbe = false): Promise<void> {
     if (!root) return;
     if (!listRoot) {
       // First paint: build the frame once so the notice slot, the filter and
@@ -1758,7 +1846,7 @@ export function serversPage(): Page {
           ]),
           el("span", {
             class: "toolbar-hint",
-            text: "Health comes from gateways that are actually using each server.",
+            text: "Health is checked directly from this page.",
           }),
         ]),
         slot.node,
@@ -1774,34 +1862,40 @@ export function serversPage(): Page {
       listRoot.append(failureState(err, "the server list", () => void draw()));
       return;
     }
-    servers = stabilizeConnecting(servers);
-    noteConnecting(servers);
-    paint(servers);
-    tick();
+    listedServers = servers;
+    probeFleet(servers, forceProbe);
+    repaint();
   }
 
   return {
     render(node) {
       root = node;
-      // The `servers` SSE payload is byte-identical to the list call, so a
-      // notification is simply a cue to re-read: one code path, one shape.
-      // Our own writes come back the same way, so "someone else changed it"
-      // and "I changed it" look identical on screen.
-      off = on<TopicEvent>(EVT.servers, () => void draw());
+      // Runtime reports and registry changes share the servers topic. Both
+      // trigger a configuration re-read, but only a newer registry revision
+      // starts fresh page-owned handshakes; gateway churn cannot overwrite
+      // or continuously retrigger this page's status observations.
+      off = on<TopicEvent>(EVT.servers, (event) => {
+        const registryChanged = lastServerRevision !== 0 && event.rev > lastServerRevision;
+        lastServerRevision = Math.max(lastServerRevision, event.rev);
+        void draw(registryChanged);
+      });
       ticker = window.setInterval(tick, 1000);
-      return draw();
+      return draw(true);
     },
     dispose() {
       off?.();
       off = null;
       if (ticker !== undefined) window.clearInterval(ticker);
       ticker = undefined;
-      if (stabilityTimer !== undefined) window.clearTimeout(stabilityTimer);
-      stabilityTimer = undefined;
+      fleetProbeEpoch++;
       connectingSince.clear();
       commands.clear();
-      displayedServers.clear();
-      connectingObservedAt.clear();
+      probes.clear();
+      probeVersions.clear();
+      for (const request of inFlightProbes.values()) request.cancel();
+      inFlightProbes.clear();
+      listedServers = [];
+      lastServerRevision = 0;
       paintedSignature = "";
       root = null;
       listRoot = null;

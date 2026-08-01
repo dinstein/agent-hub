@@ -957,6 +957,9 @@ export const ErrCode = {
   /** A live server self-test reached the downstream and its initial
    *  handshake was rejected with 401/403. Offer the OAuth login action. */
   AuthRequired: "E_AUTH_REQUIRED",
+  /** CLI-shaped authentication failures can cross a mixed-version desktop
+   *  boundary. They require the same persistent login action. */
+  AuthFailed: "E_AUTH_FAILED",
   Gui: "E_GUI",
 } as const;
 export type ErrCode = (typeof ErrCode)[keyof typeof ErrCode];

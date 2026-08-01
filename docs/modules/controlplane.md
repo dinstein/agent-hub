@@ -594,6 +594,11 @@ is not a worthwhile trade. The aggregation rules are in the file comment of `int
 Those reports keep handshake authentication refusals distinct from generic dial failures, so a downstream 401/403
 produces the Health contract's `login` action instead of the misleading `restart` action.
 
+The desktop Servers page does not present this aggregate as its own diagnosis. It uses `/v1/servers` for registry
+membership and enabled state, then runs the existing per-server self-test endpoint and keeps those short-lived
+observations locally while the page is open. Thus one client's broken gateway remains visible through the API and
+CLI without being able to repaint the independent management-page probe.
+
 ---
 
 ## internal/httpbridge
