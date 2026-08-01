@@ -422,9 +422,14 @@ export function openModal(
   document.addEventListener("keydown", onKey);
   document.body.append(overlay);
   window.setTimeout(() => {
-    const first = panel.querySelector<HTMLElement>(
-      "input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href]",
-    );
+    // Prefer a one-line field. The server dialog begins with a collapsed
+    // paste disclosure whose textarea precedes the visible Id input in DOM
+    // order; focusing that closed descendant fails and leaves focus on the X.
+    const firstField =
+      panel.querySelector<HTMLElement>("input:not([disabled])") ??
+      panel.querySelector<HTMLElement>("select:not([disabled])") ??
+      panel.querySelector<HTMLElement>("textarea:not([disabled])");
+    const first = firstField ?? panel.querySelector<HTMLElement>("button:not([disabled]), a[href]");
     (first ?? panel).focus();
   }, 0);
   return close;
