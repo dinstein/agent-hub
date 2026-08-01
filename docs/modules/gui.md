@@ -62,6 +62,14 @@ an explicit row check or `Check connections` action performs those reads. Once c
 Disconnect. This preserves the macOS privacy boundary while avoiding the old pair of Connect and
 Disconnect buttons that appeared simultaneously for every client and claimed no state at all.
 
+The server editor is transport-shaped, not a union of every possible field. `stdio` shows the local
+process contract (`command`, arguments, environment, working directory and optional container runtime);
+`http` and `sse` show the remote endpoint contract (`url`, headers and provenance). Enabled, OAuth hints
+and connection instancing are shared because the registry supports them across transports. The groups
+are switched in place when Connection type changes, and `fieldset.group[hidden]` is an explicit CSS rule:
+the group's authored `display:flex` would otherwise override the browser's default `[hidden]` style and
+put Command and URL on screen together even though the collected entry correctly accepted only one.
+
 ---
 
 ## 2. State is the action

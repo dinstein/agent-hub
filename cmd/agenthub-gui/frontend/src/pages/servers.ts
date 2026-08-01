@@ -331,6 +331,10 @@ function entryForm(initial: ServerEntry): EntryForm {
   // -- stdio half ------------------------------------------------------------
   const command = textInput(initial.command, "/usr/local/bin/some-mcp-server");
   const args = linesEditor(initial.args, "one argument per line");
+  const env = pairEditor(initial.env, {
+    keyLabel: "NAME",
+    hint: "stored verbatim — put ${SECRET_NAME} here, never the credential itself",
+  });
   const cwd = textInput(initial.cwd, "working directory (optional)");
   const runtime = selectInput(
     [
@@ -368,14 +372,18 @@ function entryForm(initial: ServerEntry): EntryForm {
   // Command and arguments are the whole of a stdio server for almost every
   // entry; a working directory and container isolation are real but rare.
   const stdioAdvanced =
-    (initial.cwd ?? "") !== "" || initial.runtime === Runtime.Docker || initial.docker !== undefined;
+    Object.keys(initial.env ?? {}).length > 0 ||
+    (initial.cwd ?? "") !== "" ||
+    initial.runtime === Runtime.Docker ||
+    initial.docker != null;
   const stdioBlock = group(
-    "Process",
+    "Local process",
     field("Command", command),
     field("Arguments", args.node),
     advanced(
-      "Working directory and isolation",
+      "Environment, working directory and isolation",
       stdioAdvanced,
+      field("Environment variables", env.node),
       field("Working directory", cwd),
       field("Runtime", runtime),
       dockerBlock,
@@ -405,14 +413,12 @@ function entryForm(initial: ServerEntry): EntryForm {
   // authorization server, and headers are for the ones that want a static
   // token. Both stay one click away, and open by themselves once set.
   const httpAdvanced =
-    Object.keys(initial.headers ?? {}).length > 0 ||
-    initial.provenance === Provenance.Local ||
-    initial.oauth !== undefined;
+    Object.keys(initial.headers ?? {}).length > 0 || initial.provenance === Provenance.Local;
   const httpBlock = group(
-    "Endpoint",
+    "Remote endpoint",
     field("URL", url),
     advanced(
-      "Headers, network provenance and OAuth",
+      "Headers and network provenance",
       httpAdvanced,
       field("Headers", headers.node),
       field(
@@ -420,20 +426,10 @@ function entryForm(initial: ServerEntry): EntryForm {
         provenance,
         "local unblocks a LITERAL loopback address only, never a hostname whose DNS answer claims to be local",
       ),
-      group(
-        "OAuth hints (optional)",
-        field("Issuer", issuer, "pins the authorization server and skips discovery"),
-        field("Scopes", scopes.node),
-        field("Resource metadata URL", resourceMeta),
-      ),
     ),
   );
 
   // -- common ---------------------------------------------------------------
-  const env = pairEditor(initial.env, {
-    keyLabel: "NAME",
-    hint: "stored verbatim — put ${SECRET_NAME} here, never the credential itself",
-  });
   const derive = selectInput(
     [
       { value: "", label: "none (one shared instance)" },
@@ -443,27 +439,50 @@ function entryForm(initial: ServerEntry): EntryForm {
     initial.derive || "",
   );
   const enabled = checkboxInput("Enabled", initial.enabled);
+  const transportContext = el("div", { class: "transport-context", "aria-live": "polite" });
+  const transportField = field(
+    "Connection type",
+    transport,
+    "Choose how AgentHub reaches this server. The configuration fields below change with this selection.",
+  );
+  transportField.classList.add("transport-field");
 
   function sync(): void {
     const stdio = transport.value === Transport.Stdio;
     stdioBlock.hidden = !stdio;
     httpBlock.hidden = stdio;
     dockerBlock.hidden = !stdio || runtime.value !== Runtime.Docker;
+    if (stdio) {
+      transportContext.textContent = "stdio runs a local process. Configure its command, arguments and environment.";
+    } else if (transport.value === Transport.HTTP) {
+      transportContext.textContent = "HTTP connects to an MCP Streamable HTTP URL. No local command is started.";
+      url.placeholder = "https://example.com/mcp";
+    } else {
+      transportContext.textContent = "SSE connects to a legacy HTTP+SSE URL. No local command is started.";
+      url.placeholder = "https://example.com/sse";
+    }
   }
   transport.addEventListener("change", sync);
   runtime.addEventListener("change", sync);
 
   const node = el("div", { class: "form" }, [
-    field("Transport", transport),
+    transportField,
+    transportContext,
     stdioBlock,
     httpBlock,
     // Enabled stays in the open: it is the one switch here whose default a
     // reader may actually want to change while adding.
     enabled.node,
     advanced(
-      "Environment and instancing",
-      Object.keys(initial.env ?? {}).length > 0 || (initial.derive ?? "") !== "",
-      field("Variables", env.node),
+      "OAuth hints",
+      initial.oauth != null,
+      field("Issuer", issuer, "pins the authorization server and skips discovery"),
+      field("Scopes", scopes.node),
+      field("Resource metadata URL", resourceMeta),
+    ),
+    advanced(
+      "Connection instancing",
+      (initial.derive ?? "") !== "",
       field(
         "Derive",
         derive,
@@ -503,8 +522,13 @@ function entryForm(initial: ServerEntry): EntryForm {
       entry.enabled = enabled.box.checked;
       entry.derive = derive.value;
       entry.source = initial.source || "gui";
-      const envMap = env.value();
-      entry.env = Object.keys(envMap).length > 0 ? envMap : null;
+      const scopeList = scopes.value();
+      if (issuer.value.trim() || scopeList.length > 0 || resourceMeta.value.trim()) {
+        entry.oauth = {};
+        if (issuer.value.trim()) entry.oauth.issuer = issuer.value.trim();
+        if (scopeList.length > 0) entry.oauth.scopes = scopeList;
+        if (resourceMeta.value.trim()) entry.oauth.resourceMetadataUrl = resourceMeta.value.trim();
+      }
 
       if (transport.value === Transport.Stdio) {
         if (!command.value.trim()) {
@@ -513,6 +537,8 @@ function entryForm(initial: ServerEntry): EntryForm {
         entry.command = command.value.trim();
         const argv = args.value();
         entry.args = argv.length > 0 ? argv : null;
+        const envMap = env.value();
+        entry.env = Object.keys(envMap).length > 0 ? envMap : null;
         entry.cwd = cwd.value.trim();
         entry.runtime = runtime.value;
         if (runtime.value === Runtime.Docker) {
@@ -542,13 +568,6 @@ function entryForm(initial: ServerEntry): EntryForm {
       const headerMap = headers.value();
       entry.headers = Object.keys(headerMap).length > 0 ? headerMap : null;
       entry.provenance = provenance.value;
-      const scopeList = scopes.value();
-      if (issuer.value.trim() || scopeList.length > 0 || resourceMeta.value.trim()) {
-        entry.oauth = {};
-        if (issuer.value.trim()) entry.oauth.issuer = issuer.value.trim();
-        if (scopeList.length > 0) entry.oauth.scopes = scopeList;
-        if (resourceMeta.value.trim()) entry.oauth.resourceMetadataUrl = resourceMeta.value.trim();
-      }
       return { ok: true, entry };
     },
   };

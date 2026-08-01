@@ -2212,10 +2212,34 @@ fieldset.group {
   gap: 10px;
 }
 
+/* Author-level display:flex beats the user agent's [hidden] rule. Without an
+ * equally specific rule here, changing a server from stdio to HTTP leaves the
+ * Process group visible beside the URL fields (and vice versa). */
+fieldset.group[hidden] {
+  display: none;
+}
+
 fieldset.group > legend {
   color: var(--muted);
   font-size: 12px;
   padding: 0 6px;
+}
+
+.transport-field {
+  max-width: 460px;
+}
+
+.transport-context {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  margin-top: calc(-1 * var(--space-2));
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+  color: var(--muted);
+  font-size: var(--text-sm);
 }
 
 .textarea {
