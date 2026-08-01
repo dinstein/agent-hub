@@ -71,6 +71,14 @@ are switched in place when Connection type changes, and `fieldset.group[hidden]`
 the group's authored `display:flex` would otherwise override the browser's default `[hidden]` style and
 put Command and URL on screen together even though the collected entry correctly accepted only one.
 
+The Playground treats execution as the primary task, not the last step of a form. Its Call action is
+inside the argument header and remains visible while a long generated schema scrolls beneath it.
+Generated fields are split into explicit Required and Optional sections; a blank optional field is
+omitted rather than encoded as an empty value. A rejected field receives both an invalid state and
+focus. Tool text that parses as JSON opens in Pretty mode with a reversible Raw view, while arbitrary
+text is left untouched. The raw daemon result remains a separate diagnostic disclosure because tool
+content and transport metadata answer different questions.
+
 ---
 
 ## 2. State is the action

@@ -396,28 +396,66 @@ interface ArgsEditor {
   degraded: boolean;
   /** True when this tool declares no parameters at all. */
   empty: boolean;
+  requiredCount: number;
+  optionalCount: number;
 }
 
 function buildForm(check: Extract<SchemaCheck, { ok: true }>): ArgsEditor {
-  const rows: { name: string; control: FieldControl; required: boolean }[] = [];
-  const node = el("div", { class: "form" });
+  const rows: { name: string; control: FieldControl; required: boolean; field: HTMLElement }[] = [];
+  const requiredFields: HTMLElement[] = [];
+  const optionalFields: HTMLElement[] = [];
+  const node = el("div", { class: "playground-param-groups" });
   for (const [name, sub] of check.properties) {
     const required = check.required.has(name);
     const control = controlFor(name, sub, required);
-    rows.push({ name, control, required });
-    const label = required ? `${name} *` : name;
     const hintParts = [
       sub.description ?? "",
       control.degraded ? "not renderable as a field — enter this one as JSON" : "",
     ].filter(Boolean);
-    node.append(field(label, control.node, hintParts.join(" · ") || undefined));
+    const fieldNode = el("label", { class: `field playground-param ${required ? "is-required" : "is-optional"}` }, [
+      el("span", { class: "field-label playground-param-label" }, [
+        el("span", { class: "playground-param-name", text: name }),
+        el("span", {
+          class: `param-kind ${required ? "param-kind-required" : "param-kind-optional"}`,
+          text: required ? "Required" : "Optional",
+        }),
+      ]),
+      control.node,
+      hintParts.length > 0 ? el("span", { class: "hint", text: hintParts.join(" · ") }) : null,
+    ]);
+    rows.push({ name, control, required, field: fieldNode });
+    (required ? requiredFields : optionalFields).push(fieldNode);
   }
+
+  const group = (title: string, fields: HTMLElement[], required: boolean): HTMLElement | null =>
+    fields.length === 0
+      ? null
+      : el("section", { class: `playground-param-section ${required ? "required" : "optional"}` }, [
+          el("div", { class: "playground-param-section-head" }, [
+            el("strong", { text: title }),
+            el("span", { text: `${fields.length} ${fields.length === 1 ? "parameter" : "parameters"}` }),
+          ]),
+          el("div", { class: "form" }, fields),
+        ]);
+  const requiredGroup = group("Required", requiredFields, true);
+  const optionalGroup = group("Optional", optionalFields, false);
+  if (requiredGroup) node.append(requiredGroup);
+  if (optionalGroup) node.append(optionalGroup);
+
   const collect = (enforceRequired: boolean): ArgsResult => {
     const args: Record<string, unknown> = {};
+    let firstInvalid: HTMLElement | null = null;
     for (const r of rows) {
+      r.field.classList.remove("is-invalid");
+      r.control.node.removeAttribute("aria-invalid");
       const got = r.control.read();
       if (!got.ok) {
         if (!enforceRequired && got.fault === "missing") continue;
+        r.field.classList.add("is-invalid");
+        r.control.node.setAttribute("aria-invalid", "true");
+        firstInvalid ??= r.control.node;
+        firstInvalid.focus({ preventScroll: true });
+        firstInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
         return { ok: false, message: got.message };
       }
       if (got.value !== undefined) args[r.name] = got.value;
@@ -428,6 +466,8 @@ function buildForm(check: Extract<SchemaCheck, { ok: true }>): ArgsEditor {
     node,
     degraded: rows.some((r) => r.control.degraded),
     empty: rows.length === 0,
+    requiredCount: requiredFields.length,
+    optionalCount: optionalFields.length,
     value: () => collect(true),
     partial: () => collect(false),
     fill(value) {
@@ -640,14 +680,26 @@ export function playgroundPage(): Page {
           }),
         );
       }
-      body.push(
-        el("p", {
-          class: "hint",
-          text: "* is required. An optional field left blank is left OUT of the call — it is not sent as an empty value.",
-        }),
-      );
+      body.push(el("p", {
+        class: "hint playground-omit-note",
+        text: "Optional fields left blank are omitted from the call — they are not sent as empty values.",
+      }));
     }
-    argsBox.append(el("div", { class: "panel panel-inset" }, [el("h3", { text: "Arguments" }), ...body]));
+    const counts = check.ok && editor
+      ? `${editor.requiredCount} required · ${editor.optionalCount} optional`
+      : "Raw JSON";
+    argsBox.append(
+      el("div", { class: "panel panel-inset playground-args-panel" }, [
+        el("div", { class: "playground-args-head" }, [
+          el("div", {}, [
+            el("h3", { text: "Arguments" }),
+            el("span", { class: "meta", text: counts }),
+          ]),
+          runBox,
+        ]),
+        ...body,
+      ]),
+    );
   }
 
   // -- calling ---------------------------------------------------------------
@@ -717,11 +769,9 @@ export function playgroundPage(): Page {
         copyButton(() => cliCall(serverId, toolName, argsText()), "Copy CLI command", "btn btn-secondary"),
       ),
       el("p", {
-        class: "hint",
+        class: "hint playground-call-note",
         text:
-          "This runs the tool for real on the downstream server. It is the daemon's self-test, not the " +
-          "gateway: scope and the per-tool allow lists are NOT applied here, so a call " +
-          "that works on this page is not proof that a client would be allowed to make it.",
+          "Runs this downstream tool for real. Client/Profile scope is not applied.",
       }),
     );
   }
@@ -753,16 +803,59 @@ export function playgroundPage(): Page {
           el("span", { text: `  ${call.tool} returned in ${call.millis} ms.` }),
         ]);
     const text = call.text ?? "";
+    let parsed: unknown;
+    let isJSON = false;
+    if (text) {
+      try {
+        parsed = JSON.parse(text) as unknown;
+        isJSON = true;
+      } catch {
+        // Tool text is allowed to be anything. A failed parse simply means
+        // there is no meaningful Pretty mode to offer.
+      }
+    }
+    const resultContent = el("div", {});
+    if (text) {
+      const output = el("pre", { class: "raw-text playground-output-text" }) as HTMLPreElement;
+      let shown = text;
+      const renderText = (pretty: boolean): void => {
+        shown = pretty && isJSON ? JSON.stringify(parsed, null, 2) : text;
+        output.textContent = shown;
+      };
+      const resultActions: Node[] = [];
+      if (isJSON) {
+        const modes = el("div", { class: "segmented", role: "group", "aria-label": "Result formatting" });
+        const pretty = button("Pretty", "", () => {
+          pretty.setAttribute("aria-pressed", "true");
+          raw.setAttribute("aria-pressed", "false");
+          renderText(true);
+        });
+        const raw = button("Raw", "", () => {
+          raw.setAttribute("aria-pressed", "true");
+          pretty.setAttribute("aria-pressed", "false");
+          renderText(false);
+        });
+        pretty.setAttribute("aria-pressed", "true");
+        raw.setAttribute("aria-pressed", "false");
+        modes.append(pretty, raw);
+        resultActions.push(modes);
+        renderText(true);
+      } else {
+        renderText(false);
+      }
+      resultContent.append(
+        el("div", { class: "playground-result-toolbar" }, [
+          isJSON ? el("span", { class: "id-chip", text: "JSON" }) : el("span", { class: "meta", text: "Text output" }),
+          controls(...resultActions, copyButton(() => shown, "Copy output", "btn btn-secondary")),
+        ]),
+        output,
+      );
+    }
     resultBox.append(
       el("div", { class: "panel panel-inset" }, [
         el("h3", { text: "Result" }),
         header,
-        text
-          ? el("div", {}, [
-              el("pre", { class: "raw-text", text }),
-              controls(copyButton(() => text, "Copy output", "btn btn-secondary")),
-            ])
-          : el("p", { class: "hint", text: "The tool returned no text content." }),
+        text ? resultContent : el("p", { class: "hint", text: "The tool returned no text content." }),
         rawDetails(raw, "Show the raw result JSON"),
         el("p", {
           class: "hint",
@@ -1056,7 +1149,6 @@ export function playgroundPage(): Page {
           connBox,
           toolBox,
           argsBox,
-          runBox,
         ]),
         el("section", { class: "playground-output" }, [
           el("div", { class: "workspace-label", text: "Result" }),
