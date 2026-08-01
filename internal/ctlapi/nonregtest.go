@@ -156,7 +156,11 @@ func (s *Server) handleServerTest(w http.ResponseWriter, r *http.Request, id str
 	start := time.Now()
 	conn, err := connect(r.Context(), spec, deps)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, CodeInternal,
+		code := CodeInternal
+		if transport.IsAuthStatus(err) {
+			code = CodeAuthRequired
+		}
+		writeErr(w, http.StatusInternalServerError, code,
 			fmt.Sprintf("server %q did not connect: %v", id, err),
 			connectHint(err), reqID)
 		return

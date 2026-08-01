@@ -232,6 +232,9 @@ func TestServerTestConnectFailure(t *testing.T) {
 	if status != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500: %s", status, body)
 	}
+	if code := nrErrCode(t, body); code != CodeAuthRequired {
+		t.Errorf("code = %q, want %q: %s", code, CodeAuthRequired, body)
+	}
 	// The auth hint is the one case where the fix is a login, so it is named.
 	if !nrContains(body, "login") {
 		t.Errorf("a 401 must hint at re-authorizing: %s", body)
@@ -254,6 +257,9 @@ func TestServerTestConnectFailureIsNotBlamedOnCredentials(t *testing.T) {
 	status, body := nrDo(t, env.sock, http.MethodPost, "/v1/servers/github/test", ServerTestRequest{})
 	if status != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500: %s", status, body)
+	}
+	if code := nrErrCode(t, body); code != CodeInternal {
+		t.Errorf("code = %q, want %q: %s", code, CodeInternal, body)
 	}
 	if nrContains(body, "login") {
 		t.Errorf("a 502 was blamed on the credentials: %s", body)

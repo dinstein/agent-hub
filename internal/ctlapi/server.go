@@ -34,6 +34,9 @@ const (
 	CodeConflict = "E_CONFLICT"
 	// CodeInternal is the generic 500 (including recovered panics).
 	CodeInternal = "E_INTERNAL"
+	// CodeAuthRequired means a downstream rejected the credentials during a
+	// live self-test. Frontends may offer the interactive login operation.
+	CodeAuthRequired = "E_AUTH_REQUIRED"
 )
 
 // notFoundMessage is the frozen uniform 404 text (anti-probing: identical

@@ -37,6 +37,9 @@ const (
 	ErrCodeStale = "E_STALE"
 	// ErrCodeInternal: the daemon failed to serve the request.
 	ErrCodeInternal = "E_INTERNAL"
+	// ErrCodeAuthRequired: a live downstream self-test was rejected with
+	// HTTP 401/403. A frontend may offer Auth.StartLogin for that server.
+	ErrCodeAuthRequired = "E_AUTH_REQUIRED"
 )
 
 // IsCode reports whether err is a control-plane *Error carrying code.
