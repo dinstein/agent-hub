@@ -851,6 +851,8 @@ export interface AuditCallSummary {
 export interface AuditCalls {
   since?: string;
   calls: AuditCallSummary[];
+  total: number;
+  nextCursor?: string;
   skippedMalformed: number;
 }
 

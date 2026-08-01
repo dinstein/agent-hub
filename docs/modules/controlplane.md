@@ -346,7 +346,10 @@ carrying their own read-only badge. `PATCH /v1/skills/{id}` exposes **only** the
 
 The encrypted access ledger also enters through this face, with one deliberate split. `GET /v1/audit/calls`
 and `/stats` read metadata records only, aggregate lifecycle events by the opaque `callId`, and never
-return payload references or event error strings. `GET /v1/audit/calls/{id}` is the explicit single-call
+return payload references or event error strings. The calls collection filters search, client, server, tool,
+and outcome before paging; its opaque cursor is the last call's `(received time, callId)` rather than an
+offset, so calls arriving at the front of a live ledger do not shift later pages underneath the reader. Its
+`total` is the filtered total for the selected time range. `GET /v1/audit/calls/{id}` is the explicit single-call
 disclosure: it resolves immutable key ids in the daemon's vault and returns Request, Effective arguments,
 and Result immediately with `Cache-Control: no-store`. Each rendered payload is capped to a 512 KiB preview
 and says when it was truncated, keeping the control plane's 16 MiB non-streaming response bound intact.

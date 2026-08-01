@@ -125,11 +125,13 @@ export const hub = {
   auditCalls: (
     sinceMillis: number,
     limit: number,
+    cursor = "",
+    query = "",
     client = "",
     server = "",
     tool = "",
     outcome = "",
-  ) => call<AuditCalls>("AuditCalls", sinceMillis, limit, client, server, tool, outcome),
+  ) => call<AuditCalls>("AuditCalls", sinceMillis, limit, cursor, query, client, server, tool, outcome),
   /** Selecting a row is the disclosure action: payload previews are returned
    *  immediately, with no second decrypt control. */
   auditCall: (id: string) => call<AuditCallDetail>("AuditCall", id),

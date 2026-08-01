@@ -14,6 +14,12 @@ import (
 )
 
 func seedControlAuditCall(t *testing.T, root, callID string, key []byte) string {
+	return seedControlAuditCallAt(t, root, callID, key, time.Now().UTC().Add(-time.Minute), "codex", "srv", "tool")
+}
+
+func seedControlAuditCallAt(
+	t *testing.T, root, callID string, key []byte, ts time.Time, client, server, tool string,
+) string {
 	t.Helper()
 	keyID, err := accesslog.KeyID(key)
 	if err != nil {
@@ -25,7 +31,6 @@ func seedControlAuditCall(t *testing.T, root, callID string, key []byte) string 
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts := time.Now().UTC().Add(-time.Minute)
 	request, err := store.PutPayload(ts, callID, accesslog.PayloadRequest,
 		[]byte(`{"name":"srv__tool","arguments":{"secret":"request-value"}}`))
 	if err != nil {
@@ -33,7 +38,7 @@ func seedControlAuditCall(t *testing.T, root, callID string, key []byte) string 
 	}
 	if err := store.Append(accesslog.Event{
 		TS: ts, Kind: accesslog.EventReceived, CallID: callID,
-		Client: "codex", Face: "stdio", Exposed: "srv__tool", Request: &request,
+		Client: client, Face: "stdio", Exposed: server + "__" + tool, Request: &request,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +49,7 @@ func seedControlAuditCall(t *testing.T, root, callID string, key []byte) string 
 	}
 	if err := store.Append(accesslog.Event{
 		TS: ts.Add(time.Millisecond), Kind: accesslog.EventRouted, CallID: callID,
-		Client: "codex", Exposed: "srv__tool", Server: "srv", Tool: "tool",
+		Client: client, Exposed: server + "__" + tool, Server: server, Tool: tool,
 		EffectiveArgs: &args,
 	}); err != nil {
 		t.Fatal(err)
@@ -56,7 +61,7 @@ func seedControlAuditCall(t *testing.T, root, callID string, key []byte) string 
 	}
 	if err := store.Append(accesslog.Event{
 		TS: ts.Add(2 * time.Millisecond), Kind: accesslog.EventFinished, CallID: callID,
-		Client: "codex", Exposed: "srv__tool", Server: "srv", Tool: "tool",
+		Client: client, Exposed: server + "__" + tool, Server: server, Tool: tool,
 		Outcome: "success", DurationMs: 12, Result: &result, ResultCapture: "full",
 	}); err != nil {
 		t.Fatal(err)
@@ -65,6 +70,54 @@ func seedControlAuditCall(t *testing.T, root, callID string, key []byte) string 
 		t.Fatal(err)
 	}
 	return keyID
+}
+
+func TestAuditCallsUseStableCursorAndServerSideFilters(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "audit")
+	key := []byte("0123456789abcdef0123456789abcdef")
+	base := time.Now().UTC().Add(-time.Minute)
+	seedControlAuditCallAt(t, root, "call-alpha", key, base.Add(3*time.Second), "claude", "linear", "list_projects")
+	seedControlAuditCallAt(t, root, "call-beta", key, base.Add(2*time.Second), "codex", "github", "get_issue")
+	seedControlAuditCallAt(t, root, "call-gamma", key, base.Add(time.Second), "codex", "linear", "get_project")
+	client, env := startServer(t, func(o *Options) { o.NonRegistry.AuditRoot = root })
+
+	first, err := client.Audit.Calls(t.Context(), api.AuditCallFilter{Since: base, Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Total != 3 || len(first.Calls) != 2 || first.NextCursor == "" {
+		t.Fatalf("first page = %+v", first)
+	}
+	second, err := client.Audit.Calls(t.Context(), api.AuditCallFilter{
+		Since: base, Limit: 2, Cursor: first.NextCursor,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Total != 3 || len(second.Calls) != 1 || second.NextCursor != "" {
+		t.Fatalf("second page = %+v", second)
+	}
+	seen := map[string]bool{}
+	for _, row := range append(first.Calls, second.Calls...) {
+		if seen[row.CallID] {
+			t.Fatalf("call %q appeared on more than one page", row.CallID)
+		}
+		seen[row.CallID] = true
+	}
+
+	filtered, err := client.Audit.Calls(t.Context(), api.AuditCallFilter{
+		Since: base, Limit: 10, Query: "PROJECTS", Client: "claude", Server: "linear",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filtered.Total != 1 || len(filtered.Calls) != 1 || filtered.Calls[0].CallID != "call-alpha" {
+		t.Fatalf("filtered calls = %+v", filtered)
+	}
+
+	if status, _ := nrDo(t, env.sock, http.MethodGet, "/v1/audit/calls?cursor=not-a-cursor", nil); status != http.StatusBadRequest {
+		t.Fatalf("invalid cursor status = %d, want %d", status, http.StatusBadRequest)
+	}
 }
 
 func TestAuditListIsMetadataOnlyAndDetailDecryptsImmediately(t *testing.T) {

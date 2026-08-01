@@ -51,9 +51,11 @@ type AuditCallSummary struct {
 }
 
 type AuditCalls struct {
-	Since   time.Time          `json:"since,omitempty"`
-	Calls   []AuditCallSummary `json:"calls"`
-	Skipped int                `json:"skippedMalformed"`
+	Since      time.Time          `json:"since,omitempty"`
+	Calls      []AuditCallSummary `json:"calls"`
+	Total      int                `json:"total"`
+	NextCursor string             `json:"nextCursor,omitempty"`
+	Skipped    int                `json:"skippedMalformed"`
 }
 
 type AuditEvent struct {
@@ -138,6 +140,8 @@ func (s *AuditService) Status(ctx context.Context) (AuditStatus, error) {
 type AuditCallFilter struct {
 	Since   time.Time
 	Limit   int
+	Cursor  string
+	Query   string
 	Client  string
 	Server  string
 	Tool    string
@@ -151,6 +155,12 @@ func auditQuery(f AuditCallFilter) url.Values {
 	}
 	if f.Limit > 0 {
 		q.Set("limit", strconv.Itoa(f.Limit))
+	}
+	if f.Cursor != "" {
+		q.Set("cursor", f.Cursor)
+	}
+	if f.Query != "" {
+		q.Set("query", f.Query)
 	}
 	if f.Client != "" {
 		q.Set("client", f.Client)

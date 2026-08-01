@@ -17,11 +17,11 @@ func (h *Hub) AuditStatus(ctx context.Context) (api.AuditStatus, error) {
 // AuditCalls returns metadata-only call rows. Decrypted payloads are available
 // exclusively through AuditCall after a user selects one row.
 func (h *Hub) AuditCalls(
-	ctx context.Context, sinceMillis int64, limit int, client, server, tool, outcome string,
+	ctx context.Context, sinceMillis int64, limit int, cursor, query, client, server, tool, outcome string,
 ) (api.AuditCalls, error) {
 	return call(ctx, h, func(c *api.Client) (api.AuditCalls, error) {
 		return c.Audit.Calls(ctx, api.AuditCallFilter{
-			Since: time.UnixMilli(sinceMillis), Limit: limit,
+			Since: time.UnixMilli(sinceMillis), Limit: limit, Cursor: cursor, Query: query,
 			Client: client, Server: server, Tool: tool, Outcome: outcome,
 		})
 	})

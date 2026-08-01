@@ -75,10 +75,53 @@ func eventIntoSummary(out *api.AuditCallSummary, e accesslog.Event) {
 }
 
 func auditMatches(c api.AuditCallSummary, q map[string]string) bool {
+	if query := strings.ToLower(strings.TrimSpace(q["query"])); query != "" {
+		values := []string{c.CallID, c.Client, c.Face, c.ExposedTool, c.Server, c.Tool, c.Outcome, c.Code}
+		matched := false
+		for _, value := range values {
+			if strings.Contains(strings.ToLower(value), query) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
 	return (q["client"] == "" || c.Client == q["client"]) &&
 		(q["server"] == "" || c.Server == q["server"]) &&
 		(q["tool"] == "" || c.Tool == q["tool"] || c.ExposedTool == q["tool"]) &&
 		(q["outcome"] == "" || c.Outcome == q["outcome"])
+}
+
+type auditListCursor struct {
+	time   time.Time
+	callID string
+}
+
+func encodeAuditListCursor(row api.AuditCallSummary) string {
+	raw := row.Time.Format(time.RFC3339Nano) + "\n" + row.CallID
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+func decodeAuditListCursor(raw string) (auditListCursor, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return auditListCursor{}, fmt.Errorf("decode cursor: %w", err)
+	}
+	timestamp, callID, ok := strings.Cut(string(decoded), "\n")
+	if !ok || callID == "" {
+		return auditListCursor{}, fmt.Errorf("cursor has invalid shape")
+	}
+	t, err := time.Parse(time.RFC3339Nano, timestamp)
+	if err != nil {
+		return auditListCursor{}, fmt.Errorf("cursor has invalid timestamp: %w", err)
+	}
+	return auditListCursor{time: t, callID: callID}, nil
+}
+
+func auditRowAfterCursor(row api.AuditCallSummary, cursor auditListCursor) bool {
+	return row.Time.Before(cursor.time) || (row.Time.Equal(cursor.time) && row.CallID < cursor.callID)
 }
 
 func (s *Server) handleAuditCalls(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +139,15 @@ func (s *Server) handleAuditCalls(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var cursor auditListCursor
+	if raw := strings.TrimSpace(r.URL.Query().Get("cursor")); raw != "" {
+		var err error
+		cursor, err = decodeAuditListCursor(raw)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, CodeBadRequest, "cursor is invalid", "return to the first page", requestIDFrom(r.Context()))
+			return
+		}
+	}
 	byID := map[string]*api.AuditCallSummary{}
 	skipped, err := accesslog.ScanEventsSince(s.opts.NonRegistry.AuditRoot, since, func(e accesslog.Event) error {
 		row := byID[e.CallID]
@@ -110,18 +162,37 @@ func (s *Server) handleAuditCalls(w http.ResponseWriter, r *http.Request) {
 		s.writeAuditError(w, r, err)
 		return
 	}
-	filters := map[string]string{"client": r.URL.Query().Get("client"), "server": r.URL.Query().Get("server"), "tool": r.URL.Query().Get("tool"), "outcome": r.URL.Query().Get("outcome")}
+	filters := map[string]string{
+		"query": r.URL.Query().Get("query"), "client": r.URL.Query().Get("client"),
+		"server": r.URL.Query().Get("server"), "tool": r.URL.Query().Get("tool"),
+		"outcome": r.URL.Query().Get("outcome"),
+	}
 	rows := make([]api.AuditCallSummary, 0, len(byID))
 	for _, row := range byID {
 		if auditMatches(*row, filters) {
 			rows = append(rows, *row)
 		}
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].Time.After(rows[j].Time) })
-	if len(rows) > limit {
-		rows = rows[:limit]
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Time.Equal(rows[j].Time) {
+			return rows[i].CallID > rows[j].CallID
+		}
+		return rows[i].Time.After(rows[j].Time)
+	})
+	total := len(rows)
+	start := 0
+	if !cursor.time.IsZero() {
+		start = sort.Search(len(rows), func(i int) bool { return auditRowAfterCursor(rows[i], cursor) })
 	}
-	writeOK(w, http.StatusOK, api.AuditCalls{Since: since, Calls: rows, Skipped: skipped})
+	end := min(start+limit, len(rows))
+	page := rows[start:end]
+	nextCursor := ""
+	if end < len(rows) && len(page) > 0 {
+		nextCursor = encodeAuditListCursor(page[len(page)-1])
+	}
+	writeOK(w, http.StatusOK, api.AuditCalls{
+		Since: since, Calls: page, Total: total, NextCursor: nextCursor, Skipped: skipped,
+	})
 }
 
 func auditEventView(e accesslog.Event) api.AuditEvent {
