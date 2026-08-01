@@ -35,18 +35,11 @@ var contributorOnlyDocs = []struct{ Path, Why string }{
 	{"docs/mcp-2026-07-28.md", "one spec's design and landing plan, cited by section number from the code implementing it"},
 	{"docs/modules/", "per-package invariants and the gaps recorded beside them; each moves with its package"},
 	{"docs/windows.md", "one platform's implementation status, rewritten on every change to it"},
-	{"runbooks/", "procedures run at the machine; every step is a command or gate this tree defines"},
 }
 
 // translatedRoots are the directories walked for English documents. Each
 // mirrors its translations at <root>/zh-CN/<the same relative path>.
-//
-// runbooks/ is walked even though every file in it is exempt above. The
-// exemption is then a decision this test can see and check — the subtree has
-// to exist, and a zh-CN copy of a runbook is reported — rather than an
-// accident of which directories the walk happened to visit. Drop the
-// exemption and the demand for translations starts on the next run.
-var translatedRoots = []string{"docs", "runbooks"}
+var translatedRoots = []string{"docs"}
 
 // englishOnly reports whether rel is declared contributor-only.
 func englishOnly(rel string) bool {
@@ -230,7 +223,7 @@ func TestContributorOnlyDocsMatchTheTree(t *testing.T) {
 	for _, top := range translatedRoots {
 		zhRoot := filepath.Join(root, top, "zh-CN")
 		if _, err := os.Stat(zhRoot); os.IsNotExist(err) {
-			continue // a root with no translations at all is the normal case for runbooks/
+			continue
 		}
 		err := filepath.WalkDir(zhRoot, func(path string, e os.DirEntry, err error) error {
 			if err != nil {

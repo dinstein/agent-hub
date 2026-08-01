@@ -25,15 +25,16 @@ regardless of who asked.
 | [docs/modules/](docs/modules/) | Before touching a package — its invariants and failure directions |
 | [docs/modules/oauth.md](docs/modules/oauth.md) | An OAuth downstream will not connect, or which provider shapes are supported |
 | [docs/canonical.md](docs/canonical.md) | Whether a name/dependency/convention may change, and why it was decided |
-| [runbooks/](runbooks/) | You are about to **do** one of the standard things, and want the steps in order |
+| [.agents/skills/](.agents/skills/) | You are about to **do** one of the standard workflows, and want its steps in order |
 
-`docs/` explains how the system works; `runbooks/` is what you execute. Four of them today —
-[new-feature.md](runbooks/new-feature.md) (build anything, and land it), [nightly-tidy.md](runbooks/nightly-tidy.md)
-(the recurring simplify / refactor / docs-agree pass), [releasing.md](runbooks/releasing.md)
-(cut a release), and [security-audit.md](runbooks/security-audit.md) (the recurring security sweep —
-a workflow of parallel finders, adversarial verifiers and one adjudication pass). Each has a
-shared skill under `.agents/skills/`; `.claude/skills/` contains symlinks to those same directories
-so Codex and Claude execute one wrapper rather than two copies.
+`docs/` explains how the system works; skills are what you execute. Four repository workflows exist
+today — [new-feature](.agents/skills/new-feature/SKILL.md) (build anything, and land it),
+[nightly-tidy](.agents/skills/nightly-tidy/SKILL.md) (the recurring simplify / refactor / docs-agree
+pass), [release](.agents/skills/release/SKILL.md) (cut a release), and
+[security-audit](.agents/skills/security-audit/SKILL.md) (the recurring security sweep — a workflow
+of parallel finders, adversarial verifiers and one adjudication pass). `.agents/skills/` is the
+single source; `.claude/skills` links to the entire directory so Codex and Claude execute the same
+files.
 
 Confirmed gaps, pinned to a line but not yet fixed, live in the `docs/modules/` file of the package
 that owns them — under "current assembly status", or beside the invariant they bend — and, for one
@@ -137,9 +138,9 @@ failures look like, and what the correct behavior is.
 
 ## Collaboration conventions
 
-These are the rules. The commands that carry them out live in
-[runbooks/new-feature.md](runbooks/new-feature.md), in one copy — follow it rather than reconstructing
-the sequence from the bullets below.
+These are the rules. The commands that carry them out live in the
+[new-feature skill](.agents/skills/new-feature/SKILL.md), in one copy — follow it rather than
+reconstructing the sequence from the bullets below.
 
 - **Do every feature in its own worktree; never edit code directly in the main work tree**:
   `git worktree add ../agent-hub-<topic> -b <topic>`. The main work tree only lands and pushes.
@@ -167,6 +168,7 @@ the sequence from the bullets below.
 Go 1.26+, golangci-lint v2, make, node v22 / npm 10, the `gh` CLI (authenticated — the branch flow
 opens and updates PRs through it), and the wails3 CLI (only needed for GUI builds).
 
-The `codex` CLI is optional, and only [security-audit.md](runbooks/security-audit.md) looks for it:
-present, it reviews the same shards as a second independent engine; absent, that sweep runs
-single-engine and says so. Not a build dependency.
+The `codex` CLI is optional, and only the
+[security-audit skill](.agents/skills/security-audit/SKILL.md) looks for it: present, it reviews the
+same shards as a second independent engine; absent, that sweep runs single-engine and says so. Not a
+build dependency.

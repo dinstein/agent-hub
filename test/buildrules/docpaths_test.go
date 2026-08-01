@@ -39,7 +39,7 @@ var retiredNames = map[string]string{
 // real top-level directories. Anchoring on those prefixes is what keeps the
 // pattern from claiming every backticked identifier in the prose: a bare
 // `slices.Sorted` or `tools/list` has no such prefix and is left alone.
-var docPathRef = regexp.MustCompile("`((?:internal|cmd|api|test|docs|runbooks|scripts)/[A-Za-z0-9_./-]+)`")
+var docPathRef = regexp.MustCompile("`((?:\\.agents|internal|cmd|api|test|docs|scripts)/[A-Za-z0-9_./-]+)`")
 
 // TestDocsCitePathsThatExist keeps the prose honest about the tree.
 //

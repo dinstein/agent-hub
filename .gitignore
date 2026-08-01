@@ -51,13 +51,10 @@ node_modules/
 .vscode/
 *.swp
 
-# Agent session state stays local; skills are a deliverable and ship with the
-# repo, and the command wrappers point at runbooks/ that everyone shares. The
-# rule has to re-include the chain step by step, because git will not look
-# inside a directory it has already excluded — and .claude IS excluded here,
-# by a global ~/.gitignore rather than by this file. A negation on the leaf
-# alone would silently do nothing.
+# Agent session state stays local; shared skills are a deliverable and ship
+# under .agents/. Claude follows this one directory symlink to them. The rule
+# has to re-include the chain step by step because .claude is excluded by a
+# global ~/.gitignore; a negation on the leaf alone would silently do nothing.
 !.claude/
 .claude/*
-!.claude/skills/
-!.claude/commands/
+!.claude/skills

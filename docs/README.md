@@ -13,7 +13,7 @@
 | Touch the GUI frontend | [modules/gui.md](modules/gui.md) |
 | Check whether a name, dependency, or convention is changeable | [canonical.md](canonical.md) |
 | Find out what works on Windows today | [windows.md](windows.md) |
-| **Do** one of the standard things — build a feature, run the tidy pass, cut a release | [../runbooks/](../runbooks/) |
+| **Do** one of the standard things — build a feature, run the tidy pass, cut a release | [../.agents/skills/](../.agents/skills/) |
 
 ## Files
 
@@ -26,15 +26,16 @@
 | [canonical.md](canonical.md) | Frozen identifiers, package layout, the four dependency constraints, command naming rules, engineering conventions, and every decision record |
 | [windows.md](windows.md) | Windows status: what's implemented, **what's unverified**, what's missing, acceptance criteria |
 
-## Not here: the procedures
+## Not here: executable workflows
 
-Anything you *perform* lives in [../runbooks/](../runbooks/), not in this directory. The split is by
-what a file answers, and the two rot differently: a doc explains how the system works and goes
-quietly wrong when the code changes; a runbook is a numbered sequence executed at the machine, and
-goes loudly wrong — a step fails — when a command or a gate changes. Kept together, a reader after
-the steps skims explanation, and a reader after the reason finds an ordered list that never gives one.
+Anything you *perform* lives in [../.agents/skills/](../.agents/skills/), not in this directory. The
+split is by what a file answers, and the two rot differently: a doc explains how the system works and
+goes quietly wrong when the code changes; a skill workflow is a numbered sequence executed at the
+machine, and goes loudly wrong — a step fails — when a command or a gate changes. Kept together, a
+reader after the steps skims explanation, and a reader after the reason finds an ordered list that
+never gives one.
 
-A runbook may cite a document here for the reason behind a step, and should. The reason stays here;
+A skill may cite a document here for the reason behind a step, and should. The reason stays here;
 the step stays there.
 
 ## Three layers — don't read them interchangeably
