@@ -1,6 +1,8 @@
 # <type>[(<scope>)][!]: <imperative summary>
 #
-# Optional body: explain why the change exists.
+# Body: usually 1–3 short bullets naming concrete changes; omit if the title is enough.
+# - concrete change
+# - concrete change (and a brief why, when it matters)
 #
 # Types: feat fix refactor perf test docs build ci chore release revert
 # Scope: stable owner such as cli, gateway, gui, or buildrules

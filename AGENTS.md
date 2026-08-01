@@ -156,13 +156,18 @@ Use one English, Conventional-Commits-shaped format:
   `gui` is a scope, not a type.
 - Summary is an imperative sentence fragment, normally lowercase, with no terminal punctuation;
   keep the complete title within 80 characters.
-- Body is optional. When needed, leave one blank line and explain why the change exists. Mark a
-  breaking change with `!` and a `BREAKING CHANGE:` trailer.
+- After one blank line, body is normally 1–3 short bullet points naming the concrete changes. Omit
+  it only when the title already says everything; keep each bullet to one sentence and include a
+  brief why only when it matters. Mark a breaking change with `!` and a `BREAKING CHANGE:` trailer.
 
 Examples:
 
 ```text
 feat(cli): show the resolved profile in client ls
+
+- add the resolved profile to each client row
+- reuse the default-profile resolver for unbound clients
+
 docs: define the contributor commit convention
 release: 0.18.0
 ```
