@@ -1458,7 +1458,6 @@ export function serversPage(): Page {
       class: "rec-overview",
       type: "button",
       "aria-label": `Edit ${s.id}`,
-      title: `Edit ${s.id}`,
     }, [
       el("span", { class: "rec-title" }, [
         el("span", { class: "rec-name", text: s.id }),

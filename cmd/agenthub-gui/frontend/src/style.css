@@ -3020,37 +3020,31 @@ details.adv[open] > summary::before {
 }
 
 .rec-overview {
-  width: calc(100% + 16px);
+  width: 100%;
   min-width: 0;
-  min-height: 38px;
+  min-height: 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  margin: -8px -8px 4px;
-  padding: 7px 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  margin: 0 0 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
   background: transparent;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition:
-    border-color var(--dur-fast) var(--ease),
-    background var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease);
 }
 
-.rec-overview:hover {
-  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+.rec-overview:hover .rec-name {
+  color: var(--accent-strong);
 }
 
 .rec-overview:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
 }
 
 .rec-overview > .rec-title {

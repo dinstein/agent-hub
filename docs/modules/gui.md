@@ -151,12 +151,14 @@ Two rules on it, both easy to undo by accident:
   walked back, and the moment they are wrong is exactly the moment the user looks away satisfied —
   the same reason a row grays out instead of vanishing (§5).
 
-The server overview is one keyboard-focusable Edit target. Its hover, focus ring, cursor, and Edit cue
-(revealed only while hovering or focusing) all describe the same action. This prevents the old split
-card where visually identical space in the upper half did nothing while only the lower label happened
-to accept a click. There is no second Edit button in the action column. The leading enable switch and
-trailing Test control remain separate targets and never bubble into Edit. Destructive Remove sits in
-a compact overflow menu: it stays available without painting every healthy row as a red warning.
+The server overview is one keyboard-focusable Edit target. The row already supplies the hover surface,
+so the target does not draw a second bordered box inside it: its cursor, subtle title-color change and
+Edit cue (revealed only while hovering or focusing) describe the action, while keyboard focus still
+gets an explicit outline. This prevents the old split card where visually identical space in the upper
+half did nothing while only the lower label happened to accept a click. There is no second Edit button
+in the action column. The leading enable switch and trailing Test control remain separate targets and
+never bubble into Edit. Destructive Remove sits in a compact overflow menu: it stays available without
+painting every healthy row as a red warning.
 
 The action column is deliberately compact. It may contain only the distilled status or direct health
 action plus the row controls; daemon detail, HTTP responses and recovery instructions live behind a
