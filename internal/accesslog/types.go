@@ -27,6 +27,9 @@ var (
 	ErrBadKey        = errors.New("accesslog: encryption key must be 32 bytes")
 	ErrBadReference  = errors.New("accesslog: invalid payload reference")
 	ErrPayloadTooBig = errors.New("accesslog: payload exceeds accepted MCP frame bound")
+	ErrCapacity      = errors.New("accesslog: storage limit reached")
+	ErrFreeReserve   = errors.New("accesslog: free-space reserve reached")
+	ErrExpired       = errors.New("accesslog: event is outside the retention window")
 )
 
 // Durability controls when a write is acknowledged.
@@ -112,10 +115,13 @@ type Event struct {
 
 // Options configures an access store. Root is normally <data>/audit.
 type Options struct {
-	Root         string
-	Key          []byte
-	KeyID        string
-	Durability   Durability
-	MaxPackBytes int64
-	Clock        func() time.Time
+	Root          string
+	Key           []byte
+	KeyID         string
+	Durability    Durability
+	MaxPackBytes  int64
+	RetentionDays int
+	MaxBytes      int64
+	MinFreeBytes  int64
+	Clock         func() time.Time
 }

@@ -302,6 +302,36 @@ func SetAuditEnabled(
 	return out, nil
 }
 
+// SetAuditKeyID advances the ledger to an already-persisted immutable key.
+// It never changes the enabled bit, so rotation is safe while capture is
+// paused as well as while it is live.
+func SetAuditKeyID(
+	ctx context.Context, st *registry.Store, keyID string, pre Precondition,
+) (AuditPolicyResult, error) {
+	out := AuditPolicyResult{}
+	res, err := apply(ctx, st, pre, func(tx *registry.Tx) error {
+		g := tx.Governance.V
+		out.Previous = g.ResolvedAudit()
+		if g.Audit == nil || strings.TrimSpace(g.Audit.V.KeyID) == "" {
+			return usagef("audit has no current key; run agenthub audit enable first")
+		}
+		if strings.TrimSpace(keyID) == "" {
+			return usagef("rotating audit requires a key id")
+		}
+		p := auditForWrite(&g)
+		p.KeyID = keyID
+		tx.Governance.V = g
+		out.Policy = g.ResolvedAudit()
+		return nil
+	})
+	out.Result = res
+	if err != nil {
+		return out, err
+	}
+	out.Changed = out.Previous != out.Policy
+	return out, nil
+}
+
 // SetGovernance writes one governance key.
 //
 // Failure direction: an unparseable value is an error and leaves the switch

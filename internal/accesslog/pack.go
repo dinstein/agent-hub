@@ -37,6 +37,7 @@ type packWriter struct {
 	seq      int
 	f        *os.File
 	size     int64
+	guard    func(int64, func() error) error
 }
 
 // cipherAEAD is the subset used here, kept narrow for tests and to avoid
@@ -48,12 +49,12 @@ type cipherAEAD interface {
 	Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, error)
 }
 
-func newPackWriter(dir, bootID string, key []byte, keyID string, maxBytes int64) (*packWriter, error) {
+func newPackWriter(dir, bootID string, key []byte, keyID string, maxBytes int64, guard func(int64, func() error) error) (*packWriter, error) {
 	aead, err := chacha20poly1305.NewX(key)
 	if err != nil {
 		return nil, fmt.Errorf("accesslog: payload cipher: %w", err)
 	}
-	return &packWriter{dir: dir, bootID: bootID, keyID: keyID, maxBytes: maxBytes, aead: aead}, nil
+	return &packWriter{dir: dir, bootID: bootID, keyID: keyID, maxBytes: maxBytes, aead: aead, guard: guard}, nil
 }
 
 func (w *packWriter) openNext() error {
@@ -111,26 +112,33 @@ func (w *packWriter) append(callID string, kind PayloadKind, raw []byte, sync bo
 	}
 	ciphertext := w.aead.Seal(nil, nonce, compressed, header)
 	entryLen := int64(packPrefixBytes + len(header) + len(ciphertext))
-	if w.f == nil || w.size > 0 && w.size+entryLen > w.maxBytes {
-		if err := w.openNext(); err != nil {
-			return PayloadRef{}, err
-		}
-	}
-	offset := w.size
 	buf := make([]byte, packPrefixBytes, int(entryLen))
 	copy(buf[:4], packMagic[:])
 	binary.BigEndian.PutUint32(buf[4:8], uint32(len(header)))
 	binary.BigEndian.PutUint64(buf[8:16], uint64(len(ciphertext)))
 	buf = append(buf, header...)
 	buf = append(buf, ciphertext...)
-	if _, err := w.f.Write(buf); err != nil {
-		return PayloadRef{}, fmt.Errorf("accesslog: append payload: %w", err)
-	}
-	w.size += entryLen
-	if sync {
-		if err := w.f.Sync(); err != nil {
-			return PayloadRef{}, fmt.Errorf("accesslog: sync payload: %w", err)
+	var offset int64
+	err = w.guard(entryLen, func() error {
+		if w.f == nil || w.size > 0 && w.size+entryLen > w.maxBytes {
+			if err := w.openNext(); err != nil {
+				return err
+			}
 		}
+		offset = w.size
+		if _, err := w.f.Write(buf); err != nil {
+			return fmt.Errorf("accesslog: append payload: %w", err)
+		}
+		w.size += entryLen
+		if sync {
+			if err := w.f.Sync(); err != nil {
+				return fmt.Errorf("accesslog: sync payload: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return PayloadRef{}, err
 	}
 	return PayloadRef{
 		Day: day, File: filepath.Base(w.f.Name()), Offset: offset, Length: entryLen,

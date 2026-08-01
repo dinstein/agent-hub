@@ -103,12 +103,14 @@ func (g *gateway) syncAudit() {
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
 	}
-	// Capture and retention changes do not require a new file handle or
-	// cipher. Reuse the current store when key and durability are unchanged;
-	// this also keeps repeated policy edits from accumulating retired handles.
+	// Result capture changes do not require a new file handle or cipher. Reuse
+	// the current store only when every storage invariant is unchanged; a
+	// retention or pressure edit must take effect before the next write.
 	g.audit.mu.Lock()
 	if g.audit.store != nil && g.audit.unavailable == nil &&
-		g.audit.policy.KeyID == p.KeyID && g.audit.policy.Durability == p.Durability {
+		g.audit.policy.KeyID == p.KeyID && g.audit.policy.Durability == p.Durability &&
+		g.audit.policy.RetentionDays == p.RetentionDays && g.audit.policy.MaxBytes == p.MaxBytes &&
+		g.audit.policy.MinFreeBytes == p.MinFreeBytes {
 		g.audit.policy = p
 		g.audit.mu.Unlock()
 		g.log.Info("audit policy applied", "results", p.ResultMode, "durability", p.Durability,
@@ -122,7 +124,13 @@ func (g *gateway) syncAudit() {
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
 	}
-	encoded, ok, err := g.cfg.Secrets(g.lifeCtx, secrets.AuditEncryptionRef())
+	encoded, ok, err := g.cfg.Secrets(g.lifeCtx, secrets.AuditEncryptionKeyRef(p.KeyID))
+	if err == nil && !ok {
+		// Compatibility with ledgers enabled before key-specific vault entries
+		// existed. The id check below prevents a legacy current key from being
+		// mistaken for the configured historical key.
+		encoded, ok, err = g.cfg.Secrets(g.lifeCtx, secrets.AuditEncryptionRef())
+	}
 	if err != nil || !ok {
 		if err == nil {
 			err = errors.New("audit encryption key is missing")
@@ -159,6 +167,7 @@ func (g *gateway) syncAudit() {
 	}
 	store, err := accesslog.Open(accesslog.Options{
 		Root: root, Key: key, KeyID: keyID, Durability: accesslog.Durability(p.Durability),
+		RetentionDays: p.RetentionDays, MaxBytes: p.MaxBytes, MinFreeBytes: p.MinFreeBytes,
 	})
 	zeroBytes(key)
 	if err != nil {

@@ -109,6 +109,67 @@ func TestPayloadPackRotates(t *testing.T) {
 	}
 }
 
+func TestHardCapacityBlocksBeforeWrite(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	keyID, err := KeyID(testKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(Options{
+		Root: root, Key: testKey(), KeyID: keyID, Durability: DurabilityWrite,
+		MaxBytes: 64, Clock: func() time.Time { return time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	_, err = s.PutPayload(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), "too-large", PayloadRequest, []byte(`{"value":"larger than the limit after encryption"}`))
+	if !errors.Is(err, ErrCapacity) {
+		t.Fatalf("PutPayload error = %v, want ErrCapacity", err)
+	}
+	usage, inspectErr := Inspect(root)
+	if inspectErr != nil {
+		t.Fatal(inspectErr)
+	}
+	if usage.Bytes > 64 {
+		t.Fatalf("stored %d bytes above hard cap", usage.Bytes)
+	}
+}
+
+func TestRetentionPrunesOnlyExpiredDayDirectories(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for _, name := range []string{"2026-07-01", "2026-07-30", "2026-08-01", "not-a-day"} {
+		if err := os.MkdirAll(filepath.Join(root, name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name, "marker"), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cutoff := time.Date(2026, 7, 30, 0, 0, 0, 0, time.UTC)
+	dry, err := Prune(root, cutoff, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dry.Days != 1 || len(dry.Names) != 1 || dry.Names[0] != "2026-07-01" {
+		t.Fatalf("dry-run = %+v", dry)
+	}
+	removed, err := Prune(root, cutoff, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed.Days != 1 || removed.Bytes == 0 {
+		t.Fatalf("prune = %+v", removed)
+	}
+	for _, name := range []string{"2026-07-30", "2026-08-01", "not-a-day"} {
+		if _, err := os.Stat(filepath.Join(root, name, "marker")); err != nil {
+			t.Fatalf("protected %s: %v", name, err)
+		}
+	}
+}
+
 func TestEventRoundTripAndBound(t *testing.T) {
 	t.Parallel()
 	s, root := openTestStore(t, 0)

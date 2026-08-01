@@ -33,8 +33,12 @@ type Store struct {
 	keyID      string
 	durability Durability
 	maxPack    int64
+	retention  int
+	maxBytes   int64
+	minFree    int64
 	clock      func() time.Time
 	bootID     string
+	lock       *os.File
 
 	mu     sync.Mutex
 	closed bool
@@ -44,6 +48,23 @@ type Store struct {
 type dayWriter struct {
 	events *os.File
 	pack   *packWriter
+}
+
+func (d *dayWriter) close() error {
+	if d == nil {
+		return nil
+	}
+	var errs []error
+	if err := d.pack.close(); err != nil {
+		errs = append(errs, err)
+	}
+	if err := d.events.Sync(); err != nil {
+		errs = append(errs, err)
+	}
+	if err := d.events.Close(); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
 // DefaultDir resolves <data>/audit.
@@ -88,17 +109,29 @@ func Open(opts Options) (*Store, error) {
 	if opts.Clock == nil {
 		opts.Clock = time.Now
 	}
+	if opts.RetentionDays < 0 || opts.MaxBytes < 0 || opts.MinFreeBytes < 0 {
+		return nil, errors.New("accesslog: retention and capacity limits cannot be negative")
+	}
+	if (opts.RetentionDays > 0 || opts.MaxBytes > 0 || opts.MinFreeBytes > 0) && !crossProcessLockSupported {
+		return nil, errors.New("accesslog: bounded retention requires a cross-process lock on this platform")
+	}
 	if err := platform.EnsureDir(opts.Root); err != nil {
 		return nil, err
 	}
+	lock, err := os.OpenFile(filepath.Join(opts.Root, ".audit.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("accesslog: open capacity lock: %w", err)
+	}
 	boot := make([]byte, 8)
 	if _, err := rand.Read(boot); err != nil {
+		_ = lock.Close()
 		return nil, fmt.Errorf("accesslog: boot id: %w", err)
 	}
 	key := append([]byte(nil), opts.Key...)
 	return &Store{
 		root: opts.Root, key: key, keyID: opts.KeyID, durability: opts.Durability,
-		maxPack: opts.MaxPackBytes, clock: opts.Clock, bootID: hex.EncodeToString(boot),
+		maxPack: opts.MaxPackBytes, retention: opts.RetentionDays, maxBytes: opts.MaxBytes,
+		minFree: opts.MinFreeBytes, clock: opts.Clock, bootID: hex.EncodeToString(boot), lock: lock,
 		days: map[string]*dayWriter{},
 	}, nil
 }
@@ -129,6 +162,16 @@ func (s *Store) dayLocked(day string) (*dayWriter, error) {
 	if d := s.days[day]; d != nil {
 		return d, nil
 	}
+	// A store writes one UTC day at a time. Close older handles before the
+	// capacity pass can prune their partitions: on Unix, unlinking an open
+	// pack would otherwise hide its still-allocated bytes from Inspect until
+	// the process exits.
+	for name, d := range s.days {
+		if err := d.close(); err != nil {
+			return nil, err
+		}
+		delete(s.days, name)
+	}
 	dir := filepath.Join(s.root, day)
 	if err := platform.EnsureDir(dir); err != nil {
 		return nil, err
@@ -137,7 +180,9 @@ func (s *Store) dayLocked(day string) (*dayWriter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("accesslog: open events: %w", err)
 	}
-	pack, err := newPackWriter(dir, s.bootID, s.key, s.keyID, s.maxPack)
+	pack, err := newPackWriter(dir, s.bootID, s.key, s.keyID, s.maxPack, func(added int64, write func() error) error {
+		return s.withCapacityLocked(day, added, write)
+	})
 	if err != nil {
 		_ = events.Close()
 		return nil, err
@@ -214,15 +259,17 @@ func (s *Store) Append(e Event) error {
 	if err != nil {
 		return err
 	}
-	if _, err := d.events.Write(line); err != nil {
-		return fmt.Errorf("accesslog: append event: %w", err)
-	}
-	if s.durability == DurabilitySync {
-		if err := d.events.Sync(); err != nil {
-			return fmt.Errorf("accesslog: sync event: %w", err)
+	return s.withCapacityLocked(day, int64(len(line)), func() error {
+		if _, err := d.events.Write(line); err != nil {
+			return fmt.Errorf("accesslog: append event: %w", err)
 		}
-	}
-	return nil
+		if s.durability == DurabilitySync {
+			if err := d.events.Sync(); err != nil {
+				return fmt.Errorf("accesslog: sync event: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 func eventMAC(e Event, key []byte) (string, error) {
@@ -280,13 +327,12 @@ func (s *Store) Close() error {
 	s.closed = true
 	var errs []error
 	for _, d := range s.days {
-		if err := d.pack.close(); err != nil {
+		if err := d.close(); err != nil {
 			errs = append(errs, err)
 		}
-		if err := d.events.Sync(); err != nil {
-			errs = append(errs, err)
-		}
-		if err := d.events.Close(); err != nil {
+	}
+	if s.lock != nil {
+		if err := s.lock.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}

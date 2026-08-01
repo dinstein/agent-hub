@@ -214,12 +214,9 @@ func (a *App) newAuditShowCmd() *cobra.Command {
 			out := AuditCall{CallID: args[0], Events: events}
 			var warnings []string
 			if payloads {
-				key, err := a.loadAuditKey(cmd)
-				if err != nil {
-					return err
-				}
-				defer zeroSecret(key)
-				if err := decryptAuditCall(root, key, events, &out); err != nil {
+				keys := newAuditKeyCache(a, cmd)
+				defer keys.close()
+				if err := decryptAuditCall(root, keys, events, &out); err != nil {
 					return err
 				}
 				warnings = append(warnings, "decrypted audit payloads may contain credentials and private user data")
@@ -231,7 +228,7 @@ func (a *App) newAuditShowCmd() *cobra.Command {
 	return cmd
 }
 
-func decryptAuditCall(root string, key []byte, events []accesslog.Event, out *AuditCall) error {
+func decryptAuditCall(root string, keys *auditKeyCache, events []accesslog.Event, out *AuditCall) error {
 	for _, e := range events {
 		for _, item := range []struct {
 			ref *accesslog.PayloadRef
@@ -239,6 +236,10 @@ func decryptAuditCall(root string, key []byte, events []accesslog.Event, out *Au
 		}{{e.Request, &out.Request}, {e.EffectiveArgs, &out.EffectiveArguments}, {e.Result, &out.Result}} {
 			if item.ref == nil {
 				continue
+			}
+			key, err := keys.get(item.ref.KeyID)
+			if err != nil {
+				return err
 			}
 			raw, err := accesslog.ReadPayload(root, *item.ref, key)
 			if err != nil {
@@ -378,11 +379,8 @@ func (a *App) newAuditVerifyCmd() *cobra.Command {
 		Short: "Authenticate metadata and decrypt every referenced payload",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			key, err := a.loadAuditKey(cmd)
-			if err != nil {
-				return err
-			}
-			defer zeroSecret(key)
+			keys := newAuditKeyCache(a, cmd)
+			defer keys.close()
 			root, err := accesslog.DefaultDir(a.resolver)
 			if err != nil {
 				return err
@@ -390,6 +388,11 @@ func (a *App) newAuditVerifyCmd() *cobra.Command {
 			out := AuditVerify{OK: true}
 			out.Skipped, err = accesslog.ScanEvents(root, func(e accesslog.Event) error {
 				out.Events++
+				key, keyErr := keys.get(e.KeyID)
+				if keyErr != nil {
+					out.addIssue(fmt.Sprintf("event %s/%s: %v", e.CallID, e.Kind, keyErr))
+					return nil
+				}
 				if err := accesslog.VerifyEvent(e, key); err != nil {
 					out.addIssue(fmt.Sprintf("event %s/%s: %v", e.CallID, e.Kind, err))
 				}
@@ -401,7 +404,12 @@ func (a *App) newAuditVerifyCmd() *cobra.Command {
 						continue
 					}
 					out.Payloads++
-					if err := accesslog.VerifyPayload(root, *item.ref, key, e.CallID, item.kind); err != nil {
+					payloadKey, payloadKeyErr := keys.get(item.ref.KeyID)
+					if payloadKeyErr != nil {
+						out.addIssue(fmt.Sprintf("payload %s/%s: %v", e.CallID, item.kind, payloadKeyErr))
+						continue
+					}
+					if err := accesslog.VerifyPayload(root, *item.ref, payloadKey, e.CallID, item.kind); err != nil {
 						out.addIssue(fmt.Sprintf("payload %s/%s: %v", e.CallID, item.kind, err))
 					}
 				}
@@ -432,19 +440,62 @@ func (v *AuditVerify) addIssue(issue string) {
 	}
 }
 
-func (a *App) loadAuditKey(cmd *cobra.Command) ([]byte, error) {
+type auditKeyCache struct {
+	a    *App
+	cmd  *cobra.Command
+	keys map[string][]byte
+}
+
+func newAuditKeyCache(a *App, cmd *cobra.Command) *auditKeyCache {
+	return &auditKeyCache{a: a, cmd: cmd, keys: map[string][]byte{}}
+}
+
+func (c *auditKeyCache) get(keyID string) ([]byte, error) {
+	if key := c.keys[keyID]; key != nil {
+		return key, nil
+	}
+	key, err := c.a.loadAuditKeyID(c.cmd, keyID)
+	if err != nil {
+		return nil, err
+	}
+	c.keys[keyID] = key
+	return key, nil
+}
+
+func (c *auditKeyCache) close() {
+	for _, key := range c.keys {
+		zeroSecret(key)
+	}
+}
+
+func (a *App) loadAuditKeyID(cmd *cobra.Command, keyID string) ([]byte, error) {
+	if len(keyID) != 16 {
+		return nil, NotFoundf(CodeSecretNotFound, "audit encryption key %q is invalid", keyID)
+	}
 	chain, _, err := a.secretChain()
 	if err != nil {
 		return nil, err
 	}
-	encoded, ok, err := chain.Get(cmd.Context(), secrets.AuditEncryptionRef())
+	encoded, ok, err := chain.Get(cmd.Context(), secrets.AuditEncryptionKeyRef(keyID))
+	if err == nil && !ok {
+		encoded, ok, err = chain.Get(cmd.Context(), secrets.AuditEncryptionRef())
+	}
 	if err != nil {
 		return nil, classifySecretsError(err)
 	}
 	if !ok {
-		return nil, NotFoundf(CodeSecretNotFound, "audit encryption key not found")
+		return nil, NotFoundf(CodeSecretNotFound, "audit encryption key %q not found", keyID)
 	}
-	return decodeAuditKey(encoded)
+	key, err := decodeAuditKey(encoded)
+	if err != nil {
+		return nil, err
+	}
+	got, err := accesslog.KeyID(key)
+	if err != nil || got != keyID {
+		zeroSecret(key)
+		return nil, &Error{Code: CodeStateCorrupt, ExitCode: ExitLocked, Message: fmt.Sprintf("stored audit key does not match id %q", keyID), Err: err}
+	}
+	return key, nil
 }
 
 func zeroSecret(key []byte) {

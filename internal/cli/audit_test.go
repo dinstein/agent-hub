@@ -225,3 +225,78 @@ func TestAuditReadCommandsAndIntegrityVerification(t *testing.T) {
 		t.Fatalf("tampered verify = %+v", verify)
 	}
 }
+
+func TestAuditExportPruneAndKeyRotation(t *testing.T) {
+	dir := setDataDir(t)
+	t.Setenv(secrets.EnvDevSecrets, "1")
+	var enabled AuditStatus
+	decodeInto(t, mustRun(t, "", "audit", "enable", "--json"), &enabled)
+	seedCLIAuditCall(t, dir, "before-rotation")
+
+	var rotated AuditKeyRotation
+	decodeInto(t, mustRun(t, "", "audit", "rotate-key", "--json"), &rotated)
+	if rotated.PreviousKeyID != enabled.KeyID || rotated.KeyID == "" || rotated.KeyID == enabled.KeyID || !rotated.Enabled {
+		t.Fatalf("rotation = %+v, enabled = %+v", rotated, enabled)
+	}
+	seedCLIAuditCall(t, dir, "after-rotation")
+
+	// Historical and new entries must both verify and decrypt after rotation.
+	var verify AuditVerify
+	decodeInto(t, mustRun(t, "", "audit", "verify", "--json"), &verify)
+	if !verify.OK || verify.Events != 6 || verify.Payloads != 6 {
+		t.Fatalf("post-rotation verify = %+v", verify)
+	}
+	var old AuditCall
+	decodeInto(t, mustRun(t, "", "audit", "show", "before-rotation", "--payloads", "--json"), &old)
+	if !strings.Contains(old.Request, "request-value") {
+		t.Fatalf("old payload after rotation = %+v", old)
+	}
+
+	metadataPath := filepath.Join(dir, "metadata.jsonl")
+	var metadataExport AuditExport
+	decodeInto(t, mustRun(t, "", "audit", "export", "--output", metadataPath, "--json"), &metadataExport)
+	metadataRaw, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadataExport.Events != 6 || strings.Contains(string(metadataRaw), "request-value") {
+		t.Fatalf("metadata export = %+v, data=%s", metadataExport, metadataRaw)
+	}
+	if code, _, _ := runCLI(t, "", "audit", "export", "--output", metadataPath); code != ExitUsage {
+		t.Fatalf("export overwrote existing file, exit = %d", code)
+	}
+
+	payloadPath := filepath.Join(dir, "payloads.jsonl")
+	out := mustRun(t, "", "audit", "export", "--output", payloadPath, "--payloads", "--json")
+	payloadRaw, err := os.ReadFile(payloadPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(payloadRaw), "request-value") || len(decodeEnvelope(t, out).Warnings) == 0 {
+		t.Fatalf("payload export lacks content or warning: %s / %s", payloadRaw, out)
+	}
+
+	oldDay := filepath.Join(dir, accesslog.DirectoryName, "2000-01-01")
+	if err := os.MkdirAll(oldDay, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldDay, "old.pack"), []byte("expired"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var dry AuditPrune
+	decodeInto(t, mustRun(t, "", "audit", "prune", "--dry-run", "--json"), &dry)
+	if !dry.DryRun || dry.Days != 1 {
+		t.Fatalf("dry prune = %+v", dry)
+	}
+	if _, err := os.Stat(oldDay); err != nil {
+		t.Fatalf("dry run removed partition: %v", err)
+	}
+	var pruned AuditPrune
+	decodeInto(t, mustRun(t, "", "audit", "prune", "--json"), &pruned)
+	if pruned.DryRun || pruned.Days != 1 || pruned.Bytes == 0 {
+		t.Fatalf("prune = %+v", pruned)
+	}
+	if _, err := os.Stat(oldDay); !os.IsNotExist(err) {
+		t.Fatalf("expired partition remains: %v", err)
+	}
+}

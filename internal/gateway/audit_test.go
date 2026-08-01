@@ -263,6 +263,38 @@ func TestAuditUnavailableBlocksBeforeTheGateChain(t *testing.T) {
 	}
 }
 
+func TestAuditCapacityBlocksBeforeTheGateChain(t *testing.T) {
+	resolver := testResolver(t.TempDir())
+	seedRegistry(t, resolver, "fake")
+	setAuditPolicy(t, resolver, func(p *registry.AuditPolicy) { p.MaxBytes = 1 })
+	g, c, _ := startGateway(t, Config{
+		ClientID: "audit-full", Resolver: resolver, Secrets: auditSecretResolver(auditTestKey()),
+		Dial: scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
+	})
+	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
+	waitForTools(t, c, "fake__echo")
+	resp := c.call(mcp.MethodToolsCall, mcp.CallToolParams{Name: "fake__echo", Arguments: []byte(`{"must":"not execute"}`)})
+	if resp.Error == nil || !strings.Contains(resp.Error.Message, "access ledger") {
+		t.Fatalf("response = %+v, want storage-pressure refusal", resp)
+	}
+	for stage, n := range g.pipe.Counters() {
+		if n != 0 {
+			t.Errorf("pipeline stage %s ran %d times after hard-cap refusal", stage, n)
+		}
+	}
+	root, err := accesslog.DefaultDir(resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, err := accesslog.Inspect(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.Bytes > 1 {
+		t.Fatalf("ledger used %d bytes above configured one-byte cap", usage.Bytes)
+	}
+}
+
 func TestAuditRecordsGateDenial(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "s1", "s2")

@@ -3,6 +3,7 @@ package accesslog
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,6 +18,7 @@ const (
 	accessHelperID   = "AGENTHUB_ACCESSLOG_TEST_ID"
 	accessHelperN    = "AGENTHUB_ACCESSLOG_TEST_N"
 	accessHelperKey  = "AGENTHUB_ACCESSLOG_TEST_KEY"
+	accessHelperCap  = "AGENTHUB_ACCESSLOG_TEST_CAP"
 )
 
 func TestMain(m *testing.M) {
@@ -24,7 +26,43 @@ func TestMain(m *testing.M) {
 		helperAppendEvents()
 		os.Exit(0)
 	}
+	if os.Getenv(accessHelperMode) == "capacity" {
+		helperCapacityEvents()
+		os.Exit(0)
+	}
 	os.Exit(m.Run())
+}
+
+func helperCapacityEvents() {
+	root, id := os.Getenv(accessHelperRoot), os.Getenv(accessHelperID)
+	capBytes, err := strconv.ParseInt(os.Getenv(accessHelperCap), 10, 64)
+	if err != nil || root == "" || id == "" {
+		fmt.Fprintln(os.Stderr, "bad capacity helper environment")
+		os.Exit(2)
+	}
+	key, err := hex.DecodeString(os.Getenv(accessHelperKey))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	keyID, _ := KeyID(key)
+	s, err := Open(Options{Root: root, Key: key, KeyID: keyID, Durability: DurabilityWrite, MaxBytes: capBytes})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer func() { _ = s.Close() }()
+	ts := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 500; i++ {
+		err := s.Append(Event{TS: ts, Kind: EventReceived, CallID: fmt.Sprintf("%s-%04d", id, i), Client: id})
+		if errors.Is(err, ErrCapacity) {
+			return
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 }
 
 func helperAppendEvents() {
@@ -99,5 +137,40 @@ func TestMetadataAppendIsWholeAcrossProcesses(t *testing.T) {
 	}
 	if len(events) != processes*records {
 		t.Fatalf("events = %d, want %d", len(events), processes*records)
+	}
+}
+
+func TestHardCapacityIsSharedAcrossProcesses(t *testing.T) {
+	root := t.TempDir()
+	const processes, capBytes = 4, int64(24 << 10)
+	commands := make([]*exec.Cmd, processes)
+	outputs := make([]*bytes.Buffer, processes)
+	for i := range commands {
+		outputs[i] = &bytes.Buffer{}
+		cmd := exec.Command(os.Args[0], "-test.run=^$")
+		cmd.Env = append(os.Environ(),
+			accessHelperMode+"=capacity",
+			accessHelperRoot+"="+root,
+			accessHelperID+"="+fmt.Sprintf("cap%d", i),
+			accessHelperCap+"="+strconv.FormatInt(capBytes, 10),
+			accessHelperKey+"="+hex.EncodeToString(testKey()),
+		)
+		cmd.Stdout, cmd.Stderr = outputs[i], outputs[i]
+		commands[i] = cmd
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, cmd := range commands {
+		if err := cmd.Wait(); err != nil {
+			t.Fatalf("capacity helper failed: %v\n%s", err, outputs[i].Bytes())
+		}
+	}
+	usage, err := Inspect(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.Bytes == 0 || usage.Bytes > capBytes {
+		t.Fatalf("shared usage = %d, want 1..%d", usage.Bytes, capBytes)
 	}
 }

@@ -30,6 +30,18 @@ type AuditStatus struct {
 	Storage       accesslog.Usage `json:"storage"`
 }
 
+// AuditKeyRotation reports only public key identifiers.
+type AuditKeyRotation struct {
+	PreviousKeyID string `json:"previousKeyId"`
+	KeyID         string `json:"keyId"`
+	Enabled       bool   `json:"enabled"`
+}
+
+func (r AuditKeyRotation) Human(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "audit key rotated: %s -> %s (enabled: %s)\n", r.PreviousKeyID, r.KeyID, boolText(r.Enabled))
+	return err
+}
+
 func auditStatusOf(p registry.ResolvedAuditPolicy) AuditStatus {
 	return AuditStatus{
 		Enabled: p.Enabled, Arguments: "full", Results: p.ResultMode,
@@ -75,7 +87,8 @@ func (a *App) newAuditCmd() *cobra.Command {
 	}
 	cmd.AddCommand(
 		a.newAuditStatusCmd(), a.newAuditTailCmd(), a.newAuditShowCmd(),
-		a.newAuditStatsCmd(), a.newAuditVerifyCmd(),
+		a.newAuditStatsCmd(), a.newAuditVerifyCmd(), a.newAuditExportCmd(),
+		a.newAuditPruneCmd(), a.newAuditRotateKeyCmd(),
 		a.newAuditEnableCmd(), a.newAuditDisableCmd(),
 	)
 	return cmd
@@ -159,6 +172,56 @@ func (a *App) newAuditDisableCmd() *cobra.Command {
 	}
 }
 
+func (a *App) newAuditRotateKeyCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rotate-key",
+		Short: "Create a new payload key while retaining old keys for history",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, warnings, err := a.opsStore()
+			if err != nil {
+				return err
+			}
+			previous := store.Snapshot().Governance.V.ResolvedAudit()
+			if previous.KeyID == "" {
+				return Usagef("audit has no current key; run agenthub audit enable first")
+			}
+			key := make([]byte, 32)
+			if _, err := rand.Read(key); err != nil {
+				return fmt.Errorf("generate audit encryption key: %w", err)
+			}
+			defer zeroSecret(key)
+			keyID, err := accesslog.KeyID(key)
+			if err != nil {
+				return err
+			}
+			encoded := base64.RawStdEncoding.EncodeToString(key)
+			chain, _, err := a.secretChain()
+			if err != nil {
+				return err
+			}
+			// Persist by immutable id first. The configuration can then switch
+			// atomically between two keys that are both already readable.
+			if err := chain.Set(cmd.Context(), secrets.AuditEncryptionKeyRef(keyID), encoded); err != nil {
+				return classifySecretsError(err)
+			}
+			res, err := confops.SetAuditKeyID(cmd.Context(), store, keyID, noPrecondition)
+			warnings = append(warnings, res.Warnings...)
+			if err != nil {
+				return opsError(err)
+			}
+			// Keep the legacy current-key entry updated for older clients. New
+			// gateways resolve the immutable id entry above.
+			if err := chain.Set(cmd.Context(), secrets.AuditEncryptionRef(), encoded); err != nil {
+				return classifySecretsError(err)
+			}
+			return a.printer().Emit(AuditKeyRotation{
+				PreviousKeyID: previous.KeyID, KeyID: keyID, Enabled: res.Policy.Enabled,
+			}, warnings...)
+		},
+	}
+}
+
 func (a *App) loadOrCreateAuditKey(cmd *cobra.Command) ([]byte, error) {
 	chain, _, err := a.secretChain()
 	if err != nil {
@@ -181,9 +244,33 @@ func (a *App) loadOrCreateAuditKey(cmd *cobra.Command) ([]byte, error) {
 			}
 			return nil, classifySecretsError(err)
 		}
+		keyID, err := accesslog.KeyID(key)
+		if err != nil {
+			zeroSecret(key)
+			return nil, err
+		}
+		if err := chain.Set(cmd.Context(), secrets.AuditEncryptionKeyRef(keyID), encoded); err != nil {
+			zeroSecret(key)
+			return nil, classifySecretsError(err)
+		}
 		return key, nil
 	}
-	return decodeAuditKey(encoded)
+	key, err := decodeAuditKey(encoded)
+	if err != nil {
+		return nil, err
+	}
+	keyID, err := accesslog.KeyID(key)
+	if err != nil {
+		zeroSecret(key)
+		return nil, err
+	}
+	// Backfill the immutable id entry for installations created by the first
+	// audit release. This is idempotent and keeps rotation lossless.
+	if err := chain.Set(cmd.Context(), secrets.AuditEncryptionKeyRef(keyID), encoded); err != nil {
+		zeroSecret(key)
+		return nil, classifySecretsError(err)
+	}
+	return key, nil
 }
 
 func decodeAuditKey(encoded string) ([]byte, error) {
