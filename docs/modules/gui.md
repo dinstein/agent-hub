@@ -113,10 +113,12 @@ Two rules on it, both easy to undo by accident:
   this on" versus "it is actually working". Every other product's switch is green, so this is
   written into `style.css` at the spot someone would go to "fix" it.
 - **The position is never set by the click.** `onChange` performs the write and the page repaints
-  from the answer, so a refused write, a lost precondition or a cancelled confirmation leaves the
-  switch showing what is *stored*. Optimistic flips have to be walked back, and the moment they are
-  wrong is exactly the moment the user looks away satisfied — the same reason a row grays out
-  instead of vanishing (§5).
+  from the answer, so a refused write or a lost precondition leaves the switch showing what is
+  *stored*. Both directions write immediately: disabling is a reversible setting change that keeps
+  the definition, credentials and profile rules, so interrupting it with a destructive-action dialog
+  trains the user to dismiss confirmations without reading them. Optimistic flips still have to be
+  walked back, and the moment they are wrong is exactly the moment the user looks away satisfied —
+  the same reason a row grays out instead of vanishing (§5).
 
 ### 2.1 The Authenticate button signs in
 
@@ -169,11 +171,11 @@ ends up doubting their own memory.
 
 ## 4. The presentation layer for writes
 
-**Confirmation dialog copy follows a pattern**: the title is a question (`Remove stripe?`), the button
-is a verb (`Remove`), and the description spells out **what will not happen** ("credentials stay in
-the keychain"). On failure the dialog **stays open**; bulk operations have a threshold (confirm only
-above 3); and **global actions are disabled while a filter is active** — otherwise they would touch
-rows you cannot see.
+**Confirmation dialogs are for destructive actions, not reversible switches.** Their copy follows a
+pattern: the title is a question (`Remove stripe?`), the button is a verb (`Remove`), and the description
+spells out **what will not happen** ("credentials stay in the keychain"). On failure the dialog **stays
+open**; bulk operations have a threshold (confirm only above 3); and **global actions are disabled while
+a filter is active** — otherwise they would touch rows you cannot see.
 
 **409 conflicts don't overwrite.** Control plane write endpoints carry a `Precondition`, and a
 conflict returns 409 plus the current generation (see

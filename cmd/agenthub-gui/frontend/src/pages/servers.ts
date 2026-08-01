@@ -1450,37 +1450,15 @@ export function serversPage(): Page {
 
   async function toggle(s: Server): Promise<void> {
     const next = !s.enabled;
-    const run = async (): Promise<void> => {
+    try {
       const detail = await hub.getServer(s.id);
       await hub.setServerEnabled(s.id, next, detail.generation);
-    };
-    if (next) {
-      // Enabling is the widening direction but not a destructive one, and it
-      // is undone by one click. No dialog.
-      try {
-        await run();
-      } catch (err) {
-        slot.fail(err);
-        return;
-      }
-      await draw();
-      slot.say(`${s.id} enabled.`);
+    } catch (err) {
+      slot.fail(err);
       return;
     }
-    const ok = await confirmAction({
-      title: `Disable ${s.id}?`,
-      body: "The server stops being offered to every client until it is enabled again.",
-      consequences: [
-        "The definition is kept exactly as it is: this is not a delete and nothing has to be retyped to undo it.",
-        "Credentials and tool-governance records are untouched.",
-      ],
-      confirmLabel: "Disable",
-      cli: cliDisable(s.id),
-      perform: run,
-    });
-    if (!ok) return;
     await draw();
-    slot.say(`${s.id} disabled.`);
+    slot.say(`${s.id} ${next ? "enabled" : "disabled"}.`);
   }
 
   async function test(s: Server): Promise<void> {
