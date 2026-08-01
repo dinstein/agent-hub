@@ -75,7 +75,7 @@ the rule unprovable.
 | `internal/controlapi`, `internal/control` | `internal/ctlapi` (DTOs and client live in the public `api` package) |
 | `internal/vault` | `internal/secrets` |
 | `internal/secure/{integrity,injection,ssrf,audit}` | `internal/guard/*` — but only `ssrf` survived, as `netguard` |
-| `internal/integrity`, `internal/approval`, `internal/audit` | **Nothing.** Removed with the runtime governance surface rather than renamed, so there is no forwarding address: fingerprint pinning, the approval queue and the per-call ledger are gone, not relocated. `internal/audit`'s one surviving primitive — the multi-writer JSONL append — was extracted first and is `internal/jsonl` |
+| `internal/integrity`, `internal/approval`, `internal/audit` | **Nothing.** Removed with the old runtime governance surface rather than renamed. The later `internal/accesslog` is a new, local observability ledger with a different on-disk format and no permission role; it is not a forwarding address for the old package. `internal/audit`'s one surviving primitive — the multi-writer JSONL append — was extracted first and is `internal/jsonl` |
 | `internal/gatewaymode` | `internal/gateway` |
 | `internal/downstream/transport` | `internal/mcp/transport` |
 | `package skill` | `package skills` |
@@ -118,8 +118,9 @@ the change is sealed inside one package, rather than borrowing one now.
 - **Resource groups are singular as the canonical name, with the plural as a cobra alias**:
   `server` / `profile` / `client` / `session` / `skill` / `secret` / `token` — one alias per group,
   and `grep -n 'Aliases' internal/cli/*.go` is the whole list
-- **Action/flow groups stay as they are**: `daemon`, `connect`, `auth`, `activity`, `events`,
-  `config`, `doctor`, `catalog`. The OAuth group is **`auth`**, not `oauth`, and `catalog` takes
+- **Action/flow groups stay as they are**: `daemon`, `connect`, `auth`, `audit`, `activity`, `events`,
+  `config`, `doctor`, `catalog`. `audit` is the access-ledger lifecycle and inspection surface, not a
+  plural resource collection. The OAuth group is **`auth`**, not `oauth`, and `catalog` takes
   **no plural alias**: there is one built-in list, so `catalogs` would name a thing that does not
   exist. The rule is that the plural is an alias for a group you accumulate entries in, not
   decoration applied to every noun

@@ -74,7 +74,7 @@ agenthub client connect claude-code
 | 结果整形 | 分页 / 预算 / `fetch_result` 缓存 / TOON 单向投影编码（never-larger + 数字保真两条构造性保证） |
 | 凭据 | 四级解析链（env → 显式 bare env → `secrets.enc` → OS keyring）、vault 复合键 `(serverID, scopeName)`、headless OAuth 三模式回调 + 刷新协调 |
 | 客户端 | 12 种客户端配置适配（Format 驱动）、skills 库/安装两层管理、skills-over-MCP 供给 |
-| 运维 | `agenthub doctor` 全面体检、每 server 的 JSON-RPC 报文抓取（默认关，`server trace`）、`agenthub activity` 背后的 token 节省账本、X-Request-Id 全链路 |
+| 运维 | `agenthub doctor` 全面体检、`agenthub audit` 背后加密且有硬边界的 tools/call 历史、每 server 的 JSON-RPC 报文抓取（默认关，`server trace`）、`agenthub activity` 背后的 token 节省账本、X-Request-Id 全链路 |
 
 ## 文档
 

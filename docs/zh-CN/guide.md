@@ -232,6 +232,35 @@ PROFILE 是它**可以看见什么**——它自己的 profile，或者你从没
 
 写好的配置文件说明的只是意图。真正的确认是客户端自己：重启它，让它用一次某个 tool。
 
+## 保留 tools/call 访问历史
+
+访问账本默认关闭。启用之后，每一次 tools/call 尝试都会把完整请求参数与实际下游参数写进本地加密
+pack；返回结果默认只保留一段截断副本。它是严格记录：密钥或有界存储不可用时，调用会被拒绝，
+不会先执行再在历史里留下空洞。
+
+```bash
+agenthub audit enable
+agenthub audit status
+agenthub audit tail --since 24h
+agenthub audit show <call-id>                 # 默认只看元数据
+agenthub audit show <call-id> --payloads      # 显式解密
+agenthub audit stats --since 7d
+agenthub audit verify
+```
+
+默认保留 30 个 UTC 日、总量硬上限 5 GiB，并为所在文件系统预留 1 GiB 空间。可用
+`config set audit.retentionDays`、`audit.maxBytes`、`audit.minFreeBytes` 修改；
+`audit prune --dry-run` 先预览过期日分区，`audit prune` 再整日删除。正常写入也会在容量检查前执行
+同一套清理。
+
+`audit export --output history.jsonl` 只把元数据导出到一个新的 0600 文件，并拒绝覆盖已有文件。
+确实需要明文参数/结果时才加 `--payloads`；此时导出文件已离开有界账本，含有凭据与私人数据。
+`audit rotate-key` 换新当前密钥但保留旧密钥，让历史仍能读取；`audit disable` 只停止新增记录，
+不会顺手删除历史或密钥。
+
+`audit verify` 能发现元数据被改、payload 损坏和引用被调包；但所有证据都在同一本地目录里，
+所以无法证明某个完整日目录从未被删。威胁模型若要求删除证据，需要再接一个外部不可变归档。
+
 ## 当你需要看到线上的原始流量
 
 一台 server 过得了 `server test`、在客户端里却表现不对时，问题就不再是「连不连得上」，而是

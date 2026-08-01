@@ -130,6 +130,7 @@ flowchart TD
         OAUTH["internal/oauthflow<br/>发现/DCR/PKCE/刷新"]
         SKL["internal/skills<br/>库+安装两层"]
         CLNT["internal/clients<br/>12 种客户端适配"]
+        ACCESS["internal/accesslog<br/>加密 tools/call 账本"]
     end
     subgraph L1["零业务依赖底座"]
         MCP["internal/mcp<br/>协议门面（+transport）"]
@@ -150,7 +151,7 @@ flowchart TD
     L3 --> L1
 ```
 
-最值得先认识的九个包：
+最值得先认识的十个包：
 
 | 包 | 一句话职责 | 为什么它重要 |
 |---|---|---|
@@ -162,6 +163,7 @@ flowchart TD
 | `internal/pipeline` | ★ 唯一执行管线：两道门 + 整形 | 所有调用路径都在这里汇合，门禁不可能分叉 |
 | `internal/downstream` | 下游连接生命周期、串行队列、断路器、派生实例池 | 下游的不稳定被挡在这一层，不外溢到调用方 |
 | `internal/gateway` | stdio 网关装配与生命周期（`connect` 的实现体） | 数据面的组装点；HTTP 面复用的也是它 |
+| `internal/accesslog` | 每次 tools/call 尝试的加密、有界生命周期历史 | 完整请求不进普通日志仍可离线审计；严格写失败会阻止执行 |
 | `internal/guard/*` | spawn 反走私 / SSRF | 零业务依赖，可被任何层安全复用 |
 
 ---
@@ -191,17 +193,18 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    A["客户端<br/>tools/call"] --> B["gateway<br/>分派"]
+    A["客户端<br/>tools/call"] --> AU1["audit<br/>received + 完整请求"]
+    AU1 --> B["gateway<br/>分派"]
     B --> C{"名字是什么"}
     C -->|"meta-tool"| D["discovery 处理器"]
     C -->|"普通工具"| E["router.RouteOf<br/>唯一溯源"]
     D -->|"call_tool*"| E
-    E --> F["pipeline.Execute"]
+    E --> AU2["audit<br/>route + 实际参数"] --> F["pipeline.Execute"]
     F --> G1["scope 门"] --> G2["token 层级门"]
     G2 --> H["ratelimit 准入<br/>（配额包裹，非第三道门）"]
     H --> I["downstream.Call<br/>断路器 / 重试 / 串行队列"]
     I --> J["shaping<br/>预算 + fetch_result 游标"]
-    J --> A
+    J --> AU3["audit<br/>结果 + 按策略截取返回"] --> A
 ```
 
 这条链上有三个不可动摇的性质：
@@ -218,6 +221,11 @@ flowchart LR
 游标，还可能留下一个指向没人会收到的字节的截断提示。这一段在里面的防御被删掉之后仍叫
 `defend_and_shape`，而且是刻意的：stdio 面与 HTTP 面之间的门计数对等断言比的就是这些 stage
 键，改名会让那些测试继续通过、却什么都不再比。
+
+**audit 包裹是严格观测，不是第三道门。** 启用后，它会在解析和执行前持久化完整的
+`tools/call` 参数，在冻结门禁链之前写下路由身份与实际参数，并为协议错误、拒绝、busy、tool error、
+成功和取消等每个出口补上 `finished`。必需的记录、密钥或存储压力检查失败时，调用会在
+`pipeline.Execute` 前被拒绝；它不会改变 scope、tier、参数或结果。
 
 ---
 
@@ -252,8 +260,10 @@ flowchart LR
         P["pipeline / gateway"] --> A3["logs/savings.jsonl<br/>token 节省 + 搜索轨迹"]
         DSX["downstream"] --> A4["logs/server-&lt;name&gt;.log<br/>每 server 一份，默认关闭"]
         GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log<br/>logs/daemon.log"]
+        GW --> A6["audit/YYYY-MM-DD/<br/>认证元数据 + 加密 payload pack"]
         A3 -.->|"agenthub activity<br/>（纯文件读，离线可用）"| F["CLI / GUI"]
         A4 -.->|"agenthub server logs"| F
+        A6 -.->|"agenthub audit<br/>（离线读取；明文需显式开启）"| F
     end
 ```
 
@@ -263,10 +273,10 @@ flowchart LR
   事件只是通知、不带快照，多次快速连续写时按相等判定会卡在旧版本等一个永远不会再来的事件。
 - **凭据流**：vault 键从第一天就是复合键 `(serverID, scopeName)`。事后再改要动 token store、
   回调 server 与刷新协调器的全部单例，所以它不是可以「先简单做」的东西。
-- **观测流**：**这条路径上没有任何东西记录一次调用的参数。** 现在根本不存在按调用记录的账本
-  ——早期设计里有一份，它随着唯一会读它的治理面一起删掉了。剩下的要么描述成本
-  （`savings.jsonl`），要么是按 server 手动打开、用完就关的调试手段（`server trace`）；
-  trace 是唯一真正存下游原始字节的文件，这正是它默认关闭、并且在自己的帮助里说明这一点的原因。
+- **观测流**：普通日志和 `savings.jsonl` 永远不写调用参数。另行启用的访问账本会记录：完整请求
+  与实际参数先压缩再加密，返回捕获可配为 `none | errors | truncated | full`（默认 `truncated`）。
+  CLI 默认只读元数据，任何解密都必须显式加 `--payloads`。按 server 的 wire trace 仍是另一套默认
+  关闭的调试面。
 
 ---
 

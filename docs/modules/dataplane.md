@@ -629,12 +629,11 @@ continuation is already lost.
 to plain text; if the savings stream won't open, it becomes `nil`; if the tool cache directory is unavailable, caching is
 skipped. If the control socket path won't resolve, only coordination functionality is lost.
 
-**Every completed `tools/call` ends on exactly one line, and `runCall` is the only place that writes it.** That
-follows from there being one execute path: a second writer would mean a call that could complete without being
-recorded. The identity is the **routed** `(server, tool)` — `RouteOf` provenance, never the exposed name, so a
-rename does not become a different tool in the log — plus the upstream request id and the pipeline's duration. The
-id is load-bearing rather than decorative: every `tools/call` runs on its own goroutine, so without it the lines of
-an agent making six concurrent calls interleave into one unreadable sequence.
+**Every completed `tools/call` ends on exactly one operational log line, and `runCall` is the only place that writes
+it.** This is distinct from the durable three-event access ledger described below. The log identity is the
+**routed** `(server, tool)` — `RouteOf` provenance, never the exposed name — plus the upstream request id and the
+pipeline's duration. The id is load-bearing rather than decorative: every `tools/call` runs on its own goroutine,
+so without it the lines of an agent making six concurrent calls interleave into one unreadable sequence.
 
 The three outcomes are deliberately three messages at two levels:
 
@@ -650,8 +649,16 @@ written before the client connected. `internal/ratelimit` already made this argu
 whose silence made exactly that indistinguishable: a scope denying everything and `Options.Scope == nil` (the
 no-authority mode that allows) produced the same empty log.
 
-**Arguments are never logged**, here or anywhere else on this path. They are the part of a call that carries the
-user's data, and a log that records them cannot be attached to a bug report.
+**Arguments never enter ordinary logs.** They are the part of a call that carries the user's data, and a log that
+records them cannot be attached to a bug report. When the separately configured access ledger is enabled, the
+gateway stores them only in encrypted payload packs; metadata-only CLI reads remain the default.
+
+**The access ledger wraps every tools/call exit without becoming a third gate.** `auditBegin` persists `received`
+and the exact raw parameters before protocol parsing or pipeline execution; routing persists `routed` plus exact
+effective arguments before the frozen `scope → token tier` chain; the central reply/cancellation paths append
+`finished`. Missing keys, invalid policy, retention/cap pressure, or any required write failure block execution.
+Result capture is policy-controlled and sees the delivered, post-shaping result. Hot reload may replace the store,
+but an in-flight span retains its original store/key so one lifecycle never straddles keys.
 
 The two non-answers also leave lines: the retryable busy reply (Debug — an agent asking early is the system
 working, but "it did nothing for ten seconds" would otherwise be unattributable), and a name routed to a cached
@@ -716,6 +723,9 @@ fully implemented and tested.
 
 Rate limiting is the exception: it **is wired**, but not through `pipeline.Options` — quotas are an admission wrapper
 around `CallRequest.Call` (`ratelimit.go` + `runCall`), not a pipeline stage.
+
+Access recording is wired the same way at a different boundary: `gateway/audit.go` wraps dispatch and completion,
+not `pipeline.Options`, so it cannot alter the gate count or call contents.
 
 ---
 

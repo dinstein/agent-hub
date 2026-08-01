@@ -1,6 +1,6 @@
 # Key flows
 
-This document uses sequence diagrams to explain the six runtime flows most worth understanding. The
+This document uses sequence diagrams to explain the seven runtime flows most worth understanding. The
 prose after each diagram covers the **failure branches** and **why it's designed this way** — the happy
 path is legible from the diagram; the hard part is always what happens when things go wrong. For the
 system's static decomposition see [architecture.md](architecture.md); for an overview of the three data
@@ -14,6 +14,7 @@ flows see [architecture.md §6](architecture.md#6-three-data-flows).
 | 4 | [Config hot reload](#4-config-hot-reload-two-things-to-get-right) | Events are only notifications; the generation criterion is `≥` |
 | 5 | [Headless OAuth and refresh](#5-headless-oauth-and-refresh) | Three callback modes; write state before token |
 | 6 | [Derived downstream instances](#6-derived-downstream-instances) | Touches only the connection plane, never visibility |
+| 7 | [Access audit lifecycle](#7-access-audit-lifecycle) | Persist before execution, finish every outcome, stay inside hard storage bounds |
 
 ---
 
@@ -322,3 +323,55 @@ every singleton in the token store, callback server, and refresh coordinator.
 The cap exists to prevent process explosion: exceeding it isn't an error but a fallback to the base
 instance plus a counted warning, because "a bit less isolation" is more acceptable than "denial of
 service."
+
+---
+
+## 7. Access audit lifecycle
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as AI client
+    participant G as gateway audit wrapper
+    participant L as local access ledger
+    participant P as pipeline
+    participant D as downstream
+
+    C->>G: tools/call (raw params)
+    G->>L: encrypted request payload → received event
+    Note over L: root lock: prune expired days → check max/free reserve → write
+    alt first durable write fails
+        G-->>C: access-ledger error; pipeline never runs
+    else recorded
+        G->>G: parse + RouteOf / resolve call_tool
+        G->>L: encrypted effective args → routed event
+        alt routed write fails
+            G->>L: finished(storage_error)
+            G-->>C: access-ledger error; pipeline never runs
+        else routed
+            G->>P: Execute (scope → token tier)
+            P->>D: tools/call when allowed
+            D-->>P: result / tool error
+            P-->>G: delivered post-shaping result
+            G->>L: optional encrypted result → finished event
+            G-->>C: result / denial / protocol error / busy error
+        end
+    end
+```
+
+The wrapper records an attempt before it knows whether the parameters are valid, so protocol errors and unknown
+names are evidence too. Direct names and lazy `call_tool` keep two payloads: the exact incoming wrapper and the
+effective downstream arguments. Results are configurable as `none`, `errors`, `truncated`, or `full`; request and
+effective arguments are always complete up to the MCP frame bound.
+
+Storage failure is deliberately stricter than ordinary logging. An enabled policy claims every call is recorded,
+so a missing key, invalid policy, full ledger, crossed free-space reserve, or failed required write refuses the call
+instead of silently creating a hole. The capacity decision and write hold one cross-process lock, preventing four
+stdio gateways from each believing they own the same remaining bytes. Retention removes only complete validated UTC
+day directories, and `minFreeBytes` protects the filesystem even if another process still has a just-expired file
+open.
+
+Metadata is independently HMAC-authenticated and payloads use XChaCha20-Poly1305 with call/kind binding. This detects
+edits, corruption, and reference substitution; it does not prove that a complete partition was deleted. That stronger
+claim needs an immutable anchor outside the same local directory. Key rotation stores keys by immutable key id and
+keeps historical keys, so retained partitions stay verifiable and decryptable.

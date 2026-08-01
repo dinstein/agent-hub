@@ -345,9 +345,10 @@ without weakening that atomic-line contract. Payload entries are gzip-compressed
 XChaCha20-Poly1305; metadata points at one by `(day, file, offset, length, key id)`.
 
 `Open(Options)` constructs the process writer, `PutPayload` stores exact bytes and returns their
-reference, and `Append` writes one immutable `received`, `routed`, or `finished` event. `ReadEvents`
-and `ReadPayload` are the offline reader half used by the CLI. `NewCallID` mints the cross-event join
-key; an upstream request id is not sufficient because clients may reuse it across sessions.
+reference, and `Append` writes one immutable `received`, `routed`, or `finished` event. `ScanEvents`,
+`ReadPayload`, `VerifyEvent`, and `VerifyPayload` are the offline reader half used by the CLI.
+`NewCallID` mints the cross-event join key; an upstream request id is not sufficient because clients
+may reuse it across sessions.
 
 ### Invariants and failure directions
 
@@ -362,6 +363,12 @@ key; an upstream request id is not sufficient because clients may reuse it acros
 - **Each payload pack has one process writer.** Large writes therefore need no cross-process atomicity;
   only the bounded event stream is shared. A cross-process acceptance test proves event lines arrive
   whole and in the expected count.
+- **Storage pressure is a serialized decision.** When retention or capacity limits are configured,
+  every process holds the same root lock across pruning, directory-size inspection, free-space
+  inspection and the actual write. Complete UTC partitions older than the retention cutoff are the
+  only automatic deletion targets. `maxBytes` is a hard ledger limit; `minFreeBytes` reserves room on
+  the containing filesystem. Crossing either limit is an error, never an unbounded queue or a silent
+  record drop, and a multi-process test proves concurrent writers cannot multiply the cap.
 - **Durability is explicit.** `sync` acknowledges only after both the pack/event file has been synced;
   `write` acknowledges the kernel write. Neither mode has an unbounded queue and neither silently
   drops on backpressure. This differs intentionally from `internal/jsonl`, whose streams must never
@@ -369,6 +376,14 @@ key; an upstream request id is not sufficient because clients may reuse it acros
 - **The package decides no permission.** An assembly may make a durable `received` record a
   prerequisite for execution, but that wrapper does not enter or reorder the frozen pipeline gates
   and it never inspects or modifies the arguments.
+- **Integrity has a stated boundary.** Each metadata event carries HMAC-SHA256 and each payload entry
+  is bound by AEAD to its call id, kind, sizes and codec. `audit verify` detects edits, corruption and
+  reference substitution. Independent records cannot prove that an attacker deleted a whole day or
+  the entire directory; deletion evidence would require an external immutable anchor, which this
+  local-only design does not claim.
+- **Key rotation never orphans retained history.** The current key id is public governance metadata;
+  each 32-byte key is stored under an immutable key-id vault ref. Rotation writes the new ref before
+  switching governance and retains old refs until the operator's retained data no longer needs them.
 
 ---
 

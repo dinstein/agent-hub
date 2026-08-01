@@ -220,18 +220,18 @@ after panic recovery. Panic recovery splits two ways: if the response hasn't sta
 it has (mid-SSE-stream, say), `panic(http.ErrAbortHandler)` and drop the connection — never append garbage after
 half a body, which would parse as a truncated success.
 
-**There is no audit trail, and the comments that said otherwise are gone.** This is recorded here rather than
+**There is no control-plane/config-write audit trail.** This is recorded here rather than
 left implicit because for a long time the tree read as though the control existed: six comment sites asserted it
 ("every write is audited with the key and both values, so `blockOnInjection went off at 03:00` is answerable
 after the fact"; "See `auditNonReg`"; an `Options.LogsDir` documented as feeding `/v1/audit` and `/v1/security`),
 while nothing ever wrote a record, `auditNonReg` had never existed, and neither route was served. `LogsDir` is
 removed along with the claims — nothing read it. **A governance write leaves no evidence beyond the daemon's own
 log**, so "who relaxed this switch, and when" is not answerable after the fact. `X-Request-Id` correlates a
-request across that log and nothing more; `HeaderActor` records a caller class for the same purpose. Building the
-trail is its own change with its own argument, and `TestNoCodeClaimsAnAuditTrailThatDoesNotExist` in
-`test/buildrules` keeps the claims from creeping back until someone does — that test should be deleted in the
-commit that implements it. The reason this matters more than an ordinary stale comment: a reviewer, or the next
-sweep's finder, reads the comment first and concludes the control is in place.
+request across that log and nothing more; `HeaderActor` records a caller class for the same purpose. The tools/call
+access ledger in `internal/accesslog` records data-plane calls only and does not answer who edited governance.
+`TestNoCodeClaimsAnAuditTrailThatDoesNotExist` in `test/buildrules` therefore still protects ctlapi from claiming a
+write trail it does not implement. The reason this matters more than an ordinary stale comment: a reviewer, or the
+next sweep's finder, reads the comment first and concludes the control is in place.
 
 **The 404 text is unified and frozen byte for byte.** `notFoundMessage = "not found"`, and unknown routes,
 unknown sessions and unknown tokens all share one `(code, message, hint)`, differing only in

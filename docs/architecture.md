@@ -74,7 +74,8 @@ HTTP pool; OAuth refresh falls back to file locks.
 The price is that the discipline of multiple processes writing the same disk has to be right: one
 `O_APPEND` write per log line (`internal/jsonl`, with a multi-process test to prove it), a
 cross-process file lock around the shared rate-limit counters, atomic rename for every registry
-write. These aren't belt-and-braces; they're concurrency correctness dependencies.
+write, and a cross-process inspect-prune-write lock around the access ledger's hard storage limits.
+These aren't belt-and-braces; they're concurrency correctness dependencies.
 
 **The HTTP data plane doesn't exist by default.** The MCP exposure surface in `internal/httpbridge` is
 enabled explicitly by `agenthub daemon start --http-addr <host:port>`; **no address means no
@@ -141,6 +142,7 @@ flowchart TD
         OAUTH["internal/oauthflow<br/>discovery/DCR/PKCE/refresh"]
         SKL["internal/skills<br/>library+install tiers"]
         CLNT["internal/clients<br/>12 client adapters"]
+        ACCESS["internal/accesslog<br/>encrypted tools/call ledger"]
     end
     subgraph L1["zero-business-dependency foundation"]
         MCP["internal/mcp<br/>protocol facade (+transport)"]
@@ -161,7 +163,7 @@ flowchart TD
     L3 --> L1
 ```
 
-The nine packages worth knowing first:
+The ten packages worth knowing first:
 
 | Package | One-line responsibility | Why it matters |
 |---|---|---|
@@ -173,6 +175,7 @@ The nine packages worth knowing first:
 | `internal/pipeline` | ★ The one execution pipeline: two gates + the shaping stage | Every call path converges here, so the gates cannot fork |
 | `internal/downstream` | Downstream connection lifecycle, serial queue, circuit breaker, derived instance pool | Downstream instability stops at this layer instead of leaking to callers |
 | `internal/gateway` | stdio gateway assembly and lifecycle (the implementation behind `connect`) | The data plane's assembly point; the HTTP surface reuses it too |
+| `internal/accesslog` | Encrypted, bounded lifecycle history for every tools/call attempt | Complete requests remain available for offline audit without entering ordinary logs; strict write failure blocks execution |
 | `internal/guard/*` | Spawn anti-smuggling / SSRF screening | Zero business dependencies, safely reusable by any layer. Neither is a permission: both refuse regardless of who asked |
 
 ---
@@ -204,17 +207,18 @@ than a lint error, which left the rule unprovable.
 
 ```mermaid
 flowchart LR
-    A["client<br/>tools/call"] --> B["gateway<br/>dispatch"]
+    A["client<br/>tools/call"] --> AU1["audit<br/>received + full request"]
+    AU1 --> B["gateway<br/>dispatch"]
     B --> C{"what is the name"}
     C -->|"meta-tool"| D["discovery handler"]
     C -->|"regular tool"| E["router.RouteOf<br/>sole provenance"]
     D -->|"call_tool*"| E
-    E --> F["pipeline.Execute"]
+    E --> AU2["audit<br/>route + effective args"] --> F["pipeline.Execute"]
     F --> G1["scope gate"] --> G2["token tier gate"]
     G2 --> H["ratelimit admission<br/>(a quota wrapper, not a third gate)"]
     H --> I["downstream.Call<br/>circuit breaker / retries / serial queue"]
     I --> J["shaping<br/>budget + fetch_result cursor"]
-    J --> A
+    J --> AU3["audit<br/>outcome + configured result capture"] --> A
 ```
 
 Three unshakeable properties along this chain:
@@ -234,6 +238,13 @@ whichever branch it came back on, so a large JSON-RPC error is budgeted the same
 is. The stage kept its name after the defenses in it were removed, and deliberately: the gate-count
 parity assertions between the stdio and HTTP faces compare these stage keys, so renaming one would
 leave those tests passing while comparing nothing.
+
+**The audit wrapper is strict observability, not a gate.** An enabled ledger persists the complete
+incoming `tools/call` parameters before parsing or execution, then the routed identity and effective
+arguments before the frozen gate chain. Every exit, including a protocol error, denial, busy reply,
+tool error and cancellation, receives a `finished` event. If a required audit write, key lookup or
+storage-pressure check fails, execution is refused before `pipeline.Execute`; the wrapper never
+changes scope, tier, arguments or results.
 
 ---
 
@@ -269,8 +280,10 @@ flowchart LR
         P["pipeline / gateway"] --> A3["logs/savings.jsonl<br/>token savings + search traces"]
         DSX["downstream"] --> A4["logs/server-&lt;name&gt;.log<br/>one per server, off by default"]
         GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log<br/>logs/daemon.log"]
+        GW --> A6["audit/YYYY-MM-DD/<br/>authenticated metadata + encrypted payload packs"]
         A3 -.->|"agenthub activity<br/>(a plain file read, works offline)"| F["CLI / GUI"]
         A4 -.->|"agenthub server logs"| F
+        A6 -.->|"agenthub audit<br/>(offline reads; payloads opt-in)"| F
     end
 ```
 
@@ -282,11 +295,11 @@ Each flow has one property you must not forget:
   rulings, `modules/foundation.md` the mechanism).
 - **Credential flow**: the vault key is the composite `(serverID, scopeName)` and has been since day
   one — one of the three things canonical.md §4 says must never be retrofitted.
-- **Observability flow**: **nothing on this path records a call's arguments.** There is no
-  per-call ledger at all — an earlier design had one, and it went with the governance surface that
-  was its only reader. What is left describes cost (`savings.jsonl`) or is a debugging aid switched
-  on per server and off again (`server trace`); the trace is the one file that does hold raw
-  downstream bytes, which is why it defaults to off and says so in its own help.
+- **Observability flow**: ordinary logs and `savings.jsonl` never contain call arguments. The
+  separately enabled access ledger does: complete request parameters and effective arguments are
+  compressed and encrypted; result capture is `none | errors | truncated | full` (default
+  `truncated`). Metadata-only inspection is the default, and every decrypting CLI operation requires
+  explicit `--payloads`. Per-server wire trace remains a separate, off-by-default debugging surface.
 
 ---
 

@@ -270,6 +270,38 @@ never bound it. When a row says something other than yes or no — `denied`,
 A written config file only shows intent. The confirmation is the client
 itself: restart it and ask it to use a tool.
 
+## Keeping a tools/call history
+
+The access ledger is off until you enable it. Once enabled, every tools/call attempt records complete request
+parameters and effective arguments in encrypted local packs; result capture defaults to a truncated copy. Recording
+is strict: if the key or bounded storage is unavailable, the call is refused rather than executed with a hole in the
+history.
+
+```bash
+agenthub audit enable
+agenthub audit status
+agenthub audit tail --since 24h
+agenthub audit show <call-id>                 # metadata only
+agenthub audit show <call-id> --payloads      # explicit decryption
+agenthub audit stats --since 7d
+agenthub audit verify
+```
+
+The defaults retain 30 UTC days, cap the ledger at 5 GiB, and reserve 1 GiB of filesystem free space. Change them
+with `config set audit.retentionDays`, `audit.maxBytes`, and `audit.minFreeBytes`; `audit prune --dry-run` previews the
+expired day partitions and `audit prune` removes them. Automatic writes apply the same pruning before their capacity
+check.
+
+`audit export --output history.jsonl` exports metadata into a new 0600 file and refuses to overwrite it. Add
+`--payloads` only when decrypted arguments/results are required; the exported file then carries credentials and
+private data outside the bounded ledger. `audit rotate-key` makes a new current key while retaining old keys so
+existing history remains readable. `audit disable` stops new capture but intentionally deletes neither history nor
+keys.
+
+`audit verify` detects modified metadata, corrupted payloads, and swapped references. Because all evidence is local,
+it cannot prove a whole day directory was deleted; use an external immutable archive if deletion evidence is part of
+your threat model.
+
 ## When you need to see the wire
 
 Once a server passes `server test` but still behaves wrongly in the client,
