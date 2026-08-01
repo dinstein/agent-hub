@@ -66,6 +66,7 @@
   --ease: cubic-bezier(0.2, 0, 0.2, 1);
   --dur-fast: 90ms;
   --dur: 150ms;
+  --dur-slow: 220ms;
 
   --sidebar-w: 224px;
   /* Tables of eight columns are unreadable at 2000px. The cap is on the
@@ -105,8 +106,8 @@
    * black shadow is nearly invisible, so depth there comes mostly from a
    * lighter hairline. Sharing one shadow across both themes is how dark
    * mode ends up looking flat. */
-  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
-  --shadow-2: 0 8px 24px rgb(0 0 0 / 0.5);
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.32), 0 8px 24px rgb(0 0 0 / 0.08);
+  --shadow-2: 0 20px 56px rgb(0 0 0 / 0.56), 0 0 0 1px rgb(255 255 255 / 0.025);
   --hairline: rgb(255 255 255 / 0.06);
 
   color-scheme: dark;
@@ -131,8 +132,8 @@
   --danger: #c4322c;
   --info: #0b62c4;
 
-  --shadow-1: 0 1px 2px rgb(16 24 40 / 0.06);
-  --shadow-2: 0 12px 28px rgb(16 24 40 / 0.12);
+  --shadow-1: 0 1px 2px rgb(16 24 40 / 0.04), 0 8px 24px rgb(16 24 40 / 0.035);
+  --shadow-2: 0 24px 64px rgb(16 24 40 / 0.16), 0 0 0 1px rgb(16 24 40 / 0.025);
   --hairline: rgb(255 255 255 / 0.9);
 
   color-scheme: light;
@@ -180,6 +181,19 @@ body {
   color: var(--fg);
   font-size: var(--text-base);
   line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 /* One focus ring for the whole application. */
@@ -253,6 +267,15 @@ body {
   font-weight: 750;
 }
 
+.brand-mark svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
 .brand-copy {
   display: flex;
   flex-direction: column;
@@ -290,12 +313,18 @@ a.nav {
   font-size: var(--text-base);
   transition:
     background var(--dur-fast) var(--ease),
-    color var(--dur-fast) var(--ease);
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
 }
 
 a.nav:hover {
   background: color-mix(in srgb, var(--fg) 5%, transparent);
   color: var(--fg);
+  transform: translateX(1px);
+}
+
+a.nav:active {
+  transform: translateX(1px) scale(0.985);
 }
 
 /* The active item is the only nav entry at full foreground contrast. The
@@ -309,15 +338,30 @@ a.nav.active {
 }
 
 .nav-icon {
-  width: 18px;
+  width: 22px;
+  height: 22px;
   color: var(--muted);
-  font-size: var(--text-lg);
-  line-height: 1;
-  text-align: center;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+.nav-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 a.nav.active .nav-icon {
   color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .spacer {
@@ -404,6 +448,9 @@ a.nav.active .nav-icon {
   padding: 30px 32px 48px;
   overflow: auto;
   min-width: 0;
+  background:
+    radial-gradient(circle at 90% -10%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 34rem),
+    var(--bg);
 }
 
 /* The cap lives on an inner wrapper so the scroll container still spans the
@@ -415,6 +462,17 @@ a.nav.active .nav-icon {
 
 .content-view {
   max-width: var(--content-max);
+}
+
+.content-view > :not(.connection-banner) {
+  animation: page-in var(--dur-slow) var(--ease) both;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
 .page-header {
@@ -636,6 +694,18 @@ a.nav.active .nav-icon {
   border-radius: var(--radius-lg);
   background: var(--panel);
   box-shadow: var(--shadow-1);
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.access-card:hover,
+.client-card:hover,
+.settings-card:hover,
+.playground-setup:hover,
+.playground-output:hover {
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  box-shadow: 0 10px 32px color-mix(in srgb, var(--accent) 5%, transparent), var(--shadow-1);
 }
 
 .access-card {
@@ -825,6 +895,9 @@ a.nav.active .nav-icon {
   background: var(--panel);
   box-shadow: var(--shadow-1);
   padding: var(--space-6);
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .settings-card-wide {
@@ -1098,8 +1171,9 @@ tbody tr:hover {
   background: var(--panel-2);
   color: var(--fg);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 6px var(--space-5);
+  min-height: 34px;
+  border-radius: 9px;
+  padding: 6px 13px;
   font: inherit;
   font-size: var(--text-md);
   line-height: 1.5;
@@ -1123,13 +1197,15 @@ tbody tr:hover {
 .btn:hover {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
   background: color-mix(in srgb, var(--accent) 8%, var(--panel-2));
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--accent) 9%, transparent), inset 0 1px 0 var(--hairline);
+  transform: translateY(-1px);
 }
 
 /* 1px, not 2: the press should read as the surface giving way, not as the
  * layout reflowing. Paired with dropping the shadow so it reads as the
  * button moving toward the page rather than merely sliding down it. */
 .btn:active:not([disabled]):not([aria-busy="true"]) {
-  transform: translateY(1px);
+  transform: translateY(0) scale(0.975);
   box-shadow: none;
 }
 
@@ -1179,10 +1255,13 @@ tbody tr:hover {
  * border colour, which put it on the same visual level as every secondary
  * button in the row — a hierarchy nobody could see is not a hierarchy. */
 .btn-primary {
-  background: var(--accent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white), var(--accent));
   border-color: var(--accent);
   color: var(--bg);
   font-weight: 600;
+  box-shadow:
+    0 6px 18px color-mix(in srgb, var(--accent) 24%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.2);
 }
 
 .btn-primary:hover {
@@ -1325,7 +1404,7 @@ tbody tr:hover {
 
 .btn-secondary {
   color: var(--muted);
-  background: transparent;
+  background: color-mix(in srgb, var(--panel-2) 68%, transparent);
   box-shadow: none;
 }
 
@@ -1336,7 +1415,8 @@ tbody tr:hover {
 /* Size variants. Table rows carry actions at sm; a page's single leading
  * action gets lg. Both stay on the type and space scales. */
 .btn-sm {
-  padding: 3px var(--space-4);
+  min-height: 28px;
+  padding: 3px 10px;
   font-size: var(--text-sm);
   border-radius: 6px;
 }
@@ -1375,13 +1455,36 @@ code.cmd {
 }
 
 .input {
-  background: var(--panel-2);
+  min-height: 36px;
+  background: color-mix(in srgb, var(--panel-2) 88%, var(--panel));
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 9px;
   color: var(--fg);
-  padding: 6px 10px;
+  padding: 7px 11px;
   font: inherit;
   min-width: 160px;
+  box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.04);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.input:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  background: var(--panel-2);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--panel);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.input::placeholder {
+  color: var(--faint);
+  opacity: 0.78;
 }
 
 .error {
@@ -1959,19 +2062,114 @@ fieldset.group > legend {
 
 select.input {
   cursor: pointer;
+  appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239099aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+}
+
+select.input:active {
+  background-position: right 10px top 52%;
 }
 
 .check {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   cursor: pointer;
+  color: var(--muted);
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.check:hover {
+  color: var(--fg);
+}
+
+.check > input {
+  appearance: none;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.check > input[type="checkbox"] {
+  border-radius: 5px;
+}
+
+.check > input[type="radio"] {
+  border-radius: 50%;
+}
+
+.check > input::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  transform: scale(0);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.check > input[type="checkbox"]::before {
+  width: 8px;
+  height: 5px;
+  border-left: 2px solid var(--bg);
+  border-bottom: 2px solid var(--bg);
+  transform: translateY(-1px) rotate(-45deg) scale(0);
+}
+
+.check > input[type="radio"]::before {
+  border-radius: 50%;
+  background: var(--bg);
+}
+
+.check > input:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.check > input[type="checkbox"]:checked::before {
+  transform: translateY(-1px) rotate(-45deg) scale(1);
+}
+
+.check > input[type="radio"]:checked::before {
+  transform: scale(1);
+}
+
+.check > input:active {
+  transform: scale(0.9);
 }
 
 .radio-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px;
+  gap: 8px;
+}
+
+.radio-row > .check {
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-2);
+}
+
+.radio-row > .check:has(input:checked) {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: var(--accent-soft);
 }
 
 .editor,
@@ -2033,28 +2231,42 @@ select.input {
 .segmented {
   display: inline-flex;
   border: 1px solid var(--line);
-  border-radius: 999px;
-  overflow: hidden;
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+  background: var(--panel-2);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.05);
 }
 
 .segmented > button {
-  background: var(--panel-2);
+  background: transparent;
   color: var(--muted);
   border: none;
-  border-right: 1px solid var(--line);
-  padding: 6px 14px;
+  border-radius: 7px;
+  padding: 6px 13px;
   font: inherit;
   cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
 }
 
-.segmented > button:last-child {
-  border-right: none;
+.segmented > button:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+
+.segmented > button:active {
+  transform: scale(0.97);
 }
 
 .segmented > button[aria-pressed="true"] {
-  background: var(--accent);
-  color: var(--bg);
+  background: var(--panel);
+  color: var(--accent-strong);
   font-weight: 600;
+  box-shadow: var(--shadow-1), inset 0 0 0 1px var(--line-soft);
 }
 
 /* --- notices ------------------------------------------------------------- */
@@ -2079,7 +2291,8 @@ select.input {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgb(4 7 12 / 0.58);
+  backdrop-filter: blur(8px) saturate(0.8);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2090,12 +2303,20 @@ select.input {
 .modal {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 16px;
   width: min(640px, 100%);
   max-height: 85vh;
   overflow: auto;
   padding: var(--space-6) 18px;
   box-shadow: var(--shadow-2);
+  animation: modal-in var(--dur-slow) var(--ease) both;
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
 }
 
 .modal-danger {
@@ -2121,7 +2342,7 @@ dialog.dlg {
   background: var(--panel);
   color: var(--fg);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 16px;
   width: min(560px, calc(100vw - 48px));
   max-height: 85vh;
   overflow: auto;
@@ -2149,7 +2370,8 @@ dialog.dlg.danger {
 }
 
 dialog.dlg::backdrop {
-  background: rgba(0, 0, 0, 0.55);
+  background: rgb(4 7 12 / 0.58);
+  backdrop-filter: blur(8px) saturate(0.8);
 }
 
 dialog.dlg > h2 {
@@ -2225,27 +2447,55 @@ dialog.dlg > h2 {
 
 details.adv {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--panel-2);
+  overflow: hidden;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
 }
 
 details.adv > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
   cursor: pointer;
-  padding: var(--space-4) var(--space-5);
+  padding: 10px 12px;
   font-size: var(--text-md);
   color: var(--muted);
-  list-style-position: inside;
-  border-radius: 8px;
-  transition: color var(--dur-fast) var(--ease);
+  list-style: none;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+details.adv > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.adv > summary::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-right: 1.5px solid currentcolor;
+  border-bottom: 1.5px solid currentcolor;
+  transform: rotate(-45deg);
+  transition: transform var(--dur) var(--ease);
 }
 
 details.adv > summary:hover {
   color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
 }
 
 details.adv[open] > summary {
   border-bottom: 1px solid var(--line);
-  border-radius: 8px 8px 0 0;
+  color: var(--fg);
+}
+
+details.adv[open] > summary::before {
+  transform: rotate(45deg) translate(-1px, -1px);
 }
 
 .adv-body {
