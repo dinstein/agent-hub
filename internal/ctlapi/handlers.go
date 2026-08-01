@@ -49,6 +49,7 @@ func (s *Server) serverList() []api.Server {
 				AdminState:       admin,
 				MissingSecrets:   rt.MissingSecrets,
 				OAuthConfigError: rt.OAuthConfigError,
+				NeedsAuth:        rt.NeedsAuth,
 				Conn:             rt.Conn,
 				ConnDetail:       rt.ConnDetail,
 				CallAuthFailed:   rt.CallAuthFailed,

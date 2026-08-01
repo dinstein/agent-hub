@@ -52,6 +52,10 @@ type HealthInput struct {
 	// OAuthConfigError is a non-empty description when the OAuth
 	// configuration itself is broken (bad issuer, failed discovery, ...).
 	OAuthConfigError string
+	// NeedsAuth reports a 401/403 that prevented the initial MCP handshake.
+	// It is runtime evidence from a live connection attempt, never stored
+	// configuration.
+	NeedsAuth bool
 	// Conn is the connection state; ConnDetail optionally elaborates
 	// (last error text, retry countdown, ...).
 	Conn       ConnState
@@ -75,8 +79,9 @@ type HealthInput struct {
 //     (docs/modules/controlplane.md).
 //  2. Missing secrets: unhealthy, action set_secret.
 //  3. OAuth config error: unhealthy, action login.
-//  4. Connection: error/disconnected → unhealthy (restart); connecting →
-//     degraded (transient, no action); connected/unknown → next rung.
+//  4. Connection: handshake auth refusal → unhealthy (login);
+//     error/disconnected → unhealthy (restart); connecting → degraded
+//     (transient, no action); connected/unknown → next rung.
 //  5. Call-time auth failures: degraded, action login (connection is up but
 //     calls bounce off authentication).
 //  6. Token: expired → unhealthy + login (calls will fail); expiring →
@@ -130,7 +135,18 @@ func ComputeHealth(in HealthInput) api.Health {
 		}
 	}
 
-	// Rung 4: connection state.
+	// Rung 4: connection state. A typed 401/403 from the handshake is the
+	// one connection failure a restart cannot repair, so surface login before
+	// the generic ConnError branch consumes it.
+	if in.NeedsAuth {
+		return api.Health{
+			Level:      api.HealthLevelUnhealthy,
+			AdminState: admin,
+			Summary:    "authentication required",
+			Detail:     in.ConnDetail,
+			Action:     api.ActionLogin,
+		}
+	}
 	switch in.Conn {
 	case ConnError:
 		return api.Health{

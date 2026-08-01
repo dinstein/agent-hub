@@ -1,13 +1,40 @@
 package gateway
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/mcp"
+	"github.com/dinstein/agent-hub/internal/mcp/transport"
 	"github.com/dinstein/agent-hub/internal/testutil/fakemcp"
 )
+
+func TestServerStatesClassifiesHandshakeAuthByTypedStatus(t *testing.T) {
+	t.Parallel()
+	g := newCredGateway("auth")
+	g.noteConnectResult("auth", &transport.Error{
+		StatusCode: 401,
+		Err:        errors.New("credentials rejected"),
+	})
+
+	states := g.serverStates()
+	if len(states) != 1 || !states[0].NeedsAuth || states[0].Conn != string(ctlapi.ConnError) {
+		t.Fatalf("states = %+v, want one auth-required connection error", states)
+	}
+
+	// The body text is not authority: a proxy's 502 may quote an upstream
+	// 401, and sending that operator to login would repair nothing.
+	g.noteConnectResult("auth", &transport.Error{
+		StatusCode: 502,
+		Err:        errors.New("proxy body mentions http 401"),
+	})
+	states = g.serverStates()
+	if len(states) != 1 || states[0].NeedsAuth {
+		t.Fatalf("states = %+v, want the typed 502 to stay a generic failure", states)
+	}
+}
 
 // TestCtlLinkReportsServerRuntime is the production wiring of BACKLOG #1 end
 // to end: a real gateway with a real downstream, a real control plane with

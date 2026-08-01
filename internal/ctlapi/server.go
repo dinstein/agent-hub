@@ -59,6 +59,8 @@ type ServerRuntime struct {
 	MissingSecrets []string
 	// OAuthConfigError describes a broken OAuth configuration ("" = none).
 	OAuthConfigError string
+	// NeedsAuth reports a 401/403 that prevented the initial MCP handshake.
+	NeedsAuth bool
 	// CallAuthFailed reports auth failures observed on tool calls.
 	CallAuthFailed bool
 	// Token is the OAuth token lifecycle state.

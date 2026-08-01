@@ -11,6 +11,7 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/downstream"
+	"github.com/dinstein/agent-hub/internal/mcp/transport"
 )
 
 // reportTimeout bounds one runtime-state push to the daemon. The report is
@@ -51,9 +52,9 @@ func (g *gateway) serverStates() []ctlapi.GatewayServerState {
 	for id, srv := range g.servers {
 		servers[id] = srv
 	}
-	failures := make(map[string]string, len(g.connErr))
-	for id, msg := range g.connErr {
-		failures[id] = msg
+	failures := make(map[string]connectFailure, len(g.connErr))
+	for id, failure := range g.connErr {
+		failures[id] = failure
 	}
 	g.mu.Unlock()
 
@@ -74,9 +75,10 @@ func (g *gateway) serverStates() []ctlapi.GatewayServerState {
 				st.Conn = string(h.State)
 				st.Detail = h.Detail
 			}
-		case failures[spec.ID] != "":
+		case failures[spec.ID].detail != "":
 			st.Conn = string(ctlapi.ConnError)
-			st.Detail = failures[spec.ID]
+			st.Detail = failures[spec.ID].detail
+			st.NeedsAuth = failures[spec.ID].needsAuth
 		default:
 			// Neither connected nor failed: still dialing. npx/uvx cold
 			// starts live here for minutes, and "connecting" is the honest
@@ -142,16 +144,24 @@ func (g *gateway) connDiagnosis() string {
 // disarmed, so the two can never disagree about whether a server is broken:
 // a recorded failure always has a rung waiting, and a success always clears
 // one.
-func (g *gateway) noteConnectResult(id, failure string) {
+type connectFailure struct {
+	detail    string
+	needsAuth bool
+}
+
+func (g *gateway) noteConnectResult(id string, failure error) {
 	g.mu.Lock()
-	if failure == "" {
+	if failure == nil {
 		delete(g.connErr, id)
 		g.resetLadderLocked(id)
 	} else {
 		if g.connErr == nil {
-			g.connErr = make(map[string]string)
+			g.connErr = make(map[string]connectFailure)
 		}
-		g.connErr[id] = failure
+		g.connErr[id] = connectFailure{
+			detail:    failure.Error(),
+			needsAuth: transport.IsAuthStatus(failure),
+		}
 		g.armLocked(id, time.Now())
 	}
 	g.mu.Unlock()

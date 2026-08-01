@@ -58,6 +58,8 @@ type GatewayServerState struct {
 	MissingSecrets []string `json:"missing_secrets,omitempty"`
 	// OAuthConfigError describes a broken OAuth configuration ("" = none).
 	OAuthConfigError string `json:"oauth_config_error,omitempty"`
+	// NeedsAuth reports a 401/403 that prevented the initial MCP handshake.
+	NeedsAuth bool `json:"needs_auth,omitempty"`
 	// CallAuthFailed reports auth failures observed on tool calls.
 	CallAuthFailed bool `json:"call_auth_failed,omitempty"`
 	// Token is the OAuth token lifecycle state (TokenState wire string).
@@ -106,7 +108,8 @@ type ServerStateSink interface {
 //   - Tools: the MAXIMUM. An instance that is still connecting reports 0,
 //     and that 0 must not erase a catalog another instance actually listed.
 //   - MissingSecrets: sorted union; OAuthConfigError: first non-empty in
-//     client order; CallAuthFailed / Quarantined: logical OR; Token: worst.
+//     client order; NeedsAuth / CallAuthFailed / Quarantined: logical OR;
+//     Token: worst.
 //     All of these are properties of the server's configuration rather than
 //     of one connection, so any reporter seeing a problem is enough.
 //
@@ -209,6 +212,7 @@ func (g *GatewayStates) ServerRuntime(id string) (ServerRuntime, bool) {
 		if rt.OAuthConfigError == "" {
 			rt.OAuthConfigError = r.state.OAuthConfigError
 		}
+		rt.NeedsAuth = rt.NeedsAuth || r.state.NeedsAuth
 		rt.CallAuthFailed = rt.CallAuthFailed || r.state.CallAuthFailed
 		if tokenSeverity(TokenState(r.state.Token)) > tokenSeverity(rt.Token) {
 			rt.Token = TokenState(r.state.Token)

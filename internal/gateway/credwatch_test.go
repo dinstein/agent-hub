@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func newCredGateway(specIDs ...string) *gateway {
 		redialAt:    map[string]time.Time{},
 		redialTries: map[string]int{},
 		dialing:     map[string]struct{}{},
-		connErr:     map[string]string{},
+		connErr:     map[string]connectFailure{},
 		servers:     map[string]*downstream.Server{},
 		specs:       specs,
 		credEpochs:  newCredEpochs(),
@@ -44,7 +45,7 @@ func TestCredentialChangeWakesAFailedServer(t *testing.T) {
 	// Four failures in: the next rung is 135s away, far past anything a test
 	// would sit through and far past a user's patience.
 	for range 4 {
-		g.noteConnectResult("alpha", "401 unauthorized")
+		g.noteConnectResult("alpha", errors.New("401 unauthorized"))
 	}
 	if due := g.redialAt["alpha"]; !due.After(time.Now().Add(time.Minute)) {
 		t.Fatalf("setup: the ladder is due at %v, want a rung well into the future", due)

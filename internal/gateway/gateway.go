@@ -295,7 +295,7 @@ type gateway struct {
 	ready       bool                          // live router built from real connections
 	pending     int                           // downstreams still connecting
 	servers     map[string]*downstream.Server // connected downstreams
-	connErr     map[string]string             // last connect failure per server id
+	connErr     map[string]connectFailure     // last connect failure per server id
 	dialing     map[string]struct{}           // servers with a dial in flight (redial.go)
 	redialAt    map[string]time.Time          // when each failed server may be dialed again
 	redialTries map[string]int                // rungs climbed, per failed server
@@ -381,7 +381,7 @@ func newGateway(cfg Config) (*gateway, error) {
 		lifeCtx:     lifeCtx,
 		stop:        stop,
 		servers:     make(map[string]*downstream.Server),
-		connErr:     make(map[string]string),
+		connErr:     make(map[string]connectFailure),
 		dialing:     make(map[string]struct{}),
 		redialAt:    make(map[string]time.Time),
 		redialTries: make(map[string]int),

@@ -21,6 +21,7 @@ func fullStack(from int) HealthInput {
 		in.OAuthConfigError = "bad issuer"
 	}
 	if from <= 4 {
+		in.NeedsAuth = true
 		in.Conn = ConnError
 		in.ConnDetail = "dial tcp: refused"
 	}
@@ -97,8 +98,16 @@ func TestComputeHealthMatrix(t *testing.T) {
 		},
 		// Rung 4: connection states.
 		{
-			name: "connection error outranks call auth and token",
+			name: "handshake auth refusal outranks generic connection error",
 			in:   fullStack(4),
+			want: api.Health{Level: api.HealthLevelUnhealthy, AdminState: api.AdminStateEnabled, Summary: "authentication required", Detail: "dial tcp: refused", Action: api.ActionLogin},
+		},
+		{
+			name: "connection error outranks call auth and token",
+			in: HealthInput{
+				Conn: ConnError, ConnDetail: "dial tcp: refused",
+				CallAuthFailed: true, Token: TokenExpired,
+			},
 			want: api.Health{Level: api.HealthLevelUnhealthy, AdminState: api.AdminStateEnabled, Summary: "connection error", Detail: "dial tcp: refused", Action: api.ActionRestart},
 		},
 		{

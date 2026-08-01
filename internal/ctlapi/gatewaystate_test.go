@@ -37,6 +37,7 @@ func TestServersReflectGatewayReports(t *testing.T) {
 	})
 	seedServer(t, env.reg, "elk", true)
 	seedServer(t, env.reg, "docs", true)
+	seedServer(t, env.reg, "notion", true)
 
 	// Before any gateway exists: nothing is connected and nothing is
 	// claimed. "unknown" plus "not observed" — never "ok".
@@ -60,6 +61,7 @@ func TestServersReflectGatewayReports(t *testing.T) {
 	fg.report(
 		GatewayServerState{ID: "elk", Conn: string(ConnConnected), Tools: 5},
 		GatewayServerState{ID: "docs", Conn: string(ConnError), Detail: "spawn: no such file"},
+		GatewayServerState{ID: "notion", Conn: string(ConnError), Detail: "http 401", NeedsAuth: true},
 	)
 
 	after := serversByID(t, client)
@@ -78,6 +80,10 @@ func TestServersReflectGatewayReports(t *testing.T) {
 		got.Detail != "claude-code: spawn: no such file" {
 		t.Errorf("docs health = %+v", got)
 	}
+	if got := after["notion"].Health; got.Level != api.HealthLevelUnhealthy ||
+		got.Summary != "authentication required" || got.Action != api.ActionLogin {
+		t.Errorf("notion health = %+v, want authentication-required login action", got)
+	}
 
 	// A report is a full snapshot, not a delta: dropping "docs" from it
 	// retracts that server's state instead of freezing the last error.
@@ -88,6 +94,9 @@ func TestServersReflectGatewayReports(t *testing.T) {
 	}
 	if got := after["docs"]; got.State != "unknown" || got.Health.Summary != "not observed" {
 		t.Errorf("docs after retraction = %+v", got)
+	}
+	if got := after["notion"]; got.State != "unknown" || got.Health.Summary != "not observed" {
+		t.Errorf("notion after retraction = %+v", got)
 	}
 
 	// The observer leaving takes its observations with it.
@@ -159,7 +168,7 @@ func TestGatewayStatesFold(t *testing.T) {
 	}})
 	g.ReportServers("s2", "cursor", []GatewayServerState{{
 		ID: "elk", Conn: string(ConnConnecting), Tools: 0,
-		MissingSecrets: []string{"A", "B"}, CallAuthFailed: true,
+		MissingSecrets: []string{"A", "B"}, NeedsAuth: true, CallAuthFailed: true,
 		Token: string(TokenExpired), OAuthConfigError: "bad issuer",
 	}})
 
@@ -176,7 +185,7 @@ func TestGatewayStatesFold(t *testing.T) {
 	if len(rt.MissingSecrets) != 2 || rt.MissingSecrets[0] != "A" || rt.MissingSecrets[1] != "B" {
 		t.Errorf("missing secrets = %v, want sorted union [A B]", rt.MissingSecrets)
 	}
-	if !rt.CallAuthFailed || rt.OAuthConfigError != "bad issuer" || rt.Token != TokenExpired {
+	if !rt.NeedsAuth || !rt.CallAuthFailed || rt.OAuthConfigError != "bad issuer" || rt.Token != TokenExpired {
 		t.Errorf("folded runtime = %+v", rt)
 	}
 
@@ -194,7 +203,7 @@ func TestGatewayStatesFold(t *testing.T) {
 	g.DropSession("s2")
 	g.DropSession("s3")
 	rt, _ = g.ServerRuntime("elk")
-	if rt.Conn != ConnConnected || rt.Token != TokenExpiring || rt.CallAuthFailed {
+	if rt.Conn != ConnConnected || rt.Token != TokenExpiring || rt.NeedsAuth || rt.CallAuthFailed {
 		t.Errorf("after drops = %+v, want only s1's contribution", rt)
 	}
 }

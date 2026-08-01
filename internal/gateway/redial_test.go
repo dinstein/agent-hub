@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -142,13 +143,13 @@ func TestRedialClimbsExactlyOneRungPerAttempt(t *testing.T) {
 		redialAt:    map[string]time.Time{},
 		redialTries: map[string]int{},
 		dialing:     map[string]struct{}{},
-		connErr:     map[string]string{},
+		connErr:     map[string]connectFailure{},
 		servers:     map[string]*downstream.Server{},
 		specs:       []downstream.Spec{{ID: "s"}},
 	}
 	for attempt := 1; attempt <= 4; attempt++ {
 		// The dial that just ran failed: THIS is what arms the next rung.
-		g.noteConnectResult("s", "boom")
+		g.noteConnectResult("s", errors.New("boom"))
 		if got := g.redialTries["s"]; got != attempt {
 			t.Fatalf("after failure %d the ladder is at rung %d, want %d", attempt, got, attempt)
 		}

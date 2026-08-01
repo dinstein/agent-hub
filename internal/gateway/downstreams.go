@@ -50,7 +50,7 @@ func (g *gateway) connectOne(spec downstream.Spec) {
 		// Remember WHY: without it this server would report "connecting"
 		// forever, which is the failure this whole state path exists to
 		// stop (a red server that displays as merely slow).
-		g.noteConnectResult(spec.ID, err.Error())
+		g.noteConnectResult(spec.ID, err)
 		g.reportServers()
 		return
 	}
@@ -94,7 +94,7 @@ func (g *gateway) connectOne(spec downstream.Spec) {
 		old.Close() // replaced by a concurrent reconnect race; keep the newest
 	}
 
-	g.noteConnectResult(spec.ID, "")
+	g.noteConnectResult(spec.ID, nil)
 	g.persistTools(srv)
 	g.rebuildAndNotify()
 	g.reportServers()
