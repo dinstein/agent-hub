@@ -678,6 +678,9 @@ that proves it: gate counts on the in-process path must match stdio exactly.
 **`statereport.go` is where downstream runtime state comes from.** The gateway is the only process holding the
 connections, so it is the only thing that can answer "how is this server doing right now" — it snapshots
 `serverStates()` and reports through `POST /v1/gateway/{sid}/servers`, and the daemon only aggregates.
+The last connection failure stays structured long enough to classify a typed HTTP 401/403 as `needs_auth` in that
+report. Classification never greps the rendered error: a proxy's 502 response may include the words "http 401",
+and an OAuth login cannot repair that failure.
 
 **How credentials enter this assembly.** `Config.CallerTier` is the operation tier of the **credential** this gateway
 serves (minted from the agent token on the HTTP face, always empty for stdio — a terminal pipe carries no credential, so
@@ -689,7 +692,8 @@ values are exactly the stdio behavior.
 
 ### The re-dial ladder
 
-A dial that fails records **why** (`connErr`) so the server reports as errored rather than as perpetually
+A dial that fails records **why and whether the typed failure rejected credentials** (`connErr`) so the server
+reports as errored rather than as perpetually
 connecting — and, until this plane existed, that was the end of it: the connection was never attempted again,
 so every recovery cost a client restart whatever the cause. The server came up slower than the gateway, the
 network blinked, a stdio child crashed on its first launch, or a credential arrived after a 401 had already

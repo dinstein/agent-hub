@@ -157,6 +157,10 @@ accessibility requirement and a guard against misreading:
 This is the single biggest saver of user time: it removes the "read status → figure out what to do →
 find the entry point" three-step.
 
+`needs-auth` arrives from the daemon's Health contract after a gateway preserves a typed handshake 401/403; the
+frontend does not infer it from an error string. Clicking `Authenticate` starts the control-plane login session
+below, so the status both identifies the problem and is the operation that repairs it.
+
 **Semantic colors are reserved for health; accent is reserved for interaction.** Metadata like
 transport, source, and profile is always neutral (`ChipTone`'s `neutral`). Green/yellow/red still
 answer health only. The indigo accent answers a different, closed question — which navigation item,

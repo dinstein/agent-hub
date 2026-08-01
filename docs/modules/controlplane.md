@@ -251,6 +251,7 @@ flowchart TD
     B -->|"hit"| B1["unhealthy + set_secret"]
     C -->|"no hit"| D["4. connection state"]
     C -->|"hit"| C1["unhealthy + login"]
+    D -->|"handshake 401 / 403"| D0["unhealthy + login"]
     D -->|"error / disconnected"| D1["unhealthy + restart"]
     D -->|"connecting"| D2["degraded (no action)"]
     D -->|"unrecognized value"| D3["unhealthy + view_logs<br/>(surface it rather than guess green)"]
@@ -267,6 +268,12 @@ flowchart TD
 Two points worth recording separately: `disabled` **deliberately keeps `level=healthy`** (turning something off on
 purpose is not a fault), and an unrecognized connection state **fails toward visibility** (report unhealthy +
 view_logs) rather than defaulting to healthy. The frontend only renders, and must not re-derive the state from other fields.
+
+The handshake-auth branch is driven only by a typed HTTP 401/403 retained by the gateway from the failed
+connection attempt. It never searches error text — a proxy's 502 body may quote an upstream 401 — and it never
+persists `needsAuth` in the registry. This runtime witness outranks the generic connection-error branch because
+restarting cannot repair it; the resulting `login` action is what turns the GUI status cell into its working
+`Authenticate` button.
 
 The fourth is **the fork between `unknown` and `connected` on rung 7**. Once the state source was wired up,
 `unknown` acquired a precise meaning: **no gateway currently holds a connection to this server** (nobody is using
@@ -583,6 +590,8 @@ over the control connection by the stdio gateways that actually hold the connect
 Standing up a second set of downstream processes just to display a status dot (one resident child process per stdio
 server, doubled OAuth and quotas for remote servers, plus reassembling secret resolution and netguard inside the daemon)
 is not a worthwhile trade. The aggregation rules are in the file comment of `internal/ctlapi/gatewaystate.go`.
+Those reports keep handshake authentication refusals distinct from generic dial failures, so a downstream 401/403
+produces the Health contract's `login` action instead of the misleading `restart` action.
 
 ---
 
