@@ -1,15 +1,17 @@
 ---
 name: agenthub
-description: Drive the agenthub CLI to give an AI client MCP tools - add a server (curated catalog, pasted config, or by hand), store its credentials, run its OAuth login, test it for real, connect it to Claude Code / Cursor / Codex / VS Code / Zed, narrow what each client may see, and diagnose the installation with doctor when a client cannot reach a server or it answers wrongly. Use whenever the task involves adding, authorizing, testing, wiring up, or troubleshooting an MCP server.
+description: Drive the agenthub CLI to give an AI client MCP tools - add a server (curated catalog, pasted config, or by hand), store its credentials, run its OAuth login, test it for real, connect it to Claude Code / Cursor / Codex / VS Code / Zed, narrow what each client may see, diagnose the installation with doctor when a client cannot reach a server or it answers wrongly, and read the call log when a call itself went wrong. Also covers the meta-tools an agent uses from inside a session agenthub already serves. Use whenever the task involves adding, authorizing, testing, wiring up, inspecting, or troubleshooting an MCP server.
 ---
 
 # agenthub
 
 One gateway between every AI client and every MCP server. Wire a client up **once**; add, authorize, and narrow servers here afterwards without touching the client again.
 
-**Never guess a flag** — `agenthub <group> --help` decides. This file covers exactly what a release advertises: `server`, `auth`, `secret`, `catalog`, `profile`, `client`, `doctor`.
+**Never guess a flag** — `agenthub <group> --help` decides. A release build's help page lists the everyday path only (`server`, `auth`, `secret`, `catalog`, `profile`, `client`, `doctor`); `config`, `audit` and `activity` are withheld from that page and run identically — their own `--help` still prints.
 
 The path is always: **add → (credential) → enable → test → connect → narrow**.
+
+**Two surfaces over one state.** The CLI edits the configuration; the meta-tools inside a session agenthub already serves (§10) use it. A config edit reaches running sessions — only wiring a client up (§5) needs a restart.
 
 ## Reading output
 
@@ -218,6 +220,7 @@ agenthub server test brave --tools      # live answer today
 | a tool vanished | `server inspect <id>` visibility (§6) |
 | client sees nothing | `server inspect` first; did the user restart the client? |
 | a client points at an old binary | `doctor` reports it; `--fix` repoints it |
+| a call went wrong, or "did it even reach the server" | the call log (§9) — `audit tail`, then `audit show <call-id>` |
 | exit 4 | that command needs a running daemon; nothing on this path does |
 | exit 6 | governance denied it — report it, do not retry |
 
@@ -240,10 +243,55 @@ agenthub server trace linear off    # turn off when done
 - `server ls` grows a `TRACE` column while any trace is on.
 - Correct-looking frames plus a misbehaving client → the problem is above this layer (§6 narrowing, client restart).
 
+## 9. Call log
+
+Every `tools/call` from every client, in one encrypted local ledger — the other half of §8: wire trace is verbatim frames for **one server**, this is the lifecycle of **every call**. **Off by default.**
+
+```bash
+agenthub audit status                      # effective capture, durability, retention; is it even on
+agenthub audit enable                      # creates the payload key, starts recording
+agenthub audit tail --limit 20             # metadata only, nothing decrypted; --since 24h by default
+agenthub audit tail --server linear --client claude-code --outcome tool_error
+agenthub audit stats --since 24h           # counts by outcome / client / server / tool
+agenthub audit show <call-id>              # one lifecycle
+agenthub audit show <call-id> --payloads   # + request, effective arguments, captured result
+agenthub audit disable                     # stops recording; keys and history stay
+```
+
+- **Recording is fail-closed: a ledger that cannot write blocks the call.** Missing key, disk full, `maxBytes` or `minFreeBytes` crossed → the client gets a failure, never an unrecorded success. That is why `enable` is a decision, not a default.
+- **Three events per call**: `received` (before parsing), `routed` (a target was chosen), `finished` (outcome). No `routed` means it never reached a server; no `finished` means incomplete — `stats` counts those separately.
+- **The filters match events, not calls**, and are compared verbatim: `--server` / `--tool` can only ever hit `routed` and `finished`, which is where those fields exist, and a value outside the vocabulary (`success`, `tool_error`, `denied`, `busy`, `protocol_error`, `cancelled`) returns an empty list rather than an error.
+- **The `CALL` column is truncated to 12 characters and `show` wants all 32** — take `callId` from `agenthub --json audit tail`.
+- **`--payloads` decrypts the user's data** — arguments and results, credentials included; the command says so on stderr. Read it in the terminal, never paste it into a chat or a commit.
+- Policy lives in governance: `agenthub config ls` names every `audit.*` key, `config set` moves one. **Arguments are always captured whole**; only result capture is tunable (`audit.results`: `none | errors | truncated | full`), alongside `durability`, `retentionDays`, `maxBytes` and `minFreeBytes`.
+- `verify` authenticates every event and decrypts every payload; `export --output <new-file>` refuses an existing path; `prune --dry-run` first — it drops whole day partitions past retention; `rotate-key` keeps old keys so retained history stays readable.
+
+`agenthub activity --since 24h` is a **different** projection — token savings and search traces from lazy discovery, not the call ledger.
+
+## 10. From inside a session
+
+When agenthub already serves the client you are running in, its meta-tools are the second surface — configuration read and used rather than edited:
+
+| tool | use |
+|---|---|
+| `status` | which servers this session sees and how many tools each has |
+| `search_tools{query,limit}` | keyword search; each hit carries `sig` and the `call_with` door to use |
+| `describe_tool{tool\|tools}` | full input schema, up to 5 names at once |
+| `call_tool{tool,arguments}` | invoke by exposed name |
+| `fetch_result{cursor,offset,limit}` | next page of a truncated result |
+
+- **`status` is the fastest check that a narrowing landed** — it answers from the client's side, after both layers of §6 have intersected, where `server tool ls` answers from the config's.
+- **A config edit reaches a live session**: enable a server, bind a profile, allow a tool, and the gateway reloads and emits `tools/list_changed`. If `status` still disagrees, that client ignored the notification — restart it.
+- These exist in **lazy** mode. `grouped` exposes one `<server>_tools` entry per server plus `call_tool`; `full` exposes the tools themselves and no meta-tools at all (§6).
+- A `sig` marked `lossy` is abridged — `describe_tool` before building arguments.
+- Take exposed names from search results, and **never split one on `__`** — a server id or tool name may contain it.
+- Every call made this way is one lifecycle in §9's ledger, recorded under the meta-tool it entered by (`call_tool`) with the real server and tool on the `routed` event.
+
 ## Non-negotiable
 
 - **No credential in an argv or in the registry** — `secret set --stdin`, `${SECRET_X}` in the definition.
 - **No invented command or flag** — `--help` decides.
 - **Exit 6 is an answer, not an obstacle.** Report it.
 - **`--dry-run` before editing a client's config; `server test` before `client connect`.**
+- **Decrypted payloads and traced frames stay local** — quote a field if it answers the question, never the record.
 - **Say when a step needs a human** (OAuth browser, client restart).
