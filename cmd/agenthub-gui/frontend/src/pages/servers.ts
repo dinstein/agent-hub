@@ -31,7 +31,7 @@
 // read path and this page must not grow one.
 
 import { asCallError, EVT, hub, isCancelled, on, openExternal } from "../bridge";
-import { chip, chipRow, clear, el, emptyState, errorHeadline, icon, loadingState, pageHeader, reconcile } from "../dom";
+import { chip, chipRow, chipToggle, clear, el, emptyState, errorHeadline, icon, loadingState, pageHeader, reconcile } from "../dom";
 import { AdminState, HealthAction, HealthLevel } from "../generated/health";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot, runWrite } from "../page";
@@ -767,6 +767,9 @@ export function serversPage(): Page {
   let search: HTMLInputElement | null = null;
   let ticker: number | undefined;
   let filter = "";
+  /** Narrows the list to the rows that are asking for something — the job the
+   *  old "needs attention" bucket did by rearranging the page permanently. */
+  let attentionOnly = false;
   const slot = noticeSlot();
   const form = modalHost();
   const secretManager = createServerSecretsManager(retestAfterSecretChange);
@@ -2186,15 +2189,26 @@ export function serversPage(): Page {
     listRoot.append(chipsHost, noticeHost, ledgerHost, disabledHost);
   }
 
+  /** Drops BOTH filters. One button, because a view narrowed twice and
+   *  cleared once is a view the user has to discover a second control for. */
+  function clearFilters(): void {
+    filter = "";
+    attentionOnly = false;
+    if (search) search.value = "";
+    repaint();
+  }
+
   function paint(servers: Server[]): void {
     if (!listRoot) return;
     ensureHosts();
     if (!chipsHost || !noticeHost || !ledgerHost || !disabledHost) return;
 
     const needle = filter.trim().toLowerCase();
-    const shown = needle
-      ? servers.filter((s) => s.id.toLowerCase().includes(needle))
-      : servers;
+    const shown = servers.filter(
+      (s) =>
+        (needle === "" || s.id.toLowerCase().includes(needle)) &&
+        (!attentionOnly || needsAttention(s)),
+    );
 
     // Chips describe the WHOLE fleet, not the filtered view: a summary that
     // silently means "of what you can currently see" is the same lie as a
@@ -2202,23 +2216,66 @@ export function serversPage(): Page {
     const connected = servers.filter((s) => s.state === "connected").length;
     const attention = servers.filter(needsAttention).length;
     const disabled = servers.filter(isDisabled).length;
-    const chipsSig = JSON.stringify([servers.length, connected, attention, disabled]);
+    // Still checking: the page's own handshake is what puts an enabled row in
+    // the connecting state, so this counts unanswered questions, not servers
+    // the daemon believes are mid-connection.
+    const checking = servers.filter((s) => !isDisabled(s) && s.state === "connecting").length;
+
+    const chipsSig = JSON.stringify([servers.length, connected, attention, disabled, checking, attentionOnly]);
     if (chipsSig !== chipsSignature) {
       chipsSignature = chipsSig;
+      const hadFocus = chipsHost.contains(document.activeElement);
       clear(chipsHost);
-      const chips = chipRow(
-        chip(servers.length, servers.length === 1 ? "server" : "servers"),
-        chip(connected, "connected", "success"),
-        chip(attention, attention === 1 ? "needs attention" : "need attention", "warning"),
-        chip(disabled, "disabled"),
+      // WHILE THE FLEET IS SETTLING the verdict chips are absent rather than
+      // partial. A "connected" count that climbs from 0 to 13 one probe at a
+      // time is motion that says nothing: the number is only an answer once
+      // every question has been asked. What is shown instead is the progress
+      // itself, counting down.
+      // The toggle survives a re-probe even while the counts are withheld: it
+      // is the control that turns the filter OFF, and a filter whose only
+      // switch has gone missing is a view the user cannot leave.
+      const attentionChip = chipToggle(
+        attention,
+        attention === 1 ? "needs attention" : "need attention",
+        "warning",
+        {
+          pressed: attentionOnly,
+          onToggle: () => {
+            attentionOnly = !attentionOnly;
+            repaint();
+          },
+        },
       );
+      const chips = checking > 0
+        ? chipRow(
+            chip(servers.length, servers.length === 1 ? "server" : "servers"),
+            chip(checking, "checking"),
+            attentionOnly ? attentionChip : null,
+            chip(disabled, "disabled"),
+          )
+        : chipRow(
+            chip(servers.length, servers.length === 1 ? "server" : "servers"),
+            chip(connected, "connected", "success"),
+            attentionChip,
+            chip(disabled, "disabled"),
+          );
       if (chips) chipsHost.append(chips);
+      // A settling probe rebuilds these chips underneath whoever just clicked
+      // one. Putting focus back is what keeps the toggle usable from the
+      // keyboard while the fleet is still answering.
+      if (hadFocus) chipsHost.querySelector<HTMLElement>(".chip-toggle")?.focus();
     }
 
     // Which empty state applies, if any. Rebuilt only when the answer
     // changes, because both of them contain a button.
-    const notice = servers.length === 0 ? "none" : shown.length === 0 ? "filtered" : "";
-    const noticeSig = JSON.stringify([notice, filter.trim(), servers.length]);
+    const notice = servers.length === 0
+      ? "none"
+      : shown.length > 0
+        ? ""
+        : attentionOnly && attention === 0
+          ? "settled"
+          : "filtered";
+    const noticeSig = JSON.stringify([notice, filter.trim(), servers.length, attentionOnly]);
     if (noticeSig !== noticeSignature) {
       noticeSignature = noticeSig;
       clear(noticeHost);
@@ -2235,19 +2292,27 @@ export function serversPage(): Page {
             ],
           }),
         );
-      } else if (notice === "filtered") {
+      } else if (notice === "settled") {
         noticeHost.append(
           emptyState({
             kind: "empty",
-            title: `No server id contains \u201C${filter.trim()}\u201D.`,
+            title: "Nothing needs attention.",
+            body: "Every enabled server answered its last handshake. This view is filtered to the ones that did not.",
+            actions: [button("Show all servers", "btn", clearFilters)],
+          }),
+        );
+      } else if (notice === "filtered") {
+        const both = attentionOnly && filter.trim() !== "";
+        noticeHost.append(
+          emptyState({
+            kind: "empty",
+            title: both
+              ? `Nothing that needs attention contains \u201C${filter.trim()}\u201D.`
+              : attentionOnly
+                ? "Nothing needs attention."
+                : `No server id contains \u201C${filter.trim()}\u201D.`,
             body: `All ${servers.length} configured servers are still there — this view is filtered.`,
-            actions: [
-              button("Clear filter", "btn", () => {
-                filter = "";
-                if (search) search.value = "";
-                void draw();
-              }),
-            ],
+            actions: [button("Clear filters", "btn", clearFilters)],
           }),
         );
       }

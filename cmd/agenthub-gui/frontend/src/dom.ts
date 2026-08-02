@@ -227,6 +227,35 @@ export function chip(count: number, label: string, tone: ChipTone = "neutral"): 
   ]);
 }
 
+/**
+ * A chip that is also a filter.
+ *
+ * The counts along the top of a list answer "how many"; this one also answers
+ * "which ones", by narrowing the list to what it counts. That is deliberately
+ * the same affordance rather than a second control elsewhere: the number and
+ * the way to see what it is made of belong together, and a summary that can be
+ * opened is what lets a list stop rearranging itself to make the same point.
+ *
+ * Unlike `chip`, a zero count is still rendered while the filter is ON —
+ * removing the control that turns it off would strand the user in a view they
+ * cannot leave.
+ */
+export function chipToggle(
+  count: number,
+  label: string,
+  tone: ChipTone,
+  opts: { pressed: boolean; onToggle: () => void },
+): HTMLElement | null {
+  if (count === 0 && !opts.pressed) return null;
+  const b = el("button", {
+    class: tone === "neutral" ? "chip chip-toggle" : `chip chip-toggle c-${tone}`,
+    type: "button",
+    "aria-pressed": String(opts.pressed),
+  }, [el("b", { text: String(count) }), el("span", { text: label })]) as HTMLButtonElement;
+  b.addEventListener("click", opts.onToggle);
+  return b;
+}
+
 /** A row of chips; renders nothing at all when every count was zero. */
 export function chipRow(...chips: (HTMLElement | null)[]): HTMLElement | null {
   const kept = chips.filter((c): c is HTMLElement => c !== null);

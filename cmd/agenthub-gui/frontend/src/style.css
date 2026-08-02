@@ -4492,6 +4492,23 @@ details.adv[open] > summary::before {
   margin-top: var(--space-5);
 }
 
+.chip-toggle {
+  cursor: pointer;
+  font: inherit;
+  border: 1px solid transparent;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.chip-toggle:hover {
+  border-color: var(--line);
+}
+
+/* Pressed is a state, not a hover: it has to survive the pointer leaving,
+ * because it is the reason the list below is showing a subset. */
+.chip-toggle[aria-pressed="true"] {
+  border-color: currentColor;
+}
+
 .server-list > .chips .chip,
 .catalog-list > .chips .chip {
   border-radius: var(--radius);
