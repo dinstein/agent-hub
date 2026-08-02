@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// resolveCommand returns the absolute path of command as found in the PATH
+// LookPath returns the absolute path of command as found in the PATH
 // carried by env — the environment the child is about to be given — rather
 // than in the one this process happens to have.
 //
@@ -32,7 +32,7 @@ import (
 //   - A nil env is returned unchanged. Under exec.Cmd semantics that means the
 //     child inherits this process's environment, so the two PATHs are one PATH
 //     and exec's own lookup is already asking the right question.
-func resolveCommand(command string, env []string) (string, error) {
+func LookPath(command string, env []string) (string, error) {
 	if runtime.GOOS == "windows" || command == "" || env == nil {
 		return command, nil
 	}

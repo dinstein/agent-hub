@@ -23,9 +23,9 @@ func pathEnv(dirs ...string) []string {
 	return []string{"HOME=/home/u", "PATH=" + strings.Join(dirs, string(os.PathListSeparator))}
 }
 
-func TestResolveCommandUsesTheChildsPATH(t *testing.T) {
+func TestLookPathUsesTheChildsPATH(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("resolveCommand defers to exec.LookPath on Windows")
+		t.Skip("LookPath defers to exec.LookPath on Windows")
 	}
 	dir := t.TempDir()
 	want := stub(t, dir, "npx")
@@ -35,35 +35,35 @@ func TestResolveCommandUsesTheChildsPATH(t *testing.T) {
 	// the parent's does not.
 	t.Setenv("PATH", "/nonexistent-for-this-test")
 
-	got, err := resolveCommand("npx", pathEnv(dir))
+	got, err := LookPath("npx", pathEnv(dir))
 	if err != nil {
-		t.Fatalf("resolveCommand: %v", err)
+		t.Fatalf("LookPath: %v", err)
 	}
 	if got != want {
 		t.Fatalf("resolved to %q, want %q", got, want)
 	}
 }
 
-func TestResolveCommandTakesTheFirstMatch(t *testing.T) {
+func TestLookPathTakesTheFirstMatch(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("resolveCommand defers to exec.LookPath on Windows")
+		t.Skip("LookPath defers to exec.LookPath on Windows")
 	}
 	first, second := t.TempDir(), t.TempDir()
 	want := stub(t, first, "tool")
 	stub(t, second, "tool")
 
-	got, err := resolveCommand("tool", pathEnv(first, second))
+	got, err := LookPath("tool", pathEnv(first, second))
 	if err != nil {
-		t.Fatalf("resolveCommand: %v", err)
+		t.Fatalf("LookPath: %v", err)
 	}
 	if got != want {
 		t.Fatalf("resolved to %q, want the earlier entry %q", got, want)
 	}
 }
 
-func TestResolveCommandSkipsNonExecutablesAndDirectories(t *testing.T) {
+func TestLookPathSkipsNonExecutablesAndDirectories(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("resolveCommand defers to exec.LookPath on Windows")
+		t.Skip("LookPath defers to exec.LookPath on Windows")
 	}
 	shadow, real := t.TempDir(), t.TempDir()
 	if err := os.Mkdir(filepath.Join(shadow, "tool"), 0o755); err != nil {
@@ -75,9 +75,9 @@ func TestResolveCommandSkipsNonExecutablesAndDirectories(t *testing.T) {
 	}
 	want := stub(t, real, "tool")
 
-	got, err := resolveCommand("tool", pathEnv(shadow, notExec, real))
+	got, err := LookPath("tool", pathEnv(shadow, notExec, real))
 	if err != nil {
-		t.Fatalf("resolveCommand: %v", err)
+		t.Fatalf("LookPath: %v", err)
 	}
 	if got != want {
 		t.Fatalf("resolved to %q, want %q", got, want)
@@ -86,25 +86,25 @@ func TestResolveCommandSkipsNonExecutablesAndDirectories(t *testing.T) {
 
 // An empty PATH entry is the current directory to POSIX and to
 // exec.LookPath, and deliberately nothing here.
-func TestResolveCommandIgnoresEmptyPATHEntries(t *testing.T) {
+func TestLookPathIgnoresEmptyPATHEntries(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("resolveCommand defers to exec.LookPath on Windows")
+		t.Skip("LookPath defers to exec.LookPath on Windows")
 	}
 	cwd := t.TempDir()
 	stub(t, cwd, "tool")
 	t.Chdir(cwd)
 
-	if _, err := resolveCommand("tool", pathEnv("", "/nonexistent")); err == nil {
+	if _, err := LookPath("tool", pathEnv("", "/nonexistent")); err == nil {
 		t.Fatal("an empty PATH entry resolved a command out of the working directory")
 	}
 }
 
-func TestResolveCommandNotFoundNamesWhatWasSearched(t *testing.T) {
+func TestLookPathNotFoundNamesWhatWasSearched(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("resolveCommand defers to exec.LookPath on Windows")
+		t.Skip("LookPath defers to exec.LookPath on Windows")
 	}
 	dir := t.TempDir()
-	_, err := resolveCommand("absent-tool", pathEnv(dir))
+	_, err := LookPath("absent-tool", pathEnv(dir))
 	if err == nil {
 		t.Fatal("expected a not-found error")
 	}
@@ -115,7 +115,7 @@ func TestResolveCommandNotFoundNamesWhatWasSearched(t *testing.T) {
 	}
 }
 
-func TestResolveCommandPassThrough(t *testing.T) {
+func TestLookPathPassThrough(t *testing.T) {
 	dir := t.TempDir()
 	cases := []struct {
 		name    string
@@ -130,9 +130,9 @@ func TestResolveCommandPassThrough(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := resolveCommand(tc.command, tc.env)
+			got, err := LookPath(tc.command, tc.env)
 			if err != nil {
-				t.Fatalf("resolveCommand: %v", err)
+				t.Fatalf("LookPath: %v", err)
 			}
 			if got != tc.command {
 				t.Fatalf("rewrote %q to %q", tc.command, got)
@@ -169,7 +169,7 @@ func TestPathFromEnv(t *testing.T) {
 // succeed anyway.
 func TestSpawnStdioFindsCommandOnlyOnTheChildsPATH(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("resolveCommand defers to exec.LookPath on Windows")
+		t.Skip("LookPath defers to exec.LookPath on Windows")
 	}
 	dir := t.TempDir()
 	stub(t, dir, "quiet-tool")
@@ -184,7 +184,7 @@ func TestSpawnStdioFindsCommandOnlyOnTheChildsPATH(t *testing.T) {
 
 func TestSpawnStdioReportsAnUnresolvableCommand(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("resolveCommand defers to exec.LookPath on Windows")
+		t.Skip("LookPath defers to exec.LookPath on Windows")
 	}
 	_, err := SpawnStdio(StdioConfig{Command: "absent-tool", Env: pathEnv(t.TempDir())})
 	if err == nil {

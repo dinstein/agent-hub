@@ -188,18 +188,29 @@ inherits it; storing a value under a specific scope **overrides** just that deri
 either level aborts outright — a broken keychain must never quietly downgrade a scoped credential to a shared
 one.
 
-**A stdio child's PATH is widened to the login shell's** (`buildEnv` → `widenPATH`, over
-`secureenv.LoginPATH` and `secureenv.MergePATH`). A process started by launchd or systemd inherits a
-four-entry PATH and cannot tell from the inside that it was: an agenthub daemon spawned by the GUI —
-itself an app bundle launchd opened — sees `/usr/bin:/bin:/usr/sbin:/sbin`, while the same daemon
-started from a terminal sees everything the user has. Every server whose command is a package-manager
-shim (`npx`, `uvx`, `bunx` — the common case) is then unspawnable from the GUI and fine from the CLI.
-Widening rather than replacing is what makes it safe to do on every spawn: the result is a strict
-superset, so a process whose PATH was never truncated resolves every command to the same file it did
-before, and nothing has to guess whether *this* process is one of the launchd ones. The capture is
-process-wide, cached, bounded at 3s and fail-open, so the first stdio spawn pays for one login shell
-and no later one does. **An explicit `PATH` in a server's `env` is never touched** — a configuration
-that states a PATH has said what it means, and the capture is skipped entirely.
+**A stdio child's PATH is widened to the login shell's, but only when it has to be**
+(`widenPATHIfNeeded`, over `transport.LookPath`, `secureenv.LoginPATH` and `secureenv.MergePATH`). A
+process started by launchd or systemd inherits a four-entry PATH and cannot tell from the inside that it
+was: an agenthub daemon spawned by the GUI — itself an app bundle launchd opened — sees
+`/usr/bin:/bin:/usr/sbin:/sbin`, while the same daemon started from a terminal sees everything the user
+has. Every server whose command is a package-manager shim (`npx`, `uvx`, `bunx` — the common case) is
+then unspawnable from the GUI and fine from the CLI.
+
+**The precondition is the design, not an optimization.** Capturing a login PATH costs a shell — an
+interactive one, which sources an rc file that may do real work — and the first stdio dial is the most
+timing-sensitive moment the gateway has: until it returns, calls are answered `downstream servers are
+still connecting`. Paying that on every machine to help the launchd ones is the wrong trade when a
+lookup identifies the launchd ones for free. So the command is looked up against the PATH the child
+would get, and only a PATH that cannot resolve it is repaired: a CLI gateway spawns no shell at all,
+and `Deps.LoginPATH` is never called. The presence check is separate from the lookup on purpose —
+`transport.LookPath` passes a PATH-less environment through untouched, declining to invent a policy for
+a caller that gave it nothing, which is right there and wrong here.
+
+Widening rather than replacing keeps the result a strict superset, so even in the repair case every
+command that already resolved resolves to the same file. The capture is process-wide, cached, bounded
+at 5s and fail-open. **An explicit `PATH` in a server's `env` is neither probed nor widened** — a
+configuration that states a PATH has said what it means. The docker runtime is skipped outright: it
+spawns the docker CLI, which finds itself through `transport.DockerBinary`'s own fallback table.
 
 Handing the child a good PATH is only half of it: `exec.Command` resolves the command against the
 *parent's* PATH, so `transport.SpawnStdio` resolves against `StdioConfig.Env`'s instead (see

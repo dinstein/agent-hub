@@ -328,8 +328,9 @@ func (d Deps) dialer() DialFunc {
 
 // dialStdio spawns the child described by spec and speaks stdio to it. The
 // child environment is the parent environment with every AGENTHUB_*
-// variable stripped and its PATH widened to the login shell's, overlaid with
-// spec.Env after secret expansion.
+// variable stripped, overlaid with spec.Env after secret expansion, and its
+// PATH widened to the login shell's if the command cannot be found without
+// that (see widenPATHIfNeeded).
 func (d Deps) dialStdio(ctx context.Context, spec Spec) (transport.Transport, error) {
 	if spec.Command == "" {
 		return nil, fmt.Errorf("downstream %q: empty command", spec.ID)
@@ -338,10 +339,16 @@ func (d Deps) dialStdio(ctx context.Context, spec Spec) (transport.Transport, er
 	if err != nil {
 		return nil, err
 	}
+	childEnv := buildEnv(env)
+	if spec.Docker == nil {
+		// Host runtime only: the docker path spawns the docker CLI, which
+		// finds itself through transport.DockerBinary's own fallback table.
+		childEnv = widenPATHIfNeeded(childEnv, spec.Command, env, d.LoginPATH)
+	}
 	cfg := transport.StdioConfig{
 		Command: spec.Command,
 		Args:    spec.Args,
-		Env:     buildEnv(env, d.LoginPATH),
+		Env:     childEnv,
 		Cwd:     spec.Cwd,
 		Screen:  d.spawnScreen(),
 	}
@@ -382,32 +389,19 @@ var defaultSpawnGuard = spawnguard.New(spawnguard.Config{})
 
 // buildEnv assembles the child environment: parent env minus AGENTHUB_*
 // and minus any key overridden by extra, plus extra in sorted key order
-// (deterministic output for a given input). PATH is widened to the login
-// shell's, unless extra states one — see widenPATH.
-func buildEnv(extra map[string]string, loginPATH func() string) []string {
+// (deterministic output for a given input).
+func buildEnv(extra map[string]string) []string {
 	base := os.Environ()
 	out := make([]string, 0, len(base)+len(extra))
-	pathSeen := false
 	for _, kv := range base {
 		if strings.HasPrefix(kv, envPrefix) {
 			continue
 		}
-		name, val, _ := strings.Cut(kv, "=")
+		name, _, _ := strings.Cut(kv, "=")
 		if _, ok := extra[name]; ok {
 			continue
 		}
-		if name == pathVar {
-			pathSeen = true
-			kv = name + "=" + widenPATH(val, loginPATH)
-		}
 		out = append(out, kv)
-	}
-	if _, stated := extra[pathVar]; !pathSeen && !stated {
-		// A parent with no PATH at all: launchd can produce one, and the
-		// child would then have nothing to resolve a command against.
-		if p := widenPATH("", loginPATH); p != "" {
-			out = append(out, pathVar+"="+p)
-		}
 	}
 	keys := slices.Sorted(maps.Keys(extra))
 	for _, k := range keys {
@@ -416,34 +410,80 @@ func buildEnv(extra map[string]string, loginPATH func() string) []string {
 	return out
 }
 
-// pathVar is spelled PATH on every platform this widens on; Windows' Path
-// is left to exec's own casing rules, which is where transport stops too.
+// pathVar is spelled PATH on every platform this widens on; Windows' Path is
+// left to exec's own casing rules, which is where transport stops too.
 const pathVar = "PATH"
 
-// widenPATH returns current extended with the directories of the login
-// shell's PATH that it does not already have.
+// widenPATHIfNeeded returns env with its PATH extended by the directories of
+// the login shell's PATH, but ONLY when command cannot already be found under
+// the PATH env carries. stated is the server's own `env` block.
 //
-// A process started by launchd or systemd inherits a PATH with four entries
-// in it, and the manager it was started from is invisible from inside: an
-// agenthub daemon spawned by the GUI (which is itself an app bundle launchd
-// opened) sees /usr/bin:/bin:/usr/sbin:/sbin, while the same daemon started
-// from a terminal sees everything the user has. Every stdio server whose
-// command is a package-manager shim — npx, uvx, bunx, the common case by
-// far — is then unspawnable from the GUI and fine from the CLI, which is the
-// bug this is here for.
+// The problem it solves: a process started by launchd or systemd inherits a
+// PATH with four entries in it, and cannot tell from the inside that it was.
+// An agenthub daemon spawned by the GUI — itself an app bundle launchd
+// opened — sees /usr/bin:/bin:/usr/sbin:/sbin, while the same daemon started
+// from a terminal sees everything the user has, so every server whose command
+// is a package-manager shim (npx, uvx, bunx — the common case) is unspawnable
+// from the GUI and fine from the CLI.
 //
-// Widening rather than replacing is what makes it safe to do every time: the
-// result is a strict superset of the PATH we had, so a process whose PATH was
-// never truncated resolves every command to the same file it did before, and
-// there is no need to guess from the outside whether this process is one of
-// the launchd ones. The capture itself is cached process-wide and fail-open;
-// the first stdio spawn pays for one login shell and no later one does.
+// **The precondition is what keeps this off the hot path.** Capturing a login
+// PATH costs a shell — an interactive one, which sources an rc file that may
+// do real work — and the first stdio dial is the most timing-sensitive moment
+// the gateway has: until it finishes, calls are answered "downstream servers
+// are still connecting". Paying that on every machine to help the launchd ones
+// is the wrong trade when the launchd ones are exactly the ones a lookup
+// identifies for free. A PATH that already resolves the command is left alone
+// and no shell is ever spawned, so a CLI gateway does no work at all here.
 //
-// An explicit PATH in a server's `env` is never touched: a configuration that
-// states a PATH has said what it means.
-func widenPATH(current string, loginPATH func() string) string {
+// Widening rather than replacing keeps the result a strict superset, so even
+// in the repair case every command that already resolved resolves to the same
+// file. An explicit PATH in the server's `env` is never touched and never
+// probed: a configuration that states a PATH has said what it means.
+func widenPATHIfNeeded(env []string, command string, stated map[string]string, loginPATH func() string) []string {
+	if _, ok := stated[pathVar]; ok {
+		return env
+	}
+	// The presence check cannot be folded into the lookup. transport.LookPath
+	// passes a PATH-less environment through untouched — declining to invent a
+	// policy for a caller that gave it nothing — which is right there and
+	// wrong here: an environment with no PATH at all is the case that most
+	// needs repairing, not the case that needs none.
+	if _, hasPATH := envValueOf(env, pathVar); hasPATH {
+		if _, err := transport.LookPath(command, env); err == nil {
+			return env
+		}
+	}
 	if loginPATH == nil {
 		loginPATH = secureenv.LoginPATH
 	}
-	return secureenv.MergePATH(current, loginPATH())
+	login := loginPATH()
+	if login == "" {
+		return env
+	}
+	out := make([]string, 0, len(env)+1)
+	widened := false
+	for _, kv := range env {
+		if name, val, ok := strings.Cut(kv, "="); ok && name == pathVar {
+			kv, widened = name+"="+secureenv.MergePATH(val, login), true
+		}
+		out = append(out, kv)
+	}
+	if !widened {
+		// A parent with no PATH at all: launchd can produce one, and the
+		// child would then have nothing to resolve a command against.
+		out = append(out, pathVar+"="+login)
+	}
+	return out
+}
+
+// envValueOf returns the value of name in a "KEY=value" slice; the last
+// occurrence wins, as os/exec's own deduplication does.
+func envValueOf(env []string, name string) (string, bool) {
+	val, found := "", false
+	for _, kv := range env {
+		if k, v, ok := strings.Cut(kv, "="); ok && k == name {
+			val, found = v, true
+		}
+	}
+	return val, found
 }

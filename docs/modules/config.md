@@ -481,9 +481,10 @@ empty entry already in `base` is left alone, since removing it would change what
 ### Current integration status
 
 **The PATH half is wired; the allowlist half is not.** `internal/downstream/spec.go` calls
-`LoginPATH` and `MergePATH` from `buildEnv`, so every stdio child is given a PATH widened to the login
-shell's — the fix for a GUI-launched daemon being unable to spawn `npx`. `Filter` still has no
-production caller: `buildEnv` does its own `AGENTHUB_*` stripping (`envPrefix`) and otherwise passes
+`LoginPATH` and `MergePATH` from `widenPATHIfNeeded`, so a stdio child whose command cannot be found
+under the PATH it would be given is retried against the login shell's — the fix for a GUI-launched daemon
+being unable to spawn `npx`. A PATH that already resolves the command never triggers a capture. `Filter` still has no
+production caller: `internal/downstream`'s `buildEnv` does its own `AGENTHUB_*` stripping (`envPrefix`) and otherwise passes
 the parent environment through, so downstream admission is a passthrough rather than the deny-by-default
 this package describes. Turning that on is a behavior change for every existing server, not a wiring
 task, and is not something the PATH fix decided.

@@ -696,7 +696,7 @@ closes stdin (which is an EOF to a well-behaved child), waits `killGrace = 3s`, 
 and finally runs cleanup. **The process is always reaped.**
 
 **`StdioConfig.Command` is resolved against `StdioConfig.Env`'s PATH, not against this process's**
-(`resolveCommand` in `lookpath.go`). `exec.Command` resolves through `exec.LookPath`, which reads the
+(`transport.LookPath` in `lookpath.go`). `exec.Command` resolves through `exec.LookPath`, which reads the
 PATH of the *calling* process; `cmd.Env` is only ever handed to the child and never consulted for the
 lookup. Those are the same PATH often enough that the difference goes unnoticed, and then a caller
 repairs the child's PATH — which `internal/downstream` does, because launchd hands a GUI-launched
@@ -815,7 +815,7 @@ stateDiagram-v2
 | `transport.go` | The `Transport` interface, `Kind`, `ChangeMask`, `PeerHandler`, the three `Class` values and `*Error`, `ErrClosed` |
 | `conn.go` | The generic byte-stream implementation: single read loop, pending table, terminal `fail`, inline reverse RPC, cancellation forwarding, `Close` |
 | `stdio.go` | `StdioConfig`, `SpawnStdio`, the injected spawn screen `screen`, `launch` (pipe wiring, stderr ring, process reaping and kill escalation) |
-| `lookpath.go` | `resolveCommand` — resolves a stdio command against the PATH the child is being given rather than this process's |
+| `lookpath.go` | `LookPath` — resolves a stdio command against the PATH the child is being given rather than this process's |
 | `docker.go` | `DockerConfig`/`Mount`, `SpawnDocker`, `BuildDockerRunArgs`, configuration validation, `DockerBinary`/`DockerVersion`/`StrayContainers`, stderr diagnostics |
 | `httpcommon.go` | Everything the two HTTP transports share: header constants, `HTTPConfig`, `DialContextFunc`, `httpError`/`requestError` classification, `readBounded`/`encodeMessage`/`decodeMessages`, `sameOrigin`, backoff |
 | `streamablehttp.go` | Streamable HTTP: the POST main path, JSON and SSE responses, session headers, `Last-Event-ID` resumption, the optional GET notification stream and reconnect loop, DELETE on `Close` |

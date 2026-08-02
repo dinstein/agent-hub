@@ -32,7 +32,7 @@ type StdioConfig struct {
 	// inherits the parent environment, empty slice means empty env).
 	//
 	// Its PATH also decides where Command is looked up, which exec.Cmd does
-	// NOT do on its own — see resolveCommand. A caller that hands the child
+	// NOT do on its own — see LookPath. A caller that hands the child
 	// a PATH gets that PATH used for the lookup too, instead of silently
 	// resolving against this process's.
 	Env []string
@@ -82,7 +82,7 @@ func SpawnStdio(cfg StdioConfig) (Transport, error) {
 	// spawnguard matches on the command's basename, so it reaches the same
 	// verdict for "npx" and for /opt/homebrew/bin/npx. Screening the name the
 	// configuration actually wrote is the more legible of two equal options.
-	command, err := resolveCommand(cfg.Command, cfg.Env)
+	command, err := LookPath(cfg.Command, cfg.Env)
 	if err != nil {
 		return nil, &Error{Class: ClassUnavailable, Err: fmt.Errorf("spawn %q: %w", cfg.Command, err)}
 	}
