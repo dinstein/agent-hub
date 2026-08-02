@@ -14,6 +14,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/guard/spawnguard"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 	"github.com/dinstein/agent-hub/internal/secrets"
+	"github.com/dinstein/agent-hub/internal/secrets/secureenv"
 )
 
 // Sentinel errors of this package.
@@ -223,6 +224,15 @@ type Deps struct {
 	// assembly, so the default here is the guard and the opt-out is explicit.
 	Spawn func(command string, args, env []string) error
 
+	// LoginPATH supplies the login shell's PATH, which buildEnv folds into
+	// the one a stdio child is given (see widenPATH). nil selects
+	// secureenv.LoginPATH, which is what production wants; this field exists
+	// because that one is a process-wide sync.Once, so a test cannot ask it
+	// for two different answers — and this path only ever runs for real in a
+	// packaged GUI, which is precisely where an untested regression would sit
+	// unnoticed.
+	LoginPATH func() string
+
 	// SpawnUnscreened disables Spawn entirely. It exists for the tests that
 	// spawn deliberately guard-tripping shapes to prove the guard is what
 	// stops them elsewhere; production never sets it.
@@ -318,7 +328,8 @@ func (d Deps) dialer() DialFunc {
 
 // dialStdio spawns the child described by spec and speaks stdio to it. The
 // child environment is the parent environment with every AGENTHUB_*
-// variable stripped, overlaid with spec.Env after secret expansion.
+// variable stripped and its PATH widened to the login shell's, overlaid with
+// spec.Env after secret expansion.
 func (d Deps) dialStdio(ctx context.Context, spec Spec) (transport.Transport, error) {
 	if spec.Command == "" {
 		return nil, fmt.Errorf("downstream %q: empty command", spec.ID)
@@ -330,7 +341,7 @@ func (d Deps) dialStdio(ctx context.Context, spec Spec) (transport.Transport, er
 	cfg := transport.StdioConfig{
 		Command: spec.Command,
 		Args:    spec.Args,
-		Env:     buildEnv(env),
+		Env:     buildEnv(env, d.LoginPATH),
 		Cwd:     spec.Cwd,
 		Screen:  d.spawnScreen(),
 	}
@@ -371,23 +382,68 @@ var defaultSpawnGuard = spawnguard.New(spawnguard.Config{})
 
 // buildEnv assembles the child environment: parent env minus AGENTHUB_*
 // and minus any key overridden by extra, plus extra in sorted key order
-// (deterministic output for a given input).
-func buildEnv(extra map[string]string) []string {
+// (deterministic output for a given input). PATH is widened to the login
+// shell's, unless extra states one — see widenPATH.
+func buildEnv(extra map[string]string, loginPATH func() string) []string {
 	base := os.Environ()
 	out := make([]string, 0, len(base)+len(extra))
+	pathSeen := false
 	for _, kv := range base {
 		if strings.HasPrefix(kv, envPrefix) {
 			continue
 		}
-		name, _, _ := strings.Cut(kv, "=")
+		name, val, _ := strings.Cut(kv, "=")
 		if _, ok := extra[name]; ok {
 			continue
 		}
+		if name == pathVar {
+			pathSeen = true
+			kv = name + "=" + widenPATH(val, loginPATH)
+		}
 		out = append(out, kv)
+	}
+	if _, stated := extra[pathVar]; !pathSeen && !stated {
+		// A parent with no PATH at all: launchd can produce one, and the
+		// child would then have nothing to resolve a command against.
+		if p := widenPATH("", loginPATH); p != "" {
+			out = append(out, pathVar+"="+p)
+		}
 	}
 	keys := slices.Sorted(maps.Keys(extra))
 	for _, k := range keys {
 		out = append(out, k+"="+extra[k])
 	}
 	return out
+}
+
+// pathVar is spelled PATH on every platform this widens on; Windows' Path
+// is left to exec's own casing rules, which is where transport stops too.
+const pathVar = "PATH"
+
+// widenPATH returns current extended with the directories of the login
+// shell's PATH that it does not already have.
+//
+// A process started by launchd or systemd inherits a PATH with four entries
+// in it, and the manager it was started from is invisible from inside: an
+// agenthub daemon spawned by the GUI (which is itself an app bundle launchd
+// opened) sees /usr/bin:/bin:/usr/sbin:/sbin, while the same daemon started
+// from a terminal sees everything the user has. Every stdio server whose
+// command is a package-manager shim — npx, uvx, bunx, the common case by
+// far — is then unspawnable from the GUI and fine from the CLI, which is the
+// bug this is here for.
+//
+// Widening rather than replacing is what makes it safe to do every time: the
+// result is a strict superset of the PATH we had, so a process whose PATH was
+// never truncated resolves every command to the same file it did before, and
+// there is no need to guess from the outside whether this process is one of
+// the launchd ones. The capture itself is cached process-wide and fail-open;
+// the first stdio spawn pays for one login shell and no later one does.
+//
+// An explicit PATH in a server's `env` is never touched: a configuration that
+// states a PATH has said what it means.
+func widenPATH(current string, loginPATH func() string) string {
+	if loginPATH == nil {
+		loginPATH = secureenv.LoginPATH
+	}
+	return secureenv.MergePATH(current, loginPATH())
 }

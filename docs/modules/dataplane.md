@@ -188,6 +188,26 @@ inherits it; storing a value under a specific scope **overrides** just that deri
 either level aborts outright — a broken keychain must never quietly downgrade a scoped credential to a shared
 one.
 
+**A stdio child's PATH is widened to the login shell's** (`buildEnv` → `widenPATH`, over
+`secureenv.LoginPATH` and `secureenv.MergePATH`). A process started by launchd or systemd inherits a
+four-entry PATH and cannot tell from the inside that it was: an agenthub daemon spawned by the GUI —
+itself an app bundle launchd opened — sees `/usr/bin:/bin:/usr/sbin:/sbin`, while the same daemon
+started from a terminal sees everything the user has. Every server whose command is a package-manager
+shim (`npx`, `uvx`, `bunx` — the common case) is then unspawnable from the GUI and fine from the CLI.
+Widening rather than replacing is what makes it safe to do on every spawn: the result is a strict
+superset, so a process whose PATH was never truncated resolves every command to the same file it did
+before, and nothing has to guess whether *this* process is one of the launchd ones. The capture is
+process-wide, cached, bounded at 3s and fail-open, so the first stdio spawn pays for one login shell
+and no later one does. **An explicit `PATH` in a server's `env` is never touched** — a configuration
+that states a PATH has said what it means, and the capture is skipped entirely.
+
+Handing the child a good PATH is only half of it: `exec.Command` resolves the command against the
+*parent's* PATH, so `transport.SpawnStdio` resolves against `StdioConfig.Env`'s instead (see
+[foundation.md](foundation.md)). Either half alone leaves the bug exactly where it was. `Deps.LoginPATH`
+overrides the capture; nil selects the real one. It exists because `secureenv.LoginPATH` is a
+process-wide `sync.Once` that no test can ask for two answers, and this path only runs for real in a
+packaged GUI — precisely where an untested regression would sit unnoticed.
+
 **Derived instances: `Spec.ID` never changes.** Derivation specializes only the connection parameters
 (`${ROOT}` expansion in `Args` / `Env` values / `Cwd`, plus explicit `Env` overrides); `Spec.ID` stays the
 baseline server id, so `router.RouteOf` remains the sole provenance for the call, scope intersection still

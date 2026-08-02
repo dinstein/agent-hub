@@ -469,8 +469,13 @@ empty entry already in `base` is left alone, since removing it would change what
 
 ### Current integration status
 
-**Not yet wired.** Nothing outside this package and its tests references `secureenv`;
-`internal/downstream/spec.go` still does its own `AGENTHUB_*` stripping (`envPrefix`).
+**The PATH half is wired; the allowlist half is not.** `internal/downstream/spec.go` calls
+`LoginPATH` and `MergePATH` from `buildEnv`, so every stdio child is given a PATH widened to the login
+shell's — the fix for a GUI-launched daemon being unable to spawn `npx`. `Filter` still has no
+production caller: `buildEnv` does its own `AGENTHUB_*` stripping (`envPrefix`) and otherwise passes
+the parent environment through, so downstream admission is a passthrough rather than the deny-by-default
+this package describes. Turning that on is a behavior change for every existing server, not a wiring
+task, and is not something the PATH fix decided.
 
 ---
 
