@@ -389,11 +389,14 @@ silently reopened, and the numbering is cited from code.
 3. ~~Wails3 version and frontend stack (v3 is still alpha; we need a fallback)~~ → **Decided (M1-G):**
    `wails/v3 v3.0.0-alpha2.118` + vanilla TS + Vite (`@wailsio/runtime` is the only frontend runtime
    dependency). The fallback plan is not "switch frameworks", it is **compressing the alpha dependency
-   down to two files**: only `cmd/agenthub-gui/gui_main.go` and
-   `cmd/agenthub-gui/services/service_wails.go` (~50 lines of assembly) depend on Wails, both behind
-   `//go:build wails`, while the service body `services/hub.go` carries no tag and so compiles, vets
-   and unit-tests in CI. A breaking alpha change edits those two files; page logic and the `api` layer
-   are untouched. The frontend also skips `wails3 generate bindings` in favour of `Call.ByName` plus
+   down to three files**: only `cmd/agenthub-gui/gui_main.go`,
+   `cmd/agenthub-gui/services/service_wails.go` and `cmd/agenthub-gui/tray_wails.go` (assembly only)
+   depend on Wails, all behind `//go:build wails`, while the bodies they assemble — `services/hub.go`,
+   `services/window.go`, `tray.go`, `trayicon.go` — carry no tag and so compile, vet and unit-test in
+   CI. A breaking alpha change edits those three files; page logic, the tray's own judgement and the
+   `api` layer are untouched. The third file arrived with the system tray (2026-08): what a menu says,
+   which servers survive its cap and whether the close button hides or quits are all decided outside
+   it. The frontend also skips `wails3 generate bindings` in favour of `Call.ByName` plus
    `Events.On` — one fewer generated artifact to drift. Details in [modules/gui.md](modules/gui.md).
 4. ~~TOON grammar scope and the golden case set~~ → **Decided (M1.5).** Both "determinism is the
    contract" grammars are frozen, each with its own golden corpus:

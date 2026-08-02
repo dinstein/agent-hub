@@ -7,7 +7,7 @@ rules must not be casually changed**. The Go-side service body and wiring live i
 [controlplane.md](controlplane.md#cmdagenthub-gui).
 
 The rationale for the tech stack (vanilla TS + Vite, `@wailsio/runtime` as the only runtime
-dependency, alpha dependencies confined to two files) is in [../canonical.md](../canonical.md) §7,
+dependency, alpha dependencies confined to three files) is in [../canonical.md](../canonical.md) §7,
 item 3.
 
 ---
@@ -187,6 +187,58 @@ content item), can be copied, and can be switched back to the exact Raw value. *
 same bounded time range by outcome, client, server, and tool.
 **Ledger** owns capture status, footprint, integrity verification, retention cleanup, and key rotation.
 Pausing capture is a direct reversible action and never deletes history or keys.
+
+### 1.2 The window is not the application
+
+Closing the window used to end the process — and with it, on the ordinary path, the daemon that
+process had started. A GUI other programs depend on cannot have "tidy the desktop" and "cut off every
+connected client" behind the same button, so the close button now **hides the window** and the
+application keeps running in the system tray.
+
+The tray is a **readout, a set of destinations, and one lifecycle action**. It carries no registry
+write of any kind: a menu has no confirmation surface and nowhere to render a 409, so a mis-click
+there would change governance configuration and the refusal would have nowhere to go. Enabling a
+server, switching a profile, editing scope — all of it stays in the window. The one action offered is
+**starting** a hub that is not running, which can only help; stopping or restarting a running one
+cuts off every client mid-session, and is therefore not in the menu at all.
+
+The icon is the whole feature for anyone not currently looking at the window: a hollow ring is no
+daemon, a ring with a solid centre is serving, and a badge appears when an enabled server is not
+healthy. Bucketing comes from the same `Health` contract the Servers page uses — a tray that
+re-derived status from connection flags would be the second opinion
+[controlplane.md](controlplane.md) forbids. Server rows are capped, sorted worst-first so the cap
+drops what nobody needs to see, and the menu says how many it dropped.
+
+Three decisions are load-bearing:
+
+- **The first close asks.** Vanishing silently into the status area is the standard complaint about
+  tray applications, and here what keeps running is a hub. The dialog is also the "I meant quit"
+  escape, and the button pressed becomes what the close button does from then on (changeable in
+  Settings). Dismissing it persists nothing and asks again.
+- **No tray means the close button still quits.** Hiding into a status area that is not there leaves
+  a running process with **no reachable surface at all** — no window, no menu, only a process list. A
+  window that closes when you asked it to minimise is a surprise; a hub that cannot be quit is a
+  trap. The frontend's copy of "is there a tray" is display state only, because everything bound is
+  settable from the webview; the close path reads the assembly's own flag.
+- **Quit says what it costs.** Once the close button stops quitting, Quit is the only path that
+  reaches the shutdown which stops a daemon this GUI started, so the item spells that out when it
+  applies (`Quit AgentHub (stops the hub)`).
+
+The preference lives in `localStorage`, like the theme and for the same reason: it is a property of
+this window on this machine, and the registry having an opinion about it would be wrong. The Go side
+holds a runtime copy because the close arrives natively; the frontend pushes it at startup, and a
+change made from the tray comes back as an event the frontend persists without answering.
+
+**Platforms.** macOS and Windows drive a tray. Linux deliberately does not: Wails registers the icon
+over the dbus `StatusNotifierItem` protocol, and a desktop with no `StatusNotifierHost` — a default
+GNOME session, for one — accepts the registration and then shows nothing, so until that is verified
+on a real session Linux keeps exactly the behaviour it had before. Windows compiles and vets but,
+like everything else there, is unverified on a real machine ([../windows.md](../windows.md)).
+
+Deliberately not done, each for its own reason: **launch at login** (three platform mechanisms plus
+their uninstall residue), **notifications when a server drops** (a new dependency, a permission
+prompt and a debounce policy), and a **menu-bar-only mode** (`ActivationPolicy` accessory), which
+would make the tray the only way back into an application that is not a menu-bar utility.
 
 ---
 
@@ -403,12 +455,14 @@ zero runtime dependency).
 
 | File | Contents |
 |---|---|
-| `main.ts` | Entry point: routing, sidebar, SSE subscription. **No theme code** — it cannot have any and still work, see below |
+| `main.ts` | Entry point: routing, sidebar, SSE subscription, tray navigation and the close question. **No theme code** — it cannot have any and still work, see below |
 | `bridge.ts` | The only seam with the Go side: `Call.ByName(<Go FQN>)` + `Events.On` (no `wails3 generate bindings`), plus `openExternal` — the HOST browser, never this webview |
 | `page.ts` | The `Page` contract, `failureBox` / `failureState`, `CONFLICT_MESSAGE`, `noticeSlot` |
 | `dom.ts` | Dependency-free DOM construction: `el` / `table` / `emptyState` (three kinds) / `chip` (returns null for 0) / `errorHeadline` / time formatting |
 | `ui.ts` | Form widgets: inputs, tri-state selector, pair/lines editors, confirmation dialog, `toggleSwitch` (never optimistic) |
-| `types.ts` | TS mirror of the control plane DTOs |
+| `types.ts` | TS mirror of the control plane DTOs, plus `WindowPrefs` (window-local, not hub state) |
+| `window-prefs.ts` | The close-button preferences: `localStorage` is the durable copy, the Go side gets a runtime copy, the tray's changes arrive as an event (§1.2) |
+| `close-notice.ts` | The one-time "this keeps running in the tray" dialog, and the quit escape inside it |
 | `generated/health.ts` | **Generated**: Health's Level/AdminState/Action constants, via `go generate ./cmd/agenthub-gui/...` |
 | `pages/*.ts` | One page per resource |
 | `style.css` | Semantic color variables, focus ring, the three widget classes, light/dark |

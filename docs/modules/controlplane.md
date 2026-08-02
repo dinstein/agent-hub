@@ -1180,7 +1180,9 @@ doesn't matter**.
 
 `services.Hub` is the bound service body: every method the frontend can call, plus the SSE→Wails event bridge.
 `services.HubService` is a thin shell around Hub (Wails binding promotes its methods), and `MarshalError` converts Go errors
-into the rejection cause the frontend receives. `healthgen` generates the frontend's TypeScript constants from the `api`
+into the rejection cause the frontend receives. `services/window.go` holds the window-local preferences that decide what the
+close button does — in memory here, durably in the frontend's `localStorage`, because this package cannot touch the data
+directory and the registry has no opinion about one window on one machine ([gui.md](gui.md) §1.2). `healthgen` generates the frontend's TypeScript constants from the `api`
 package's source.
 
 ### Invariants and failure directions
@@ -1193,15 +1195,22 @@ control plane endpoint, and is therefore something the CLI can do too** — so "
 rather than a verbal promise. This is enforced by depguard and proven by two failing cases in `internal/depguardtest` (one
 for api, one for gui).
 
+**Five bound methods have no control-plane call behind them**: `TrayAvailable`, `OwnsDaemon`, `SetWindowPreferences`,
+`HideWindow` and `QuitApplication`. They are not a hole in "the GUI is optional" — a CLI is not missing anything by being
+unable to hide a window — and none can reach configuration. Tray availability is display state on purpose: everything bound
+is settable from the webview, so the close path reads the assembly's own flag instead. A webview that could set it would be
+able to hide the window into a status area that is not there, leaving a process with no reachable surface.
+
 **Build tag isolation.** The default build (`go build ./...`, `golangci-lint run`) gets the placeholder program in `main.go`,
 which prints "this binary has no GUI, build with `make gui`" and exits 1. The real application sits behind
 `//go:build wails` in `gui_main.go`, because a webview build needs GTK/WebKit dev packages that CI runners don't have. The
 same cut is made inside the services package: **the entire service body lives in `hub.go` with no build tag**, so it still
 compiles, vets, and unit-tests on CI machines with no graphics libraries; only about 50 lines of Wails wiring sit behind the
-tag in `service_wails.go`. The day Wails3 alpha stops building, only those two files break, leaving the page logic and the
-api layer untouched.
+tag in `service_wails.go`. The system tray makes the same cut a third time: `tray.go` and `trayicon.go` decide and draw with
+no tag, `tray_wails.go` renders and routes behind one. The day Wails3 alpha stops building, only those three files break,
+leaving the page logic and the api layer untouched.
 
-**Those two tagged files do have CI coverage, just in a different job.** The `gui` job in `.github/workflows/ci.yml` (a macOS
+**Those tagged files do have CI coverage, just in a different job.** The `gui` job in `.github/workflows/ci.yml` (a macOS
 runner) runs `make gui-frontend-ci` (`npm ci` + `tsc --noEmit` + vite), `make gui-go` (a real `-tags wails` compile), and
 `go vet -tags wails ./cmd/agenthub-gui/...`. It lives on macOS because on Linux `-tags wails` fails at the cgo preamble
 (`#cgo pkg-config: gtk4 webkitgtk-6.0`) — that is **type-check time**, not link time, so a bare ubuntu runner can't even get

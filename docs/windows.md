@@ -24,6 +24,7 @@
 | Dev-channel pipe separation | `platform.Resolver` holds an unexported `devChannel bool` set only by `DevResolver`; `windowsCtlEndpoint` returns the frozen dev-channel name when it is true. Cannot be derived from directory names — the two names are literal constants in both `internal/platform` and `api`, held together by contract tests | `TestDevResolverSeparatesFromRelease` (`endpointSeparates: true` for the windows row); `TestWindowsEndpointContract` |
 | api path resolution and dialing | `api/paths.go` computes the Windows data directory, run directory, and pipe name independently (api cannot import internal/platform). `api/dial_windows.go` uses `winio.DialPipeContext` for pipe-shaped paths | `TestDefaultSocketPath` windows rows; `TestDevSocketPathSeparatesFromRelease`; `TestSIDHashMatchesTheFrozenDigest` |
 | GUI dev-channel endpoint | `cmd/agenthub-gui/channel.go` sets `AGENTHUB_SOCKET` on Windows when the channel is dev, so the GUI reaches the dev pipe rather than the release one. Setting it only on Windows avoids freezing the Unix path at a dev-run value | `TestDevChannelPinsTheEndpointOnWindows`; `TestExplicitSocketWinsOverTheChannel`; `TestDevChannelDoesNotPinTheEndpointOffWindows` |
+| System tray and close-to-tray | `cmd/agenthub-gui/tray_wails.go` drives the notification-area icon and the close hook; the icon is drawn at runtime rather than shipped, so `SetIcon`/`SetDarkModeIcon` get a light- and a dark-taskbar variant. The behaviour is decided in untagged, unit-tested code ([modules/gui.md](modules/gui.md) §1.2) | `TestTray*` in `cmd/agenthub-gui`; `make cross-windows-gui`. **The icon itself, the notification-area overflow and the dark-taskbar variant are unverified** |
 | Portable zip packaging | `build/windows/Taskfile.yml` cross-compiles both architectures (amd64, arm64) on any host, embeds icon + manifest + version resource via `wails3 generate syso`, and packs `AgentHub/{agenthub-gui.exe, agenthub.exe, README.txt}` into a zip. Builds automatically in the release workflow | `make release-windows`; layout matches the sibling contract in `api/dialorstart.go` |
 
 ### Why MSIX detection fails in the "assume packaged" direction
@@ -131,6 +132,8 @@ These are the checks that would graduate Windows from "experimental" to "support
 - A non-owner user being refused when connecting to the named pipe
 - The data directory landing correctly after spawning the gateway from a real MSIX-packaged client
 - The GUI starting the daemon successfully (pipe listener arming, `run/daemon.json` written)
+- The tray icon appearing (including from the notification-area overflow), its menu opening, and the
+  close button hiding the window rather than ending the process
 - At least one end-to-end call through a downstream MCP server
 
 ---
