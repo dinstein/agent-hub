@@ -948,6 +948,21 @@ export function serversPage(): Page {
     }
   }
 
+  /**
+   * How many probes run at once.
+   *
+   * Bounded, not unbounded: a stdio probe SPAWNS A PROCESS — often `npx` or
+   * `uvx`, which may download before it answers — so the ceiling is what the
+   * machine is asked to start at the same moment, not what the daemon can
+   * serve. It has no limit of its own; every /v1/servers/{id}/test is handled
+   * independently, so this number is the only one there is.
+   *
+   * Ten rather than four because the previous ceiling made a fleet settle in
+   * visible waves, and one slow package runner held a quarter of the capacity
+   * for as long as it took to install.
+   */
+  const PROBE_CONCURRENCY = 10;
+
   /** Probes a fleet at bounded concurrency. A runtime SSE repaint with the
    *  same registry revision finds observations already present and starts
    *  nothing; a real registry revision change asks every enabled definition
@@ -986,7 +1001,9 @@ export function serversPage(): Page {
         }
       }
     };
-    return Promise.all(Array.from({ length: Math.min(4, ids.length) }, () => worker())).then(
+    return Promise.all(
+      Array.from({ length: Math.min(PROBE_CONCURRENCY, ids.length) }, () => worker()),
+    ).then(
       () => undefined,
     );
   }

@@ -37,7 +37,8 @@ failures by mount generation before displaying them. This is the shell's backsto
 promise that every page remembered to add the same post-await guard.
 
 The Servers page consumes live events for **configuration membership only**. Every enabled row is checked through
-the page's own short-lived handshake, with four running at once; another client's gateway report never supplies or
+the page's own short-lived handshake, with ten running at once (bounded because a stdio probe spawns a
+process, not because the daemon has a limit — it does not); another client's gateway report never supplies or
 overwrites the row status. Settled outcomes live in a process-local cache across route changes, so returning to the
 page paints the last page-owned observation immediately while a new fleet check runs silently in the background.
 Only a row with no prior observation, or an explicit **Refresh**, displays `Checking…`; the Refresh action waits for
