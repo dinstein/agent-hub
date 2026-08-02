@@ -146,11 +146,36 @@ func RedactProxyValue(name, val string) (string, bool) {
 	return u.String(), true
 }
 
-// CaptureLoginPATH runs `shell -l -c 'echo $PATH'` and returns the last
-// non-empty line of output. launchd/systemd-spawned processes inherit a
-// truncated PATH; the login shell's is what interactive users actually
-// have (this bit mcpproxy three times). The last line is
-// used because login profiles may print greetings before the echo.
+// captureModes are tried in order, most complete first.
+//
+// **`-l` alone is not enough, and that is the whole reason this list is a
+// list.** A login shell sources the login profile (.zprofile, .bash_profile)
+// and nothing else, while the line that puts Homebrew, nvm, pyenv or a
+// language toolchain on PATH conventionally lives in the *interactive* rc
+// file (.zshrc, .bashrc) — so the directory holding `npx` is exactly the one
+// `-l` does not find. `-i -l` sources both.
+//
+// This is easy to measure wrongly. Running `zsh -l -c 'echo $PATH'` from a
+// terminal prints a complete PATH and appears to prove `-l` sufficient; it
+// proves nothing, because the shell inherited the already-complete PATH of
+// the interactive shell that launched it and merely appended to it. The
+// launchd case has no such inheritance, and is the only case that matters
+// here.
+//
+// `-i` is kept fallible rather than assumed: a shell that refuses to be
+// interactive without a tty, or an rc file that fails under one, must not
+// cost us the plain login capture that would have worked.
+var captureModes = [][]string{
+	{"-i", "-l", "-c", "echo $PATH"},
+	{"-l", "-c", "echo $PATH"},
+}
+
+// CaptureLoginPATH runs the shell as an interactive login shell (falling back
+// to a plain login shell) and returns the PATH it reports — the last
+// non-empty line of output, because a profile may print a greeting before the
+// echo. launchd/systemd-spawned processes inherit a truncated PATH; this is
+// what an interactive user actually has (this bit mcpproxy three times).
+//
 // An empty shell argument falls back to $SHELL, then /bin/sh.
 func CaptureLoginPATH(ctx context.Context, shell string) (string, error) {
 	if shell == "" {
@@ -159,7 +184,23 @@ func CaptureLoginPATH(ctx context.Context, shell string) (string, error) {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	cmd := exec.CommandContext(ctx, shell, "-l", "-c", "echo $PATH")
+	var err error
+	for _, args := range captureModes {
+		var path string
+		if path, err = captureWith(ctx, shell, args); err == nil {
+			return path, nil
+		}
+		// A cancelled context will not be any kinder to the next mode, and
+		// retrying spends the caller's remaining budget on a second timeout.
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return "", err
+}
+
+func captureWith(ctx context.Context, shell string, args []string) (string, error) {
+	cmd := exec.CommandContext(ctx, shell, args...)
 	// Children of the login shell inherit the stdout pipe; after the
 	// context kills the shell, Output would otherwise block until every
 	// descendant exits. WaitDelay force-closes the pipes shortly after
@@ -167,7 +208,7 @@ func CaptureLoginPATH(ctx context.Context, shell string) (string, error) {
 	cmd.WaitDelay = time.Second
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("secureenv: capture login PATH via %s: %w", shell, err)
+		return "", fmt.Errorf("secureenv: capture login PATH via %s %s: %w", shell, strings.Join(args[:len(args)-2], " "), err)
 	}
 	lines := strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -178,9 +219,11 @@ func CaptureLoginPATH(ctx context.Context, shell string) (string, error) {
 	return "", fmt.Errorf("secureenv: login shell %s printed no PATH", shell)
 }
 
-// loginPATHTimeout bounds the one-shot capture; a wedged login profile
-// must not stall the first spawn for long.
-const loginPATHTimeout = 3 * time.Second
+// loginPATHTimeout bounds the one-shot capture, across both modes; a wedged
+// profile must not stall the first spawn for long. It is the budget for an
+// interactive rc file, which does real work — version managers, completions —
+// where a login profile mostly exports variables.
+const loginPATHTimeout = 5 * time.Second
 
 var loginPATH struct {
 	once sync.Once

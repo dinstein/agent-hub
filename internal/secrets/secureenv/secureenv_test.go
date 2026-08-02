@@ -281,3 +281,74 @@ func TestMergePATHKeepsBaseResolution(t *testing.T) {
 		t.Fatalf("merge changed resolution: got %q, want %q", got, want)
 	}
 }
+
+// TestCaptureLoginPATHPrefersInteractive is the bug this ladder exists for:
+// the directory holding npx is conventionally added by the interactive rc
+// file, which a plain `-l` shell never sources.
+func TestCaptureLoginPATHPrefersInteractive(t *testing.T) {
+	shell := writeFakeShell(t, `
+case "$1" in
+  -i) echo '/rc/bin:/profile/bin' ;;
+   *) echo '/profile/bin' ;;
+esac
+`)
+	got, err := CaptureLoginPATH(context.Background(), shell)
+	if err != nil {
+		t.Fatalf("CaptureLoginPATH: %v", err)
+	}
+	if got != "/rc/bin:/profile/bin" {
+		t.Fatalf("got %q, want the interactive shell's PATH", got)
+	}
+}
+
+// A shell that refuses to be interactive without a tty must not cost us the
+// plain login capture that would have worked.
+func TestCaptureLoginPATHFallsBackWhenInteractiveFails(t *testing.T) {
+	shell := writeFakeShell(t, `
+case "$1" in
+  -i) echo 'cannot set terminal process group' >&2; exit 1 ;;
+   *) echo '/profile/bin' ;;
+esac
+`)
+	got, err := CaptureLoginPATH(context.Background(), shell)
+	if err != nil {
+		t.Fatalf("CaptureLoginPATH: %v", err)
+	}
+	if got != "/profile/bin" {
+		t.Fatalf("got %q, want the login shell's PATH", got)
+	}
+}
+
+// An interactive shell that prints nothing usable still falls through.
+func TestCaptureLoginPATHFallsBackWhenInteractiveIsSilent(t *testing.T) {
+	shell := writeFakeShell(t, `
+case "$1" in
+  -i) exit 0 ;;
+   *) echo '/profile/bin' ;;
+esac
+`)
+	got, err := CaptureLoginPATH(context.Background(), shell)
+	if err != nil {
+		t.Fatalf("CaptureLoginPATH: %v", err)
+	}
+	if got != "/profile/bin" {
+		t.Fatalf("got %q, want the login shell's PATH", got)
+	}
+}
+
+// A cancelled context stops the ladder rather than spending the caller's
+// remaining budget on a second timeout.
+func TestCaptureLoginPATHTimeoutDoesNotRetry(t *testing.T) {
+	shell := writeFakeShell(t, "sleep 5\necho /never\n")
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if _, err := CaptureLoginPATH(ctx, shell); err == nil {
+		t.Fatal("expected timeout error")
+	}
+	// Two 5s sleeps back to back would blow well past this; one plus the
+	// WaitDelay does not.
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("capture spent %v, which is more than one attempt's worth", elapsed)
+	}
+}

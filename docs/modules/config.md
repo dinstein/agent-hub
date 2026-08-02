@@ -452,12 +452,23 @@ value we cannot prove is credential-free.
 
 **`LoginPATH` is the one place in this layer that is deliberately fail-open.** Processes launched by
 launchd/systemd inherit a truncated PATH, and the login shell's PATH is the one an interactive user actually has
-(this bit mcpproxy three times). Capture runs `shell -l -c 'echo $PATH'` and takes the **last** non-empty line of
-output (a login profile may print a greeting before the echo), with a 3-second hard timeout and
+(this bit mcpproxy three times). Capture takes the **last** non-empty line of output (a profile may print a
+greeting before the echo), with a 5-second hard timeout across both modes and
 `cmd.WaitDelay = 1s` to force the pipes closed — otherwise the login shell's children inherit the stdout pipe and
 `Output` keeps blocking until every descendant exits, even after the context kills the shell. Any failure falls
 back to the current process's `PATH`: a broken login shell should not block a spawn, and the worst case is keeping
 the truncated PATH we already had, never less. The captured result is cached with `sync.Once`, once per process.
+
+**`-l` alone is not enough, which is why `captureModes` is a list**: `-i -l -c 'echo $PATH'` first, plain
+`-l -c` as the fallback. A login shell sources the login profile (`.zprofile`, `.bash_profile`) and nothing
+else, while the line that puts Homebrew, nvm or pyenv on PATH conventionally lives in the **interactive** rc file
+(`.zshrc`, `.bashrc`) — so the directory holding `npx` is exactly the one `-l` does not find. This is easy to
+measure wrongly, and was: running `zsh -l -c 'echo $PATH'` from a terminal prints a complete PATH and looks like
+proof that `-l` suffices, when all it shows is that the shell inherited the complete PATH of the interactive
+shell that launched it and appended to it. The launchd case has no such parent to inherit from, and is the only
+case this code runs in. `-i` stays fallible rather than assumed — a shell that refuses to be interactive without
+a tty falls through to `-l` — and a cancelled context breaks the ladder instead of spending the caller's
+remaining budget on a second timeout.
 
 **`MergePATH` appends and never reorders.** `base` is preserved byte for byte and the directories of `extra` that
 it does not already list are appended in `extra`'s order, so the result is a strict superset in which every
