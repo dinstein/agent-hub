@@ -1,23 +1,26 @@
 // Secrets page: the credential vault's KEY NAMES.
 //
-// RED LINE (docs/modules/controlplane.md rule 5): this page has no entry point that shows a
-// value, and it is not that the field is left blank — the wire type has no
-// value field at all, so there is nothing here to reveal. Consequences that
-// are visible in this file:
-//
-//   - the input is a password field with no reveal toggle, and it is cleared
-//     the moment the write is submitted, whether it succeeded or not;
-//   - the value is never kept in a variable that outlives the call, never put
-//     in a model object, never echoed back into the form on failure;
-//   - "is this credential right?" is answered by Test connection on the
-//     Servers page, which makes a REAL call. agenthub sends secrets, it does
-//     not read them back.
+// RED LINE (docs/modules/controlplane.md rule 5): this page has no entry point
+// that shows a value. The wire list type has no value field at all, and the
+// writer clears its password input before awaiting the control-plane call.
+// Credential correctness is verified only by a real Server self-test.
 
 import { hub } from "../bridge";
-import { clear, el, empty, section, table } from "../dom";
+import { clear, el, empty, pageHeader, section, table } from "../dom";
 import type { Page } from "../page";
 import { failureBox, noticeSlot } from "../page";
-import { button, confirmAction, controls, field, passwordInput, textInput } from "../ui";
+import { consumeSecretSetup, returnToServerTest } from "../secret-guidance";
+import {
+  advanced,
+  button,
+  confirmAction,
+  controls,
+  field,
+  modalHost,
+  passwordInput,
+  selectInput,
+  textInput,
+} from "../ui";
 import type { SecretRef, Server } from "../types";
 import { SecretScopeGlobal } from "../types";
 
@@ -27,26 +30,17 @@ function backendBadge(backend: string): HTMLElement {
   return el("span", { class: `badge ${cls}`, text: backend || "—" });
 }
 
+function keyLabel(key: string): string {
+  return key.endsWith("API_KEY") ? "API key" : "Secret value";
+}
+
 export function secretsPage(): Page {
   let root: HTMLElement | null = null;
   const slot = noticeSlot();
+  const form = modalHost();
   let refs: SecretRef[] = [];
   let servers: Server[] = [];
   let filter = "";
-
-  async function store(server: string, scope: string, key: string, input: HTMLInputElement): Promise<void> {
-    const value = input.value;
-    // Cleared before the await, so the plaintext never sits in a focused
-    // field while a slow write is in flight.
-    input.value = "";
-    try {
-      const res = await hub.setSecret(server, scope, key, value);
-      slot.say(`${res.key} stored for ${res.server} (scope ${res.scope}).`);
-      await draw();
-    } catch (err) {
-      slot.fail(err);
-    }
-  }
 
   async function remove(ref: SecretRef): Promise<void> {
     const ok = await confirmAction({
@@ -69,101 +63,182 @@ export function secretsPage(): Page {
     }
   }
 
-  function writeForm(): Node {
-    const server = textInput("", "server id");
-    const scope = textInput("", SecretScopeGlobal);
-    const key = textInput("", "API_TOKEN");
-    const value = passwordInput("value (never displayed again)");
-    const save = button("Store secret", "btn", () => {
+  function openWriter(
+    initial: { server?: string; key?: string; returnToServers?: boolean } = {},
+  ): void {
+    const guided = Boolean(initial.server && initial.key);
+    const choices = [
+      { value: "", label: "Choose a server…" },
+      ...servers.map((server) => ({ value: server.id, label: server.id })),
+    ];
+    if (initial.server && !servers.some((server) => server.id === initial.server)) {
+      choices.push({ value: initial.server, label: initial.server });
+    }
+    const server = selectInput(choices, initial.server ?? "");
+    const key = textInput(initial.key ?? "", "API_TOKEN");
+    const value = passwordInput("never displayed again");
+    const scope = textInput(SecretScopeGlobal, SecretScopeGlobal);
+    const errors = el("div", { class: "notice-slot" });
+    server.disabled = guided;
+    key.disabled = guided;
+
+    const save = button(guided ? `Save ${keyLabel(initial.key ?? "")}` : "Store secret", "btn btn-primary", () => {
+      clear(errors);
       const id = server.value.trim();
       const name = key.value.trim();
+      const secret = value.value;
+      // Clear before the await: plaintext never remains in a focused field
+      // while a slow keychain write is in flight, successful or otherwise.
+      value.value = "";
       if (!id || !name) {
-        slot.say("A secret needs a server id and a key name.", "warn");
+        errors.append(el("div", { class: "notice notice-warn", text: "Choose a server and enter the key name." }));
         return;
       }
-      if (!value.value) {
-        // The vault treats a blank as unset at every resolution level, so
-        // storing one would report success and leave the server exactly as
-        // broken as before.
-        slot.say("A blank value is not stored: it would read as unset everywhere.", "warn");
+      if (!secret) {
+        errors.append(el("div", {
+          class: "notice notice-warn",
+          text: "Enter a value. A blank secret reads as unset and is never stored.",
+        }));
         return;
       }
-      void store(id, scope.value.trim(), name, value);
+      save.setAttribute("aria-busy", "true");
+      save.disabled = true;
+      void hub
+        .setSecret(id, scope.value.trim() || SecretScopeGlobal, name, secret)
+        .then(async (res) => {
+          form.hide();
+          filter = res.server;
+          if (initial.returnToServers) {
+            returnToServerTest(res.server);
+            return;
+          }
+          slot.say(`${res.key} stored for ${res.server}. Test the server to verify it.`);
+          await draw();
+        })
+        .catch((err) => {
+          errors.append(failureBox(err));
+          value.focus();
+        })
+        .finally(() => {
+          save.removeAttribute("aria-busy");
+          save.disabled = false;
+        });
     });
-    return el("div", { class: "form-inline" }, [
-      field("Server", server),
-      field("Scope", scope, `empty selects ${SecretScopeGlobal}`),
-      field("Key", key),
-      field("Value", value, "write-only: there is no read path on the control plane"),
-      save,
-    ]);
+
+    form.show(
+      guided ? `Set up ${initial.server}` : "Add secret",
+      el("div", { class: "modal-form" }, [
+        guided
+          ? el("div", { class: "notice notice-info" }, [
+              el("strong", { text: `${initial.server} needs ${initial.key}.` }),
+              el("span", { text: " Store it here and AgentHub will immediately test the server again." }),
+            ])
+          : null,
+        errors,
+        field("Server", server, guided ? "selected from the failed self-test" : "the server that will receive this value"),
+        field("Key", key, guided ? "required by this server definition" : "must match the ${SECRET_KEY} placeholder"),
+        field(keyLabel(initial.key ?? ""), value, "write-only; this value cannot be read back"),
+        advanced("Advanced", false, field("Scope", scope, `${SecretScopeGlobal} shares the value across derived instances`)),
+        controls(save, button("Cancel", "btn btn-secondary", () => form.hide())),
+      ]),
+    );
+    window.setTimeout(() => value.focus(), 0);
   }
 
   async function draw(): Promise<void> {
     if (!root) return;
     let err: unknown = null;
     try {
-      const [r, s] = await Promise.all([hub.listSecrets(filter), hub.listServers()]);
+      const [r, s] = await Promise.all([hub.listSecrets(""), hub.listServers()]);
       refs = r ?? [];
       servers = s ?? [];
     } catch (e) {
       err = e;
     }
+    if (!root) return;
     clear(root);
-    const server = textInput(filter, "filter by server id (empty = all)");
-    const known = el("datalist", { id: "secret-servers" }, servers.map((s) => {
-      const opt = el("option") as HTMLOptionElement;
-      opt.value = s.id;
-      return opt;
-    }));
-    server.setAttribute("list", "secret-servers");
+
+    const search = textInput(filter, "Filter by server or key…");
+    search.classList.add("search-input");
+    const list = el("div");
+    const paintList = (): void => {
+      clear(list);
+      if (err) {
+        list.append(failureBox(err));
+        return;
+      }
+      const needle = filter.trim().toLowerCase();
+      const shown = needle
+        ? refs.filter((ref) => `${ref.server} ${ref.key}`.toLowerCase().includes(needle))
+        : refs;
+      if (shown.length === 0) {
+        list.append(
+          empty(
+            needle ? `No secret name matches “${filter.trim()}”.` : "No stored credentials.",
+            needle
+              ? "Stored credentials are unchanged; clear the filter to see all key names."
+              : "Add a write-only value for a configured server.",
+            needle
+              ? button("Clear filter", "btn", () => {
+                  filter = "";
+                  search.value = "";
+                  paintList();
+                })
+              : button("Add secret", "btn btn-primary", () => openWriter()),
+          ),
+        );
+        return;
+      }
+      list.append(
+        table(
+          ["Server", "Scope", "Key", "Backend", ""],
+          shown.map((ref) => [
+            el("strong", { text: ref.server }),
+            el("span", { text: ref.scope || SecretScopeGlobal }),
+            el("span", { class: "mono", text: ref.key }),
+            backendBadge(ref.backend),
+            button("Delete", "btn btn-deny", () => void remove(ref)),
+          ]),
+        ),
+      );
+    };
+    search.addEventListener("input", () => {
+      filter = search.value;
+      paintList();
+    });
+    paintList();
 
     root.append(
-      section(
+      pageHeader(
         "Secrets",
-        controls(server, button("Filter", "btn", () => {
-          filter = server.value.trim();
-          void draw();
-        })),
-        known,
-        slot.node,
-        err
-          ? failureBox(err)
-          : refs.length === 0
-            ? empty("No stored credentials.")
-            : table(
-                ["Server", "Scope", "Key", "Backend", ""],
-                refs.map((r) => [
-                  el("strong", { text: r.server }),
-                  el("span", { text: r.scope || SecretScopeGlobal }),
-                  el("span", { class: "mono", text: r.key }),
-                  backendBadge(r.backend),
-                  button("Delete", "btn btn-deny", () => void remove(r)),
-                ]),
-              ),
-        el("p", {
-          class: "hint",
-          text: "Names and backends only. The backend says where a resolution would find the value today — the environment shadows both persistent stores.",
-        }),
+        "Store write-only credentials by server. AgentHub shows key names and storage backends, never values.",
+        button("Add secret", "btn btn-primary", () => openWriter()),
       ),
-      section(
-        "Store a secret",
-        writeForm(),
-        el("p", {
-          class: "hint",
-          text: "To check that a credential works, use Test connection on the Servers page: it makes a real call, which is the only verification that exists.",
-        }),
-      ),
+      el("div", { class: "page-toolbar" }, [
+        el("div", { class: "toolbar-search toolbar-search-wide" }, [search]),
+        el("span", { class: "toolbar-hint", text: "Verify a credential with Test on the Servers page." }),
+      ]),
+      slot.node,
+      section("Stored secrets", list),
     );
   }
 
   return {
-    render(node) {
+    async render(node) {
       root = node;
-      return draw();
+      await draw();
+      const setup = consumeSecretSetup();
+      if (setup) {
+        openWriter({
+          server: setup.server,
+          key: setup.keys[0] ?? "",
+          returnToServers: setup.returnToServers,
+        });
+      }
     },
     dispose() {
       root = null;
+      form.hide();
     },
   };
 }

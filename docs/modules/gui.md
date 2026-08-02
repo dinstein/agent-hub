@@ -15,10 +15,10 @@ item 3.
 ## 1. Information architecture: a short task spine, then state inside each page
 
 The sidebar started life as a one-to-one mapping of the CLI command tree — fourteen resource tables
-laid out along the domain model. It now has seven task destinations: Servers, Catalog, Playground,
-Profiles, Clients, Activity and Settings. Catalog is deliberately first-class and immediately follows Servers:
-the two are the configured and discoverable halves of the same task. Credentials live with the
-server that uses them, client bindings live with Clients, and appearance/daemon diagnostics live in
+laid out along the domain model. It now has eight task destinations: Servers, Catalog, Playground,
+Profiles, Secrets, Clients, Activity and Settings. Catalog is deliberately first-class and immediately follows Servers:
+the two are the configured and discoverable halves of the same task. Credentials are configured from
+the server that needs them and inventory remains directly reachable under Secrets; client bindings live with Clients, and appearance/daemon diagnostics live in
 Settings. Activity sits under System because it is the operator's evidence and maintenance workspace,
 not a permission layer: its source of truth is the encrypted access ledger covering every
 gateway-to-server call, and its aggregates are computed from those same lifecycle records. A resource
@@ -141,6 +141,12 @@ its `Authenticate` action. Authentication has exactly that one surface: the page
 above the list, and Test closes its transient result dialog before moving the condition into the row. The frontend
 branches on the daemon's code, never on whether prose happens to contain `401`.
 
+An unresolved placeholder follows the parallel setup path: `E_SECRET_REQUIRED` carries safe key names, the row
+becomes **Add API key** or **Set secret**, and the Secrets modal opens with the server and key locked to that typed
+result. Saving returns to Servers and immediately retests exactly that server. The value is cleared before the
+write awaits and never comes back over a read surface. A non-OAuth server with this condition omits the unrelated
+“No OAuth credential stored” section.
+
 The Playground treats execution as the primary task, not the last step of a form. Its Call action is
 inside the argument header and remains visible while a long generated schema scrolls beneath it.
 Generated fields are split into explicit Required and Optional sections; a blank optional field is
@@ -171,14 +177,15 @@ Pausing capture is a direct reversible action and never deletes history or keys.
 
 ## 2. State is the action
 
-A server row's status cell has five states, and each one is expressed through **three channels at
+A server row's status cell has six states, and each one is expressed through **three channels at
 once** (dot color / text content / text color). Color is never the only channel — that is both an
 accessibility requirement and a guard against misreading:
 
 | State | Display |
 |---|---|
-| connected | **`23 tools`** — not "connected". An informative number displaces a redundant status word |
+| connected | a green status dot; **`23 tools`** occupies its own aligned inventory column |
 | needs-auth | the status cell **becomes an `Authenticate` button** that signs in for real (docs/modules/controlplane.md) |
+| needs-secret | the status cell **becomes `Add API key` / `Set secret`**, opening the guided write-only form |
 | checking | after 4 seconds, if the command is `npx`/`uvx`, it changes to **`Installing…`** — reinterpreting a wait as progress |
 | error | a one-line distilled error headline, expandable to the full text |
 | disabled | gray dot, no text |
@@ -206,7 +213,7 @@ anything.
 
 **Status classification never parses raw connection flags or error prose.** The ordinary control-plane Health
 contract is computed by the daemon's pure function. The Servers page deliberately replaces it for enabled rows with
-the typed outcome of its own self-test: success, authentication refusal, generic failure, or still checking. The
+the typed outcome of its own self-test: success, authentication refusal, missing secret, generic failure, or still checking. The
 shared level/action constants are generated from the `api` package into `generated/health.ts`, with a golden test
 watching for three-way drift.
 
@@ -236,14 +243,15 @@ geometry and health spine, while the detail adds a divider and quieter backgroun
 non-control surface toggles the disclosure; interacting with cached detail cannot collapse it. Editing is a
 separate, always-visible **Edit** button in the action column, so a click whose visible affordance says “show me
 more” cannot unexpectedly open a write surface. The leading enable switch and trailing Edit / Test controls remain
-separate targets and never bubble into the disclosure. Destructive Remove sits in a compact overflow menu: it stays
-available without painting every healthy row as a red warning. A successful enable/disable writes no page-level
+separate targets and never bubble into the disclosure. The tool count occupies a fixed column before status/actions,
+so every count aligns vertically and cannot move the buttons. Destructive Remove and OAuth Log out sit in the compact
+overflow menu: they stay available without painting every healthy row as a red warning. A successful enable/disable writes no page-level
 notice because the switch and the row's own probe already show the stored and runtime outcomes; failures keep the
 shared error surface.
 
 The detail also includes cached OAuth metadata from the credential-status API: state, access-token expiry,
 issuer, scopes, and whether a refresh token exists. It never includes token values. When a stored OAuth credential
-exists, the fixed summary action group exposes **Log out**; the confirmation states that this deletes the local
+exists, the summary overflow menu exposes **Log out OAuth**; the confirmation states that this deletes the local
 credential but does not revoke it at the provider. Logging out immediately re-runs the page-owned handshake so the
 row returns to its Authenticate action rather than retaining a stale connected result.
 

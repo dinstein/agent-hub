@@ -35,6 +35,7 @@ import { chip, chipRow, clear, el, emptyState, errorHeadline, icon, loadingState
 import { AdminState, HealthAction, HealthLevel } from "../generated/health";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot, runWrite } from "../page";
+import { consumeServerRetest, openSecretSetup } from "../secret-guidance";
 import {
   advanced,
   button,
@@ -83,16 +84,14 @@ const TERMINAL_ACTIONS: Record<string, { label: string; command: string; note?: 
   },
 };
 
-/** Actions that are just another page of this window. */
-const ROUTE_ACTIONS: Record<string, { label: string; route: string }> = {
-  [HealthAction.SetSecret]: { label: "Set secret", route: "#/secrets" },
-};
-
-function suggestion(server: Server): Node | null {
+function suggestion(server: Server, missingSecrets: string[] = []): Node | null {
   const action = server.health.action ?? HealthAction.None;
   if (action === HealthAction.None || action === HealthAction.Enable) return null;
-  const route = ROUTE_ACTIONS[action];
-  if (route) return el("a", { class: "btn btn-secondary", href: route.route, text: route.label });
+  if (action === HealthAction.SetSecret) {
+    return button(missingSecrets.length === 1 ? "Set secret" : "Open Secrets", "btn btn-secondary", () => {
+      openSecretSetup(server.id, missingSecrets);
+    });
+  }
   const spec = TERMINAL_ACTIONS[action];
   if (!spec) return el("span", { class: "meta", text: action });
   const command = spec.command.replace("<id>", server.id);
@@ -147,6 +146,7 @@ type ProbeObservation =
   | { kind: "checking" }
   | { kind: "connected"; tools: number; result: ServerTestResult; checkedAt: number }
   | { kind: "auth"; checkedAt: number }
+  | { kind: "secret"; keys: string[]; checkedAt: number }
   | { kind: "error"; summary: string; detail: string; checkedAt: number };
 
 type SettledProbeObservation = Exclude<ProbeObservation, { kind: "checking" }>;
@@ -195,6 +195,20 @@ function withProbe(s: Server, observation: ProbeObservation | undefined): Server
         summary: "authentication required",
         detail: "",
         action: HealthAction.Login,
+      },
+    };
+  }
+  if (probe.kind === "secret") {
+    return {
+      ...s,
+      state: "error",
+      tools: 0,
+      health: {
+        level: HealthLevel.Unhealthy,
+        admin_state: AdminState.Enabled,
+        summary: probe.keys.length === 1 && probe.keys[0].endsWith("API_KEY") ? "API key required" : "secret required",
+        detail: probe.keys.join(", "),
+        action: HealthAction.SetSecret,
       },
     };
   }
@@ -865,7 +879,12 @@ export function serversPage(): Page {
     } catch (err) {
       if (probeVersions.get(id) === version && root) {
         const failure = asCallError(err);
-        if (authenticationRequired(err)) {
+        if (failure.code === ErrCode.SecretRequired && failure.missingSecrets?.length) {
+          const keys = Array.from(new Set(failure.missingSecrets.filter((key) => key.trim() !== "")));
+          const observation: SettledProbeObservation = { kind: "secret", keys, checkedAt: Date.now() };
+          probes.set(id, observation);
+          probeCache.set(id, observation);
+        } else if (authenticationRequired(err)) {
           const observation: SettledProbeObservation = { kind: "auth", checkedAt: Date.now() };
           probes.set(id, observation);
           probeCache.set(id, observation);
@@ -1135,6 +1154,19 @@ export function serversPage(): Page {
       ]);
     }
 
+    // missing-secret: this is configuration work, not a failed connection.
+    // The structured key name comes from E_SECRET_REQUIRED; no error string
+    // is parsed to decide which form to open.
+    if (s.health.action === HealthAction.SetSecret) {
+      const observation = probes.get(s.id);
+      const keys = observation?.kind === "secret" ? observation.keys : [];
+      const label = keys.length === 1 && keys[0].endsWith("API_KEY") ? "Add API key" : "Set secret";
+      const setup = button(label, "btn btn-primary", () => openSecretSetup(s.id, keys));
+      return el("div", { class: "srv-status" }, [
+        el("div", { class: "state-line" }, [dot("warning"), setup]),
+      ]);
+    }
+
     // needs-auth: the status position BECOMES the action, and the action now
     // signs the user in rather than handing them a command to go and type.
     if (s.health.action === HealthAction.Login) {
@@ -1181,13 +1213,7 @@ export function serversPage(): Page {
     // operator actually has.
     if (s.state === "connected") {
       return el("div", { class: "srv-status" }, [
-        el("div", { class: "state-line" }, [
-          dot("success"),
-          el("span", {
-            class: "state-text t-success",
-            text: s.tools === 1 ? "1 tool" : `${s.tools} tools`,
-          }),
-        ]),
+        el("div", { class: "state-line" }, [dot("success")]),
       ]);
     }
 
@@ -1206,6 +1232,16 @@ export function serversPage(): Page {
     ]);
   }
 
+  /** Tool inventory has its own fixed column so counts line up vertically
+   *  and never change the width available to row actions. */
+  function toolCell(s: Server): Node {
+    return el("div", {
+      class: `server-tool-count${s.state === "connected" ? " t-success" : ""}`,
+      text: s.state === "connected" ? (s.tools === 1 ? "1 tool" : `${s.tools} tools`) : "",
+      "aria-label": s.state === "connected" ? `${s.tools} tools available` : undefined,
+    });
+  }
+
   /**
    * The expanded row is a read of the last SETTLED page-owned handshake. It
    * never starts a request: Refresh and Test are the two explicit operations
@@ -1214,7 +1250,8 @@ export function serversPage(): Page {
    */
   function probeDetails(s: Server, detailID: string): Node {
     const observation = probeCache.get(s.id);
-    const action = s.health.action === HealthAction.Login ? null : suggestion(s);
+    const missingSecrets = observation?.kind === "secret" ? observation.keys : [];
+    const action = s.health.action === HealthAction.Login ? null : suggestion(s, missingSecrets);
     let content: Node;
     if (!observation) {
       content = el("p", {
@@ -1229,6 +1266,11 @@ export function serversPage(): Page {
       content = el("p", {
         class: "meta",
         text: "The latest self-test requires authentication. Authenticate, then the page will test the stored credential again.",
+      });
+    } else if (observation.kind === "secret") {
+      content = el("p", {
+        class: "meta",
+        text: `The latest self-test needs ${observation.keys.join(", ")}. Store it, then AgentHub will test this server again.`,
       });
     } else {
       content = el("p", {
@@ -1282,11 +1324,13 @@ export function serversPage(): Page {
     return status !== undefined && status.state !== AuthState.None;
   }
 
-  /** Cached OAuth metadata belongs beside the cached self-test, but its
-   *  destructive action stays in the fixed summary where the operator asked
-   *  for it. No token or refresh token value exists in this API shape. */
-  function authDetails(s: Server): Node {
+  /** Cached OAuth metadata belongs beside the cached self-test. Servers with
+   *  no OAuth state and no authentication action omit this section entirely:
+   *  an API-key server should not claim that an OAuth credential is missing.
+   *  No token or refresh token value exists in this API shape. */
+  function authDetails(s: Server): Node | null {
     const status = authStatuses.get(s.id);
+    if (!status && s.health.action !== HealthAction.Login) return null;
     let body: Node;
     let badge: Node;
     if (!authStatusLoaded) {
@@ -1798,9 +1842,9 @@ export function serversPage(): Page {
     const admin = s.health.admin_state;
     if (admin === AdminState.Disabled) return "off";
     // A credential is missing, not a connection broken. The warning spine
-    // matches the Authenticate action and avoids painting a routine sign-in
-    // as the same red failure used for network and protocol faults.
-    if (s.health.action === HealthAction.Login) return "warning";
+    // matches the setup action and avoids painting routine auth/key setup as
+    // the same red failure used for network and protocol faults.
+    if (s.health.action === HealthAction.Login || s.health.action === HealthAction.SetSecret) return "warning";
     if (s.health.level === HealthLevel.Healthy) return "ok";
     if (s.health.level === HealthLevel.Degraded) return "warning";
     return "bad";
@@ -1817,6 +1861,20 @@ export function serversPage(): Page {
       title: "More actions",
       text: "⋯",
     });
+    const items: Node[] = [];
+    if (hasStoredCredential(s.id)) {
+      const logoutButton = el("button", {
+        class: "server-row-menu-item",
+        type: "button",
+        role: "menuitem",
+        text: "Log out OAuth",
+      });
+      logoutButton.addEventListener("click", () => {
+        menu.open = false;
+        void logoutCredential(s);
+      });
+      items.push(logoutButton);
+    }
     const removeButton = el("button", {
       class: "server-row-menu-item server-row-menu-danger",
       type: "button",
@@ -1827,6 +1885,7 @@ export function serversPage(): Page {
       menu.open = false;
       void remove(s);
     });
+    items.push(removeButton);
     menu.addEventListener("keydown", (ev) => {
       if (ev.key !== "Escape") return;
       ev.preventDefault();
@@ -1846,7 +1905,7 @@ export function serversPage(): Page {
     });
     menu.append(
       summary,
-      el("div", { class: "server-row-menu-popover", role: "menu" }, [removeButton]),
+      el("div", { class: "server-row-menu-popover", role: "menu" }, items),
     );
     return menu;
   }
@@ -1896,12 +1955,10 @@ export function serversPage(): Page {
         }),
       ]),
       el("div", { class: "rec-body" }, [overview]),
+      toolCell(s),
       el("div", { class: "rec-act" }, [
         statusCell(s),
         controls(
-          hasStoredCredential(s.id)
-            ? button("Log out", "btn btn-sm btn-deny", () => void logoutCredential(s))
-            : null,
           button("Edit", "btn btn-sm", () => void openEditor(s.id)),
           button("Test", "btn btn-sm", () => void test(s)),
           rowMenu(s),
@@ -2097,7 +2154,7 @@ export function serversPage(): Page {
   }
 
   return {
-    render(node) {
+    async render(node) {
       root = node;
       // Runtime reports and registry changes share the servers topic. Both
       // trigger a configuration re-read, but only a newer registry revision
@@ -2109,10 +2166,17 @@ export function serversPage(): Page {
         void draw(registryChanged);
       });
       ticker = window.setInterval(tick, 1000);
-      // Reuse settled observations immediately, then silently recheck them.
-      // The explicit Refresh action is the path that deliberately repaints
-      // every enabled row as Checking while its forced probes run.
-      return draw(true);
+      const retest = consumeServerRetest();
+      // A guided secret write returns with one precise job: retest that
+      // server. Do not turn it into a forced probe of the whole fleet.
+      await draw(retest === "");
+      if (retest && listedServers.some((server) => server.id === retest && server.enabled)) {
+        try {
+          await probeOne(retest);
+        } catch {
+          // The row owns either the next setup action or the concrete failure.
+        }
+      }
     },
     dispose() {
       off?.();

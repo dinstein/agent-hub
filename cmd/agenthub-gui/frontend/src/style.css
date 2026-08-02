@@ -1291,6 +1291,45 @@ a.nav.active .nav-icon {
   justify-content: flex-end;
 }
 
+/* The sidebar consumes 224px of the desktop window, so the server ledger
+ * reaches its compact shape before page-wide controls need their 760px
+ * fallback. Keeping the wide five-column row below this point would make the
+ * fixed tool/status columns consume the server name. */
+@media (max-width: 1100px) {
+  .server-summary-row {
+    grid-template-columns: 3px auto minmax(0, 1fr);
+  }
+
+  .server-summary-row > .spine {
+    grid-row: 1 / span 3;
+  }
+
+  .server-tool-count {
+    grid-column: 3;
+    grid-row: 2;
+    min-width: 0;
+    padding-bottom: var(--space-3);
+    text-align: left;
+  }
+
+  .server-record > .server-probe-detail {
+    padding-left: var(--space-5);
+  }
+
+  .server-summary-row > .rec-act {
+    grid-column: 2 / -1;
+    grid-row: 3;
+    width: auto;
+    display: flex;
+    padding: 0 var(--space-5) var(--space-5);
+    justify-content: space-between;
+  }
+
+  .server-summary-row .srv-status {
+    max-width: none;
+  }
+}
+
 @media (max-width: 760px) {
   .page-header {
     flex-direction: column;
@@ -3741,7 +3780,7 @@ details.adv[open] > summary::before {
 
 .server-summary-row {
   display: grid;
-  grid-template-columns: 3px auto minmax(0, 1fr) auto;
+  grid-template-columns: 3px auto minmax(0, 1fr) 88px auto;
   align-items: center;
   gap: 0 var(--space-6);
   cursor: pointer;
@@ -3867,9 +3906,23 @@ details.adv[open] > summary::before {
 
 .rec-act {
   padding: var(--space-5) var(--space-6) var(--space-5) 0;
-  display: flex;
+  width: 370px;
+  display: grid;
+  grid-template-columns: minmax(0, 190px) auto;
   align-items: center;
   gap: var(--space-5);
+}
+
+.rec-act > .controls {
+  justify-content: flex-end;
+}
+
+.server-tool-count {
+  min-width: 88px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .server-row-menu {
@@ -4330,6 +4383,8 @@ details.adv[open] > summary::before {
 }
 
 .catalog-list .rec-act {
+  width: auto;
+  display: flex;
   min-width: 148px;
   padding: var(--space-6) 18px var(--space-6) var(--space-5);
   flex-direction: column;
@@ -4395,7 +4450,15 @@ details.adv[open] > summary::before {
   }
 
   .server-summary-row > .spine {
-    grid-row: 1 / span 2;
+    grid-row: 1 / span 3;
+  }
+
+  .server-tool-count {
+    grid-column: 3;
+    grid-row: 2;
+    min-width: 0;
+    padding-bottom: var(--space-3);
+    text-align: left;
   }
 
   .server-record > .server-probe-detail {
@@ -4404,6 +4467,9 @@ details.adv[open] > summary::before {
 
   .rec-act {
     grid-column: 2 / -1;
+    grid-row: 3;
+    width: auto;
+    display: flex;
     padding: 0 var(--space-5) var(--space-5);
     justify-content: space-between;
   }
