@@ -241,6 +241,37 @@ func TestServerTestConnectFailure(t *testing.T) {
 	}
 }
 
+func TestServerTestMissingSecretIsActionable(t *testing.T) {
+	c := &nrConnector{err: fmt.Errorf("prepare environment: %w", &downstream.UnresolvedSecretError{
+		ServerID: "brave-search",
+		Key:      "BRAVE_API_KEY",
+	})}
+	env := nrStart(t, func(d *NonRegistryDeps) { d.Connect = c.connect })
+	seedServer(t, env.reg, "brave-search", true)
+
+	status, body := nrDo(t, env.sock, http.MethodPost, "/v1/servers/brave-search/test", ServerTestRequest{})
+	if status != http.StatusConflict {
+		t.Fatalf("status = %d, want 409: %s", status, body)
+	}
+	var envelope struct {
+		Error struct {
+			Code           string   `json:"code"`
+			Message        string   `json:"message"`
+			MissingSecrets []string `json:"missingSecrets"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if envelope.Error.Code != CodeSecretRequired || len(envelope.Error.MissingSecrets) != 1 ||
+		envelope.Error.MissingSecrets[0] != "BRAVE_API_KEY" {
+		t.Fatalf("error = %+v", envelope.Error)
+	}
+	if strings.Contains(envelope.Error.Message, "BRAVE_API_KEY") {
+		t.Fatalf("key belongs in structured metadata, not display copy: %s", body)
+	}
+}
+
 // TestServerTestConnectFailureIsNotBlamedOnCredentials is the other half: a
 // failure that merely MENTIONS 401 must not be reported as a credential
 // problem. A proxy answering 502 explains itself in the body, the transport

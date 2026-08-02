@@ -53,6 +53,10 @@ func TestEnvSecretExpansionAtDial(t *testing.T) {
 	if !errors.Is(err, downstream.ErrUnresolvedSecret) {
 		t.Fatalf("error = %v, want ErrUnresolvedSecret", err)
 	}
+	var missing *downstream.UnresolvedSecretError
+	if !errors.As(err, &missing) || missing.ServerID != "srv" || missing.Key != "ABSENT" {
+		t.Fatalf("error = %v, want typed missing srv/ABSENT", err)
+	}
 	if strings.Contains(err.Error(), "s3cr3t") {
 		t.Fatal("the error text leaked a secret value")
 	}

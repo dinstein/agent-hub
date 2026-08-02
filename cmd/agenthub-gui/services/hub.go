@@ -587,11 +587,12 @@ func MarshalError(err error) []byte {
 		return nil
 	}
 	type wireError struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Hint    string `json:"hint,omitempty"`
-		Status  int    `json:"status,omitempty"`
-		Offline bool   `json:"offline,omitempty"`
+		Code           string   `json:"code"`
+		Message        string   `json:"message"`
+		Hint           string   `json:"hint,omitempty"`
+		MissingSecrets []string `json:"missingSecrets,omitempty"`
+		Status         int      `json:"status,omitempty"`
+		Offline        bool     `json:"offline,omitempty"`
 		// Kind classifies the failure by the RESPONSE it calls for, where a
 		// code alone is ambiguous. Empty for everything but a conflict.
 		Kind string `json:"kind,omitempty"`
@@ -616,7 +617,10 @@ func MarshalError(err error) []byte {
 	} else {
 		switch {
 		case errors.As(err, &apiErr):
-			we = wireError{Code: apiErr.Code, Message: apiErr.Message, Hint: apiErr.Hint, Status: apiErr.Status}
+			we = wireError{
+				Code: apiErr.Code, Message: apiErr.Message, Hint: apiErr.Hint,
+				MissingSecrets: apiErr.MissingSecrets, Status: apiErr.Status,
+			}
 		case errors.Is(err, ErrOffline):
 			we = wireError{Code: "E_OFFLINE", Message: err.Error(), Offline: true,
 				Hint: "start the daemon with `agenthub daemon start`"}

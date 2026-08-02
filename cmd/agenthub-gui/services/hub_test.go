@@ -467,6 +467,19 @@ func TestMarshalErrorCarriesMachineReadableCodes(t *testing.T) {
 		t.Errorf("api error marshalled as %v", m)
 	}
 
+	secretErr := &api.Error{
+		ErrorBody: api.ErrorBody{
+			Code: api.ErrCodeSecretRequired, Message: "secret required",
+			MissingSecrets: []string{"BRAVE_API_KEY"},
+		},
+		Status: http.StatusConflict,
+	}
+	m = decode(t, secretErr)
+	missing, ok := m["missingSecrets"].([]any)
+	if m["code"] != api.ErrCodeSecretRequired || !ok || len(missing) != 1 || missing[0] != "BRAVE_API_KEY" {
+		t.Errorf("missing-secret error marshalled as %v", m)
+	}
+
 	m = decode(t, fmt.Errorf("%w: dial failed", ErrOffline))
 	if m["code"] != "E_OFFLINE" || m["offline"] != true {
 		t.Errorf("offline error marshalled as %v", m)

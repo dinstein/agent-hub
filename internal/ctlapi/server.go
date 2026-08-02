@@ -37,6 +37,9 @@ const (
 	// CodeAuthRequired means a downstream rejected the credentials during a
 	// live self-test. Frontends may offer the interactive login operation.
 	CodeAuthRequired = "E_AUTH_REQUIRED"
+	// CodeSecretRequired means a server definition references a vault key
+	// that is not stored. Frontends may open a prefilled secret writer.
+	CodeSecretRequired = "E_SECRET_REQUIRED"
 )
 
 // notFoundMessage is the frozen uniform 404 text (anti-probing: identical

@@ -957,6 +957,9 @@ export const ErrCode = {
   /** A live server self-test reached the downstream and its initial
    *  handshake was rejected with 401/403. Offer the OAuth login action. */
   AuthRequired: "E_AUTH_REQUIRED",
+  /** The server definition references a vault key that has not been stored.
+   *  missingSecrets carries safe key names for a prefilled writer. */
+  SecretRequired: "E_SECRET_REQUIRED",
   /** CLI-shaped authentication failures can cross a mixed-version desktop
    *  boundary. They require the same persistent login action. */
   AuthFailed: "E_AUTH_FAILED",
@@ -976,6 +979,9 @@ export interface CallError {
   code: string;
   message: string;
   hint?: string;
+  /** Vault key names required by a failed self-test. Values never cross this
+   *  interface in either direction. */
+  missingSecrets?: string[];
   status?: number;
   offline?: boolean;
   /** ErrorKindConflict, or absent. Classifies the failure by the RESPONSE it

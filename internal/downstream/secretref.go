@@ -22,6 +22,21 @@ const secretPrefix = "SECRET_"
 // the vault.
 var ErrUnresolvedSecret = errors.New("downstream: unresolved secret placeholder")
 
+// UnresolvedSecretError identifies the vault entry a server definition needs
+// without exposing its value. Callers may use errors.As to turn a failed dial
+// into a setup action; they must not recover this information by parsing the
+// human error text.
+type UnresolvedSecretError struct {
+	ServerID string
+	Key      string
+}
+
+func (e *UnresolvedSecretError) Error() string {
+	return fmt.Sprintf("%v: server %q needs secret %q", ErrUnresolvedSecret, e.ServerID, e.Key)
+}
+
+func (e *UnresolvedSecretError) Unwrap() error { return ErrUnresolvedSecret }
+
 // ErrNoResolver reports a spec that references a secret while no resolver
 // was injected.
 var ErrNoResolver = errors.New("downstream: secret placeholder used but no secrets resolver is wired")
@@ -83,7 +98,7 @@ func expandSecrets(ctx context.Context, serverID, scopeName, s string, resolve s
 			return "", fmt.Errorf("downstream %q: resolve secret %q: %w", serverID, key, err)
 		}
 		if !ok || val == "" {
-			return "", fmt.Errorf("%w: server %q needs secret %q", ErrUnresolvedSecret, serverID, key)
+			return "", &UnresolvedSecretError{ServerID: serverID, Key: key}
 		}
 		b.WriteString(val)
 		rest = rest[end+1:]

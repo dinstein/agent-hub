@@ -40,6 +40,9 @@ const (
 	// ErrCodeAuthRequired: a live downstream self-test was rejected with
 	// HTTP 401/403. A frontend may offer Auth.StartLogin for that server.
 	ErrCodeAuthRequired = "E_AUTH_REQUIRED"
+	// ErrCodeSecretRequired: a live downstream self-test could not start
+	// because the server definition references an unset vault key.
+	ErrCodeSecretRequired = "E_SECRET_REQUIRED"
 )
 
 // IsCode reports whether err is a control-plane *Error carrying code.
@@ -53,9 +56,10 @@ func IsCode(err error, code string) bool {
 // ErrorBody is the wire error shape shared by the REST API and the CLI
 // `--json` convention (docs/modules/controlplane.md): {"code","message","hint"}.
 type ErrorBody struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Hint    string `json:"hint,omitempty"`
+	Code           string   `json:"code"`
+	Message        string   `json:"message"`
+	Hint           string   `json:"hint,omitempty"`
+	MissingSecrets []string `json:"missingSecrets,omitempty"`
 }
 
 // Error is the error type returned for every failed control-plane call.

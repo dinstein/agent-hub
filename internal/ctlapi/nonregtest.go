@@ -3,11 +3,13 @@ package ctlapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/dinstein/agent-hub/api"
 	"github.com/dinstein/agent-hub/internal/discovery/toolsig"
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
@@ -156,6 +158,16 @@ func (s *Server) handleServerTest(w http.ResponseWriter, r *http.Request, id str
 	start := time.Now()
 	conn, err := connect(r.Context(), spec, deps)
 	if err != nil {
+		var missing *downstream.UnresolvedSecretError
+		if errors.As(err, &missing) {
+			writeErrBody(w, http.StatusConflict, api.ErrorBody{
+				Code:           CodeSecretRequired,
+				Message:        fmt.Sprintf("server %q needs a stored secret", id),
+				Hint:           fmt.Sprintf("store %s for this server, then test again", missing.Key),
+				MissingSecrets: []string{missing.Key},
+			}, reqID)
+			return
+		}
 		code := CodeInternal
 		if transport.IsAuthStatus(err) {
 			code = CodeAuthRequired

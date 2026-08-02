@@ -164,8 +164,15 @@ func writeOK(w http.ResponseWriter, status int, data any) {
 
 // writeErr writes a failure envelope {code,message,hint} (+requestId).
 func writeErr(w http.ResponseWriter, status int, code, message, hint, requestID string) {
+	writeErrBody(w, status, api.ErrorBody{Code: code, Message: message, Hint: hint}, requestID)
+}
+
+// writeErrBody is the additive-details form of writeErr. Most errors have
+// only code/message/hint; actionable setup failures may carry safe metadata
+// such as missing key NAMES (never values).
+func writeErrBody(w http.ResponseWriter, status int, body api.ErrorBody, requestID string) {
 	writeJSON(w, status, wireEnvelope{OK: false, Error: &wireError{
-		ErrorBody: api.ErrorBody{Code: code, Message: message, Hint: hint},
+		ErrorBody: body,
 		RequestID: requestID,
 	}})
 }
