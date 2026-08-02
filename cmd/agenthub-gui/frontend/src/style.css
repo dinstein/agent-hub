@@ -2565,6 +2565,12 @@ tbody tr:hover {
   opacity: 0.55;
 }
 
+/* Off for good on this system, rather than busy. The cursor is the only
+ * thing distinguishing the two states, so it has to say the right one. */
+.switch.switch-unavailable[disabled] {
+  cursor: not-allowed;
+}
+
 .btn-secondary {
   color: var(--muted);
   background: color-mix(in srgb, var(--panel-2) 68%, transparent);

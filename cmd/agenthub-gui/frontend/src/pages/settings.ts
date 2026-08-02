@@ -4,17 +4,19 @@
 // There is no hub configuration here: every setting the hub has lives in the
 // daemon's registry and is reached through the control plane.
 //
-// The theme is the one genuine exception and precisely because it is not hub
-// state: it is a property of THIS window on THIS machine and is stored in
-// localStorage rather than the registry. Putting it anywhere else would imply
-// the daemon has an opinion about it.
+// The theme and the close-button behaviour are the two genuine exceptions,
+// and precisely because they are not hub state: they are properties of THIS
+// window on THIS machine and are stored in localStorage rather than in the
+// registry. Putting either anywhere else would imply the daemon has an
+// opinion about it.
 
 import { hub } from "../bridge";
 import { clear, el, icon, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { failureBox } from "../page";
-import { themeControl } from "../ui";
+import { themeControl, toggleSwitch } from "../ui";
 import type { Status } from "../types";
+import { setWindowPrefs, windowPrefs } from "../window-prefs";
 
 function statusTable(st: Status): HTMLElement {
   const row = (k: string, v: string) =>
@@ -29,12 +31,54 @@ function statusTable(st: Status): HTMLElement {
   ]);
 }
 
+/**
+ * The close-button preference.
+ *
+ * Disabled, with the reason, wherever no tray icon came up: a switch that
+ * silently does nothing is worse than a switch that explains why it cannot.
+ * The Go side makes the same call independently — this control cannot talk it
+ * into hiding a window into a status area that is not there.
+ */
+function closeBehaviour(trayReady: boolean): HTMLElement {
+  const prefs = windowPrefs();
+  const sw = toggleSwitch({
+    checked: trayReady && prefs.closeToTray,
+    label: "close button minimises to tray",
+    onChange: () => setWindowPrefs({ closeToTray: !windowPrefs().closeToTray }),
+  });
+  if (!trayReady) {
+    // Not the same disabled as "a write is in flight", which is what the
+    // switch normally means by it, so it does not borrow that cursor.
+    sw.disabled = true;
+    sw.classList.add("switch-unavailable");
+  }
+  return el("div", { class: "settings-appearance-choice" }, [
+    el("div", { class: "settings-control" }, [
+      el("div", { class: "check" }, [sw, el("span", { text: "Close button minimises to tray" })]),
+    ]),
+    el("p", {
+      class: "hint",
+      text: trayReady
+        ? "AgentHub keeps running and the clients connected to it keep working. Quit from the tray menu."
+        : "No tray icon is available on this system, so the close button quits — otherwise the window " +
+          "would disappear with no way to bring it back.",
+    }),
+  ]);
+}
+
 export function settingsPage(): Page {
   let root: HTMLElement | null = null;
 
   async function draw(): Promise<void> {
     if (!root) return;
     let statusError: unknown = null;
+    let trayReady = false;
+    try {
+      trayReady = await hub.trayAvailable();
+    } catch {
+      // Unbound service: leave it false, which is also what the close button
+      // then does.
+    }
     let st: Status;
     try {
       st = await hub.status();
@@ -104,6 +148,16 @@ export function settingsPage(): Page {
               text: "System follows the OS live. This local preference is applied before the first frame is drawn.",
             }),
           ]),
+        ]),
+        el("section", { class: "settings-card settings-card-wide settings-appearance" }, [
+          el("div", { class: "settings-appearance-copy" }, [
+            el("div", { class: "settings-icon" }, [icon("window")]),
+            el("div", {}, [
+              el("h2", { text: "Closing the window" }),
+              el("p", { class: "muted", text: "What the close button does to the application behind it." }),
+            ]),
+          ]),
+          closeBehaviour(trayReady),
         ]),
       ]),
     );

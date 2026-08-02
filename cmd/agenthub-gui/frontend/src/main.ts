@@ -12,6 +12,8 @@ import { clear, el, loadingState } from "./dom";
 import type { Page } from "./page";
 import { failureBox } from "./page";
 import { initTheme } from "./ui";
+import { askAboutClosing } from "./close-notice";
+import { initWindowPrefs } from "./window-prefs";
 import { authPage } from "./pages/auth";
 import { activityPage } from "./pages/activity";
 import { catalogPage } from "./pages/catalog";
@@ -159,7 +161,19 @@ async function firstRoute(): Promise<void> {
 
 function boot(): void {
   initTheme();
+  // Before anything the user can click: until this lands, the Go side acts on
+  // the defaults for a close button it handles natively.
+  initWindowPrefs();
   window.addEventListener("hashchange", () => void mount(routeFromHash()));
+
+  // The tray sending the user to a page. Assigning the hash fires hashchange,
+  // which mounts it — the same path a sidebar click takes.
+  on<string>(EVT.navigate, (route) => {
+    if (route) window.location.hash = `#/${route}`;
+  });
+  // The first close. The Go side has already cancelled it and brought the
+  // window forward, so the question has somewhere to be asked.
+  on(EVT.confirmClose, () => void askAboutClosing());
 
   hub
     .applicationVersion()

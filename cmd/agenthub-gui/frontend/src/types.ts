@@ -799,6 +799,18 @@ export interface Status {
   error?: string;
 }
 
+/**
+ * The window-local preferences (services.WindowPrefs).
+ *
+ * Not hub state: they describe this window on this machine, live in
+ * localStorage rather than in the registry, and are pushed to the Go side only
+ * because the close button is handled natively.
+ */
+export interface WindowPrefs {
+  closeToTray: boolean;
+  hideNoticeSeen: boolean;
+}
+
 /** One bridged daemon event (services.TopicEvent). */
 export interface TopicEvent<T = unknown> {
   topic: string;

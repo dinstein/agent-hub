@@ -69,6 +69,7 @@ import type {
   TokenCreated,
   TokenRevoked,
   TokenSpec,
+  WindowPrefs,
 } from "./types";
 import { ErrCode, ErrorKindConflict } from "./types";
 
@@ -119,6 +120,25 @@ export const hub = {
   status: () => call<Status>("Status"),
   /** Force a connection attempt, starting the daemon if necessary. */
   connect: () => call<Status>("Connect"),
+
+  // -- this window ----------------------------------------------------------
+  // The only bound calls with no control-plane endpoint behind them, and not
+  // a GUI privilege for it: a CLI is not missing anything by being unable to
+  // hide a window.
+  /** Whether a tray icon actually came up. False means the close button
+   *  quits, whatever the preference says. */
+  trayAvailable: () => call<boolean>("TrayAvailable"),
+  /** Whether THIS process started the daemon — i.e. whether quitting stops
+   *  the hub with it. */
+  ownsDaemon: () => call<boolean>("OwnsDaemon"),
+  /** Hands the Go side the preferences it acts on when the close button is
+   *  pressed. Storing them is this window's job (window-prefs.ts). */
+  setWindowPreferences: (prefs: WindowPrefs) => call<WindowPrefs>("SetWindowPreferences", prefs),
+  /** Minimises to the tray. */
+  hideWindow: () => call<void>("HideWindow"),
+  /** Ends the application through the shutdown path that also stops a daemon
+   *  this process started. */
+  quitApplication: () => call<void>("QuitApplication"),
 
   // -- encrypted access ledger ---------------------------------------------
   auditStatus: () => call<AuditStatus>("AuditStatus"),
@@ -377,4 +397,10 @@ export const EVT = {
   sessions: "agenthub:sessions",
   activity: "agenthub:activity",
   skills: "agenthub:skills",
+  /** The tray changed a window preference; this window stores it. */
+  windowPrefs: "agenthub:window-prefs",
+  /** The tray asked for a page. */
+  navigate: "agenthub:navigate",
+  /** The close button was pressed for the first time. */
+  confirmClose: "agenthub:confirm-close",
 } as const;

@@ -31,7 +31,7 @@ export function clear(node: Element): void {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
 
-export type IconName = "search" | "play" | "scope" | "privacy" | "theme";
+export type IconName = "search" | "play" | "scope" | "privacy" | "theme" | "window";
 
 /** A tiny dependency-free icon set for application chrome. Centralising the
  * paths keeps weight, baseline and platform rendering consistent. */
@@ -42,6 +42,7 @@ export function icon(name: IconName, className = "ui-icon"): SVGSVGElement {
     scope: "M12 3 5 6v5c0 4.8 2.8 8.3 7 10 4.2-1.7 7-5.2 7-10V6l-7-3Zm-3 9 2 2 4-4",
     privacy: "M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6S2.5 12 2.5 12Zm12.5 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
     theme: "M12 3a9 9 0 1 0 9 9c0-1-.2-1.9-.5-2.8A7 7 0 0 1 12 3Z",
+    window: "M3 5.5A1.5 1.5 0 0 1 4.5 4h15A1.5 1.5 0 0 1 21 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5v-13Zm0 3.5h18M6.5 6.7h.01M9 6.7h.01",
   };
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", className);
