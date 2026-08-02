@@ -43,6 +43,22 @@ hands each client exactly the surface you decided it should see.
 > macOS and Linux are verified; Windows is **experimental** — platform layer filled in, two commands
 > still unimplemented, never run on real hardware ([details](#platforms)).
 
+## Install
+
+```bash
+brew tap dinstein/agenthub
+
+brew install agenthub                 # the CLI, which is all you need
+brew install --cask agenthub-gui      # the macOS app, and the CLI with it
+```
+
+The cask installs `AgentHub.app` and depends on the formula, so the `agenthub`
+on your `$PATH` has exactly one owner either way. The app is ad-hoc signed but **not
+notarized**: the cask clears the quarantine flag macOS puts on downloads, and its pinned
+sha256 is what vouches for the bytes instead of Gatekeeper. Windows and Linux have no
+package yet — take the `.zip` or the `.tar.gz` from
+[Releases](https://github.com/dinstein/agent-hub/releases).
+
 ## Quickstart
 
 ```bash

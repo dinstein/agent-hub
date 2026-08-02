@@ -40,6 +40,21 @@ Claude Code · Cursor · Codex · Open WebUI · 以及另外 8 种
 > 的端到端验收通过。macOS + Linux 已验证；Windows 为**实验性**——平台层已补齐，
 > 尚有两个命令未实现，且从未在真实机器上跑过（[详见](#平台)）。
 
+## 安装
+
+```bash
+brew tap dinstein/agenthub
+
+brew install agenthub                 # CLI，装它就够了
+brew install --cask agenthub-gui      # macOS 应用，CLI 随它一起装上
+```
+
+cask 装的是 `AgentHub.app`，并且依赖上面那个 formula，所以两条路装下来，`$PATH` 上的
+`agenthub` 都只有一个归属。应用只做了 ad-hoc 签名，**没有做公证（notarization）**：
+cask 会清掉 macOS 给下载文件打的 quarantine 标记，替 Gatekeeper 作保的是它锁定的
+sha256。Windows 和 Linux 目前没有包，从
+[Releases](https://github.com/dinstein/agent-hub/releases) 取 `.zip` 或 `.tar.gz`。
+
 ## 快速开始
 
 ```bash

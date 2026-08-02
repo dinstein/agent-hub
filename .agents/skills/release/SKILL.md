@@ -103,8 +103,8 @@ gh run watch <run-id> --exit-status
 
 Six jobs, about four minutes: `verify` (checks tag against `VERSION` and the tap token; gates the
 rest), `cli` (darwin/linux/windows tarballs), `gui-macos` (universal DMG), `gui-windows` (amd64 and
-arm64 zips), `publish` (the Release with every artifact), `homebrew` (formula and skill to the tap,
-one commit).
+arm64 zips), `publish` (the Release with every artifact), `homebrew` (formula, cask and skill to the
+tap, one commit).
 
 ## 7. Check what shipped
 
@@ -121,12 +121,29 @@ tarball, two Windows zips, three `checksums-*.txt`.
 Then the tap, a different repository that fails on its own:
 
 ```bash
-gh api repos/dinstein/homebrew-agenthub/contents/Formula/agenthub.rb -q .content \
-  | base64 -d | grep -E 'version|url' | head -4
+for f in Formula/agenthub.rb Casks/agenthub-gui.rb; do
+  gh api "repos/dinstein/homebrew-agenthub/contents/${f}" -q .content \
+    | base64 -d | grep -E 'version|url|depends_on formula' | head -4
+done
 ```
 
-The `version` must be the new one, and every `url` must point at **`dinstein/agent-hub`**, not at the
-tap.
+The `version` must be the new one in both — the cask's carries the build hash after a comma — and
+every `url` must point at **`dinstein/agent-hub`**, not at the tap. Both files land in one commit, so
+one of them being stale is a bug in `tap-sync.sh`, not a re-run.
+
+The cask is the only artifact whose install is not exercised by anything in CI. Once per release, on
+a machine that has not installed it before — a fresh user account is enough, the quarantine flag is
+per-download and this machine's copies are already cleared:
+
+```bash
+brew install --cask dinstein/agenthub/agenthub-gui   # pulls the formula with it
+open -a AgentHub                                     # must launch with no Gatekeeper prompt
+which agenthub && agenthub --version                 # from the formula, and must NOT say (dev)
+brew uninstall --cask --zap dinstein/agenthub/agenthub-gui
+```
+
+`brew audit --cask --strict --online dinstein/agenthub/agenthub-gui` grades the file; only the four
+lines above grade the install.
 
 ## When it goes wrong
 
