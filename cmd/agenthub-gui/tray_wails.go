@@ -248,7 +248,15 @@ func (t *tray) show(route string) {
 	}
 	// On macOS the whole application can be hidden (Cmd-H), and a window
 	// shown while that is true stays invisible.
-	t.app.Show()
+	//
+	// InvokeSync, and NOT because it is tidy: App.Show is one of the few Wails
+	// calls that does not hop to the main thread for you. Window.Show, Focus,
+	// Hide, App.Quit and the clipboard all do it internally, which makes the
+	// exception invisible at the call site. A menu click runs on its own
+	// goroutine, AppKit traps a cross-thread [NSApp unhide:], and Wails turns
+	// the resulting panic into os.Exit(1) — a tray item that quit the
+	// application instead of opening it, with no crash report to explain it.
+	application.InvokeSync(t.app.Show)
 	t.win.Show()
 	t.win.Focus()
 }

@@ -233,6 +233,13 @@ and the Settings switch — and each has to learn about the other's change. Neit
 itself: like every `toggleSwitch` here they render a value and the page redraws from the
 authoritative one, which for this preference means redrawing on that event.
 
+**A menu callback runs off the main thread.** Wails hops for you on window methods, `App.Quit` and the
+clipboard, but **not** on `App.Show`/`App.Hide` — and the asymmetry is invisible at the call site.
+AppKit traps a cross-thread `[NSApp unhide:]`, Wails catches the panic and calls `os.Exit(1)`, so the
+symptom is a tray item that quits the application with no crash report to explain it. Anything new in
+this menu that touches a native API goes through `application.InvokeSync` unless it has been checked
+that the call already does.
+
 **Platforms.** macOS and Windows drive a tray. Linux deliberately does not: Wails registers the icon
 over the dbus `StatusNotifierItem` protocol, and a desktop with no `StatusNotifierHost` — a default
 GNOME session, for one — accepts the registration and then shows nothing, so until that is verified
