@@ -145,6 +145,9 @@ type Hub struct {
 	// which must not queue behind a control-plane call holding mu. A nil
 	// pointer means "the frontend has not pushed anything yet".
 	prefs atomic.Pointer[WindowPrefs]
+	// prefsMu serialises read-modify-write on prefs (ToggleCloseToTray).
+	// The atomic alone makes every read safe but not every update atomic.
+	prefsMu sync.Mutex
 
 	// trayAvailable is the tray assembly's report, kept here so the frontend
 	// can read it. It is display state only — see SetTrayAvailable.

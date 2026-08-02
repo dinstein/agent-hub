@@ -307,6 +307,59 @@ func TestTrayMenuShape(t *testing.T) {
 	}
 }
 
+func TestTraySignatureTracksWhatTheUserWouldSee(t *testing.T) {
+	t.Parallel()
+	base := connected(srv("a", api.HealthLevelHealthy, api.AdminStateEnabled, "connected"))
+
+	// An equal state read a second time — which is what every re-read after
+	// an event produces — must sign the same, or the menu would be
+	// reinstalled on every probe the daemon reports.
+	again := connected(srv("a", api.HealthLevelHealthy, api.AdminStateEnabled, "connected"))
+	if traySignature(trayMenu(base)) != traySignature(trayMenu(again)) {
+		t.Fatal("the same state produced two signatures")
+	}
+
+	changed := []struct {
+		name  string
+		state trayState
+	}{
+		{"a server broke", connected(srv("a", api.HealthLevelUnhealthy, api.AdminStateEnabled, "error"))},
+		{"the daemon went away", trayState{}},
+		{"the preference flipped", func() trayState { s := base; s.CloseToTray = true; return s }()},
+		{"ownership changed", func() trayState { s := base; s.OwnsDaemon = true; return s }()},
+	}
+	for _, tc := range changed {
+		if traySignature(trayMenu(tc.state)) == traySignature(trayMenu(base)) {
+			t.Errorf("%s did not change the signature; the menu would go stale", tc.name)
+		}
+	}
+
+	// A generation bump with nothing else different still shows in the Hub
+	// submenu, so it must not be suppressed either.
+	bumped := base
+	bumped.Status.Generation++
+	if traySignature(trayMenu(bumped)) == traySignature(trayMenu(base)) {
+		t.Error("the registry generation is displayed but not signed")
+	}
+}
+
+func TestTrayAvailabilityIsPerPlatform(t *testing.T) {
+	t.Parallel()
+	for _, goos := range []string{"darwin", "windows"} {
+		if !trayAvailableOn(goos) {
+			t.Errorf("%s: want a tray", goos)
+		}
+	}
+	// Linux is deliberately out until a real session has been verified: a
+	// desktop with no StatusNotifierHost accepts the registration and shows
+	// nothing, and closeIntentFor turns that into "the close button quits".
+	for _, goos := range []string{"linux", "freebsd"} {
+		if trayAvailableOn(goos) {
+			t.Errorf("%s: want no tray", goos)
+		}
+	}
+}
+
 func TestCloseIntent(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

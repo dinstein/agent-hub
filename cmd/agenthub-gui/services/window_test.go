@@ -36,13 +36,19 @@ func TestWindowPreferenceRoundTrip(t *testing.T) {
 		t.Fatalf("SetWindowPreferences emitted %d events", len(evs))
 	}
 
-	h.setWindowPreferencesFromTray(WindowPrefs{CloseToTray: true, HideNoticeSeen: true})
+	// The tray toggling it IS news: the frontend owns the durable copy.
+	if got := h.ToggleCloseToTray(); !got.CloseToTray || !got.HideNoticeSeen {
+		t.Fatalf("ToggleCloseToTray returned %+v, want close-to-tray back on with the notice intact", got)
+	}
 	evs := rec.byName(EventWindowPrefs)
 	if len(evs) != 1 {
 		t.Fatalf("tray change emitted %d events, want 1", len(evs))
 	}
 	if got, ok := evs[0].data.(WindowPrefs); !ok || !got.CloseToTray {
 		t.Fatalf("event payload = %#v", evs[0].data)
+	}
+	if h.WindowPreferences() != evs[0].data {
+		t.Fatalf("the announced value %+v is not the stored one %+v", evs[0].data, h.WindowPreferences())
 	}
 }
 

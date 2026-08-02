@@ -406,6 +406,56 @@ func trayMenu(st trayState) []trayItem {
 	}
 }
 
+// traySignature is what the rendered menu says, flattened. The assembly
+// installs a new native menu only when this changes.
+//
+// The daemon publishes a `servers` event for every probe, so a tray that
+// rebuilt on each one would replace the native menu several times a second —
+// and every replacement is a fresh set of native objects the previous menu
+// does not obviously release. Comparing the rendered text first turns that
+// into "rebuild when the user would see a difference", which is a handful of
+// times an hour.
+func traySignature(items []trayItem) string {
+	var b strings.Builder
+	writeTraySignature(&b, items)
+	return b.String()
+}
+
+func writeTraySignature(b *strings.Builder, items []trayItem) {
+	for _, it := range items {
+		if it.Separator {
+			b.WriteString("--\n")
+			continue
+		}
+		fmt.Fprintf(b, "%s|%s|%s|%s|%t|%t|%t\n",
+			it.Label, it.Tooltip, it.Action, it.Arg, it.Checkbox, it.Checked, it.Disabled)
+		if len(it.Items) > 0 {
+			b.WriteString("<\n")
+			writeTraySignature(b, it.Items)
+			b.WriteString(">\n")
+		}
+	}
+}
+
+// trayAvailableOn reports whether this build drives a tray icon on the named
+// platform.
+//
+// Linux is excluded deliberately, not accidentally. Wails renders its tray
+// through the dbus StatusNotifierItem protocol, and a desktop with no
+// StatusNotifierHost — a default GNOME session, for one — accepts the
+// registration and then shows nothing. Since closeIntentFor turns "no tray"
+// back into "the close button quits", saying false here leaves Linux with
+// exactly the behaviour it had before this feature, which is the honest answer
+// until someone verifies it on a real session (docs/modules/gui.md).
+func trayAvailableOn(goos string) bool {
+	switch goos {
+	case "darwin", "windows":
+		return true
+	default:
+		return false
+	}
+}
+
 // closeIntent is what pressing the window's close button should do.
 type closeIntent int
 

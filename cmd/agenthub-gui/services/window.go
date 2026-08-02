@@ -75,10 +75,20 @@ func (h *Hub) SetWindowPreferences(p WindowPrefs) WindowPrefs {
 	return p
 }
 
-// setWindowPreferencesFromTray is the other direction: it stores and tells the
-// frontend, which owns the durable copy.
-func (h *Hub) setWindowPreferencesFromTray(p WindowPrefs) WindowPrefs {
+// ToggleCloseToTray flips the close-button preference and tells the frontend,
+// which owns the durable copy. It is the tray checkbox's whole behaviour.
+//
+// A toggle rather than a setter because the tray renders from the same value:
+// a set would have to read, negate and write in the caller, and two menus
+// racing that pair could leave the checkbox disagreeing with what the close
+// button does.
+func (h *Hub) ToggleCloseToTray() WindowPrefs {
+	h.prefsMu.Lock()
+	p := h.WindowPreferences()
+	p.CloseToTray = !p.CloseToTray
 	out := h.SetWindowPreferences(p)
+	h.prefsMu.Unlock()
+
 	h.emit(EventWindowPrefs, out)
 	return out
 }

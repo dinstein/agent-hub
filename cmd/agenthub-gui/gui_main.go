@@ -42,11 +42,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Held rather than constructed inline: the tray reads its state and the
+	// close hook reads its preferences, so the assembly needs the instance
+	// Wails is going to bind.
+	hub := services.NewHubService(version)
+
 	app := application.New(application.Options{
 		Name:        "AgentHub",
 		Description: "Local agent service hub",
 		Services: []application.Service{
-			application.NewService(services.NewHubService(version)),
+			application.NewService(hub),
 		},
 		// MarshalError keeps the control-plane error CODE reachable from the
 		// frontend (it arrives as the rejection's `cause`), so pages can tell
@@ -57,12 +62,18 @@ func main() {
 			Handler: application.BundledAssetFileServer(dist),
 		},
 		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: true,
+			// FALSE now that a hidden window is a normal state. The flag is no
+			// longer what ends the application either way: the close hook
+			// decides, and where it decides to quit it says so explicitly, on
+			// every platform rather than only this one. Leaving it true would
+			// mean a window that really closes takes the process down while
+			// the tray icon is still in the menu bar offering to reopen it.
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 	})
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:      "main",
+	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:      services.MainWindowName,
 		Title:     "",
 		Width:     1240,
 		Height:    800,
@@ -71,8 +82,14 @@ func main() {
 		URL:       "/",
 	})
 
+	// The tray is optional by construction: nil means this platform gets the
+	// behaviour it had before, with the close button ending the application.
+	t := newTray(app, hub.Hub, win)
+	hub.SetTrayAvailable(t != nil)
+	installCloseBehaviour(app, hub.Hub, win, t != nil)
+
 	// A termination signal has to reach the service too. Wails calls
-	// ServiceShutdown when the LAST WINDOW closes, but a SIGTERM or SIGINT —
+	// ServiceShutdown on the way out of Quit, but a SIGTERM or SIGINT —
 	// a logout, a `kill`, Ctrl-C on a foreground run — ends the process
 	// without that path ever running, and a daemon this GUI started would be
 	// left behind. Quit unwinds through the same shutdown Wails uses, so the
