@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -182,5 +184,100 @@ func TestLoginPATHCached(t *testing.T) {
 	}
 	if os.Getenv("PATH") != "" && first == "" {
 		t.Fatal("LoginPATH empty despite process PATH being set")
+	}
+}
+
+func TestMergePATHTable(t *testing.T) {
+	sep := string(os.PathListSeparator)
+	j := func(parts ...string) string { return strings.Join(parts, sep) }
+
+	cases := []struct {
+		name        string
+		base, extra string
+		want        string
+	}{
+		{
+			name:  "appends only what is missing, in extra's order",
+			base:  j("/usr/bin", "/bin"),
+			extra: j("/usr/bin", "/opt/homebrew/bin", "/bin", "/Users/u/.cargo/bin"),
+			want:  j("/usr/bin", "/bin", "/opt/homebrew/bin", "/Users/u/.cargo/bin"),
+		},
+		{
+			name:  "a base that already contains everything is unchanged",
+			base:  j("/a", "/b", "/c"),
+			extra: j("/c", "/a"),
+			want:  j("/a", "/b", "/c"),
+		},
+		{
+			name:  "base keeps its precedence rather than extra's",
+			base:  j("/first", "/second"),
+			extra: j("/second", "/first"),
+			want:  j("/first", "/second"),
+		},
+		{
+			name:  "empty base takes extra without a leading empty entry",
+			base:  "",
+			extra: j("/a", "/b"),
+			want:  j("/a", "/b"),
+		},
+		{
+			name:  "empty entries in extra are dropped",
+			base:  "/a",
+			extra: j("", "/b", ""),
+			want:  j("/a", "/b"),
+		},
+		{
+			name:  "an empty entry already in base is left alone",
+			base:  j("/a", "", "/b"),
+			extra: j("/c"),
+			want:  j("/a", "", "/b", "/c"),
+		},
+		{
+			name:  "extra repeating itself contributes one entry",
+			base:  "/a",
+			extra: j("/b", "/b"),
+			want:  j("/a", "/b"),
+		},
+		{
+			name:  "empty extra is a no-op",
+			base:  j("/a", "/b"),
+			extra: "",
+			want:  j("/a", "/b"),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := MergePATH(tc.base, tc.extra); got != tc.want {
+				t.Fatalf("MergePATH(%q, %q) = %q, want %q", tc.base, tc.extra, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMergePATHKeepsBaseResolution is the invariant the callers rely on:
+// whatever base resolved before the merge resolves to the same file after
+// it. A machine whose PATH was never truncated must spawn what it always
+// spawned, which is what lets the merge run unconditionally.
+func TestMergePATHKeepsBaseResolution(t *testing.T) {
+	dirA, dirB := t.TempDir(), t.TempDir()
+	name := "shadowed-tool"
+	if runtime.GOOS == "windows" {
+		name += ".bat"
+	}
+	for _, dir := range []string{dirA, dirB} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatalf("write stand-in: %v", err)
+		}
+	}
+
+	// dirA wins under base; the merge must not let extra's dirB take over.
+	merged := MergePATH(dirA, dirB)
+	t.Setenv("PATH", merged)
+	got, err := exec.LookPath(name)
+	if err != nil {
+		t.Fatalf("LookPath under merged PATH: %v", err)
+	}
+	if want := filepath.Join(dirA, name); got != want {
+		t.Fatalf("merge changed resolution: got %q, want %q", got, want)
 	}
 }

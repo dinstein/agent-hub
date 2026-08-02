@@ -431,7 +431,8 @@ default), login-shell PATH capture, and userinfo redaction in proxy variables.
 Pure functions only. `Filter(environ []string, cfg Config) []string` filters `KEY=value` entries against the
 allowlist while preserving order. `Config` allows extending the allowlist by name (`Allow`) and by prefix
 (`AllowPrefixes`), and enables forwarding of proxy variables via `ForwardProxy`. `RedactProxyValue(name, val)
-(string, bool)` is separately usable. `CaptureLoginPATH(ctx, shell)` and `LoginPATH()` handle PATH capture.
+(string, bool)` is separately usable. `CaptureLoginPATH(ctx, shell)` and `LoginPATH()` handle PATH capture, and
+`MergePATH(base, extra)` folds a captured PATH into the one a process already has.
 
 ### Invariants and failure directions
 
@@ -457,6 +458,14 @@ output (a login profile may print a greeting before the echo), with a 3-second h
 `Output` keeps blocking until every descendant exits, even after the context kills the shell. Any failure falls
 back to the current process's `PATH`: a broken login shell should not block a spawn, and the worst case is keeping
 the truncated PATH we already had, never less. The captured result is cached with `sync.Once`, once per process.
+
+**`MergePATH` appends and never reorders.** `base` is preserved byte for byte and the directories of `extra` that
+it does not already list are appended in `extra`'s order, so the result is a strict superset in which every
+command that already resolved under `base` resolves to the same file. That is what lets a caller apply it
+unconditionally rather than behind a guess at whether the current PATH "looks truncated" — a machine whose PATH
+was never truncated spawns exactly what it spawned before. Empty entries in `extra` are dropped, because POSIX
+reads an empty entry as the current directory and a login profile should not be able to add that to a spawn; an
+empty entry already in `base` is left alone, since removing it would change what `base` resolves.
 
 ### Current integration status
 

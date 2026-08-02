@@ -205,3 +205,45 @@ func LoginPATH() string {
 	})
 	return loginPATH.val
 }
+
+// MergePATH returns base with every directory of extra that base does not
+// already list appended, in extra's order.
+//
+// base is preserved byte for byte, and that is the point rather than an
+// implementation detail: the result is a strict superset in which every
+// command that already resolved under base still resolves to the same file.
+// A process whose PATH was never truncated therefore spawns exactly what it
+// spawned before, so this can be applied unconditionally instead of behind a
+// guess at whether the current PATH "looks truncated".
+//
+// Empty entries in extra are dropped — POSIX reads an empty entry as the
+// current directory, which is not something a login shell should be able to
+// add to a spawn. An empty entry already in base is left alone; removing it
+// would change what base resolves.
+//
+// Deduplication is by exact string match. On Windows that will miss a
+// difference in case or in trailing separator and append a duplicate
+// directory, which costs a wasted stat during lookup and nothing else.
+func MergePATH(base, extra string) string {
+	sep := string(os.PathListSeparator)
+	seen := make(map[string]struct{})
+	for _, dir := range strings.Split(base, sep) {
+		seen[dir] = struct{}{}
+	}
+	out := base
+	for _, dir := range strings.Split(extra, sep) {
+		if dir == "" {
+			continue
+		}
+		if _, dup := seen[dir]; dup {
+			continue
+		}
+		seen[dir] = struct{}{}
+		if out == "" {
+			out = dir
+			continue
+		}
+		out += sep + dir
+	}
+	return out
+}
