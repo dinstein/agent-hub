@@ -31,7 +31,7 @@
 // read path and this page must not grow one.
 
 import { asCallError, EVT, hub, isCancelled, on, openExternal } from "../bridge";
-import { chip, chipRow, clear, el, emptyState, errorHeadline, icon, loadingState, pageHeader } from "../dom";
+import { chip, chipRow, clear, el, emptyState, errorHeadline, icon, loadingState, pageHeader, reconcile } from "../dom";
 import { AdminState, HealthAction, HealthLevel } from "../generated/health";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot, runWrite } from "../page";
@@ -792,7 +792,24 @@ export function serversPage(): Page {
    *  no reason to pull every definition to label one wait. */
   const commands = new Map<string, string>();
 
-  let paintedSignature = "";
+  /**
+   * The nodes that survive a repaint, and the signature each was built from.
+   *
+   * A repaint happens on every probe start and every probe result — dozens of
+   * them while a fleet settles — and the page used to answer each one by
+   * rebuilding the entire table. Keeping the row nodes keyed by server id
+   * turns that into "rebuild the one row whose rendered content changed",
+   * which is what makes an unchanged row hold its hover, its focus and its
+   * open disclosure while the row beside it is still checking.
+   */
+  const rowNodes = new Map<string, { node: HTMLElement; sig: string }>();
+  let chipsHost: HTMLElement | null = null;
+  let noticeHost: HTMLElement | null = null;
+  let ledgerHost: HTMLElement | null = null;
+  let disabledHost: HTMLDetailsElement | null = null;
+  let disabledCount: HTMLElement | null = null;
+  let chipsSignature = "";
+  let noticeSignature = "";
 
   function noteConnecting(servers: Server[]): void {
     const now = Date.now();
@@ -2075,10 +2092,14 @@ export function serversPage(): Page {
     ]);
   }
 
-  /** The one remaining group header. Servers that are IN SERVICE need no
-   *  header — they are the list; switched-off ones are the exception and say
-   *  so, folded away. */
-  function disabledSection(servers: Server[]): HTMLElement {
+  /** The one remaining group header, built ONCE. Servers that are IN SERVICE
+   *  need no header — they are the list; switched-off ones are the exception
+   *  and say so, folded away.
+   *
+   *  Built once because <details> carries state the user set: rebuilding the
+   *  element on every probe result would close a section they had just opened,
+   *  and the stored preference cannot distinguish that from a choice. */
+  function disabledSection(): HTMLDetailsElement {
     const details = el("details", { class: "bucket" }) as HTMLDetailsElement;
     details.open = !disabledCollapsed();
     // Setting `open` above queues a toggle event of its own; ignore that one
@@ -2093,34 +2114,72 @@ export function serversPage(): Page {
       setDisabledCollapsed(!details.open);
     });
     if (!details.open) settled = true;
+    disabledCount = el("span", { class: "bucket-count", text: "0" });
     details.append(
-      el("summary", {}, [
-        el("span", { text: "Disabled" }),
-        el("span", { class: "bucket-count", text: String(servers.length) }),
-      ]),
-      el("div", { class: "bucket-body ledger" }, servers.map(row)),
+      el("summary", {}, [el("span", { text: "Disabled" }), disabledCount]),
+      el("div", { class: "bucket-body ledger" }),
     );
     return details;
   }
 
+  /**
+   * Everything `row` reads, flattened. A row is rebuilt when this changes and
+   * reused when it does not.
+   *
+   * The whole server DTO goes in rather than the fields the row happens to
+   * render today: a reused node keeps the closures it was built with, so a
+   * field that reaches a click handler without appearing on screen would
+   * otherwise go stale invisibly. The expanded body's inputs are included only
+   * while it is open, so a cached diagnostic arriving for a collapsed row does
+   * not rebuild it.
+   */
+  function rowSignature(s: Server): string {
+    const expanded = expandedServers.has(s.id);
+    const observation = probes.get(s.id);
+    return JSON.stringify([
+      s,
+      expanded,
+      observation?.kind === "secret" ? observation.keys : null,
+      expanded ? probeCache.get(s.id) ?? null : null,
+      expanded ? authStatuses.get(s.id) ?? null : null,
+      expanded ? [authStatusLoaded, authStatusError] : null,
+    ]);
+  }
+
+  function rowFor(s: Server): HTMLElement {
+    const sig = rowSignature(s);
+    const cached = rowNodes.get(s.id);
+    if (cached && cached.sig === sig) return cached.node;
+    const node = row(s);
+    rowNodes.set(s.id, { node, sig });
+    return node;
+  }
+
+  /** Creates the four hosts. They are the page's furniture: everything a
+   *  repaint changes happens INSIDE them.
+   *
+   *  The test is "are they still MY children", not "do I hold them". A failed
+   *  registry read replaces the whole list with a failure state, and holding
+   *  references to hosts that were just detached is how a page ends up
+   *  painting, correctly and invisibly, into a discarded tree. */
+  function ensureHosts(): void {
+    if (!listRoot) return;
+    if (chipsHost && chipsHost.parentElement === listRoot) return;
+    clear(listRoot); // the "Reading the registry…" skeleton, or a failure state
+    rowNodes.clear();
+    chipsSignature = "";
+    noticeSignature = "";
+    chipsHost = el("div", { class: "server-chips-host" });
+    noticeHost = el("div", { class: "server-notice-host" });
+    ledgerHost = el("div", { class: "ledger" });
+    disabledHost = disabledSection();
+    listRoot.append(chipsHost, noticeHost, ledgerHost, disabledHost);
+  }
+
   function paint(servers: Server[]): void {
     if (!listRoot) return;
-
-    // SSE can publish several coordination events whose final visible fleet
-    // is identical. Do not tear down and recreate every row in that case:
-    // preserving the DOM also preserves scroll, focus and open disclosures.
-    const signature = JSON.stringify({
-      filter,
-      servers,
-      expanded: Array.from(expandedServers).sort(),
-      probeDetails: servers.map((s) => [s.id, probeCache.get(s.id)]),
-      authDetails: servers.map((s) => [s.id, authStatuses.get(s.id)]),
-      authStatusLoaded,
-      authStatusError,
-    });
-    if (signature === paintedSignature) return;
-    paintedSignature = signature;
-    clear(listRoot);
+    ensureHosts();
+    if (!chipsHost || !noticeHost || !ledgerHost || !disabledHost) return;
 
     const needle = filter.trim().toLowerCase();
     const shown = needle
@@ -2133,45 +2192,55 @@ export function serversPage(): Page {
     const connected = servers.filter((s) => s.state === "connected").length;
     const attention = servers.filter(needsAttention).length;
     const disabled = servers.filter(isDisabled).length;
-    const chips = chipRow(
-      chip(servers.length, servers.length === 1 ? "server" : "servers"),
-      chip(connected, "connected", "success"),
-      chip(attention, attention === 1 ? "needs attention" : "need attention", "warning"),
-      chip(disabled, "disabled"),
-    );
-    if (chips) listRoot.append(chips);
-
-    if (servers.length === 0) {
-      listRoot.append(
-        emptyState({
-          kind: "empty",
-          title: "No servers configured yet.",
-          body: "A server is one downstream MCP process or endpoint. Add one and agenthub will offer its tools to every client you connect.",
-          actions: [
-            button("Add your first server", "btn btn-primary", () =>
-              form.show("Add server", editor("", null)),
-            ),
-          ],
-        }),
+    const chipsSig = JSON.stringify([servers.length, connected, attention, disabled]);
+    if (chipsSig !== chipsSignature) {
+      chipsSignature = chipsSig;
+      clear(chipsHost);
+      const chips = chipRow(
+        chip(servers.length, servers.length === 1 ? "server" : "servers"),
+        chip(connected, "connected", "success"),
+        chip(attention, attention === 1 ? "needs attention" : "need attention", "warning"),
+        chip(disabled, "disabled"),
       );
-      return;
+      if (chips) chipsHost.append(chips);
     }
-    if (shown.length === 0) {
-      listRoot.append(
-        emptyState({
-          kind: "empty",
-          title: `No server id contains “${filter.trim()}”.`,
-          body: `All ${servers.length} configured servers are still there — this view is filtered.`,
-          actions: [
-            button("Clear filter", "btn", () => {
-              filter = "";
-              if (search) search.value = "";
-              void draw();
-            }),
-          ],
-        }),
-      );
-      return;
+
+    // Which empty state applies, if any. Rebuilt only when the answer
+    // changes, because both of them contain a button.
+    const notice = servers.length === 0 ? "none" : shown.length === 0 ? "filtered" : "";
+    const noticeSig = JSON.stringify([notice, filter.trim(), servers.length]);
+    if (noticeSig !== noticeSignature) {
+      noticeSignature = noticeSig;
+      clear(noticeHost);
+      if (notice === "none") {
+        noticeHost.append(
+          emptyState({
+            kind: "empty",
+            title: "No servers configured yet.",
+            body: "A server is one downstream MCP process or endpoint. Add one and agenthub will offer its tools to every client you connect.",
+            actions: [
+              button("Add your first server", "btn btn-primary", () =>
+                form.show("Add server", editor("", null)),
+              ),
+            ],
+          }),
+        );
+      } else if (notice === "filtered") {
+        noticeHost.append(
+          emptyState({
+            kind: "empty",
+            title: `No server id contains \u201C${filter.trim()}\u201D.`,
+            body: `All ${servers.length} configured servers are still there — this view is filtered.`,
+            actions: [
+              button("Clear filter", "btn", () => {
+                filter = "";
+                if (search) search.value = "";
+                void draw();
+              }),
+            ],
+          }),
+        );
+      }
     }
 
     // One order, by id, for both groups: the same order `server ls` prints,
@@ -2180,14 +2249,22 @@ export function serversPage(): Page {
     const inService = shown.filter((s) => !isDisabled(s)).sort(byID);
     const switchedOff = shown.filter(isDisabled).sort(byID);
 
-    // An empty group is not rendered at all — a permanent "Disabled (0)"
-    // header is chrome that never says anything.
-    if (inService.length > 0) {
-      listRoot.append(el("div", { class: "ledger" }, inService.map(row)));
+    // A row that has left the fleet takes its node with it, or the cache
+    // would keep a growing set of servers that no longer exist.
+    const present = new Set(servers.map((s) => s.id));
+    for (const id of Array.from(rowNodes.keys())) {
+      if (!present.has(id)) rowNodes.delete(id);
     }
-    if (switchedOff.length > 0) {
-      listRoot.append(disabledSection(switchedOff));
-    }
+
+    reconcile(ledgerHost, inService.map(rowFor));
+    reconcile(disabledHost.querySelector(".bucket-body") as HTMLElement, switchedOff.map(rowFor));
+    if (disabledCount) disabledCount.textContent = String(switchedOff.length);
+
+    // An empty group is not RENDERED, but its host survives: hiding is what
+    // keeps the disabled section's open/closed state across a repaint that
+    // momentarily has nothing to put in it.
+    ledgerHost.hidden = inService.length === 0;
+    disabledHost.hidden = switchedOff.length === 0;
   }
 
   async function draw(
@@ -2285,7 +2362,18 @@ export function serversPage(): Page {
       inFlightProbes.clear();
       listedServers = [];
       lastServerRevision = 0;
-      paintedSignature = "";
+      // The surviving nodes belong to a mount that is over. Dropping them
+      // here — rather than letting the next mount find stale hosts pointing
+      // at a detached tree — is what keeps re-entering the page a clean
+      // build rather than a repair.
+      rowNodes.clear();
+      chipsHost = null;
+      noticeHost = null;
+      ledgerHost = null;
+      disabledHost = null;
+      disabledCount = null;
+      chipsSignature = "";
+      noticeSignature = "";
       root = null;
       listRoot = null;
       search = null;

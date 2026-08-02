@@ -27,6 +27,35 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+/**
+ * Makes `container`'s children exactly `nodes`, in that order, reusing every
+ * node that is already there.
+ *
+ * The difference from clear-and-append is what survives: a node that is merely
+ * MOVED keeps its scroll position, its open <details>, its hover and — where
+ * it is not moved at all — the focus inside it. A list that rebuilds itself on
+ * every asynchronous answer is how a page ends up flickering under the cursor
+ * while nothing about it has actually changed.
+ *
+ * Callers key their nodes themselves (a map from id to node): this only puts
+ * the nodes it is handed into the order it is handed them.
+ */
+export function reconcile(container: Element, nodes: Node[]): void {
+  for (let i = 0; i < nodes.length; i++) {
+    const want = nodes[i];
+    const have = container.childNodes[i];
+    if (have === want) continue;
+    // insertBefore MOVES a node that is already in this container, which is
+    // exactly what reordering needs; `have` being undefined appends.
+    container.insertBefore(want, have ?? null);
+  }
+  while (container.childNodes.length > nodes.length) {
+    const last = container.lastChild;
+    if (!last) break;
+    container.removeChild(last);
+  }
+}
+
 export function clear(node: Element): void {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
