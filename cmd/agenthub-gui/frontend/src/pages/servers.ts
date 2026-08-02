@@ -108,44 +108,49 @@ function suggestion(
 }
 
 // ---------------------------------------------------------------------------
-// Buckets
+// Grouping
 // ---------------------------------------------------------------------------
 
-/** Which of the three groups a row belongs to. */
-type Bucket = "attention" | "active" | "disabled";
+/**
+ * A ROW MOVES ONLY WHEN THE USER CHANGES CONFIGURATION, NEVER BECAUSE OF A
+ * PROBE RESULT.
+ *
+ * The list used to be grouped by state — needs attention / active / disabled —
+ * and that made position depend on an asynchronous, changeable quantity that
+ * is UNKNOWN at startup. Every enabled row therefore began life in "needs
+ * attention" (an unchecked row reports level=degraded, which is not a fault,
+ * it is an absence of an answer) and migrated to "active" as its handshake
+ * settled: twenty servers meant twenty rows changing group, the whole table
+ * re-sorting under the cursor each time, and a warning header that was telling
+ * the truth about nothing.
+ *
+ * Grouping now follows CONFIGURATION, which the registry answers with
+ * certainty the moment it is read, and state is expressed inside the row —
+ * where it already had three channels (spine, dot, text). What the old
+ * attention bucket really provided was the answer to "which row should I look
+ * at first"; that is now the attention chip, which filters on demand instead
+ * of rearranging the page permanently to answer a question nobody has asked
+ * yet.
+ *
+ * The classification still comes from the Health contract rather than from
+ * `enabled` or the raw connection state (docs/modules/controlplane.md): a
+ * disabled server reports level=healthy on purpose, and admin_state is the
+ * field that says so.
+ */
+function isDisabled(s: Server): boolean {
+  return s.health.admin_state === AdminState.Disabled;
+}
 
 /**
- * Bucketing is derived from the Health contract alone, never from the raw
- * connection state: "disabled" reports level=healthy on purpose, and
- * re-deriving severity here is exactly the frontend-invented status
- * docs/modules/controlplane.md forbids.
+ * Whether this row is asking for something. Deliberately NOT "level is not
+ * healthy": a row whose handshake is still in flight also reports degraded,
+ * and counting an unanswered question as a fault is what produced a page that
+ * opened claiming everything was broken.
  */
-function bucketOf(s: Server): Bucket {
-  if (s.health.admin_state === AdminState.Disabled) return "disabled";
-  return s.health.level === HealthLevel.Healthy ? "active" : "attention";
+function needsAttention(s: Server): boolean {
+  if (isDisabled(s) || s.state === "connecting") return false;
+  return s.health.level !== HealthLevel.Healthy;
 }
-
-/** Severity rank inside the attention bucket: the unusable before the merely
- *  degraded, so the first row is always the most expensive one to ignore. */
-function severityRank(s: Server): number {
-  if (s.health.level === HealthLevel.Unhealthy) return 0;
-  if (s.health.level === HealthLevel.Degraded) return 1;
-  return 2; // quarantined (level=healthy by contract)
-}
-
-/** Connection rank inside the active bucket: what is actually serving tools
- *  first, what nobody is watching last. */
-function activeRank(s: Server): number {
-  if (s.state === "connected") return 0;
-  if (s.state === "connecting") return 1;
-  return 2;
-}
-
-const BUCKET_TITLES: Record<Bucket, string> = {
-  attention: "Needs attention",
-  active: "Active",
-  disabled: "Disabled",
-};
 
 type ProbeObservation =
   | { kind: "checking" }
@@ -245,29 +250,27 @@ function withProbe(s: Server, observation: ProbeObservation | undefined): Server
   };
 }
 
-/** localStorage key for one bucket's collapse state. */
-const collapseKey = (b: Bucket): string => `agenthub.servers.bucket.${b}.collapsed`;
+/** localStorage key for the disabled section's collapse state. The spelling
+ *  predates the grouping change and is kept so that nobody's collapsed
+ *  section quietly springs open on upgrade. */
+const DISABLED_COLLAPSE_KEY = "agenthub.servers.bucket.disabled.collapsed";
 
-/** Disabled is collapsed by default: it is the bucket the operator already
- *  decided about. The other two open. */
-function collapsedByDefault(b: Bucket): boolean {
-  return b === "disabled";
-}
-
-function isCollapsed(b: Bucket): boolean {
+/** Collapsed by default: this is the group the operator has already decided
+ *  about, and it must not push the servers that are in service off-screen. */
+function disabledCollapsed(): boolean {
   try {
-    const v = localStorage.getItem(collapseKey(b));
+    const v = localStorage.getItem(DISABLED_COLLAPSE_KEY);
     if (v === "1") return true;
     if (v === "0") return false;
   } catch {
     // Storage unavailable: fall through to the default.
   }
-  return collapsedByDefault(b);
+  return true;
 }
 
-function setCollapsed(b: Bucket, collapsed: boolean): void {
+function setDisabledCollapsed(collapsed: boolean): void {
   try {
-    localStorage.setItem(collapseKey(b), collapsed ? "1" : "0");
+    localStorage.setItem(DISABLED_COLLAPSE_KEY, collapsed ? "1" : "0");
   } catch {
     // The section still opens and closes; it just will not be remembered.
   }
@@ -2072,11 +2075,12 @@ export function serversPage(): Page {
     ]);
   }
 
-  function bucketNode(b: Bucket, servers: Server[]): HTMLElement {
-    const details = el("details", {
-      class: b === "attention" ? "bucket b-attention" : "bucket",
-    }) as HTMLDetailsElement;
-    details.open = !isCollapsed(b);
+  /** The one remaining group header. Servers that are IN SERVICE need no
+   *  header — they are the list; switched-off ones are the exception and say
+   *  so, folded away. */
+  function disabledSection(servers: Server[]): HTMLElement {
+    const details = el("details", { class: "bucket" }) as HTMLDetailsElement;
+    details.open = !disabledCollapsed();
     // Setting `open` above queues a toggle event of its own; ignore that one
     // so a redraw never rewrites the stored preference with what it just
     // read. Only a real click is a choice.
@@ -2086,12 +2090,12 @@ export function serversPage(): Page {
         settled = true;
         return;
       }
-      setCollapsed(b, !details.open);
+      setDisabledCollapsed(!details.open);
     });
     if (!details.open) settled = true;
     details.append(
       el("summary", {}, [
-        el("span", { text: BUCKET_TITLES[b] }),
+        el("span", { text: "Disabled" }),
         el("span", { class: "bucket-count", text: String(servers.length) }),
       ]),
       el("div", { class: "bucket-body ledger" }, servers.map(row)),
@@ -2127,8 +2131,8 @@ export function serversPage(): Page {
     // silently means "of what you can currently see" is the same lie as a
     // global action under a filter.
     const connected = servers.filter((s) => s.state === "connected").length;
-    const attention = servers.filter((s) => bucketOf(s) === "attention").length;
-    const disabled = servers.filter((s) => bucketOf(s) === "disabled").length;
+    const attention = servers.filter(needsAttention).length;
+    const disabled = servers.filter(isDisabled).length;
     const chips = chipRow(
       chip(servers.length, servers.length === 1 ? "server" : "servers"),
       chip(connected, "connected", "success"),
@@ -2170,17 +2174,19 @@ export function serversPage(): Page {
       return;
     }
 
-    const buckets: Record<Bucket, Server[]> = { attention: [], active: [], disabled: [] };
-    for (const s of shown) buckets[bucketOf(s)].push(s);
-    buckets.attention.sort((a, b) => severityRank(a) - severityRank(b) || a.id.localeCompare(b.id));
-    buckets.active.sort((a, b) => activeRank(a) - activeRank(b) || a.id.localeCompare(b.id));
-    buckets.disabled.sort((a, b) => a.id.localeCompare(b.id));
+    // One order, by id, for both groups: the same order `server ls` prints,
+    // and one a reader can predict before the page has finished loading.
+    const byID = (a: Server, b: Server): number => a.id.localeCompare(b.id);
+    const inService = shown.filter((s) => !isDisabled(s)).sort(byID);
+    const switchedOff = shown.filter(isDisabled).sort(byID);
 
-    // An empty bucket is not rendered at all. A permanent "Needs attention
-    // (0)" header trains the eye to skip the exact region that matters on the
-    // one day it is not zero.
-    for (const b of ["attention", "active", "disabled"] as Bucket[]) {
-      if (buckets[b].length > 0) listRoot.append(bucketNode(b, buckets[b]));
+    // An empty group is not rendered at all — a permanent "Disabled (0)"
+    // header is chrome that never says anything.
+    if (inService.length > 0) {
+      listRoot.append(el("div", { class: "ledger" }, inService.map(row)));
+    }
+    if (switchedOff.length > 0) {
+      listRoot.append(disabledSection(switchedOff));
     }
   }
 
