@@ -53,3 +53,34 @@ func (s *HubService) ServiceShutdown() error {
 	s.Hub.stop()
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// Window control. These are the only bound methods that do not map to a
+// control-plane call, and they are not a GUI privilege: hiding a window is not
+// something a CLI could be missing. They live in this file because they are
+// the one thing that genuinely needs Wails, and canonical.md §7 item 3 keeps
+// that dependency inside tagged assembly.
+//
+// The frontend calls them from the one-time close dialog, which is the only
+// place a user answers "keep running" or "quit" — the tray drives the window
+// directly from Go and does not come through here.
+// ---------------------------------------------------------------------------
+
+// HideWindow minimises the application to the tray.
+//
+// A no-op when the window has already gone: the dialog that calls this can
+// only be on screen while it exists, but the answer arrives asynchronously and
+// a quit racing it must not panic on the way out.
+func (s *HubService) HideWindow() {
+	if w, ok := application.Get().Window.GetByName(MainWindowName); ok {
+		w.Hide()
+	}
+}
+
+// QuitApplication ends the process through the normal shutdown path, so
+// ServiceShutdown still runs and a daemon this GUI started is still stopped.
+// It is deliberately not an os.Exit: skipping that teardown would strand the
+// daemon this process is responsible for.
+func (s *HubService) QuitApplication() {
+	application.Get().Quit()
+}

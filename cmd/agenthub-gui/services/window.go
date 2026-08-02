@@ -30,6 +30,12 @@ const (
 	EventConfirmClose = EventPrefix + "confirm-close"
 )
 
+// MainWindowName is the name the application's only window is registered
+// under. Both the assembly that creates it and the window-control methods
+// that look it up spell it from here, so a rename cannot leave one of them
+// addressing a window that no longer answers.
+const MainWindowName = "main"
+
 // WindowPrefs is the window-local preference set.
 type WindowPrefs struct {
 	// CloseToTray makes the close button hide the window instead of ending
@@ -76,6 +82,22 @@ func (h *Hub) setWindowPreferencesFromTray(p WindowPrefs) WindowPrefs {
 	h.emit(EventWindowPrefs, out)
 	return out
 }
+
+// SetTrayAvailable records whether a tray icon actually came up. The tray
+// assembly calls it once at startup.
+//
+// DISPLAY ONLY. The close button's own decision reads the assembly's flag
+// directly, not this one, and the split is deliberate: this value is bound and
+// therefore settable from the webview, and a wrong `true` reaching the close
+// path would hide the window into a status area that is not there — a running
+// process with no reachable surface. The worst a wrong value can do here is
+// mislabel a checkbox in Settings.
+func (h *Hub) SetTrayAvailable(v bool) { h.trayAvailable.Store(v) }
+
+// TrayAvailable reports what the assembly recorded, so Settings can explain
+// why the close-to-tray preference is unavailable instead of showing a switch
+// that silently does nothing.
+func (h *Hub) TrayAvailable() bool { return h.trayAvailable.Load() }
 
 // OwnsDaemon reports whether the daemon this GUI is connected to was started
 // BY this GUI — the same claim that licenses stop to shut it down again.

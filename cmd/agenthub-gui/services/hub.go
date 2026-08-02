@@ -146,6 +146,10 @@ type Hub struct {
 	// pointer means "the frontend has not pushed anything yet".
 	prefs atomic.Pointer[WindowPrefs]
 
+	// trayAvailable is the tray assembly's report, kept here so the frontend
+	// can read it. It is display state only — see SetTrayAvailable.
+	trayAvailable atomic.Bool
+
 	// ready closes once the startup connect has finished, successfully or
 	// not. It exists because the window renders — and its pages start
 	// calling — while that connect is still in flight: without the gate the
