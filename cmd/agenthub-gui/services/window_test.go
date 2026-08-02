@@ -30,25 +30,27 @@ func TestWindowPreferenceRoundTrip(t *testing.T) {
 	if h.WindowPreferences() != got {
 		t.Fatalf("stored %+v, read back %+v", got, h.WindowPreferences())
 	}
-	// The frontend pushing its own stored value back is not news: it already
-	// knows, and echoing it would be a write loop waiting to close.
-	if evs := rec.byName(EventWindowPrefs); len(evs) != 0 {
-		t.Fatalf("SetWindowPreferences emitted %d events", len(evs))
+	// Every change is announced, whichever surface made it: the preference is
+	// shown in two places (Settings and the tray checkbox) and only one of
+	// them made the change. An announcement covering one direction left the
+	// other stale — which is what made the Settings switch look inert.
+	if evs := rec.byName(EventWindowPrefs); len(evs) != 1 {
+		t.Fatalf("SetWindowPreferences emitted %d events, want 1", len(evs))
 	}
 
-	// The tray toggling it IS news: the frontend owns the durable copy.
 	if got := h.ToggleCloseToTray(); !got.CloseToTray || !got.HideNoticeSeen {
 		t.Fatalf("ToggleCloseToTray returned %+v, want close-to-tray back on with the notice intact", got)
 	}
 	evs := rec.byName(EventWindowPrefs)
-	if len(evs) != 1 {
-		t.Fatalf("tray change emitted %d events, want 1", len(evs))
+	if len(evs) != 2 {
+		t.Fatalf("the tray change emitted %d events in total, want 2", len(evs))
 	}
-	if got, ok := evs[0].data.(WindowPrefs); !ok || !got.CloseToTray {
-		t.Fatalf("event payload = %#v", evs[0].data)
+	last := evs[len(evs)-1]
+	if got, ok := last.data.(WindowPrefs); !ok || !got.CloseToTray {
+		t.Fatalf("event payload = %#v", last.data)
 	}
-	if h.WindowPreferences() != evs[0].data {
-		t.Fatalf("the announced value %+v is not the stored one %+v", evs[0].data, h.WindowPreferences())
+	if h.WindowPreferences() != last.data {
+		t.Fatalf("the announced value %+v is not the stored one %+v", last.data, h.WindowPreferences())
 	}
 }
 

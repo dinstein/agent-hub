@@ -226,8 +226,12 @@ Three decisions are load-bearing:
 
 The preference lives in `localStorage`, like the theme and for the same reason: it is a property of
 this window on this machine, and the registry having an opinion about it would be wrong. The Go side
-holds a runtime copy because the close arrives natively; the frontend pushes it at startup, and a
-change made from the tray comes back as an event the frontend persists without answering.
+holds a runtime copy because the close arrives natively; the frontend pushes it at startup, and every
+change is announced back as an event the frontend persists without answering. The announcement is
+unconditional rather than tray-only because the preference has **two** surfaces — the tray checkbox
+and the Settings switch — and each has to learn about the other's change. Neither switch flips
+itself: like every `toggleSwitch` here they render a value and the page redraws from the
+authoritative one, which for this preference means redrawing on that event.
 
 **Platforms.** macOS and Windows drive a tray. Linux deliberately does not: Wails registers the icon
 over the dbus `StatusNotifierItem` protocol, and a desktop with no `StatusNotifierHost` — a default

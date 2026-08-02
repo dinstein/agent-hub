@@ -18,8 +18,9 @@ package services
 
 // Additional emitted event names (the topic events are in hub.go).
 const (
-	// EventWindowPrefs carries a WindowPrefs the Go side changed — today,
-	// the tray's checkbox. The frontend persists it and re-renders.
+	// EventWindowPrefs carries the window preferences whenever they change,
+	// whichever surface changed them. The frontend persists them and
+	// re-renders; it never answers by calling back.
 	EventWindowPrefs = EventPrefix + "window-prefs"
 	// EventNavigate carries a hash route the window should show. Emitted
 	// when the tray sends the user somewhere specific.
@@ -67,16 +68,26 @@ func (h *Hub) WindowPreferences() WindowPrefs {
 	return defaultWindowPrefs()
 }
 
-// SetWindowPreferences replaces them and returns what is now in effect.
-// It does not emit: the caller decides, because the frontend pushing its own
-// stored value back is not news, while the tray toggling it is.
+// SetWindowPreferences replaces them, announces the new values, and returns
+// them.
+//
+// It announces UNCONDITIONALLY, including for the frontend pushing back a value
+// it already knows, because there are two surfaces showing this preference and
+// only one of them made the change: a Settings switch flipped here has to reach
+// the tray checkbox, and a tray checkbox flipped there has to reach Settings
+// and localStorage. An announcement that only covered one direction left the
+// other reading a stale value until something unrelated redrew it.
+//
+// It cannot ring: the frontend answers the event by storing and re-rendering,
+// never by calling back.
 func (h *Hub) SetWindowPreferences(p WindowPrefs) WindowPrefs {
 	h.prefs.Store(&p)
+	h.emit(EventWindowPrefs, p)
 	return p
 }
 
-// ToggleCloseToTray flips the close-button preference and tells the frontend,
-// which owns the durable copy. It is the tray checkbox's whole behaviour.
+// ToggleCloseToTray flips the close-button preference. It is the tray
+// checkbox's whole behaviour.
 //
 // A toggle rather than a setter because the tray renders from the same value:
 // a set would have to read, negate and write in the caller, and two menus
@@ -84,13 +95,10 @@ func (h *Hub) SetWindowPreferences(p WindowPrefs) WindowPrefs {
 // button does.
 func (h *Hub) ToggleCloseToTray() WindowPrefs {
 	h.prefsMu.Lock()
+	defer h.prefsMu.Unlock()
 	p := h.WindowPreferences()
 	p.CloseToTray = !p.CloseToTray
-	out := h.SetWindowPreferences(p)
-	h.prefsMu.Unlock()
-
-	h.emit(EventWindowPrefs, out)
-	return out
+	return h.SetWindowPreferences(p)
 }
 
 // SetTrayAvailable records whether a tray icon actually came up. The tray

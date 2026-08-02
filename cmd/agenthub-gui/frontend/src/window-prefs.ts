@@ -7,8 +7,9 @@
 // that this module pushes at startup and after every change.
 //
 // The sync has one direction each way and no loop: this module writes to Go,
-// and the TRAY's own changes come back as an event which this module persists
-// without answering. A handler that called back would ring.
+// and every change — including one made from the tray menu — comes back as an
+// event which this module persists without answering. A handler that called
+// back would ring.
 //
 // Every storage access is wrapped: localStorage throws in some embedded
 // webview configurations, and a preference must never be what stops the
@@ -63,7 +64,12 @@ export function onWindowPrefs(cb: (p: WindowPrefs) => void): () => void {
 }
 
 function apply(p: WindowPrefs): void {
+  const same = current.closeToTray === p.closeToTray && current.hideNoticeSeen === p.hideNoticeSeen;
   current = p;
+  // The Go side announces every change, including the echo of one this window
+  // just made. Re-rendering on the echo is harmless but redraws the page a
+  // second time for one click, which is visible as a flicker.
+  if (same) return;
   for (const cb of listeners) cb(p);
 }
 

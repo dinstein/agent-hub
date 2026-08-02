@@ -83,6 +83,9 @@ func newTray(app *application.App, hub *services.Hub, win *application.WebviewWi
 	// reports; both arrive as the events the pages already consume.
 	app.Event.On(services.EventDaemon, func(*application.CustomEvent) { t.signal() })
 	app.Event.On(services.EventServers, func(*application.CustomEvent) { t.signal() })
+	// The checkbox in this menu is also a switch in Settings. Without this the
+	// two agree only as often as the heartbeat fires.
+	app.Event.On(services.EventWindowPrefs, func(*application.CustomEvent) { t.signal() })
 
 	go t.run()
 	t.signal()

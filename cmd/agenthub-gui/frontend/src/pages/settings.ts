@@ -16,7 +16,7 @@ import type { Page } from "../page";
 import { failureBox } from "../page";
 import { themeControl, toggleSwitch } from "../ui";
 import type { Status } from "../types";
-import { setWindowPrefs, windowPrefs } from "../window-prefs";
+import { onWindowPrefs, setWindowPrefs, windowPrefs } from "../window-prefs";
 
 function statusTable(st: Status): HTMLElement {
   const row = (k: string, v: string) =>
@@ -38,6 +38,13 @@ function statusTable(st: Status): HTMLElement {
  * silently does nothing is worse than a switch that explains why it cannot.
  * The Go side makes the same call independently — this control cannot talk it
  * into hiding a window into a status area that is not there.
+ *
+ * The switch does not flip itself, here or anywhere else in this codebase
+ * (`toggleSwitch`, ui.ts): it renders the value it was handed and the page
+ * redraws from the authoritative one afterwards. The redraw for THIS one comes
+ * from the preference subscription in settingsPage, which fires for a change
+ * made here and for one made from the tray menu alike — so the two surfaces
+ * cannot disagree about what the close button does.
  */
 function closeBehaviour(trayReady: boolean): HTMLElement {
   const prefs = windowPrefs();
@@ -68,6 +75,7 @@ function closeBehaviour(trayReady: boolean): HTMLElement {
 
 export function settingsPage(): Page {
   let root: HTMLElement | null = null;
+  let unsubscribe: (() => void) | null = null;
 
   async function draw(): Promise<void> {
     if (!root) return;
@@ -166,9 +174,14 @@ export function settingsPage(): Page {
   return {
     render(node) {
       root = node;
+      // Both directions of the sync land here: this page's own switch, and
+      // the tray's checkbox for the same preference.
+      unsubscribe = onWindowPrefs(() => void draw());
       return draw();
     },
     dispose() {
+      unsubscribe?.();
+      unsubscribe = null;
       root = null;
     },
   };
