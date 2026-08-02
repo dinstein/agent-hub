@@ -30,6 +30,7 @@ import type { Cancellable } from "../bridge";
 import { clear, el, emptyState, icon, loadingState, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot } from "../page";
+import { requestServerSecrets } from "../secret-guidance";
 import {
   button,
   copyButton,
@@ -863,7 +864,7 @@ export function playgroundPage(): Page {
       }),
       controls(
         el("a", { class: "btn", href: "#/auth", text: "Go to Auth" }),
-        el("a", { class: "btn btn-secondary", href: "#/secrets", text: "Go to Secrets" }),
+        button("Manage server secrets", "btn btn-secondary", () => requestServerSecrets(serverId)),
       ),
       el("span", {
         class: "hint",

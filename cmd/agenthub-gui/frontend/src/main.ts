@@ -21,7 +21,6 @@ import { onboardingPage, shouldAutoStart } from "./pages/onboarding";
 import { playgroundPage } from "./pages/playground";
 import { profilesPage } from "./pages/profiles";
 import { scopePage } from "./pages/scope";
-import { secretsPage } from "./pages/secrets";
 import { serversPage } from "./pages/servers";
 import { sessionsPage } from "./pages/sessions";
 import { settingsPage } from "./pages/settings";
@@ -38,7 +37,6 @@ type Route =
   | "profiles"
   | "scope"
   | "config"
-  | "secrets"
   | "sessions"
   | "skills"
   | "tokens"
@@ -55,7 +53,6 @@ const ROUTES: Record<Route, () => Page> = {
   profiles: profilesPage,
   scope: scopePage,
   config: configPage,
-  secrets: secretsPage,
   sessions: sessionsPage,
   skills: skillsPage,
   tokens: tokensPage,

@@ -15,10 +15,10 @@ item 3.
 ## 1. Information architecture: a short task spine, then state inside each page
 
 The sidebar started life as a one-to-one mapping of the CLI command tree — fourteen resource tables
-laid out along the domain model. It now has eight task destinations: Servers, Catalog, Playground,
-Profiles, Secrets, Clients, Activity and Settings. Catalog is deliberately first-class and immediately follows Servers:
+laid out along the domain model. It now has seven task destinations: Servers, Catalog, Playground,
+Profiles, Clients, Activity and Settings. Catalog is deliberately first-class and immediately follows Servers:
 the two are the configured and discoverable halves of the same task. Credentials are configured from
-the server that needs them and inventory remains directly reachable under Secrets; client bindings live with Clients, and appearance/daemon diagnostics live in
+the server that needs them rather than from a global vault page; client bindings live with Clients, and appearance/daemon diagnostics live in
 Settings. Activity sits under System because it is the operator's evidence and maintenance workspace,
 not a permission layer: its source of truth is the encrypted access ledger covering every
 gateway-to-server call, and its aggregates are computed from those same lifecycle records. A resource
@@ -142,10 +142,12 @@ above the list, and Test closes its transient result dialog before moving the co
 branches on the daemon's code, never on whether prose happens to contain `401`.
 
 An unresolved placeholder follows the parallel setup path: `E_SECRET_REQUIRED` carries safe key names, the row
-becomes **Add API key** or **Set secret**, and the Secrets modal opens with the server and key locked to that typed
-result. Saving returns to Servers and immediately retests exactly that server. The value is cleared before the
-write awaits and never comes back over a read surface. A non-OAuth server with this condition omits the unrelated
-“No OAuth credential stored” section.
+becomes **Add API key** or **Set secret**, and that Server's secret manager opens with the key locked to the typed
+result. Every Server also exposes **Manage secrets** from its overflow menu; the scoped modal lists only its key
+names, scopes, and storage backends and owns add/delete work. There is deliberately no global Secrets destination.
+Saving closes the modal and immediately retests exactly that Server. The value is cleared before the write awaits
+and never comes back over a read surface. A non-OAuth server with this condition omits the unrelated “No OAuth
+credential stored” section.
 
 The Playground treats execution as the primary task, not the last step of a form. Its Call action is
 inside the argument header and remains visible while a long generated schema scrolls beneath it.
@@ -244,8 +246,8 @@ non-control surface toggles the disclosure; interacting with cached detail canno
 separate, always-visible **Edit** button in the action column, so a click whose visible affordance says “show me
 more” cannot unexpectedly open a write surface. The leading enable switch and trailing Edit / Test controls remain
 separate targets and never bubble into the disclosure. The tool count occupies a fixed column before status/actions,
-so every count aligns vertically and cannot move the buttons. Destructive Remove and OAuth Log out sit in the compact
-overflow menu: they stay available without painting every healthy row as a red warning. A successful enable/disable writes no page-level
+so every count aligns vertically and cannot move the buttons. Server-scoped **Manage secrets**, destructive Remove,
+and OAuth Log out sit in the compact overflow menu: they stay available without painting every healthy row as a red warning. A successful enable/disable writes no page-level
 notice because the switch and the row's own probe already show the stored and runtime outcomes; failures keep the
 shared error surface.
 

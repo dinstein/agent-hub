@@ -37,6 +37,7 @@ import { asCallError, hub, isStalePrecondition } from "../bridge";
 import { chip, chipRow, clear, el, emptyState, icon, loadingState, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { CONFLICT_MESSAGE, failureState, noticeSlot } from "../page";
+import { requestServerSecrets } from "../secret-guidance";
 import { button, controls, field, modalHost, textInput } from "../ui";
 import type { CatalogAdded, CatalogEntry, CatalogList, CatalogParam } from "../types";
 import { CatalogAuthOAuth, CatalogProvenance, Transport } from "../types";
@@ -154,7 +155,7 @@ export function catalogPage(): Page {
         text: "The definition is stored, but the server still needs setup:",
       }),
       secretKeys.length > 0
-        ? el("div", { class: "hint", text: `Store ${secretKeys.join(", ")} on the Secrets page.` })
+        ? el("div", { class: "hint", text: `Store ${secretKeys.join(", ")} for ${added.id}.` })
         : null,
       needsLogin
         ? el("div", { class: "hint", text: `Authenticate ${added.id} from the Servers page.` })
@@ -164,7 +165,9 @@ export function catalogPage(): Page {
         : null,
       controls(
         secretKeys.length > 0
-          ? el("a", { class: "btn btn-secondary", href: "#/secrets", text: "Open Secrets" })
+          ? button("Manage server secrets", "btn btn-secondary", () => {
+              requestServerSecrets(added.id, secretKeys);
+            })
           : null,
         needsLogin || hasUnknown
           ? el("a", { class: "btn btn-secondary", href: "#/servers", text: "Open Servers" })
@@ -363,7 +366,7 @@ export function catalogPage(): Page {
     const lines: string[] = [];
     if (keys.length > 0) {
       lines.push(
-        `Needs ${keys.join(", ")}. Add it here first, then store the value on the Secrets page: ` +
+        `Needs ${keys.join(", ")}. Add it here first, then store the value from that Server's Manage secrets action: ` +
           "the stored definition only ever holds a ${SECRET_…} reference, never the credential.",
       );
     }

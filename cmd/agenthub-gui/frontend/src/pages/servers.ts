@@ -35,7 +35,8 @@ import { chip, chipRow, clear, el, emptyState, errorHeadline, icon, loadingState
 import { AdminState, HealthAction, HealthLevel } from "../generated/health";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot, runWrite } from "../page";
-import { consumeServerRetest, openSecretSetup } from "../secret-guidance";
+import { consumeServerSecrets } from "../secret-guidance";
+import { createServerSecretsManager } from "../server-secrets";
 import {
   advanced,
   button,
@@ -84,12 +85,16 @@ const TERMINAL_ACTIONS: Record<string, { label: string; command: string; note?: 
   },
 };
 
-function suggestion(server: Server, missingSecrets: string[] = []): Node | null {
+function suggestion(
+  server: Server,
+  missingSecrets: string[] = [],
+  openSecrets?: () => void,
+): Node | null {
   const action = server.health.action ?? HealthAction.None;
   if (action === HealthAction.None || action === HealthAction.Enable) return null;
   if (action === HealthAction.SetSecret) {
     return button(missingSecrets.length === 1 ? "Set secret" : "Open Secrets", "btn btn-secondary", () => {
-      openSecretSetup(server.id, missingSecrets);
+      openSecrets?.();
     });
   }
   const spec = TERMINAL_ACTIONS[action];
@@ -761,6 +766,7 @@ export function serversPage(): Page {
   let filter = "";
   const slot = noticeSlot();
   const form = modalHost();
+  const secretManager = createServerSecretsManager(retestAfterSecretChange);
 
   /** Runtime state owned by this page's short-lived handshakes. Seed settled
    *  results from the prior mount so route changes do not flash "Checking…". */
@@ -903,6 +909,19 @@ export function serversPage(): Page {
       throw err;
     } finally {
       if (inFlightProbes.get(id) === request) inFlightProbes.delete(id);
+    }
+  }
+
+  async function retestAfterSecretChange(id: string): Promise<void> {
+    const server = listedServers.find((item) => item.id === id);
+    if (!server?.enabled) {
+      repaint();
+      return;
+    }
+    try {
+      await probeOne(id);
+    } catch {
+      // The row owns the next missing key or the concrete connection failure.
     }
   }
 
@@ -1161,7 +1180,7 @@ export function serversPage(): Page {
       const observation = probes.get(s.id);
       const keys = observation?.kind === "secret" ? observation.keys : [];
       const label = keys.length === 1 && keys[0].endsWith("API_KEY") ? "Add API key" : "Set secret";
-      const setup = button(label, "btn btn-primary", () => openSecretSetup(s.id, keys));
+      const setup = button(label, "btn btn-primary", () => secretManager.open(s.id, keys));
       return el("div", { class: "srv-status" }, [
         el("div", { class: "state-line" }, [dot("warning"), setup]),
       ]);
@@ -1251,7 +1270,9 @@ export function serversPage(): Page {
   function probeDetails(s: Server, detailID: string): Node {
     const observation = probeCache.get(s.id);
     const missingSecrets = observation?.kind === "secret" ? observation.keys : [];
-    const action = s.health.action === HealthAction.Login ? null : suggestion(s, missingSecrets);
+    const action = s.health.action === HealthAction.Login
+      ? null
+      : suggestion(s, missingSecrets, () => secretManager.open(s.id, missingSecrets));
     let content: Node;
     if (!observation) {
       content = el("p", {
@@ -1862,6 +1883,17 @@ export function serversPage(): Page {
       text: "⋯",
     });
     const items: Node[] = [];
+    const secretsButton = el("button", {
+      class: "server-row-menu-item",
+      type: "button",
+      role: "menuitem",
+      text: "Manage secrets",
+    });
+    secretsButton.addEventListener("click", () => {
+      menu.open = false;
+      secretManager.open(s.id);
+    });
+    items.push(secretsButton);
     if (hasStoredCredential(s.id)) {
       const logoutButton = el("button", {
         class: "server-row-menu-item",
@@ -2166,16 +2198,12 @@ export function serversPage(): Page {
         void draw(registryChanged);
       });
       ticker = window.setInterval(tick, 1000);
-      const retest = consumeServerRetest();
-      // A guided secret write returns with one precise job: retest that
-      // server. Do not turn it into a forced probe of the whole fleet.
-      await draw(retest === "");
-      if (retest && listedServers.some((server) => server.id === retest && server.enabled)) {
-        try {
-          await probeOne(retest);
-        } catch {
-          // The row owns either the next setup action or the concrete failure.
-        }
+      const requestedSecrets = consumeServerSecrets();
+      // A cross-page handoff opens one Server's manager after the registry is
+      // present. It does not turn navigation into a forced fleet probe.
+      await draw(requestedSecrets === null);
+      if (requestedSecrets && listedServers.some((server) => server.id === requestedSecrets.server)) {
+        secretManager.open(requestedSecrets.server, requestedSecrets.keys);
       }
     },
     dispose() {
@@ -2197,6 +2225,7 @@ export function serversPage(): Page {
       listRoot = null;
       search = null;
       form.hide();
+      secretManager.hide();
     },
   };
 }

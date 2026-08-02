@@ -1,41 +1,21 @@
-/**
- * One-shot handoffs between the Servers and Secrets routes.
- *
- * They stay in memory: key NAMES are not credentials, but a setup intent is
- * still transient UI state rather than configuration. A reload simply falls
- * back to the normal Secrets page instead of replaying an old write prompt.
- */
-export interface SecretSetupRequest {
+/** One-shot handoff from another route to one Server's secret manager. */
+export interface ServerSecretRequest {
   server: string;
   keys: string[];
-  returnToServers: boolean;
 }
 
-let pendingSetup: SecretSetupRequest | null = null;
-let pendingRetest = "";
+let pending: ServerSecretRequest | null = null;
 
-export function openSecretSetup(server: string, keys: string[] = []): void {
-  pendingSetup = {
+export function requestServerSecrets(server: string, keys: string[] = []): void {
+  pending = {
     server,
     keys: keys.filter((key) => key.trim() !== ""),
-    returnToServers: true,
   };
-  window.location.hash = "#/secrets";
-}
-
-export function consumeSecretSetup(): SecretSetupRequest | null {
-  const request = pendingSetup;
-  pendingSetup = null;
-  return request;
-}
-
-export function returnToServerTest(server: string): void {
-  pendingRetest = server;
   window.location.hash = "#/servers";
 }
 
-export function consumeServerRetest(): string {
-  const server = pendingRetest;
-  pendingRetest = "";
-  return server;
+export function consumeServerSecrets(): ServerSecretRequest | null {
+  const request = pending;
+  pending = null;
+  return request;
 }
