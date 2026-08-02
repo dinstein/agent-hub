@@ -44,15 +44,39 @@ Only a row with no prior observation, or an explicit **Refresh**, displays `Chec
 the forced fleet check to settle. Clicking a row toggles an expanded view of the latest settled handshake result;
 that disclosure is a cache read and never starts a request, and says so beside its check time. Runtime-only events
 may cause a configuration re-read but do not retrigger the probes. A newer registry revision does, because an
-external editor may have changed an endpoint without changing its id. The page signatures the resulting visible
-fleet and preserves the existing rows when the answer is unchanged, keeping scroll, focus and disclosures intact.
+external editor may have changed an endpoint without changing its id.
 
-The current call is: **lists are bucketed by state, not alphabetized**. The server list has three
-buckets — needs attention / active / disabled — sorted within each bucket, **empty buckets are not
-rendered**, and disabled is collapsed by default (collapse state lives in localStorage). A single row
-of overview chips sits at the top (`20 servers · 13 connected · 1 needs attention · 6 disabled`), and
-**a chip whose count is zero simply doesn't appear** (`chip()` in `dom.ts` returns `null` for 0, and
-`chipRow` drops it). "0 needs attention" is noise, not information.
+Rows are keyed by server id and survive a repaint: only the row whose rendered content changed is
+rebuilt, so an unchanged row keeps its hover, its focus and its open disclosure while the row beside
+it is still checking. That is a stronger promise than the whole-fleet signature it replaced, which
+could only skip a repaint when **nothing** had changed — during a fleet check, never.
+
+The current call is: **a row moves only when the user changes configuration, never because of a probe
+result.** Grouping follows configuration, which the registry answers with certainty the moment it is
+read: the servers in service are the list itself, with no header, and the switched-off ones fold away
+underneath in a `Disabled` section that is collapsed by default (collapse state lives in
+localStorage). Both are ordered by id, the order `server ls` prints. An empty group is not rendered.
+
+This **reverses** the earlier "lists are bucketed by state, not alphabetized", and the reason is worth
+keeping: state is asynchronous, changeable, and at startup unknown, so letting it decide position
+made every enabled row begin life in `needs attention` — an unchecked row reports `level=degraded`,
+which is the absence of an answer rather than a fault — and migrate to `active` as its handshake
+settled. Twenty servers meant twenty group changes and the table re-sorting under the cursor each
+time. State did not need a position; it already had three channels inside the row (spine, dot, text),
+and an unsettled row now uses the neutral tone in all three, because colour belongs to outcomes.
+
+What the attention bucket actually provided was the answer to "which row do I look at first". That is
+now the **attention chip, which filters**: narrowing on demand costs nothing when nobody asks,
+whereas grouping rearranged the page permanently to make the same point. A single row of overview
+chips sits at the top and describes the **whole fleet**, never the filtered view (`20 servers · 13
+connected · 1 needs attention · 6 disabled`), and **a chip whose count is zero simply doesn't appear**
+(`chip()` in `dom.ts` returns `null` for 0, and `chipRow` drops it) — "0 needs attention" is noise,
+not information. Two exceptions exist because they close traps rather than add information: the
+attention chip is rendered at zero **while it is pressed**, and it survives a re-probe that withholds
+the other counts, because it is the control that turns the filter off. While the fleet is settling
+the verdict chips are absent rather than partial (`20 servers · 13 checking · 6 disabled`, counting
+down): a count that climbs one probe at a time is motion that says nothing, since the number is only
+an answer once every question has been asked.
 
 ### 1.1 Window and page geometry
 
@@ -469,7 +493,7 @@ zero runtime dependency).
 | `main.ts` | Entry point: routing, sidebar, SSE subscription, tray navigation and the close question. **No theme code** — it cannot have any and still work, see below |
 | `bridge.ts` | The only seam with the Go side: `Call.ByName(<Go FQN>)` + `Events.On` (no `wails3 generate bindings`), plus `openExternal` — the HOST browser, never this webview |
 | `page.ts` | The `Page` contract, `failureBox` / `failureState`, `CONFLICT_MESSAGE`, `noticeSlot` |
-| `dom.ts` | Dependency-free DOM construction: `el` / `table` / `emptyState` (three kinds) / `chip` (returns null for 0) / `errorHeadline` / time formatting |
+| `dom.ts` | Dependency-free DOM construction: `el` / `table` / `emptyState` (three kinds) / `chip` (returns null for 0) / `chipToggle` (a count that is also a filter) / `reconcile` (keeps nodes across a repaint) / `errorHeadline` / time formatting |
 | `ui.ts` | Form widgets: inputs, tri-state selector, pair/lines editors, confirmation dialog, `toggleSwitch` (never optimistic) |
 | `types.ts` | TS mirror of the control plane DTOs, plus `WindowPrefs` (window-local, not hub state) |
 | `window-prefs.ts` | The close-button preferences: `localStorage` is the durable copy, the Go side gets a runtime copy, the tray's changes arrive as an event (§1.2) |
