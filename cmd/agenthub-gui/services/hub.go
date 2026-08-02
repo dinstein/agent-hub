@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -138,6 +139,12 @@ type Hub struct {
 	// emitter is fixed at construction; nil means "drop events" so that a
 	// Hub built without a webview (tests, headless probes) still works.
 	emitter Emitter
+
+	// prefs holds the window-local preferences (window.go). Atomic rather
+	// than mutex-guarded because the close hook reads it on the UI thread,
+	// which must not queue behind a control-plane call holding mu. A nil
+	// pointer means "the frontend has not pushed anything yet".
+	prefs atomic.Pointer[WindowPrefs]
 
 	// ready closes once the startup connect has finished, successfully or
 	// not. It exists because the window renders — and its pages start
