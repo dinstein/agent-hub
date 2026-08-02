@@ -386,6 +386,28 @@ export function describeServerSet(servers: string[] | undefined): string {
 // Modal dialogs
 // ---------------------------------------------------------------------------
 
+let modalScrollLocks = 0;
+
+/**
+ * Freeze every page scroll container while a modal owns interaction.
+ *
+ * Native dialog modality and aria-modal contain focus and pointer input, but
+ * neither stops a wheel event from scrolling the document behind the dialog.
+ * Keep this reference-counted because a destructive confirmation may open on
+ * top of an existing editor; closing the top layer must not thaw the page.
+ */
+function lockBackgroundScroll(): () => void {
+  modalScrollLocks += 1;
+  document.documentElement.classList.add("modal-open");
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    modalScrollLocks = Math.max(0, modalScrollLocks - 1);
+    if (modalScrollLocks === 0) document.documentElement.classList.remove("modal-open");
+  };
+}
+
 /** Opens a modal. Returns the function that closes it. */
 export function openModal(
   title: string,
@@ -393,11 +415,13 @@ export function openModal(
   opts: { danger?: boolean; onClose?: () => void } = {},
 ): () => void {
   const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const releaseScrollLock = lockBackgroundScroll();
   const titleID = `modal-title-${Math.random().toString(36).slice(2)}`;
   const overlay = el("div", { class: "overlay" });
   const close = (): void => {
     overlay.remove();
     document.removeEventListener("keydown", onKey);
+    releaseScrollLock();
     opts.onClose?.();
     if (previousFocus?.isConnected) previousFocus.focus();
   };
@@ -488,6 +512,7 @@ export interface ConfirmOptions {
 export function confirmAction(opts: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
+    const releaseScrollLock = lockBackgroundScroll();
     const dlg = el("dialog", {
       class: opts.danger ? "dlg danger" : "dlg",
     }) as HTMLDialogElement;
@@ -495,6 +520,7 @@ export function confirmAction(opts: ConfirmOptions): Promise<boolean> {
     const finish = (ok: boolean): void => {
       if (settled) return;
       settled = true;
+      releaseScrollLock();
       resolve(ok);
       if (dlg.open) dlg.close();
       dlg.remove();

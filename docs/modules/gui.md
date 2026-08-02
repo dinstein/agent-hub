@@ -74,6 +74,11 @@ The document reserves a stable vertical-scrollbar gutter. Expanding a cached ser
 an otherwise short page overflow, but that disclosure must not change the sidebar position or the
 content column width when the scrollbar appears.
 
+A modal freezes both the document and the shell's `.content` scroll container until its last modal
+layer closes. The modal body may scroll within the available window height, but a wheel or touch
+gesture at either edge must not move the dimmed page behind it. The lock is reference-counted because
+a confirmation may sit above an editor; closing only the confirmation must leave the editor modal.
+
 The native window title is blank. The sidebar is the single visible product identity: `AgentHub`
 with the release-plus-commit version stamped into this GUI build. That value comes from the process,
 not the connected daemon, because the two may legitimately be different builds.

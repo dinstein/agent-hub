@@ -92,6 +92,16 @@ html {
   scrollbar-gutter: stable;
 }
 
+/* A modal owns the viewport. aria-modal and native <dialog> contain focus,
+ * but wheel/touch scrolling otherwise continues through the dimmed surface.
+ * .content is named explicitly because it is the shell's scroll container;
+ * the root/body rules also cover short pages that scroll as a document. */
+html.modal-open,
+html.modal-open body,
+html.modal-open .content {
+  overflow: hidden;
+}
+
 /* -- dark (the default; the bootstrap resolves "system" to one of the two) -- */
 
 :root,
@@ -3541,6 +3551,7 @@ select.input:active {
   gap: 10px;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 18px;
 }
 
