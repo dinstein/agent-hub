@@ -5,7 +5,7 @@
 // model has a value field that could reveal one later.
 
 import { hub } from "./bridge";
-import { clear, el, empty, loadingState, table } from "./dom";
+import { clear, el, empty, icon, loadingState, table } from "./dom";
 import { failureBox } from "./page";
 import {
   advanced,
@@ -43,6 +43,12 @@ export function createServerSecretsManager(
     let refs: SecretRef[] = [];
     let adding = requiredKeys.length > 0;
     const required = requiredKeys[0] ?? "";
+    const guided = required !== "";
+
+    const close = (): void => {
+      epoch++;
+      modal.hide();
+    };
 
     const load = async (): Promise<void> => {
       try {
@@ -51,7 +57,7 @@ export function createServerSecretsManager(
       } catch (err) {
         if (current !== epoch) return;
         clear(root);
-        root.append(failureBox(err), controls(button("Close", "btn btn-secondary", () => modal.hide())));
+        root.append(failureBox(err), controls(button("Close", "btn btn-secondary", close)));
       }
     };
 
@@ -81,7 +87,7 @@ export function createServerSecretsManager(
 
     const writer = (): Node => {
       const key = textInput(required, "API_TOKEN");
-      const value = passwordInput("never displayed again");
+      const value = passwordInput(required ? `Paste ${required}` : "Enter secret value");
       const scope = textInput(SecretScopeGlobal, SecretScopeGlobal);
       key.disabled = required !== "";
       const errors = el("div", { class: "notice-slot" });
@@ -121,30 +127,47 @@ export function createServerSecretsManager(
             save.removeAttribute("aria-busy");
           });
       });
+      const cancel = button("Cancel", "btn btn-secondary", () => {
+        if (guided) {
+          close();
+          return;
+        }
+        adding = false;
+        paint();
+      });
       return el("div", { class: "server-secret-writer" }, [
-        required
-          ? el("div", { class: "notice" }, [
-              el("strong", { text: `${server} needs ${required}.` }),
-              el("span", { text: " Store it here and AgentHub will immediately test this Server again." }),
-            ])
-          : null,
+        el("div", { class: "server-secret-context" }, [
+          el("strong", { text: server }),
+          required ? el("span", { class: "id-chip", text: required }) : el("span", { text: "New secret" }),
+        ]),
         errors,
-        field("Key", key, required ? "required by this Server definition" : "must match its ${SECRET_KEY} placeholder"),
-        field(valueLabel(required), value, "write-only; this value cannot be read back"),
-        advanced("Advanced", false, field("Scope", scope, `${SecretScopeGlobal} shares it across derived instances`)),
-        controls(
-          save,
-          button("Cancel", "btn btn-secondary", () => {
-            adding = false;
-            paint();
-          }),
+        required ? null : field("Key", key, "Must match the Server's ${SECRET_KEY} placeholder"),
+        field(valueLabel(required), value),
+        el("div", { class: "server-secret-security" }, [
+          icon("scope", "server-secret-lock"),
+          el("span", { text: "Stored securely on this machine · never shown again" }),
+        ]),
+        advanced(
+          "Advanced settings",
+          false,
+          field("Scope", scope, `${SecretScopeGlobal} shares it across derived instances`),
         ),
+        el("div", { class: "server-secret-footer" }, [
+          guided
+            ? el("span", { class: "server-secret-retest", text: `AgentHub will test ${server} after saving.` })
+            : null,
+          controls(cancel, save),
+        ]),
       ]);
     };
 
     const paint = (): void => {
       if (current !== epoch) return;
       clear(root);
+      if (guided) {
+        root.append(writer());
+        return;
+      }
       const nodes: (Node | null)[] = [
         el("p", {
           class: "hint",
@@ -170,18 +193,22 @@ export function createServerSecretsManager(
             adding = true;
             paint();
           }),
-          button("Close", "btn btn-secondary", () => {
-            epoch++;
-            modal.hide();
-          }),
+          button("Close", "btn btn-secondary", close),
         ),
       ];
       root.append(...nodes.filter((node): node is Node => node !== null));
     };
 
-    modal.show(`Secrets · ${server}`, root);
-    root.append(loadingState(`Reading ${server}'s secret names…`, 2));
-    void load();
+    const title = guided
+      ? valueLabel(required) === "API key" ? "Add API key" : "Add secret"
+      : `Secrets · ${server}`;
+    modal.show(title, root);
+    if (guided) {
+      paint();
+    } else {
+      root.append(loadingState(`Reading ${server}'s secret names…`, 2));
+      void load();
+    }
   }
 
   return {

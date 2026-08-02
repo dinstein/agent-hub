@@ -148,7 +148,11 @@ branches on the daemon's code, never on whether prose happens to contain `401`.
 
 An unresolved placeholder follows the parallel setup path: `E_SECRET_REQUIRED` carries safe key names, the row
 becomes **Add API key** or **Set secret**, and that Server's secret manager opens with the key locked to the typed
-result. Every Server also exposes **Manage secrets** from its overflow menu; the scoped modal lists only its key
+result. This guided path is deliberately a one-field dialog: the header and neutral key chip carry the Server/key
+context, the only editable control is the write-only value, and scope stays behind a quiet Advanced settings
+disclosure. It does not load or expose the Server's wider credential inventory before accepting the required value,
+and has one Cancel / Save footer instead of a second Close action. Every Server also exposes **Manage secrets** from
+its overflow menu; the scoped modal lists only its key
 names, scopes, and storage backends and owns add/delete work. There is deliberately no global Secrets destination.
 Saving closes the modal and immediately retests exactly that Server. The value is cleared before the write awaits
 and never comes back over a read surface. A non-OAuth server with this condition omits the unrelated “No OAuth

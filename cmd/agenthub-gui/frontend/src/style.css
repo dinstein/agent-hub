@@ -3577,6 +3577,113 @@ select.input:active {
   backdrop-filter: blur(10px);
 }
 
+/* --- server-scoped secret setup ------------------------------------------
+ *
+ * A typed missing-secret result already names both the Server and key. The
+ * guided dialog therefore has one editable field, not a disabled key field
+ * plus an alert that repeats the same requirement. */
+
+.server-secrets {
+  gap: var(--space-4);
+}
+
+.server-secret-writer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.server-secret-context {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  color: var(--muted);
+}
+
+.server-secret-context > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg);
+  font-size: var(--text-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.server-secret-security {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.server-secret-lock {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  color: var(--faint);
+}
+
+/* Advanced is navigation to an uncommon setting, not another input. */
+.server-secret-writer > details.adv {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+  box-shadow: none;
+}
+
+.server-secret-writer > details.adv > summary {
+  width: fit-content;
+  padding: 3px 1px;
+  font-size: var(--text-sm);
+}
+
+.server-secret-writer > details.adv[open] > summary {
+  border-bottom: 0;
+}
+
+.server-secret-writer > details.adv > .adv-body {
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+
+.server-secret-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  margin: var(--space-2) -18px -18px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.server-secret-footer > .controls {
+  margin-left: auto;
+  flex-wrap: nowrap;
+}
+
+.server-secret-retest {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 620px) {
+  .server-secret-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .server-secret-footer > .controls {
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+}
+
 /* --- native <dialog> confirm (docs/modules/gui.md) ----------------------- */
 
 dialog.dlg {
