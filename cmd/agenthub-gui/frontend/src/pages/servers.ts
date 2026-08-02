@@ -30,7 +30,7 @@
 // resolves is "Test connection", which makes a REAL call — the vault has no
 // read path and this page must not grow one.
 
-import { asCallError, EVT, hub, on, openExternal } from "../bridge";
+import { asCallError, EVT, hub, isCancelled, on, openExternal } from "../bridge";
 import { chip, chipRow, clear, el, emptyState, errorHeadline, icon, loadingState, pageHeader } from "../dom";
 import { AdminState, HealthAction, HealthLevel } from "../generated/health";
 import type { Page } from "../page";
@@ -1687,6 +1687,10 @@ export function serversPage(): Page {
         slot.say(`${id} ${changed}; connection check passed with ${res.tool_count} tool(s).`);
       }
     } catch (err) {
+      // A newer page-owned probe supersedes and cancels this one. The newer
+      // request owns the row state, so cancellation is neutral rather than a
+      // failed connection check.
+      if (isCancelled(err)) return;
       if (authenticationRequired(err)) {
         // The row is the single authentication surface. Do not create a
         // second warning card above the fleet for the same typed condition.
@@ -1869,6 +1873,10 @@ export function serversPage(): Page {
         testResultView(res),
       );
     } catch (err) {
+      if (isCancelled(err)) {
+        close();
+        return;
+      }
       if (authenticationRequired(err)) {
         close();
         slot.clear();

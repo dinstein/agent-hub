@@ -146,6 +146,10 @@ its `Authenticate` action. Authentication has exactly that one surface: the page
 above the list, and Test closes its transient result dialog before moving the condition into the row. The frontend
 branches on the daemon's code, never on whether prose happens to contain `401`.
 
+Only the latest page-owned self-test for one Server may settle its presentation. Starting a newer test cancels the
+older wait; that cancellation is neutral and must not become a connection-failure notice or a failed Test dialog.
+The replacement request owns the row and supplies the eventual success or concrete failure.
+
 An unresolved placeholder follows the parallel setup path: `E_SECRET_REQUIRED` carries safe key names, the row
 becomes **Add API key** or **Set secret**, and that Server's secret manager opens with the key locked to the typed
 result. This guided path is deliberately a one-field dialog: the header and neutral key chip carry the Server/key
