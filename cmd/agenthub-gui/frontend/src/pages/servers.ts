@@ -1949,8 +1949,30 @@ export function serversPage(): Page {
       summary.focus();
     });
     menu.addEventListener("toggle", () => {
-      menu.closest(".rec")?.classList.toggle("menu-open", menu.open);
+      const record = menu.closest(".rec");
+      const bucket = menu.closest(".bucket");
+      record?.classList.toggle("menu-open", menu.open);
+      bucket?.classList.toggle("menu-open", menu.open);
+      menu.classList.remove("open-up");
       if (!menu.open) return;
+
+      // A menu on the bucket's last row must not disappear beneath the next
+      // bucket. Prefer opening it upward when there is room; still fall back
+      // to the viewport-safe direction for short windows and one-row groups.
+      const popover = menu.querySelector<HTMLElement>(".server-row-menu-popover");
+      const bucketBody = record?.parentElement;
+      const lastRow = bucketBody?.lastElementChild === record;
+      if (popover) {
+        const triggerRect = summary.getBoundingClientRect();
+        const popoverHeight = popover.getBoundingClientRect().height;
+        const gap = 6;
+        const edge = 12;
+        const roomAbove = triggerRect.top - edge;
+        const roomBelow = window.innerHeight - triggerRect.bottom - edge;
+        const opensUp = (lastRow && roomAbove >= popoverHeight + gap)
+          || (roomBelow < popoverHeight + gap && roomAbove > roomBelow);
+        menu.classList.toggle("open-up", opensUp);
+      }
       document.addEventListener(
         "pointerdown",
         (ev) => {
@@ -2027,7 +2049,12 @@ export function serversPage(): Page {
       // Controls keep their own meaning. Everything else in the fixed summary
       // row is the disclosure target; the detail panel is a sibling and can
       // never bubble into this listener.
-      if (target.closest("button, a, input, label, summary, details")) return;
+      const control = target.closest("button, a, input, label, summary, details");
+      // The row itself lives inside the bucket's <details>. Only controls
+      // contained by this summary are exclusions; treating any ancestor
+      // <details> as a control makes the status, tool count and whitespace
+      // inert because they all find that outer bucket.
+      if (control && summary.contains(control)) return;
       toggleDetails();
     });
 

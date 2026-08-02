@@ -3887,7 +3887,15 @@ details.adv[open] > summary::before {
 }
 
 .rec.menu-open {
-  z-index: 2;
+  z-index: 4;
+}
+
+/* The popover belongs visually to its row but may cross the bucket boundary.
+ * Lift the whole bucket above its siblings while the menu is open so the next
+ * card cannot paint over the menu's first actions. */
+.bucket.menu-open {
+  position: relative;
+  z-index: 3;
 }
 
 .rec:first-child {
@@ -4121,6 +4129,11 @@ details.adv[open] > summary::before {
   border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--shadow-2);
+}
+
+.server-row-menu.open-up > .server-row-menu-popover {
+  top: auto;
+  bottom: calc(100% + 6px);
 }
 
 .server-row-menu:not([open]) > .server-row-menu-popover {

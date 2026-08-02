@@ -250,14 +250,17 @@ Two rules on it, both easy to undo by accident:
 The server overview is one keyboard-focusable disclosure target. Its leading chevron and `aria-expanded` state make the
 toggle explicit: one activation reveals the latest cached self-test detail underneath and the next collapses it.
 Expansion never performs I/O. The summary and detail are separate sibling boxes: the summary retains its fixed
-geometry and health spine, while the detail adds a divider and quieter background underneath. Only the summary's
-non-control surface toggles the disclosure; interacting with cached detail cannot collapse it. Editing is a
+geometry and health spine, while the detail adds a divider and quieter background underneath. Every part of the
+summary except its row-local controls toggles the disclosure, including the status, tool count, and empty column
+space; the enclosing bucket's own `<details>` element is not a row control. Interacting with cached detail cannot
+collapse it. Editing is a
 separate, always-visible **Edit** button in the action column, so a click whose visible affordance says “show me
 more” cannot unexpectedly open a write surface. The leading enable switch and trailing Test / Edit controls remain
 separate targets and never bubble into the disclosure. A fixed status column is followed by one aligned outcome
 column: healthy rows show their tool count there, while setup rows show Authenticate or Add API key. Neither can move
 the trailing buttons. Server-scoped **Manage secrets**, destructive Remove,
-and OAuth Log out sit in the compact overflow menu: they stay available without painting every healthy row as a red warning. A successful enable/disable writes no page-level
+and OAuth Log out sit in the compact overflow menu: they stay available without painting every healthy row as a red warning. The menu opens upward on a bucket's last row when space permits and lifts its bucket above adjacent cards,
+so every action remains visible without changing the ledger's layout. A successful enable/disable writes no page-level
 notice because the switch and the row's own probe already show the stored and runtime outcomes; failures keep the
 shared error surface.
 
