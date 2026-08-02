@@ -3969,6 +3969,15 @@ details.adv[open] > summary::before {
   background: var(--line);
 }
 
+/* An answer that has not arrived. Quieter than every outcome tone — including
+ * the untoned default — so a row in flight is still visible without competing
+ * with a row that has something to say. The dot beside it carries the motion;
+ * a second pulsing element per row, twenty rows deep, is a light show. */
+.spine.checking {
+  background: var(--faint);
+  opacity: 0.55;
+}
+
 /* Masked rather than over-painted. Filling the gaps with --panel looked right
  * until the row was hovered, when the row behind it becomes --panel-2 and the
  * dashes stop matching; punching holes lets whatever is behind show through in

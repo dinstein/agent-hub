@@ -1225,12 +1225,18 @@ export function serversPage(): Page {
     }
 
     // checking: a wait re-told as progress once it is long enough to need one.
+    //
+    // NEUTRAL, not warning. An unanswered handshake is the absence of an
+    // answer, not a fault, and painting it yellow meant a page that opened
+    // with every row shouting and then quietly took it back one row at a
+    // time. The pulse is what says "in progress"; colour is reserved for
+    // outcomes.
     if (s.state === "connecting") {
       return el("div", { class: "srv-status" }, [
         el("div", { class: "state-line" }, [
-          dot("warning", "pulse"),
+          dot("neutral", "pulse"),
           el("span", {
-            class: "state-text t-warning state-checking",
+            class: "state-text t-muted state-checking",
             "data-server": s.id,
             text: "Checking…",
           }),
@@ -1914,6 +1920,10 @@ export function serversPage(): Page {
   function spineTone(s: Server): string {
     const admin = s.health.admin_state;
     if (admin === AdminState.Disabled) return "off";
+    // Before the level is consulted: an unsettled row reports degraded, and
+    // the spine is the widest state channel on the row — twenty yellow spines
+    // on a page that has not asked anything yet is the whole complaint.
+    if (s.state === "connecting") return "checking";
     // A credential is missing, not a connection broken. The warning spine
     // matches the setup action and avoids painting routine auth/key setup as
     // the same red failure used for network and protocol faults.
