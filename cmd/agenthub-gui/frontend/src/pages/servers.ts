@@ -1164,12 +1164,15 @@ export function serversPage(): Page {
   function statusCell(s: Server): Node {
     const admin = s.health.admin_state;
 
-    // disabled: a grey dot and nothing else. There is no status to report
-    // about a server that was switched off on purpose, and writing one makes
-    // the six disabled rows compete with the one broken row.
+    // Disabled stays quiet, but still says what the grey dot means. The list
+    // is compact enough that one short word improves scanning without making
+    // intentionally inactive rows compete with a failure.
     if (admin === AdminState.Disabled) {
       return el("div", { class: "srv-status" }, [
-        el("div", { class: "state-line" }, [dot("neutral")]),
+        el("div", { class: "state-line" }, [
+          dot("neutral"),
+          el("span", { class: "state-text t-muted", text: "Disabled" }),
+        ]),
       ]);
     }
 
@@ -1179,19 +1182,25 @@ export function serversPage(): Page {
     if (s.health.action === HealthAction.SetSecret) {
       const observation = probes.get(s.id);
       const keys = observation?.kind === "secret" ? observation.keys : [];
-      const label = keys.length === 1 && keys[0].endsWith("API_KEY") ? "Add API key" : "Set secret";
-      const setup = button(label, "btn btn-primary", () => secretManager.open(s.id, keys));
+      const message = keys.length === 1 && keys[0].endsWith("API_KEY")
+        ? "API key required"
+        : "Secret required";
       return el("div", { class: "srv-status" }, [
-        el("div", { class: "state-line" }, [dot("warning"), setup]),
+        el("div", { class: "state-line" }, [
+          dot("warning"),
+          el("span", { class: "state-text t-warning", text: message }),
+        ]),
       ]);
     }
 
-    // needs-auth: the status position BECOMES the action, and the action now
-    // signs the user in rather than handing them a command to go and type.
+    // Keep state and recovery as two adjacent columns: the first answers what
+    // is wrong, the second is the direct operation that repairs it.
     if (s.health.action === HealthAction.Login) {
-      const authenticate = button("Authenticate", "btn btn-primary", () => void login(s.id));
       return el("div", { class: "srv-status" }, [
-        el("div", { class: "state-line" }, [dot("warning"), authenticate]),
+        el("div", { class: "state-line" }, [
+          dot("warning"),
+          el("span", { class: "state-text t-warning", text: "Authentication required" }),
+        ]),
       ]);
     }
 
@@ -1226,13 +1235,14 @@ export function serversPage(): Page {
       ]);
     }
 
-    // connected: the TOOL COUNT, not the word "connected". "connected" is
-    // already implied by the bucket the row is in and by the green dot; the
-    // number is the only thing in this position that answers a question the
-    // operator actually has.
+    // The inventory now has its own following column, so the status column can
+    // say plainly what the green dot means.
     if (s.state === "connected") {
       return el("div", { class: "srv-status" }, [
-        el("div", { class: "state-line" }, [dot("success")]),
+        el("div", { class: "state-line" }, [
+          dot("success"),
+          el("span", { class: "state-text t-success", text: "Connected" }),
+        ]),
       ]);
     }
 
@@ -1251,14 +1261,28 @@ export function serversPage(): Page {
     ]);
   }
 
-  /** Tool inventory has its own fixed column so counts line up vertically
-   *  and never change the width available to row actions. */
-  function toolCell(s: Server): Node {
-    return el("div", {
-      class: `server-tool-count${s.state === "connected" ? " t-success" : ""}`,
-      text: s.state === "connected" ? (s.tools === 1 ? "1 tool" : `${s.tools} tools`) : "",
-      "aria-label": s.state === "connected" ? `${s.tools} tools available` : undefined,
-    });
+  /**
+   * The fixed outcome column carries either inventory or the direct setup
+   * action. Both are short, high-value outcomes of the status immediately to
+   * their left, and keeping the column fixed aligns every Test/Edit group.
+   */
+  function outcomeCell(s: Server): Node {
+    let content: Node | null = null;
+    if (s.health.action === HealthAction.SetSecret) {
+      const observation = probes.get(s.id);
+      const keys = observation?.kind === "secret" ? observation.keys : [];
+      const label = keys.length === 1 && keys[0].endsWith("API_KEY") ? "Add API key" : "Set secret";
+      content = button(label, "btn btn-primary btn-sm", () => secretManager.open(s.id, keys));
+    } else if (s.health.action === HealthAction.Login) {
+      content = button("Authenticate", "btn btn-primary btn-sm", () => void login(s.id));
+    } else if (s.state === "connected") {
+      content = el("span", {
+        class: "server-tool-count",
+        text: s.tools === 1 ? "1 tool" : `${s.tools} tools`,
+        "aria-label": `${s.tools} tools available`,
+      });
+    }
+    return el("div", { class: "server-row-outcome" }, [content]);
   }
 
   /**
@@ -1961,13 +1985,13 @@ export function serversPage(): Page {
       "aria-expanded": String(expanded),
       "aria-controls": detailID,
     }, [
+      el("span", { class: "rec-overview-cue", "aria-hidden": "true", text: "▸" }),
       el("span", { class: "rec-title" }, [
         el("span", { class: "rec-name", text: s.id }),
         // Metadata is NEUTRAL: a green "stdio" next to a green health dot
         // would put two unrelated greens on one row (see style.css).
         el("span", { class: "id-chip", text: s.transport || "stdio" }),
       ]),
-      el("span", { class: "rec-overview-cue", "aria-hidden": "true", text: "▸" }),
     ]) as HTMLButtonElement;
     overview.addEventListener("click", toggleDetails);
 
@@ -1987,12 +2011,12 @@ export function serversPage(): Page {
         }),
       ]),
       el("div", { class: "rec-body" }, [overview]),
-      toolCell(s),
+      statusCell(s),
+      outcomeCell(s),
       el("div", { class: "rec-act" }, [
-        statusCell(s),
         controls(
-          button("Edit", "btn btn-sm", () => void openEditor(s.id)),
           button("Test", "btn btn-sm", () => void test(s)),
+          button("Edit", "btn btn-sm", () => void openEditor(s.id)),
           rowMenu(s),
         ),
       ]),

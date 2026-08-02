@@ -1307,19 +1307,24 @@ a.nav.active .nav-icon {
  * fixed tool/status columns consume the server name. */
 @media (max-width: 1100px) {
   .server-summary-row {
-    grid-template-columns: 3px auto minmax(0, 1fr);
+    grid-template-columns: 3px auto minmax(0, 1fr) 132px;
   }
 
   .server-summary-row > .spine {
     grid-row: 1 / span 3;
   }
 
-  .server-tool-count {
+  .server-summary-row > .srv-status {
     grid-column: 3;
     grid-row: 2;
     min-width: 0;
     padding-bottom: var(--space-3);
-    text-align: left;
+  }
+
+  .server-row-outcome {
+    grid-column: 4;
+    grid-row: 2;
+    padding-bottom: var(--space-3);
   }
 
   .server-record > .server-probe-detail {
@@ -1332,7 +1337,7 @@ a.nav.active .nav-icon {
     width: auto;
     display: flex;
     padding: 0 var(--space-5) var(--space-5);
-    justify-content: space-between;
+    justify-content: flex-end;
   }
 
   .server-summary-row .srv-status {
@@ -3791,9 +3796,10 @@ details.adv[open] > summary::before {
 
 .server-summary-row {
   display: grid;
-  grid-template-columns: 3px auto minmax(0, 1fr) 88px auto;
+  grid-template-columns: 3px auto minmax(180px, 1fr) minmax(150px, 190px) 132px auto;
   align-items: center;
-  gap: 0 var(--space-6);
+  min-height: 68px;
+  gap: 0 var(--space-5);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease);
 }
@@ -3809,11 +3815,13 @@ details.adv[open] > summary::before {
 .rec-lead {
   display: flex;
   align-items: center;
-  padding-left: var(--space-6);
+  padding-left: var(--space-5);
 }
 
 /* The lead column supplies the indent, so the body stops adding its own. */
 .server-summary-row > .rec-body {
+  padding-top: var(--space-4);
+  padding-bottom: var(--space-4);
   padding-left: 0;
 }
 
@@ -3864,7 +3872,7 @@ details.adv[open] > summary::before {
   min-height: 28px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-4);
   margin: 0 0 2px;
   padding: 0;
@@ -3887,7 +3895,7 @@ details.adv[open] > summary::before {
 }
 
 .rec-overview > .rec-title {
-  flex: 1;
+  flex: 1 1 auto;
 }
 
 .rec-overview-cue {
@@ -3916,23 +3924,40 @@ details.adv[open] > summary::before {
 }
 
 .rec-act {
-  padding: var(--space-5) var(--space-6) var(--space-5) 0;
-  width: 370px;
-  display: grid;
-  grid-template-columns: minmax(0, 190px) auto;
+  padding: var(--space-4) var(--space-5) var(--space-4) 0;
+  width: auto;
+  display: flex;
   align-items: center;
-  gap: var(--space-5);
 }
 
 .rec-act > .controls {
   justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: var(--space-3);
+}
+
+.server-row-outcome {
+  width: 132px;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.server-row-outcome > .btn {
+  width: 100%;
+  white-space: nowrap;
 }
 
 .server-tool-count {
-  min-width: 88px;
+  min-width: 76px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
   color: var(--muted);
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -4457,19 +4482,24 @@ details.adv[open] > summary::before {
 
   .rec,
   .server-summary-row {
-    grid-template-columns: 3px auto minmax(0, 1fr);
+    grid-template-columns: 3px auto minmax(0, 1fr) 132px;
   }
 
   .server-summary-row > .spine {
     grid-row: 1 / span 3;
   }
 
-  .server-tool-count {
+  .server-summary-row > .srv-status {
     grid-column: 3;
     grid-row: 2;
     min-width: 0;
     padding-bottom: var(--space-3);
-    text-align: left;
+  }
+
+  .server-row-outcome {
+    grid-column: 4;
+    grid-row: 2;
+    padding-bottom: var(--space-3);
   }
 
   .server-record > .server-probe-detail {
@@ -4482,7 +4512,7 @@ details.adv[open] > summary::before {
     width: auto;
     display: flex;
     padding: 0 var(--space-5) var(--space-5);
-    justify-content: space-between;
+    justify-content: flex-end;
   }
 
   .srv-status {

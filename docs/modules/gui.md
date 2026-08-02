@@ -190,9 +190,9 @@ accessibility requirement and a guard against misreading:
 
 | State | Display |
 |---|---|
-| connected | a green status dot; **`23 tools`** occupies its own aligned inventory column |
-| needs-auth | the status cell **becomes an `Authenticate` button** that signs in for real (docs/modules/controlplane.md) |
-| needs-secret | the status cell **becomes `Add API key` / `Set secret`**, opening the guided write-only form |
+| connected | a green dot and **Connected**; **`23 tools`** occupies the following aligned outcome column |
+| needs-auth | a yellow dot and **Authentication required**; the outcome column becomes `Authenticate` and signs in for real (docs/modules/controlplane.md) |
+| needs-secret | a yellow dot and **API key required** / **Secret required**; the outcome column opens the guided write-only form |
 | checking | after 4 seconds, if the command is `npx`/`uvx`, it changes to **`Installing…`** — reinterpreting a wait as progress |
 | error | a one-line distilled error headline, expandable to the full text |
 | disabled | gray dot, no text |
@@ -201,8 +201,8 @@ This is the single biggest saver of user time: it removes the "read status → f
 find the entry point" three-step.
 
 `needs-auth` arrives from this page's own self-test as a typed authentication error; the frontend does not infer it
-from an error string. Clicking `Authenticate` starts the control-plane login session below, so the status both
-identifies the problem and is the operation that repairs it. It uses the warning spine, not the red
+from an error string. Clicking the adjacent `Authenticate` action starts the control-plane login session below, so
+the row identifies the problem and places its repair beside it. It uses the warning spine, not the red
 connection-failure spine: missing authorization is an expected setup state, not evidence that the endpoint or
 protocol is broken.
 
@@ -243,15 +243,16 @@ Two rules on it, both easy to undo by accident:
   walked back, and the moment they are wrong is exactly the moment the user looks away satisfied —
   the same reason a row grays out instead of vanishing (§5).
 
-The server overview is one keyboard-focusable disclosure target. Its chevron and `aria-expanded` state make the
+The server overview is one keyboard-focusable disclosure target. Its leading chevron and `aria-expanded` state make the
 toggle explicit: one activation reveals the latest cached self-test detail underneath and the next collapses it.
 Expansion never performs I/O. The summary and detail are separate sibling boxes: the summary retains its fixed
 geometry and health spine, while the detail adds a divider and quieter background underneath. Only the summary's
 non-control surface toggles the disclosure; interacting with cached detail cannot collapse it. Editing is a
 separate, always-visible **Edit** button in the action column, so a click whose visible affordance says “show me
-more” cannot unexpectedly open a write surface. The leading enable switch and trailing Edit / Test controls remain
-separate targets and never bubble into the disclosure. The tool count occupies a fixed column before status/actions,
-so every count aligns vertically and cannot move the buttons. Server-scoped **Manage secrets**, destructive Remove,
+more” cannot unexpectedly open a write surface. The leading enable switch and trailing Test / Edit controls remain
+separate targets and never bubble into the disclosure. A fixed status column is followed by one aligned outcome
+column: healthy rows show their tool count there, while setup rows show Authenticate or Add API key. Neither can move
+the trailing buttons. Server-scoped **Manage secrets**, destructive Remove,
 and OAuth Log out sit in the compact overflow menu: they stay available without painting every healthy row as a red warning. A successful enable/disable writes no page-level
 notice because the switch and the row's own probe already show the stored and runtime outcomes; failures keep the
 shared error surface.
