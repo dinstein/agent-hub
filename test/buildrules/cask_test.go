@@ -228,6 +228,67 @@ func TestCaskRefusesAReleaseItCannotDescribe(t *testing.T) {
 	}
 }
 
+// TestReleaseWorkflowPublishesTheCaskItRenders keeps the cask from being
+// rendered into a file nobody sends anywhere.
+//
+// The homebrew job writes the cask, then hands paths to tap-sync.sh. Dropping
+// the cask from that second command — or renaming the file in one place — is
+// not a red job: the render still succeeds, the formula and the skill still
+// reach the tap, and the tap simply keeps serving the previous release's GUI
+// while the Release page advertises a new one. The first report comes from
+// someone whose `brew upgrade` did nothing.
+//
+// The artifact name is checked for the same reason one job's `upload` and
+// another's `download` are the only thing tying the DMG's checksums to the
+// cask that pins them: rename it on one side and the job fails, but it fails
+// AFTER the Release is published, which is the expensive half.
+func TestReleaseWorkflowPublishesTheCaskItRenders(t *testing.T) {
+	wf := string(releaseWorkflow(t))
+
+	m := regexp.MustCompile(`homebrew-cask\.sh[^\n>]*> (\S+)`).FindStringSubmatch(wf)
+	if m == nil {
+		t.Fatal("the release workflow does not run scripts/homebrew-cask.sh; the tap " +
+			"then serves whatever cask it served before, for every release from now on")
+	}
+	rendered := m[1]
+
+	sync := regexp.MustCompile(`tap-sync\.sh\s+(.*)`).FindStringSubmatch(wf)
+	if sync == nil {
+		t.Fatal("the release workflow no longer calls scripts/tap-sync.sh")
+	}
+	if !strings.Contains(sync[1], rendered) {
+		t.Errorf("the workflow renders the cask to %s but hands tap-sync.sh %q.\n"+
+			"Every job stays green and the tap keeps the previous release's GUI.",
+			rendered, strings.TrimSpace(sync[1]))
+	}
+
+	// The cask names its tap in depends_on, and the script refuses without it.
+	if !regexp.MustCompile(`HOMEBREW_TAP_REPO:\s*\S`).MatchString(wf) {
+		t.Error("the render step does not pass HOMEBREW_TAP_REPO; homebrew-cask.sh " +
+			"refuses to render an unqualified dependency, so the job fails after the " +
+			"Release has already been published")
+	}
+
+	// Uploaded by gui-macos, downloaded here. One spelling, two jobs.
+	upload := regexp.MustCompile(`name: (\S+)\n\s+path: \|\n(?:\s+\S+\n)*?\s*dist/checksums-macos\.txt`)
+	up := upload.FindStringSubmatch(wf)
+	if up == nil {
+		t.Fatal("no job uploads dist/checksums-macos.txt as an artifact; the cask's " +
+			"sha256 has nowhere to come from but a second hashing of the same DMG")
+	}
+	// [^\s|] skips the upload's own `path: |` block scalar, which is the same
+	// two keys in the same order one job earlier.
+	download := regexp.MustCompile(`name: ` + regexp.QuoteMeta(up[1]) + `\n\s+path: ([^\s|]\S*)`)
+	down := download.FindStringSubmatch(wf)
+	if down == nil {
+		t.Fatalf("the %s artifact is uploaded but never downloaded; the homebrew job "+
+			"cannot see the checksums the cask pins", up[1])
+	}
+	if want := down[1] + "/checksums-macos.txt"; !strings.Contains(wf, want) {
+		t.Errorf("the %s artifact lands in %s/ but nothing reads %s", up[1], down[1], want)
+	}
+}
+
 // TestCaskScriptIsExecutable — the release workflow invokes it directly.
 func TestCaskScriptIsExecutable(t *testing.T) {
 	info, err := os.Stat(filepath.Join(repoRoot(t), "scripts", "homebrew-cask.sh"))

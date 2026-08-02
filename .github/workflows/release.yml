@@ -207,10 +207,12 @@ jobs:
           body: |
             ## Install
 
-            **GUI (macOS)** — download the `.dmg`. It contains the CLI too, so
-            nothing else is needed. The app is ad-hoc signed but **not
-            notarized**: on first launch, right-click → Open, or run
-            `xattr -cr /Applications/AgentHub.app`.
+            **GUI (macOS)** — `brew install --cask dinstein/agenthub/agenthub-gui`
+            installs the app and the CLI together, ready to launch. Or download
+            the `.dmg`, which contains the CLI too: the app is ad-hoc signed but
+            **not notarized**, so on first launch right-click → Open, or run
+            `xattr -cr /Applications/AgentHub.app`. The cask clears that flag for
+            you — its pinned sha256 is what vouches for the download instead.
 
             **GUI (Windows, experimental)** — download the `.zip` for your
             architecture (amd64 or arm64), unzip anywhere, and keep
@@ -228,8 +230,9 @@ jobs:
 
             Verify downloads against `checksums-*.txt`.
 
-  # Updates the Homebrew tap: the formula, and the skill that documents the CLI
-  # the formula installs.
+  # Updates the Homebrew tap: the formula, the cask that installs the macOS GUI
+  # and depends on that formula, and the skill that documents the CLI both
+  # install.
   #
   # A separate job on purpose. By the time it runs the Release is complete and
   # correct; a tap push that fails must not retract or re-cut it. It goes red
@@ -253,7 +256,13 @@ jobs:
         with:
           name: cli
           path: cli
-      - name: Render the formula
+      # The cask's half of the same thing: its sha256 is the one gui-macos
+      # already computed over the DMG this Release serves.
+      - uses: actions/download-artifact@v5
+        with:
+          name: gui-macos
+          path: gui
+      - name: Render the formula and the cask
         env:
           # The same repository the publish job uploaded to, spelled the same
           # way. The script has its own default and so does release-local.sh;
@@ -261,11 +270,18 @@ jobs:
           # this workflow already knows, and the disagreement is only ever
           # discovered by somebody installing.
           HOMEBREW_SOURCE_REPO: ${{ github.repository }}
+          # The cask depends on the formula by its fully qualified name, which
+          # only the tap knows. Unset, homebrew-cask.sh refuses rather than
+          # rendering a bare "agenthub" that resolves against homebrew-core.
+          # The job does not run at all without this variable (see `if:`), so
+          # the two can never be out of step.
+          HOMEBREW_TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
         run: |
           set -euo pipefail
           mkdir -p out
           scripts/homebrew-formula.sh "${GITHUB_REF_NAME}" cli/checksums-cli.txt > out/agenthub.rb
-          cat out/agenthub.rb
+          scripts/homebrew-cask.sh "${GITHUB_REF_NAME}" gui/checksums-macos.txt > out/agenthub-gui.rb
+          cat out/agenthub.rb out/agenthub-gui.rb
       - name: Push it to the tap
         env:
           TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -276,4 +292,4 @@ jobs:
           # Which files go to the tap, and that they arrive as one commit, is
           # decided in one place shared with the local release path — see the
           # header of scripts/tap-sync.sh.
-          scripts/tap-sync.sh tap "${GITHUB_REF_NAME}" out/agenthub.rb
+          scripts/tap-sync.sh tap "${GITHUB_REF_NAME}" out/agenthub.rb out/agenthub-gui.rb
