@@ -85,6 +85,13 @@
   --content-max: 1024px;
 }
 
+html {
+  /* Disclosure panels can make a short page taller than the window. Reserve
+   * the document scrollbar lane in both states so opening one never shifts
+   * the fixed sidebar or changes the content column's measured width. */
+  scrollbar-gutter: stable;
+}
+
 /* -- dark (the default; the bootstrap resolves "system" to one of the two) -- */
 
 :root,

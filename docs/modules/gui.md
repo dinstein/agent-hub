@@ -70,6 +70,10 @@ Geometry follows three shared lines rather than page-local guesses:
 - record content stays next to its state and actions. A flexible middle column may absorb spare width,
   but metadata or a button must not be pushed across an empty card merely to occupy both edges.
 
+The document reserves a stable vertical-scrollbar gutter. Expanding a cached server detail can make
+an otherwise short page overflow, but that disclosure must not change the sidebar position or the
+content column width when the scrollbar appears.
+
 The native window title is blank. The sidebar is the single visible product identity: `AgentHub`
 with the release-plus-commit version stamped into this GUI build. That value comes from the process,
 not the connected daemon, because the two may legitimately be different builds.
