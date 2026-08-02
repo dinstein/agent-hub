@@ -695,6 +695,29 @@ dies stdout hits EOF and the read loop necessarily ends). `Close` first fails al
 closes stdin (which is an EOF to a well-behaved child), waits `killGrace = 3s`, `Kill`s on timeout,
 and finally runs cleanup. **The process is always reaped.**
 
+**`StdioConfig.Command` is resolved against `StdioConfig.Env`'s PATH, not against this process's**
+(`resolveCommand` in `lookpath.go`). `exec.Command` resolves through `exec.LookPath`, which reads the
+PATH of the *calling* process; `cmd.Env` is only ever handed to the child and never consulted for the
+lookup. Those are the same PATH often enough that the difference goes unnoticed, and then a caller
+repairs the child's PATH — which `internal/downstream` does, because launchd hands a GUI-launched
+process a four-entry PATH — and every spawn still fails with `exec: "npx": executable file not found
+in $PATH`, naming a PATH the child was never going to run with. Resolution takes the first entry
+holding an executable regular file, and the not-found error names the directories searched, so a
+missing tool reads differently from a truncated PATH.
+
+Three deliberate narrowings, all in the direction of doing nothing rather than doing something
+different: **on Windows it returns the command untouched**, since resolution there means reproducing
+PATHEXT and its ordering exactly, and no gate here runs on a real Windows machine
+([docs/windows.md](../windows.md)); a command containing a path separator, or a nil `Env` (the child
+inherits ours, so the two PATHs are one), is likewise returned untouched. **An empty PATH entry is
+skipped**, which is the one place this deviates from `exec.LookPath` — POSIX reads it as the working
+directory, and a spawn should not let a directory nobody named decide which binary runs.
+
+Resolution happens **after** the screen, and it makes no difference to the screen: `spawnguard`
+matches on the basename, so `npx` and `/opt/homebrew/bin/npx` reach the same verdict. A command that
+cannot be resolved fails `ClassUnavailable`, exactly as the failed `exec.Start` did before, so a
+missing binary stays breaker-visible rather than becoming fatal.
+
 ### The docker spawner's additional rules
 
 The positioning is explicit: the spawn guard is **anti-smuggling**, not a sandbox; this docker half is
@@ -792,6 +815,7 @@ stateDiagram-v2
 | `transport.go` | The `Transport` interface, `Kind`, `ChangeMask`, `PeerHandler`, the three `Class` values and `*Error`, `ErrClosed` |
 | `conn.go` | The generic byte-stream implementation: single read loop, pending table, terminal `fail`, inline reverse RPC, cancellation forwarding, `Close` |
 | `stdio.go` | `StdioConfig`, `SpawnStdio`, the injected spawn screen `screen`, `launch` (pipe wiring, stderr ring, process reaping and kill escalation) |
+| `lookpath.go` | `resolveCommand` — resolves a stdio command against the PATH the child is being given rather than this process's |
 | `docker.go` | `DockerConfig`/`Mount`, `SpawnDocker`, `BuildDockerRunArgs`, configuration validation, `DockerBinary`/`DockerVersion`/`StrayContainers`, stderr diagnostics |
 | `httpcommon.go` | Everything the two HTTP transports share: header constants, `HTTPConfig`, `DialContextFunc`, `httpError`/`requestError` classification, `readBounded`/`encodeMessage`/`decodeMessages`, `sameOrigin`, backoff |
 | `streamablehttp.go` | Streamable HTTP: the POST main path, JSON and SSE responses, session headers, `Last-Event-ID` resumption, the optional GET notification stream and reconnect loop, DELETE on `Close` |

@@ -30,6 +30,11 @@ type StdioConfig struct {
 	Args    []string
 	// Env is the complete child environment (exec.Cmd semantics: nil
 	// inherits the parent environment, empty slice means empty env).
+	//
+	// Its PATH also decides where Command is looked up, which exec.Cmd does
+	// NOT do on its own — see resolveCommand. A caller that hands the child
+	// a PATH gets that PATH used for the lookup too, instead of silently
+	// resolving against this process's.
 	Env []string
 	Cwd string
 
@@ -73,7 +78,15 @@ func SpawnStdio(cfg StdioConfig) (Transport, error) {
 	if err := screen(cfg.Screen, cfg.Command, cfg.Args, cfg.Env); err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(cfg.Command, cfg.Args...)
+	// Resolved AFTER the screen, and it makes no difference to the screen:
+	// spawnguard matches on the command's basename, so it reaches the same
+	// verdict for "npx" and for /opt/homebrew/bin/npx. Screening the name the
+	// configuration actually wrote is the more legible of two equal options.
+	command, err := resolveCommand(cfg.Command, cfg.Env)
+	if err != nil {
+		return nil, &Error{Class: ClassUnavailable, Err: fmt.Errorf("spawn %q: %w", cfg.Command, err)}
+	}
+	cmd := exec.Command(command, cfg.Args...)
 	cmd.Dir = cfg.Cwd
 	cmd.Env = cfg.Env
 	return launch(cmd, cfg.Command, nil, nil)
