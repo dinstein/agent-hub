@@ -2,14 +2,19 @@
 #
 # Put this release's tap-facing files into a tap checkout, as ONE commit.
 #
-#   scripts/tap-sync.sh <tap-checkout> <tag> [<formula.rb>]
+#   scripts/tap-sync.sh <tap-checkout> <tag> [<formula.rb> [<cask.rb>]]
 #
-# Two files travel to the tap and they are not independent: Formula/agenthub.rb
-# installs a binary, and skills/agenthub/SKILL.md tells an AI client how to
-# drive that binary. The skill is written against a specific released surface —
-# it says so in its own second paragraph — so a tap where the two arrive in
-# separate commits has a window in which `git show` on either one describes a
-# version the other does not. One commit closes it.
+# Three files travel to the tap and they are not independent:
+# Formula/agenthub.rb installs a binary, Casks/agenthub-gui.rb installs the app
+# that drives it and DEPENDS ON that formula, and skills/agenthub/SKILL.md tells
+# an AI client how to drive the binary. The skill is written against a specific
+# released surface — it says so in its own second paragraph — so a tap where
+# they arrive in separate commits has a window in which `git show` on any one of
+# them describes a version the others do not. One commit closes it.
+#
+# For the cask that window is worse than a documentation lag: an install landing
+# inside it gets this release's app resolving a dependency the tap still
+# describes at the previous release.
 #
 # WHY THIS IS A SCRIPT AND NOT TWO COPIES OF A `cp`. The release workflow and
 # scripts/release-local.sh both update the tap, and the same reasoning that put
@@ -24,17 +29,34 @@
 # without this the only way to publish a doc fix would be to cut a version that
 # changes no code. The tag is still required and still means the same thing: the
 # release the skill was verified against.
+#
+# OMITTING THE CASK is release-local.sh's path, and is not an oversight: that
+# script builds no DMG, so it has nothing to point a cask at. The tap then keeps
+# serving the previous release's app beside a newer formula. That is survivable
+# — the cask's depends_on carries no version — and it is why the dependency is
+# spelled without one; a cask left behind must degrade to "the GUI is a release
+# older", never to "the GUI will not install".
 
 set -euo pipefail
 
-if [ $# -lt 2 ] || [ $# -gt 3 ]; then
-	echo "usage: $0 <tap-checkout> <tag> [<formula.rb>]" >&2
+if [ $# -lt 2 ] || [ $# -gt 4 ]; then
+	echo "usage: $0 <tap-checkout> <tag> [<formula.rb> [<cask.rb>]]" >&2
 	exit 2
 fi
 
 tap="$1"
 tag="$2"
 formula="${3:-}"
+cask="${4:-}"
+
+# A cask without a formula would publish an app whose dependency the same
+# commit does not update. Ordering the arguments cannot prevent it — this can.
+if [ -n "$cask" ] && [ -z "$formula" ]; then
+	echo "$0: a cask was given without a formula" >&2
+	echo "$0: the cask depends on the formula; publishing one without the other is" >&2
+	echo "$0: the split commit this script exists to prevent, spelled differently" >&2
+	exit 2
+fi
 here="$(cd "$(dirname "$0")/.." && pwd)"
 skill="$here/skills/agenthub/SKILL.md"
 
@@ -63,6 +85,11 @@ fi
 
 if [ -n "$formula" ] && [ ! -r "$formula" ]; then
 	echo "$0: cannot read the formula: $formula" >&2
+	exit 1
+fi
+
+if [ -n "$cask" ] && [ ! -r "$cask" ]; then
+	echo "$0: cannot read the cask: $cask" >&2
 	exit 1
 fi
 
@@ -105,6 +132,14 @@ if [ -n "$formula" ]; then
 	cp "$formula" "$tap/Formula/agenthub.rb"
 fi
 
+# agenthub-gui, not agenthub: the token has to differ from the formula's, or
+# `brew install agenthub` becomes an ambiguous name in one tap and Homebrew
+# picks for the user.
+if [ -n "$cask" ]; then
+	mkdir -p "$tap/Casks"
+	cp "$cask" "$tap/Casks/agenthub-gui.rb"
+fi
+
 cd "$tap"
 
 # STAGE FIRST, THEN COMPARE. `git diff` without --cached does not see untracked
@@ -112,10 +147,10 @@ cd "$tap"
 # the next file to be added will — reads as "no change" and the script exits
 # reporting success while pushing nothing. That is the exact failure this
 # script exists to prevent, wearing a green tick.
-git add -A -- Formula skills
+git add -A -- Formula Casks skills
 
 # Re-running a release must not produce an empty commit.
-if git diff --cached --quiet -- Formula skills; then
+if git diff --cached --quiet -- Formula Casks skills; then
 	echo "the tap already matches ${tag}; nothing to push"
 	exit 0
 fi

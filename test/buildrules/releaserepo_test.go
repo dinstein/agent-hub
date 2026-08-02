@@ -2,8 +2,10 @@ package buildrules
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -135,6 +137,82 @@ func TestBothReleasePathsSyncTheTapThroughOneScript(t *testing.T) {
 				"reach the tap — and the one that was forgotten is invisible: the push "+
 				"succeeds and the stale copy stays.", caller)
 		}
+	}
+}
+
+// TestTapSyncCommitsEverythingItCopies closes the gap between copying a file
+// into the tap and committing it.
+//
+// tap-sync.sh writes each file to "$tap/<dir>/…" and then stages and diffs an
+// explicit pathspec list. The two are maintained by hand and nothing but this
+// check ties them together, so a directory added to the first and forgotten in
+// the second produces a run that copies the file, stages nothing, reports "the
+// tap already matches" and exits 0. The tap keeps serving the old copy and the
+// release looks green from every angle — the same silent-staleness failure the
+// script's own STAGE FIRST comment exists to prevent, one line further along.
+func TestTapSyncCommitsEverythingItCopies(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts", "tap-sync.sh"))
+	if err != nil {
+		t.Fatalf("scripts/tap-sync.sh: %v", err)
+	}
+	script := string(data)
+
+	// Top-level directories the script writes into, `.git` aside — that one is
+	// read to prove the target is a checkout, never written.
+	copied := map[string]bool{}
+	for _, m := range regexp.MustCompile(`"\$tap/([A-Za-z][^/"]*)`).FindAllStringSubmatch(script, -1) {
+		copied[m[1]] = true
+	}
+	if len(copied) == 0 {
+		t.Fatal("no \"$tap/<dir>\" writes found in tap-sync.sh; if the shape of the " +
+			"script changed, this check has to change with it rather than pass vacuously")
+	}
+
+	for _, pathspec := range []struct{ what, pat string }{
+		// [^;\n]+ rather than .+: the diff runs inside an `if …; then`, and a
+		// trailing ";" swallowed into the last pathspec makes every check here
+		// miss the directory it is about.
+		{"git add", `git add -A -- ([^;\n]+)`},
+		{"git diff --cached", `git diff --cached --quiet -- ([^;\n]+)`},
+	} {
+		m := regexp.MustCompile(pathspec.pat).FindStringSubmatch(script)
+		if m == nil {
+			t.Fatalf("tap-sync.sh no longer runs `%s` with an explicit pathspec", pathspec.what)
+		}
+		listed := map[string]bool{}
+		for _, f := range strings.Fields(m[1]) {
+			listed[f] = true
+		}
+		for dir := range copied {
+			if !listed[dir] {
+				t.Errorf("tap-sync.sh copies into %s/ but `%s` does not name it.\n"+
+					"The file is written and never committed: the script prints "+
+					"\"the tap already matches\" and exits 0 while the tap serves "+
+					"the previous release's copy.", dir, pathspec.what)
+			}
+		}
+	}
+}
+
+// TestTapSyncRefusesACaskWithoutItsFormula proves that guard blocks.
+//
+// The cask depends on the formula. Publishing one without the other is the
+// split-commit window this script exists to close, arriving through the
+// argument list instead of through two invocations.
+func TestTapSyncRefusesACaskWithoutItsFormula(t *testing.T) {
+	dir := t.TempDir()
+	cask := filepath.Join(dir, "agenthub-gui.rb")
+	if err := os.WriteFile(cask, []byte("cask \"agenthub-gui\" do\nend\n"), 0o644); err != nil {
+		t.Fatalf("writing a cask: %v", err)
+	}
+	cmd := exec.Command("bash", filepath.Join(repoRoot(t), "scripts", "tap-sync.sh"),
+		dir, "v9.9.9", "", cask)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("tap-sync.sh accepted a cask with no formula:\n%s", out)
+	}
+	if !strings.Contains(string(out), "without a formula") {
+		t.Errorf("refused, but not for the recorded reason:\n%s", out)
 	}
 }
 

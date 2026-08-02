@@ -96,6 +96,11 @@ if [ "$push" != "--push" ]; then
 	find dist -maxdepth 1 \( -name '*.tar.gz' -o -name 'checksums-cli.txt' \) -exec echo '  {}' \;
 	if [ -n "$tap" ]; then
 		echo "would push Formula/agenthub.rb and skills/agenthub/SKILL.md to ${tap}"
+		# Said before the irreversible step rather than discovered after it.
+		# This path builds no DMG, so it has no cask to render; the tap keeps
+		# serving the GUI it already served.
+		echo "would NOT touch Casks/agenthub-gui.rb: no DMG is built here, so the tap"
+		echo "  would serve the previous GUI beside this release's CLI"
 	else
 		echo "HOMEBREW_TAP_REPO unset: the tap step would be skipped"
 	fi
