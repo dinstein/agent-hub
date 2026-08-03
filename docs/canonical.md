@@ -2,17 +2,15 @@
 
 This file registers **the things you don't get to change casually**: frozen identifiers, the
 singletons, dependency directions, command naming rules, engineering conventions, and every matter
-that has ever been seriously decided, along with its rationale. Changing this file means changing an
-architectural convention.
+that has been seriously decided. Changing this file means changing an architectural convention.
 
-It deliberately carries nothing you can read off the tree or the code. For how the system works see
+It carries nothing you can read off the tree. For how the system works see
 [architecture.md](architecture.md); for flow timing [flows.md](flows.md); for per-package invariants
-[modules/](modules/) — which is also where a debt already pinned to a line is recorded, in the doc of
-the package that owns it.
+and debt already pinned to a line, [modules/](modules/).
 
 **The section numbers are an interface.** Code comments cite them by number — `§2 rule 3`, `§5c #2`,
-`§7 #4` — in well over a hundred places. Add sections, rewrite their contents, but do not renumber:
-a citation that lands on the wrong ruling is worse than one that lands on nothing.
+`§7 #4` — in well over a hundred places. Add sections and rewrite their contents, but do not
+renumber: a citation that lands on the wrong ruling is worse than one that lands on nothing.
 
 ---
 
@@ -28,45 +26,40 @@ a citation that lands on the wrong ruling is worse than one that lands on nothin
 | env prefix | `AGENTHUB_*` (stripped wholesale when spawning downstream) |
 | Control socket | `<run>/ctl.sock`; on Windows `\\.\pipe\agenthub-ctl-<sha8(SID)>` |
 
-The repository name `agent-hub` deliberately differs from the product and binary name `agenthub`; the
-repository name is **not** part of the frozen set.
+The repository name `agent-hub` deliberately differs from the product and binary name `agenthub`, and
+is **not** part of the frozen set.
 
 Data directory: macOS `~/Library/Application Support/AgentHub`, Linux
-`${XDG_DATA_HOME:-~/.local/share}/AgentHub`, Windows `%APPDATA%\AgentHub` — the Windows resolution
-(MSIX detection plus a loopback-UNC twin path) is implemented but **never verified on real hardware**;
-[windows.md](windows.md) is the one place that tracks what does and doesn't work there.
+`${XDG_DATA_HOME:-~/.local/share}/AgentHub`, Windows `%APPDATA%\AgentHub` — the Windows resolution is
+implemented but never verified on real hardware ([windows.md](windows.md)).
 
 **Channel separation is a property of the binary, not of an environment variable.** `main.channel`
-defaults to `"dev"` and resolves to the `AgentHubDev` sibling; only a build made explicitly for release
-resolves to the installed location. **Failure direction: a build that forgot to declare its channel
-gets the dev directory.** Wrong in that direction costs one extra sandbox; wrong in the other burns the
-one-shot OAuth refresh token in the user's real installation. An explicit `AGENTHUB_DATA_DIR` still
-takes precedence over both.
+defaults to `"dev"`; only a build made explicitly for release resolves to the installed location.
+**Failure direction: a build that forgot to declare its channel gets the dev directory** — wrong that
+way costs one sandbox, wrong the other burns the one-shot OAuth refresh token in the user's real
+installation. `AGENTHUB_DATA_DIR` still overrides both.
 
 ---
 
 ## 2. Package layout
 
-Which package holds what, and which layer it belongs to: [architecture.md §3](architecture.md#3-core-module-map)
-and [modules/](modules/). The tree itself is `ls internal/`, which is faster and never goes stale.
-What follows is only what you *cannot* read off the tree.
+Which package holds what: [architecture.md §3](architecture.md#3-core-module-map) and
+[modules/](modules/). What follows is only what you *cannot* read off `ls internal/`.
 
 ### There is exactly one of each
 
 | The one … | Lives in | What "one" forbids |
 |---|---|---|
 | MCP protocol facade | `internal/mcp` (+ `transport`) | Any other package touching protocol implementation, and any third-party MCP library anywhere (rule 2 below) |
-| execution pipeline | `internal/pipeline` | A second call path. Both direct calls and `call_tool` go through `pipeline.Execute`, and tests assert their gate counters match exactly; a new path must carry the same assertion |
-| semantic-write implementation | `internal/confops` | The CLI and the control plane owning separate copies of "what it means to add a server". They are two frontends over one rule set |
+| execution pipeline | `internal/pipeline` | A second call path. Direct calls and `call_tool` both go through `pipeline.Execute`, and tests assert their gate counters match; a new path must carry the same assertion |
+| semantic-write implementation | `internal/confops` | The CLI and the control plane owning separate copies of "what it means to add a server" |
 | provenance for an exposed name | `router.RouteOf` | Splitting on `__` — a server id or a tool name may itself contain `__` |
 | governance surface | the scope chain (§7 of architecture.md) | A second place that decides what a caller may see |
 
 Four packages are **leaves on purpose**: `internal/tier` (the read/write/destructive vocabulary),
 `internal/platform`, `internal/logx`, `internal/guard/*`. `tier` is the instructive one — five
-packages need to say the word "read", and none of them should import another to do it. It used to live
-in `pipeline`, which made the control plane import the data plane's execution package for a noun, and
-that import turned rule 3's failing case into an **import cycle rather than a lint error**, leaving
-the rule unprovable.
+packages need to say the word "read", and none should import another to do it. It used to live in
+`pipeline`, which turned rule 3's failing case into an **import cycle rather than a lint error**.
 
 ### Retired old names (they show up in early material; never use them)
 
@@ -75,17 +68,17 @@ the rule unprovable.
 | `internal/controlapi`, `internal/control` | `internal/ctlapi` (DTOs and client live in the public `api` package) |
 | `internal/vault` | `internal/secrets` |
 | `internal/secure/{integrity,injection,ssrf,audit}` | `internal/guard/*` — but only `ssrf` survived, as `netguard` |
-| `internal/integrity`, `internal/approval`, `internal/audit` | **Nothing.** Removed with the old runtime governance surface rather than renamed. The later `internal/accesslog` is a new, local observability ledger with a different on-disk format and no permission role; it is not a forwarding address for the old package. `internal/audit`'s one surviving primitive — the multi-writer JSONL append — was extracted first and is `internal/jsonl` |
-| `internal/savings` | **Nothing.** The token-savings ledger was removed rather than renamed or replaced (§7 decision 9); `agenthub activity`, which was its only reader, went with it |
+| `internal/integrity`, `internal/approval`, `internal/audit` | **Nothing.** Removed with the old runtime governance surface. `internal/accesslog` is a new local ledger with no permission role, not a forwarding address; `internal/audit`'s one surviving primitive, the multi-writer JSONL append, is `internal/jsonl` |
+| `internal/savings` | **Nothing.** Removed rather than renamed (§7 #9); `agenthub activity`, its only reader, went with it |
 | `internal/gatewaymode` | `internal/gateway` |
 | `internal/downstream/transport` | `internal/mcp/transport` |
 | `package skill` | `package skills` |
-| `agenthub tool ls` / `tool inspect` / `tool allow` | `agenthub server tool …` (the one-release shim shipped in v0.14.0 and is gone; the old spelling is now a usage error). `tool` is a resource group at two altitudes, `server tool` and `profile tool`, and at neither is it top-level |
+| `agenthub tool ls` / `tool inspect` / `tool allow` | `agenthub server tool …` (the shim is gone; the old spelling is a usage error) |
 | `agenthub tool allow <server> a b` (positional) | `agenthub server tool allow <server> --only a,b` |
 | `agenthub tool allow <server>` (bare = block all) | `agenthub server tool allow <server> --none` |
 | `agenthub tool allow <server> --clear` | `agenthub server tool allow <server> --all` |
-| `agenthub profile tools <profile> <server>` | `agenthub profile tool allow …` (the one-release shim shipped in v0.14.0 and is gone; `tools` now aliases the group, per §3) |
-| `agenthub server tool ls --rules` | `agenthub server ls` (a TOOLS column) / `agenthub server inspect <server>` (hidden flag for one release, §7.8) |
+| `agenthub profile tools <profile> <server>` | `agenthub profile tool allow …` (the shim is gone; `tools` now aliases the group, per §3) |
+| `agenthub server tool ls --rules` | `agenthub server ls` (a TOOLS column) / `agenthub server inspect <server>`. `--rules` is still accepted as a hidden, deprecated spelling; deleting it is outstanding (§7 #8) |
 | the execute pipeline living inside `internal/gateway` | a standalone `internal/pipeline`; `gateway`/`daemon` only do assembly |
 | `catalog.Snapshot` (tool catalog snapshot) | `router.Catalog`; `internal/catalog` is the curated *server* catalog |
 
@@ -99,120 +92,79 @@ the rule unprovable.
 4. `internal/mcp`, `internal/platform`, `internal/logx` and `internal/guard/*` are
    zero-business-dependency foundations.
 
-These are CI failure conditions, not review conventions, and each one must have a failing case that
-proves it actually bites (§6).
+These are CI failure conditions, not review conventions, and each must have a failing case proving it
+actually bites (§6).
 
-### On constraint #2: the MCP protocol facade is entirely first-party
-
-No `go get` of `modelcontextprotocol/go-sdk`, `mark3labs/mcp-go`, or any other MCP library.
-
-Rationale: bounded reads (16MB), `notifications/cancelled` forwarding, inline replies to reverse RPC
-and the trailing 4KB of stdio stderr are protocol-layer invariants that need precise control, while
-JSON-RPC encoding itself is not much work — not worth tying to an external project's release cadence.
-The point of the facade is to keep that choice **reversible**: if the implementation is ever swapped,
-the change is sealed inside one package, rather than borrowing one now.
+On rule 2: no `go get` of any MCP library. Bounded reads (16MB), `notifications/cancelled` forwarding,
+inline replies to reverse RPC and the trailing 4KB of stdio stderr are protocol-layer invariants
+needing precise control, while JSON-RPC encoding itself is not much work. The facade keeps the choice
+**reversible** — swapping the implementation stays sealed inside one package.
 
 ---
 
 ## 3. Command naming rules
 
 - **Resource groups are singular as the canonical name, with the plural as a cobra alias**:
-  `server` / `profile` / `client` / `session` / `skill` / `secret` / `token` — one alias per group,
-  and `grep -n 'Aliases' internal/cli/*.go` is the whole list
-- **Action/flow groups stay as they are**: `daemon`, `connect`, `auth`, `audit`, `logs`, `events`,
-  `config`, `doctor`, `catalog`. `audit` is the access-ledger lifecycle and inspection surface, not a
-  plural resource collection. Neither is `logs`: it is a read **across every process log at once**,
-  which is what separates it from `daemon logs` (one process) and `server logs` (one downstream
-  connection's frames). Three readers, three subjects — and the name is not free to move to any of
-  the other two. `events` kept its name through a change of meaning: it subscribed to the daemon SSE
-  stream and now reads the event LOG (`internal/eventlog`). The name stayed because it was always the
-  better fit — a notification channel is not a stream of events, a change log is — and because the two
-  never coexisted, so nothing is ambiguous about which one a reader has. `activity` was one of these and is **gone, not renamed**: it projected
-  the token-savings ledger, and the ledger was removed rather than repaired (§7 decision 9). The
-  OAuth group is **`auth`**, not `oauth`, and `catalog` takes
-  **no plural alias**: there is one built-in list, so `catalogs` would name a thing that does not
-  exist. The rule is that the plural is an alias for a group you accumulate entries in, not
-  decoration applied to every noun
+  `server` / `profile` / `client` / `session` / `skill` / `secret` / `token`. One alias per group;
+  `grep -n 'Aliases' internal/cli/*.go` is the whole list
+- **Action/flow groups take no plural alias**: `daemon`, `connect`, `auth`, `audit`, `logs`, `events`,
+  `config`, `doctor`, `catalog`. The plural marks a group you accumulate entries in, not every noun.
+  `logs` reads **across every process log at once**, which is what separates it from `daemon logs`
+  (one process) and `server logs` (one downstream connection's frames); the name may not move between
+  the three. `events` reads the event log (`internal/eventlog`), not the daemon SSE stream it
+  originally subscribed to. `activity` is **gone, not renamed** (§7 #9). The OAuth group is **`auth`**
 - List subcommands are always `ls`, and **every command supports `--json`**, with human and machine
   output rendered from the same data structure
-- **There is no top-level `tool` group.** A tool is something a server contributes, and the rule
-  deciding which of them it contributes lives on the server entry beside `enabled` — so the group
-  hangs off `server`: `server tool ls` / `server tool inspect` / `server tool allow`. While it was at
-  the top level it was also in the withheld group, which shipped a global allow list with no
-  advertised way to read or write it
-- **The two narrowing layers are one command at two altitudes**: `server tool ls | inspect | allow`
-  and `profile tool ls | inspect | allow`, the writes both taking `--only a,b | --all | --none` and
-  the listings both taking `--search | --all`. They intersect and neither can widen. Spelling them
-  differently — which they were, `tool allow` with a positional list against `profile tools --only`
-  — invites a second mental model of one mechanism, and the pair that must not be confused (`--all`
-  drops the rule, `--none` stores the empty list) is exactly the pair a second model gets backwards.
-  A command present at one altitude and missing at the other does the same thing more quietly
-- **A rule is read where it is stored; a listing reads its effect.** The global allow list is a
-  field on the server entry, so `server ls` and `server inspect` report it and `profile ls` reports
-  a profile's selectors; `server tool ls` and `profile tool ls` list the tools those rules leave
-  offered (§7.8). A flag that swaps a listing's row type is a second command wearing a flag — which
-  is what `server tool ls --rules` was, and why it is going
-- **There is no `scope` group.** Narrowing is what a profile *is*, so it lives on `profile`
-  (`profile server` / `profile tool` / `profile discovery`), and handing a surface out lives on
-  `client` (`client bind <client> <profile>` / `client unbind` / `client ls`). The retired group maps
-  one-to-one: `scope set --client X --profile P` → `client bind X P`, `scope clear --client X` →
-  `client unbind X`, `scope ls` → `client ls`
+- **There is no top-level `tool` group.** The rule deciding which tools a server contributes lives on
+  the server entry beside `enabled`, so the group hangs off `server` (§7 #7)
+- **The two narrowing layers are one command at two altitudes**: `server tool` and `profile tool`,
+  each `ls | inspect | allow`, the writes taking `--only a,b | --all | --none` and the listings
+  `--search | --all`. They intersect and neither can widen. A second spelling invites a second mental
+  model, and `--all` (drop the rule) against `--none` (store the empty list) is exactly the pair a
+  second model gets backwards
+- **A rule is read where it is stored; a listing reads its effect** (§7 #8)
+- **There is no `scope` group.** Narrowing is what a profile *is* (`profile server` / `profile tool` /
+  `profile discovery`); handing a surface out lives on `client` (`bind` / `unbind` / `ls`). The
+  retired group maps one-to-one: `scope set --client X --profile P` → `client bind X P`,
+  `scope clear --client X` → `client unbind X`, `scope ls` → `client ls`
 - **A live session cannot be renarrowed.** What a client sees is decided before it connects, so
-  `session` is a read-and-terminate group (`ls` / `show` / `kill`) and the way to change a surface is
-  to edit the profile
-- The `client` group is `ls | detect | inspect | connect | disconnect | bind | unbind`. `detect` stats
-  and `inspect` reads — that is the whole distinction (macOS TCC, see `internal/clients`); `ls` gives
-  the connect and the bind answers per client. There is no `import`: a client's existing servers are
-  brought over by pasting its configuration
+  `session` is read-and-terminate (`ls` / `show` / `kill`); edit the profile instead
+- The `client` group is `ls | detect | inspect | connect | disconnect | bind | unbind` — `detect`
+  stats and `inspect` reads (macOS TCC, see `internal/clients`). There is no `import`: a client's
+  existing servers are brought over by pasting its configuration
 - The `skill` group is `add | ls | inspect | rm | enable | disable | install-to | sync | update |
-  verify` (`install-to` materializes one entry, `sync` materializes in bulk by scope; both coexist)
+  verify` (`install-to` materializes one entry, `sync` in bulk by scope; both coexist)
 
 ### `add` and `enable` are separate primitives, and stay that way
 
 `server add` writes the definition and **nothing else**: no connection, no probe, and the entry lands
 **disabled**. `server enable` puts a server into service, and that is where the connection probe lives.
-
-They answer different questions. `add` records what a server IS — pure configuration, no network,
-deterministic, safe to script against a downstream that is unreachable right now. `enable` declares
-that the operator wants to USE it, the only point at which "can we reach it?" is worth asking. Folded
-together, `enabled` would mean both *the user wants this* and *it answered a probe*, and a downstream
-that was merely mid-deploy at add time becomes indistinguishable from one that was never added.
-
-Two consequences that must not be "simplified" away:
-
-- **The probe reports; it never vetoes.** The enable always happens. A server that needs a login is
-  enabled and says so. Refusing would strand an entry the operator explicitly enabled and turn a
-  transient outage into a configuration change.
-- **Composition belongs to the caller.** `catalog add` offers one action over the two operations, and
-  `auth login` enables the server it just authorized (which is what keeps the OAuth path two commands
-  rather than three). The primitives underneath stay separate.
+Folded together, `enabled` would mean both *the user wants this* and *it answered a probe*. Two
+consequences that must not be "simplified" away: **the probe reports, it never vetoes**, so a
+transient outage never becomes a configuration change; and **composition belongs to the caller** —
+`catalog add` and `auth login` each offer one action over the two, and the primitives stay separate.
 
 ---
 
 ## 4. Known capability boundaries
 
-Not a to-do list — an **honest grading of the current implementation**. When you touch the related
-code, know which tier you are standing on.
+Not a to-do list — an **honest grading of the current implementation**.
 
 | Item | Status |
 |---|---|
-| Windows | Platform layer filled in: `LockFileEx` cross-process locks in every flock package, named-pipe listener with SDDL (owner-only), api dialing, GUI channel wiring, and portable zip packaging. CI gates on `GOOS=windows` build + vet. Two gaps remain above it — `daemon stop` has no process control, and no client has a user-level config path. **Never run on a real Windows machine.** [windows.md](windows.md) tracks all of it |
+| Windows | Platform layer filled in; CI gates on `GOOS=windows` build + vet, but it has **never run on a real Windows machine**. [windows.md](windows.md) tracks what works and what is missing |
 | GUI | Functionally complete, **not part of the default build** (the webview needs GTK/WebKit, which CI runners lack); `make gui` |
 | skills materialization | **Client granularity only**, not per-session — the files live outside agenthub's read path |
 | skills from git sources | Records and pins a revision, but **never runs git and never touches the network**; update without a local checkout returns a typed unsupported error rather than claiming you are up to date |
 | TOON | A **one-way display projection with no decoder** (§7 #4); anything requiring a round trip never enters the encoder |
-| teams | Deliberately unimplemented, and **nothing in the tree reserves a seam for it**. There used to be a `policy` layer holding an `Effective()` hook for a forced team policy; it went with the rest of the runtime governance surface, and a hook nobody can reach is worse than none — it reads as a decision already half-made |
+| teams | Deliberately unimplemented, and **nothing in the tree reserves a seam for it** — a hook nobody can reach reads as a decision already half-made |
 | Telemetry / update checker | Decided against (§7 #6) — no data is collected |
 
 ### Three things that must never be retrofitted
 
-Each was nearly left out, and each would be disproportionately expensive to add later. They are in
-place; keep them that way.
-
 1. **The composite vault key** `(serverID, scopeName)`, defaulting to `"_global"` — retrofitting it
    would touch every singleton in the token store, callback server and refresh coordinator.
-2. **Registry self-write suppression** (§5c #1) — without it every self-write triggers a pointless
-   reload cycle.
+2. **Registry self-write suppression** (§5c #1) — without it every self-write costs a reload cycle.
 3. **X-Request-Id end to end**: the response header is written before the handler runs, error bodies
    carry it, and the log line for the failure carries the same value.
 
@@ -225,17 +177,11 @@ place; keep them that way.
 | [smart-mcp-proxy/mcpproxy-go](https://github.com/smart-mcp-proxy/mcpproxy-go) | MIT / Go | **Reference only, never copy code** |
 | [tsouth89/toolport](https://github.com/tsouth89/toolport) | MIT / Rust | A different language; likewise a design reference only |
 
-The rule and the reasoning behind it are in [AGENTS.md](../AGENTS.md) — read them, never copy them;
-what is inherited is the list of problems they hit. It is not restated here, because two copies of a
-policy eventually give two answers and a reader has no way to tell which is current.
-
-What that leaves for this file is the line the tree actually cites §5 for, which AGENTS.md does not
-draw: **a bound learned from them is not copied code.** Two constants come across verbatim —
-`internal/httpbridge`'s ingress limits from toolport's, and `clients.MaxConfigSize` — and both are
-what this policy permits rather than exceptions to it. A number is a finding *about* the problem
-(how large a hostile request gets before it costs you something), and arriving at a different one by
-rederivation would be worse, not more independent. What may never cross is the implementation around
-it.
+The rule and its reasoning live in [AGENTS.md](../AGENTS.md) and are not restated here. What this file
+adds is the line the tree cites §5 for: **a bound learned from them is not copied code.** Two constants
+come across verbatim — `internal/httpbridge`'s ingress limits and `clients.MaxConfigSize` — and both
+are what the policy permits: a number is a finding *about* the problem, and rederiving a different one
+would be worse, not more independent. What may never cross is the implementation around it.
 
 The root `NOTICE` records the design references (academic honesty, not a license obligation).
 
@@ -248,43 +194,39 @@ newest first — `2026-07-28`, `2025-11-25`, `2025-06-18`, `2025-03-26` — and 
 either direction reads what it accepts.
 
 - The **read side** (connecting to downstreams) probes with `server/discover`, and falls back to the
-  `initialize` handshake only on proof the server answered. A downstream speaking an older version
-  negotiates downward from the same list
-- The **exposure side** (the gateway facing upstream clients) answers `server/discover` with that
-  same list, and a request carrying the per-request `_meta` puts the session in stateless mode.
-  `initialize` negotiates the **stateful family only**: a client declaring `2026-07-28` *there* is
-  answered with the default instead, because echoing it would promise per-request `_meta` semantics
-  on a session that just used the handshake 2026 removed
-- Transport support stays asymmetric by direction: the read side speaks `stdio` +
-  `streamable-http` + **legacy HTTP+SSE**; the exposure side speaks `streamable-http` only — no new
-  SSE exposure surface
+  `initialize` handshake only on proof the server answered. An older downstream negotiates downward
+  from the same list
+- The **exposure side** answers `server/discover` with that same list, and a request carrying the
+  per-request `_meta` puts the session in stateless mode. `initialize` negotiates the **stateful
+  family only**: a client declaring `2026-07-28` *there* gets the default instead, because echoing it
+  would promise per-request `_meta` semantics on a session that used the handshake 2026 removed
+- Transport support is asymmetric by direction: the read side speaks `stdio` + `streamable-http` +
+  **legacy HTTP+SSE**; the exposure side speaks `streamable-http` only — no new SSE exposure surface
+  (ruling #29)
 - **Neither generation is offered an out-of-band notification stream on the HTTP face.**
-  `subscriptions/listen` — 2026's replacement for the GET stream — lands in the dispatch default, so
-  a conforming client reads it as "this server offers no stream", which is the stance already frozen
-  for the stream it replaces. The stdio face pushes notifications inline, as it always has
+  `subscriptions/listen` lands in the dispatch default, so a conforming client reads it as "this
+  server offers no stream" — the stance already frozen for the GET stream it replaces. The stdio face
+  pushes notifications inline, as it always has
 
 **`mcp.ProtocolVersion` does not name the version this tree targets, and flipping it to 2026 is
-wrong.** It stays at `2025-11-25` because every context that reads it is definitionally pre-2026 —
-the legacy handshake, the exposure side's default answer, the HTTP header sent before negotiation.
-The 2026-07-28 declaration travels per-request in `_meta`, built from `Version2026` directly. The
-constant carries this warning too; [mcp-2026-07-28.md](mcp-2026-07-28.md) §6.1 records why the
-original "flip the constant" plan was dropped, and its §7 what is deliberately still absent.
+wrong.** It stays at `2025-11-25` because every context that reads it is definitionally pre-2026: the
+legacy handshake, the exposure side's default answer, the HTTP header sent before negotiation. The
+2026-07-28 declaration travels per-request in `_meta`, built from `Version2026` directly.
+[mcp-2026-07-28.md](mcp-2026-07-28.md) §6.1 records why "flip the constant" was dropped.
 
 ### Upstream deprecation tracking
 
-The removals themselves are all no earlier than 2027-07-28, and every seam is already in place —
-which is what makes the 2026-07-28 column read as history rather than as a plan. Every use site
-carries a `// DEPRECATED-UPSTREAM(<feature>, earliest-removal: <date>)` comment, so one grep finds
-them all.
+No removal is earlier than 2027-07-28 and every seam is in place. Each use site carries a
+`// DEPRECATED-UPSTREAM(<feature>, earliest-removal: <date>)` comment, so one grep finds them all.
 
 | Feature | Deprecated in | Dependency point | Migration seam |
 |---|---|---|---|
-| The `initialize` handshake | `2026-07-28` | The stateful session path, on both faces | **Landed**: `server/discover` plus per-request `_meta`. The handshake stays, because a downstream that speaks only the older generation still needs it |
-| `ping` | `2026-07-28` | Liveness on the stateful path | None needed — a stateless request carries its own context, so there is no session to keep alive |
-| Roots | `2026-07-28` | `${ROOT}` and derived-instance keying (`internal/downstream`). The dependency **shrank** when the per-project scope layer was retired: the root no longer selects anything and has left the resolver's cache key | **In place since M0**: `RootSource`, with one implementation for the roots protocol and one for an explicit root in `clients.json` |
-| Sampling | `2026-07-28` | One of the isolation arguments | None needed (the conclusion is independently supported by credentials, connection parameters and fault isolation) |
-| DCR | `2026-07-28` | The OAuth discovery chain; DCR credentials persisted alongside tokens | **In place since M1**: `ClientRegistrar`, with one implementation for DCR and one for Client ID Metadata Documents |
-| Logging | `2026-07-28` | Downstream log forwarding | None needed (the logging surface is first-party anyway) |
+| The `initialize` handshake | `2026-07-28` | The stateful session path, both faces | **Landed**: `server/discover` plus per-request `_meta`. The handshake stays for downstreams on the older generation |
+| `ping` | `2026-07-28` | Liveness on the stateful path | None needed — a stateless request carries its own context |
+| Roots | `2026-07-28` | `${ROOT}` and derived-instance keying (`internal/downstream`) | **In place**: `RootSource`, one implementation for the roots protocol, one for an explicit root in `clients.json` |
+| Sampling | `2026-07-28` | One of the isolation arguments | None needed — the conclusion is independently supported |
+| DCR | `2026-07-28` | The OAuth discovery chain; credentials persisted alongside tokens | **In place**: `ClientRegistrar`, one implementation for DCR, one for Client ID Metadata Documents |
+| Logging | `2026-07-28` | Downstream log forwarding | None needed — the logging surface is first-party |
 | HTTP+SSE transport | `2025-03-26` | One of the three transports | Kept on the read side; no new exposure side |
 
 ---
@@ -292,17 +234,16 @@ them all.
 ## 5c. The config hot-reload path (two things not to get wrong)
 
 GUI/CLI edits a profile → the corresponding gateway updates automatically. The path is in
-[flows.md](flows.md) §4 and the mechanism in
-[modules/foundation.md](modules/foundation.md#the-generation-criterion-self-write-suppression-and-the-two-watch-channels);
-these two rulings are what the mechanism exists to satisfy.
+[flows.md](flows.md) §4 and the mechanism in [modules/foundation.md](modules/foundation.md); these two
+rulings are what the mechanism exists to satisfy.
 
 1. **Self-write suppression.** When the daemon writes `profiles.json` itself, fsnotify reports the
    event just the same, so the payload is registered in a bounded TTL set *before* writing and the
    watcher ignores anything that hits it. Without it, every self-write costs a reload cycle.
 2. **The generation criterion is "the generation read ≥ the generation applied"**, never "equals the
    event's `Rev`". `Change{Kind, Rev}` is a **notification** carrying no snapshot, so the gateway
-   re-reads the file itself; an equality test leaves several rapid successive writes stuck on an old
-   version, waiting for an event that will never come again.
+   re-reads the file itself; an equality test leaves rapid successive writes stuck on an old version,
+   waiting for an event that will never come again.
 
 ---
 
@@ -312,15 +253,9 @@ these two rulings are what the mechanism exists to satisfy.
 kept current and closed by the landing, one commit per subtask, `main` stays linear (rebase, never
 merge), `make ci-landing` **after** the rebase, `--ff-only` as the enforcement.
 
-This section used to carry its own copy, and the copy was the older rule: *commit directly to `main`,
-push as soon as each commit is done*. That is the dangerous direction for a contradiction to fall in.
-This file advertises itself as the authority on whether a convention may change, so an agent that
-starts here and stops reading commits straight into the main work tree — which is what the worktree
-rule exists to prevent, and no review after the fact puts the history back.
-
-Development workflow is not an architectural convention: it says nothing about the shape of the code,
-it changes for reasons the code never sees, and the file every coding agent reads first is `AGENTS.md`.
-One home, and that is the one.
+Development workflow is not an architectural convention, and `AGENTS.md` is the file every coding
+agent reads first. This section once carried its own copy, and the copy had gone stale in the
+dangerous direction: commit straight to `main`.
 
 ---
 
@@ -338,128 +273,97 @@ One home, and that is the one.
 | | |
 |---|---|
 | Fake downstream MCP server | `internal/testutil/fakemcp` |
-| Where reference repositories are cloned | `~/Develop/_refs/` (**outside the repository**, to keep git history clean) |
+| Where reference repositories are cloned | `~/Develop/_refs/` (**outside the repository**) |
 | Per-server log file | `<data>/logs/server-<name>.log` |
 
 ### Every depguard constraint must have a failing case
 
 A violating sample plus a test that runs lint and asserts it fails (`internal/depguardtest`, which
 plants its probes in a disposable copy of the checkout). **A lint rule that is configured but not in
-effect is more dangerous than no rule at all.**
-
-The same standard applies to the proof itself: when golangci-lint is absent the proof calls `t.Skip`,
-`make test` reports that skip as success, and **a skipped proof is not a proof** — so the CI gate greps
-the verbose output for `--- SKIP` and fails on it. The rule generalizes beyond depguard: a check that
-can quietly not run is a check you do not have.
+effect is more dangerous than no rule at all** — and the same standard applies to the proof: when
+golangci-lint is absent it calls `t.Skip` and `make test` counts that as success, so the CI gate greps
+the verbose output for `--- SKIP` and fails on it. **A check that can quietly not run is a check you
+do not have.**
 
 ### Test infrastructure
 
-A programmable **fake downstream MCP server** (`internal/testutil/fakemcp`) that injects by script:
-slow responses and timeouts, half-written and malformed JSON-RPC frames, oversized payloads (hitting
-the 16MB bounded read), crashes during the handshake, `tools/list_changed` storms, protocol violations.
+A programmable **fake downstream MCP server** (`internal/testutil/fakemcp`) injects by script: slow
+responses, half-written and malformed JSON-RPC frames, oversized payloads (hitting the 16MB bounded
+read), handshake crashes, `tools/list_changed` storms, protocol violations.
 
 Three classes of test have been in CI from day one:
 
 1. **Golden tests** — the signature grammar, search ordering, error copy. **Determinism is the
-   contract**: agents key retry logic and prompts off exact wording, so error text and ordering are
-   frozen artifacts, not cosmetics.
-2. **Cross-process concurrency tests** — single-line `O_APPEND` writes (`internal/jsonl`, which
-   re-executes the test binary as N appending children and asserts no line was torn), monotonic
-   generations.
+   contract** (ruling #27): agents key retry logic and prompts off exact wording, so error text and
+   ordering are frozen artifacts. Fix the code, never the golden.
+2. **Cross-process concurrency tests** — single-line `O_APPEND` writes (`internal/jsonl` re-executes
+   the test binary as N appending children and asserts no line was torn), monotonic generations.
 3. **Daemon `kill -9` injection tests** — the stdio data plane is unaffected.
 
 ---
 
 ## 7. Decision records
 
-The items that were once "to be decided". **All are decided**; each is registered here so none gets
+The items that were once "to be decided". **All are decided**; each is registered so none gets
 silently reopened, and the numbering is cited from code.
 
-1. ~~Whether to pull lazy-connect forward into M1~~ → **Decided (M2): no.** Keep eager connect plus
-   "answer from cache first" fast startup.
-
-   Three reasons, in order of weight. **The original motivation was solved by something else**: lazy
-   connect was meant to fix the N×M process cost of one process per client × one instance per server,
-   and what actually solves that is the daemon's streamable-http shared pool. **The cost lands in
-   exactly the wrong place**: a cold npx/uvx cache takes 10s to minutes on first start (hence
-   `DefaultConnectTimeout` at 120s), and eager connect spends that in the gateway's startup window
-   where `tools/list` is already answered from cache and the agent never blocks — lazy connect moves it
-   into the middle of the first `tools/call`, where it reads as an unexplainable hang inside an agent
-   turn and races the client's own timeout.
-
-   The escape hatch stays open — the seam is `downstream.Deps.Dial` plus the tool cache — and the
-   trigger should be measured process/memory cost, not a derivation.
+1. ~~Whether to pull lazy-connect forward~~ → **Decided: no.** Keep eager connect plus "answer from
+   cache first" fast startup. The N×M process cost that motivated it is solved by the daemon's shared
+   streamable-http pool instead, and a cold npx/uvx cache (10s to minutes; hence
+   `DefaultConnectTimeout` at 120s) is better spent in the startup window, where `tools/list` answers
+   from cache, than inside the first `tools/call`, where it reads as an unexplainable hang. The escape
+   hatch stays open — `downstream.Deps.Dial` plus the tool cache — and the trigger should be measured
+   cost, not a derivation.
 2. ~~On-disk cache for shaping: bbolt or plain files~~ → **Decided: plain files.**
    `<data>/cache/shaping/<sha256(owner)>/<cursor>.json`, atomic writes (temp file in the same
-   directory → 0600 → fsync → rename) + TTL sweeping + a sweep at startup. Zero new dependencies is
-   an established style here; the access pattern is single-key point lookup with no queries, no
-   transactions and no cross-key consistency; and a corrupted entry costs exactly one cursor, whereas
-   a single-file database would need a recovery mechanism to offer the same property.
-3. ~~Wails3 version and frontend stack (v3 is still alpha; we need a fallback)~~ → **Decided (M1-G):**
-   `wails/v3 v3.0.0-alpha2.118` + vanilla TS + Vite (`@wailsio/runtime` is the only frontend runtime
-   dependency). The fallback plan is not "switch frameworks", it is **compressing the alpha dependency
-   down to three files**: only `cmd/agenthub-gui/gui_main.go`,
-   `cmd/agenthub-gui/services/service_wails.go` and `cmd/agenthub-gui/tray_wails.go` (assembly only)
-   depend on Wails, all behind `//go:build wails`, while the bodies they assemble — `services/hub.go`,
-   `services/window.go`, `tray.go`, `trayicon.go` — carry no tag and so compile, vet and unit-test in
-   CI. A breaking alpha change edits those three files; page logic, the tray's own judgement and the
-   `api` layer are untouched. The third file arrived with the system tray (2026-08): what a menu says,
-   which servers survive its cap and whether the close button hides or quits are all decided outside
-   it. The frontend also skips `wails3 generate bindings` in favour of `Call.ByName` plus
-   `Events.On` — one fewer generated artifact to drift. Details in [modules/gui.md](modules/gui.md).
-4. ~~TOON grammar scope and the golden case set~~ → **Decided (M1.5).** Both "determinism is the
-   contract" grammars are frozen, each with its own golden corpus:
+   directory → 0600 → fsync → rename) + TTL sweeping + a sweep at startup. The access pattern is
+   single-key point lookup with no transactions, and a corrupted entry costs exactly one cursor —
+   where a single-file database would need a recovery mechanism to match that.
+3. ~~Wails3 version and frontend stack~~ → **Decided:** `wails/v3 v3.0.0-alpha2.118` + vanilla TS +
+   Vite (`@wailsio/runtime` is the only frontend runtime dependency). The fallback plan is not
+   "switch frameworks", it is **compressing the alpha dependency down to three files**: only
+   `cmd/agenthub-gui/gui_main.go`, `cmd/agenthub-gui/services/service_wails.go` and
+   `cmd/agenthub-gui/tray_wails.go` are behind `//go:build wails`, while the bodies they assemble
+   carry no tag and so compile, vet and unit-test in CI. The frontend also skips
+   `wails3 generate bindings` in favour of `Call.ByName` plus `Events.On`.
+   See [modules/gui.md](modules/gui.md).
+4. ~~TOON grammar scope and the golden case set~~ → **Decided.** Both "determinism is the contract"
+   grammars are frozen, with golden corpora in `internal/shaping/toonenc` and
+   `internal/discovery/toolsig`:
 
-   **(a) TOON is a one-way projection: no round trip, no decoder.** A round trip would need a type
-   marker on every scalar (bare `1` vs `"1"`, bare `true` vs `"true"`) — exactly the tokens the
-   encoding exists to save. The contract is stated in-band instead, a first line reading
-   `#toon/1 (display encoding; send tool arguments as JSON)`. Anything that must survive a round trip
-   (`structuredContent`, tool arguments, cursors) stays JSON and never enters the encoder. Two
-   constructive guarantees: **never-larger** (below `MinSavingsPct`, default 10%, the input is returned
-   unchanged, so callers never compare sizes themselves) and **numeric fidelity** (no value is routed
-   through float64).
+   **(a) TOON is a one-way projection: no round trip, no decoder** — a round trip would need a type
+   marker on every scalar (bare `1` vs `"1"`), exactly the tokens the encoding exists to save. The
+   contract is stated in-band by a first line reading
+   `#toon/1 (display encoding; send tool arguments as JSON)`, and anything that must survive a round
+   trip (`structuredContent`, tool arguments, cursors) stays JSON. Two constructive guarantees:
+   **never-larger** (below `MinSavingsPct`, default 10%, the input is returned unchanged) and
+   **numeric fidelity** (no value is routed through float64).
 
-   **(b) The compact signature grammar** — `name(p1:str, p2?:int=3, p3?~:obj{a,b}) -> str` — carries
-   `?` for optional and `~` for lossy, and is what search hits return *instead of* a schema; the agent
-   calls `describe_tool` for detail.
+   **(b) The compact signature grammar** — `name(p1:str, p2?:int=3, p3?~:obj{a,b}) -> str`, `?` for
+   optional and `~` for lossy — is what search hits return *instead of* a schema.
 
-   The grammars themselves are frozen in the package docs, next to the golden corpora that actually
-   pin them: `internal/shaping/toonenc` (`testdata/*.toon`) and `internal/discovery/toolsig`
-   (`testdata/signatures.golden`). Two ordering invariants that are *not* local to those packages, and
-   so live here: `shaping.ShapeResult` **re-encodes first and applies the budget second** (the budget
-   is spent on the cheaper representation, and the truncation trailer is therefore always last), and
-   re-encoding sits at the very end of the delivery path, so nothing downstream of it can invalidate
-   the budget the truncation trailer describes.
+   Two ordering invariants are not local to those packages and so live here: `shaping.ShapeResult`
+   **re-encodes first and applies the budget second**, so the truncation trailer is always last, and
+   re-encoding sits at the end of the delivery path, so nothing downstream can invalidate the budget
+   that trailer describes.
 
    Two-stage describe is part of the same ruling: the meta-tools are **five, in a frozen order**
    (`status, search_tools, describe_tool, call_tool, fetch_result`); `describe_tool`'s visibility
-   predicate is exactly `Surface.byExposed`, so it is structurally impossible for it to be wider than
-   search/tools_list/call; and it emits **one per-id error only, `not_found`** — nonexistent, out of
-   scope, and left out of an allow list all share the copy, because differentiated errors would make
-   it an enumeration oracle. Same rule as `fetch_result`.
-5. ~~A workable story for macOS keychain ACLs and unsigned development binaries~~ → **Decided (M1):
-   yes, dev mode falls back to `secrets.enc` automatically.** Every `go build` produces a new unsigned
-   binary, so the keychain ACL prompts again each time; when keyring availability detection fails, or
-   `AGENTHUB_DEV_SECRETS=1` is set, writes fall back to `secrets.enc` with a 32-byte key generated and
-   persisted beside it (`secrets.enc.key`, 0600).
-
-   The honest grading is in the package comment: **a key next to the ciphertext is obfuscation, not
-   encryption at rest.** That holds for the dev fallback only; production uses `AGENTHUB_SECRET_KEY` or
-   the OS keyring. The detection itself must **read, never write** (a `Set` probe triggers macOS's
-   destructive confirmation dialog), caches per process, and gives every operation a hard timeout — a
-   stuck keychain dialog would otherwise hang the caller.
-6. ~~Whether to build telemetry and an update checker~~ → **Decided: neither.** AgentHub collects no
-   data: no telemetry (not even enum-only reporting, and no opt-in switch) and no update checker (no
-   channel probing, no network request at startup).
-
-   This process holds every downstream credential, every tool-call argument and result, and the user's
-   project paths. A channel promising "enums only" needs a `ScanForPII` gate to keep the promise, and
-   the stronger the promise the higher the maintenance cost — whereas not opening the channel costs
-   nothing and cannot degrade. "We collect no data" is also verifiable on the spot with an empty packet
-   capture, which "we only collect anonymous enums" is not; for a security product that is the best
-   available use of the trust budget. An update checker, meanwhile, either adds a round trip to a
-   startup path that runs once per client process, or needs a resident prober — and version comparison
-   is the package manager's job.
+   predicate is exactly `Surface.byExposed`, so it cannot be wider than search/tools_list/call; and it
+   emits **one per-id error only, `not_found`** — differentiated errors would make it an enumeration
+   oracle. Same rule as `fetch_result`.
+5. ~~macOS keychain ACLs and unsigned development binaries~~ → **Decided: dev mode falls back to
+   `secrets.enc` automatically.** Every `go build` produces a new unsigned binary, so the keychain ACL
+   prompts again each time; when keyring detection fails, or `AGENTHUB_DEV_SECRETS=1` is set, writes
+   fall back to `secrets.enc` with a 32-byte key persisted beside it (`secrets.enc.key`, 0600).
+   **A key next to the ciphertext is obfuscation, not encryption at rest** — true of the dev fallback
+   only; production uses `AGENTHUB_SECRET_KEY` or the OS keyring. Detection must **read, never write**
+   (a `Set` probe triggers macOS's destructive confirmation dialog), caches per process, and gives
+   every operation a hard timeout.
+6. ~~Whether to build telemetry and an update checker~~ → **Decided: neither.** No telemetry (not even
+   enum-only reporting, and no opt-in switch) and no update checker. This process holds every
+   downstream credential, argument and result; "enums only" would need a `ScanForPII` gate to keep the
+   promise, while not opening the channel costs nothing and is verifiable with an empty packet capture.
 
    Implementation constraint, equivalent to a CI-checkable property: **there exists no** outbound
    request anywhere in `internal/*` to an agenthub-owned domain or version manifest. Network egress
@@ -469,97 +373,58 @@ silently reopened, and the numbering is cited from code.
    `server`, and identically.** `server tool ls | inspect | allow`, with `server tool allow <server>`
    and `profile tool allow <profile> <server>` taking the same `--only | --all | --none`.
 
-   Three faults, one cause — the command tree disagreed with where the rule is stored. The rule is a
-   field on the server entry beside `enabled`, so **`tool` at the top level was in the withheld
-   group**: a shipped build carried a global allow list it never advertised a way to reach.
-   **`tool ls` applied no allow list at all**, so the rule's only possible reader disagreed with the
-   rule — and it had no other reader, since `server ls` does not carry the field and `server inspect`
-   does not print it. And **a bare `tool allow <server>` meant "expose nothing"**, one forgotten
-   argument from the opposite of the intent, silent afterwards, and spelled unlike the same edit one
-   layer up.
-
-   What must not be re-simplified: the two layers stay ONE vocabulary. They are an intersection, and
-   the pair that decides whether it fails open (`--all` drops the rule, `--none` stores the empty
-   list) is precisely what a second spelling gets backwards. There is still no `deny` verb at either
-   altitude — allow and deny answer the arrival of a tool the downstream adds tomorrow in opposite
-   directions.
+   The cause of the spelling it replaced was that the command tree disagreed with where the rule is
+   stored: a top-level `tool` sat in the withheld group, `tool ls` applied no allow list at all, and a
+   bare `tool allow <server>` meant "expose nothing". The two layers stay ONE vocabulary, and there is
+   still no `deny` verb at either altitude — allow and deny answer the arrival of a tool the
+   downstream adds tomorrow in opposite directions.
 8. ~~Where the tool RULES are read, now that they are written identically at both altitudes~~ →
    **Decided: a rule is reported by the resource that stores it; a listing reports the effect.**
    `server ls` / `server inspect` carry the global allow list, `profile ls` carries a profile's
-   selectors as it always did, and `server tool ls` / `profile tool ls` list the tools each layer
-   leaves offered. `server tool ls --rules` is hidden and goes at the next release.
+   selectors, and `server tool ls` / `profile tool ls` list the tools each layer leaves offered.
 
-   §7 fixed the writing and left the reading half-built. The rule got exactly one reader — a
-   `--rules` flag that swapped the row type, so one command answered with two JSON contracts (one
-   row per server, or one row per tool) — while the two commands that *describe* a server carried
-   the field in neither, which is the fault §7 itself recorded and did not repair. And the reading
-   existed at one altitude only: `server tool ls` said what the machine offered, `profile ls` said
-   what a profile narrowed, and the intersection — the only thing a bound client actually gets —
-   was left to the reader, per tool, in their head. That is the arithmetic `server tool inspect`
-   exists to stop them doing, and nothing was doing it at listing granularity.
+   **`server tool ls --rules` is hidden and deprecated but still accepted.** It was meant to go one
+   release later and has outlived that by several; deleting it is outstanding work.
 
    Two consequences worth keeping: the rule appears in `server ls` **only when some server carries
-   one** (the AUTH/TRACE rule — a column that never varies is a column readers learn to skip), and
-   `profile tool ls --all` names WHICH layer took each tool, split three ways because the repairs
-   are three different commands (`server tool allow`, `profile server add`, `profile tool allow`).
-
-   What must not be re-simplified: the layer that blocked is derived from the same `scope.Merge` as
-   the verdict, never from a second reading of the rules — the split between "the profile excludes
-   the server" and "the profile's selector excludes the tool" is the only thing read off the
-   profile, and only for tools the merge has already dropped. And `inspect` stays ONE
-   implementation: it is inherently cross-layer, so `profile tool inspect` is that same report
-   narrowed after it is computed, with the machine-wide verdict deliberately kept — a report that
-   hid it would say a profile allows something no client can reach.
+   one** (a column that never varies is a column readers learn to skip), and `profile tool ls --all`
+   names WHICH layer took each tool. Two things that must not be re-simplified: the blocking layer is
+   derived from the same `scope.Merge` as the verdict, never from a second reading of the rules; and
+   `inspect` stays ONE implementation — `profile tool inspect` is that report narrowed after it is
+   computed, machine-wide verdict kept, because hiding it would claim a profile allows something no
+   client can reach.
 9. ~~Whether to repair the token-savings ledger or remove it~~ → **Decided: removed.**
    `internal/savings`, `shaping`'s token estimator, the discovery-side projection and the
-   `agenthub activity` command are gone; `activity` leaves §3's action-group list with them.
+   `agenthub activity` command are gone. Its one writer fired only when `resultBudget` cut a result
+   and `resultBudget` has no built-in default, so on an untouched install nothing was ever written.
 
-   The measurement did not survive being audited. It had one writer — `gateway.shapeResult`, mode
-   always `shaping` — which fires only when `resultBudget` cuts a result, and `resultBudget` has no
-   built-in default: on an untouched install `savings.jsonl` was never written at all. The
-   `activity` report's "search trace" section looked for five modes (`lazy-discovery`, `lazy`,
-   `grouped`, `search`, `search_tools`) that no code path ever wrote, so that table was
-   structurally empty. And the one figure worth having — what compact signatures saved against
-   shipping full input schemas — was computed in `discovery/meta.go` and discarded.
+   Three reasons not to repair it instead. **The unit was wrong** — four bytes per token is ±20% on
+   English JSON and understates CJK, least accurate for the payloads most worth shrinking. **The claim
+   was wrong** — it measured how much a configured budget truncated, a consequence of the operator's
+   own setting. **The absence was worse than silence** — 0 because nothing was recorded is
+   indistinguishable from 0 because it is broken.
 
-   Three separate reasons not to repair it instead. **The unit was wrong**: four bytes per token is
-   ±20% on English JSON and understates CJK by about a quarter, so the headline number was least
-   accurate for the payloads most worth shrinking. **The claim was wrong**: what it measured is how
-   much a configured budget truncated, which is a consequence of the operator's own setting, not of
-   anything AgentHub does for them. **The absence was worse than silence**: a report that says 0
-   because nothing was ever recorded is indistinguishable from one that says 0 because the feature
-   does not work, and both read as "nobody uses this".
-
-   What must NOT be reintroduced under another name: an estimator with a fixed bytes-per-token
-   divisor. If per-mechanism accounting is ever wanted again, it measures **bytes** — bytes are a
-   fact this process observes, and the token count is a third party's tokenizer that the number
-   would then silently depend on. `internal/shaping/toonenc`'s `MinSavingsPct` is not an exception
-   to this and never was: it compares byte lengths to decide whether TOON is used at all, which is
-   a data-path decision with no accounting in it.
+   What must NOT be reintroduced under another name: an estimator with a fixed bytes-per-token divisor.
+   Per-mechanism accounting, if ever wanted again, measures **bytes** — a fact this process observes,
+   not a third party's tokenizer. `MinSavingsPct` is not an exception: it compares byte lengths to
+   decide whether TOON is used at all, a data-path decision with no accounting in it.
 
 ---
 
 ## 8. Historical ruling ids
 
 Around sixty comments cite a ruling by a number from the original design document — `ruling #8`,
-`A.1 #8`, `A.6 #5`. **That document is not in this repository**, so until this table existed those
-citations resolved to nothing: a reader met an id that looked authoritative, had no way to look it up,
-and could only guess whether the rule still held.
+`A.1 #8`, `A.6 #5`. **That document is not in this repository**, so without this table those citations
+resolve to nothing. The ids are kept because they are *stable* while the rules are *live*: a ruling
+number does not move when a section is renumbered, which is exactly what a citation wants.
 
-They are kept rather than deleted because the ids are *stable* and the rules are *live*. A ruling
-number does not move when a section is renumbered or a paragraph rewritten, which is exactly the
-property a citation wants — it just needs somewhere to resolve. This table is that somewhere, and it is
-the reason each id may still be written.
-
-**`A.6 #N` is `§7 #N`.** The appendix's six open questions are the six decision records above, in the
-same order, so `A.6 #3` and "§7 item 3" name one ruling. Prefer the `§7` spelling in new comments.
+**`A.6 #N` is `§7 #N`.** The appendix's open questions are the decision records above, in the same
+order. Prefer the `§7` spelling in new comments.
 
 Two conventions, so this table cannot quietly rot: the bare `#N` and the `A.x #N` spellings of one
 ruling are one row, and **a number not listed here may not be cited** —
 `TestHistoricalRulingIdsResolve` fails on an unregistered id. Milestone *task* numbers (`M0-7`,
-`M1-3`) are not rulings and are not citable at all: they named a unit of work in a plan that is also
-absent, they carry no rule, and the module doc for the package says everything the task number was
-standing in for.
+`M1-3`) are not rulings and are not citable at all.
 
 | Cited as | What it ruled | Where the rule lives now |
 |---|---|---|
@@ -570,9 +435,9 @@ standing in for.
 | `#32` | `internal/mcp` is standard-library only — one first-party protocol facade | §2 rule 2 |
 | `A.2 #9` | The manual paste loop, for providers that cannot reach a loopback redirect | modules/oauth.md |
 | `A.2 #10` | Refresh is serialized: daemon singleflight online, a file lock offline | modules/oauth.md |
-| `A.3 #1` | Cross-process shared state takes a **file lock** or an atomic rename, proven by an N-process acceptance test. Its original subject — quarantine and pin writes — was removed with `internal/integrity`; the rule outlived it and now governs the rate-limit counters and the registry | §6; modules/foundation.md |
+| `A.3 #1` | Cross-process shared state takes a **file lock** or an atomic rename, proven by an N-process acceptance test. Now governs the rate-limit counters and the registry | §6; modules/foundation.md |
 | `A.3 #2` | `kill -9` on the daemon: the stdio data plane is untouched and gateways re-register | §6; flows.md |
-| `A.3 #4` | A daemon restart makes the session overlay vanish on **both** sides. Retired by its own logic taken further: a session now carries no scope of its own at all, so there is nothing left to survive a restart or to fail to | modules/config.md |
+| `A.3 #4` | A daemon restart makes the session overlay vanish on **both** sides. Retired by its own logic: a session now carries no scope of its own at all | modules/config.md |
 | `A.3 #5` | skills materialization is **client-granular**, never per-session | §4 |
 | `A.5 #23` | Windows is confined to a seam inside `internal/platform`; nothing outside it branches on the platform | §4; windows.md |
 | `A.5 #26` | The **composite vault key** `(serverID, scopeName)` from day one | §4 ("never retrofitted", item 1) |
