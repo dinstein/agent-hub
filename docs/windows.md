@@ -19,12 +19,12 @@
 | Control-plane named pipe path | `\\.\pipe\agenthub-ctl-<sha8(SID)>` (release) / `\\.\pipe\agenthub-ctl-dev-<sha8(SID)>` (dev — see channel separation below). A frozen identifier (canonical.md §1); `platform.IsPipePath` lets callers tell "this is not a file path" | `TestWindowsCtlPipePath` / `TestWindowsDevCtlPipePath` |
 | The pipe's SDDL | `platform.CtlPipeSDDL(sid)` = `D:P(A;;GA;;;<SID>)` — the current user only, **not Administrators, not SYSTEM** | `TestCtlPipeSDDL` |
 | run directory | `<data>\run` (holds only `daemon.json`; the control endpoint is a pipe, not a file) | `TestPathResolution` |
-| Cross-process file locks | `LockFileEx`/`UnlockFileEx` on `kernel32.dll` via `syscall.NewLazyDLL`; lock byte at 1<<62 (past any plausible file length, because Windows locks are **mandatory** — locking over data would break reads). Used in the five packages that take one — `internal/httpbridge`, `internal/oauthflow`, `internal/ratelimit`, `internal/registry`, `internal/skills`. **`internal/jsonl` is not among them**: it serializes appenders with `O_APPEND` alone, and the flock its predecessor carried belonged to the security stream's cross-process dedup, which was retired with that stream | `test/buildrules/flockparity_test.go`; lock byte is a protocol between processes and must not move |
+| Cross-process file locks | `LockFileEx`/`UnlockFileEx` on `kernel32.dll` via `syscall.NewLazyDLL`; lock byte at 1<<62 (past any plausible file length, because Windows locks are **mandatory** — locking over data would break reads). Used in the six packages that take one — `internal/accesslog`, `internal/httpbridge`, `internal/oauthflow`, `internal/ratelimit`, `internal/registry`, `internal/skills`. **`internal/jsonl` is not among them**: it serializes appenders with `O_APPEND` alone | `test/buildrules/flockparity_test.go` walks for `flock_unix.go` and demands a `flock_windows.go` beside it, so the set is discovered rather than listed; the lock byte is a protocol between processes and must not move |
 | Named-pipe control listener | `winio.ListenPipe` (go-winio v0.6.2) with the SDDL from `platform.CtlPipeSDDL()`; maps `ERROR_ALREADY_EXISTS`/`ERROR_PIPE_BUSY` to `ErrAlreadyRunning`. `internal/ctlapi` now branches to the pipe listener before the `peerCredSupported` gate | `TestListenRefusesAPipePathOffWindows` on non-Windows; `TestWindowsEndpointContract` in `internal/ctlapi` asserts the frozen pipe spellings |
 | Dev-channel pipe separation | `platform.Resolver` holds an unexported `devChannel bool` set only by `DevResolver`; `windowsCtlEndpoint` returns the frozen dev-channel name when it is true. Cannot be derived from directory names — the two names are literal constants in both `internal/platform` and `api`, held together by contract tests | `TestDevResolverSeparatesFromRelease` (`endpointSeparates: true` for the windows row); `TestWindowsEndpointContract` |
 | api path resolution and dialing | `api/paths.go` computes the Windows data directory, run directory, and pipe name independently (api cannot import internal/platform). `api/dial_windows.go` uses `winio.DialPipeContext` for pipe-shaped paths | `TestDefaultSocketPath` windows rows; `TestDevSocketPathSeparatesFromRelease`; `TestSIDHashMatchesTheFrozenDigest` |
 | GUI dev-channel endpoint | `cmd/agenthub-gui/channel.go` sets `AGENTHUB_SOCKET` on Windows when the channel is dev, so the GUI reaches the dev pipe rather than the release one. Setting it only on Windows avoids freezing the Unix path at a dev-run value | `TestDevChannelPinsTheEndpointOnWindows`; `TestExplicitSocketWinsOverTheChannel`; `TestDevChannelDoesNotPinTheEndpointOffWindows` |
-| System tray and close-to-tray | `cmd/agenthub-gui/tray_wails.go` drives the notification-area icon and the close hook; the icon is drawn at runtime rather than shipped, so `SetIcon`/`SetDarkModeIcon` get a light- and a dark-taskbar variant. The behaviour is decided in untagged, unit-tested code ([modules/gui.md](modules/gui.md) §1.2) | `TestTray*` in `cmd/agenthub-gui`; `make cross-windows-gui`. **The icon itself, the notification-area overflow and the dark-taskbar variant are unverified** |
+| System tray and close-to-tray | `cmd/agenthub-gui/tray_wails.go` drives the notification-area icon and the close hook; the icon is drawn at runtime rather than shipped, so `SetIcon`/`SetDarkModeIcon` get a light- and a dark-taskbar variant. The behaviour is decided in untagged, unit-tested code ([modules/gui.md](modules/gui.md) §1.4) | `TestTray*` in `cmd/agenthub-gui`; `make cross-windows-gui`. **The icon itself, the notification-area overflow and the dark-taskbar variant are unverified** |
 | Portable zip packaging | `build/windows/Taskfile.yml` cross-compiles both architectures (amd64, arm64) on any host, embeds icon + manifest + version resource via `wails3 generate syso`, and packs `AgentHub/{agenthub-gui.exe, agenthub.exe, README.txt}` into a zip. Builds automatically in the release workflow | `make release-windows`; layout matches the sibling contract in `api/dialorstart.go` |
 
 ### Why MSIX detection fails in the "assume packaged" direction
@@ -102,10 +102,9 @@ accepts may name one that has already exited) and has never run on a real machin
 Two consequences, in opposite directions. A hub can outlive its owner by up to one poll interval,
 which is the harmless direction — the next launch finds it and adopts nothing. And
 `api.Supervised.Stop` **kills rather than asks** here, because there is no SIGTERM to deliver: the
-alternative to a hard stop is not a gentler stop but no stop at all, leaving a hub running with the
-application gone, no window, no tray, and nothing on the machine that will ever end it. An abandoned
-in-flight call is the smaller loss. The Job Object that fixes `daemon stop` above fixes this too —
-one piece of work, and neither half is verifiable from here.
+alternative to a hard stop is no stop at all, leaving a hub running with the application gone and
+nothing on the machine that will ever end it. The Job Object that fixes `daemon stop` above fixes
+this too — one piece of work, and neither half is verifiable from here.
 
 ### No client has a user-level location on Windows
 
@@ -165,17 +164,13 @@ go test ./internal/platform/ ./api/ ./internal/ctlapi/  # injection-based Window
 make release-windows                              # build the portable zip (cross-compiles on any host)
 ```
 
-**`cross-windows` alone is half the check.** The GUI is excluded from the default build ("the GUI is optional" is a
-compile-time constraint), so its Windows build is a separate target — and it is the half where wails v3 diverges
-most from the macOS build this project develops on. AGENTS.md names both as the complete set of Windows gates.
+**`cross-windows` alone is half the check.** The GUI is excluded from the default build ("the GUI is
+optional" is a compile-time constraint), so its Windows build is a separate target — and it is the
+half where wails v3 diverges most from the macOS build this project develops on. Both are the
+complete set of Windows gates.
 
-**`cross-windows-gui` needs the frontend bundle first, and says so badly.** `gui_main.go` embeds
-`frontend/dist`, which is gitignored, so on a fresh checkout the target fails before it compiles anything Windows
-at all:
-
-```
-cmd/agenthub-gui/gui_main.go:26:12: pattern all:frontend/dist: no matching files found
-```
-
-That is a missing `make gui-frontend`, not a Windows problem. `make ci-full` orders the two correctly, which is
-why it is only ever seen by someone running the gate by hand.
+**`cross-windows-gui` needs the frontend bundle first, and says so badly.** `gui_main.go` embeds the
+gitignored `frontend/dist`, so on a fresh checkout the target fails before compiling anything Windows
+at all — `pattern all:frontend/dist: no matching files found`. That is a missing `make gui-frontend`,
+not a Windows problem. `make ci-full` orders the two correctly, which is why only someone running the
+gate by hand ever sees it.

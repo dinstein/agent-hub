@@ -1,10 +1,9 @@
 # Key flows
 
-This document uses sequence diagrams to explain the seven runtime flows most worth understanding. The
-prose after each diagram covers the **failure branches** and **why it's designed this way** — the happy
-path is legible from the diagram; the hard part is always what happens when things go wrong. For the
-system's static decomposition see [architecture.md](architecture.md); for an overview of the three data
-flows see [architecture.md §6](architecture.md#6-three-data-flows).
+Seven runtime flows, one sequence diagram each. The prose after a diagram covers only the **failure
+branches** and **why it is shaped this way** — the happy path is legible from the diagram. For the
+static decomposition see [architecture.md](architecture.md); for the three data flows,
+[architecture.md §6](architecture.md#6-three-data-flows).
 
 | # | Flow | In one line |
 |---|---|---|
@@ -50,20 +49,16 @@ sequenceDiagram
     end
 ```
 
-Three trade-offs that shape the startup experience:
+**`setsid` to leave the client's process group**, or `SIGTTIN`/`SIGTTOU` from downstream child
+processes will interfere with a TUI client's raw mode.
 
-**`setsid` to leave the client's process group**, or `SIGTTIN`/`SIGTTOU` from downstream child processes
-will interfere with a TUI client's raw mode.
+**A config load failure is not fatal.** The gateway falls back to the last persisted tool cache to
+serve the handshake and `tools/list`: a hub temporarily running on an old catalog beats one that won't
+connect. The same cache covers slow startup, with `tools/list_changed` pushed once the real tools land.
 
-**A config load failure is not fatal.** The gateway falls back to the last persisted tool cache to serve
-the handshake and `tools/list` — users would much rather have a hub that's "temporarily running on an
-old catalog" than one that won't connect. The cache is also the answer to slow startup: `tools/list` can
-be answered while downstreams are still connecting, and `tools/list_changed` is pushed once the real
-tools are ready.
-
-**A `tools/call` before the downstream is connected returns a retryable busy error (`-32000`), not "tool
-not found."** Falsely claiming it doesn't exist makes the agent give up and route around it, when all it
-needed was to wait a second.
+**A `tools/call` before the downstream is connected returns a retryable busy error (`-32000`), not
+"tool not found."** Falsely claiming it doesn't exist makes the agent give up and route around it when
+all it needed was to wait a second.
 
 ---
 
@@ -106,16 +101,16 @@ sequenceDiagram
     SH-->>A: next page
 ```
 
-**`RouteOf` is the only legal way to trace an exposed name back to the real `(server, tool)`; splitting
-on `__` is forbidden in the codebase.** Splitting misjudges whenever a server id or tool name itself
-contains `__`, and disambiguation suffixes (`_2`) make string-based recovery hopeless anyway.
+**`RouteOf` is the only legal way to trace an exposed name back to `(server, tool)`; splitting on `__`
+is forbidden.** It misjudges whenever a server id or tool name itself contains `__`, and disambiguation
+suffixes (`_2`) make string-based recovery hopeless anyway.
 
 **SearchGuard handles an agent going in circles.** Three consecutive searches returning the same top
-result truncate the response into a single imperative hint ("you already found X, just call it"); any
-non-search action resets the counter; low-confidence hits don't escalate.
+result truncate the response into one imperative hint ("you already found X, just call it"); any
+non-search action resets the counter, and low-confidence hits don't escalate.
 
-**Cursor sequence numbers are guessable, so owner validation is the only isolation.** That's why a
-miss, an unauthorized access, an expired cursor, and a malformed one all return **byte-for-byte
+**Cursor sequence numbers are guessable, so owner validation is the only isolation.** A miss, an
+unauthorized access, an expired cursor and a malformed one therefore all return **byte-for-byte
 identical** copy — a differentiated error would leak "this cursor exists but isn't yours."
 
 ---
@@ -153,41 +148,32 @@ sequenceDiagram
     end
 ```
 
-**Semantic writes have exactly one implementation.** `internal/confops` offers **operations**, not field
-setters: `RenameProfile` also repoints every client binding that references it, because leaving those
-references dangling would fail-close those clients into an empty scope — that consequence belongs to the
-operation itself, not to the caller. If the control plane wrote its own version of "how to edit a
-profile," the CLI and GUI would each have their own validation and side effects, and sooner or later the
-two would produce different results for the same operation. There's precedent for this class of
-incident: the comment on `SpecFromEntry` claimed it was the sole translation point while the gateway
-hand-rolled its own Spec, and container isolation was silently dropped as a result. A parity test asserts
-that both paths produce **byte-for-byte identical** registry documents for the same operation.
+**Semantic writes have exactly one implementation.** `internal/confops` offers **operations**, not
+field setters: `RenameProfile` repoints every client binding that references it, because leaving those
+dangling would fail-close those clients into an empty scope. A parity test asserts both frontends
+produce **byte-for-byte identical** registry documents.
 
-`RemoveServer` is that rule at its widest: it takes the whole footprint — credentials, profile
-membership and selectors, governance rules naming the server, the cached catalog. Logs are the
-deliberate exception; a log that forgot deleted servers would be worthless as evidence.
+`RemoveServer` is that rule at its widest: the whole footprint — credentials, profile membership and
+selectors, governance rules naming the server, the cached catalog — with logs the deliberate exception,
+since a log that forgot deleted servers would be worthless as evidence. The reason is **not** that
+dangling references are dangerous (they resolve to the empty set, fail-closed) but that every one of
+those stores is keyed by **server id**, so re-adding the id inherits them: a stale reference is inert, a
+stale refresh token is a live entitlement. Rewriting references is legitimate only because all of them
+are **narrowing-only** — `Profile.Servers` is a three-state allow list, so an emptied one stays `[]` and
+is never collapsed to `nil`, which would flip "none" into "all". A field with exclusion semantics must
+never be rewritten here. Failure direction: the registry transaction commits first, then each cleanup
+runs independently and reports failure as a **warning** naming what survived, because a locked keychain
+must never make a server unremovable.
 
-The reason it goes that far is **not** that dangling references are dangerous — they resolve to the empty
-set, which is fail-closed. It is that all of those stores are keyed by **server id**, so re-adding the id
-inherits them: a refresh token earned by a completely different server is the clearest case. A stale
-reference is inert; a stale credential is a live entitlement. Rewriting references
-is legitimate only because every one of them is **narrowing-only** — `Profile.Servers` is a three-state
-allow list, so an emptied one stays `[]` and is never collapsed to `nil`, which would flip "none" into
-"all". A field carrying exclusion semantics must never be rewritten here. Failure direction: the registry
-transaction commits first, then each cleanup runs independently and reports failure as a **warning**
-naming what survived — a locked keychain or state file must never make a server unremovable.
+**Optimistic locking, not last-writer-wins.** The file lock prevents torn writes but not lost ones: two
+people editing one profile means the later write wins and the earlier change disappears silently, and
+the GUI is a long-lived window whose data may be minutes stale. So every operation carries a
+`Precondition`, compared **after taking the lock and before modifying**; a mismatch returns a
+`*StaleError` carrying the current generation, which the control plane maps to **409**. `Precondition{}`
+(generation 0) means "don't check", which is what the CLI uses.
 
-**Optimistic locking, not last-writer-wins.** The file lock guarantees no torn writes, but **not no
-overwrites**: two people editing the same profile at once means the later write wins and the earlier
-person's change disappears silently. The GUI is a long-lived window whose page data may be minutes
-stale, which would make this happen often. So every operation carries a `Precondition`, compared **after
-taking the lock and before modifying**; a mismatch returns a `*StaleError` carrying the current
-generation, which the control plane maps to **409**. `Precondition{}` (generation 0) means "don't
-check," which is what the CLI's non-interactive path uses, so CLI behavior is unchanged.
-
-**Validation rejects rather than normalizes.** An unknown transport, an unknown runtime, an unparseable
-boolean — each leaves the registry untouched instead of landing on a default the operator never asked
-for.
+**Validation rejects rather than normalizes.** An unknown transport, runtime or boolean leaves the
+registry untouched instead of landing on a default the operator never asked for.
 
 ---
 
@@ -221,21 +207,19 @@ sequenceDiagram
     end
 ```
 
-**Self-write suppression**: when the daemon or a gateway writes config itself, fsnotify reports the event
-all the same, and without suppression it does a pointless reload cycle for its own write. Register the
-payload fingerprint in a bounded, 10-second-expiry, multi-slot set before writing, and the watcher
-ignores anything that hits it; a failed write retracts the registration immediately. A missed
-suppression costs at most one pointless reload (safe in the fail-open direction), but it can never mask
-an external change.
+**Self-write suppression**: a process that writes config gets its own fsnotify event back and would
+otherwise reload for its own write. The payload fingerprint goes into a bounded, 10-second-expiry,
+multi-slot set before writing, and a failed write retracts it immediately. The failure direction is
+what matters: a missed suppression costs one pointless reload, and can never mask an external change.
 
 **The generation criterion is `≥`, not `==`**: the push is only a notification and carries no snapshot,
 so the gateway still re-reads the files itself. Under several rapid successive writes the generation it
 reads will **exceed** the event's Rev, and an equality test leaves it stuck on an old version, waiting
 for an event that will never come again.
 
-**Only server changes touch downstream connections**, and even then only the ones whose spec differs get
-reconnected. Purely visibility-affecting changes such as narrowing a scope only invalidate the cache —
-which is the precondition for per-session dynamic scope without restarting processes.
+**Only server changes touch downstream connections**, and only those whose spec differs. A purely
+visibility-affecting change invalidates the scope cache and nothing else — the precondition for
+per-session dynamic scope without restarting processes.
 
 ---
 
@@ -273,19 +257,19 @@ sequenceDiagram
     C->>V: then write __http_auth__ (the access token)
 ```
 
-**Every authorization binds a fresh random port.** With a fixed port, a leftover listener from a
-previous incomplete authorization intercepts this callback, which shows up as an inexplicable state
-mismatch. And you must **start the server before opening the browser** — binding without accepting
-leaves the browser stuck in the connection queue.
+**Every authorization binds a fresh random port**, or a leftover listener from a previous incomplete
+authorization intercepts this callback and shows up as an inexplicable state mismatch. And **start the
+server before opening the browser** — binding without accepting leaves the browser stuck in the
+connection queue.
 
 **Write-order invariant: state before access token.** Reversed, a failure on the second write leaves the
 unrecoverable state of "new access token + already-invalidated old refresh token"; in the correct order,
 the worst case is "new refresh + old access," which heals itself on the next 401.
 
-**Refresh concurrency**: when the daemon is online, everything goes through its singleflight (there is
-exactly one vault writer); only when offline do we take the `<server>.refresh.lock` file lock, and even
-then the state must be re-read after acquiring it — if `expires_at` has already been advanced by another
-process, abandon this refresh, so a one-shot refresh token isn't spent twice.
+**Refresh concurrency**: with the daemon online everything goes through its singleflight, so there is
+exactly one vault writer; offline it is the `<server>.refresh.lock` file lock, and the state must be
+re-read *after* acquiring it — if `expires_at` already moved, abandon this refresh rather than spend a
+one-shot refresh token twice.
 
 ---
 
@@ -313,16 +297,14 @@ sequenceDiagram
 ```
 
 Derivation happens only on the **connection plane**: exposed names don't change, `RouteOf` is still the
-sole provenance, and the only thing that changes is which instance this call lands on. So it doesn't
-affect visibility and never makes `tools/list` flicker.
+sole provenance, and only the instance a call lands on differs — so visibility is untouched and
+`tools/list` never flickers. Acquiring happens inside the call closure, after both gates, because a
+call the scope gate is about to deny must not spawn a child or open an authenticated remote connection.
 
-Credentials are resolved by `(serverID, derivation key)` and fall back to global when not found — which
-is exactly why the vault key was promoted to a composite key back in M1: retrofitting it would touch
-every singleton in the token store, callback server, and refresh coordinator.
-
-The cap exists to prevent process explosion: exceeding it isn't an error but a fallback to the base
-instance plus a counted warning, because "a bit less isolation" is more acceptable than "denial of
-service."
+Credentials resolve by `(serverID, derivation key)` and fall back to global, which is why the vault key
+was promoted to a composite one back in M1. The per-server cap prevents process explosion, and
+exceeding it is not an error but a fallback to the base instance plus a counted warning: a bit less
+isolation beats a denial of service.
 
 ---
 
@@ -359,24 +341,24 @@ sequenceDiagram
     end
 ```
 
-The wrapper records an attempt before it knows whether the parameters are valid, so protocol errors and unknown
-names are evidence too. Direct names and lazy `call_tool` keep two payloads: the exact incoming wrapper and the
-effective downstream arguments. Results are configurable as `none`, `errors`, `truncated`, or `full`; request and
-effective arguments are always complete up to the MCP frame bound.
+The wrapper records an attempt before it knows whether the parameters are valid, so protocol errors and
+unknown names are evidence too. Both direct names and lazy `call_tool` keep two payloads — the exact
+incoming wrapper and the effective downstream arguments — and both are complete up to the MCP frame
+bound whatever the result capture setting (`none`, `errors`, `truncated`, `full`) is.
 
-Storage failure is deliberately stricter than ordinary logging. An enabled policy claims every call is recorded,
-so a missing key, invalid policy, full ledger, crossed free-space reserve, or failed required write refuses the call
-instead of silently creating a hole. The capacity decision and write hold one cross-process lock, preventing four
-stdio gateways from each believing they own the same remaining bytes. Retention removes only complete validated UTC
-day directories, and `minFreeBytes` protects the filesystem even if another process still has a just-expired file
-open.
+**Storage failure refuses the call**, which is the opposite direction from the event stream
+(`internal/eventlog`), where an unwritable record is dropped rather than blocking anything. An enabled
+audit policy claims every call is recorded, so a missing key, invalid policy, full ledger, crossed
+free-space reserve or failed required write must not silently create a hole. The capacity decision and
+the write hold one cross-process lock, so four stdio gateways cannot each believe they own the same
+remaining bytes. Retention removes only complete validated UTC day directories, and `minFreeBytes`
+protects the filesystem even if another process still holds a just-expired file open.
 
-Metadata is independently HMAC-authenticated and payloads use XChaCha20-Poly1305 with call/kind binding. This detects
-edits, corruption, and reference substitution; it does not prove that a complete partition was deleted. That stronger
-claim needs an immutable anchor outside the same local directory. Key rotation stores keys by immutable key id and
-keeps historical keys, so retained partitions stay verifiable and decryptable.
+Metadata is HMAC-authenticated and payloads use XChaCha20-Poly1305 with call/kind binding, which
+detects edits, corruption and reference substitution — but cannot prove a whole partition was not
+deleted; that needs an immutable anchor outside this directory.
 
-The GUI's Activity list and Insights view consume metadata only. Selecting one call is the explicit
-disclosure boundary: the daemon resolves that call's key ids, decrypts bounded previews of its request,
-effective arguments, and result, and marks the response `no-store`. The frontend displays them immediately
-— there is no separate decrypt button — and removes the payload-bearing drawer from the DOM on close.
+The GUI's **Calls** page consumes metadata only, and selecting one call is the explicit disclosure
+boundary: the daemon resolves that call's key ids, decrypts bounded previews, and marks the response
+`no-store`. The frontend shows them immediately — no decrypt button — and drops the payload-bearing
+drawer from the DOM on close.
