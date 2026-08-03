@@ -359,10 +359,15 @@ both call sites sit together so neither can be changed without the other being v
 
 ### The closed vocabulary
 
-Adding a kind means editing **three** places — the constant, `AllKinds`, and this table — and
-`test/buildrules` fails until all three agree. The omission is otherwise invisible: the event is
-still written and `make ci` stays green, while the consumer that was supposed to recognize it
-silently does not.
+Adding a kind means editing **three** places — the constant, `allKinds`, and this table — and then
+**writing it somewhere**. `test/buildrules` fails until all four are true, and each direction hides
+a different way of being wrong:
+
+- A kind missing from the table is still written, `make ci` stays green, and the consumer that was
+  supposed to recognize it silently does not.
+- A kind nothing emits is still offered as a `--kind` selector and answers "no events" — the same
+  answer as "this has not happened", which is the one confusion a closed set exists to prevent.
+  Seven kinds shipped in that state before the second check existed.
 
 Kinds are checked as a **(scope, kind) pair**, never a bare kind: a gateway and the daemon both
 `started`, and that spelling is meaningless at server scope.

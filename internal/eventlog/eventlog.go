@@ -32,9 +32,13 @@ const (
 // timeline by them or alert on them, none of which is safe against a
 // free-text log message. Adding one means editing THREE places — the
 // constant, allKinds below, and the table in docs/modules/foundation.md —
-// and test/buildrules fails until all three agree. Without that check the
-// omission is invisible: the event still gets written, and only the reader
-// that was supposed to recognize it silently does not.
+// and then WRITING it somewhere. test/buildrules fails until all four are
+// true. The first three catch a kind a consumer cannot learn about: the
+// event still gets written and only the reader meant to recognize it
+// silently does not. The fourth catches the opposite and less obvious
+// failure — a kind all three agree on that nothing emits, which is still
+// offered as a `--kind` selector and answers "no events", the same answer
+// as "this has not happened".
 type Kind string
 
 // Server-scope kinds: the life of one downstream connection.
