@@ -16,6 +16,20 @@ const (
 	LegacyDirectoryName = "audit"
 	// EventFileName is the shared bounded metadata stream inside one UTC day.
 	EventFileName = "calls.jsonl"
+	// FramePrefix names the per-process frame stream inside one UTC day:
+	// frames-<bootid>-p<pid>.jsonl.
+	//
+	// Frames do NOT share calls.jsonl, and the reason is the reason that file
+	// has a 4096-byte line bound at all: PIPE_BUF is what makes one line from
+	// one of N gateway processes atomic, and it exists because that file is
+	// SHARED. Frames outnumber lifecycle records by one to two orders of
+	// magnitude and are process-local by nature, so putting them there would
+	// make a debugging switch the hot path of the file that decides whether a
+	// call may run. One schema, one reader, one retention policy; only the
+	// contention is split.
+	FramePrefix = "frames-"
+	// FrameExt completes that name.
+	FrameExt = ".jsonl"
 	// LegacyEventFileName is its previous name. A day directory holding one
 	// is read, never rewritten: history is not ours to restate.
 	LegacyEventFileName = "access.jsonl"
@@ -32,6 +46,7 @@ var (
 	ErrClosed        = errors.New("calllog: store is closed")
 	ErrEventTooLarge = errors.New("calllog: event exceeds line bound")
 	ErrBadKey        = errors.New("calllog: encryption key must be 32 bytes")
+	ErrNoKey         = errors.New("calllog: this store records metadata only; no encryption key is configured")
 	ErrBadReference  = errors.New("calllog: invalid payload reference")
 	ErrPayloadTooBig = errors.New("calllog: payload exceeds accepted MCP frame bound")
 	ErrCapacity      = errors.New("calllog: storage limit reached")
@@ -53,9 +68,39 @@ const (
 type EventKind string
 
 const (
+	// The three lifecycle points of one upstream request, at the boundary
+	// with the CLIENT.
 	EventReceived EventKind = "received"
 	EventRouted   EventKind = "routed"
 	EventFinished EventKind = "finished"
+	// The two directions of one frame at the boundary with a DOWNSTREAM.
+	//
+	// They are in the same vocabulary as the three above because they are the
+	// same story sampled more finely: `routed` says which server was chosen,
+	// `sent` says what actually went on the wire, and one `routed` can be
+	// followed by three `sent`/`recv` pairs when the connection died twice on
+	// the way. Two separate streams could not express that at all — which is
+	// what the per-server trace log could not, having no call id in it.
+	EventSent EventKind = "sent"
+	EventRecv EventKind = "recv"
+)
+
+// Cause says why a frame crossed the boundary. It is the answer for the
+// frames that belong to no client call, which are not an exception: a health
+// probe, a tools refresh and a token replay are all traffic somebody has to
+// account for when they are reading a server's conversation.
+type Cause string
+
+const (
+	// CauseCall is a frame carrying an upstream client's call. CallID is set.
+	CauseCall Cause = "call"
+	// CauseList is a tools/list refresh, from RefreshTools or a
+	// list_changed notification.
+	CauseList Cause = "list"
+	// CauseProbe is the health ping or a breaker's half-open probe.
+	CauseProbe Cause = "probe"
+	// CauseRefresh is a call replayed after a credential was renewed.
+	CauseRefresh Cause = "refresh"
 )
 
 // PayloadKind identifies bytes stored in a payload pack.
@@ -65,6 +110,9 @@ const (
 	PayloadRequest       PayloadKind = "request"
 	PayloadEffectiveArgs PayloadKind = "effective_arguments"
 	PayloadResult        PayloadKind = "result"
+	// PayloadFrame is one downstream frame's body. Its direction is the
+	// event's own kind, so it needs no second spelling here.
+	PayloadFrame PayloadKind = "frame"
 )
 
 // PayloadRef points to one encrypted entry in one process-owned pack.
@@ -111,6 +159,15 @@ type Event struct {
 	Error      string `json:"error,omitempty"`
 	ToolError  bool   `json:"toolError,omitempty"`
 
+	// Cause, Method and Seq describe a frame. Cause is why it crossed the
+	// boundary, Method is the JSON-RPC method on the wire, and Seq numbers the
+	// attempts within one call — a retry ladder produces sent/recv pairs 1, 2,
+	// 3, and without the number they read as one exchange reported three
+	// times.
+	Cause  Cause  `json:"cause,omitempty"`
+	Method string `json:"method,omitempty"`
+	Seq    int    `json:"seq,omitempty"`
+
 	Request       *PayloadRef `json:"request,omitempty"`
 	EffectiveArgs *PayloadRef `json:"effectiveArguments,omitempty"`
 	Result        *PayloadRef `json:"result,omitempty"`
@@ -118,6 +175,14 @@ type Event struct {
 	ResultCapture string      `json:"resultCapture,omitempty"`
 	ResultBytes   int         `json:"resultBytes,omitempty"`
 	ResultCut     bool        `json:"resultTruncated,omitempty"`
+	// Frame points at one downstream frame's body, when payload capture is on.
+	// The metadata line stands on its own without it: bytes, duration and
+	// outcome are on the event, so a frame stream costs nothing but a line
+	// per frame until somebody asks for the contents.
+	Frame *PayloadRef `json:"frame,omitempty"`
+	// Bytes is the frame body's size BEFORE any capture decision, so a line
+	// with no payload still tells the truth about how big the frame was.
+	Bytes int `json:"bytes,omitempty"`
 }
 
 // Options configures a store. Root is normally <data>/calls.

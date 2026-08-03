@@ -62,35 +62,120 @@ func ScanEventsSince(root string, since time.Time, visit func(Event) error) (int
 			}
 			return skipped, err
 		}
-		sc := bufio.NewScanner(f)
-		sc.Buffer(make([]byte, 0, 64<<10), MaxEventLineBytes)
-		for sc.Scan() {
-			line := strings.TrimSpace(sc.Text())
-			if line == "" {
-				continue
-			}
-			var e Event
-			if err := json.Unmarshal([]byte(line), &e); err != nil || e.Version != Version || e.CallID == "" {
-				skipped++
-				continue
-			}
-			if !since.IsZero() && e.TS.Before(since) {
-				continue
-			}
-			if visit != nil {
-				if err := visit(e); err != nil {
-					_ = f.Close()
-					return skipped, err
-				}
-			}
-		}
-		if err := sc.Err(); err != nil {
-			_ = f.Close()
-			return skipped, fmt.Errorf("calllog: read %s: %w", f.Name(), err)
-		}
-		if err := f.Close(); err != nil {
+		n, err := scanFile(f, since, true, visit)
+		skipped += n
+		if err != nil {
 			return skipped, err
 		}
+	}
+	return skipped, nil
+}
+
+// ScanFramesSince visits the frame records of every process, day by day.
+//
+// Frames are a SEPARATE call from the lifecycle scan, not an option on it,
+// because they outnumber lifecycle records by one to two orders of magnitude:
+// a reader that wanted `calls tail` and silently got every frame of every
+// traced server would be paying for a question it did not ask. The two are
+// merged only by the readers that want one call's whole story.
+func ScanFramesSince(root string, since time.Time, visit func(Event) error) (int, error) {
+	days, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	skipped := 0
+	cutoffDay := ""
+	if !since.IsZero() {
+		cutoffDay = since.UTC().Format("2006-01-02")
+	}
+	for _, day := range days {
+		if !day.IsDir() || len(day.Name()) != len("2006-01-02") {
+			continue
+		}
+		if cutoffDay != "" && day.Name() < cutoffDay {
+			continue
+		}
+		names, err := frameFiles(filepath.Join(root, day.Name()))
+		if err != nil {
+			return skipped, err
+		}
+		for _, path := range names {
+			f, err := os.Open(path)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return skipped, err
+			}
+			// A frame may belong to no call — a health probe, a tools
+			// refresh — so the call id is not required here. Cause is what
+			// says which it is, and it is always set.
+			n, err := scanFile(f, since, false, visit)
+			skipped += n
+			if err != nil {
+				return skipped, err
+			}
+		}
+	}
+	return skipped, nil
+}
+
+// frameFiles lists one day's per-process frame streams, in a stable order so
+// two reads of an unchanged directory agree.
+func frameFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasPrefix(name, FramePrefix) || !strings.HasSuffix(name, FrameExt) {
+			continue
+		}
+		out = append(out, filepath.Join(dir, name))
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// scanFile decodes one file's records, closing it before returning.
+func scanFile(f *os.File, since time.Time, requireCallID bool, visit func(Event) error) (int, error) {
+	defer func() { _ = f.Close() }()
+	skipped := 0
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64<<10), MaxEventLineBytes)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		var e Event
+		if err := json.Unmarshal([]byte(line), &e); err != nil || e.Version != Version {
+			skipped++
+			continue
+		}
+		if requireCallID && e.CallID == "" {
+			skipped++
+			continue
+		}
+		if !since.IsZero() && e.TS.Before(since) {
+			continue
+		}
+		if visit != nil {
+			if err := visit(e); err != nil {
+				return skipped, err
+			}
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return skipped, fmt.Errorf("calllog: read %s: %w", f.Name(), err)
 	}
 	return skipped, nil
 }

@@ -40,6 +40,11 @@ type Store struct {
 	bootID     string
 	lock       *os.File
 
+	// frames is the fail-open half: a queue and one goroutine writing this
+	// process's own frame file. It is deliberately outside mu — a frame must
+	// never contend with the lock a lifecycle write holds.
+	frames *frames
+
 	mu     sync.Mutex
 	closed bool
 	days   map[string]*dayWriter
@@ -108,18 +113,28 @@ func Open(opts Options) (*Store, error) {
 	if opts.Root == "" {
 		return nil, errors.New("calllog: empty root")
 	}
-	if len(opts.Key) != 32 {
-		return nil, ErrBadKey
-	}
-	if opts.KeyID == "" {
-		return nil, errors.New("calllog: empty key id")
-	}
-	keyID, err := KeyID(opts.Key)
-	if err != nil {
-		return nil, err
-	}
-	if keyID != opts.KeyID {
-		return nil, fmt.Errorf("calllog: key id %q does not match key %q", opts.KeyID, keyID)
+	// A store with NO key is legitimate and is the ordinary case: it records
+	// metadata, which is what makes the data plane observable by default, and
+	// refuses to store payloads because there is nothing to seal them with.
+	// The alternative — requiring a key before anything at all is recorded —
+	// is what left an installation with no evidence AND no timeline until
+	// somebody went looking for a switch.
+	if len(opts.Key) > 0 {
+		if len(opts.Key) != 32 {
+			return nil, ErrBadKey
+		}
+		if opts.KeyID == "" {
+			return nil, errors.New("calllog: empty key id")
+		}
+		keyID, err := KeyID(opts.Key)
+		if err != nil {
+			return nil, err
+		}
+		if keyID != opts.KeyID {
+			return nil, fmt.Errorf("calllog: key id %q does not match key %q", opts.KeyID, keyID)
+		}
+	} else if opts.KeyID != "" {
+		return nil, errors.New("calllog: key id without a key")
 	}
 	if opts.Durability == "" {
 		opts.Durability = DurabilitySync
@@ -152,12 +167,14 @@ func Open(opts Options) (*Store, error) {
 		return nil, fmt.Errorf("calllog: boot id: %w", err)
 	}
 	key := append([]byte(nil), opts.Key...)
-	return &Store{
+	s := &Store{
 		root: opts.Root, key: key, keyID: opts.KeyID, durability: opts.Durability,
 		maxPack: opts.MaxPackBytes, retention: opts.RetentionDays, maxBytes: opts.MaxBytes,
 		minFree: opts.MinFreeBytes, clock: opts.Clock, bootID: hex.EncodeToString(boot), lock: lock,
 		days: map[string]*dayWriter{},
-	}, nil
+	}
+	s.frames = newFrames(s)
+	return s, nil
 }
 
 // BootID is the random identity stamped on this process's events and pack names.
@@ -204,23 +221,37 @@ func (s *Store) dayLocked(day string) (*dayWriter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("calllog: open events: %w", err)
 	}
-	pack, err := newPackWriter(dir, s.bootID, s.key, s.keyID, s.maxPack, func(added int64, write func() error) error {
-		return s.withCapacityLocked(day, added, write)
-	})
-	if err != nil {
-		_ = events.Close()
-		return nil, err
+	// No key, no pack: a metadata-only store seals nothing, and building a
+	// cipher out of an empty key is how that used to surface — as an
+	// encryption error on a path that was never going to encrypt anything.
+	var pack *packWriter
+	if s.HasKey() {
+		var err error
+		pack, err = newPackWriter(dir, s.bootID, s.key, s.keyID, s.maxPack, func(added int64, write func() error) error {
+			return s.withCapacityLocked(day, added, write)
+		})
+		if err != nil {
+			_ = events.Close()
+			return nil, err
+		}
 	}
 	d := &dayWriter{events: events, pack: pack}
 	s.days[day] = d
 	return d, nil
 }
 
+// HasKey reports whether this store can store payloads at all. A store
+// without one records metadata and nothing else.
+func (s *Store) HasKey() bool { return s != nil && len(s.key) == 32 }
+
 // PutPayload compresses and encrypts raw, returning a durable reference when
 // the store runs in sync mode.
 func (s *Store) PutPayload(ts time.Time, callID string, kind PayloadKind, raw []byte) (PayloadRef, error) {
 	if s == nil {
 		return PayloadRef{}, ErrClosed
+	}
+	if !s.HasKey() {
+		return PayloadRef{}, ErrNoKey
 	}
 	if len(raw) > MaxPayloadBytes {
 		return PayloadRef{}, fmt.Errorf("%w: %d bytes", ErrPayloadTooBig, len(raw))
@@ -229,7 +260,7 @@ func (s *Store) PutPayload(ts time.Time, callID string, kind PayloadKind, raw []
 		return PayloadRef{}, errors.New("calllog: invalid call id")
 	}
 	switch kind {
-	case PayloadRequest, PayloadEffectiveArgs, PayloadResult:
+	case PayloadRequest, PayloadEffectiveArgs, PayloadResult, PayloadFrame:
 	default:
 		return PayloadRef{}, fmt.Errorf("calllog: unknown payload kind %q", kind)
 	}
@@ -262,12 +293,17 @@ func (s *Store) Append(e Event) error {
 	if e.BootID == "" {
 		e.BootID = s.bootID
 	}
-	e.KeyID = s.keyID
-	mac, err := eventMAC(e, s.key)
-	if err != nil {
-		return err
+	// Unkeyed records carry no MAC and say so by leaving both fields empty.
+	// `calls verify` counts them as unauthenticated, which is a different
+	// answer from "authentication failed" and must not be confused with it.
+	if len(s.key) == 32 {
+		e.KeyID = s.keyID
+		mac, err := eventMAC(e, s.key)
+		if err != nil {
+			return err
+		}
+		e.MAC = mac
 	}
-	e.MAC = mac
 	line, err := json.Marshal(e)
 	if err != nil {
 		return fmt.Errorf("calllog: encode event: %w", err)
@@ -350,6 +386,16 @@ func (s *Store) Close() error {
 	}
 	s.closed = true
 	var errs []error
+	// Frames first, and with the lock RELEASED: the pipeline may be inside a
+	// PutPayload, which takes this same lock, and the day writers closed
+	// below are what that write lands in. s.frames is left in place — a
+	// concurrent AppendFrame reads it without the lock and finds a pipeline
+	// that refuses rather than a nil.
+	s.mu.Unlock()
+	if err := s.frames.close(); err != nil {
+		errs = append(errs, err)
+	}
+	s.mu.Lock()
 	for _, d := range s.days {
 		if err := d.close(); err != nil {
 			errs = append(errs, err)
