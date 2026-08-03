@@ -58,8 +58,8 @@ const ProviderID = "skills"
 
 // toolPrefix prefixes the RAW tool name of one skill: skill_<id>. Kept even
 // though the router prefixes the exposed name with the pseudo-server id —
-// the raw name is what audit records, scope allow/deny lists and approval
-// fingerprints key on, and "skill_" is what makes those readable.
+// the raw name is what the call ledger records and what a scope allow list
+// keys on, and "skill_" is what makes those readable.
 const toolPrefix = "skill_"
 
 // contentLimit bounds one skill document served over MCP. A skill larger

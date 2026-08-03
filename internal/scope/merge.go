@@ -81,8 +81,11 @@ func MergeWithDiagnostics(layers []ScopeLayer, cat router.Catalog, diags []Diagn
 		}
 	}
 
-	// Per-server tool sets: allow intersection + deny union, both keyed by
-	// original tool names.
+	// Per-server tool sets: an allow INTERSECTION keyed by original tool
+	// names, and nothing else. There is no deny half and there must not be
+	// one — a selector is an allow list, so a tool the downstream adds
+	// tomorrow arrives blocked, and a deny list would admit it. Layers can
+	// therefore only ever narrow.
 	servers := make(map[string]ToolView, len(visible))
 	for id := range visible {
 		allowed := make(map[string]bool, len(cat.Servers[id]))
