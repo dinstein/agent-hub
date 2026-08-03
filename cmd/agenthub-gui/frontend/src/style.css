@@ -4484,13 +4484,6 @@ details.adv[open] > summary::before {
   margin-bottom: var(--space-5);
 }
 
-/* The servers in service are the list itself and carry no header; the
-   switched-off ones fold away underneath. The gap is here rather than on
-   .ledger because .ledger is also used inside the disabled section, where the
-   surrounding <details> already provides the spacing. */
-.server-list > .ledger + .bucket {
-  margin-top: var(--space-5);
-}
 
 .chip-toggle {
   cursor: pointer;

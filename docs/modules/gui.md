@@ -54,9 +54,13 @@ could only skip a repaint when **nothing** had changed — during a fleet check,
 
 The current call is: **a row moves only when the user changes configuration, never because of a probe
 result.** Grouping follows configuration, which the registry answers with certainty the moment it is
-read: the servers in service are the list itself, with no header, and the switched-off ones fold away
-underneath in a `Disabled` section that is collapsed by default (collapse state lives in
-localStorage). Both are ordered by id, the order `server ls` prints. An empty group is not rendered.
+read: `Enabled` and `Disabled`, both folding sections with a count, both ordered by id — the order
+`server ls` prints. Enabled opens by default and Disabled does not, because one is the working set
+and the other is the group the operator has already decided about; each remembers its own fold in
+localStorage. Both fold, because a long list of healthy servers is as much in the way as a long list
+of switched-off ones when you came to the page to look at the other group. An empty group is not
+rendered, and a section that is momentarily empty is hidden rather than destroyed — a rebuilt
+`<details>` would lose the open state the user set.
 
 This **reverses** the earlier "lists are bucketed by state, not alphabetized", and the reason is worth
 keeping: state is asynchronous, changeable, and at startup unknown, so letting it decide position

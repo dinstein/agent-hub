@@ -250,27 +250,39 @@ function withProbe(s: Server, observation: ProbeObservation | undefined): Server
   };
 }
 
-/** localStorage key for the disabled section's collapse state. The spelling
- *  predates the grouping change and is kept so that nobody's collapsed
- *  section quietly springs open on upgrade. */
-const DISABLED_COLLAPSE_KEY = "agenthub.servers.bucket.disabled.collapsed";
+/**
+ * The two groups, and the localStorage key each remembers its fold in.
+ *
+ * The key spellings predate the grouping change and are kept so that nobody's
+ * folded section quietly springs open on upgrade.
+ *
+ * Enabled opens by default and Disabled does not: one is the working set, the
+ * other is the group the operator has already decided about and must not push
+ * the servers in service off-screen. Both fold, because a long list of healthy
+ * servers is as much in the way as a long list of switched-off ones when you
+ * came to the page to look at the other group.
+ */
+const SECTIONS = {
+  enabled: { title: "Enabled", key: "agenthub.servers.bucket.enabled.collapsed", foldedByDefault: false },
+  disabled: { title: "Disabled", key: "agenthub.servers.bucket.disabled.collapsed", foldedByDefault: true },
+} as const;
 
-/** Collapsed by default: this is the group the operator has already decided
- *  about, and it must not push the servers that are in service off-screen. */
-function disabledCollapsed(): boolean {
+type SectionName = keyof typeof SECTIONS;
+
+function sectionFolded(name: SectionName): boolean {
   try {
-    const v = localStorage.getItem(DISABLED_COLLAPSE_KEY);
+    const v = localStorage.getItem(SECTIONS[name].key);
     if (v === "1") return true;
     if (v === "0") return false;
   } catch {
     // Storage unavailable: fall through to the default.
   }
-  return true;
+  return SECTIONS[name].foldedByDefault;
 }
 
-function setDisabledCollapsed(collapsed: boolean): void {
+function setSectionFolded(name: SectionName, folded: boolean): void {
   try {
-    localStorage.setItem(DISABLED_COLLAPSE_KEY, collapsed ? "1" : "0");
+    localStorage.setItem(SECTIONS[name].key, folded ? "1" : "0");
   } catch {
     // The section still opens and closes; it just will not be remembered.
   }
@@ -808,9 +820,7 @@ export function serversPage(): Page {
   const rowNodes = new Map<string, { node: HTMLElement; sig: string }>();
   let chipsHost: HTMLElement | null = null;
   let noticeHost: HTMLElement | null = null;
-  let ledgerHost: HTMLElement | null = null;
-  let disabledHost: HTMLDetailsElement | null = null;
-  let disabledCount: HTMLElement | null = null;
+  const sectionHosts = new Map<SectionName, { node: HTMLDetailsElement; body: HTMLElement; count: HTMLElement }>();
   let chipsSignature = "";
   let noticeSignature = "";
 
@@ -2122,16 +2132,14 @@ export function serversPage(): Page {
     ]);
   }
 
-  /** The one remaining group header, built ONCE. Servers that are IN SERVICE
-   *  need no header — they are the list; switched-off ones are the exception
-   *  and say so, folded away.
+  /** One group header, built ONCE.
    *
    *  Built once because <details> carries state the user set: rebuilding the
    *  element on every probe result would close a section they had just opened,
    *  and the stored preference cannot distinguish that from a choice. */
-  function disabledSection(): HTMLDetailsElement {
+  function buildSection(name: SectionName): { node: HTMLDetailsElement; body: HTMLElement; count: HTMLElement } {
     const details = el("details", { class: "bucket" }) as HTMLDetailsElement;
-    details.open = !disabledCollapsed();
+    details.open = !sectionFolded(name);
     // Setting `open` above queues a toggle event of its own; ignore that one
     // so a redraw never rewrites the stored preference with what it just
     // read. Only a real click is a choice.
@@ -2141,15 +2149,13 @@ export function serversPage(): Page {
         settled = true;
         return;
       }
-      setDisabledCollapsed(!details.open);
+      setSectionFolded(name, !details.open);
     });
     if (!details.open) settled = true;
-    disabledCount = el("span", { class: "bucket-count", text: "0" });
-    details.append(
-      el("summary", {}, [el("span", { text: "Disabled" }), disabledCount]),
-      el("div", { class: "bucket-body ledger" }),
-    );
-    return details;
+    const count = el("span", { class: "bucket-count", text: "0" });
+    const body = el("div", { class: "bucket-body ledger" });
+    details.append(el("summary", {}, [el("span", { text: SECTIONS[name].title }), count]), body);
+    return { node: details, body, count };
   }
 
   /**
@@ -2197,13 +2203,20 @@ export function serversPage(): Page {
     if (chipsHost && chipsHost.parentElement === listRoot) return;
     clear(listRoot); // the "Reading the registry…" skeleton, or a failure state
     rowNodes.clear();
+    sectionHosts.clear();
     chipsSignature = "";
     noticeSignature = "";
     chipsHost = el("div", { class: "server-chips-host" });
     noticeHost = el("div", { class: "server-notice-host" });
-    ledgerHost = el("div", { class: "ledger" });
-    disabledHost = disabledSection();
-    listRoot.append(chipsHost, noticeHost, ledgerHost, disabledHost);
+    for (const name of ["enabled", "disabled"] as SectionName[]) {
+      sectionHosts.set(name, buildSection(name));
+    }
+    listRoot.append(
+      chipsHost,
+      noticeHost,
+      sectionHosts.get("enabled")!.node,
+      sectionHosts.get("disabled")!.node,
+    );
   }
 
   /** Drops BOTH filters. One button, because a view narrowed twice and
@@ -2218,7 +2231,9 @@ export function serversPage(): Page {
   function paint(servers: Server[]): void {
     if (!listRoot) return;
     ensureHosts();
-    if (!chipsHost || !noticeHost || !ledgerHost || !disabledHost) return;
+    const enabledHost = sectionHosts.get("enabled");
+    const disabledHost = sectionHosts.get("disabled");
+    if (!chipsHost || !noticeHost || !enabledHost || !disabledHost) return;
 
     const needle = filter.trim().toLowerCase();
     const shown = servers.filter(
@@ -2348,15 +2363,16 @@ export function serversPage(): Page {
       if (!present.has(id)) rowNodes.delete(id);
     }
 
-    reconcile(ledgerHost, inService.map(rowFor));
-    reconcile(disabledHost.querySelector(".bucket-body") as HTMLElement, switchedOff.map(rowFor));
-    if (disabledCount) disabledCount.textContent = String(switchedOff.length);
+    reconcile(enabledHost.body, inService.map(rowFor));
+    reconcile(disabledHost.body, switchedOff.map(rowFor));
+    enabledHost.count.textContent = String(inService.length);
+    disabledHost.count.textContent = String(switchedOff.length);
 
     // An empty group is not RENDERED, but its host survives: hiding is what
-    // keeps the disabled section's open/closed state across a repaint that
-    // momentarily has nothing to put in it.
-    ledgerHost.hidden = inService.length === 0;
-    disabledHost.hidden = switchedOff.length === 0;
+    // keeps a section's open/closed state across a repaint that momentarily
+    // has nothing to put in it.
+    enabledHost.node.hidden = inService.length === 0;
+    disabledHost.node.hidden = switchedOff.length === 0;
   }
 
   async function draw(
@@ -2459,11 +2475,9 @@ export function serversPage(): Page {
       // at a detached tree — is what keeps re-entering the page a clean
       // build rather than a repair.
       rowNodes.clear();
+      sectionHosts.clear();
       chipsHost = null;
       noticeHost = null;
-      ledgerHost = null;
-      disabledHost = null;
-      disabledCount = null;
       chipsSignature = "";
       noticeSignature = "";
       root = null;
