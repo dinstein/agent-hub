@@ -82,9 +82,23 @@ func DefaultDir(res *platform.Resolver) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(data, DirectoryName)
-	migrateLegacyDir(filepath.Join(data, LegacyDirectoryName), dir)
-	return dir, nil
+	return DirFor(data), nil
+}
+
+// DirFor is the ledger root under one data directory, migrating the
+// pre-rename <data>/audit into it on the way.
+//
+// It exists because the daemon holds a data dir rather than a resolver, and
+// composed the path itself — `filepath.Join(dataDir, "audit")`. The rename
+// moved the constant and left that string behind, so the CLI read
+// <data>/calls while the control plane read a directory that the CLI's own
+// migration had just renamed away: the GUI's Calls page went empty against a
+// ledger full of records. One function, so there is no second place for the
+// name to live.
+func DirFor(dataDir string) string {
+	dir := filepath.Join(dataDir, DirectoryName)
+	migrateLegacyDir(filepath.Join(dataDir, LegacyDirectoryName), dir)
+	return dir
 }
 
 // migrateLegacyDir renames <data>/audit to <data>/calls, once, on the first

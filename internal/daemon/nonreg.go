@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/dinstein/agent-hub/internal/calllog"
 	"github.com/dinstein/agent-hub/internal/clients"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/ctlapi"
@@ -68,7 +69,7 @@ func nonRegistryDeps(cfg Config, dataDir string, vault secrets.Store, log *slog.
 		vault = secrets.NewChain(secrets.ChainConfig{Dir: secretsDir})
 	}
 	deps := ctlapi.NonRegistryDeps{
-		CallsRoot:     filepath.Join(dataDir, "audit"),
+		CallsRoot:     calllog.DirFor(dataDir),
 		EventLogPath:  filepath.Join(dataDir, "logs", eventlog.FileName),
 		LogsDir:       filepath.Join(dataDir, "logs"),
 		CallsKeys:     vault,
