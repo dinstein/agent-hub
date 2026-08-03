@@ -135,11 +135,18 @@ func (m *Manager) scanTree(src string) (*scanned, error) {
 	return out, nil
 }
 
-// scan validates the untrusted text of a package through the configured
-// content scanner. SKILL.md is a first-class prompt-injection carrier
-// (docs/modules/config.md): a hit refuses the import outright rather than
-// importing and flagging, because an imported skill is one `sync` away from
-// being materialized into a client's directory.
+// scanContent puts the untrusted text of a package through Options.
+// ContentScanner. A hit refuses the import outright rather than importing and
+// flagging, because an imported skill is one `sync` away from being
+// materialized into a client's directory, and SKILL.md is a first-class
+// prompt-injection carrier (docs/modules/config.md).
+//
+// NOTHING SETS THAT SCANNER TODAY. The injection scanner it was shaped for
+// went with the removed governance surface, so the nil check below is the
+// path every import actually takes and this function is a no-op. Options.
+// ContentScanner says the same beside the field; it is repeated here because
+// this is where a reader tracing the import path arrives, and a description
+// of what the seam WOULD do reads exactly like a check imports are passing.
 func (m *Manager) scanContent(sc *scanned, name string) error {
 	if m.opts.ContentScanner == nil {
 		return nil
