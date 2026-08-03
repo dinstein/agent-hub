@@ -1440,6 +1440,7 @@ the outside.
 | `e2e_test.go` | The full chain against the fake downstream (register → initialize → tools/list → tools/call → clean EOF); the real npx filesystem server (the acceptance criterion case) |
 | `mcpclient_test.go` | The hand-written stdio client, reverse RPC replies, retry semantics, stderr tail and SIGQUIT stack dumps |
 | `daemonrestart_test.go` | A `kill -9`ed daemon leaves the data plane untouched; after a restart the gateway re-registers on the 30s ladder, and `session kill` proves the new registration is a live handle rather than a remembered row; self-skips under `-short` |
+| `daemonowner_test.go` | The ownership rule with real processes, which is the only place it can be checked: an ownerless `daemon start` is refused and leaves no daemon behind; a hub whose owner is `kill -9`ed stops on its own, having been sent nothing at all; a `--headless` hub keeps running through the same watch interval, so a watch that armed itself for nobody would be caught rather than looking like success |
 | `serverlifecycle_test.go` | add → ls → inspect → enable (with the probe) → disable → rm, and an unreachable probe that reports rather than vetoes |
 | `serverlive_test.go` | `server trace` engaging and releasing under a client that is never restarted, frames carrying the call argument verbatim, and `server disable` withdrawing a tool from a live session |
 | `profile_test.go` | Membership edits moving a live surface in both directions, a rename repointing bindings, and a deleted profile failing closed to an empty scope rather than widening |
