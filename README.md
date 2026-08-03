@@ -93,7 +93,7 @@ again. Full walkthrough — profiles, narrowing, the whole model — in [docs/gu
 | Result shaping | Pagination / budgets / `fetch_result` caching / TOON one-way projection encoding (with two constructive guarantees: never-larger and numeric fidelity) |
 | Credentials | Four-level resolution chain (env → explicit bare env → `secrets.enc` → OS keyring), composite vault key `(serverID, scopeName)`, headless OAuth with three callback modes + refresh coordination |
 | Clients | Config adaptation for 12 client types (format-driven), two-layer skills management (library/install), skills-over-MCP provisioning |
-| Operations | `agenthub doctor` full health check; encrypted, bounded tools/call history behind `agenthub audit`; per-server JSON-RPC wire trace (off by default, `server trace`); X-Request-Id across the whole chain |
+| Operations | `agenthub doctor` full health check; encrypted, bounded tools/call history behind `agenthub audit`; `agenthub logs` merging every process's log into one stream; per-server JSON-RPC wire trace (off by default, `server trace`); X-Request-Id across the whole chain |
 
 ## Documentation
 

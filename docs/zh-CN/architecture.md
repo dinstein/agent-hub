@@ -260,6 +260,7 @@ flowchart LR
         GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log<br/>logs/daemon.log"]
         GW --> A6["audit/YYYY-MM-DD/<br/>认证元数据 + 加密 payload pack"]
         A4 -.->|"agenthub server logs"| F
+        A5 -.->|"agenthub logs（离线，跨进程归并）<br/>agenthub daemon logs（只读 daemon.log）"| F
         A6 -.->|"agenthub audit<br/>（离线读取；明文需显式开启）"| F
     end
 ```

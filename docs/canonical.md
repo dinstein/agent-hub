@@ -119,9 +119,12 @@ the change is sealed inside one package, rather than borrowing one now.
 - **Resource groups are singular as the canonical name, with the plural as a cobra alias**:
   `server` / `profile` / `client` / `session` / `skill` / `secret` / `token` — one alias per group,
   and `grep -n 'Aliases' internal/cli/*.go` is the whole list
-- **Action/flow groups stay as they are**: `daemon`, `connect`, `auth`, `audit`, `events`,
+- **Action/flow groups stay as they are**: `daemon`, `connect`, `auth`, `audit`, `logs`, `events`,
   `config`, `doctor`, `catalog`. `audit` is the access-ledger lifecycle and inspection surface, not a
-  plural resource collection. `activity` was one of these and is **gone, not renamed**: it projected
+  plural resource collection. Neither is `logs`: it is a read **across every process log at once**,
+  which is what separates it from `daemon logs` (one process) and `server logs` (one downstream
+  connection's frames). Three readers, three subjects — and the name is not free to move to any of
+  the other two. `activity` was one of these and is **gone, not renamed**: it projected
   the token-savings ledger, and the ledger was removed rather than repaired (§7 decision 9). The
   OAuth group is **`auth`**, not `oauth`, and `catalog` takes
   **no plural alias**: there is one built-in list, so `catalogs` would name a thing that does not

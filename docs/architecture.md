@@ -280,6 +280,7 @@ flowchart LR
         GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log<br/>logs/daemon.log"]
         GW --> A6["audit/YYYY-MM-DD/<br/>authenticated metadata + encrypted payload packs"]
         A4 -.->|"agenthub server logs"| F["CLI / GUI"]
+        A5 -.->|"agenthub logs (offline, merged)<br/>agenthub daemon logs (daemon.log only)"| F
         A6 -.->|"agenthub audit (offline)<br/>GUI Activity (selected-call detail)"| F
     end
 ```

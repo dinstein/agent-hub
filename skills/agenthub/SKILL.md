@@ -221,12 +221,29 @@ agenthub server test brave --tools      # live answer today
 | client sees nothing | `server inspect` first; did the user restart the client? |
 | a client points at an old binary | `doctor` reports it; `--fix` repoints it |
 | a call went wrong, or "did it even reach the server" | the call log (§9) — `audit tail`, then `audit show <call-id>` |
+| a server dropped, kept reconnecting, or died overnight | `agenthub logs --server <id>` (§8) — merged across the daemon and every gateway |
 | exit 4 | that command needs a running daemon; nothing on this path does |
 | exit 6 | governance denied it — report it, do not retry |
 
 `server inspect` always prints a **visibility** section — the first command for "enabled, credential stored, client still sees nothing". Lists which profiles include and exclude the server, bound clients that can and cannot reach it, what an unbound client gets, and local tool-override count.
 
-## 8. Wire trace
+## 8. Process logs and the wire trace
+
+**Process logs** — what the hub's own processes did. Start here for anything about a connection's
+life rather than a call's content:
+
+```bash
+agenthub logs --server linear          # every process's records about one downstream
+agenthub logs --level warn --since 1h  # what went wrong recently, anywhere
+agenthub logs --client claude-code -f  # follow one gateway
+```
+
+- Merges `daemon.log` with every `gateway-<client>.log`. The **gateways** are the half that matters:
+  the daemon never dials a downstream, so connect failures, circuit transitions, health flips and
+  respawns are recorded only by the gateway serving a client.
+- Works offline, and must — a stdio gateway writes its log with no daemon running at all.
+- Filters are fail-closed: `--server x` drops records carrying no server field, daemon lines included.
+- `agenthub daemon logs` is still there; it is the single-process view of `daemon.log`.
 
 **Wire trace** — for when `server test` passes but a tool misbehaves inside the client:
 

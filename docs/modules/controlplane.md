@@ -891,9 +891,11 @@ classifiable error — agents and scripts use all four, so silently rewording is
 **The online/offline matrix is explicit.** Every command in the `session` group requires the daemon (a session is a runtime
 object that is never persisted), and offline is exit 4 rather **than** an invented offline answer. `events` is inherently
 online (the stream *is* the daemon), and offline is exit 4 rather than printing an empty stream that looks like "nothing
-happened". Conversely, `audit` reads the access ledger straight off disk and **works offline** — the records describe things
-that already happened, and whether the daemon is up cannot change history; the whole `server tool` group is offline-capable
-too — choosing what a server offers must not require starting it first, and neither must reading back what was chosen.
+happened". Conversely, `audit` and `logs` read files straight off disk and **work offline** — the records describe things
+that already happened, and whether the daemon is up cannot change history. `logs` is the sharper case: a stdio gateway
+writes its log with no daemon anywhere in the picture, so requiring one to read it back would refuse exactly the
+installation with the most to explain. The whole `server tool` group is offline-capable too — choosing what a server
+offers must not require starting it first, and neither must reading back what was chosen.
 
 **Credentials are never printed, and that is guaranteed at the type level.** The `secret` group's result types **have no value
 field at all**, `ls` renders only key names and backends, and `auth status` reports only issuer/expiry/mode/whether a refresh
@@ -1079,8 +1081,20 @@ shared prerequisite answers "is the daemon up?" once for the section instead of 
 remainder, usable against local state with nothing started. This replaced a thematic Govern/Operate split
 whose themes did not survive contact with their own membership: `token` is setup rather than
 governance, and `skill` is not an operation. A heading that mis-sorts its own members teaches the wrong
-model of the tool, which is why the fallback group is not given a theme it would then break. `audit` is
-a projection of files on disk, which is why it does not sit under Daemon.
+model of the tool, which is why the fallback group is not given a theme it would then break. `audit` and `logs` are
+projections of files on disk, which is why neither sits under Daemon — `logs` least of all, since the gateway logs it
+exists to surface are written by processes that never needed a daemon to run.
+
+**`logs` is the third log reader, and the three do not overlap.** `daemon logs` reads one file for one process;
+`server logs` renders one downstream connection's JSON-RPC frames and is off unless tracing was switched on for that
+server; `logs` merges `daemon.log` with every `gateway-<client>.log` into one time-ordered stream. The merge is the
+feature. `internal/ctlapi/gatewaystate.go` establishes that the daemon never dials a downstream, so every circuit
+transition, health flip, respawn and connection close is observed and recorded by a **gateway** — and before this reader
+existed, that half was written to files nothing in the tree could open. Filters are the mandatory `logx` field names
+(`--client`, `--server`) rather than free text, which is what makes a stream joinable in the first place, and they are
+**fail-closed** like `--since`/`--level`: a daemon record carries no `server`, so `--server x` excludes it instead of
+admitting a record it cannot classify. Unparseable lines are dropped rather than counted as `server logs` counts them —
+with no timestamp there is no position in a time-ordered stream where showing one would be truthful.
 
 `skill` is deliberately not in Wire up: materializing skill packages is a separate job from giving a
 client MCP tools, and a shipped build's help page is a route recommendation — a third entry beside
