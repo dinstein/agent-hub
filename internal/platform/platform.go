@@ -2,11 +2,15 @@
 // logs, cache, state, run directories and the control socket path) for
 // agenthub.
 //
-// Constraints (canonical.md §2, depguard-enforced):
+// Two constraints, from different places and held by different means:
 //   - Zero business dependencies: this package imports only the standard
-//     library and must never import other internal packages.
+//     library and must never import other internal packages. canonical.md §2,
+//     and depguard fails the build on a violation.
 //   - The AGENTHUB_* environment variable names are frozen identifiers:
-//     renaming the product must never rename them.
+//     renaming the product must never rename them. canonical.md §1, where the
+//     ABI is listed. NOTHING enforces this one — depguard reads imports, not
+//     string constants — so it holds only as long as a reader knows it is a
+//     rule. Which is why it is stated here, next to the constants.
 //
 // Platform support: macOS and Linux are implemented and exercised in CI.
 // Windows is implemented here as of M2 (ruling A.5 #23 put the seam in this
@@ -33,8 +37,10 @@ import (
 // darwin, linux and windows). Callers must test for it with errors.Is.
 var ErrUnsupportedPlatform = errors.New("unsupported platform")
 
-// Frozen environment variable names (see docs/modules/controlplane.md). These are ABI:
-// renaming the product must never rename them.
+// Frozen environment variable names. These are ABI, listed in canonical.md §1
+// alongside the module path and the binary names: renaming the product must
+// never rename them. docs/modules/controlplane.md describes what each one
+// does; the ruling that they cannot move is in canonical.md.
 const (
 	// EnvDataDir overrides the whole data directory.
 	EnvDataDir = "AGENTHUB_DATA_DIR"
