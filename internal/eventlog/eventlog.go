@@ -140,10 +140,9 @@ var allKinds = map[Scope][]Kind{
 	},
 }
 
-// Scopes lists every scope in presentation order.
-func Scopes() []Scope { return slices.Clone(scopeOrder) }
-
-// ScopeNames is Scopes as strings, for help text and error hints.
+// ScopeNames lists every scope in presentation order, as strings, for help
+// text and error hints. Callers want the names: the typed values are already
+// reachable as the exported constants, and a []Scope accessor had no caller.
 func ScopeNames() []string {
 	out := make([]string, 0, len(scopeOrder))
 	for _, s := range scopeOrder {
