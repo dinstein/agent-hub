@@ -46,7 +46,7 @@ func (a *App) newCallsExportCmd() *cobra.Command {
 			if output == "" || output == "-" {
 				return Usagef("--output must name a new file; stdout export is refused")
 			}
-			since, err := parseAuditSince(sinceRaw)
+			since, err := parseCallsSince(sinceRaw)
 			if err != nil {
 				return err
 			}

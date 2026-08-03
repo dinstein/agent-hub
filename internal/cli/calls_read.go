@@ -15,7 +15,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
-// CallEventRow is the metadata-only projection used by audit tail.
+// CallEventRow is the metadata-only projection used by calls tail.
 type CallEventRow struct {
 	Time          time.Time `json:"time"`
 	CallID        string    `json:"callId"`
@@ -31,7 +31,7 @@ type CallEventRow struct {
 	ResultCapture string    `json:"resultCapture,omitempty"`
 }
 
-func auditEventRow(e calllog.Event) CallEventRow {
+func callEventRow(e calllog.Event) CallEventRow {
 	return CallEventRow{
 		Time: e.TS, CallID: e.CallID, Event: string(e.Kind), Client: e.Client,
 		Face: e.Face, ExposedTool: e.Exposed, Server: e.Server, Tool: e.Tool,
@@ -40,14 +40,14 @@ func auditEventRow(e calllog.Event) CallEventRow {
 	}
 }
 
-// AuditTail is a bounded recent-event view. Payloads are never decrypted.
-type AuditTail struct {
+// CallTail is a bounded recent-event view. Payloads are never decrypted.
+type CallTail struct {
 	Since   time.Time      `json:"since,omitempty"`
 	Events  []CallEventRow `json:"events"`
 	Skipped int            `json:"skippedMalformed"`
 }
 
-func (t AuditTail) Human(w io.Writer) error {
+func (t CallTail) Human(w io.Writer) error {
 	if len(t.Events) == 0 {
 		_, err := fmt.Fprintln(w, "no matching call events")
 		return err
@@ -85,14 +85,14 @@ type callSelector struct {
 }
 
 func (s callSelector) admit(e calllog.Event) bool {
-	return auditEventMatches(e, s.client, s.server, s.tool, s.outcome)
+	return callEventMatches(e, s.client, s.server, s.tool, s.outcome)
 }
 
 // readCallTail collects the newest `limit` matching events since `since`.
 // A limit of zero or less is unbounded, which is what the follower asks for:
 // it has already narrowed the window with a cursor, and a ring buffer on top
 // of that could only throw away records it was about to print.
-func readCallTail(root string, since time.Time, limit int, sel callSelector) (AuditTail, error) {
+func readCallTail(root string, since time.Time, limit int, sel callSelector) (CallTail, error) {
 	rows := make([]CallEventRow, 0, max(limit, 0))
 	skipped, err := calllog.ScanEventsSince(root, since, func(e calllog.Event) error {
 		if !sel.admit(e) {
@@ -102,13 +102,13 @@ func readCallTail(root string, since time.Time, limit int, sel callSelector) (Au
 			copy(rows, rows[1:])
 			rows = rows[:limit-1]
 		}
-		rows = append(rows, auditEventRow(e))
+		rows = append(rows, callEventRow(e))
 		return nil
 	})
 	if err != nil {
-		return AuditTail{}, err
+		return CallTail{}, err
 	}
-	return AuditTail{Since: since, Events: rows, Skipped: skipped}, nil
+	return CallTail{Since: since, Events: rows, Skipped: skipped}, nil
 }
 
 // followCalls prints every event recorded after the tail it was given.
@@ -130,7 +130,7 @@ func readCallTail(root string, since time.Time, limit int, sel callSelector) (Au
 // it. A record sharing that instant is the one case this loses, and the
 // alternative — >= — reprints the last row on every tick, which reads as the
 // same call happening over and over.
-func (a *App) followCalls(ctx context.Context, root string, seen AuditTail, sel callSelector) error {
+func (a *App) followCalls(ctx context.Context, root string, seen CallTail, sel callSelector) error {
 	p := a.printer()
 	cursor := seen.Since
 	if n := len(seen.Events); n > 0 {
@@ -150,7 +150,7 @@ func (a *App) followCalls(ctx context.Context, root string, seen AuditTail, sel 
 		if err != nil {
 			return err
 		}
-		fresh := AuditTail{}
+		fresh := CallTail{}
 		for _, row := range batch.Events {
 			if !row.Time.After(cursor) {
 				continue
@@ -185,7 +185,7 @@ func (a *App) newCallsTailCmd() *cobra.Command {
 			if limit <= 0 || limit > 1000 {
 				return Usagef("--limit must be from 1 through 1000")
 			}
-			since, err := parseAuditSince(sinceRaw)
+			since, err := parseCallsSince(sinceRaw)
 			if err != nil {
 				return err
 			}
@@ -217,7 +217,7 @@ func (a *App) newCallsTailCmd() *cobra.Command {
 	return cmd
 }
 
-func parseAuditSince(raw string) (time.Time, error) {
+func parseCallsSince(raw string) (time.Time, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || raw == "all" {
 		return time.Time{}, nil
@@ -234,7 +234,7 @@ func parseAuditSince(raw string) (time.Time, error) {
 	return time.Time{}, Usagef("--since expects a duration such as 24h, RFC3339 time, or all")
 }
 
-func auditEventMatches(e calllog.Event, client, server, tool, outcome string) bool {
+func callEventMatches(e calllog.Event, client, server, tool, outcome string) bool {
 	return (client == "" || e.Client == client) &&
 		(server == "" || e.Server == server) &&
 		(tool == "" || e.Tool == tool || e.Exposed == tool) &&
@@ -436,7 +436,7 @@ func (a *App) newCallsStatsCmd() *cobra.Command {
 		Short: "Aggregate calls, outcomes and payload sizes without decryption",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			since, err := parseAuditSince(sinceRaw)
+			since, err := parseCallsSince(sinceRaw)
 			if err != nil {
 				return err
 			}

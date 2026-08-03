@@ -169,7 +169,7 @@ func TestAuditReadCommandsAndIntegrityVerification(t *testing.T) {
 	decodeInto(t, mustRun(t, "", "calls", "enable", "--json"), &enabled)
 	day := seedCLIAuditCall(t, dir, "call-for-cli")
 
-	var tail AuditTail
+	var tail CallTail
 	decodeInto(t, mustRun(t, "", "calls", "tail", "--since", "all", "--json"), &tail)
 	if len(tail.Events) != 3 || tail.Events[1].Server != "srv" {
 		t.Fatalf("tail = %+v", tail)
