@@ -52,10 +52,18 @@ func TestBudgetProjection(t *testing.T) {
 			t.Fatalf("rank %d signature does not name its tool: %q", h.Rank, h.Sig)
 		}
 	}
-	// The whole point of the two-step split: a search reply must be far
-	// cheaper than the schemas it stands in for.
-	if res.Savings.SavedTokens == 0 {
-		t.Fatalf("the signature projection booked no savings: %+v", res.Savings)
+	// The whole point of the two-step split: a search reply must be cheaper
+	// than the schemas it stands in for. Asserted in bytes against the input
+	// schemas themselves — the property is about this package's output, and
+	// routing it through an estimator only added a divisor to agree on.
+	sigBytes, schemaBytes := 0, 0
+	for i, h := range res.Hits {
+		sigBytes += len(h.Sig)
+		schemaBytes += len(tools[i].Def.InputSchema)
+	}
+	if sigBytes >= schemaBytes {
+		t.Fatalf("signatures cost %d bytes against %d of schema: the projection saved nothing",
+			sigBytes, schemaBytes)
 	}
 	if top.CallWith != MetaCallTool {
 		t.Fatalf("call_with = %q, want %q (M1 pins the single call entry)", top.CallWith, MetaCallTool)

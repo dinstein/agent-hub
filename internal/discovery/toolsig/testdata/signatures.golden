@@ -2,110 +2,110 @@
   sig     read_file(path:str, encoding?:str="utf8", limit?:int) -> str
   lossy   false
   params  3 shown 3
-  bytes   150 -> 60
+  bytes   60
 
 # every scalar type
   sig     scalars(s:str, i:int, n:num, b:bool, z:null, a:any) -> str
   lossy   false
   params  6 shown 6
-  bytes   186 -> 58
+  bytes   58
 
 # required order is the schema's, optional order is sorted
   sig     ordering(zulu:str, mike:str, alpha?:str, bravo?:str) -> str
   lossy   false
   params  4 shown 4
-  bytes   161 -> 59
+  bytes   59
 
 # defaults of every kind
   sig     defaults(b?:bool=false, big?~:obj, i?:int=3600, s?:str="utf8", z?:str=null) -> str
   lossy   true
   params  5 shown 5
-  bytes   258 -> 82
+  bytes   82
 
 # enums
   sig     enums(mode:enum{read|write}, many~:enum{a|b|c|d|e|f}, mixed:enum{"a b"|1|true|null}) -> str
   lossy   true
   params  3 shown 3
-  bytes   187 -> 91
+  bytes   91
 
 # arrays
   sig     arrays(names:arr<str>, rows~:arr<obj>, bare:arr, tuple~:arr, nested:arr<arr<int>>) -> str
   lossy   true
   params  5 shown 5
-  bytes   396 -> 89
+  bytes   89
 
 # objects fold after one level
   sig     objects(freeform:obj, account~:obj{id,name}, wide~:obj{a,b,c,d}, deep~:obj{inner}) -> str
   lossy   true
   params  4 shown 4
-  bytes   385 -> 89
+  bytes   89
 
 # unions, refs and inferred types
   sig     edges(nullable:str, union~:any, ref~:any, inferred_obj~:obj{k}, inferred_arr:arr<str>, anyof~:any, weird~:any) -> str
   lossy   true
   params  7 shown 7
-  bytes   404 -> 117
+  bytes   117
 
 # no parameters
   sig     ping() -> str
   lossy   false
   params  0 shown 0
-  bytes   62 -> 13
+  bytes   13
 
 # no schema at all
   sig     bare(~) -> str
   lossy   true
   params  0 shown 0
-  bytes   0 -> 14
+  bytes   14
 
 # unparsable schema
   sig     broken(~) -> str
   lossy   true
   params  0 shown 0
-  bytes   8 -> 16
+  bytes   16
 
 # boolean schema
   sig     anything(~) -> str
   lossy   true
   params  0 shown 0
-  bytes   4 -> 18
+  bytes   18
 
 # required names missing from properties
   sig     sloppy(ghost~:any, real:str) -> str
   lossy   true
   params  2 shown 2
-  bytes   96 -> 35
+  bytes   35
 
 # declared output schema
   sig     count(q:str) -> obj
   lossy   false
   params  1 shown 1
-  bytes   71 -> 19
+  bytes   19
 
 # output schema that is an array
   sig     list_rows() -> arr<str>
   lossy   false
   params  0 shown 0
-  bytes   33 -> 23
+  bytes   23
 
 # over budget: optional parameters go first
   max     80
   sig     wide(req00:str, req01:str, req02:str, req03:str, req04:str, …+15 more) -> str
   lossy   true
   params  20 shown 5
-  bytes   645 -> 79
+  bytes   79
 
 # over budget: even required parameters are cut
   max     40
   sig     wide(req00:str, …+19 more) -> str
   lossy   true
   params  20 shown 1
-  bytes   645 -> 35
+  bytes   35
 
 # budget smaller than the skeleton
   max     8
   sig     wide(…+20 more) -> str
   lossy   true
   params  20 shown 0
-  bytes   645 -> 24
+  bytes   24
 

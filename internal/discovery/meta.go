@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/dinstein/agent-hub/internal/mcp"
-	"github.com/dinstein/agent-hub/internal/shaping"
 )
 
 // The five lazy-mode meta-tools (docs/flows.md plus the describe-in-two-
@@ -317,19 +316,13 @@ type SearchRequest struct {
 func (a SearchArgs) request() SearchRequest { return SearchRequest(a) }
 
 // SearchResult is the structured outcome of one search: the projected
-// hits, the guard verdict, the audit trace and the token savings the
-// signature projection booked.
+// hits, the guard verdict and the trace.
 type SearchResult struct {
 	Hits       []Hit
 	Matched    int
 	Truncated  bool
 	Escalation Escalation
 	Trace      Trace
-	// Savings estimates what the compact signatures saved against shipping
-	// every hit's full input schema (docs/modules/dataplane.md). Same units and same
-	// estimator as the result-shaping savings stream, so the two aggregate
-	// into one number. Zero when nothing was projected.
-	Savings shaping.Savings
 }
 
 // Search ranks the visible tools against a query and applies the budget
@@ -371,7 +364,6 @@ func (s *Surface) Search(req SearchRequest, guard *SearchGuard) (*SearchResult, 
 	}
 	if !res.Escalation.Fire {
 		res.Hits = project(cands, s.variants)
-		res.Savings = projectedSavings(cands)
 	}
 
 	res.Trace = Trace{

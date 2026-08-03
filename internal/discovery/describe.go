@@ -153,10 +153,7 @@ type describePayload struct {
 }
 
 // DescribeResult is the structured outcome of one describe_tool call: the
-// resolved entries, the unresolvable names, and the savings the signature
-// layer booked for the tools that WERE resolved (an agent that had to come
-// back here spent the round trip the signature saved, so the caller can net
-// the two against each other in the savings stream).
+// resolved entries and the names that could not be resolved.
 type DescribeResult struct {
 	Entries []DescribeEntry
 	Errors  []DescribeError

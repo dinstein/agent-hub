@@ -6,7 +6,6 @@ import (
 	"unicode"
 
 	"github.com/dinstein/agent-hub/internal/discovery/toolsig"
-	"github.com/dinstein/agent-hub/internal/shaping"
 )
 
 // Budget projection (docs/flows.md "full schema for rank 1, a 140-character
@@ -120,17 +119,6 @@ func project(cands []scored, variants bool) []Hit {
 		out = append(out, h)
 	}
 	return out
-}
-
-// projectedSavings estimates what the signature projection saved against
-// shipping every hit's full input schema, in the same units as
-// shaping.EstimateSavings (one divisor for the whole savings stream).
-func projectedSavings(cands []scored) shaping.Savings {
-	sigs := make([]toolsig.Signature, 0, len(cands))
-	for _, c := range cands {
-		sigs = append(sigs, toolsig.Shared().OfNamed(c.tool.Exposed, c.tool.Def))
-	}
-	return toolsig.SumSavings(sigs)
 }
 
 // describe returns the tool's description or the frozen placeholder.

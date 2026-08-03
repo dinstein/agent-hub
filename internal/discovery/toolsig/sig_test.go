@@ -186,7 +186,7 @@ func TestGoldenSignatures(t *testing.T) {
 		fmt.Fprintf(&b, "  sig     %s\n", sig.Text)
 		fmt.Fprintf(&b, "  lossy   %t\n", sig.Lossy)
 		fmt.Fprintf(&b, "  params  %d shown %d\n", sig.Params, sig.Shown)
-		fmt.Fprintf(&b, "  bytes   %d -> %d\n\n", sig.BaselineBytes, len(sig.Text))
+		fmt.Fprintf(&b, "  bytes   %d\n\n", len(sig.Text))
 	}
 	assertGolden(t, "signatures.golden", b.String())
 }
@@ -293,23 +293,26 @@ func TestLossyIsHonest(t *testing.T) {
 }
 
 // A signature must actually be cheaper than the schema it stands in for on
-// realistic input, and Savings must describe the pair it was built from.
-func TestSavings(t *testing.T) {
-	sig := Of(corpus[0].def, Options{})
-	s := sig.Savings()
-	if s.BaselineBytes != sig.BaselineBytes || s.ActualBytes != len(sig.Text) {
-		t.Fatalf("savings do not describe the signature: %+v vs %+v", s, sig)
+// realistic input. That is the reason the whole package exists, so it stays
+// asserted even though nothing books the difference any more.
+func TestSignatureIsCheaperThanItsSchema(t *testing.T) {
+	// Only schemas big enough to be worth replacing: a signature naming a
+	// tool is necessarily longer than a schema of `{` or `{}`, and that says
+	// nothing about the claim.
+	const worthReplacing = 64
+	checked := 0
+	for _, tc := range corpus {
+		if tc.opts.MaxBytes > 0 || len(tc.def.InputSchema) < worthReplacing {
+			continue
+		}
+		checked++
+		if sig := Of(tc.def, tc.opts); len(sig.Text) >= len(tc.def.InputSchema) {
+			t.Fatalf("%s: signature costs %d bytes against %d of schema",
+				tc.name, len(sig.Text), len(tc.def.InputSchema))
+		}
 	}
-	if s.SavedTokens == 0 {
-		t.Fatalf("the design example saved nothing: %d -> %d bytes", s.BaselineBytes, s.ActualBytes)
-	}
-
-	sum := SumSavings([]Signature{sig, sig})
-	if sum.BaselineBytes != 2*sig.BaselineBytes || sum.ActualBytes != 2*len(sig.Text) {
-		t.Fatalf("SumSavings = %+v", sum)
-	}
-	if got := SumSavings(nil); got.SavedTokens != 0 {
-		t.Fatalf("SumSavings(nil) = %+v", got)
+	if checked == 0 {
+		t.Fatal("no corpus entry carried a schema worth replacing; the test asserted nothing")
 	}
 }
 

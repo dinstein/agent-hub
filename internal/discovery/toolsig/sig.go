@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/dinstein/agent-hub/internal/mcp"
-	"github.com/dinstein/agent-hub/internal/shaping"
 )
 
 // DefaultMaxBytes is the signature length budget. Calibration: a signature
@@ -29,8 +28,8 @@ func (o Options) maxBytes() int {
 	return o.MaxBytes
 }
 
-// Signature is one rendered tool signature plus the honesty and accounting
-// metadata that travels with it.
+// Signature is one rendered tool signature plus the honesty metadata that
+// travels with it.
 type Signature struct {
 	// Text is the one-line signature. Never empty for a named tool.
 	Text string
@@ -43,28 +42,6 @@ type Signature struct {
 	// survived the length budget.
 	Params int
 	Shown  int
-	// BaselineBytes is the size of what the signature stands in for: the
-	// compacted inputSchema. It is the baseline of Savings.
-	BaselineBytes int
-}
-
-// Savings estimates the tokens this signature saved against shipping the
-// full input schema, using internal/shaping's estimator so the numbers are
-// directly comparable with the result-shaping savings stream (one divisor,
-// one definition of "saved", one audit aggregate).
-func (s Signature) Savings() shaping.Savings {
-	return shaping.EstimateSavings(s.BaselineBytes, len(s.Text))
-}
-
-// SumSavings aggregates a set of signatures — e.g. every hit of one search —
-// into a single record.
-func SumSavings(sigs []Signature) shaping.Savings {
-	baseline, actual := 0, 0
-	for _, s := range sigs {
-		baseline += s.BaselineBytes
-		actual += len(s.Text)
-	}
-	return shaping.EstimateSavings(baseline, actual)
 }
 
 // Of renders the signature of def under its own name.
@@ -84,10 +61,7 @@ func Of(def mcp.ToolDef, opts Options) Signature { return Named(def.Name, def, o
 // churn the search output.
 func Named(name string, def mcp.ToolDef, opts Options) Signature {
 	max := opts.maxBytes()
-	sig := Signature{BaselineBytes: len(compact(def.InputSchema))}
-	if sig.BaselineBytes == 0 {
-		sig.BaselineBytes = len(def.InputSchema)
-	}
+	var sig Signature
 
 	ret := returnType(def)
 
