@@ -107,3 +107,20 @@ func TestPruneWithFewerSegmentsThanKeepRemovesNothing(t *testing.T) {
 		}
 	}
 }
+
+func TestIsSegmentSeparatesRotatedFilesFromStreamsOfTheirOwn(t *testing.T) {
+	cases := map[string]bool{
+		"/logs/gateway-claude-code.log":                               false,
+		"/logs/gateway-claude-code-20260803T120000.000000000Z.p7.log": true,
+		"/logs/events.jsonl":                                          false,
+		"/logs/events-20260803T120000.000000000Z.p12345.jsonl":        true,
+		"/logs/gateway-2026.log":                                      false,
+		"/logs/gateway-client-with-p7.log":                            false,
+		"/logs/server-github-20260803T120000.000000000Z.p1.log":       true,
+	}
+	for path, want := range cases {
+		if got := jsonl.IsSegment(path); got != want {
+			t.Errorf("IsSegment(%q) = %v, want %v", path, got, want)
+		}
+	}
+}

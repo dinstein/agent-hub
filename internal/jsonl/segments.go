@@ -3,6 +3,7 @@ package jsonl
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -26,6 +27,23 @@ func Segments(path string) []string {
 	}
 	slices.Sort(matches)
 	return append(matches, path)
+}
+
+// segmentSuffix matches the "-<stamp>.p<pid>" tail segmentPath appends. The
+// stamp is fixed-width, so this cannot mistake a stream whose own name ends
+// in a number for a rotated file.
+var segmentSuffix = regexp.MustCompile(`-\d{8}T\d{6}\.\d{9}Z\.p\d+$`)
+
+// IsSegment reports whether path names a rotated segment rather than a
+// stream's active file.
+//
+// A caller listing streams by glob needs it: gateway-*.log matches
+// gateway-claude-code.log and every segment rotated off it, and taking a
+// segment for a stream of its own reads the same records twice — once
+// directly and once as part of the stream it belongs to.
+func IsSegment(path string) bool {
+	ext := filepath.Ext(path)
+	return segmentSuffix.MatchString(strings.TrimSuffix(path, ext))
 }
 
 // Prune deletes all but the newest keep rotated segments. The active file is

@@ -23,6 +23,7 @@ import (
 	"github.com/dinstein/agent-hub/api"
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/daemon"
+	"github.com/dinstein/agent-hub/internal/jsonl"
 	"github.com/dinstein/agent-hub/internal/platform"
 )
 
@@ -585,10 +586,20 @@ func (f logFilter) admit(t time.Time, tOK bool, lvl slog.Level, lvlOK bool) bool
 	return true
 }
 
-// streamDaemonLogs reads path line by line, filtering and rendering. With
-// follow it keeps polling for appended data (handling truncation by
-// reopening) until ctx is done.
+// streamDaemonLogs reads the daemon's stream line by line, filtering and
+// rendering. With follow it keeps polling the active file for appended data
+// until ctx is done.
+//
+// The rotated segments are read first, oldest to newest. Reading only the
+// active file would make a `--since 24h` answer "nothing happened" for
+// everything rotation moved aside — the same trap the merged reader avoids.
 func (a *App) streamDaemonLogs(ctx context.Context, path string, filter logFilter, follow bool) error {
+	segments := jsonl.Segments(path)
+	for _, seg := range segments[:len(segments)-1] {
+		if err := a.renderLogFile(seg, filter); err != nil {
+			return err
+		}
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -623,12 +634,46 @@ func (a *App) streamDaemonLogs(ctx context.Context, path string, filter logFilte
 		case <-time.After(logsFollowInterval):
 		}
 		if st, serr := os.Stat(path); serr == nil && st.Size() < offset {
-			// Truncated/rotated: start over from the top of the new file.
-			if _, serr := f.Seek(0, io.SeekStart); serr != nil {
-				return serr
+			// The file shrank: it was rotated away, or truncated. Rotation
+			// RENAMES the active file, so this descriptor still points at the
+			// segment that moved — seeking it back to the top would re-print
+			// that history instead of following the new file. Reopen instead.
+			nf, oerr := os.Open(path)
+			if oerr != nil {
+				return oerr
 			}
+			_ = f.Close()
+			f = nf
 			r.Reset(f)
 			offset = 0
+		}
+	}
+}
+
+// renderLogFile prints one whole file through the same filter. A missing file
+// is not an error: retention can prune a segment between the listing and the
+// read, and a gap in old history is not worth failing a tail over.
+func (a *App) renderLogFile(path string, filter logFilter) error {
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	defer func() { _ = f.Close() }()
+
+	r := bufio.NewReader(f)
+	for {
+		line, rerr := r.ReadString('\n')
+		if line != "" {
+			a.renderLogLine(strings.TrimRight(line, "\n"), filter)
+		}
+		if rerr != nil {
+			if errors.Is(rerr, io.EOF) {
+				return nil
+			}
+			return rerr
 		}
 	}
 }

@@ -310,3 +310,61 @@ func equalStringSlices(got, want []string) bool {
 	}
 	return true
 }
+
+// Rotation moves history aside into a segment, and the gateway glob matches
+// those too. So the segment must be read — but exactly once: as part of the
+// stream it belongs to, never also as a stream of its own.
+func TestLogsReadsRotatedSegments(t *testing.T) {
+	dir := setDataDir(t)
+	seedLogs(t, dir)
+	logsDir := filepath.Join(dir, "logs")
+	rotated := filepath.Join(logsDir, "gateway-claude-code-20200102T090000.000000000Z.p7.log")
+	if err := os.WriteFile(rotated, []byte(
+		`{"time":"2020-01-02T09:00:00Z","level":"INFO","msg":"before rotation",`+
+			`"client":"claude-code","server":"github"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, errOut := runCLI(t, "", "logs")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+
+	msgs := msgsOf(out)
+	if len(msgs) == 0 || msgs[0] != "before rotation" {
+		t.Fatalf("rotated history missing or out of order: %v\n%s", msgs, out)
+	}
+	// Counted once: the glob matches the segment too, and reading it both as
+	// its own stream and as part of gateway-claude-code.log would double it.
+	seen := 0
+	for _, m := range msgs {
+		if m == "before rotation" {
+			seen++
+		}
+	}
+	if seen != 1 {
+		t.Fatalf("the rotated record was read %d times, want 1:\n%s", seen, out)
+	}
+}
+
+// --client narrows by file name before it narrows by field, so it has its own
+// path into the file list and its own way to miss the segments.
+func TestLogsByClientReadsRotatedSegments(t *testing.T) {
+	dir := setDataDir(t)
+	seedLogs(t, dir)
+	rotated := filepath.Join(dir, "logs", "gateway-cursor-20200102T090000.000000000Z.p7.log")
+	if err := os.WriteFile(rotated, []byte(
+		`{"time":"2020-01-02T09:00:00Z","level":"INFO","msg":"cursor history","client":"cursor"}`+"\n"),
+		0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, errOut := runCLI(t, "", "logs", "--client", "cursor")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+
+	if !strings.Contains(out, "cursor history") {
+		t.Fatalf("--client read only the active file:\n%s", out)
+	}
+}

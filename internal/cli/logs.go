@@ -17,6 +17,7 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/daemon"
 	"github.com/dinstein/agent-hub/internal/gateway"
+	"github.com/dinstein/agent-hub/internal/jsonl"
 	"github.com/dinstein/agent-hub/internal/logx"
 )
 
@@ -188,18 +189,13 @@ type logFile struct {
 func logFilesFor(logsDir string, sel logSelector) ([]logFile, error) {
 	var out []logFile
 	if sel.source != string(originGateway) && sel.client == "" {
-		if path := filepath.Join(logsDir, daemon.LogFileName); fileExists(path) {
-			out = append(out, logFile{path: path, origin: originDaemon})
-		}
+		out = appendStream(out, filepath.Join(logsDir, daemon.LogFileName), originDaemon)
 	}
 	if sel.source == string(originDaemon) {
 		return out, nil
 	}
 	if sel.client != "" {
-		if path := gateway.LogPath(logsDir, sel.client); fileExists(path) {
-			out = append(out, logFile{path: path, origin: originGateway})
-		}
-		return out, nil
+		return appendStream(out, gateway.LogPath(logsDir, sel.client), originGateway), nil
 	}
 	matches, err := filepath.Glob(filepath.Join(logsDir,
 		gateway.LogFilePrefix+"*"+gateway.LogFileExt))
@@ -208,9 +204,30 @@ func logFilesFor(logsDir string, sel logSelector) ([]logFile, error) {
 	}
 	slices.Sort(matches)
 	for _, path := range matches {
-		out = append(out, logFile{path: path, origin: originGateway})
+		// The glob matches rotated segments too. Each is read as part of the
+		// stream it belongs to, so taking one for a stream of its own would
+		// list its records twice.
+		if jsonl.IsSegment(path) {
+			continue
+		}
+		out = appendStream(out, path, originGateway)
 	}
 	return out, nil
+}
+
+// appendStream adds one stream's files — rotated segments oldest first, then
+// the active file — skipping those that do not exist.
+//
+// Reading only the active file is the mistake this exists to prevent: the
+// process logs rotate now, so a `--since 24h` that opened just the newest
+// file would answer "nothing happened" for everything rotation moved aside.
+func appendStream(out []logFile, active string, origin logOrigin) []logFile {
+	for _, path := range jsonl.Segments(active) {
+		if fileExists(path) {
+			out = append(out, logFile{path: path, origin: origin})
+		}
+	}
+	return out
 }
 
 // streamLogs prints the merged tail and, with follow, everything appended
