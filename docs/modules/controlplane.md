@@ -1125,7 +1125,8 @@ SIGTTIN/SIGTTOU.
 curated catalog trails because leading with it teaches a path that ends in "not listed" for most servers), Wire up
 (`profile`, `client` — a profile says what a surface *contains*, `client bind` says who gets it,
 so the two halves of one question sit together), Daemon (`daemon`, `session`, `token`), Manage
-(everything else), Diagnose (`doctor`, alone), and the machine entry point `connect`.
+(everything else), Diagnose (`doctor`, alone), Observe (`audit`, `events`, `logs`), and the machine
+entry point `connect`.
 
 **The back half is split on one testable question — does this command need a running daemon?** Every
 member of Daemon is inert without one: `session` says so in its own help text, and `token`
@@ -1135,10 +1136,23 @@ shared prerequisite answers "is the daemon up?" once for the section instead of 
 remainder, usable against local state with nothing started. This replaced a thematic Govern/Operate split
 whose themes did not survive contact with their own membership: `token` is setup rather than
 governance, and `skill` is not an operation. A heading that mis-sorts its own members teaches the wrong
-model of the tool, which is why the fallback group is not given a theme it would then break. `audit`, `events` and
-`logs` are projections of files on disk, which is why none of them sits under Daemon. `events` DID sit there, while it
-subscribed to the SSE stream; it now reads the event log, which a stdio gateway writes with no daemon in the picture, so
-the one testable question the split is made on answers differently.
+model of the tool, which is why the fallback group is not given a theme it would then break. Manage is now that
+remainder and nothing else — a config editor and a skill materializer — since the three record readers it used to hold
+became Observe.
+
+**Observe is visible in a shipped build, for the reason Diagnose is.** `audit`, `events` and `logs` were in Manage, so a
+release recorded every call a client made and every state change a server went through, and then withheld all three
+readers of that record. `doctor` answers "is the wiring right"; nothing on a shipped page answered "what did the client
+actually call, and what did the server do afterwards" — the questions that arrive once the wiring *is* right and the
+answer still came back wrong. A ledger nothing on the help page can open reads as no ledger at all, which is the
+`secret` fault a third time. It is a group rather than three more lines under Diagnose because these are not only
+failure tools: `audit tail` is how an operator reads what a client has been doing on a working installation. It sits
+*after* Diagnose in triage order — `doctor` decides in one command, these three ask the reader to know what they are
+looking for — and `audit` leads because the call is what a user came to ask about, `events` then says what the server
+was doing at the time, and `logs` carries the prose around both. The membership is one line: each is a projection of a
+file on disk and none needs a daemon, which is also why none of them can sit under Daemon. `events` DID sit there, while
+it subscribed to the SSE stream; it now reads the event log, which a stdio gateway writes with no daemon in the picture,
+so the one testable question that split is made on answers differently.
 
 **`logs` is the third log reader, and the three do not overlap.** `daemon logs` reads one file for one process;
 `server logs` renders one downstream connection's JSON-RPC frames and is off unless tracing was switched on for that

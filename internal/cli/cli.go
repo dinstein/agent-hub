@@ -221,16 +221,9 @@ func (a *App) newRoot() *cobra.Command {
 		a.newDaemonCmd(), a.newSessionCmd(), a.newTokenCmd())
 	// Everything else, and the title says so rather than naming a theme the
 	// membership does not honor. These run against local state with nothing
-	// started; `audit`, `events` and `logs` are projections of files on disk,
-	// which is why none of them belongs above. `events` was in Daemon while
-	// it subscribed to the SSE stream; it now reads the event log, which a
-	// stdio gateway writes with no daemon in the picture, so the one testable
-	// question the split is made on answers differently.
+	// started.
 	addGroupedHidden(root, a.reducedHelp, groupManage,
 		a.newConfigCmd(),
-		a.newAuditCmd(),
-		a.newEventsCmd(),
-		a.newLogsCmd(),
 		a.newSkillCmd())
 	// `doctor` is VISIBLE, in a shipped build too, and it is alone.
 	//
@@ -253,6 +246,35 @@ func (a *App) newRoot() *cobra.Command {
 	// belongs here — but the bar is the same one `doctor` had to clear, which
 	// is that a user following the everyday path is left stuck without it.
 	addGrouped(root, groupDiagnose, a.newDoctorCmd())
+	// The three record readers, VISIBLE for the same reason `doctor` is.
+	//
+	// They were in Manage, so a release build recorded every call a client
+	// made and every state change a server went through, and then withheld
+	// all three readers of that record. `doctor` answers "is the wiring
+	// right"; nothing on a shipped help page answered "what did the client
+	// actually call, and what did the server do afterwards" — the two
+	// questions that arrive once the wiring IS right and an answer still
+	// came back wrong. A ledger nothing on the page can open reads as no
+	// ledger at all, which is the `secret` fault a third time.
+	//
+	// A group rather than three more lines under Diagnose, because these are
+	// not only failure tools: `audit tail` is how an operator reads what a
+	// client has been doing on a working installation. Diagnose is what to
+	// run when a step did not take; this is what happened.
+	//
+	// It sits AFTER Diagnose, in triage order. `doctor` is the first move
+	// when something is wrong and it decides in one command; these three are
+	// the second, and they ask the reader to know what they are looking for.
+	//
+	// The membership is one line: each is a projection of a file on disk, and
+	// none needs a daemon — which is why they cannot go back to Daemon above.
+	// `events` was in Daemon while it subscribed to the SSE stream; it now
+	// reads the event log, which a stdio gateway writes with no daemon in the
+	// picture, so the one testable question that split is made on answers
+	// differently. `audit` leads because the call is what a user came to ask
+	// about; `events` then says what the server was doing at the time, and
+	// `logs` carries the prose around both.
+	addGrouped(root, groupObserve, a.newAuditCmd(), a.newEventsCmd(), a.newLogsCmd())
 	addGrouped(root, groupEntry, a.newConnectCmd())
 	return root
 }
@@ -260,9 +282,9 @@ func (a *App) newRoot() *cobra.Command {
 // Help groups, in the order the onboarding path actually runs: bring a server
 // in -> choose a surface and hand it to an AI client -> start the daemon and
 // watch what it serves -> everything else -> what to run when one of those did
-// not work. `connect` is held apart because it is the machine entry point a
-// client's MCP config invokes; a human who types it gets a terminal that just
-// hangs on stdio.
+// not work -> what actually happened afterwards. `connect` is held apart
+// because it is the machine entry point a client's MCP config invokes; a human
+// who types it gets a terminal that just hangs on stdio.
 //
 // There is no separate Scope group: narrowing is what a profile IS, so it
 // belongs with the commands that build and hand out profiles rather than in a
@@ -277,6 +299,12 @@ func (a *App) newRoot() *cobra.Command {
 // model of the tool, so the fallback group is named for what it honestly is —
 // the remainder — rather than given a theme to break.
 //
+// Manage is now that remainder and nothing else: the three record readers it
+// used to hold answer one question between them and have their own group, so
+// what is left is a config editor and a skill materializer. That is a
+// remainder worth keeping withheld, and no longer one big enough to be
+// mistaken for a section.
+//
 // `secret` was the other member cited there, and it has since moved to Setup,
 // where that sentence said it belonged all along. Manage's title drops
 // "credentials" with it: naming a theme no member carries is the same fault
@@ -290,7 +318,10 @@ var (
 	// shipped page it lands directly under Wire up: the path, then what to run
 	// when the path does not work.
 	groupDiagnose = &cobra.Group{ID: "diagnose", Title: "Diagnose — when something is not working:"}
-	groupEntry    = &cobra.Group{ID: "entry", Title: "Machine entry point (not for humans):"}
+	// Observe follows Diagnose, and is the other visible group a shipped build
+	// keeps: what was called, what changed, and the prose around both.
+	groupObserve = &cobra.Group{ID: "observe", Title: "Observe — what a client called, and what changed:"}
+	groupEntry   = &cobra.Group{ID: "entry", Title: "Machine entry point (not for humans):"}
 )
 
 // addGrouped stamps every command with its group before adding it. Cobra does

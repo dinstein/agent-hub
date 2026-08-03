@@ -50,10 +50,13 @@ var withheldGroups = []*cobra.Group{groupDaemon, groupManage}
 // `doctor` is likewise NOT withheld, and has its own group: a shipped build
 // that teaches the everyday path has to name what to run when a step of it
 // fails, or the user's next move after a failed handshake is unspoken.
+// `audit`, `events` and `logs` are likewise NOT withheld, and share the
+// Observe group: a build that records every call and every state change, then
+// hides all three readers of that record, ships a ledger nothing on its help
+// page can open.
 var withheldCommands = []string{
 	"daemon", "session", "token",
-	"config", "audit", "events", "logs",
-	"skill",
+	"config", "skill",
 	// `tool` is NOT here any more: it hangs off `server`, which is visible,
 	// so the group ships. That was the point of moving it — a global allow
 	// list with no advertised way to read or write it.
@@ -255,8 +258,8 @@ func TestEveryGroupShowsHelpOnBareInvocation(t *testing.T) {
 }
 
 // TestRootHelpOrderIsTheOnboardingPath pins the root listing: the phase
-// order (setup -> wire up -> daemon -> manage, connect held apart)
-// is the one thing on the help page that carries meaning, and with
+// order (setup -> wire up -> daemon -> manage -> diagnose -> observe, connect
+// held apart) is the one thing on the help page that carries meaning, and with
 // EnableCommandSorting off it is only as good as the declaration order. A new
 // command appended to whichever AddCommand call is nearest is how that
 // meaning erodes without anything failing.
@@ -277,13 +280,14 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		// `token` mints credentials for the daemon's HTTP data plane, so it
 		// sits with the daemon rather than with the other governance verbs.
 		{"daemon", []string{"daemon", "session", "token"}},
-		{"manage", []string{
-			"config", "audit", "events", "logs",
-			"skill",
-		}},
+		{"manage", []string{"config", "skill"}},
 		// One member, and visible even in a shipped build: Setup and Wire up
 		// are steps to take, and this is what to run when a step did not take.
 		{"diagnose", []string{"doctor"}},
+		// Visible too, and after Diagnose in triage order: `doctor` decides in
+		// one command, these three ask the reader to know what they are looking
+		// for. `audit` leads because the call is what a user came to ask about.
+		{"observe", []string{"audit", "events", "logs"}},
 		{"entry", []string{"connect"}},
 	}
 	root := newTestRoot(t)
@@ -447,12 +451,15 @@ func TestReleaseHidesExactlyTheWithheldCommands(t *testing.T) {
 	}
 	// The rest of the page must be untouched — this is a help-page edit, not
 	// a reshuffle of everything else.
-	for _, g := range []*cobra.Group{groupSetup, groupWire, groupDiagnose, groupEntry} {
+	for _, g := range []*cobra.Group{groupSetup, groupWire, groupDiagnose, groupObserve, groupEntry} {
 		if !strings.Contains(out, g.Title) {
 			t.Errorf("release --help dropped the %q heading, which stays visible:\n%s", g.ID, out)
 		}
 	}
-	for _, other := range []string{"catalog", "server", "auth", "secret", "profile", "client", "connect", "doctor"} {
+	for _, other := range []string{
+		"catalog", "server", "auth", "secret", "profile", "client", "connect", "doctor",
+		"audit", "events", "logs",
+	} {
 		if !strings.Contains(out, "  "+other+" ") {
 			t.Errorf("release --help dropped %q, which is not withheld:\n%s", other, out)
 		}
