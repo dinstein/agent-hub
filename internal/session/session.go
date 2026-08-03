@@ -55,8 +55,16 @@ func (o Origin) String() string {
 // ClientCaps records the client capabilities relevant to session handling,
 // captured at initialize/registration time.
 type ClientCaps struct {
-	// ToolsListChanged: the client accepts notifications/tools/list_changed,
-	// so scope changes can be pushed instead of waiting for the next list.
+	// ToolsListChanged: the client accepts notifications/tools/list_changed.
+	//
+	// Nothing reads this field. Its reason for existing was that a scope
+	// change could then be PUSHED rather than waited for, and 0bae283 removed
+	// both session overlays and the push/ack protocol, so no scope change
+	// originates here to push. The gateway still emits the notification when a
+	// downstream's catalog moves (internal/gateway/downstreams.go), but it
+	// does so unconditionally and never consults this capability. Left in
+	// place rather than removed because dropping a field from the registration
+	// hello is a protocol change, not a tidy.
 	ToolsListChanged bool
 	// Roots: the client supports the MCP roots capability (project routing).
 	Roots bool
