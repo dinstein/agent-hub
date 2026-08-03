@@ -24,8 +24,11 @@ func TestOnlineOnlyCommandsExit4(t *testing.T) {
 		{"session", "ls", "-f"},
 		{"session", "show", "claude-code:1"},
 		{"session", "kill", "claude-code:1"},
-		{"events"},
-		{"events", "--follow"},
+		// `events` is deliberately NOT here any more. It used to subscribe to
+		// the daemon SSE stream; it now reads the event LOG off disk, which a
+		// stdio gateway writes with no daemon in the picture — so refusing
+		// offline would refuse the installation with the most to explain.
+		// TestEventsWorksOffline is the other half of this claim.
 	}
 	for _, args := range cases {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
@@ -60,15 +63,47 @@ func TestOnlineOnlyCommandsJSONEnvelope(t *testing.T) {
 	}
 }
 
-func TestEventsRejectsUnknownTopic(t *testing.T) {
+// The offline half of the matrix change above: reading the event log needs
+// no daemon, and on an installation that has never run one there is simply
+// nothing recorded yet — which is a normal state, not a failure.
+func TestEventsWorksOffline(t *testing.T) {
 	setDataDir(t)
 	pointSocketAtNothing(t)
-	code, _, stderr := runCLI(t, "", "events", "--topics", "bogus")
-	if code != ExitUsage {
-		t.Fatalf("exit = %d, want %d", code, ExitUsage)
+	code, out, stderr := runCLI(t, "", "events")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 — reading the event log must not need a daemon\nstderr: %s", code, stderr)
 	}
-	if !strings.Contains(stderr, "servers") {
-		t.Errorf("the error must list the known topics: %q", stderr)
+	// And it says which file it looked at, so "nothing here" is not confused
+	// with "I did not look".
+	if !strings.Contains(out, "events.jsonl") {
+		t.Errorf("the empty result does not name the stream it read: %q", out)
+	}
+}
+
+// The vocabulary is closed so a caller can be TOLD it got a name wrong.
+// Answering a typo with an empty result would hand back exactly the output
+// of "this has not happened", which is the confusion a closed set prevents.
+func TestEventsRejectsUnknownSelectors(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"events", "--scope", "bogus"}, "server"},
+		{[]string{"events", "--kind", "exploded"}, "connected"},
+		// A kind that is real at ANOTHER scope is still wrong at this one.
+		{[]string{"events", "--scope", "server", "--kind", "listener_bound"}, "circuit_open"},
+	} {
+		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {
+			setDataDir(t)
+			pointSocketAtNothing(t)
+			code, _, stderr := runCLI(t, "", tc.args...)
+			if code != ExitUsage {
+				t.Fatalf("exit = %d, want %d", code, ExitUsage)
+			}
+			if !strings.Contains(stderr, tc.want) {
+				t.Errorf("the error must list the valid names (looking for %q): %q", tc.want, stderr)
+			}
+		})
 	}
 }
 
