@@ -13,7 +13,7 @@ func (c *fakeClock) now() time.Time          { return c.t }
 func (c *fakeClock) advance(d time.Duration) { c.t = c.t.Add(d) }
 func newTestBreaker(cfg BreakerConfig) (*breaker, *fakeClock) {
 	clk := &fakeClock{t: time.Unix(1000, 0)}
-	b := newBreaker(cfg, nil, serverEvents{})
+	b := newBreaker(cfg, serverEvents{})
 	b.now = clk.now
 	return b, clk
 }
@@ -37,7 +37,7 @@ func mustDeny(t *testing.T, b *breaker) {
 }
 
 func TestBreakerDefaults(t *testing.T) {
-	b := newBreaker(BreakerConfig{}, nil, serverEvents{})
+	b := newBreaker(BreakerConfig{}, serverEvents{})
 	if b.threshold != 3 || b.cooldown != 20*time.Second {
 		t.Fatalf("defaults = (%d, %s), want (3, 20s)", b.threshold, b.cooldown)
 	}

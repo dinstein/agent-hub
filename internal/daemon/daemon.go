@@ -430,25 +430,24 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.OnHTTPReady(endpoint.Addrs())
 	}
 
-	events.Append(eventlog.Record{
+	// "owner" is on the line on every start, including the headless 0. A hub
+	// that stopped on its own is diagnosed by asking who it was watching, and
+	// a field that only appears when there is an owner makes its absence
+	// unreadable: nothing in the log then distinguishes "headless" from "this
+	// build predates the owner watch".
+	events.Emit(log, eventlog.Record{
 		Scope: eventlog.ScopeDaemon, Kind: eventlog.KindDaemonStarted,
 		Detail: cfg.Version,
-	})
+	}, "daemon ready", "socket", socket, logx.PID(), "version", cfg.Version, "owner", cfg.Owner.PID)
 	if endpoint != nil {
 		for _, addr := range endpoint.Addrs() {
-			events.Append(eventlog.Record{
+			events.Emit(log, eventlog.Record{
 				Scope: eventlog.ScopeDaemon, Kind: eventlog.KindListenerBound,
 				Detail: addr,
-			})
+			}, "data plane listening", "addr", addr)
 		}
 	}
 
-	// "owner" is logged on every start, including the headless 0. A hub that
-	// stopped on its own is diagnosed by asking who it was watching, and a
-	// field that only appears when there is an owner makes its absence
-	// unreadable: nothing in the log then distinguishes "headless" from "this
-	// build predates the owner watch".
-	log.Info("daemon ready", "socket", socket, logx.PID(), "version", cfg.Version, "owner", cfg.Owner.PID)
 	if cfg.OnReady != nil {
 		cfg.OnReady(info)
 	}
@@ -457,15 +456,14 @@ func Run(ctx context.Context, cfg Config) error {
 	case <-ctx.Done():
 		// Graceful stop: end the long-lived streams, stop accepting, drain
 		// in-flight requests, then force-close whatever is still left.
-		log.Info("daemon stopping", "reason", context.Cause(ctx))
 		var reason string
 		if cause := context.Cause(ctx); cause != nil {
 			reason = cause.Error()
 		}
-		events.Append(eventlog.Record{
+		events.Emit(log, eventlog.Record{
 			Scope: eventlog.ScopeDaemon, Kind: eventlog.KindDaemonStopping,
 			Detail: reason,
-		})
+		}, "daemon stopping", "reason", reason)
 		// The data plane goes first, for the reason cleanup states, and it
 		// goes here rather than only in cleanup so that the downstream
 		// processes are released before the drain rather than after it.
@@ -577,12 +575,10 @@ func startWatch(ctx context.Context, store *registry.Store, opts registry.WatchO
 			if !applied {
 				continue
 			}
-			log.Info("registry change applied",
-				"kind", string(ch.Kind), "generation", snap.Generation)
-			events.Append(eventlog.Record{
+			events.Emit(log, eventlog.Record{
 				Scope: eventlog.ScopeDaemon, Kind: eventlog.KindConfigReloaded,
 				Detail: string(ch.Kind), Rev: snap.Generation,
-			})
+			}, "registry change applied", "kind", string(ch.Kind))
 			bus.Publish(event.Event{
 				Topic:   ctlapi.TopicRegistry,
 				Key:     string(ch.Kind),

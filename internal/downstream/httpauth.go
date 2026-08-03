@@ -466,5 +466,5 @@ func (a *authRoundTripper) noteRefresh(ok bool, err error) {
 	}
 	a.events.emit(eventlog.Record{
 		Kind: eventlog.KindOAuthRefreshFailed, Detail: err.Error(),
-	})
+	}, "downstream access token refresh failed", "error", err)
 }

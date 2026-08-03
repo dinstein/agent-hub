@@ -122,8 +122,9 @@ func (t *healthTracker) success(now time.Time) {
 	t.h.LastProbe = now
 	t.mu.Unlock()
 
-	// Every state line in this package carries the pair, so one grep on
-	// from/to follows a connection through an outage whichever way it moved.
+	// Every state line in this package carries the from/to pair, so one grep
+	// follows a connection through an outage whichever way it moved. For the
+	// two that are events, the pair is on the record and Emit renders it.
 	pair := []any{"from", string(before), "to", string(ConnConnected)}
 	switch before {
 	case ConnConnected:
@@ -131,11 +132,10 @@ func (t *healthTracker) success(now time.Time) {
 		// The one recovery line. Nothing else announces it: the call path
 		// only ever reports what fails, so without this a log shows a server
 		// going down and never coming back.
-		t.log.Info("downstream healthy again", append(pair, "failures_cleared", failures)...)
 		t.events.emit(eventlog.Record{
 			Kind: eventlog.KindHealthUp,
 			From: string(before), To: string(ConnConnected), Count: failures,
-		})
+		}, "downstream healthy again")
 	default:
 		// connecting → connected is the handshake, which the assembling
 		// layer already reports in its own words ("downstream connected",
@@ -166,14 +166,13 @@ func (t *healthTracker) failure(now time.Time, err error, hard bool) {
 	}
 	// `hard` is on the line because it is the difference between "this server
 	// refused the connection outright" and "three probes in a row timed out",
-	// and the two send a reader to different places.
-	t.log.Warn("downstream is not answering", "from", string(before), "to", string(after),
-		"failures", failures, "hard", hard, "error", err)
+	// and the two send a reader to different places. It is the only thing
+	// here the record has no field for.
 	t.events.emit(eventlog.Record{
 		Kind: eventlog.KindHealthDown,
 		From: string(before), To: string(after), Count: failures,
 		Detail: err.Error(),
-	})
+	}, "downstream is not answering", "hard", hard, "error", err)
 }
 
 // Health returns the current probe-derived connection condition. Servers

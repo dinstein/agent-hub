@@ -2,7 +2,6 @@ package downstream
 
 import (
 	"fmt"
-	"log/slog"
 	"sync"
 	"time"
 
@@ -51,7 +50,6 @@ type breaker struct {
 	threshold int
 	cooldown  time.Duration
 	now       func() time.Time // test seam; time.Now in production
-	log       *slog.Logger
 	events    serverEvents
 
 	mu       sync.Mutex
@@ -61,22 +59,20 @@ type breaker struct {
 	probing  bool // a half-open probe is in flight
 }
 
-// newBreaker builds the breaker for one connection. log is the server's
-// bound logger (it already carries the server, and the derived instance when
-// there is one); nil means no logging, which is what the unit tests use.
-func newBreaker(cfg BreakerConfig, log *slog.Logger, events serverEvents) *breaker {
+// newBreaker builds the breaker for one connection. Its only output is the
+// three transitions, and those go through events — which carries both the
+// record and the bound logger that writes the prose — so it holds no logger
+// of its own.
+func newBreaker(cfg BreakerConfig, events serverEvents) *breaker {
 	if cfg.FailureThreshold <= 0 {
 		cfg.FailureThreshold = 3
 	}
 	if cfg.Cooldown <= 0 {
 		cfg.Cooldown = 20 * time.Second
 	}
-	if log == nil {
-		log = slog.New(slog.DiscardHandler)
-	}
 	return &breaker{
 		threshold: cfg.FailureThreshold, cooldown: cfg.Cooldown,
-		now: time.Now, log: log, events: events,
+		now: time.Now, events: events,
 	}
 }
 
@@ -86,30 +82,38 @@ func newBreaker(cfg BreakerConfig, log *slog.Logger, events serverEvents) *break
 // state did not actually move, so each caller can report unconditionally.
 //
 // Opening is a warning: from that instant every call to this server is
-// rejected without reaching it. The other two are progress and go to Info.
+// rejected without reaching it. The other two are progress and go to Info —
+// eventlog.Level decides that from the kind, not this site.
 func (b *breaker) transition(from, to breakerState, failures int) {
 	if from == to {
 		return
 	}
-	fields := []any{"from", from.String(), "to", to.String()}
-	// Both streams, side by side. The slog line is prose for a human reading
-	// `agenthub logs`; the event is the same fact in the closed vocabulary a
-	// timeline or an alert may switch on (internal/eventlog). Keeping the two
-	// call sites adjacent is what stops one being updated without the other.
+	// Both streams from one call (eventlog.Emit). The prose is for a human
+	// reading `agenthub logs`; the record is the same fact in the closed
+	// vocabulary a timeline or an alert may switch on. The transition and the
+	// failure count are on the record and Emit renders them, so this site
+	// names neither twice.
 	ev := eventlog.Record{From: from.String(), To: to.String()}
+	var (
+		msg   string
+		attrs []any
+	)
 	switch to {
 	case stateOpen:
-		b.log.Warn("circuit opened; calls to this server are rejected until the cooldown ends",
-			append(fields, "failures", failures, "cooldown", b.cooldown.String())...)
+		msg = "circuit opened; calls to this server are rejected until the cooldown ends"
 		ev.Kind, ev.Count, ev.DurMs = eventlog.KindCircuitOpen, failures, b.cooldown.Milliseconds()
+		// Named on the line rather than left as the record's durMs: here that
+		// field is a cooldown still to come, not an elapsed time, and "for
+		// how long am I rejected" is the question this line is read for.
+		attrs = []any{"cooldown", b.cooldown}
 	case stateHalfOpen:
-		b.log.Info("circuit half-open; admitting one probe", fields...)
+		msg = "circuit half-open; admitting one probe"
 		ev.Kind = eventlog.KindCircuitHalfOpen
 	default:
-		b.log.Info("circuit closed; the server answered again", fields...)
+		msg = "circuit closed; the server answered again"
 		ev.Kind = eventlog.KindCircuitClosed
 	}
-	b.events.emit(ev)
+	b.events.emit(ev, msg, attrs...)
 }
 
 // allow reports whether a call may proceed. probe is true when this call is

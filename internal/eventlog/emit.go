@@ -57,14 +57,19 @@ func Level(kind Kind) slog.Level {
 // already bound to its server, instance, client and pid — slog's JSON handler
 // does not deduplicate, so passing them again would emit each field twice on
 // one line, and a reader taking the last (encoding/json included) reads the
-// second value. What it does add is what varies per event: the transition,
-// the number under the noun its kind gives it, the generation, the duration,
-// and the detail — each under the same spelling the record uses, so one fact
-// is not two names across the two streams.
+// What it does add is the half of the record whose MEANING is fixed: the
+// transition, the generation, and the count — the last under the noun
+// CountNoun gives its kind, so the two streams cannot disagree about what the
+// number counts.
 //
-// attrs are extra slog fields with no place in the closed record: the last
-// words of a dead child process, the cause of a respawn. They belong in the
-// prose half and nowhere else.
+// Detail and DurMs are deliberately NOT among them: both are polymorphic.
+// Detail is an error for connect_failed, a cause for respawned, an address
+// for listener_bound, a version for started; DurMs is a cooldown still to
+// come for circuit_open and an elapsed time elsewhere. Rendering either under
+// its field name would replace four accurate words with one vague one, so the
+// call site passes them under their real names through attrs — which is also
+// where anything with no record field at all goes: the last words of a dead
+// child, whether a probe failure was hard.
 func (s *Stream) Emit(log *slog.Logger, r Record, msg string, attrs ...any) {
 	s.Append(r)
 	if log == nil {
@@ -76,8 +81,11 @@ func (s *Stream) Emit(log *slog.Logger, r Record, msg string, attrs ...any) {
 // recordAttrs renders the varying half of a record as slog attrs.
 func recordAttrs(r Record, extra []any) []slog.Attr {
 	out := make([]slog.Attr, 0, 6+len(extra))
-	if r.From != "" || r.To != "" {
-		out = append(out, slog.String("from", r.From), slog.String("to", r.To))
+	if r.From != "" {
+		out = append(out, slog.String("from", r.From))
+	}
+	if r.To != "" {
+		out = append(out, slog.String("to", r.To))
 	}
 	if r.Count != 0 {
 		// The noun CountNoun gives the kind, so the prose line and the record
@@ -95,12 +103,6 @@ func recordAttrs(r Record, extra []any) []slog.Attr {
 		// names, and test/buildrules fails on a mandatory key spelled by hand
 		// inside a slog call.
 		out = append(out, logx.Rev(r.Rev))
-	}
-	if r.DurMs != 0 {
-		out = append(out, slog.Int64("durMs", r.DurMs))
-	}
-	if r.Detail != "" {
-		out = append(out, slog.String("detail", r.Detail))
 	}
 	for i := 0; i+1 < len(extra); i += 2 {
 		key, _ := extra[i].(string)

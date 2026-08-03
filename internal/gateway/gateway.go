@@ -560,10 +560,10 @@ func (g *gateway) syncEvents(resolver *platform.Resolver) {
 	if st == nil {
 		return
 	}
-	st.Append(eventlog.Record{
+	st.Emit(g.log, eventlog.Record{
 		Scope: eventlog.ScopeGateway, Kind: eventlog.KindGatewayStarted,
 		Client: g.cfg.ClientID, Detail: g.cfg.Face,
-	})
+	}, "gateway serving", "face", g.cfg.Face)
 }
 
 func openEvents(resolver *platform.Resolver, log *slog.Logger, enabled bool) *eventlog.Stream {
@@ -727,10 +727,10 @@ func (g *gateway) shutdown() {
 	// exactly what a reader opened this stream to see, so the last record
 	// must be this one and not a server's.
 	if st := g.eventStream(); st != nil {
-		st.Append(eventlog.Record{
+		st.Emit(g.log, eventlog.Record{
 			Scope: eventlog.ScopeGateway, Kind: eventlog.KindGatewayStopped,
 			Client: g.cfg.ClientID,
-		})
+		}, "gateway stopping")
 		_ = st.Close()
 	}
 	// After the connections: a server closing may still emit frames, and a

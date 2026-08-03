@@ -100,12 +100,18 @@ func TestFailureKindsAreLoggedAtWarn(t *testing.T) {
 
 	var s *Stream
 	s.Emit(log, Record{Scope: ScopeServer, Kind: KindRespawnFailed, Detail: "exec: not found"},
-		"respawn failed")
+		"respawn failed", "error", "exec: not found")
 
 	if !strings.Contains(buf.String(), `"level":"WARN"`) {
 		t.Fatalf("failure kind did not reach a warn-level sink: %q", buf.String())
 	}
-	if !strings.Contains(buf.String(), `"detail":"exec: not found"`) {
-		t.Fatalf("detail is spelled the same in both streams, or should be: %q", buf.String())
+	// Detail reaches the prose half under the name its kind gives it, passed
+	// by the call site — never as a generic `detail`, which would say the
+	// same vague word for an error, a cause, an address and a version.
+	if strings.Contains(buf.String(), `"detail"`) {
+		t.Fatalf("the record's polymorphic field leaked into the prose as `detail`: %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), `"error":"exec: not found"`) {
+		t.Fatalf("the call site's own name for the detail is missing: %q", buf.String())
 	}
 }

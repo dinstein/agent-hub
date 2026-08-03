@@ -13,6 +13,7 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/guard/spawnguard"
+	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 	"github.com/dinstein/agent-hub/internal/secrets"
 	"github.com/dinstein/agent-hub/internal/secrets/secureenv"
@@ -316,20 +317,48 @@ type Deps struct {
 // emit eventually forgets.
 type serverEvents struct {
 	stream *eventlog.Stream
+	log    *slog.Logger
 	server string
 	inst   string
 	client string
 }
 
-// emit fills in scope and identity and appends. Callers set Kind and
-// whatever that kind carries.
-func (e serverEvents) emit(r eventlog.Record) {
+// emit fills in scope and identity, appends the record, and writes the same
+// fact as prose to the connection's logger. Callers set Kind and whatever
+// that kind carries, plus the sentence a human reads.
+//
+// One call rather than two: see eventlog.Emit. The logger is the bound one,
+// so the identity is already on the line and is not stamped again.
+func (e serverEvents) emit(r eventlog.Record, msg string, attrs ...any) {
 	r.Scope = eventlog.ScopeServer
 	r.Server, r.Inst, r.Client = e.server, e.inst, e.client
-	e.stream.Append(r)
+	e.stream.Emit(e.log, r, msg, attrs...)
 }
 
-// eventsFor binds this Deps' stream to one spec.
+// boundServerLog binds one connection's identity onto a logger: the server
+// id always, the derive key when this is a derived instance.
+//
+// One function because two callers need the identical binding — Connect for
+// the connection's own logger, eventsFor for the prose half of every event —
+// and two spellings of "which connection is this" is how one of them ends up
+// missing `inst` and its lines become unattributable.
+//
+// Spec.ID deliberately does NOT change under derivation, so without the
+// derive key four instances of one server would log under one name and a
+// respawn could not be pinned to the connection it happened on.
+func boundServerLog(base *slog.Logger, spec Spec) *slog.Logger {
+	if base == nil {
+		base = slog.New(slog.DiscardHandler)
+	}
+	out := base.With(logx.FieldServer, spec.ID)
+	if spec.DeriveKey != "" {
+		out = out.With(logx.Instance(string(spec.DeriveKey)))
+	}
+	return out
+}
+
+// eventsFor binds this Deps' stream and a logger carrying the connection's
+// identity to one spec.
 func (d Deps) eventsFor(spec Spec) serverEvents {
 	var stream *eventlog.Stream
 	if d.Events != nil {
@@ -337,6 +366,7 @@ func (d Deps) eventsFor(spec Spec) serverEvents {
 	}
 	return serverEvents{
 		stream: stream,
+		log:    boundServerLog(d.Log, spec),
 		server: spec.ID,
 		inst:   string(spec.DeriveKey),
 		client: d.ClientID,

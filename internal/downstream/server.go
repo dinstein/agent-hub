@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 	"github.com/dinstein/agent-hub/internal/mrtr"
@@ -166,10 +165,7 @@ func Connect(ctx context.Context, spec Spec, deps Deps) (*Server, error) {
 	// respawn or an opening circuit could not be attributed to the connection
 	// it happened on. Bound once rather than stamped per call site — that is
 	// how one line ends up without it.
-	srvLog := log.With(logx.FieldServer, spec.ID)
-	if spec.DeriveKey != "" {
-		srvLog = srvLog.With(logx.Instance(string(spec.DeriveKey)))
-	}
+	srvLog := boundServerLog(log, spec)
 
 	// Bound once for the whole connection, for the reason srvLog is: an
 	// identity every emit has to remember is one an emit eventually forgets.
@@ -181,7 +177,7 @@ func Connect(ctx context.Context, spec Spec, deps Deps) (*Server, error) {
 		log:            srvLog,
 		events:         srvEvents,
 		dial:           dial,
-		br:             newBreaker(deps.Breaker, srvLog, srvEvents),
+		br:             newBreaker(deps.Breaker, srvEvents),
 		retry:          deps.Retry.withDefaults(),
 		reconnect:      deps.Reconnect.withReconnectDefaults(),
 		connectTimeout: timeout,
@@ -199,14 +195,15 @@ func Connect(ctx context.Context, spec Spec, deps Deps) (*Server, error) {
 	defer cancel()
 	tr, initRes, tools, err := s.dialAndInit(cctx)
 	if err != nil {
-		srvEvents.emit(connectFailure(err))
+		srvEvents.emit(connectFailure(err), "downstream connect failed", "error", err)
 		stop()
 		close(s.ownerDone)
 		return nil, err
 	}
 	s.attach(tr, initRes, tools)
 	s.health.success(time.Now()) // the handshake IS the first liveness proof
-	srvEvents.emit(eventlog.Record{Kind: eventlog.KindConnected, Count: len(tools)})
+	srvEvents.emit(eventlog.Record{Kind: eventlog.KindConnected, Count: len(tools)},
+		"downstream connected")
 	go s.owner()
 	if deps.PingInterval > 0 {
 		go s.runProbe(deps.PingInterval)
@@ -413,12 +410,10 @@ func (s *Server) Close() {
 		// redefined, or taken down with the process — and the log's last word
 		// on it is that it connected, which reads as though it still is.
 		state := s.health.snapshot().State
-		s.log.Info("downstream connection closed",
-			"reconnects", s.reconnects.Load(), "state", string(state))
 		s.events.emit(eventlog.Record{
 			Kind: eventlog.KindDisconnected,
 			From: string(state), Count: int(s.reconnects.Load()),
-		})
+		}, "downstream connection closed")
 	})
 }
 
@@ -688,18 +683,17 @@ func (s *Server) respawn(ctx context.Context, cause respawnCause, trigger error)
 	defer cancel()
 	tr, initRes, tools, err := s.dialAndInit(cctx)
 	if err != nil {
-		fields := append(respawnFields(cause, trigger, n), "error", err)
-		s.log.Warn("respawn failed", withLastWords(fields, lastWords)...)
+		fields := append(respawnFields(trigger), "cause", string(cause), "error", err)
 		s.events.emit(eventlog.Record{
 			Kind: eventlog.KindRespawnFailed, Count: int(n), Detail: err.Error(),
-		})
+		}, "respawn failed", withLastWords(fields, lastWords)...)
 		s.health.failure(time.Now(), err, hardConnError(err))
 		return nil, &transport.Error{Class: transport.ClassUnavailable, Err: fmt.Errorf("respawn: %w", err)}
 	}
 	s.attach(tr, initRes, tools)
 	s.health.success(time.Now())
-	s.log.Info("respawned", withLastWords(respawnFields(cause, trigger, n), lastWords)...)
-	s.events.emit(eventlog.Record{Kind: eventlog.KindRespawned, Count: int(n), Detail: string(cause)})
+	s.events.emit(eventlog.Record{Kind: eventlog.KindRespawned, Count: int(n), Detail: string(cause)},
+		"respawned", withLastWords(append(respawnFields(trigger), "cause", string(cause)), lastWords)...)
 	return tr, nil
 }
 
@@ -717,12 +711,17 @@ func withLastWords(fields []any, tail string) []any {
 // respawnFields renders the cause of one respawn for the log. The trigger is
 // flattened to its text and omitted when absent: a "trigger":null on every
 // manual reconnect would read as a failure nobody could name.
-func respawnFields(cause respawnCause, trigger error, n uint64) []any {
-	fields := []any{"cause", string(cause), "reconnects", n}
-	if trigger != nil {
-		fields = append(fields, "trigger", trigger.Error())
+// respawnFields is the trigger that made a respawn happen, if there was one.
+//
+// The cause and the attempt number are on the RECORD — Detail and Count — and
+// Emit renders both, the number under the noun its kind gives it. Repeating
+// them here would be one fact under two names, which is how the same number
+// came to be `reconnects` in the log line and `respawns` in the event.
+func respawnFields(trigger error) []any {
+	if trigger == nil {
+		return nil
 	}
-	return fields
+	return []any{"trigger", trigger.Error()}
 }
 
 // dialAndInit performs dial + MCP handshake + initial tools/list. On
@@ -819,7 +818,7 @@ func (s *Server) autoRefresh() {
 	}
 	s.events.emit(eventlog.Record{
 		Kind: eventlog.KindToolsChanged, Count: len(s.Tools()),
-	})
+	}, "downstream tool catalog changed")
 }
 
 // refreshOnce re-queries tools/list on the current connection and replaces

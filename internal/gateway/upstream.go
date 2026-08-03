@@ -153,15 +153,7 @@ func (g *gateway) handleInitialize(req *mcp.Request) {
 		g.reply(mcp.NewErrorResponse(req.ID, &mcp.Error{Code: mcp.CodeInternalError, Message: err.Error()}))
 		return
 	}
-	// client_name, not client: logx.FieldClient is already bound on this
-	// logger and holds the CONFIGURED client id. slog's JSON handler does not
-	// deduplicate keys, so writing the peer's self-reported name under the
-	// same key emitted the field twice on one line — and a reader that takes
-	// the last wins (most do) silently read the mandatory join key as
-	// "Claude Code" instead of "claude-code".
-	g.log.Info("initialized upstream session",
-		"protocol_version", version, "client_name", p.ClientInfo.Name)
-	// Both streams, side by side, as everywhere else. The event answers a
+	// One call, both streams (eventlog.Emit). The event answers a
 	// question the `started` record cannot: a gateway process starts when the
 	// client launches it, and attaches only once the client actually speaks
 	// MCP. A configuration that starts and never attaches is the signature of
@@ -174,11 +166,19 @@ func (g *gateway) handleInitialize(req *mcp.Request) {
 	// had to be fixed for. From/To stay empty — this is an arrival, not a
 	// transition, and the protocol version is elaboration rather than a state
 	// the session moved between.
-	g.eventStream().Append(eventlog.Record{
+	//
+	// client_name, not client: logx.FieldClient is already bound on this
+	// logger and holds the CONFIGURED client id. slog's JSON handler does not
+	// deduplicate keys, so writing the peer's self-reported name under the
+	// same key emitted the field twice on one line — and a reader that takes
+	// the last wins (most do) silently read the mandatory join key as
+	// "Claude Code" instead of "claude-code".
+	g.eventStream().Emit(g.log, eventlog.Record{
 		Scope: eventlog.ScopeGateway, Kind: eventlog.KindClientAttached,
 		Client: g.cfg.ClientID,
 		Detail: p.ClientInfo.Name + " speaking " + version,
-	})
+	}, "initialized upstream session",
+		"protocol_version", version, "client_name", p.ClientInfo.Name)
 	g.reply(mcp.NewResponse(req.ID, raw))
 }
 
