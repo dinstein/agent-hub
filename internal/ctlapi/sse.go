@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,20 @@ var sseTopics = map[string]bool{
 	TopicServers:  true,
 	TopicSessions: true,
 	TopicSkills:   true,
+}
+
+// sseTopicNames lists the closed set for hints, sorted so the wording is
+// stable. It is DERIVED rather than written out: the hand-written copy of
+// this list went on offering `activity` for the whole life of the removal
+// that deleted the topic, and a hint naming a topic the parser rejects sends
+// the reader straight back to the same 400.
+func sseTopicNames() []string {
+	out := make([]string, 0, len(sseTopics))
+	for t := range sseTopics {
+		out = append(out, t)
+	}
+	slices.Sort(out)
+	return out
 }
 
 // busTopicPrefixMap maps internal bus topic name prefixes (the segment
@@ -96,7 +111,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	topics, err := parseTopics(r.URL.Query().Get("topics"))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, CodeBadRequest, err.Error(),
-			"valid topics: servers, sessions, activity, skills", reqID)
+			"valid topics: "+strings.Join(sseTopicNames(), ", "), reqID)
 		return
 	}
 	rc := http.NewResponseController(w)
