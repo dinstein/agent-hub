@@ -54,16 +54,24 @@ const (
 
 // EventRow is one record as both output modes render it.
 type EventRow struct {
-	TS     string `json:"ts"`
-	Scope  string `json:"scope"`
-	Kind   string `json:"kind"`
+	TS    string `json:"ts"`
+	Scope string `json:"scope"`
+	Kind  string `json:"kind"`
+	// Class is routine or disruption. It is a projection of Kind rather than
+	// a field of the record: deriving it here means an old file gains the
+	// answer as soon as the binary knows it, and no writer can disagree with
+	// a reader about what its own kind means.
+	Class  string `json:"class"`
 	Server string `json:"server,omitempty"`
 	Inst   string `json:"inst,omitempty"`
 	Client string `json:"client,omitempty"`
-	PID    int    `json:"pid,omitempty"`
-	From   string `json:"from,omitempty"`
-	To     string `json:"to,omitempty"`
-	Detail string `json:"detail,omitempty"`
+	// Session is set by the kinds that are about one MCP session on the HTTP
+	// face, which belong to no configured client.
+	Session string `json:"session,omitempty"`
+	PID     int    `json:"pid,omitempty"`
+	From    string `json:"from,omitempty"`
+	To      string `json:"to,omitempty"`
+	Detail  string `json:"detail,omitempty"`
 	// Count is the one number the kind carries; eventlog.CountNoun says what
 	// it counts. The record has one such field and so does its projection.
 	Count int `json:"count,omitempty"`
@@ -114,15 +122,24 @@ func (l EventList) Human(w io.Writer) error {
 }
 
 // eventSubject is what the record is ABOUT: a server (with its derived
-// instance when there is one), or the client whose gateway spoke.
+// instance when there is one), the client whose gateway spoke, or — on the
+// HTTP face, whose callers are tokens rather than configured clients — the
+// session itself.
+//
+// The fallbacks are ordered narrowest-first. A login carries both a server
+// and a session, and the server is what somebody scanning the column is
+// looking for; a bound HTTP session has only the session.
 func eventSubject(e EventRow) string {
-	if e.Server == "" {
-		return e.Client
-	}
-	if e.Inst != "" {
+	switch {
+	case e.Server != "" && e.Inst != "":
 		return e.Server + "/" + e.Inst
+	case e.Server != "":
+		return e.Server
+	case e.Client != "":
+		return e.Client
+	default:
+		return e.Session
 	}
-	return e.Server
 }
 
 // eventDetail folds the transition, the count and the free text into one
@@ -169,6 +186,7 @@ func (a *App) newEventsCmd() *cobra.Command {
 		scope  string
 		server string
 		client string
+		class  string
 		kinds  []string
 	)
 	cmd := &cobra.Command{
@@ -177,12 +195,15 @@ func (a *App) newEventsCmd() *cobra.Command {
 		Long: "Reads <data>/logs/events.jsonl — every state change of a downstream\n" +
 			"server, a gateway or the daemon, in a closed vocabulary.\n\n" +
 			"Scopes: " + strings.Join(eventlog.ScopeNames(), ", ") + ".\n" +
+			"--class " + strings.Join(eventlog.ClassNames(), "/") + " splits the hub running as\n" +
+			"intended from the hub reacting to something that went wrong. A disruption\n" +
+			"keeps the recovery that ended it, so an outage never reads as still open.\n\n" +
 			"Works offline: a stdio gateway writes this file with no daemon running.\n\n" +
 			"See also `agenthub logs` for the same processes' prose, and\n" +
 			"`agenthub audit` for what a client CALLED.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			q, err := eventQuery(scope, server, client, kinds, since)
+			q, err := eventQuery(scope, server, client, class, kinds, since)
 			if err != nil {
 				return err
 			}
@@ -207,6 +228,8 @@ func (a *App) newEventsCmd() *cobra.Command {
 	cmd.Flags().StringVar(&scope, "scope", "", "only this scope: "+strings.Join(eventlog.ScopeNames(), ", "))
 	cmd.Flags().StringVar(&server, "server", "", "only events about this downstream server")
 	cmd.Flags().StringVar(&client, "client", "", "only events observed by this client's gateway")
+	cmd.Flags().StringVar(&class, "class", "",
+		"only this class: "+strings.Join(eventlog.ClassNames(), ", "))
 	cmd.Flags().StringSliceVar(&kinds, "kind", nil, "only these kinds (comma separated)")
 	return cmd
 }
@@ -224,7 +247,7 @@ func (a *App) newEventsCmd() *cobra.Command {
 // set, and a local copy of the answer is one that can be right while the
 // other is wrong — which is how the control plane ended up hinting a list of
 // scopes written by hand.
-func eventQuery(scope, server, client string, kinds []string, since time.Duration) (eventlog.Query, error) {
+func eventQuery(scope, server, client, class string, kinds []string, since time.Duration) (eventlog.Query, error) {
 	q := eventlog.Query{Server: server, Client: client}
 	if since > 0 {
 		q.Since = time.Now().Add(-since)
@@ -236,6 +259,14 @@ func eventQuery(scope, server, client string, kinds []string, since time.Duratio
 			return eventlog.Query{}, e
 		}
 		q.Scope = eventlog.Scope(scope)
+	}
+	if class != "" {
+		if !eventlog.KnownClass(eventlog.Class(class)) {
+			e := Usagef("unknown class %q", class)
+			e.Hint = "known classes: " + strings.Join(eventlog.ClassNames(), ", ")
+			return eventlog.Query{}, e
+		}
+		q.Class = eventlog.Class(class)
 	}
 	for _, raw := range kinds {
 		k := eventlog.Kind(strings.TrimSpace(raw))
@@ -281,7 +312,8 @@ func rowsOfEvents(records []eventlog.Record) []EventRow {
 	for _, r := range records {
 		out = append(out, EventRow{
 			TS: r.TS.UTC().Format(time.RFC3339), Scope: string(r.Scope), Kind: string(r.Kind),
-			Server: r.Server, Inst: r.Inst, Client: r.Client, PID: r.PID,
+			Class:  string(eventlog.ClassOf(r.Kind)),
+			Server: r.Server, Inst: r.Inst, Client: r.Client, Session: r.Session, PID: r.PID,
 			From: r.From, To: r.To, Detail: r.Detail,
 			Count: r.Count, Rev: r.Rev, DurMs: r.DurMs,
 		})

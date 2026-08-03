@@ -38,6 +38,9 @@ type Query struct {
 	Server string
 	Client string
 	Kinds  []Kind
+	// Class narrows to the routine half of the stream or the disruption
+	// half. Empty means "no rule", like every other selector here.
+	Class Class
 }
 
 func (q Query) admit(r Record) bool {
@@ -54,6 +57,9 @@ func (q Query) admit(r Record) bool {
 		return false
 	}
 	if len(q.Kinds) > 0 && !slices.Contains(q.Kinds, r.Kind) {
+		return false
+	}
+	if q.Class != "" && ClassOf(r.Kind) != q.Class {
 		return false
 	}
 	return true

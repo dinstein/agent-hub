@@ -310,11 +310,35 @@ Kinds are checked as a **(scope, kind) pair**, never a bare kind: a gateway and 
 
 <!-- event-kinds -->
 
-| Scope | Kinds |
-|---|---|
-| `server` | `connected`, `connect_failed`, `disconnected`, `respawned`, `respawn_failed`, `circuit_open`, `circuit_half_open`, `circuit_closed`, `health_down`, `health_up`, `tools_changed`, `oauth_refresh_failed`, `secrets_missing`, `oauth_login_started`, `oauth_login_waiting`, `oauth_login_completed`, `oauth_login_failed` |
-| `gateway` | `started`, `stopped`, `client_attached`, `registry_reload_failed`, `session_opened`, `session_closed` |
-| `daemon` | `started`, `stopping`, `listener_bound`, `config_reloaded` |
+| Scope | Kinds | Class |
+|---|---|---|
+| `server` | `connected`, `tools_changed`, `oauth_login_started`, `oauth_login_waiting`, `oauth_login_completed` | routine |
+| `server` | `connect_failed`, `disconnected`, `respawned`, `respawn_failed`, `circuit_open`, `circuit_half_open`, `circuit_closed`, `health_down`, `health_up`, `oauth_refresh_failed`, `secrets_missing`, `oauth_login_failed` | disruption |
+| `gateway` | `started`, `stopped`, `client_attached`, `session_opened`, `session_closed` | routine |
+| `gateway` | `registry_reload_failed` | disruption |
+| `daemon` | `started`, `stopping`, `listener_bound`, `config_reloaded` | routine |
+
+### Class: routine or disruption
+
+**`ClassOf(kind)` splits the hub running as intended from the hub reacting to something that went
+wrong**, and it is what `agenthub events --class` and the GUI filter on. It is derived from the kind,
+never stored, so an old file is classified by whatever build reads it and no writer can disagree with
+a reader about what its own kind means.
+
+**The recovery kinds are in `disruption`, not in `routine`.** `circuit_closed` and `health_up` are
+the last act of the same episode, and a filter that dropped them would show every outage beginning
+and none of them ending — which reads as an outage still in progress, the worst answer available.
+`disconnected` and `respawned` are there for a weaker reason: neither is a failure in itself (a
+planned shutdown ends connections too), but neither happens while a system is simply running.
+
+**The list is written as the exception**: unknown and unlisted kinds are routine. A new fault that
+nobody classified fails to show up under `--class disruption`, and the test walking every kind is
+what catches that; the opposite default would fill the filter with noise and nothing would flag it.
+
+**This is not the log level, and the two must not be conflated.** Level is one-dimensional and asks
+how loudly one record should speak, so `health_down` is `WARN` and `health_up` is not — which means
+`logs --level warn` shows a server going down and never coming back. Class asks which STORY a record
+belongs to, and a story includes how it ended. Use `events --class disruption` for the episode.
 
 ### Levels, and the one call that writes both halves
 

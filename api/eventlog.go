@@ -29,6 +29,11 @@ type EventRecord struct {
 	TS    time.Time `json:"ts"`
 	Scope string    `json:"scope"`
 	Kind  string    `json:"kind"`
+	// Class is "routine" or "disruption": the hub running as intended versus
+	// the hub reacting to something that went wrong, recovery included. It is
+	// derived from Kind rather than stored, so a record written by an older
+	// build is classified by whatever build reads it.
+	Class string `json:"class"`
 	// Server and Inst identify a downstream and, for a derived instance, the
 	// derivation. Server is set at scope "server" only.
 	Server string `json:"server,omitempty"`
@@ -36,6 +41,10 @@ type EventRecord struct {
 	// Client is the client whose gateway observed this. Empty for daemon
 	// records, which belong to no client.
 	Client string `json:"client,omitempty"`
+	// Session is the MCP session a record is about, on the face that has
+	// them. The HTTP face's callers are tokens rather than configured
+	// clients, so for its session kinds this is the only identity there is.
+	Session string `json:"session,omitempty"`
 	// PID is which process wrote the record. Never omitted: several
 	// processes append to one file, and a record attributable to none of
 	// them cannot be placed in a timeline.
@@ -76,7 +85,9 @@ type EventLogFilter struct {
 	Scope  string
 	Server string
 	Client string
-	Kinds  []string
+	// Class narrows to "routine" or "disruption". Empty reads both.
+	Class string
+	Kinds []string
 	// Limit bounds the returned tail (server-side default when 0).
 	Limit int
 }
@@ -94,6 +105,9 @@ func eventLogQuery(f EventLogFilter) url.Values {
 	}
 	if f.Client != "" {
 		q.Set("client", f.Client)
+	}
+	if f.Class != "" {
+		q.Set("class", f.Class)
 	}
 	if len(f.Kinds) > 0 {
 		q.Set("kind", strings.Join(f.Kinds, ","))

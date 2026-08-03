@@ -65,6 +65,15 @@ func (s *Server) handleEventLog(w http.ResponseWriter, r *http.Request) {
 		}
 		query.Scope = eventlog.Scope(scope)
 	}
+	if class := strings.TrimSpace(q.Get("class")); class != "" {
+		if !eventlog.KnownClass(eventlog.Class(class)) {
+			writeErr(w, http.StatusBadRequest, CodeBadRequest,
+				"unknown class "+strconv.Quote(class),
+				"known classes: "+strings.Join(eventlog.ClassNames(), ", "), reqID)
+			return
+		}
+		query.Class = eventlog.Class(class)
+	}
 	for _, raw := range strings.Split(q.Get("kind"), ",") {
 		name := strings.TrimSpace(raw)
 		if name == "" {
@@ -110,7 +119,9 @@ func (s *Server) handleEventLog(w http.ResponseWriter, r *http.Request) {
 	for _, rec := range records {
 		out.Events = append(out.Events, api.EventRecord{
 			TS: rec.TS, Scope: string(rec.Scope), Kind: string(rec.Kind),
-			Server: rec.Server, Inst: rec.Inst, Client: rec.Client, PID: rec.PID,
+			Class:  string(eventlog.ClassOf(rec.Kind)),
+			Server: rec.Server, Inst: rec.Inst, Client: rec.Client,
+			Session: rec.Session, PID: rec.PID,
 			From: rec.From, To: rec.To, Detail: rec.Detail,
 			Count: rec.Count, Rev: rec.Rev, DurMs: rec.DurMs,
 		})

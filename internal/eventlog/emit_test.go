@@ -115,3 +115,52 @@ func TestFailureKindsAreLoggedAtWarn(t *testing.T) {
 		t.Fatalf("the call site's own name for the detail is missing: %q", buf.String())
 	}
 }
+
+// Every kind is classified on purpose. ClassOf defaults to routine, so a new
+// fault added without a thought lands in the class an operator scans past —
+// this walks the vocabulary so the omission cannot hide.
+func TestEveryKindIsClassifiedDeliberately(t *testing.T) {
+	// Listed independently of the package's own list: a test reading the
+	// expression it checks would agree with any answer.
+	// Keyed by the PAIR, because two scopes share the spelling `started` and
+	// a map keyed by kind alone cannot hold both.
+	want := map[string]Class{
+		"server/connected": ClassRoutine, "server/tools_changed": ClassRoutine,
+		"server/oauth_login_started": ClassRoutine, "server/oauth_login_waiting": ClassRoutine,
+		"server/oauth_login_completed": ClassRoutine,
+		"server/connect_failed":        ClassDisruption, "server/disconnected": ClassDisruption,
+		"server/respawned": ClassDisruption, "server/respawn_failed": ClassDisruption,
+		"server/circuit_open": ClassDisruption, "server/circuit_half_open": ClassDisruption,
+		"server/circuit_closed": ClassDisruption, "server/health_down": ClassDisruption,
+		"server/health_up": ClassDisruption, "server/oauth_refresh_failed": ClassDisruption,
+		"server/secrets_missing": ClassDisruption, "server/oauth_login_failed": ClassDisruption,
+		"gateway/started": ClassRoutine, "gateway/stopped": ClassRoutine,
+		"gateway/client_attached": ClassRoutine, "gateway/registry_reload_failed": ClassDisruption,
+		"gateway/session_opened": ClassRoutine, "gateway/session_closed": ClassRoutine,
+		"daemon/started": ClassRoutine, "daemon/stopping": ClassRoutine,
+		"daemon/listener_bound": ClassRoutine, "daemon/config_reloaded": ClassRoutine,
+	}
+	for scope, kinds := range allKinds {
+		for _, k := range kinds {
+			expected, listed := want[string(scope)+"/"+string(k)]
+			if !listed {
+				t.Errorf("%s/%s is not classified in this test; classify it in class.go too", scope, k)
+				continue
+			}
+			if got := ClassOf(k); got != expected {
+				t.Errorf("ClassOf(%s/%s) = %s, want %s", scope, k, got, expected)
+			}
+		}
+	}
+}
+
+// The recovery half of an outage must survive a disruption filter. Dropping
+// it shows every outage starting and none of them ending, which reads as an
+// outage still in progress.
+func TestRecoveryKindsStayWithTheDisruptionTheyEnd(t *testing.T) {
+	for _, k := range []Kind{KindCircuitClosed, KindHealthUp} {
+		if ClassOf(k) != ClassDisruption {
+			t.Errorf("%s is not in the class of the episode it ends", k)
+		}
+	}
+}
