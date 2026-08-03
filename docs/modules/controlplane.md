@@ -1292,15 +1292,14 @@ repeatedly crashing daemon doesn't get resurrected on every click.
 plane error (a well-formed error envelope) means the daemon answered and merely said no — the connection is left alone; only a
 transport-level failure clears the client and makes the next call re-dial.
 
-**The ownership claim describes the daemon on the other end right now, never one this process once started.** `stop` SIGTERMs
-the daemon only when `h.spawned` says the GUI started it — a daemon that was already running belongs to whoever started it,
-and taking it down would end their session to tidy up after ours. That claim was only ever written `true`: `dialOrStart`
-answers the question both ways and the "I found one already running" half was discarded, while `dropClient` cleared every
-field except this one. A GUI that started a daemon, lost it, and reconnected by plain dial therefore still believed a stranger's
-daemon was its own. So **every connect writes the claim** (including `false` from the dial-only path, which cannot spawn), and
-**`dropClient` clears it alongside the client that carried it**. The pid is not the weak part: it comes from `Hello.Pid` over
-the control socket, the same verified identity `daemon stop` uses. One door is still open and recorded below — `DialOrStartSpawned`
-can report `true` for a daemon someone else started concurrently, and the claim is now only as good as that answer.
+**The ownership claim is a process handle, never a memory of having started something.** `stop` ends the hub only when
+`h.proc` — the `api.Supervised` this process is running — is non-nil; a hub that merely answers the socket is used and never
+signalled, because taking it down would end somebody else's session to tidy up after ours. It replaced a bool written from
+"did my dial start one", which was a fact about a past call rather than about the hub in front of us: it outlived the daemon
+it described, and the launcher it was read from could not tell "I started this" from "somebody else did, concurrently". A
+**transport failure no longer disowns anything** either — the connection is gone, the process is not, and a hub that is
+briefly unreachable is still ours to stop and still ours to restart. What ends the claim is the process ending, which
+`watchProcess` observes directly, and which also carries the exit status into the offline banner.
 
 **Health is rendered, never derived.** `ServerHealth` is a filter over the result of `ListServers` rather than a call to a
 per-server endpoint: the list payload and the `servers` SSE payload are the same bytes, so Health has exactly one source and
@@ -1484,13 +1483,16 @@ contract, written the way an agent would read it.
 
 ---
 
-## Raised by the 2026-07-31 sweep, not fixed on that branch
+## Closed: the 2026-07-31 sweep's ownership gap
 
-- **`api/dialorstart.go:193` — `DialOrStartSpawned` reports `spawned=true` for any daemon that becomes
-  reachable after it launches the start command.** The launcher exits 0 both when it detached its own
-  daemon and when it found one already running, so a daemon started concurrently by a terminal or a
-  login item is claimed as this process's own. That claim is what the GUI's shutdown acts on, so this
-  is the remaining door into the same end state the `spawned`-latch fix closed from the other side —
-  and now that the Hub records the dialer's answer faithfully, the claim is exactly as good as this
-  one. Ownership has to come from the launcher rather than from a successful dial: pass a startup nonce
-  the daemon echoes back, or have the launcher report "already running" distinctly.
+The sweep recorded that `DialOrStartSpawned` reported `spawned=true` for any daemon that became
+reachable after it ran the start command — the launcher exits 0 both when it detached a daemon of its
+own and when it found one already running — so a daemon started concurrently by a terminal or a login
+item was claimed as this process's own, and the GUI's shutdown acted on that claim. Its suggested fix
+was "ownership has to come from the launcher rather than from a successful dial: pass a startup nonce
+the daemon echoes back".
+
+That is what shipped, in a stronger form, and the function is gone rather than fixed: the application
+holds the child's **process handle** (`api.StartSupervised`), and the daemon echoes back the **owner
+pid** it was started with on `/v1/ping`. Nothing infers ownership from a dial any more, so there is no
+longer a caller for a function whose only purpose was to report that inference.

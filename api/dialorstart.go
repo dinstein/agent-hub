@@ -113,17 +113,19 @@ func daemonBinaryNear(exe, name string) string {
 	return cand
 }
 
-// DialOrStartSpawned is DialOrStartWith plus whether THIS call started the
-// daemon. false means one was already accepting and was merely dialled.
+// `DialOrStartSpawned` used to sit here: DialOrStartWith plus "did THIS call
+// start the daemon", for callers that stop it again when they exit. It is
+// gone, and the answer it gave is why. The launcher exits 0 both when it
+// detached a daemon of its own and when it found one already running, so a
+// daemon started concurrently by a terminal or a login item was reported as
+// this process's own — and the caller then took down a hub somebody else was
+// using, to tidy up after itself.
 //
-// The distinction exists for callers that stop the daemon again when they
-// exit. Stopping one you started is tidiness; stopping one you found takes
-// down a shared service that other clients — a gateway mid-session, a CLI
-// waiting on an approval — are relying on. A caller that cannot tell the two
-// apart must not stop anything.
-func DialOrStartSpawned(ctx context.Context, opts StartOptions) (*Client, bool, error) {
-	return dialOrStart(ctx, opts)
-}
+// The question is now answered where it can be answered correctly, and by
+// something better than the outcome of a dial: StartSupervised holds the
+// child's process handle, and /v1/ping reports the owner the daemon was
+// started with. A caller that has neither did not start that hub and must not
+// stop it.
 
 // DialOrStartWith is DialOrStart with explicit options.
 func DialOrStartWith(ctx context.Context, opts StartOptions) (*Client, error) {
