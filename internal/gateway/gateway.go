@@ -799,7 +799,13 @@ func LogPath(logsDir, clientID string) string {
 }
 
 // fsSafe rewrites every rune outside [a-zA-Z0-9_-] to '_' for use in file
-// names (log file, tool cache entries).
+// names. Its one caller is the tool cache; the log file's name comes from
+// proclog.GatewayPath, which LogPath above forwards to.
+//
+// It is NOT interchangeable with proclog's rule despite the same character
+// class: an id that sanitizes to nothing answers "" here and "_" there. Both
+// are fine for what they name — do not merge them on the strength of the
+// switch statement looking identical.
 func fsSafe(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))

@@ -200,10 +200,15 @@ func GatewayPath(logsDir, clientID string) string {
 	return filepath.Join(logsDir, GatewayPrefix+sanitize(clientID)+GatewayExt)
 }
 
-// sanitize maps a client id to a safe file-name element. It matches
-// gateway.LogPath; the two are checked against each other by a test there,
-// because a reader that sanitized differently would look in the wrong place
-// and report "no records" for a client that has been logging all day.
+// sanitize maps a client id to a safe file-name element.
+//
+// It is the ONLY implementation of this rule: gateway.LogPath, which names
+// the file the writer creates, is a one-line call to GatewayPath above. That
+// is what keeps a reader and a writer from disagreeing — not a test comparing
+// two copies, which is what this comment used to promise and there was never
+// one of. A reader that sanitized differently would look in the wrong place
+// and report "no records" for a client that had been logging all day, so the
+// rule is kept in one place instead of checked in two.
 func sanitize(id string) string {
 	var b strings.Builder
 	for _, r := range id {
