@@ -140,6 +140,39 @@ func TestRestartsGiveUpRatherThanLoopForever(t *testing.T) {
 	}
 }
 
+// Pressing "Connect / retry" is a person saying "start counting again".
+// Without the reset that count survived them: after the supervisor gave up, a
+// manual reconnect left it at the limit, so the NEXT unexpected death got no
+// restart and no explanation — in the one state where automatic recovery is
+// most obviously expected to work.
+func TestAManualConnectGivesTheSupervisorItsBudgetBack(t *testing.T) {
+	h, dl := startOwned(t)
+	first := dl.lastProcess()
+
+	// The exhausted state is set DIRECTLY rather than produced by running the
+	// ladder that leads to it. Driving it through the ladder is what the first
+	// version of this test did, and it passed with the bug present: the last
+	// attempt is still in flight when the counter reaches the limit, so the
+	// replacement it went on to create looked exactly like the one the fix is
+	// supposed to produce. What is under test is the consequence, and the
+	// consequence has to be observed on its own.
+	h.mu.Lock()
+	h.restarts = restartLimit
+	h.mu.Unlock()
+
+	if _, err := h.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	// The supervisor is watching again with a budget: this death gets a
+	// replacement rather than silence.
+	first.die()
+	waitFor(t, "a replacement after the user asked for a hub again", func() bool {
+		p := dl.lastProcess()
+		return p != nil && p != first
+	})
+}
+
 // A deliberate shutdown is not a fall: stopping the hub must not trip the
 // supervisor into starting another one on the way out.
 func TestQuittingDoesNotRestartTheHub(t *testing.T) {

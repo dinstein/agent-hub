@@ -315,7 +315,18 @@ const shutdownWait = 10 * time.Second
 
 // Connect forces a connection attempt, starting the daemon if necessary. It
 // backs the "start daemon / retry" button; every other method only dials.
+//
+// It also gives the supervisor its budget back. A person pressing this button
+// is saying "start counting again", and without the reset that count survived
+// them: once the supervisor had given up, a manual reconnect left it at the
+// limit, so the NEXT unexpected death got no restart and no explanation — in
+// the one state where automatic recovery is most obviously expected to work.
+// The restart loop itself must not reset it (that is what "consecutive"
+// means), so this is the single place it happens.
 func (h *Hub) Connect(ctx context.Context) (Status, error) {
+	h.mu.Lock()
+	h.restarts = 0
+	h.mu.Unlock()
 	if _, err := h.connect(ctx, true); err != nil {
 		return h.Status(), err
 	}
