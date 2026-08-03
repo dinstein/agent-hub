@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dinstein/agent-hub/internal/httpbridge"
-	"github.com/dinstein/agent-hub/internal/pipeline"
+	"github.com/dinstein/agent-hub/internal/tier"
 )
 
 // The `token` group is the CLI face of the agent-token layer (docs/architecture.md §9
@@ -156,10 +156,10 @@ func (a *App) tokenStore() (*httpbridge.Store, error) {
 
 func (a *App) newTokenCreateCmd() *cobra.Command {
 	var (
-		tier    string
-		servers []string
-		profile string
-		expires time.Duration
+		tierFlag string
+		servers  []string
+		profile  string
+		expires  time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -172,7 +172,7 @@ func (a *App) newTokenCreateCmd() *cobra.Command {
 			}
 			spec := httpbridge.CreateSpec{
 				Name:    args[0],
-				Tier:    pipeline.CallerTier(tier),
+				Tier:    tier.Tier(tierFlag),
 				Servers: normalizeServerFlag(servers),
 				Profile: profile,
 			}
@@ -186,7 +186,7 @@ func (a *App) newTokenCreateCmd() *cobra.Command {
 			return a.printer().Emit(TokenCreated{Token: tokenRow(tok, time.Now()), Value: value})
 		},
 	}
-	cmd.Flags().StringVar(&tier, "tier", string(pipeline.TierRead),
+	cmd.Flags().StringVar(&tierFlag, "tier", string(tier.Read),
 		"operation tier: read, write or destructive")
 	cmd.Flags().StringSliceVar(&servers, "server", nil,
 		"restrict the token to these servers (repeatable; omit for every server, '*' for every server explicitly)")
