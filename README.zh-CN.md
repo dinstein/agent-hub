@@ -9,7 +9,7 @@ Claude Code · Cursor · Codex · Open WebUI · 以及另外 8 种
 [![CI](https://github.com/dinstein/agent-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/dinstein/agent-hub/actions/workflows/ci.yml)
 [![Go 1.26+](https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.24.0-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.24.1-blue.svg)](VERSION)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows%20(exp.)-lightgrey.svg)](#平台)
 [![Telemetry: none](https://img.shields.io/badge/telemetry-none-brightgreen.svg)](#隐私不收集任何数据)
 
