@@ -77,16 +77,15 @@ const (
 	KindGatewayStarted Kind = "started"
 	// KindGatewayStopped: the process is shutting down.
 	KindGatewayStopped Kind = "stopped"
-	// KindClientAttached / KindClientDetached: the upstream MCP client
-	// completed initialize / went away.
+	// KindClientAttached: the upstream MCP client completed initialize. There
+	// is deliberately no client_detached to pair with it — a stdio gateway
+	// serves exactly one client and ends when it does, so the departure is
+	// already KindGatewayStopped, and a second kind for the same instant
+	// would make one event look like two.
 	KindClientAttached Kind = "client_attached"
-	KindClientDetached Kind = "client_detached"
 	// KindRegistryReloadFailed: a configuration change could not be adopted,
 	// so the process keeps serving the previous generation.
 	KindRegistryReloadFailed Kind = "registry_reload_failed"
-	// KindScopeChanged: the effective scope moved, which can add or remove
-	// tools under a running client.
-	KindScopeChanged Kind = "scope_changed"
 )
 
 // Daemon-scope kinds.
@@ -96,9 +95,6 @@ const (
 	KindDaemonStopping Kind = "stopping"
 	// KindListenerBound: the HTTP data plane bound an address.
 	KindListenerBound Kind = "listener_bound"
-	// KindCtlSocketLost: the control socket became unusable; gateways will
-	// stop being able to register.
-	KindCtlSocketLost Kind = "ctl_socket_lost"
 	// KindConfigReloaded: a registry generation was adopted.
 	KindConfigReloaded Kind = "config_reloaded"
 )
@@ -132,12 +128,11 @@ var allKinds = map[Scope][]Kind{
 	},
 	ScopeGateway: {
 		KindGatewayStarted, KindGatewayStopped,
-		KindClientAttached, KindClientDetached,
-		KindRegistryReloadFailed, KindScopeChanged,
+		KindClientAttached, KindRegistryReloadFailed,
 	},
 	ScopeDaemon: {
 		KindDaemonStarted, KindDaemonStopping,
-		KindListenerBound, KindCtlSocketLost, KindConfigReloaded,
+		KindListenerBound, KindConfigReloaded,
 	},
 }
 

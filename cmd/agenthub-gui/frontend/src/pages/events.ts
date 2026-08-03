@@ -43,7 +43,6 @@ const TONES: Record<string, "bad" | "warn" | "good"> = {
   secrets_missing: "bad",
   oauth_refresh_failed: "bad",
   registry_reload_failed: "bad",
-  ctl_socket_lost: "bad",
   circuit_open: "warn",
   circuit_half_open: "warn",
   disconnected: "warn",

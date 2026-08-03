@@ -372,8 +372,8 @@ Kinds are checked as a **(scope, kind) pair**, never a bare kind: a gateway and 
 | Scope | Kinds |
 |---|---|
 | `server` | `connected`, `connect_failed`, `disconnected`, `respawned`, `respawn_failed`, `circuit_open`, `circuit_half_open`, `circuit_closed`, `health_down`, `health_up`, `tools_changed`, `oauth_refresh_failed`, `secrets_missing` |
-| `gateway` | `started`, `stopped`, `client_attached`, `client_detached`, `registry_reload_failed`, `scope_changed` |
-| `daemon` | `started`, `stopping`, `listener_bound`, `ctl_socket_lost`, `config_reloaded` |
+| `gateway` | `started`, `stopped`, `client_attached`, `registry_reload_failed` |
+| `daemon` | `started`, `stopping`, `listener_bound`, `config_reloaded` |
 
 ### What `count` counts
 
