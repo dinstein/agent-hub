@@ -1,13 +1,13 @@
 ---
 name: agenthub
-description: Drive the agenthub CLI to give an AI client MCP tools - add a server (curated catalog, pasted config, or by hand), store its credentials, run its OAuth login, test it for real, connect it to Claude Code / Cursor / Codex / VS Code / Zed, narrow what each client may see, diagnose the installation with doctor when a client cannot reach a server or it answers wrongly, and read the call log when a call itself went wrong. Also covers the meta-tools an agent uses from inside a session agenthub already serves. Use whenever the task involves adding, authorizing, testing, wiring up, inspecting, or troubleshooting an MCP server.
+description: Drive the agenthub CLI to give an AI client MCP tools - add a server (curated catalog, pasted config, or by hand), store its credentials, run its OAuth login, test it for real, connect it to Claude Code / Cursor / Codex / VS Code / Zed, narrow what each client may see, diagnose the installation with doctor when a client cannot reach a server or it answers wrongly, and read the record afterwards - the call log for a call that went wrong, the event log for a server that dropped or kept reconnecting, the merged process logs for the prose around either. Also covers the meta-tools an agent uses from inside a session agenthub already serves. Use whenever the task involves adding, authorizing, testing, wiring up, inspecting, or troubleshooting an MCP server.
 ---
 
 # agenthub
 
 One gateway between every AI client and every MCP server. Wire a client up **once**; add, authorize, and narrow servers here afterwards without touching the client again.
 
-**Never guess a flag** — `agenthub <group> --help` decides. A release build's help page lists the everyday path only (`server`, `auth`, `secret`, `catalog`, `profile`, `client`, `doctor`); `config` and `audit` are withheld from that page and run identically — their own `--help` still prints.
+**Never guess a flag** — `agenthub <group> --help` decides. The page is grouped by task phase, and four groups show in every build: Setup (`server`, `auth`, `secret`, `catalog`), Wire up (`profile`, `client`), Diagnose (`doctor`) and Observe (`audit`, `events`, `logs` — §8, §9). A release build withholds two, Daemon (`daemon`, `session`, `token`) and Manage (`config`, `skill`), **from the page only**: they resolve and run identically there, and their own `--help` still prints.
 
 The path is always: **add → (credential) → enable → test → connect → narrow**.
 
@@ -229,6 +229,10 @@ agenthub server test brave --tools      # live answer today
 
 ## 8. State changes, process logs and the wire trace
 
+`events`, `logs` and §9's `audit` are the **Observe** group on the help page: the record of what already
+happened, in every build and with no daemon running. The wire trace below is not in it — it hangs off
+`server`, because it is per-server and off until switched on.
+
 **State changes** — start here for anything about a connection's life rather than a call's content.
 `events` is a closed vocabulary (connected, circuit_open, respawn_failed, health_down, …), so it is
 what to grep, script or alert on:
@@ -256,6 +260,8 @@ agenthub logs --client claude-code -f  # follow one gateway
   respawns are recorded only by the gateway serving a client.
 - Works offline, and must — a stdio gateway writes its log with no daemon running at all.
 - Filters are fail-closed: `--server x` drops records carrying no server field, daemon lines included.
+- `--source daemon|gateway` narrows the merge to one half when the other is noise; `--level`, `--since`
+  and `--limit` (default 200, `0` for all) do the rest.
 - `agenthub daemon logs` is still there; it is the single-process view of `daemon.log`.
 
 **Wire trace** — for when `server test` passes but a tool misbehaves inside the client:
