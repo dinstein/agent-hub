@@ -58,8 +58,9 @@ type Sources struct {
 	// Extra supplies additional layers appended after the persisted ones — the seam
 	// through which a credential narrows a session it does not own a
 	// registry entry for (the daemon's HTTP data plane folds an agent
-	// token's server allowlist and profile pin in here, docs/architecture.md §9
-	// "profile is the sixth constraint source in the scope intersection").
+	// token's server allowlist and profile pin in here). They join the
+	// three-layer resolution chain of docs/architecture.md §7; they do not
+	// stand outside it.
 	//
 	// Failure direction: these are ordinary layers, so Merge treats them
 	// exactly like the persisted ones — security fields intersect. An Extra

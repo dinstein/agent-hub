@@ -51,10 +51,11 @@ type Token struct {
 	// An EMPTY (non-nil) list allows nothing — the closed direction, and the
 	// reason this field is not `omitempty`.
 	Servers []string `json:"servers"`
-	// Profile pins this token to one profile permanently. It becomes the
-	// SIXTH constraint source of the scope intersection (docs/architecture.md §9;
-	// chapter 4 owns the other five) — the assembling process feeds it into
-	// the resolver. "" = no pin.
+	// Profile pins this token to one profile permanently. The assembling
+	// process feeds it to the resolver as an Extra layer, so it joins the
+	// three-layer intersection of docs/architecture.md §7 rather than
+	// standing beside it: an Extra layer is an ordinary layer, and every
+	// layer can only narrow. "" = no pin.
 	Profile   string    `json:"profile,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	// ExpiresAt is the hard deadline; the zero time means "never expires".
