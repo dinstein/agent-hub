@@ -47,7 +47,7 @@ func TestAuthClientDoesNotFollowCredentialAcrossOrigins(t *testing.T) {
 		t.Fatalf("parse endpoint: %v", err)
 	}
 
-	client := newAuthClient(nil, staticToken("SECRET"), endpoint)
+	client := newAuthClient(nil, staticToken("SECRET"), endpoint, serverEvents{})
 	req, err := http.NewRequest(http.MethodPost, endpoint.String(), strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatalf("build request: %v", err)
@@ -89,7 +89,7 @@ func TestAuthClientFollowsSameOriginRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse endpoint: %v", err)
 	}
-	client := newAuthClient(nil, staticToken("SECRET"), endpoint)
+	client := newAuthClient(nil, staticToken("SECRET"), endpoint, serverEvents{})
 	resp, err := client.Post(endpoint.String(), "application/json", strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatalf("same-origin redirect was refused: %v", err)
@@ -111,7 +111,7 @@ func TestAttachBearerRefusesForeignOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse endpoint: %v", err)
 	}
-	rt := newAuthRoundTripper(nil, staticToken("SECRET"), endpoint)
+	rt := newAuthRoundTripper(nil, staticToken("SECRET"), endpoint, serverEvents{})
 
 	for _, target := range []string{
 		"https://attacker.example/collect", // another host

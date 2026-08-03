@@ -199,7 +199,7 @@ func Connect(ctx context.Context, spec Spec, deps Deps) (*Server, error) {
 	defer cancel()
 	tr, initRes, tools, err := s.dialAndInit(cctx)
 	if err != nil {
-		srvEvents.emit(eventlog.Record{Kind: eventlog.KindConnectFailed, Detail: err.Error()})
+		srvEvents.emit(connectFailure(err))
 		stop()
 		close(s.ownerDone)
 		return nil, err

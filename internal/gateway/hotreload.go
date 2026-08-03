@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 
 	"github.com/dinstein/agent-hub/internal/downstream"
@@ -60,12 +61,26 @@ func (g *gateway) onRegistryChange(kind registry.DocKind) {
 	g.reloadMu.Lock()
 	defer g.reloadMu.Unlock()
 
+	// reloadFailed records that this process is still serving the PREVIOUS
+	// generation. It is the one gateway state that leaves no other trace: the
+	// config on disk says one thing, every reader of it agrees, and the
+	// running process quietly disagrees until something restarts it. Both
+	// branches below reach it, because "the file would not load" and "the
+	// snapshot would not apply" leave the client in the same place.
+	reloadFailed := func(err error) {
+		g.eventStream().Append(eventlog.Record{
+			Scope: eventlog.ScopeGateway, Kind: eventlog.KindRegistryReloadFailed,
+			Client: g.cfg.ClientID, Detail: err.Error(),
+		})
+	}
+
 	snap, err := g.store.Reload(g.lifeCtx)
 	if err != nil {
 		// Half-written file or transient lock failure: keep serving the old
 		// config; the next debounce/poll/link event retries (load failure
 		// never advances the applied state — docs/modules/foundation.md).
 		g.log.Warn("registry reload failed; keeping previous config", "error", err)
+		reloadFailed(err)
 		return
 	}
 	adopted, aerr := g.applier.Apply(snap.Generation, func() error {
@@ -79,6 +94,7 @@ func (g *gateway) onRegistryChange(kind registry.DocKind) {
 	})
 	if aerr != nil {
 		g.log.Warn("registry apply failed; keeping previous config", "error", aerr)
+		reloadFailed(aerr)
 		return
 	}
 	if !adopted {

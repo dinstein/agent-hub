@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
@@ -47,6 +48,13 @@ type authRoundTripper struct {
 	// CheckRedirect — see newAuthClient).
 	endpoint *url.URL
 
+	// events records a renewal that stopped working. A call-time refresh
+	// failure is the one credential fault with no other trace: the server
+	// stays connected and answering until the current token expires, so
+	// nothing flips state and nothing reconnects — the first symptom is calls
+	// failing for a reason the connection itself cannot explain.
+	events serverEvents
+
 	// mu guards the cached token. The cache exists because the alternative
 	// is a vault read — on macOS, a keychain round trip — on every single
 	// HTTP request.
@@ -65,6 +73,12 @@ type authRoundTripper struct {
 	tok    string
 	loaded bool
 	epoch  uint64
+	// refreshBroken is whether the last renewal FAILED, and it exists only to
+	// make the event below a transition. A dead credential fails every
+	// request, so emitting per failure would let one broken server fill a
+	// shared file — the flip is the fact, which is the same rule the health
+	// tracker and the breaker already follow.
+	refreshBroken bool
 }
 
 // credentialEpoch is the optional face of a TokenSource that can say when its
@@ -140,8 +154,10 @@ func deadlineOf(ts TokenSource) time.Time {
 	return time.Time{}
 }
 
-func newAuthRoundTripper(base http.RoundTripper, auth TokenSource, endpoint *url.URL) *authRoundTripper {
-	return &authRoundTripper{base: base, auth: auth, endpoint: endpoint}
+func newAuthRoundTripper(
+	base http.RoundTripper, auth TokenSource, endpoint *url.URL, events serverEvents,
+) *authRoundTripper {
+	return &authRoundTripper{base: base, auth: auth, endpoint: endpoint, events: events}
 }
 
 // currentEpoch reports the source's epoch and whether it has one at all.
@@ -283,8 +299,10 @@ func (a *authRoundTripper) refresh(ctx context.Context, stale string) (string, e
 
 	tok, err := a.auth.Refresh(ctx)
 	if err != nil {
+		a.noteRefresh(false, err)
 		return "", err
 	}
+	a.noteRefresh(true, nil)
 	// Re-read the epoch AFTER the renewal: the renew path writes the vault,
 	// which announces, so the value read before it is already one behind.
 	// Caching the new token under the stale epoch would make the very next
@@ -423,4 +441,30 @@ func (v *vaultTokenSource) Refresh(ctx context.Context) (string, error) {
 		return "", ErrNoRefresher
 	}
 	return v.renew(ctx)
+}
+
+// noteRefresh records that renewal STOPPED working, once per transition.
+//
+// Only the failing direction is emitted, because the kind is
+// `oauth_refresh_failed` and a record of that name reporting a recovery
+// would be a row whose name and content disagree. Recovery is still
+// TRACKED — the flag clears — so a credential that breaks, is fixed and
+// breaks again reports both failures rather than only the first.
+//
+// What this deliberately does not do is invent an `oauth_refresh_ok` to
+// pair with it, the way health_down/health_up pair. Health is a level that
+// is always one thing or the other; a working renewal is the silent normal
+// case, and a kind that fires on every successful hourly refresh would be
+// the loudest thing in the file while saying nothing happened.
+func (a *authRoundTripper) noteRefresh(ok bool, err error) {
+	a.mu.Lock()
+	was := a.refreshBroken
+	a.refreshBroken = !ok
+	a.mu.Unlock()
+	if ok || was {
+		return
+	}
+	a.events.emit(eventlog.Record{
+		Kind: eventlog.KindOAuthRefreshFailed, Detail: err.Error(),
+	})
 }

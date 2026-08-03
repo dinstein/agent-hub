@@ -63,7 +63,7 @@ func (d Deps) dialHTTP(ctx context.Context, spec Spec) (transport.Transport, err
 			// credential-carrying client with no origin to compare against.
 			return nil, fmt.Errorf("downstream %q: parse url: %w", spec.ID, perr)
 		}
-		cfg.Client = newAuthClient(dial, auth, endpoint)
+		cfg.Client = newAuthClient(dial, auth, endpoint, d.eventsFor(spec))
 	} else {
 		cfg.DialContext = dial
 	}
@@ -222,7 +222,9 @@ func sameOrigin(base, u *url.URL) bool {
 //
 // No Client.Timeout is set, mirroring the transport facade: SSE streams are
 // long-lived and every request already carries a bounding context.
-func newAuthClient(dial transport.DialContextFunc, auth TokenSource, endpoint *url.URL) *http.Client {
+func newAuthClient(
+	dial transport.DialContextFunc, auth TokenSource, endpoint *url.URL, events serverEvents,
+) *http.Client {
 	base := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           dial,
@@ -235,7 +237,7 @@ func newAuthClient(dial transport.DialContextFunc, auth TokenSource, endpoint *u
 		ResponseHeaderTimeout: 0, // SSE: headers may precede data by a lot
 	}
 	return &http.Client{
-		Transport: newAuthRoundTripper(base, auth, endpoint),
+		Transport: newAuthRoundTripper(base, auth, endpoint, events),
 		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
 			if !sameOrigin(endpoint, req.URL) {
 				return fmt.Errorf(

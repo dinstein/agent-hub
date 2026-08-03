@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
@@ -36,6 +37,32 @@ func (e *UnresolvedSecretError) Error() string {
 }
 
 func (e *UnresolvedSecretError) Unwrap() error { return ErrUnresolvedSecret }
+
+// connectFailure classifies a failed dial into the event kind that says what
+// the operator has to DO about it.
+//
+// A missing secret and a refused TCP connection both surface as "this server
+// did not connect", and they send someone to opposite places: one is a setup
+// step that was never finished, the other is a server or a network. The
+// closed vocabulary exists so that difference survives into a timeline, and
+// the classification reads the typed error rather than the message text, for
+// the reason UnresolvedSecretError states — the human wording is not an API.
+//
+// The Detail is the error, which for an unresolved secret names the KEY and
+// never the value (docs/modules/controlplane.md rule 5).
+func connectFailure(err error) eventlog.Record {
+	kind := eventlog.KindConnectFailed
+	var missing *UnresolvedSecretError
+	switch {
+	case errors.As(err, &missing):
+		kind = eventlog.KindSecretsMissing
+	case errors.Is(err, ErrUnresolvedSecret), errors.Is(err, ErrNoResolver):
+		// Same cause reached without the typed error: a resolver that was
+		// never wired blocks on exactly the same setup step.
+		kind = eventlog.KindSecretsMissing
+	}
+	return eventlog.Record{Kind: kind, Detail: err.Error()}
+}
 
 // ErrNoResolver reports a spec that references a secret while no resolver
 // was injected.

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/discovery"
+	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/pipeline"
@@ -160,6 +161,24 @@ func (g *gateway) handleInitialize(req *mcp.Request) {
 	// "Claude Code" instead of "claude-code".
 	g.log.Info("initialized upstream session",
 		"protocol_version", version, "client_name", p.ClientInfo.Name)
+	// Both streams, side by side, as everywhere else. The event answers a
+	// question the `started` record cannot: a gateway process starts when the
+	// client launches it, and attaches only once the client actually speaks
+	// MCP. A configuration that starts and never attaches is the signature of
+	// a client that was pointed at the hub and never restarted, and without
+	// this record the two look identical from outside.
+	//
+	// The peer's SELF-REPORTED name goes in Detail, never in Client: that
+	// field carries the CONFIGURED id, which is the join key, and letting a
+	// peer's own string reach it would be the collision the log line above
+	// had to be fixed for. From/To stay empty — this is an arrival, not a
+	// transition, and the protocol version is elaboration rather than a state
+	// the session moved between.
+	g.eventStream().Append(eventlog.Record{
+		Scope: eventlog.ScopeGateway, Kind: eventlog.KindClientAttached,
+		Client: g.cfg.ClientID,
+		Detail: p.ClientInfo.Name + " speaking " + version,
+	})
 	g.reply(mcp.NewResponse(req.ID, raw))
 }
 
