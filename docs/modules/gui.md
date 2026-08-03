@@ -231,9 +231,17 @@ server, switching a profile, editing scope — all of it stays in the window. Th
 **starting** a hub that is not running, which can only help; stopping or restarting a running one
 cuts off every client mid-session, and is therefore not in the menu at all.
 
-The icon is the whole feature for anyone not currently looking at the window: a hollow ring is no
-daemon, a ring with a solid centre is serving, and a badge appears when an enabled server is not
-healthy. Bucketing comes from the same `Health` contract the Servers page uses — a tray that
+The icon is the whole feature for anyone not currently looking at the window: three clients around a
+**hollow** hub is no daemon, the same mark with the hub **filled in** is serving, and a badge on its
+shoulder appears when an enabled server is not healthy. The mark is the application icon reduced —
+the rounded-square hub and the callers converging on it, three rather than six and detached rather
+than joined by spokes, because at 22 points six nodes smudge and a spoke fuses node, arm and core
+into one blob. It is deliberately **not** a ring: a ring says nothing this product says, and the
+other local MCP hubs already put one in the status area, so the two would be the same picture at a
+glance. The hollow state
+is an **outline**, not an absence — a two-pixel hole made "offline" and "serving" identical in the
+first draft, and `TestTrayIconOfflineKeepsTheHubVisible` is that draft's headstone.
+Bucketing comes from the same `Health` contract the Servers page uses — a tray that
 re-derived status from connection flags would be the second opinion
 [controlplane.md](controlplane.md) forbids. Server rows are capped, sorted worst-first so the cap
 drops what nobody needs to see, and the menu says how many it dropped.

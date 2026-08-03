@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/png"
+	"math"
 	"testing"
 )
 
@@ -65,7 +66,7 @@ func TestTrayIconAttentionCarriesTheBadge(t *testing.T) {
 	if _, _, _, a := attention.At(px(iconBadgeX), px(iconBadgeY)).RGBA(); a == 0 {
 		t.Fatal("the attention badge is not painted")
 	}
-	// The badge is not merely drawn, it is cut free of the ring — otherwise
+	// The badge is not merely drawn, it is cut free of the hub — otherwise
 	// the two merge into one blob at menu-bar size. So there must be pixels
 	// only the badge paints, and pixels the cut takes away.
 	var badgeOnly, cutAway int
@@ -88,7 +89,49 @@ func TestTrayIconAttentionCarriesTheBadge(t *testing.T) {
 		t.Error("the badge adds nothing the healthy icon does not already paint")
 	}
 	if cutAway == 0 {
-		t.Error("the badge is not cut free of the ring; the two will merge")
+		t.Error("the badge is not cut free of the hub; the two will merge")
+	}
+}
+
+// TestTrayIconOfflineKeepsTheHubVisible guards the failure that killed the
+// first draft of this mark: a hollow centre small enough that offline and
+// serving render as the same picture at menu-bar size. Hollow means an
+// outline, not an absence, and it has to survive 16 pixels.
+func TestTrayIconOfflineKeepsTheHubVisible(t *testing.T) {
+	t.Parallel()
+	for _, size := range []int{16, 22, 44} {
+		img := decodeIcon(t, trayIconOffline, size, false)
+		px := func(unit float64) int { return int(unit * float64(size)) }
+
+		edge := px(0.5 - iconCoreHalf + iconCoreStroke/2)
+		if _, _, _, a := img.At(edge, size/2).RGBA(); a == 0 {
+			t.Errorf("at %d px the offline hub has no outline left", size)
+		}
+		hole := px(0.5 - (iconCoreHalf - iconCoreStroke) + 0.02)
+		if _, _, _, a := img.At(hole, size/2).RGBA(); a != 0 {
+			t.Errorf("at %d px the offline hub's hole is filled in", size)
+		}
+	}
+}
+
+// TestTrayIconAlwaysDrawsItsClients holds the part of the mark that does NOT
+// change: three clients converging on the hub, in every state. Only the hub
+// answers what the state is, so a state that dropped a node would be saying
+// something the tray does not mean — and it would also mean the attention
+// badge's cut had eaten one.
+func TestTrayIconAlwaysDrawsItsClients(t *testing.T) {
+	t.Parallel()
+	const size = 44
+	for _, state := range []trayIcon{trayIconOffline, trayIconAttention, trayIconOK} {
+		img := decodeIcon(t, state, size, false)
+		for i := range iconNodeCount {
+			a := -math.Pi/2 + float64(i)*2*math.Pi/iconNodeCount
+			x := int((0.5 + math.Cos(a)*iconNodeOrbit) * size)
+			y := int((0.5 + math.Sin(a)*iconNodeOrbit) * size)
+			if _, _, _, alpha := img.At(x, y).RGBA(); alpha == 0 {
+				t.Errorf("%v icon is missing the client node at %d,%d", state, x, y)
+			}
+		}
 	}
 }
 
