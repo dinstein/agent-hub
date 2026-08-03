@@ -13,9 +13,16 @@ import (
 )
 
 // SourcePrefix is prepended to a catalog id to form ServerEntry.Source, the
-// same way a pasted document marks its own (`pasted`).
-// It is how `server ls` explains where a definition came from and how a
-// frontend can tell a catalog-added server from a hand-typed one.
+// same way a pasted document marks its own (SourcePasted) and a hand-typed
+// one is "manual".
+//
+// No Go code outside this package reads it. `server ls` prints Source whole,
+// prefix included, rather than parsing it — the string is meant to be read,
+// not matched on. The one consumer that does match is the GUI's catalog
+// page, which carries its own `SOURCE_PREFIX = "catalog:"` and a comment
+// naming this constant as its source. Nothing checks that the two agree; see
+// TestGUIBindingNamesResolve, which covers the other cross-language string
+// seam and now names this one.
 const SourcePrefix = "catalog:"
 
 // Source records that a stored entry came from catalog id.

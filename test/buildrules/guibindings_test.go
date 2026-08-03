@@ -12,8 +12,16 @@ import (
 	"testing"
 )
 
-// TestGUIBindingNamesResolve checks the one seam in this repository where two
-// languages agree on a string and NOTHING checks the string.
+// TestGUIBindingNamesResolve checks the seam where two languages agree on a
+// string and nothing else checks it: the bound method names.
+//
+// It is not the only such seam. internal/catalog.SourcePrefix has a twin in
+// the GUI's catalog page (`SOURCE_PREFIX = "catalog:"`, with a comment naming
+// the Go constant), and nothing compares them either. That one is not covered
+// here because it fails differently and far more quietly: a stale prefix does
+// not produce an error, it produces a catalog-added server the page renders
+// as hand-typed. Worth a check of its own; this test is not it, and saying so
+// beats implying the repository has one such seam when it has two.
 //
 // The frontend reaches the daemon by naming a Go method:
 //
