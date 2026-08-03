@@ -630,7 +630,7 @@ export function activityPage(): Page {
       void load().finally(() => refresh.removeAttribute("aria-busy"));
     });
     root.append(
-      pageHeader("Activity", "Inspect every gateway-to-server call, understand usage, and maintain the encrypted local ledger.", refresh),
+      pageHeader("Calls", "Inspect every gateway-to-server call, understand usage, and maintain the encrypted local ledger.", refresh),
       notices.node,
     );
     if (loadError) {

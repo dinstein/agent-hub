@@ -874,6 +874,33 @@ export interface AuditCalls {
   skippedMalformed: number;
 }
 
+/** One control-plane state change (api.EventRecord). `scope` and `kind` are
+ *  CLOSED sets published in docs/modules/foundation.md — safe to switch on,
+ *  unlike a log message. An unknown value means this frontend is older than
+ *  the daemon, not that the field is free text. */
+export interface EventRecord {
+  ts: string;
+  scope: string;
+  kind: string;
+  server?: string;
+  inst?: string;
+  client?: string;
+  pid: number;
+  from?: string;
+  to?: string;
+  detail?: string;
+  attempt?: number;
+  durMs?: number;
+}
+
+export interface EventLog {
+  events: EventRecord[];
+  /** How many segments were read. 0 means nothing has ever been written,
+   *  which is a different fact from an empty `events` over four files. */
+  files: number;
+  skipped?: number;
+}
+
 export interface AuditEvent {
   time: string;
   event: string;

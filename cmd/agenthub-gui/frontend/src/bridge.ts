@@ -44,6 +44,7 @@ import type {
   ClientDisconnected,
   ClientInspection,
   ConfigWrite,
+  EventLog,
   GovernanceList,
   ParsedClientConfig,
   ProfileList,
@@ -161,6 +162,18 @@ export const hub = {
     call<AuditKeyRotation>("RotateAuditKey", generation),
   verifyAudit: () => call<AuditVerify>("VerifyAudit"),
   pruneAudit: (dryRun: boolean) => call<AuditPrune>("PruneAudit", dryRun),
+
+  // -- control-plane event log ---------------------------------------------
+  /** What HAPPENED, in a closed vocabulary — as opposed to EVT.servers, which
+   *  only says that something did. Empty selectors mean "no rule". */
+  eventLog: (
+    sinceMillis: number,
+    limit: number,
+    scope = "",
+    server = "",
+    client = "",
+    kinds: string[] = [],
+  ) => call<EventLog>("EventLog", sinceMillis, limit, scope, server, client, kinds),
 
   // -- servers --------------------------------------------------------------
   listServers: () => call<Server[]>("ListServers"),

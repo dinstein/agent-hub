@@ -31,8 +31,9 @@
 // read path and this page must not grow one.
 
 import { asCallError, EVT, hub, isCancelled, on, openExternal } from "../bridge";
-import { chip, chipRow, chipToggle, clear, el, emptyState, errorHeadline, icon, loadingState, pageHeader, reconcile } from "../dom";
+import { chip, chipRow, chipToggle, clear, el, emptyState, errorHeadline, icon, loadingState, pageHeader, reconcile, table } from "../dom";
 import { AdminState, HealthAction, HealthLevel } from "../generated/health";
+import { eventRows } from "./events";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot, runWrite } from "../page";
 import { consumeServerSecrets } from "../secret-guidance";
@@ -59,6 +60,7 @@ import type {
   AuthStatus,
   DockerMount,
   DockerRuntime,
+  EventRecord,
   ParsedClientConfig,
   ParsedSkip,
   Server,
@@ -170,6 +172,16 @@ type SettledProbeObservation = Exclude<ProbeObservation, { kind: "checking" }>;
  * through a first probe must not strand that label on the next visit.
  */
 const probeCache = new Map<string, SettledProbeObservation>();
+
+/** SERVER_EVENT_LIMIT bounds the per-server history in the detail panel. It
+ *  is a recent-past window, not a log viewer: the whole timeline is the
+ *  Events page, and this is the tail that explains the badge above it. */
+const SERVER_EVENT_LIMIT = 20;
+
+/** Per-server event cache, keyed by id. Cleared with probeCache so a manual
+ *  refresh re-reads both rather than showing a fresh badge over stale
+ *  history. */
+const eventCache = new Map<string, EventRecord[]>();
 
 /**
  * Replaces gateway-observed runtime state with this page's own short-lived
@@ -988,6 +1000,7 @@ export function serversPage(): Page {
       if (!present.has(id) || !server?.enabled) {
         probes.delete(id);
         probeCache.delete(id);
+        eventCache.delete(id);
         probeVersions.delete(id);
         if (!present.has(id)) expandedServers.delete(id);
       }
@@ -1390,7 +1403,63 @@ export function serversPage(): Page {
       ]),
       el("div", { class: "server-health-detail-body" }, [content, action]),
       authDetails(s),
+      recentEvents(s),
     ]);
+  }
+
+  /** The health badge above is a VALUE — what this server is right now. This
+   *  is the sequence that produced it, which is a different question and the
+   *  one an operator actually asks about a server that keeps dropping.
+   *
+   *  Loaded per server and only once expanded: the whole timeline lives on
+   *  the Events page, and fetching every server's history to draw a list
+   *  would cost far more than it shows. */
+  function recentEvents(s: Server): Node {
+    const host = el("div", { class: "server-probe-detail-head" }, [
+      el("strong", { text: "Recent events" }),
+      el("span", { class: "meta", text: "loading…" }),
+    ]);
+    const body = el("div", { class: "server-health-detail-body" });
+    const cached = eventCache.get(s.id);
+    if (cached) {
+      renderEvents(host, body, cached);
+    } else {
+      void hub
+        .eventLog(0, SERVER_EVENT_LIMIT, "server", s.id, "", [])
+        .then((log) => {
+          eventCache.set(s.id, log.events);
+          renderEvents(host, body, log.events);
+        })
+        .catch(() => {
+          clear(host);
+          host.append(
+            el("strong", { text: "Recent events" }),
+            el("span", { class: "meta", text: "unavailable" }),
+          );
+        });
+    }
+    return el("div", {}, [host, body]);
+  }
+
+  function renderEvents(host: HTMLElement, body: HTMLElement, events: EventRecord[]): void {
+    clear(host);
+    host.append(
+      el("strong", { text: "Recent events" }),
+      el("span", { class: "meta", text: events.length === 0 ? "none recorded" : `${events.length} shown` }),
+    );
+    clear(body);
+    if (events.length === 0) {
+      body.append(
+        el("p", {
+          class: "meta",
+          text: "Nothing recorded for this server. The stream is written by any running gateway unless events.enabled is false.",
+        }),
+      );
+      return;
+    }
+    // Newest first: the reason this section is open is that something just
+    // happened.
+    body.append(table(["When", "What", "Subject", "Detail"], eventRows([...events].reverse())));
   }
 
   function authExpiry(status: AuthStatus): string {
@@ -1852,6 +1921,7 @@ export function serversPage(): Page {
     if (!ok) return;
     probes.delete(s.id);
     probeCache.delete(s.id);
+    eventCache.delete(s.id);
     probeVersions.delete(s.id);
     await draw();
     slot.say(`${s.id} removed.`);
@@ -1907,6 +1977,7 @@ export function serversPage(): Page {
     } else {
       probes.delete(s.id);
       probeCache.delete(s.id);
+      eventCache.delete(s.id);
       probeVersions.set(s.id, (probeVersions.get(s.id) ?? 0) + 1);
     }
   }

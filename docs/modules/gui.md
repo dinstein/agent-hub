@@ -15,13 +15,18 @@ item 3.
 ## 1. Information architecture: a short task spine, then state inside each page
 
 The sidebar started life as a one-to-one mapping of the CLI command tree — fourteen resource tables
-laid out along the domain model. It now has seven task destinations: Servers, Catalog, Playground,
-Profiles, Clients, Activity and Settings. Catalog is deliberately first-class and immediately follows Servers:
+laid out along the domain model. It now has eight task destinations: Servers, Catalog, Playground,
+Profiles, Clients, Calls, Events and Settings. Catalog is deliberately first-class and immediately follows Servers:
 the two are the configured and discoverable halves of the same task. Credentials are configured from
 the server that needs them rather than from a global vault page; client bindings live with Clients, and appearance/daemon diagnostics live in
-Settings. Activity sits under System because it is the operator's evidence and maintenance workspace,
-not a permission layer: its source of truth is the encrypted access ledger covering every
-gateway-to-server call, and its aggregates are computed from those same lifecycle records. A resource
+Settings. **Calls** and **Events** sit under System because they are the operator's evidence
+workspace, not a permission layer, and they are two destinations rather than one because they answer
+two questions: Calls reads the encrypted access ledger — what a client INVOKED — while Events reads
+the control-plane stream — what HAPPENED to a server, a gateway or the daemon. Merging them would
+put a payload-bearing, opt-in, encrypted record beside a default-on state change in one list, and a
+reader would have no way to tell which guarantees applied to which row. Calls was called "Activity"
+while it was the only one of the two; the name went because a page should say what it shows, and
+"activity" described either. A resource
 can still have a direct hash route without taking permanent navigation space. Tokens and a separate Governance destination are also
 outside this navigation until they own a concrete task that is not already expressed by server,
 profile, and client configuration.
@@ -199,7 +204,7 @@ focus. Tool text that parses as JSON opens in Pretty mode with a reversible Raw 
 text is left untouched. The raw daemon result remains a separate diagnostic disclosure because tool
 content and transport metadata answer different questions.
 
-Activity is one page with three focused views rather than three navigation destinations. **Calls** joins
+Calls is one page with three focused views rather than three navigation destinations. **Calls** joins
 the received/routed/finished lifecycle into one compact row; the collection endpoint returns metadata
 only and never exposes payload references. Calls use stable 50-row cursor pages, show the filtered total,
 and apply Client, Server, Tool and Outcome dropdowns on the daemon before
@@ -216,6 +221,22 @@ content item), can be copied, and can be switched back to the exact Raw value. *
 same bounded time range by outcome, client, server, and tool.
 **Ledger** owns capture status, footprint, integrity verification, retention cleanup, and key rotation.
 Pausing capture is a direct reversible action and never deletes history or keys.
+
+Events is the timeline Calls cannot be. It reads `GET /v1/events/log`, which exists because
+`cmd/agenthub-gui` may not import `internal/*` — the CLI reads `events.jsonl` directly and works
+offline, the GUI goes through the daemon like every other page here. Rows are coloured from `kind`
+rather than from any text, which is legitimate only because that vocabulary is CLOSED
+([foundation.md](foundation.md)); a kind this build does not know renders in the neutral tone rather
+than being hidden, because a frontend older than its daemon must not silently drop records. The SSE
+`servers` topic is the re-read TRIGGER and never the data — the bus contract says a subscriber
+re-reads authoritative state on notification, and that is exactly what happens here.
+
+The same rows appear inside a server's detail panel, from the same renderer. The health badge there
+is a value — what the server is now — and the timeline under it is the sequence that produced it,
+which is the question an operator actually brings to a server that keeps dropping. It loads per
+server and only once expanded: fetching every server's history to draw a list would cost far more
+than it shows, and it is dropped alongside the cached self-test so a refresh never pairs a fresh
+badge with stale history.
 
 ### 1.2 The window is not the application
 

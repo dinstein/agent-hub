@@ -123,7 +123,8 @@ type trayItem struct {
 // which is why this list is allowed to be a copy rather than generated.
 var trayRoutes = []struct{ Route, Label string }{
 	{"servers", "Servers"},
-	{"activity", "Activity"},
+	{"activity", "Calls"},
+	{"events", "Events"},
 	{"clients", "Clients"},
 	{"settings", "Settings"},
 }

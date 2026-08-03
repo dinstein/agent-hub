@@ -16,6 +16,7 @@ import { askAboutClosing } from "./close-notice";
 import { initWindowPrefs } from "./window-prefs";
 import { authPage } from "./pages/auth";
 import { activityPage } from "./pages/activity";
+import { eventsPage } from "./pages/events";
 import { catalogPage } from "./pages/catalog";
 import { clientsPage } from "./pages/clients";
 import { configPage } from "./pages/config";
@@ -33,6 +34,7 @@ import type { Status } from "./types";
 type Route =
   | "onboarding"
   | "activity"
+  | "events"
   | "playground"
   | "servers"
   | "catalog"
@@ -48,6 +50,7 @@ type Route =
 
 const ROUTES: Record<Route, () => Page> = {
   activity: activityPage,
+  events: eventsPage,
   onboarding: onboardingPage,
   playground: playgroundPage,
   servers: serversPage,
