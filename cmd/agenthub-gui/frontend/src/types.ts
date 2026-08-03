@@ -931,6 +931,13 @@ export interface AuditEvent {
   code?: string;
   error?: string;
   toolError?: boolean;
+  /** Set on a FRAME (event "sent" or "recv"): what crossed the downstream
+   *  boundary, why, which attempt it was, and how big it was. A call that
+   *  retried twice has three sent/recv pairs under one `routed`. */
+  method?: string;
+  cause?: string;
+  seq?: number;
+  bytes?: number;
 }
 
 export interface AuditPayload {

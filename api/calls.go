@@ -73,6 +73,13 @@ type AuditEvent struct {
 	Code       string    `json:"code,omitempty"`
 	Error      string    `json:"error,omitempty"`
 	ToolError  bool      `json:"toolError,omitempty"`
+	// Method, Cause, Seq and Bytes describe a FRAME (event "sent" or "recv"):
+	// what crossed the downstream boundary, why, which attempt it was, and
+	// how big it was. Empty on the three lifecycle events.
+	Method string `json:"method,omitempty"`
+	Cause  string `json:"cause,omitempty"`
+	Seq    int    `json:"seq,omitempty"`
+	Bytes  int    `json:"bytes,omitempty"`
 }
 
 // AuditPayload is decrypted only for one explicitly selected call. Truncated
@@ -85,6 +92,11 @@ type AuditPayload struct {
 
 type CallDetail struct {
 	CallSummary
+	// Events is the whole story in order: the lifecycle at the client
+	// boundary and, for a traced server, the frames at the downstream one.
+	// One `routed` can be followed by several sent/recv pairs — that is a
+	// retry, and it is the thing neither stream could show before the frames
+	// moved into the ledger.
 	Events             []AuditEvent `json:"events"`
 	Error              string       `json:"error,omitempty"`
 	Request            AuditPayload `json:"request"`

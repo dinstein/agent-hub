@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -199,7 +200,8 @@ func auditEventView(e calllog.Event) api.AuditEvent {
 	return api.AuditEvent{Time: e.TS, Event: string(e.Kind), RequestID: e.RequestID,
 		Session: e.Session, PolicyRev: e.PolicyRev, Server: e.Server, Tool: e.Tool,
 		Outcome: e.Outcome, DurationMs: e.DurationMs, Gate: e.Gate, Rule: e.Rule,
-		Code: e.Code, Error: e.Error, ToolError: e.ToolError}
+		Code: e.Code, Error: e.Error, ToolError: e.ToolError,
+		Method: e.Method, Cause: string(e.Cause), Seq: e.Seq, Bytes: e.Bytes}
 }
 
 type auditKeyCache struct {
@@ -255,16 +257,25 @@ func payloadView(raw []byte) api.AuditPayload {
 
 func (s *Server) handleAuditCall(w http.ResponseWriter, r *http.Request, id string) {
 	var events []calllog.Event
-	_, err := calllog.ScanEvents(s.opts.NonRegistry.CallsRoot, func(e calllog.Event) error {
+	collect := func(e calllog.Event) error {
 		if e.CallID == id {
 			events = append(events, e)
 		}
 		return nil
-	})
+	}
+	_, err := calllog.ScanEvents(s.opts.NonRegistry.CallsRoot, collect)
+	if err == nil {
+		// The frames of the same call. They live in the per-process files, so
+		// this is a second scan and one sort — the price of keeping a
+		// debugging switch off the write path that decides whether a call
+		// may run.
+		_, err = calllog.ScanFramesSince(s.opts.NonRegistry.CallsRoot, time.Time{}, collect)
+	}
 	if err != nil {
 		s.writeAuditError(w, r, err)
 		return
 	}
+	slices.SortStableFunc(events, func(a, b calllog.Event) int { return a.TS.Compare(b.TS) })
 	if len(events) == 0 {
 		writeNotFound(w, r)
 		return

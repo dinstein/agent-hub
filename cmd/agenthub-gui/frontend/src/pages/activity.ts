@@ -3,6 +3,7 @@ import { clear, el, empty, loadingState, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot } from "../page";
 import type {
+  AuditEvent,
   CallDetail,
   AuditCallSummary,
   AuditPayload,
@@ -133,23 +134,49 @@ function detailFacts(detail: CallDetail): HTMLElement {
   ]);
 }
 
+/** What one timeline row says about itself.
+ *
+ *  A frame (sent/recv) and a lifecycle event (received/routed/finished) are
+ *  the same story at two sampling rates, so they share one list rather than
+ *  being split into two panels: the reason to look at a frame at all is that
+ *  something between `routed` and `finished` went wrong, and a reader should
+ *  not have to interleave two lists by hand to see it. */
+function eventSubtitle(event: AuditEvent): string {
+  if (event.method) {
+    const parts = [event.method];
+    if (event.seq && event.seq > 1) parts.push(`attempt ${event.seq}`);
+    if (event.cause && event.cause !== "call") parts.push(event.cause);
+    if (event.bytes) parts.push(`${event.bytes} B`);
+    return parts.join(" · ");
+  }
+  return [event.server, event.tool].filter(Boolean).join(" / ");
+}
+
 function detailPage(detail: CallDetail): HTMLElement {
+  const frames = detail.events.filter((e) => e.method).length;
   const timeline = el("details", { class: "activity-timeline" }, [
     el("summary", { class: "activity-section-head" }, [
       el("strong", { text: "Lifecycle" }),
-      el("span", { class: "meta", text: `${detail.events.length} events` }),
+      el("span", {
+        class: "meta",
+        text: frames
+          ? `${detail.events.length} events · ${frames} frames`
+          : `${detail.events.length} events`,
+      }),
     ]),
-    el("div", { class: "activity-event-list" }, detail.events.map((event) =>
-      el("div", { class: "activity-event" }, [
+    el("div", { class: "activity-event-list" }, detail.events.map((event) => {
+      const subtitle = eventSubtitle(event);
+      return el("div", { class: "activity-event" }, [
         el("i", { class: event.outcome && event.outcome !== "success" ? "event-bad" : "" }),
         el("strong", { text: event.event }),
         el("time", { text: formatTime(event.time) }),
-        event.server || event.tool
-          ? el("span", { text: [event.server, event.tool].filter(Boolean).join(" / ") })
+        subtitle
+          ? el("span", { text: subtitle })
           : el("span", { class: "muted", text: "Gateway" }),
+        event.durationMs ? el("span", { class: "muted", text: `${event.durationMs} ms` }) : null,
         event.code ? el("span", { class: "event-code", text: event.code }) : null,
-      ]),
-    )),
+      ]);
+    })),
   ]);
   return el("div", { class: "activity-detail-page" }, [
     detailFacts(detail),
