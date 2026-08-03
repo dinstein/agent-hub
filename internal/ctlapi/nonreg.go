@@ -133,6 +133,13 @@ type Connector func(ctx context.Context, spec downstream.Spec, deps downstream.D
 type NonRegistryDeps struct {
 	// AuditRoot is <data>/audit. Empty keeps every /v1/audit endpoint off.
 	AuditRoot string
+	// EventLogPath is <data>/logs/events.jsonl. Empty keeps
+	// /v1/events/log off.
+	//
+	// The route exists for the GUI, which may not import internal/* and so
+	// cannot read the file itself; the CLI reads it directly and works with
+	// no daemon at all.
+	EventLogPath string
 	// AuditKeys resolves the immutable encryption keys used by detail and
 	// verification operations. Metadata listing does not consult it.
 	AuditKeys AuditKeyVault
@@ -210,6 +217,9 @@ func (s *Server) routeNonRegistry(w http.ResponseWriter, r *http.Request) bool {
 		return true
 	case p == "/v1/audit/prune" && d.AuditRoot != "" && r.Method == http.MethodPost:
 		s.handleAuditPrune(w, r)
+		return true
+	case p == "/v1/events/log" && d.EventLogPath != "" && r.Method == http.MethodGet:
+		s.handleEventLog(w, r)
 		return true
 	case p == "/v1/secrets" && d.Secrets != nil && r.Method == http.MethodGet:
 		s.handleSecretsList(w, r)

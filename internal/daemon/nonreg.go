@@ -11,6 +11,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/downstream"
+	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/gateway"
 	"github.com/dinstein/agent-hub/internal/httpbridge"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
@@ -68,6 +69,7 @@ func nonRegistryDeps(cfg Config, dataDir string, vault secrets.Store, log *slog.
 	}
 	deps := ctlapi.NonRegistryDeps{
 		AuditRoot:     filepath.Join(dataDir, "audit"),
+		EventLogPath:  filepath.Join(dataDir, "logs", eventlog.FileName),
 		AuditKeys:     vault,
 		SecretsDir:    secretsDir,
 		ClientBaseDir: cfg.ClientBaseDir,
