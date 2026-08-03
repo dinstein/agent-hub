@@ -43,8 +43,10 @@ const (
 	// stream is low-rate, but an incident-scale window still wants a tail
 	// rather than the whole file.
 	eventsDefaultLimit = 100
-	// eventsFollowInterval is the --follow re-read period. It matches the
-	// other two followers so all three feel the same.
+	// eventsFollowInterval is the --follow re-read period. It matches
+	// serverLogsInterval; the two process-log readers share a shorter
+	// logsFollowInterval, and `session ls -f` a longer one because it polls
+	// the daemon rather than a file.
 	eventsFollowInterval = 500 * time.Millisecond
 	// eventsDetailWidth caps the DETAIL column. The full text is in --json.
 	eventsDetailWidth = 90

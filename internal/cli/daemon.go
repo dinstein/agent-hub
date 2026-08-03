@@ -36,7 +36,12 @@ const (
 	daemonPollInterval = 100 * time.Millisecond
 	// daemonPingTimeout bounds one liveness ping.
 	daemonPingTimeout = 2 * time.Second
-	// logsFollowInterval is the -f re-read period.
+	// logsFollowInterval is the -f re-read period for BOTH process-log
+	// readers — `daemon logs`, declared here, and the merged `logs`. They
+	// read the same directory, so one period keeps a record from surfacing
+	// in one view before the other. It is deliberately shorter than the
+	// 500ms the record readers use: these two are what someone watches
+	// while restarting something.
 	logsFollowInterval = 300 * time.Millisecond
 )
 
