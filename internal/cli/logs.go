@@ -53,13 +53,13 @@ var logSourceValues = append([]string{"all"}, proclog.Origins()...)
 
 func (a *App) newLogsCmd() *cobra.Command {
 	var (
-		follow bool
-		since  time.Duration
-		level  string
-		limit  int
-		source string
-		client string
-		server string
+		follow   bool
+		sinceRaw string
+		level    string
+		limit    int
+		source   string
+		client   string
+		server   string
 	)
 	cmd := &cobra.Command{
 		Use:   "logs [-f] [--since 1h] [--level warn] [--server <id>]",
@@ -83,12 +83,13 @@ func (a *App) newLogsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			q := proclog.Query{Client: client, Server: server}
+			since, err := observeSince(sinceRaw)
+			if err != nil {
+				return err
+			}
+			q := proclog.Query{Client: client, Server: server, Since: since}
 			if source != "all" {
 				q.Source = proclog.Origin(source)
-			}
-			if since > 0 {
-				q.Since = time.Now().Add(-since)
 			}
 			if level != "" {
 				lvl, lerr := parseLogLevel(level)
@@ -110,10 +111,8 @@ func (a *App) newLogsCmd() *cobra.Command {
 			return a.streamLogs(cmd.Context(), files, q, limit, follow)
 		},
 	}
-	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "keep reading as the processes append")
-	cmd.Flags().DurationVar(&since, "since", 0, "only records newer than this age (e.g. 1h, 30m)")
+	bindObserveFlags(cmd, "records", &sinceRaw, &limit, &follow, logsDefaultLimit)
 	cmd.Flags().StringVar(&level, "level", "", "minimum level: debug, info, warn or error")
-	cmd.Flags().IntVar(&limit, "limit", logsDefaultLimit, "how many records to show (0 = all of them)")
 	cmd.Flags().StringVar(&source, "source", "all", "which processes: "+strings.Join(logSourceValues, ", "))
 	cmd.Flags().StringVar(&client, "client", "", "only records from the gateway serving this client")
 	cmd.Flags().StringVar(&server, "server", "", "only records about this downstream server")

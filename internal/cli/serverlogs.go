@@ -126,9 +126,9 @@ func dashInt(n int) string {
 
 func (a *App) newServerLogsCmd() *cobra.Command {
 	var (
-		follow bool
-		limit  int
-		since  time.Duration
+		follow   bool
+		limit    int
+		sinceRaw string
 	)
 	cmd := &cobra.Command{
 		Use:   "logs <id> [--follow]",
@@ -146,9 +146,9 @@ func (a *App) newServerLogsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cutoff := time.Time{}
-			if since > 0 {
-				cutoff = time.Now().Add(-since)
+			cutoff, err := observeSince(sinceRaw)
+			if err != nil {
+				return err
 			}
 			if !follow {
 				logs, err := readServerFrames(root, id, cutoff, limit)
@@ -160,9 +160,7 @@ func (a *App) newServerLogsCmd() *cobra.Command {
 			return a.followServerFrames(cmd.Context(), root, id, cutoff, limit)
 		},
 	}
-	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "stay open and keep printing new frames as they arrive")
-	cmd.Flags().IntVar(&limit, "limit", serverLogsDefault, "how many frames to show (0 = all of them)")
-	cmd.Flags().DurationVar(&since, "since", 0, "only frames newer than this age (e.g. 1h, 30m)")
+	bindObserveFlags(cmd, "frames", &sinceRaw, &limit, &follow, serverLogsDefault)
 	return cmd
 }
 

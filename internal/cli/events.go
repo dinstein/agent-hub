@@ -180,14 +180,14 @@ func countPhrase(kind string, n int) string {
 
 func (a *App) newEventsCmd() *cobra.Command {
 	var (
-		follow bool
-		since  time.Duration
-		limit  int
-		scope  string
-		server string
-		client string
-		class  string
-		kinds  []string
+		follow   bool
+		sinceRaw string
+		limit    int
+		scope    string
+		server   string
+		client   string
+		class    string
+		kinds    []string
 	)
 	cmd := &cobra.Command{
 		Use:   "events [--server <id>] [--since 24h] [-f]",
@@ -203,6 +203,10 @@ func (a *App) newEventsCmd() *cobra.Command {
 			"`agenthub calls` for what a client CALLED.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			since, err := observeSince(sinceRaw)
+			if err != nil {
+				return err
+			}
 			q, err := eventQuery(scope, server, client, class, kinds, since)
 			if err != nil {
 				return err
@@ -222,9 +226,7 @@ func (a *App) newEventsCmd() *cobra.Command {
 			return a.printer().Emit(list)
 		},
 	}
-	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "stay open and keep printing new events")
-	cmd.Flags().DurationVar(&since, "since", 0, "only events newer than this age (e.g. 24h)")
-	cmd.Flags().IntVar(&limit, "limit", eventsDefaultLimit, "how many events to show (0 = all of them)")
+	bindObserveFlags(cmd, "events", &sinceRaw, &limit, &follow, eventsDefaultLimit)
 	cmd.Flags().StringVar(&scope, "scope", "", "only this scope: "+strings.Join(eventlog.ScopeNames(), ", "))
 	cmd.Flags().StringVar(&server, "server", "", "only events about this downstream server")
 	cmd.Flags().StringVar(&client, "client", "", "only events observed by this client's gateway")
@@ -247,11 +249,8 @@ func (a *App) newEventsCmd() *cobra.Command {
 // set, and a local copy of the answer is one that can be right while the
 // other is wrong — which is how the control plane ended up hinting a list of
 // scopes written by hand.
-func eventQuery(scope, server, client, class string, kinds []string, since time.Duration) (eventlog.Query, error) {
-	q := eventlog.Query{Server: server, Client: client}
-	if since > 0 {
-		q.Since = time.Now().Add(-since)
-	}
+func eventQuery(scope, server, client, class string, kinds []string, since time.Time) (eventlog.Query, error) {
+	q := eventlog.Query{Server: server, Client: client, Since: since}
 	if scope != "" {
 		if !eventlog.KnownScope(eventlog.Scope(scope)) {
 			e := Usagef("unknown scope %q", scope)

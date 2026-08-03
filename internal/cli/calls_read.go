@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -17,24 +16,31 @@ import (
 
 // CallEventRow is the metadata-only projection used by calls tail.
 type CallEventRow struct {
-	Time          time.Time `json:"time"`
-	CallID        string    `json:"callId"`
-	Event         string    `json:"event"`
-	Client        string    `json:"client,omitempty"`
-	Face          string    `json:"face,omitempty"`
-	ExposedTool   string    `json:"exposedTool,omitempty"`
-	Server        string    `json:"server,omitempty"`
-	Tool          string    `json:"tool,omitempty"`
-	Outcome       string    `json:"outcome,omitempty"`
-	DurationMs    int64     `json:"durationMs,omitempty"`
-	Code          string    `json:"code,omitempty"`
-	ResultCapture string    `json:"resultCapture,omitempty"`
+	Time        time.Time `json:"time"`
+	CallID      string    `json:"callId"`
+	Event       string    `json:"event"`
+	Client      string    `json:"client,omitempty"`
+	Face        string    `json:"face,omitempty"`
+	ExposedTool string    `json:"exposedTool,omitempty"`
+	// Method is the JSON-RPC method the client asked for, and Surface which
+	// of agenthub's own faces the name reached (meta, group, tool). Both are
+	// on every record of one request, so a row says what was asked as well
+	// as what it resolved to.
+	Method        string `json:"method,omitempty"`
+	Surface       string `json:"surface,omitempty"`
+	Server        string `json:"server,omitempty"`
+	Tool          string `json:"tool,omitempty"`
+	Outcome       string `json:"outcome,omitempty"`
+	DurationMs    int64  `json:"durationMs,omitempty"`
+	Code          string `json:"code,omitempty"`
+	ResultCapture string `json:"resultCapture,omitempty"`
 }
 
 func callEventRow(e calllog.Event) CallEventRow {
 	return CallEventRow{
 		Time: e.TS, CallID: e.CallID, Event: string(e.Kind), Client: e.Client,
 		Face: e.Face, ExposedTool: e.Exposed, Server: e.Server, Tool: e.Tool,
+		Method: e.Method, Surface: e.Surface,
 		Outcome: e.Outcome, DurationMs: e.DurationMs, Code: e.Code,
 		ResultCapture: e.ResultCapture,
 	}
@@ -53,15 +59,22 @@ func (t CallTail) Human(w io.Writer) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "TIME\tCALL\tEVENT\tCLIENT\tTARGET\tOUTCOME\tCODE")
+	_, _ = fmt.Fprintln(tw, "TIME\tCALL\tEVENT\tCLIENT\tMETHOD\tTARGET\tOUTCOME\tCODE")
 	for _, e := range t.Events {
+		// The target column answers "what did this reach": the routed
+		// server/tool once one is chosen, the exposed name before that, and
+		// for one of the hub's own tools the surface says so — `status` is
+		// not a server called `status`.
 		target := e.ExposedTool
+		if e.Surface == "meta" && target != "" {
+			target = "hub/" + target
+		}
 		if e.Server != "" || e.Tool != "" {
 			target = e.Server + "/" + e.Tool
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			e.Time.Local().Format(time.RFC3339), shortCallID(e.CallID), e.Event,
-			dash(e.Client), dash(target), dash(e.Outcome), dash(e.Code))
+			dash(e.Client), dash(e.Method), dash(target), dash(e.Outcome), dash(e.Code))
 	}
 	return tw.Flush()
 }
@@ -182,10 +195,10 @@ func (a *App) newCallsTailCmd() *cobra.Command {
 		Short: "Show recent call metadata without decrypting payloads",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if limit <= 0 || limit > 1000 {
-				return Usagef("--limit must be from 1 through 1000")
+			if limit < 0 || limit > 1000 {
+				return Usagef("--limit must be from 0 through 1000 (0 = all of them)")
 			}
-			since, err := parseCallsSince(sinceRaw)
+			since, err := observeSince(sinceRaw)
 			if err != nil {
 				return err
 			}
@@ -207,31 +220,18 @@ func (a *App) newCallsTailCmd() *cobra.Command {
 			return a.followCalls(cmd.Context(), root, tail, sel)
 		},
 	}
-	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "stay open and keep printing new events")
-	cmd.Flags().StringVar(&sinceRaw, "since", "24h", "look back by duration or RFC3339 time; use all for no time bound")
-	cmd.Flags().IntVar(&limit, "limit", 20, "maximum events to return (1-1000)")
+	bindObserveFlags(cmd, "events", &sinceRaw, &limit, &follow, callsTailDefaultLimit)
+	// The one place this reader's DEFAULTS differ, and it is about content
+	// rather than style: the ledger holds every call ever made, so leaving
+	// --since unbounded would read a year of history to show twenty rows.
+	if err := cmd.Flags().Set("since", callsTailDefaultSince); err != nil {
+		panic(err) // a flag this function just registered
+	}
 	cmd.Flags().StringVar(&client, "client", "", "only this client")
 	cmd.Flags().StringVar(&server, "server", "", "only this routed server")
 	cmd.Flags().StringVar(&tool, "tool", "", "only this raw or exposed tool")
 	cmd.Flags().StringVar(&outcome, "outcome", "", "only this outcome")
 	return cmd
-}
-
-func parseCallsSince(raw string) (time.Time, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" || raw == "all" {
-		return time.Time{}, nil
-	}
-	if d, err := time.ParseDuration(raw); err == nil {
-		if d <= 0 {
-			return time.Time{}, Usagef("--since duration must be positive")
-		}
-		return time.Now().Add(-d), nil
-	}
-	if ts, err := time.Parse(time.RFC3339, raw); err == nil {
-		return ts, nil
-	}
-	return time.Time{}, Usagef("--since expects a duration such as 24h, RFC3339 time, or all")
 }
 
 func callEventMatches(e calllog.Event, client, server, tool, outcome string) bool {
@@ -436,7 +436,7 @@ func (a *App) newCallsStatsCmd() *cobra.Command {
 		Short: "Aggregate calls, outcomes and payload sizes without decryption",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			since, err := parseCallsSince(sinceRaw)
+			since, err := observeSince(sinceRaw)
 			if err != nil {
 				return err
 			}
