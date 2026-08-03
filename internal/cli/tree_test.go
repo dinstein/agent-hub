@@ -52,7 +52,7 @@ var withheldGroups = []*cobra.Group{groupDaemon, groupManage}
 // fails, or the user's next move after a failed handshake is unspoken.
 var withheldCommands = []string{
 	"daemon", "session", "events", "token",
-	"config", "audit",
+	"config", "audit", "logs",
 	"skill",
 	// `tool` is NOT here any more: it hangs off `server`, which is visible,
 	// so the group ships. That was the point of moving it — a global allow
@@ -126,6 +126,7 @@ func TestCommandTreeCoversDesign(t *testing.T) {
 		"agenthub skill install-to", "agenthub skill sync",
 		"agenthub skill update", "agenthub skill verify",
 		"agenthub config get", "agenthub config set", "agenthub config ls",
+		"agenthub logs",
 		"agenthub doctor",
 	}
 	have := commandPaths(newTestRoot(t))
@@ -277,7 +278,7 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		// sits with the daemon rather than with the other governance verbs.
 		{"daemon", []string{"daemon", "session", "events", "token"}},
 		{"manage", []string{
-			"config", "audit",
+			"config", "audit", "logs",
 			"skill",
 		}},
 		// One member, and visible even in a shipped build: Setup and Wire up

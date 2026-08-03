@@ -227,6 +227,7 @@ func (a *App) newRoot() *cobra.Command {
 	addGroupedHidden(root, a.reducedHelp, groupManage,
 		a.newConfigCmd(),
 		a.newAuditCmd(),
+		a.newLogsCmd(),
 		a.newSkillCmd())
 	// `doctor` is VISIBLE, in a shipped build too, and it is alone.
 	//
