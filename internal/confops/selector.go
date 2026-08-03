@@ -67,9 +67,14 @@ func allowList(sel ToolSelection) (list []string, ok bool) {
 	case ToolSelectOnly:
 		out := dedupSorted(sel.Tools)
 		if out == nil {
-			// dedupSorted answers nil for an empty input, which is the one
-			// value that must not round-trip here: validate() rejects an
-			// empty --only, and this is the second door.
+			// dedupSorted returns nil for a NIL input and a non-nil empty
+			// slice for anything that merely trims away to nothing — it never
+			// collapses the second into the first. So the only value reaching
+			// this branch is a nil Tools on an Only edit, and nil here would
+			// read as "drop the narrowing" one layer down: fail-open, from a
+			// caller that asked to narrow. validate() rejects it first; this
+			// is the second door, and it turns the ambiguous value into the
+			// safe one rather than passing it on.
 			out = []string{}
 		}
 		return out, true
