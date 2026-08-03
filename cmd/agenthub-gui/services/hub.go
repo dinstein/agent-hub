@@ -341,8 +341,9 @@ func (h *Hub) Status() Status {
 	return h.status
 }
 
-// connect establishes the client and (re)starts the pump. allowStart selects
-// DialOrStart over a plain dial.
+// connect establishes the client and (re)starts the pump. allowStart decides
+// whether a dial that finds nothing may go on to START a hub of our own, or
+// must report the machine as offline.
 func (h *Hub) connect(ctx context.Context, allowStart bool) (*api.Client, error) {
 	h.mu.Lock()
 	if h.client != nil {

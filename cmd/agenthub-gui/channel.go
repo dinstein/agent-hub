@@ -36,11 +36,11 @@ var channel = "dev"
 //     until the thing being edited turns out to be the real registry.
 //
 // An environment variable rather than a resolver argument, because it has to
-// reach further than this process: DialOrStart spawns `agenthub daemon start`,
-// and the child inherits the environment. One assignment therefore puts the
-// GUI, the daemon it starts, and anything either of them execs on the same
-// directory. Passing a path through api's options would have fixed only the
-// first of those.
+// reach further than this process: the application runs `agenthub daemon start
+// --foreground` as its own child (api.StartSupervised), and the child inherits
+// the environment. One assignment therefore puts the GUI, the hub it runs, and
+// anything either of them execs on the same directory. Passing a path through
+// api's options would have fixed only the first of those.
 //
 // Failure direction: an AGENTHUB_DATA_DIR the user already set is left alone.
 // An explicit override losing to a build flavour would be a surprise in the
@@ -81,8 +81,8 @@ func applyChannel() {
 // like it worked.
 //
 // AGENTHUB_SOCKET, rather than passing a path into api.StartOptions, for the
-// same reason applyChannel uses the environment at all: DialOrStart spawns
-// `agenthub daemon start`, and the child has to arrive at the same endpoint.
+// same reason applyChannel uses the environment at all: the hub is spawned as
+// a child process, and it has to arrive at the same endpoint.
 //
 // Failure direction: a variable the user already set is left alone, and a
 // resolution failure is reported and survived. The GUI's reason for opening

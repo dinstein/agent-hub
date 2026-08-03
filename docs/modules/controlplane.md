@@ -791,10 +791,12 @@ disagreement would land on the permissive side.
 
 ### Who assembles it
 
-`internal/daemon` (`httpserve.go` + `httpdata.go`). Assembly is **explicit opt-in**: when `daemon.Config.HTTPAddr` is
-empty — that is, no `agenthub daemon start --http-addr` was passed — **no listener is created at all**. A non-loopback
-address additionally requires `--http-allow-remote`, and its absence fails daemon startup rather than quietly downgrading
-to loopback ("what the configuration claims must be honored or error out", the same discipline as `runtime: docker`).
+`internal/daemon` (`httpserve.go` + `httpdata.go`). Assembly is **explicit opt-in**, from one of two sources and never
+half of each (`resolveHTTPFace`): the command line when any of the three flags is given, otherwise the stored
+`http.*` governance keys. When neither names an address — the default, and the state of an installation that has never
+configured one — **no listener is created at all**. A non-loopback address additionally requires the matching
+confirmation from that same source, and its absence fails daemon startup rather than quietly downgrading to loopback
+("what the configuration claims must be honored or error out", the same discipline as `runtime: docker`).
 `AuthorizeBind`'s credential check comes after all that and is still the final fail-closed gate.
 
 `Dispatcher`'s implementation `httpPlane` is deliberately thin: it maps an authenticated credential to a `gateway.Conn` —
