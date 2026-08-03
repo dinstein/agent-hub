@@ -311,12 +311,24 @@ everywhere; the real-backend smoke test runs only under `AGENTHUB_TEST_REAL_KEYR
 Pure functions building a hardened environment for a downstream process about to be spawned: allowlist
 admission, login-shell PATH capture, proxy-variable userinfo redaction.
 
+### Current assembly status — only the PATH half is wired
+
+`LoginPATH` and `MergePATH` are called from `internal/downstream/spec.go`. **`Filter`, `Config`,
+`RedactProxyValue` and `CaptureLoginPATH` have no caller outside this package's tests**, so everything the
+next section describes is a capability that exists rather than a rule in force. What a spawned downstream
+actually receives today is the parent environment minus the `AGENTHUB_` prefix, stripped by
+`internal/downstream` itself (`spec.go`, `envPrefix`) — a deny list, which is the opposite shape from the
+allowlist below. Recorded rather than fixed because admitting only the allowlist changes the environment of
+every spawned server, which can break a downstream that reads a variable nobody enumerated: a behaviour
+change with a blast radius, not a tidy.
+
 ### Invariants and failure directions
 
-**Deny by default.** Anything not explicitly allowed is dropped; there is no "everything but a blocklist"
-mode. **The `AGENTHUB_` prefix is a hard deny that `Config` cannot override** — our own control variables
-must never leak downstream. This stacks with the identical stripping in `internal/downstream`, so the
-composition is idempotent.
+**Deny by default** — *of `Filter`, which nothing calls yet; see above.* Anything not explicitly allowed is
+dropped; there is no "everything but a blocklist" mode. **The `AGENTHUB_` prefix is a hard deny that
+`Config` cannot override** — our own control variables must never leak downstream. This one IS in force,
+because `internal/downstream` strips the prefix itself; the two were designed to stack idempotently, and
+today only the second is running.
 
 **Proxy variables are not forwarded by default** — proxy endpoints frequently embed credentials. With
 `ForwardProxy` on, values go through `RedactProxyValue`: `NO_PROXY` is a plain host list and passes

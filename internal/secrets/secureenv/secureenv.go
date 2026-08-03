@@ -2,9 +2,19 @@
 // processes: allowlist filtering (deny by default),
 // login-shell PATH capture, and proxy-variable userinfo redaction.
 //
-// It exposes pure functions only. Wiring into internal/downstream happens
-// in a later task; Filter stacks with downstream's own AGENTHUB_* strip
-// (both deny AGENTHUB_*, so the composition is idempotent).
+// It exposes pure functions only, and only SOME of them are wired up.
+//
+// LIVE: LoginPATH and MergePATH, called from internal/downstream/spec.go to
+// widen a truncated PATH before a spawn.
+//
+// NOT WIRED: Filter, Config, RedactProxyValue and CaptureLoginPATH have no
+// caller outside this package's own tests. A spawned downstream therefore
+// receives the parent environment minus the AGENTHUB_* prefix, which
+// internal/downstream strips itself (spec.go, envPrefix) — a deny list. The
+// allowlist below and the proxy redaction beside it describe what Filter
+// WOULD admit, not what a downstream currently gets; read them as a design
+// that is built and waiting, not as a filter in force.
+// docs/modules/config.md records the gap.
 package secureenv
 
 import (
