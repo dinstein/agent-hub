@@ -51,8 +51,14 @@
     <div class="shell">
       <nav class="sidebar" aria-label="Main navigation">
         <div class="brand">
+          <!-- The product's own mark, not a share glyph: the rounded-square
+               hub and the three clients converging on it, which is what the
+               Dock icon (build/darwin/icon.svg) draws solid and what the tray
+               draws at 22 points (trayicon.go). Three shapes, no spokes, and
+               the same optical centring the tray applies — the bounding box is
+               centred in the 24-unit box, not the geometry. -->
           <span class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="7" r="2.5"/><circle cx="18" cy="17" r="2.5"/><path d="M8.4 11.2 15.5 8M8.4 12.8l7.1 3.2"/></svg>
+            <svg viewBox="0 0 24 24"><rect x="6.48" y="9.07" width="11.04" height="11.04" rx="1.71"/><circle cx="12" cy="4.24" r="3.04"/><circle cx="20.96" cy="19.76" r="3.04"/><circle cx="3.04" cy="19.76" r="3.04"/></svg>
           </span>
           <span class="brand-copy">
             <strong>AgentHub</strong>

@@ -403,6 +403,15 @@ primary action or focus target is active — and is never used for a health stat
 a healthy stdio server would show two unrelated green dots at once and color would stop meaning
 anything.
 
+**`.brand-mark` is the one element that does not follow the theme, on purpose.** It is the
+application icon at 32px — the same ground, the same indigo, the same three clients around the same
+hub — so its colors are literals lifted from `build/darwin/icon.svg` rather than tokens. A themed
+chip would put a different mark in the sidebar from the one in the Dock in at least one of the two
+themes, which is the state this replaced: the sidebar used to carry a generic share glyph on an
+accent tile, related to nothing else in the product. It is also **filled** where `.nav-icon` is
+stroked, because a logo is not a navigation item and the weight difference is what separates them in
+one column.
+
 **Status classification never parses raw connection flags or error prose.** The ordinary control-plane Health
 contract is computed by the daemon's pure function. The Servers page deliberately replaces it for enabled rows with
 the typed outcome of its own self-test: success, authentication refusal, missing secret, generic failure, or still checking. The
