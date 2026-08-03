@@ -22,9 +22,9 @@ import (
 // internal/downstream ("one log file per server,
 // logs/server-<name>.log … + agenthub server logs <id> --follow").
 //
-// Like `audit tail` it is a READ-ONLY projection: it never opens the file for
-// writing, so running it can never disturb the multi-writer discipline the
-// gateways and the daemon depend on. Unlike `audit tail -f` it does NOT
+// Like every other record reader it is a READ-ONLY projection: it never opens
+// the file for writing, so running it can never disturb the multi-writer
+// discipline the gateways and the daemon depend on. Following does NOT
 // require a daemon — a stdio gateway writes this file with no daemon in
 // sight, so refusing to follow without one would be wrong.
 
@@ -32,7 +32,8 @@ const (
 	// serverLogsDefault is how many frames `server logs` shows by default.
 	serverLogsDefault = 100
 	// serverLogsInterval is the --follow re-read period. It matches
-	// auditFollowInterval so the two follow modes feel the same.
+	// eventsFollowInterval so the two file readers under Observe that a user
+	// is most likely to run side by side feel the same.
 	serverLogsInterval = 500 * time.Millisecond
 	// serverLogsMaxLine bounds one line while reading. The writer bounds
 	// what it appends; a longer line means a foreign or corrupt file.
@@ -151,9 +152,11 @@ func (a *App) newServerLogsCmd() *cobra.Command {
 }
 
 // followServerLogs prints the current tail and then every newly appended
-// frame. Like followAudit it tracks a byte offset, so a rotation (rename +
+// frame. Like readLogBatch it tracks a byte offset, so a rotation (rename +
 // fresh file) shows up as "the file shrank" and the reader restarts at the
-// beginning of the new segment.
+// beginning of the new segment. `events -f` is the one that cannot do this:
+// its stream rotates into segments read as one sequence, so it tracks a
+// record timestamp instead — followEvents says why.
 func (a *App) followServerLogs(ctx context.Context, id, path string, limit int) error {
 	p := a.printer()
 	logs, err := readServerLogs(id, path, limit)
