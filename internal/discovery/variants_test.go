@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/dinstein/agent-hub/internal/mcp"
-	"github.com/dinstein/agent-hub/internal/pipeline"
+	"github.com/dinstein/agent-hub/internal/tier"
 )
 
 // variantCorpus exercises every branch of the tier derivation, including the
@@ -289,17 +289,17 @@ func TestGroupedModeIgnoresVariants(t *testing.T) {
 	}
 }
 
-// The tier ladder this package points at is the pipeline's, not a copy.
-func TestToolTierDelegatesToPipeline(t *testing.T) {
+// The tier ladder this package points at is internal/tier's, not a copy.
+func TestToolTierDelegatesToTier(t *testing.T) {
 	for _, tool := range variantCorpus() {
-		if got, want := ToolTier(tool), pipeline.ToolTier(tool.Def.Annotations); got != want {
-			t.Errorf("%s: ToolTier = %q, pipeline.ToolTier = %q", tool.Exposed, got, want)
+		if got, want := ToolTier(tool), tier.ToolTier(tool.Def.Annotations); got != want {
+			t.Errorf("%s: ToolTier = %q, tier.ToolTier = %q", tool.Exposed, got, want)
 		}
 	}
 }
 
 func TestVariantForAndBack(t *testing.T) {
-	for _, tier := range []pipeline.CallerTier{pipeline.TierRead, pipeline.TierWrite, pipeline.TierDestructive} {
+	for _, tier := range []tier.Tier{tier.Read, tier.Write, tier.Destructive} {
 		name := VariantFor(tier)
 		got, ok := TierOfVariant(name)
 		if !ok || got != tier {
@@ -308,7 +308,7 @@ func TestVariantForAndBack(t *testing.T) {
 	}
 	// An unrecognised tier lands on the most restricted door, never the
 	// least (fail-closed).
-	if got := VariantFor(pipeline.CallerTier("archive")); got != MetaCallToolDestructive {
+	if got := VariantFor(tier.Tier("archive")); got != MetaCallToolDestructive {
 		t.Errorf("VariantFor(unknown) = %q, want %q", got, MetaCallToolDestructive)
 	}
 	if _, ok := TierOfVariant(MetaCallTool); ok {

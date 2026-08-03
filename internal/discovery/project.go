@@ -79,7 +79,7 @@ type Hit struct {
 //
 // Compatibility mode (variants=false): always call_tool.
 //
-// Variant mode: the tier derived from t.Def.Annotations by pipeline.ToolTier
+// Variant mode: the tier derived from t.Def.Annotations by tier.ToolTier
 // picks the door — readOnlyHint→read, destructiveHint→destructive/write,
 // no annotations at all→destructive (fail-closed). This is the ONLY place
 // the choice is made; ResolveCallVariant then enforces the same derivation
