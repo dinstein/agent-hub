@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dinstein/agent-hub/internal/mcp"
-	"github.com/dinstein/agent-hub/internal/pipeline"
+	"github.com/dinstein/agent-hub/internal/tier"
 )
 
 // Intent variants (docs/architecture.md §9, ruling #18).
@@ -20,13 +20,13 @@ import (
 // The variant names are ABI: they appear in agent prompts, in client
 // allowlists and in audit records.
 const (
-	// MetaCallToolRead invokes tools classified pipeline.TierRead.
+	// MetaCallToolRead invokes tools classified tier.Read.
 	MetaCallToolRead = "call_tool_read"
-	// MetaCallToolWrite invokes tools classified pipeline.TierWrite.
+	// MetaCallToolWrite invokes tools classified tier.Write.
 	MetaCallToolWrite = "call_tool_write"
 	// MetaCallToolDestructive invokes tools classified
-	// pipeline.TierDestructive — including every tool whose server shipped
-	// no annotations at all (fail-closed, see pipeline.ToolTier).
+	// tier.Destructive — including every tool whose server shipped
+	// no annotations at all (fail-closed, see tier.ToolTier).
 	MetaCallToolDestructive = "call_tool_destructive"
 )
 
@@ -72,11 +72,11 @@ func VariantNames() []string {
 // VariantFor names the meta-tool that invokes a tool of tier t. An
 // unrecognised tier maps to the destructive variant (fail-closed: an agent
 // following the pointer lands on the most restricted door, never the least).
-func VariantFor(t pipeline.CallerTier) string {
+func VariantFor(t tier.Tier) string {
 	switch t {
-	case pipeline.TierRead:
+	case tier.Read:
 		return MetaCallToolRead
-	case pipeline.TierWrite:
+	case tier.Write:
 		return MetaCallToolWrite
 	default:
 		return MetaCallToolDestructive
@@ -85,14 +85,14 @@ func VariantFor(t pipeline.CallerTier) string {
 
 // TierOfVariant maps a variant name back to its tier. ok=false for anything
 // that is not one of the three variants.
-func TierOfVariant(name string) (pipeline.CallerTier, bool) {
+func TierOfVariant(name string) (tier.Tier, bool) {
 	switch name {
 	case MetaCallToolRead:
-		return pipeline.TierRead, true
+		return tier.Read, true
 	case MetaCallToolWrite:
-		return pipeline.TierWrite, true
+		return tier.Write, true
 	case MetaCallToolDestructive:
-		return pipeline.TierDestructive, true
+		return tier.Destructive, true
 	default:
 		return "", false
 	}
@@ -105,14 +105,14 @@ func IsCallVariant(name string) bool {
 }
 
 // ToolTier classifies a visible tool into the operation ladder. It is a thin
-// re-export of pipeline.ToolTier so this package never grows a second
+// re-export of tier.ToolTier so this package never grows a second
 // derivation of the same fact.
-func ToolTier(t Tool) pipeline.CallerTier { return pipeline.ToolTier(t.Def.Annotations) }
+func ToolTier(t Tool) tier.Tier { return tier.ToolTier(t.Def.Annotations) }
 
 // ResolveCallVariant resolves a call arriving through meta-tool `metaName`.
 //
 // It is ResolveCall plus the variant check: the tool's tier must EQUAL the
-// variant's tier. Equality, not coverage (pipeline.TierCovers): the variants
+// variant's tier. Equality, not coverage (tier.Covers): the variants
 // exist so that allowing call_tool_read in a client's tool allowlist means
 // "read tools only". If the destructive variant also accepted read tools,
 // each variant would be a superset of the ones below it and allowing the top
@@ -141,7 +141,7 @@ func (s *Surface) ResolveCallVariant(metaName string, raw json.RawMessage) (Tool
 // tierMismatchMessage is the frozen rejection wording (golden-tested). It
 // names the tool, the tier it actually has, and the variant to use instead —
 // nothing else, so the sentence is a stable contract.
-func tierMismatchMessage(exposed string, got pipeline.CallerTier, used string) string {
+func tierMismatchMessage(exposed string, got tier.Tier, used string) string {
 	return fmt.Sprintf("tool %q is a %s tool and cannot be invoked through %s; use %s instead",
 		exposed, string(got), used, VariantFor(got))
 }
