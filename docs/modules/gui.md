@@ -231,6 +231,16 @@ than being hidden, because a frontend older than its daemon must not silently dr
 `servers` topic is the re-read TRIGGER and never the data — the bus contract says a subscriber
 re-reads authoritative state on notification, and that is exactly what happens here.
 
+Every selector is applied by the DAEMON, not to the rendered rows, and that is the rule to keep. The
+read is bounded, so narrowing a page in the browser would search only the newest records and answer
+"nothing matches" for something that is merely older than the window — two facts a reader cannot tell
+apart, and the wrong one sends them hunting a fault that never happened. The dropdowns are counted
+and their options come from an UNFILTERED read of the same range, because deriving them from the
+filtered rows leaves a chosen server as the only option in its own dropdown with no way back. The
+kind list leads with "Problems only", derived from the tone map rather than restating the vocabulary
+again, and intersected with the kinds actually present — a hardcoded set that ran ahead of the daemon
+would reject the whole request instead of returning fewer rows.
+
 The same rows appear inside a server's detail panel, from the same renderer. The health badge there
 is a value — what the server is now — and the timeline under it is the sequence that produced it,
 which is the question an operator actually brings to a server that keeps dropping. It loads per
