@@ -17,8 +17,16 @@ func TestDTOGoldenJSON(t *testing.T) {
 	}{
 		{
 			name: "hello",
+			v:    Hello{Version: "0.1.0", Pid: 1234, Generation: 42, Owner: 99},
+			want: `{"version":"0.1.0","pid":1234,"generation":42,"owner":99}`,
+		},
+		{
+			// A headless hub reports owner 0 rather than omitting the field:
+			// "belongs to nobody" and "too old to say so" must not look alike
+			// to a caller deciding whether it may stop this daemon.
+			name: "hello_headless",
 			v:    Hello{Version: "0.1.0", Pid: 1234, Generation: 42},
-			want: `{"version":"0.1.0","pid":1234,"generation":42}`,
+			want: `{"version":"0.1.0","pid":1234,"generation":42,"owner":0}`,
 		},
 		{
 			name: "health_full",

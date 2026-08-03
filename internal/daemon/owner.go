@@ -173,5 +173,14 @@ func LifelineFromFD(fd int) (*os.File, error) {
 	if f == nil {
 		return nil, fmt.Errorf("daemon: lifeline fd %d is not open", fd)
 	}
+	// A descriptor that arrived through ExtraFiles arrives WITHOUT
+	// close-on-exec: exec dup2s it into place, and dup2 clears the flag. The
+	// daemon spawns a child process per stdio downstream, so without this
+	// every one of them would inherit the read end of the lifeline — and a
+	// downstream that outlived the application would hold the pipe open, so
+	// the close the daemon is waiting for would never arrive. The one
+	// mechanism that cannot be fooled by a recycled pid would then be the one
+	// that silently never fires.
+	markCloseOnExec(f)
 	return f, nil
 }

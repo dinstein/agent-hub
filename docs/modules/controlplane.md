@@ -68,7 +68,19 @@ number in prose is the part that stops matching first.
 `DialOrStart` is the "start it if you can't connect" path. It dials once; on failure it runs
 `exec agenthub daemon start`, then polls `run/daemon.json` within a deadline and re-dials. If the child
 process exits before becoming ready, what is returned is its real error plus a tail of stderr, not a
-"timeout" — a lesson taken from the reference implementation `desktop.rs`.
+"timeout" — a lesson taken from the reference implementation `desktop.rs`. It names no owner, so
+under the admission rule it now only starts a daemon for a caller that asks for one explicitly
+through `DaemonArgs`; the desktop application does not use it.
+
+`StartSupervised` is the path the application uses, and the difference is ownership rather than
+mechanism. It runs `daemon start --foreground` as a **direct child**, so death arrives through
+`cmd.Wait` (`Exited`/`Err`) instead of being discovered at the next call, and `Stop` signals a pid
+taken from the process handle rather than from a file that outlives an abrupt death. It appends the
+owner handshake — `--owner-pid`, plus `--owner-lifeline-fd` where a descriptor can be passed — so the
+hub it starts can be admitted and can notice on its own when the application is gone. A daemon that
+is already serving is **refused** (`ErrDaemonNotOurs`) rather than adopted: a hub this process did not
+start is not a hub it may stop. On Windows there is no lifeline and `Stop` kills rather than asks,
+because the alternative there is not a gentler stop but no stop at all (`docs/windows.md`).
 
 `Health`, `Server`, `SessionInfo` and `Event` are DTOs; `Error`/`ErrorBody` are errors;
 `ComputeHealth`'s input constants (`HealthLevel*`, `AdminState*`, `Action*`) are frozen here, and the

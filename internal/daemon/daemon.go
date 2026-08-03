@@ -260,6 +260,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	srv, err := ctlapi.NewServer(ctlapi.Options{
 		Version:           cfg.Version,
+		Owner:             cfg.Owner.PID,
 		Registry:          store,
 		Sessions:          mgr,
 		Bus:               bus,

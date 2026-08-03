@@ -55,6 +55,14 @@ type Hello struct {
 	Version    string `json:"version"`
 	Pid        int    `json:"pid"`
 	Generation uint64 `json:"generation"`
+	// Owner is the pid of the application this hub belongs to, or 0 for a
+	// headless one. It is the authoritative answer to "is this hub mine to
+	// stop", and it is answered HERE rather than remembered by whoever
+	// started the daemon: a caller's memory of having spawned one outlives
+	// the daemon it described, and a reconnect would then aim a shutdown at
+	// somebody else's hub. Always emitted, including the 0, so "headless" and
+	// "a daemon too old to say" stay distinguishable.
+	Owner int `json:"owner"`
 }
 
 // Health is the display contract computed server-side by a single pure

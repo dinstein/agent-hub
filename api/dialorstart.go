@@ -48,6 +48,15 @@ type daemonInfo struct {
 // process exits with an error before the daemon becomes ready, the real
 // error (with its stderr tail) is reported instead of a timeout —
 // inherited from the desktop.rs lesson (docs/modules/controlplane.md).
+//
+// The start it attempts names no owner, and `daemon start` refuses a hub that
+// belongs to nobody. So this dials for everyone and starts only for a caller
+// that says what it wants through DaemonArgs — `--headless` for an
+// operator-owned hub, or the owner handshake for an application that intends
+// to stop the daemon again. That is deliberate rather than a regression: the
+// alternative is a library call that quietly leaves a hub running which
+// nothing on the machine is responsible for. The desktop application uses
+// StartSupervised (supervise.go), which assembles the handshake itself.
 func DialOrStart(ctx context.Context) (*Client, error) {
 	return DialOrStartWith(ctx, StartOptions{})
 }

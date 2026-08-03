@@ -88,6 +88,10 @@ type ServerStateSource interface {
 type Options struct {
 	// Version is reported by /v1/ping ("dev" when empty).
 	Version string
+	// Owner is the pid of the application this daemon belongs to, reported by
+	// /v1/ping so a caller can ASK whether the running hub is its own instead
+	// of remembering that it started one. 0 is a headless daemon.
+	Owner int
 	// Registry is the configuration store (generation + servers document).
 	Registry *registry.Store
 	// Sessions is the live session registry.
@@ -427,5 +431,6 @@ func (s *Server) handlePing(w http.ResponseWriter, _ *http.Request) {
 		Version:    s.opts.Version,
 		Pid:        os.Getpid(),
 		Generation: s.opts.Registry.Snapshot().Generation,
+		Owner:      s.opts.Owner,
 	})
 }
