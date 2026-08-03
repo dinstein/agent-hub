@@ -810,17 +810,26 @@ the tree could open.
 **usage error, not an empty result**: the vocabulary is closed precisely so a caller can be told it got a
 name wrong. `--follow` tails the file rather than holding a subscription, so it survives a daemon restart.
 
-**Current assembly status — the two byte-offset followers can re-print a record.** `readLogBatch`
-(`internal/cli/logs.go`) and `followServerLogs` (`internal/cli/serverlogs.go`) both take the file size
-from a `stat` *before* reading, then read from the old offset to EOF and store that pre-read size as the
-new offset. Anything a writer appends between the `stat` and the reader reaching EOF is printed on this
-tick and again on the next, because the stored offset sits behind what was actually consumed. The window
-is one poll's read of a file several processes append to, so it is narrow rather than theoretical. The
-fix is to advance the offset by what the read consumed; it is left as a note because a tidy pass does not
-change behaviour, and because the duplicate is exactly the failure `followEvents` documents itself as
-avoiding — a repeated record in a watched stream reads as the state having changed twice. Established by
-reading both functions, not by a test: reproducing it needs a write interleaved inside the read, which
-nothing in the suite can currently schedule.
+**Current assembly status — `logs -f` can re-print a record.** `readLogBatch` (`internal/cli/logs.go`)
+takes the file size from a `stat` *before* reading, then reads from the old offset to EOF and stores that
+pre-read size as the new offset. Anything a writer appends between the `stat` and the reader reaching EOF
+is printed on this tick and again on the next, because the stored offset sits behind what was actually
+consumed. The window is one poll's read of a file several processes append to, so it is narrow rather than
+theoretical. The fix is to advance the offset by what the read consumed. Established by reading, not by a
+test: reproducing it needs a write interleaved inside the read, which nothing in the suite can currently
+schedule. `followServerLogs` used to share this defect and no longer exists — `e1fbe29` moved the wire
+trace into the call ledger, and its replacement tracks a timestamp instead.
+
+**Current assembly status — `server logs --follow` drops frames sharing a second.** `followServerFrames`
+(`internal/cli/serverlogs.go`) took the timestamp cursor from `followEvents`, which is the right shape,
+but reads it back out of the PROJECTED row: `serverLogRow` renders `TS` with `time.RFC3339`, which is
+second resolution, so `time.Parse` hands the cursor a whole second and `!ts.After(cursor)` then discards
+every frame of that second that had not been printed yet. This is exactly the loss `83bb725` fixed for
+`events -f`, whose comment still explains why the cursor must stay on the record's `time.Time` — the
+records carry nanoseconds and only the rendering rounds. It matters more here than it did there: a wire
+trace records two frames per call, so a second holding a burst is the ordinary case rather than the
+unlucky one. The fix is the same one `followEvents` already took: carry `calllog.Event.TS` as the cursor
+rather than re-parsing the string the table prints.
 
 **The browser is launched with detached streams AND a detached environment** (`browser.go`): streams
 because a chatty handler on stdout would corrupt the NDJSON progress stream, environment because
