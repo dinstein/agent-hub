@@ -18,7 +18,7 @@ func TestEveryKindHasADeliberateLevel(t *testing.T) {
 	warn := map[Kind]bool{
 		KindConnectFailed: true, KindRespawnFailed: true, KindCircuitOpen: true,
 		KindHealthDown: true, KindOAuthRefreshFailed: true, KindSecretsMissing: true,
-		KindRegistryReloadFailed: true,
+		KindRegistryReloadFailed: true, KindOAuthLoginFailed: true,
 	}
 	for scope, kinds := range allKinds {
 		for _, k := range kinds {

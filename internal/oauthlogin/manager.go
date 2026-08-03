@@ -29,9 +29,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/eventlog"
+	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 )
 
@@ -162,6 +165,20 @@ type Config struct {
 	Retain time.Duration
 	// Now overrides time.Now (tests).
 	Now func() time.Time
+
+	// Events and Log receive one record per phase of every login: started,
+	// waiting on the human, then completed or failed.
+	//
+	// Before them a login was invisible from outside this process. The one
+	// step of setting up a downstream that BLOCKS on a person — waiting for a
+	// consent screen somebody may never have seen — left nothing in the
+	// timeline at all, so "it has been pending for ten minutes" and "it
+	// failed at discovery a second in" read identically from the outside.
+	//
+	// Both may be nil; a nil stream still writes prose and a nil logger still
+	// writes records (eventlog.Emit).
+	Events *eventlog.Stream
+	Log    *slog.Logger
 }
 
 // Manager owns the live login sessions.
@@ -170,6 +187,8 @@ type Manager struct {
 	ttl    time.Duration
 	retain time.Duration
 	now    func() time.Time
+	events *eventlog.Stream
+	log    *slog.Logger
 
 	mu       sync.Mutex
 	sessions map[string]*session
@@ -194,6 +213,8 @@ func New(cfg Config) (*Manager, error) {
 		ttl:      cfg.TTL,
 		retain:   cfg.Retain,
 		now:      cfg.Now,
+		events:   cfg.Events,
+		log:      cfg.Log,
 		sessions: map[string]*session{},
 	}
 	if m.ttl <= 0 {
@@ -259,6 +280,7 @@ func (m *Manager) Start(req Request) (Session, error) {
 	snap := s.snap
 	m.mu.Unlock()
 
+	m.emit(snap, eventlog.KindOAuthLoginStarted, "interactive login started", "")
 	go m.run(ctx, cancel, id, req)
 	return snap, nil
 }
@@ -325,19 +347,28 @@ func (m *Manager) run(ctx context.Context, cancel context.CancelFunc, id string,
 		// the flow to the manual paste path — and there is nobody on this
 		// API to paste anything.
 		Open: func(u string) error {
-			m.update(id, func(s *Session) {
+			snap := m.update(id, func(s *Session) {
 				s.Mode = string(oauthflow.ModeLoopback)
 				s.AuthorizationURL = u
 			})
+			// The URL is not a secret — it is the page the human is being
+			// asked to open, and the code exchanged on the way back never
+			// travels in it.
+			m.emit(snap, eventlog.KindOAuthLoginWaiting, "login is waiting for the browser", u)
 			return nil
 		},
 		OnDeviceCode: func(da oauthflow.DeviceAuthorization) {
-			m.update(id, func(s *Session) {
+			snap := m.update(id, func(s *Session) {
 				s.Mode = string(oauthflow.ModeDevice)
 				s.VerificationURI = da.VerificationURI
 				s.VerificationURIComplete = da.VerificationURIComplete
 				s.UserCode = da.UserCode
 			})
+			// The verification URI, never the device code: UserCode is shown
+			// to the human but DeviceCode is the secret polled with, and a
+			// record is a file somebody else may read.
+			m.emit(snap, eventlog.KindOAuthLoginWaiting, "login is waiting for a device code",
+				da.VerificationURI)
 		},
 		// Paste stays nil. Manual mode reads a pasted callback URL from a
 		// terminal, so SelectMode must never choose it here — and with Open
@@ -348,7 +379,7 @@ func (m *Manager) run(ctx context.Context, cancel context.CancelFunc, id string,
 	lreq.FixedCallbackPort = req.CallbackPort
 
 	res, err := flow.Login(ctx, lreq)
-	m.update(id, func(s *Session) {
+	snap := m.update(id, func(s *Session) {
 		if err != nil {
 			s.Phase = PhaseFailed
 			s.Err = err
@@ -368,19 +399,42 @@ func (m *Manager) run(ctx context.Context, cancel context.CancelFunc, id string,
 		s.ended = m.now()
 	}
 	m.mu.Unlock()
+
+	if err != nil {
+		m.emit(snap, eventlog.KindOAuthLoginFailed, "interactive login failed", err.Error())
+		return
+	}
+	m.emit(snap, eventlog.KindOAuthLoginCompleted, "interactive login completed", snap.Mode)
+}
+
+// emit writes one login phase to both streams. The session id travels in the
+// record's Session field, so the four records of one login join to each other
+// and to nothing else — a server may be logged in to twice in a day.
+func (m *Manager) emit(snap Session, kind eventlog.Kind, msg, detail string) {
+	if snap.Server == "" {
+		return
+	}
+	m.events.Emit(m.log, eventlog.Record{
+		Scope: eventlog.ScopeServer, Kind: kind,
+		Server: snap.Server, Session: snap.ID, Detail: detail,
+	}, msg, logx.Server(snap.Server), logx.Session(snap.ID), "mode", snap.Mode)
 }
 
 // update mutates one session's snapshot under the lock. A session that has
 // already been swept is a no-op rather than a panic: the flow's callbacks are
 // still running at that point and they do not get to decide the lifetime.
-func (m *Manager) update(id string, fn func(*Session)) {
+// It returns the resulting snapshot BY VALUE, which is what the caller then
+// records: reading the session again outside the lock would race the flow's
+// own callbacks.
+func (m *Manager) update(id string, fn func(*Session)) Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s, ok := m.sessions[id]
 	if !ok {
-		return
+		return Session{}
 	}
 	fn(&s.snap)
+	return s.snap
 }
 
 // sweepLocked drops sessions nobody can act on any more: finished ones past

@@ -41,6 +41,12 @@ type Session struct {
 // Created reports when the session was bound.
 func (s *Session) Created() time.Time { return s.created }
 
+// Reasons a session left the table, as they appear in the closed record.
+const (
+	reasonClosed  = "closed by the client"
+	reasonExpired = "idle past the session ttl"
+)
+
 // sessions is the bounded, TTL'd session table.
 type sessions struct {
 	mu   sync.Mutex
@@ -48,6 +54,11 @@ type sessions struct {
 	max  int
 	now  func() time.Time
 	byID map[string]*Session
+	// closed is called after a session leaves the table, ALWAYS outside the
+	// lock: it writes a record and a log line, and reaching a file handler
+	// while holding the lock every request contends on is how a slow disk
+	// becomes a stalled data plane. A nil callback is usable.
+	closed func(sess *Session, reason string)
 }
 
 func newSessions(ttl time.Duration, max int, now func() time.Time) *sessions {
@@ -73,9 +84,10 @@ func (s *sessions) create(c *Caller) (*Session, error) {
 	}
 	now := s.now()
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sweepLocked(now)
+	expired := s.sweepLocked(now)
 	if len(s.byID) >= s.max {
+		s.mu.Unlock()
+		s.notifyClosed(expired, reasonExpired)
 		return nil, errOverloaded
 	}
 	sess := &Session{
@@ -86,7 +98,20 @@ func (s *sessions) create(c *Caller) (*Session, error) {
 		owner:    c.Identity(),
 	}
 	s.byID[id] = sess
+	s.mu.Unlock()
+	s.notifyClosed(expired, reasonExpired)
 	return sess, nil
+}
+
+// notifyClosed reports every session that left the table. Called with the
+// lock released.
+func (s *sessions) notifyClosed(gone []*Session, reason string) {
+	if s.closed == nil {
+		return
+	}
+	for _, sess := range gone {
+		s.closed(sess, reason)
+	}
 }
 
 // get resolves an id for a caller. Every miss — unknown, expired, or owned
@@ -95,18 +120,21 @@ func (s *sessions) create(c *Caller) (*Session, error) {
 func (s *sessions) get(id string, c *Caller) (*Session, bool) {
 	now := s.now()
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	sess, ok := s.byID[id]
 	if !ok {
+		s.mu.Unlock()
 		return nil, false
 	}
 	if now.Sub(sess.lastSeen) > s.ttl {
 		delete(s.byID, id)
+		s.mu.Unlock()
+		s.notifyClosed([]*Session{sess}, reasonExpired)
 		return nil, false
 	}
 	if sess.owner != c.Identity() {
 		// Deliberately NOT deleted: a foreign probe must not be able to
 		// destroy somebody else's session by guessing its id.
+		s.mu.Unlock()
 		return nil, false
 	}
 	sess.lastSeen = now
@@ -114,6 +142,7 @@ func (s *sessions) get(id string, c *Caller) (*Session, bool) {
 	// fingerprint above already proved they are equivalent, and this keeps
 	// the session from holding a stale *Caller alive.
 	sess.Caller = c
+	s.mu.Unlock()
 	return sess, true
 }
 
@@ -121,12 +150,14 @@ func (s *sessions) get(id string, c *Caller) (*Session, bool) {
 // removed, so DELETE of an unknown id answers 404 like every other miss.
 func (s *sessions) drop(id string, c *Caller) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	sess, ok := s.byID[id]
 	if !ok || sess.owner != c.Identity() {
+		s.mu.Unlock()
 		return false
 	}
 	delete(s.byID, id)
+	s.mu.Unlock()
+	s.notifyClosed([]*Session{sess}, reasonClosed)
 	return true
 }
 
@@ -137,13 +168,17 @@ func (s *sessions) len() int {
 	return len(s.byID)
 }
 
-// sweepLocked removes expired sessions. Caller holds mu.
-func (s *sessions) sweepLocked(now time.Time) {
+// sweepLocked removes expired sessions and returns them, so the caller can
+// report each one after releasing the lock. Caller holds mu.
+func (s *sessions) sweepLocked(now time.Time) []*Session {
+	var gone []*Session
 	for id, sess := range s.byID {
 		if now.Sub(sess.lastSeen) > s.ttl {
 			delete(s.byID, id)
+			gone = append(gone, sess)
 		}
 	}
+	return gone
 }
 
 // newSessionID mints a random session id.

@@ -241,6 +241,14 @@ func Run(ctx context.Context, cfg Config) error {
 	// its own probe connections instead.
 	states := ctlapi.NewGatewayStates()
 
+	// The control-plane event stream (internal/eventlog), opened before every
+	// collaborator that records into it — the watcher, the login manager, the
+	// HTTP face's session table. Fail-open: a daemon that cannot write its
+	// events still coordinates, so each failure degrades to a nil stream,
+	// which is silent by contract.
+	events := openEvents(logsDir, log, store)
+	defer func() { _ = events.Close() }()
+
 	// Non-registry collaborators (credentials, skills, tokens, client
 	// adapters, OAuth status). Built before the server because the server
 	// takes them by value: routes without dependencies answer "not served",
@@ -257,7 +265,7 @@ func Run(ctx context.Context, cfg Config) error {
 	if dataErr != nil {
 		log.Warn("data dir unresolved; the non-registry endpoints stay off", "error", dataErr)
 	} else {
-		nonReg, tokens = nonRegistryDeps(cfg, dataDir, cfg.Secrets, log, coordRef.Load)
+		nonReg, tokens = nonRegistryDeps(cfg, dataDir, cfg.Secrets, log, events, coordRef.Load)
 	}
 
 	srv, err := ctlapi.NewServer(ctlapi.Options{
@@ -326,13 +334,6 @@ func Run(ctx context.Context, cfg Config) error {
 	bgCtx, bgStop := context.WithCancel(context.Background())
 	defer bgStop()
 	go mgr.Run(bgCtx)
-
-	// The control-plane event stream (internal/eventlog), opened before the
-	// watcher because the watcher records config reloads into it. Fail-open:
-	// a daemon that cannot write its events still coordinates, so every
-	// failure degrades to a nil stream, which is silent by contract.
-	events := openEvents(logsDir, log, store)
-	defer func() { _ = events.Close() }()
 
 	watcher := startWatch(bgCtx, store, cfg.Watch, bus, log, events)
 
@@ -403,6 +404,7 @@ func Run(ctx context.Context, cfg Config) error {
 	endpoint, herr := startHTTPPlane(bgCtx, cfg, httpPlaneDeps{
 		Resolver: resolver,
 		Log:      log,
+		Events:   events,
 		Version:  cfg.Version,
 		Registry: store,
 		Secrets:  dataPlaneSecrets(cfg.Secrets),

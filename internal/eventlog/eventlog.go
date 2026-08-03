@@ -73,6 +73,22 @@ const (
 	KindOAuthRefreshFailed Kind = "oauth_refresh_failed"
 	// KindSecretsMissing: the connection is blocked on unresolved secrets.
 	KindSecretsMissing Kind = "secrets_missing"
+	// KindOAuthLoginStarted: an interactive login for this server began.
+	KindOAuthLoginStarted Kind = "oauth_login_started"
+	// KindOAuthLoginWaiting: the flow picked a mode and is now waiting on the
+	// human — the URL to open, or the code to type, is in Detail.
+	//
+	// It is a kind of its own rather than elaboration on `started` because
+	// the wait is the part that goes wrong: a login that never reaches this
+	// point failed at discovery, and one that sits here for ten minutes is
+	// waiting on somebody who never saw the browser tab. Those are different
+	// problems and a timeline that cannot separate them is no help with
+	// either.
+	KindOAuthLoginWaiting Kind = "oauth_login_waiting"
+	// KindOAuthLoginCompleted: a credential was obtained and stored.
+	KindOAuthLoginCompleted Kind = "oauth_login_completed"
+	// KindOAuthLoginFailed: the flow errored, timed out, or was cancelled.
+	KindOAuthLoginFailed Kind = "oauth_login_failed"
 )
 
 // Gateway-scope kinds: the life of one client-serving process.
@@ -90,6 +106,16 @@ const (
 	// KindRegistryReloadFailed: a configuration change could not be adopted,
 	// so the process keeps serving the previous generation.
 	KindRegistryReloadFailed Kind = "registry_reload_failed"
+	// KindSessionOpened / KindSessionClosed bracket one MCP session on the
+	// HTTP face, where a single process serves many of them at once.
+	//
+	// The stdio gateway has no counterpart and needs none: it serves exactly
+	// one client over one pipe, so its session IS the process and `started`
+	// and `stopped` already bracket it. Detail on the close says which way it
+	// ended — the client said so, or it timed out — because a session nobody
+	// closed and a session nobody used look identical afterwards.
+	KindSessionOpened Kind = "session_opened"
+	KindSessionClosed Kind = "session_closed"
 )
 
 // Daemon-scope kinds.
@@ -129,10 +155,13 @@ var allKinds = map[Scope][]Kind{
 		KindCircuitOpen, KindCircuitHalfOpen, KindCircuitClosed,
 		KindHealthDown, KindHealthUp, KindToolsChanged,
 		KindOAuthRefreshFailed, KindSecretsMissing,
+		KindOAuthLoginStarted, KindOAuthLoginWaiting,
+		KindOAuthLoginCompleted, KindOAuthLoginFailed,
 	},
 	ScopeGateway: {
 		KindGatewayStarted, KindGatewayStopped,
 		KindClientAttached, KindRegistryReloadFailed,
+		KindSessionOpened, KindSessionClosed,
 	},
 	ScopeDaemon: {
 		KindDaemonStarted, KindDaemonStopping,
@@ -241,6 +270,15 @@ type Record struct {
 	Rev uint64 `json:"rev,omitempty"`
 	// DurMs is how long the thing being reported took.
 	DurMs int64 `json:"durMs,omitempty"`
+	// Session is the MCP session a record belongs to, on the face that has
+	// them. Empty everywhere else, and last so the frozen field order above
+	// is untouched — a record written before this field existed is still
+	// byte-identical.
+	//
+	// The spelling matches logx.FieldSession for the reason Inst matches
+	// TraceFrame's: a reader joining the two streams must not have to know
+	// two names for one thing.
+	Session string `json:"session,omitempty"`
 }
 
 // CountNoun names what Count holds for one kind, plural, or "" for a kind

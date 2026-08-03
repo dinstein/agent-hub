@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
 )
@@ -59,6 +60,14 @@ type Options struct {
 	MaxInFlight int
 	// Logger receives rejection and lifecycle records (nil = discard).
 	Logger *slog.Logger
+	// Events receives the session lifecycle as records (nil = prose only).
+	//
+	// This face is the one place a single process holds many sessions at
+	// once, so "which sessions were live at 11:03" is a question only it can
+	// answer — and before these records a session that timed out left no
+	// trace anywhere, which is indistinguishable from one that was never
+	// opened.
+	Events *eventlog.Stream
 	// Now overrides the clock (tests).
 	Now func() time.Time
 }
@@ -83,6 +92,7 @@ type Server struct {
 	sessions   *sessions
 	inflight   semaphore
 	log        *slog.Logger
+	events     *eventlog.Stream
 	now        func() time.Time
 }
 
@@ -112,15 +122,29 @@ func New(opts Options) (*Server, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Server{
+	srv := &Server{
 		dispatcher: opts.Dispatcher,
 		auth:       opts.Auth,
 		path:       path,
 		sessions:   newSessions(opts.SessionTTL, opts.MaxSessions, now),
 		inflight:   newSemaphore(inflight),
 		log:        log,
+		events:     opts.Events,
 		now:        now,
-	}, nil
+	}
+	srv.sessions.closed = srv.recordSessionClosed
+	return srv, nil
+}
+
+// recordSessionClosed reports one session leaving the table, whichever way it
+// left. The table calls it with its lock released.
+func (s *Server) recordSessionClosed(sess *Session, reason string) {
+	s.events.Emit(s.log, eventlog.Record{
+		Scope: eventlog.ScopeGateway, Kind: eventlog.KindSessionClosed,
+		Session: sess.ID, Detail: reason,
+		DurMs: s.now().Sub(sess.created).Milliseconds(),
+	}, "http session ended", logx.Session(sess.ID), "reason", reason,
+		"lifetime", s.now().Sub(sess.created).Round(time.Second))
 }
 
 // Handler returns the http.Handler for this server. The per-request limits
@@ -265,7 +289,10 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request, c *Caller
 		}
 		sess = created
 		w.Header().Set(SessionHeader, sess.ID)
-		s.log.Info("http session bound",
+		s.events.Emit(s.log, eventlog.Record{
+			Scope: eventlog.ScopeGateway, Kind: eventlog.KindSessionOpened,
+			Session: sess.ID, Detail: string(c.Kind),
+		}, "http session bound",
 			logx.Session(sess.ID), "caller", string(c.Kind), "token", c.Token, "tier", string(c.Tier))
 	case r.Header.Get(SessionHeader) == "" && stateless2026Request(req):
 		// Sessionless by protocol. The declared _meta version is validated

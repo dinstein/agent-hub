@@ -62,7 +62,7 @@ func serverStateForgetters(resolver *platform.Resolver) []confops.StateForgetter
 // control plane only needs the ctlapi.TokenStore interface, but the data
 // plane's authenticator needs *httpbridge.Store, and both must be the same
 // object — a second store would be a second HMAC-key cache over one file.
-func nonRegistryDeps(cfg Config, dataDir string, vault secrets.Store, log *slog.Logger, coord func() *oauthflow.Coordinator) (ctlapi.NonRegistryDeps, *httpbridge.Store) {
+func nonRegistryDeps(cfg Config, dataDir string, vault secrets.Store, log *slog.Logger, events *eventlog.Stream, coord func() *oauthflow.Coordinator) (ctlapi.NonRegistryDeps, *httpbridge.Store) {
 	secretsDir := filepath.Join(dataDir, "secrets")
 	if vault == nil {
 		vault = secrets.NewChain(secrets.ChainConfig{Dir: secretsDir})
@@ -84,7 +84,7 @@ func nonRegistryDeps(cfg Config, dataDir string, vault secrets.Store, log *slog.
 	oauthStore := oauthflow.NewStore(vault)
 	deps.OAuth = oauthStore
 	deps.TestDeps = testDeps(vault, coord)
-	deps.Logins = loginSessions(oauthStore, log)
+	deps.Logins = loginSessions(oauthStore, log, events)
 
 	if lib, err := skills.Open(filepath.Join(dataDir, "skills"), skills.Options{}); err != nil {
 		log.Warn("skills library unavailable; its endpoints stay off", "error", err)
@@ -115,13 +115,15 @@ func nonRegistryDeps(cfg Config, dataDir string, vault secrets.Store, log *slog.
 //
 // The store is the daemon's own, the same one auth status and logout read, so
 // a login lands where every other reader is already looking.
-func loginSessions(store *oauthflow.Store, log *slog.Logger) ctlapi.LoginSessions {
+func loginSessions(store *oauthflow.Store, log *slog.Logger, events *eventlog.Stream) ctlapi.LoginSessions {
 	m, err := oauthlogin.New(oauthlogin.Config{
 		Flows: func(allowLoopback bool) oauthlogin.Flow {
 			return oauthflow.NewFlow(oauthflow.NewClient(oauthflow.Config{
 				AllowLoopback: allowLoopback,
 			}), store)
 		},
+		Events: events,
+		Log:    log,
 	})
 	if err != nil {
 		// Never reached with a non-nil factory, but the endpoint staying off

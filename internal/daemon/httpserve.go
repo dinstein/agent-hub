@@ -153,6 +153,7 @@ func startHTTPPlane(ctx context.Context, cfg Config, deps httpPlaneDeps, tokens 
 			InsecureLoopback: cfg.HTTPInsecureLoopback,
 		},
 		Logger: log,
+		Events: deps.Events,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("daemon: %w", err)

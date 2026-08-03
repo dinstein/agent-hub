@@ -312,9 +312,32 @@ Kinds are checked as a **(scope, kind) pair**, never a bare kind: a gateway and 
 
 | Scope | Kinds |
 |---|---|
-| `server` | `connected`, `connect_failed`, `disconnected`, `respawned`, `respawn_failed`, `circuit_open`, `circuit_half_open`, `circuit_closed`, `health_down`, `health_up`, `tools_changed`, `oauth_refresh_failed`, `secrets_missing` |
-| `gateway` | `started`, `stopped`, `client_attached`, `registry_reload_failed` |
+| `server` | `connected`, `connect_failed`, `disconnected`, `respawned`, `respawn_failed`, `circuit_open`, `circuit_half_open`, `circuit_closed`, `health_down`, `health_up`, `tools_changed`, `oauth_refresh_failed`, `secrets_missing`, `oauth_login_started`, `oauth_login_waiting`, `oauth_login_completed`, `oauth_login_failed` |
+| `gateway` | `started`, `stopped`, `client_attached`, `registry_reload_failed`, `session_opened`, `session_closed` |
 | `daemon` | `started`, `stopping`, `listener_bound`, `config_reloaded` |
+
+### Levels, and the one call that writes both halves
+
+Everything here is also a `slog` record, and `Emit` writes the two together —
+`Append` plus a `log.Log` at the level `Level(kind)` decides. It used to be two calls at each site,
+which is a rule about adjacency rather than a mechanism, and the split had already produced three
+disagreements: the respawn count was `reconnects` in the log and `respawns` in the record, the level
+of a transition was chosen per site, and `connect_failed` and `oauth_refresh_failed` had a record and
+no prose at all — a downstream that never came up left nothing in `agenthub logs`.
+
+**Every failure kind is `WARN`, everything else `INFO`.** Nothing here is `ERROR`: that level is
+reserved for a protective capability failing (the ledger unavailable, rate-limit counters unusable),
+and no state change of a downstream is that. Nothing is `DEBUG` either — a kind worth a closed
+vocabulary is worth being visible at the default level. A test walks `allKinds`, so a new kind cannot
+inherit a level by falling through.
+
+**`Emit` stamps no identity.** The logger a call site holds is already bound to its server, instance,
+client and pid; `slog`'s JSON handler does not deduplicate, so passing them again emits the field
+twice on one line and a reader taking the last — `encoding/json` included — reads the second value.
+It renders only the half of the record whose meaning is fixed for every kind: `from`, `to`, `rev`,
+and the count under its `CountNoun`. **`Detail` and `DurMs` are polymorphic and stay with the call
+site**: Detail is an error, a cause, an address or a version depending on the kind, and DurMs is a
+cooldown still to come for `circuit_open` and an elapsed time elsewhere.
 
 ### What `count` counts
 

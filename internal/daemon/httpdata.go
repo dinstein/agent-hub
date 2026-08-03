@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/downstream"
+	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/gateway"
 	"github.com/dinstein/agent-hub/internal/httpbridge"
 	"github.com/dinstein/agent-hub/internal/logx"
@@ -53,7 +54,11 @@ const httpConnSweep = time.Minute
 type httpPlaneDeps struct {
 	Resolver *platform.Resolver
 	Log      *slog.Logger
-	Version  string
+	// Events records the HTTP face's session lifecycle. This is the one face
+	// where a process holds many sessions at once, so it is the only one that
+	// can answer "which were live at 11:03".
+	Events  *eventlog.Stream
+	Version string
 	// Registry is the daemon's live store; it is read only to resolve a
 	// token's profile pin. nil = no pin can be resolved, which fails closed
 	// (see scopeLayers).
