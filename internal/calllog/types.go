@@ -136,15 +136,26 @@ type Event struct {
 	KeyID   string    `json:"keyId"`
 	MAC     string    `json:"mac"`
 
-	Client     string `json:"client,omitempty"`
-	Session    string `json:"session,omitempty"`
-	PID        int    `json:"pid"`
-	BootID     string `json:"bootId"`
-	RequestID  string `json:"requestId,omitempty"`
-	Face       string `json:"face,omitempty"`
-	Protocol   string `json:"protocol,omitempty"`
-	PolicyRev  uint64 `json:"policyRev,omitempty"`
-	Exposed    string `json:"exposedTool,omitempty"`
+	Client    string `json:"client,omitempty"`
+	Session   string `json:"session,omitempty"`
+	PID       int    `json:"pid"`
+	BootID    string `json:"bootId"`
+	RequestID string `json:"requestId,omitempty"`
+	Face      string `json:"face,omitempty"`
+	Protocol  string `json:"protocol,omitempty"`
+	PolicyRev uint64 `json:"policyRev,omitempty"`
+	Exposed   string `json:"exposedTool,omitempty"`
+	// Surface says WHICH of agenthub's own surfaces the client reached, in
+	// internal/discovery's vocabulary: `meta` for one of the hub's own tools
+	// (search_tools, call_tool, fetch_result …), `group` for a grouped
+	// listing, `tool` for a name that routes straight through to a server.
+	//
+	// It is not derivable from Exposed after the fact — the same name means
+	// different things under different discovery modes — and it is the
+	// difference between "the client called the server" and "the client
+	// asked the hub, which called the server". A `meta` record and a routed
+	// one under the SAME call id is the second case, told in full.
+	Surface    string `json:"surface,omitempty"`
 	Server     string `json:"server,omitempty"`
 	Tool       string `json:"tool,omitempty"`
 	Provider   string `json:"provider,omitempty"`

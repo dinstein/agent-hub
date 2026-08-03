@@ -396,6 +396,19 @@ no call id in it, so a call that retried twice appeared there as three exchanges
 while the ledger said only that it took 1.2 seconds, and "what did this call actually do" could not
 be asked of either stream.
 
+**Every upstream request is recorded, not only the ones that route.** `initialize`, `tools/list`,
+`ping` and `server/discover` each leave a `received`/`finished` pair with no `routed` between them —
+because the first question anybody brings to the ledger is whether a client reached the hub at all,
+and a session that connected and then went quiet used to leave exactly the trace of one that never
+connected: none. Those pairs are fail-open even when evidence is on; only `tools/call` is governed,
+and only `tools/call` refuses to run unrecorded.
+
+**`Method` says what was asked and `Surface` which of agenthub's own faces answered** — `meta` for
+one of the hub's own tools, `group` for a grouped listing, `tool` for a name that routes straight
+through. The surface is not derivable from the exposed name afterwards, because the same name means
+different things under different discovery modes, and a `meta` record carrying a real `server`/`tool`
+under one call id is the whole story of "the client asked the hub, which called the server".
+
 ### Two tiers, and what each costs
 
 | | **metadata** | **evidence** |

@@ -286,17 +286,7 @@ func (g *gateway) auditBegin(req *mcp.Request) error {
 			return err
 		}
 	}
-	face := g.cfg.Face
-	if face == "" {
-		face = "stdio"
-	}
-	face = boundedAuditText(face)
-	common := calllog.Event{
-		TS: started, CallID: callID, Client: boundedAuditText(g.cfg.ClientID),
-		Session: boundedAuditText(face + ":" + g.cfg.ClientID), RequestID: boundedAuditText(req.ID.String()),
-		Face: face, Protocol: boundedAuditText(g.auditRequestProtocol(req.Params)), PolicyRev: g.auditPolicyRev(),
-		CallerTier: boundedAuditText(string(g.cfg.CallerTier)),
-	}
+	common := g.auditCommon(callID, req, started)
 	received := common
 	received.Kind = calllog.EventReceived
 	if store.HasKey() {
@@ -338,6 +328,70 @@ func (g *gateway) auditRoute(id mcp.ID, route router.Route, args json.RawMessage
 	return nil
 }
 
+// auditCommon is the identity every record of one upstream request carries:
+// who asked, over which face, under which policy generation, and — since
+// every method is recorded now, not only tools/call — which method it was.
+//
+// One function because the two paths that build it were one copy apart, and
+// the copy that drifts is the one that leaves a record nobody can join.
+func (g *gateway) auditCommon(callID string, req *mcp.Request, started time.Time) calllog.Event {
+	face := g.cfg.Face
+	if face == "" {
+		face = "stdio"
+	}
+	face = boundedAuditText(face)
+	return calllog.Event{
+		TS: started, CallID: callID, Client: boundedAuditText(g.cfg.ClientID),
+		Session:   boundedAuditText(face + ":" + g.cfg.ClientID),
+		RequestID: boundedAuditText(req.ID.String()), Face: face,
+		Method:     boundedAuditText(req.Method),
+		Protocol:   boundedAuditText(g.auditRequestProtocol(req.Params)),
+		PolicyRev:  g.auditPolicyRev(),
+		CallerTier: boundedAuditText(string(g.cfg.CallerTier)),
+	}
+}
+
+// auditRequest records one NON-routed upstream request: what the client
+// asked agenthub for, and how long answering took. It returns the closure
+// that writes the finish, so a caller defers one call.
+//
+// Metadata only, and fail-open in every direction. These are not governed
+// calls — nothing here decides whether a downstream may be reached — so a
+// ledger that cannot be written costs the timeline a line and costs the
+// client nothing. tools/call is the one method that goes the other way.
+//
+// The outcome is coarse on purpose: this path answers "did the client reach
+// us, and with what", and the reply it produced is already the answer to
+// anything finer.
+func (g *gateway) auditRequest(req *mcp.Request) func() {
+	m := g.audit
+	if m == nil {
+		return func() {}
+	}
+	m.mu.Lock()
+	store := m.store
+	m.mu.Unlock()
+	if store == nil {
+		return func() {}
+	}
+	callID, err := calllog.NewCallID()
+	if err != nil {
+		return func() {}
+	}
+	started := time.Now().UTC()
+	common := g.auditCommon(callID, req, started)
+	received := common
+	received.Kind = calllog.EventReceived
+	_ = store.Append(received)
+	return func() {
+		finished := common
+		finished.TS, finished.Kind = time.Now().UTC(), calllog.EventFinished
+		finished.Outcome = "answered"
+		finished.DurationMs = time.Since(started).Milliseconds()
+		_ = store.Append(finished)
+	}
+}
+
 // auditCallID returns the ledger id of one in-flight request, or "" when
 // nothing is being recorded for it.
 func (g *gateway) auditCallID(id mcp.ID) string {
@@ -350,6 +404,15 @@ func (g *gateway) auditCallID(id mcp.ID) string {
 func (g *gateway) auditSetExposed(id mcp.ID, exposed string) {
 	if span := g.auditSpan(id); span != nil {
 		span.common.Exposed = boundedAuditText(exposed)
+	}
+}
+
+// auditSetSurface records which of agenthub's own surfaces the name reached.
+// It is set after classification and before anything acts on it, so a call
+// that fails a gate still says what it was asking for.
+func (g *gateway) auditSetSurface(id mcp.ID, surface string) {
+	if span := g.auditSpan(id); span != nil {
+		span.common.Surface = boundedAuditText(surface)
 	}
 }
 

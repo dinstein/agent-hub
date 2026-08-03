@@ -107,8 +107,25 @@ func eventKind(t *testing.T, events []calllog.Event, kind calllog.EventKind) cal
 // The strictness is kept where it belongs: the executed call must have
 // exactly its three events, and an event that is neither part of it nor part
 // of a busy refusal still fails the test rather than being tolerated.
+// toolCalls keeps the records of tools/call requests.
+//
+// Every upstream method is recorded now — initialize, tools/list and ping
+// included — which is the point: a session that connected and then went
+// quiet must not look like one that never connected. The assertions about
+// ROUTING are still about tools/call, so they say so.
+func toolCalls(events []calllog.Event) []calllog.Event {
+	var out []calllog.Event
+	for _, e := range events {
+		if e.Method == mcp.MethodToolsCall {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func executedCall(t *testing.T, events []calllog.Event) []calllog.Event {
 	t.Helper()
+	events = toolCalls(events)
 	var callID string
 	for _, e := range events {
 		if e.Kind == calllog.EventRouted {
@@ -163,7 +180,7 @@ func TestAuditRecordsCompleteRequestRouteAndBoundedResult(t *testing.T) {
 		t.Fatal(resp.Error)
 	}
 
-	events := readAuditEvents(t, resolver)
+	events := toolCalls(readAuditEvents(t, resolver))
 	if len(events) != 3 {
 		t.Fatalf("events = %d, want received+routed+finished: %+v", len(events), events)
 	}
@@ -241,7 +258,7 @@ func TestAuditRecordsMetaAndUnroutableAttempts(t *testing.T) {
 	if resp := c.call(mcp.MethodToolsCall, mcp.CallToolParams{Name: "does-not-exist", Arguments: []byte(`{"x":1}`)}); resp.Error == nil {
 		t.Fatal("unknown tool succeeded")
 	}
-	events := readAuditEvents(t, resolver)
+	events := toolCalls(readAuditEvents(t, resolver))
 	if len(events) != 4 {
 		t.Fatalf("events = %d, want two received+finished lifecycles: %+v", len(events), events)
 	}
@@ -365,7 +382,7 @@ func TestAuditRecordsGateDenial(t *testing.T) {
 	if resp.Error == nil || !strings.Contains(resp.Error.Message, "E_SCOPE_DENIED") {
 		t.Fatalf("denial response = %+v", resp)
 	}
-	events := readAuditEvents(t, resolver)
+	events := toolCalls(readAuditEvents(t, resolver))
 	if len(events) != 3 {
 		t.Fatalf("denial events = %d, want 3: %+v", len(events), events)
 	}
@@ -393,7 +410,7 @@ func TestAuditRecordsCancellationWithoutReply(t *testing.T) {
 	if c.hasResponse(id) {
 		t.Fatal("cancelled call received a response")
 	}
-	events := readAuditEvents(t, resolver)
+	events := toolCalls(readAuditEvents(t, resolver))
 	if len(events) != 3 {
 		t.Fatalf("cancellation events = %d, want 3: %+v", len(events), events)
 	}
@@ -422,7 +439,85 @@ func TestAuditEnableHotReloadsIntoRunningGateway(t *testing.T) {
 	if resp.Error != nil {
 		t.Fatal(resp.Error)
 	}
-	if events := readAuditEvents(t, resolver); len(events) != 3 {
+	if events := toolCalls(readAuditEvents(t, resolver)); len(events) != 3 {
 		t.Fatalf("hot-reloaded audit events = %d, want 3: %+v", len(events), events)
+	}
+}
+
+// Everything a client asks of agenthub is recorded, not only what it routes.
+//
+// The question this answers is the first one anybody brings to the ledger:
+// did this client reach us at all. Before it, a session that initialized,
+// listed its tools and then went quiet left exactly the same trace as one
+// that never connected — none.
+func TestAuditRecordsEveryUpstreamMethod(t *testing.T) {
+	resolver := testResolver(t.TempDir())
+	seedRegistry(t, resolver, "fake")
+	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) {})
+	_, c, _ := startGateway(t, Config{
+		ClientID: "audit-methods", Resolver: resolver,
+		Secrets: auditSecretResolver(auditTestKey()),
+		Dial:    scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
+	})
+	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
+	waitForTools(t, c, "fake__echo")
+	if resp := c.call(mcp.MethodPing, nil); resp.Error != nil {
+		t.Fatal(resp.Error)
+	}
+
+	events := readAuditEvents(t, resolver)
+	byMethod := map[string][]calllog.Event{}
+	for _, e := range events {
+		byMethod[e.Method] = append(byMethod[e.Method], e)
+	}
+	for _, method := range []string{mcp.MethodInitialize, mcp.MethodToolsList, mcp.MethodPing} {
+		got := byMethod[method]
+		if len(got) != 2 {
+			t.Fatalf("%s produced %d records, want received+finished: %+v", method, len(got), got)
+		}
+		if got[0].Kind != calllog.EventReceived || got[1].Kind != calllog.EventFinished {
+			t.Errorf("%s pair = %s, %s", method, got[0].Kind, got[1].Kind)
+		}
+		// No routing between them: these reach no downstream, and a `routed`
+		// record would claim one was chosen.
+		if got[1].Server != "" || got[1].Outcome != "answered" {
+			t.Errorf("%s finished = %+v, want no server and outcome=answered", method, got[1])
+		}
+	}
+}
+
+// Which of agenthub's OWN surfaces a call reached is recorded, because the
+// exposed name cannot be read back into it: the same name means different
+// things under different discovery modes, and "the client called the server"
+// and "the client asked the hub, which called the server" are different
+// facts about the same call id.
+func TestAuditRecordsWhichSurfaceWasCalled(t *testing.T) {
+	resolver := testResolver(t.TempDir())
+	seedRegistry(t, resolver, "fake")
+	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) { p.ResultMode = "none" })
+	setGovernance(t, externalRegistry(t, resolver), func(g *registry.GovernanceDoc) { g.Discovery = "lazy" })
+	_, c, _ := startGateway(t, Config{
+		ClientID: "audit-surface", Resolver: resolver,
+		Secrets: auditSecretResolver(auditTestKey()),
+		Dial:    scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
+	})
+	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
+	waitForTools(t, c, metaNames...)
+	res := callToolResult(t, c, discovery.MetaCallTool, map[string]any{
+		"tool": "fake__echo", "arguments": map[string]any{"marker": "surface"},
+	})
+	if res.IsError {
+		t.Fatal(resultText(t, res))
+	}
+
+	events := executedCall(t, readAuditEvents(t, resolver))
+	routed := eventKind(t, events, calllog.EventRouted)
+	// A meta surface AND a real downstream target under one call id: the hub
+	// was asked, and the hub called the server.
+	if routed.Surface != "meta" {
+		t.Errorf("surface = %q, want meta", routed.Surface)
+	}
+	if routed.Server != "fake" || routed.Tool != "echo" {
+		t.Errorf("the meta call did not record its real target: %+v", routed)
 	}
 }

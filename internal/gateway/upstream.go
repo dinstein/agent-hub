@@ -39,6 +39,19 @@ func (g *gateway) handleRequest(req *mcp.Request) {
 	if req.Method != mcp.MethodToolsCall && !g.acceptRequestMeta(req) {
 		return // rejected with CodeUnsupportedProtocolVersion, reply sent
 	}
+	// Everything a client asks of agenthub is recorded, not only the calls it
+	// routes. Without this the ledger could not answer the first question
+	// anybody brings to it — did this client reach us at all — because a
+	// session that initialized, listed and then went quiet left exactly the
+	// same trace as one that never connected.
+	//
+	// It is a metadata pair (received, finished) with no routing between
+	// them, and it is fail-open even when evidence is on: a ledger hiccup
+	// must not be able to break `initialize`. Only tools/call is governed,
+	// and only tools/call refuses to run unrecorded.
+	if req.Method != mcp.MethodToolsCall {
+		defer g.auditRequest(req)()
+	}
 	switch req.Method {
 	case mcp.MethodInitialize:
 		g.handleInitialize(req)
@@ -361,7 +374,9 @@ func (g *gateway) handleToolsCall(ctx context.Context, req *mcp.Request) {
 	g.auditSetExposed(req.ID, p.Name)
 
 	s := g.currentSurface()
-	switch s.Classify(p.Name) {
+	kind := s.Classify(p.Name)
+	g.auditSetSurface(req.ID, kind.String())
+	switch kind {
 	case discovery.KindMeta:
 		g.handleMetaCall(ctx, req, s, p)
 	case discovery.KindGroup:
