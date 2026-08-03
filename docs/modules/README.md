@@ -16,13 +16,19 @@ incident.
 
 | File | Packages covered |
 |---|---|
-| [foundation.md](foundation.md) | `platform`, `logx`, `jsonl`, `eventlog`, `accesslog`, `tier`, `mcp` (+ four `transport` implementations), `registry` |
+| [foundation.md](foundation.md) | `platform`, `logx`, `jsonl`, `eventlog`, `calllog`, `tier`, `mcp` (+ four `transport` implementations), `registry` |
 | [config.md](config.md) | `scope`, `session`, `event`, `secrets` (+ `secureenv`), `clients`, `skills` |
 | [dataplane.md](dataplane.md) | `downstream`, `router`, `pipeline`, `gateway`, `discovery` (+ `toolsig`), `shaping` (+ `toonenc`), `ratelimit` |
 | [security.md](security.md) | `guard` (`spawnguard`/`netguard`), `oauthflow` |
 | [controlplane.md](controlplane.md) | `api`, `ctlapi`, `confops`, `catalog`, `daemon`, `httpbridge`, `cli` (+ `output`), the two `cmd/` binaries, `testutil/fakemcp`, `depguardtest`, `test/*` |
 | [oauth.md](oauth.md) | Topic: how well `oauthflow` conforms to the MCP authorization spec, which provider deployment shapes are supported, known gaps; `oauthlogin` (the same flow, as a pollable session) |
 | [gui.md](gui.md) | Topic: the GUI frontend's information architecture, state presentation, write operations, and what it deliberately does not do |
+
+**Not covered yet: `internal/proclog`.** Added by `cbfbc4b` so the CLI and the control plane read the
+process logs through one implementation, and no document above has a section for it. It belongs in
+`foundation.md` on its dependency budget — standard library plus `jsonl`, `logx` and `platform` — but
+saying so in this table before the section exists would only move the gap. The package comment is
+currently the whole description, which is the state this index exists to make visible rather than hide.
 
 ## How these documents are written
 

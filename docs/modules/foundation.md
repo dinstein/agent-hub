@@ -271,7 +271,7 @@ need, and both call sites sit together so neither can change without the other b
 ### Invariants and failure directions
 
 - **Failure direction is OPEN, and that is the difference from `internal/calllog`.** A record that
-  cannot be written is dropped and counted; nothing is refused. `accesslog` is fail-closed because
+  cannot be written is dropped and counted; nothing is refused. `calllog` is fail-closed because
   an unrecorded `tools/call` is a governance gap. A missed state change is not — the state itself is
   still observable — and refusing to serve a client because a note about it could not be filed would
   be worse than the gap it prevents.
