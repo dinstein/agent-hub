@@ -1,5 +1,7 @@
-// Package ratelimit implements the cooperative call quotas
-// (`rate_limits.rs` → `internal/ratelimit` in the migration table).
+// Package ratelimit implements the cooperative call quotas. toolport's
+// `rate_limits.rs` is the reference implementation it was written against —
+// read, never copied, and the multi-process section below is where the two
+// part company.
 //
 // # What it is, and what it is not
 //
@@ -16,21 +18,22 @@
 // # Where it runs in the pipeline
 //
 // Immediately BEFORE the downstream call and AFTER every gate. That position
-// is not achieved by adding a third gate — it is
-// achieved structurally, by wrapping pipeline.CallRequest.Call (and its
-// self-heal twin CallWithArgs) through Admission:
+// is not achieved by adding a third gate — it is achieved structurally, by
+// wrapping pipeline.CallRequest.Call through Admission:
 //
 //	adm := lim.Admit(ratelimit.Key{Client: c, Server: s, Tool: t})
 //	req.Call = adm.Wrap(req.Call)
-//	req.CallWithArgs = adm.WrapArgs(req.CallWithArgs)
 //
-// Two consequences are load-bearing:
+// The consequence that is load-bearing: a call a gate denied never spends a
+// token. Charging a refusal against the agent's quota would let denied calls
+// starve allowed ones.
 //
-//   - A call a gate denied never spends a token. Charging a refusal against
-//     the agent's quota would let denied calls starve allowed ones.
-//   - The 7.2 argument self-heal retry is charged ONCE, not twice: both
-//     wrappers share one Admission and the token is spent on first
-//     admission only. One agent intent = one token.
+// There is one wrapped function, not two. There used to be a second —
+// CallWithArgs, the argument self-heal's retry — and the rule was that both
+// wrappers shared one Admission so an intent was charged once rather than
+// twice. f501146 removed the argument precheck gate and its self-heal, so the
+// field is gone and one wrapper is the whole story. One agent intent is still
+// one token, now because there is only one way to spend it.
 //
 // A rejection is an *ExceededError, which unwraps to BOTH
 // pipeline.ErrBlocked (so errors.Is keeps working for anything that
