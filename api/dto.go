@@ -107,7 +107,7 @@ type SessionInfo struct {
 
 // Event is one daemon event as delivered over the SSE stream
 // (GET /v1/events). Topic selects the stream ("servers", "sessions",
-// "activity", "skills"), Kind the event type within it, and
+// "skills"), Kind the event type within it, and
 // Rev the registry generation for registry-backed topics. Change events
 // are notifications only — they carry no snapshot; consumers re-read state
 // and apply it when the read generation is >= the applied one

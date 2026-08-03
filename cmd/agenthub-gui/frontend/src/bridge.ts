@@ -395,7 +395,6 @@ export const EVT = {
   daemon: "agenthub:daemon",
   servers: "agenthub:servers",
   sessions: "agenthub:sessions",
-  activity: "agenthub:activity",
   skills: "agenthub:skills",
   /** The tray changed a window preference; this window stores it. */
   windowPrefs: "agenthub:window-prefs",

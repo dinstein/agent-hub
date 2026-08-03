@@ -25,8 +25,6 @@ const (
 	TopicServers = "servers"
 	// TopicSessions carries session lifecycle changes.
 	TopicSessions = "sessions"
-	// TopicActivity carries the live token-savings activity feed.
-	TopicActivity = "activity"
 	// TopicSkills carries skills library/install changes.
 	TopicSkills = "skills"
 )
@@ -42,7 +40,7 @@ type EventsService struct {
 }
 
 // Subscribe opens the SSE stream for the given topics ("servers",
-// "sessions", "activity", "skills"; empty = all) and returns a channel of
+// "sessions", "skills"; empty = all) and returns a channel of
 // decoded events.
 //
 // The set is CLOSED at the daemon: an unlisted name is a 400, not a

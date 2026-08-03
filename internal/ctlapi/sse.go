@@ -17,7 +17,6 @@ import (
 const (
 	TopicServers  = "servers"
 	TopicSessions = "sessions"
-	TopicActivity = "activity"
 	TopicSkills   = "skills"
 )
 
@@ -25,7 +24,6 @@ const (
 var sseTopics = map[string]bool{
 	TopicServers:  true,
 	TopicSessions: true,
-	TopicActivity: true,
 	TopicSkills:   true,
 }
 
@@ -33,10 +31,9 @@ var sseTopics = map[string]bool{
 // before the first '.') to SSE topics. Bus topics outside this table are
 // daemon-internal and never leave the process.
 var busTopicPrefixMap = map[string]string{
-	"session":  TopicSessions,
-	"server":   TopicServers,
-	"activity": TopicActivity,
-	"skill":    TopicSkills,
+	"session": TopicSessions,
+	"server":  TopicServers,
+	"skill":   TopicSkills,
 }
 
 // sseTopicOf classifies one bus topic: SSE topic + event kind (the bus

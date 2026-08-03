@@ -49,10 +49,9 @@ const EventPrefix = "agenthub:"
 const (
 	// EventDaemon reports connection state changes to the daemon.
 	EventDaemon = EventPrefix + "daemon"
-	// EventServers/Sessions/Activity/Skills mirror the SSE topics.
+	// EventServers/Sessions/Skills mirror the SSE topics.
 	EventServers  = EventPrefix + api.TopicServers
 	EventSessions = EventPrefix + api.TopicSessions
-	EventActivity = EventPrefix + api.TopicActivity
 	EventSkills   = EventPrefix + api.TopicSkills
 )
 
@@ -66,8 +65,7 @@ const (
 // therefore an api.Topic* constant: retiring one there breaks this list at
 // compile time instead of at runtime.
 var subscribedTopics = []string{
-	api.TopicServers, api.TopicSessions,
-	api.TopicActivity, api.TopicSkills,
+	api.TopicServers, api.TopicSessions, api.TopicSkills,
 }
 
 // Emitter is the sink the SSE bridge pushes frontend events into. The Wails

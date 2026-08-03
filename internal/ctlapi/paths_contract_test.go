@@ -292,11 +292,10 @@ func TestAPITopicsMatchTheServedSet(t *testing.T) {
 	declared := map[string]string{
 		api.TopicServers:  "api.TopicServers",
 		api.TopicSessions: "api.TopicSessions",
-		api.TopicActivity: "api.TopicActivity",
 		api.TopicSkills:   "api.TopicSkills",
 	}
-	if len(declared) != 4 {
-		t.Fatalf("api declares %d distinct topics, want 4 — two constants collided", len(declared))
+	if len(declared) != 3 {
+		t.Fatalf("api declares %d distinct topics, want 3 — two constants collided", len(declared))
 	}
 	for name, constant := range declared {
 		if !sseTopics[name] {

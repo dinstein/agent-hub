@@ -102,7 +102,7 @@ means "the subscription ended". A single frame that fails JSON parsing is skippe
 the stream is still usable, and consumers were always going to realign by re-reading state.
 
 **The topic set is closed, and retiring one is a breaking change on both sides.** `TopicServers` /
-`TopicSessions` / `TopicActivity` / `TopicSkills` mirror `internal/ctlapi`'s own list, and the daemon
+`TopicSessions` / `TopicSkills` mirror `internal/ctlapi`'s own list, and the daemon
 answers an unlisted name with a **400 on the subscribe request** rather than an empty stream. So a
 constant left standing here after the daemon stopped serving it does not degrade to "that topic is
 quiet" — it takes the whole subscription down, and every other topic with it. That is exactly what a

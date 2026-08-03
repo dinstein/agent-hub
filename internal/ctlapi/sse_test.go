@@ -236,7 +236,10 @@ func TestSSETopicMapping(t *testing.T) {
 		{session.TopicClosed, TopicSessions, "closed", true},
 		{"server.changed", TopicServers, "changed", true},
 		{"skill.updated", TopicSkills, "updated", true},
-		{"activity.call", TopicActivity, "call", true},
+		// A prefix outside the table stays daemon-internal. "activity" was in
+		// it, mapping to a topic no producer ever published on; it is here to
+		// pin that removing the topic removed the mapping with it.
+		{"activity.call", "", "", false},
 		{"internal.debug", "", "", false},
 		{"registry.write", "", "", false},
 	}
