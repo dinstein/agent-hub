@@ -234,6 +234,7 @@ pack，返回结果留一份截断副本——记录发生在门禁之前，所�
 agenthub calls enable
 agenthub calls status
 agenthub calls tail --since 24h
+agenthub calls tail -f                        # 保持打开，新调用到达就打印
 agenthub calls show <call-id>                 # 默认只看元数据
 agenthub calls show <call-id> --payloads      # 显式解密
 agenthub calls stats --since 7d
@@ -241,13 +242,13 @@ agenthub calls verify
 ```
 
 默认保留 30 个 UTC 日、总量上限 5 GiB，并为所在文件系统预留 1 GiB 空间；改它们用
-`config set audit.retentionDays`、`audit.maxBytes`、`audit.minFreeBytes`。
-`audit prune --dry-run` 先预览过期的日分区，`audit prune` 再整日删除——正常写入在自己那次容量
+`config set calls.retentionDays`、`calls.maxBytes`、`calls.minFreeBytes`。
+`calls prune --dry-run` 先预览过期的日分区，`calls prune` 再整日删除——正常写入在自己那次容量
 检查之前也会跑同一套清理。
 
-导出和关掉它之前有两件事要知道。`audit export --output history.jsonl` 只把元数据写进一个新的
+导出和关掉它之前有两件事要知道。`calls export --output history.jsonl` 只把元数据写进一个新的
 0600 文件，并拒绝覆盖已有文件；确实需要明文参数与结果时才加 `--payloads`，因为导出文件从此就带着
-凭据离开了那个有界账本。以及 `audit disable` 只停止新增记录，不删历史也不删密钥，
+凭据离开了那个有界账本。以及 `calls disable` 只停止新增记录，不删历史也不删密钥，
 正如 `audit rotate-key` 会留着旧密钥，让已有历史仍然读得出来。
 
 `audit verify` 能发现元数据被改、payload 损坏和引用被调包。但所有证据都在本地，所以它无法证明

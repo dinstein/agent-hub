@@ -273,6 +273,7 @@ with a hole in the history.
 agenthub calls enable
 agenthub calls status
 agenthub calls tail --since 24h
+agenthub calls tail -f                        # and keep printing as calls arrive
 agenthub calls show <call-id>                 # metadata only
 agenthub calls show <call-id> --payloads      # explicit decryption
 agenthub calls stats --since 7d
@@ -280,16 +281,16 @@ agenthub calls verify
 ```
 
 The defaults retain 30 UTC days, cap the ledger at 5 GiB and reserve 1 GiB of
-free space; change them with `config set audit.retentionDays`,
-`audit.maxBytes` and `audit.minFreeBytes`. `audit prune --dry-run` previews the
-expired day partitions and `audit prune` removes them; ordinary writes run the
+free space; change them with `config set calls.retentionDays`,
+`calls.maxBytes` and `calls.minFreeBytes`. `calls prune --dry-run` previews the
+expired day partitions and `calls prune` removes them; ordinary writes run the
 same pruning before their own capacity check.
 
-Two things to know before exporting or turning it off. `audit export --output
+Two things to know before exporting or turning it off. `calls export --output
 history.jsonl` writes metadata to a new 0600 file and refuses to overwrite one;
 add `--payloads` only when you truly need decrypted arguments and results,
 because the exported file then carries credentials outside the bounded ledger.
-And `audit disable` stops new capture without deleting history or keys, just as
+And `calls disable` stops new capture without deleting history or keys, just as
 `audit rotate-key` keeps the old keys so existing history stays readable.
 
 `audit verify` detects modified metadata, corrupted payloads and swapped

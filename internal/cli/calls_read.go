@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"slices"
@@ -48,7 +49,7 @@ type AuditTail struct {
 
 func (t AuditTail) Human(w io.Writer) error {
 	if len(t.Events) == 0 {
-		_, err := fmt.Fprintln(w, "no matching audit events")
+		_, err := fmt.Fprintln(w, "no matching call events")
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
@@ -72,6 +73,92 @@ func shortCallID(id string) string {
 	return id
 }
 
+// callsFollowInterval is the -f re-read period. It matches the event and
+// frame readers': the three are read side by side, and one period keeps a
+// record from surfacing in one view before another.
+const callsFollowInterval = 500 * time.Millisecond
+
+// callSelector is the narrowing shared by the one-shot read and the follower,
+// so -f cannot drift into admitting something a plain tail would not.
+type callSelector struct {
+	client, server, tool, outcome string
+}
+
+func (s callSelector) admit(e calllog.Event) bool {
+	return auditEventMatches(e, s.client, s.server, s.tool, s.outcome)
+}
+
+// readCallTail collects the newest `limit` matching events since `since`.
+// A limit of zero or less is unbounded, which is what the follower asks for:
+// it has already narrowed the window with a cursor, and a ring buffer on top
+// of that could only throw away records it was about to print.
+func readCallTail(root string, since time.Time, limit int, sel callSelector) (AuditTail, error) {
+	rows := make([]CallEventRow, 0, max(limit, 0))
+	skipped, err := calllog.ScanEventsSince(root, since, func(e calllog.Event) error {
+		if !sel.admit(e) {
+			return nil
+		}
+		if limit > 0 && len(rows) == limit {
+			copy(rows, rows[1:])
+			rows = rows[:limit-1]
+		}
+		rows = append(rows, auditEventRow(e))
+		return nil
+	})
+	if err != nil {
+		return AuditTail{}, err
+	}
+	return AuditTail{Since: since, Events: rows, Skipped: skipped}, nil
+}
+
+// followCalls prints every event recorded after the tail it was given.
+//
+// It tracks a record TIMESTAMP rather than a byte offset, for the reason
+// followEvents and followServerFrames do: the ledger is a directory of
+// day-partitioned files written by N gateway processes, so an offset into
+// "the file" is not a position in the stream at all.
+//
+// The cursor is the newest record PRINTED, and admission is strictly after
+// it. A record sharing that instant is the one case this loses, and the
+// alternative — >= — reprints the last row on every tick, which reads as the
+// same call happening over and over.
+func (a *App) followCalls(ctx context.Context, root string, seen AuditTail, sel callSelector) error {
+	p := a.printer()
+	cursor := seen.Since
+	if n := len(seen.Events); n > 0 {
+		cursor = seen.Events[n-1].Time
+	}
+	ticker := time.NewTicker(callsFollowInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+		// Re-read from the cursor rather than from `since`: a long-running
+		// follower would otherwise re-scan a widening window every tick.
+		batch, err := readCallTail(root, cursor, 0, sel)
+		if err != nil {
+			return err
+		}
+		fresh := AuditTail{}
+		for _, row := range batch.Events {
+			if !row.Time.After(cursor) {
+				continue
+			}
+			fresh.Events = append(fresh.Events, row)
+		}
+		if len(fresh.Events) == 0 {
+			continue
+		}
+		cursor = fresh.Events[len(fresh.Events)-1].Time
+		if err := p.Emit(fresh); err != nil {
+			return err
+		}
+	}
+}
+
 func (a *App) newCallsTailCmd() *cobra.Command {
 	var (
 		sinceRaw string
@@ -80,10 +167,11 @@ func (a *App) newCallsTailCmd() *cobra.Command {
 		server   string
 		tool     string
 		outcome  string
+		follow   bool
 	)
 	cmd := &cobra.Command{
-		Use:   "tail",
-		Short: "Show recent access metadata without decrypting payloads",
+		Use:   "tail [-f]",
+		Short: "Show recent call metadata without decrypting payloads",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if limit <= 0 || limit > 1000 {
@@ -97,24 +185,21 @@ func (a *App) newCallsTailCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			rows := make([]CallEventRow, 0, limit)
-			skipped, err := calllog.ScanEventsSince(root, since, func(e calllog.Event) error {
-				if !auditEventMatches(e, client, server, tool, outcome) {
-					return nil
-				}
-				if len(rows) == limit {
-					copy(rows, rows[1:])
-					rows = rows[:limit-1]
-				}
-				rows = append(rows, auditEventRow(e))
-				return nil
-			})
+			sel := callSelector{client: client, server: server, tool: tool, outcome: outcome}
+			tail, err := readCallTail(root, since, limit, sel)
 			if err != nil {
 				return err
 			}
-			return a.printer().Emit(AuditTail{Since: since, Events: rows, Skipped: skipped})
+			if err := a.printer().Emit(tail); err != nil {
+				return err
+			}
+			if !follow {
+				return nil
+			}
+			return a.followCalls(cmd.Context(), root, tail, sel)
 		},
 	}
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "stay open and keep printing new events")
 	cmd.Flags().StringVar(&sinceRaw, "since", "24h", "look back by duration or RFC3339 time; use all for no time bound")
 	cmd.Flags().IntVar(&limit, "limit", 20, "maximum events to return (1-1000)")
 	cmd.Flags().StringVar(&client, "client", "", "only this client")

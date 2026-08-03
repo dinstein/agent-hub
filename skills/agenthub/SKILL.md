@@ -290,6 +290,7 @@ Every interaction with a downstream, in one local ledger: the lifecycle of every
 agenthub calls status                      # effective capture, durability, retention; is evidence on
 agenthub calls enable                      # creates the payload key, starts storing bodies
 agenthub calls tail --limit 20             # metadata only, nothing decrypted; --since 24h by default
+agenthub calls tail -f                     # and keep printing, like `events -f` and `logs -f`
 agenthub calls tail --server linear --client claude-code --outcome tool_error
 agenthub calls stats --since 24h           # counts by outcome / client / server / tool
 agenthub calls show <call-id>              # one call: lifecycle + its frames, in order

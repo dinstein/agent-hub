@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -298,5 +301,72 @@ func TestCallsExportPruneAndKeyRotation(t *testing.T) {
 	}
 	if _, err := os.Stat(oldDay); !os.IsNotExist(err) {
 		t.Fatalf("expired partition remains: %v", err)
+	}
+}
+
+// -f keeps printing. The three record readers under Observe all follow, and
+// this was the one that could not: watching a client misbehave meant
+// re-running `calls tail` by hand, which is exactly when a call is missed.
+func TestCallsTailFollowPrintsOnlyWhatIsNew(t *testing.T) {
+	dir := setDataDir(t)
+	root := filepath.Join(dir, "calls")
+	base := time.Now().UTC().Add(-time.Minute)
+	seedCallEvent(t, root, base, "call-old", "received")
+
+	// The tail the follower is handed, exactly as the command builds it.
+	tail, err := readCallTail(root, time.Time{}, 20, callSelector{})
+	if err != nil {
+		t.Fatalf("readCallTail: %v", err)
+	}
+	if len(tail.Events) != 1 || tail.Events[0].CallID != "call-old" {
+		t.Fatalf("seed tail = %+v", tail.Events)
+	}
+
+	// A record that arrives after that tail was taken.
+	seedCallEvent(t, root, base.Add(time.Second), "call-new", "finished")
+
+	var out bytes.Buffer
+	app := &App{stdout: &out, stderr: io.Discard}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- app.followCalls(ctx, root, tail, callSelector{}) }()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(out.String(), "call-new") {
+		if time.Now().After(deadline) {
+			t.Fatalf("the follower never printed the new record:\n%s", out.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("followCalls: %v", err)
+	}
+
+	// And only what is new: reprinting the row the tail already showed reads
+	// as the same call happening twice.
+	if strings.Contains(out.String(), "call-old") {
+		t.Fatalf("the follower reprinted a record the tail had shown:\n%s", out.String())
+	}
+}
+
+// seedCallEvent appends one lifecycle record to the day partition its
+// timestamp belongs to, which is where the reader looks for it.
+func seedCallEvent(t *testing.T, root string, ts time.Time, callID, kind string) {
+	t.Helper()
+	dir := filepath.Join(root, ts.UTC().Format("2006-01-02"))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	line := fmt.Sprintf(`{"v":1,"ts":%q,"event":%q,"callId":%q,"client":"claude-code","pid":7}`,
+		ts.UTC().Format(time.RFC3339Nano), kind, callID) + "\n"
+	f, err := os.OpenFile(filepath.Join(dir, "calls.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.WriteString(line); err != nil {
+		t.Fatal(err)
 	}
 }
