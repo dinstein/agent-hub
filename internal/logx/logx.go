@@ -3,7 +3,7 @@
 //
 // It provides:
 //   - Setup: a dual-handler logger — human-readable text to stderr and JSON
-//     lines to a file, each independently switchable.
+//     lines to a writer the assembly supplies, each independently switchable.
 //   - The mandatory field convention (server / tool / client / session /
 //     rev / pid / inst) as exported constants plus attr constructors.
 //   - Secret scrubbing as a slog.Handler middleware (see scrub.go).
@@ -18,7 +18,6 @@ package logx
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -36,9 +35,17 @@ type Config struct {
 	TextEnabled bool
 	// TextWriter receives text output. Defaults to os.Stderr.
 	TextWriter io.Writer
-	// JSONPath, when non-empty, turns on the JSON handler appending one
-	// JSON object per line to the given file (created 0600 if missing).
-	JSONPath string
+	// JSON, when non-nil, turns on the JSON handler writing one JSON object
+	// per line to it.
+	//
+	// This package does NOT open the file. It is locked to the standard
+	// library, while the discipline a shared log file needs — a bounded line
+	// written in one write(2), rotation by rename, retention — belongs to
+	// internal/jsonl, which every other stream on disk already goes through.
+	// The assembly opens jsonl.NewLineWriter and hands the sink over here,
+	// and it also closes it: a sink this package neither opened nor sized is
+	// not one whose lifetime it can decide.
+	JSON io.Writer
 	// Level is the minimum level for both sinks. Defaults to slog.LevelInfo.
 	Level slog.Leveler
 	// Debug forces debug-level verbosity, equivalent to AGENTHUB_DEBUG=1.
@@ -46,11 +53,12 @@ type Config struct {
 	Debug bool
 }
 
-// Setup builds the logger described by cfg and returns it together with a
-// close function releasing the JSON file (a no-op when JSON output is
-// disabled). Every record passes through the scrubbing middleware before
-// reaching any sink.
-func Setup(cfg Config) (*slog.Logger, func() error, error) {
+// Setup builds the logger described by cfg. Every record passes through the
+// scrubbing middleware before reaching any sink.
+//
+// It returns no closer, because it holds nothing to close: both sinks are
+// writers the caller supplied.
+func Setup(cfg Config) *slog.Logger {
 	level := slog.Leveler(slog.LevelInfo)
 	if cfg.Level != nil {
 		level = cfg.Level
@@ -69,14 +77,8 @@ func Setup(cfg Config) (*slog.Logger, func() error, error) {
 		handlers = append(handlers, slog.NewTextHandler(w, opts))
 	}
 
-	closer := func() error { return nil }
-	if cfg.JSONPath != "" {
-		f, err := os.OpenFile(cfg.JSONPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-		if err != nil {
-			return nil, nil, fmt.Errorf("logx: open json log: %w", err)
-		}
-		handlers = append(handlers, slog.NewJSONHandler(f, opts))
-		closer = f.Close
+	if cfg.JSON != nil {
+		handlers = append(handlers, slog.NewJSONHandler(cfg.JSON, opts))
 	}
 
 	var h slog.Handler
@@ -90,7 +92,7 @@ func Setup(cfg Config) (*slog.Logger, func() error, error) {
 	}
 	// Scrubbing wraps the outermost handler so that a single pass covers
 	// every sink and every WithAttrs-bound attribute.
-	return slog.New(NewScrubHandler(h)), closer, nil
+	return slog.New(NewScrubHandler(h))
 }
 
 // multiHandler fans one record out to several handlers. Handle errors are

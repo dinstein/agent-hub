@@ -277,7 +277,7 @@ const (
 	detailCap = 512
 	// keepSegments is how many rotated segments survive a prune, newest
 	// first, on top of the active file.
-	keepSegments = 3
+	keepSegments = jsonl.DefaultKeepSegments
 )
 
 // Stream appends Records. A nil *Stream is valid and does nothing.

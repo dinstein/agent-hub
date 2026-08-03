@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,41 +12,25 @@ import (
 
 func TestSetupTextOnly(t *testing.T) {
 	var buf bytes.Buffer
-	logger, closeFn, err := logx.Setup(logx.Config{TextEnabled: true, TextWriter: &buf})
-	if err != nil {
-		t.Fatalf("Setup: %v", err)
-	}
-	defer func() {
-		if err := closeFn(); err != nil {
-			t.Errorf("close: %v", err)
-		}
-	}()
+	logger := logx.Setup(logx.Config{TextEnabled: true, TextWriter: &buf})
 
 	logger.Info("hello", logx.Server("github"))
+
 	out := buf.String()
 	if !strings.Contains(out, "msg=hello") || !strings.Contains(out, "server=github") {
 		t.Fatalf("unexpected text output: %q", out)
 	}
 }
 
-func TestSetupJSONFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gateway.jsonl")
-	logger, closeFn, err := logx.Setup(logx.Config{JSONPath: path})
-	if err != nil {
-		t.Fatalf("Setup: %v", err)
-	}
-	logger.Info("boot", logx.Rev(3))
-	if err := closeFn(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
+func TestSetupJSONSink(t *testing.T) {
+	var buf bytes.Buffer
+	logger := logx.Setup(logx.Config{JSON: &buf})
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
+	logger.Info("boot", logx.Rev(3))
+
 	var rec map[string]any
-	if err := json.Unmarshal(bytes.TrimSpace(data), &rec); err != nil {
-		t.Fatalf("not valid JSON: %v\n%s", err, data)
+	if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &rec); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, buf.String())
 	}
 	if rec["msg"] != "boot" || rec["rev"] != float64(3) {
 		t.Fatalf("unexpected record: %v", rec)
@@ -56,61 +38,35 @@ func TestSetupJSONFile(t *testing.T) {
 	if _, ok := rec["time"]; !ok {
 		t.Fatalf("expected time field in JSON record: %v", rec)
 	}
-
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat: %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("log file perm = %o, want 600", perm)
-	}
 }
 
 func TestSetupDualSink(t *testing.T) {
-	var buf bytes.Buffer
-	path := filepath.Join(t.TempDir(), "dual.jsonl")
-	logger, closeFn, err := logx.Setup(logx.Config{
-		TextEnabled: true, TextWriter: &buf, JSONPath: path,
-	})
-	if err != nil {
-		t.Fatalf("Setup: %v", err)
-	}
-	logger.Info("both sinks")
-	if err := closeFn(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
+	var text, jsonBuf bytes.Buffer
+	logger := logx.Setup(logx.Config{TextEnabled: true, TextWriter: &text, JSON: &jsonBuf})
 
-	if !strings.Contains(buf.String(), "both sinks") {
-		t.Fatalf("text sink missing record: %q", buf.String())
+	logger.Info("both sinks")
+
+	if !strings.Contains(text.String(), "both sinks") {
+		t.Fatalf("text sink missing record: %q", text.String())
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if !strings.Contains(string(data), `"msg":"both sinks"`) {
-		t.Fatalf("json sink missing record: %s", data)
+	if !strings.Contains(jsonBuf.String(), `"msg":"both sinks"`) {
+		t.Fatalf("json sink missing record: %s", jsonBuf.String())
 	}
 }
 
 func TestSetupBothDisabledDiscards(t *testing.T) {
-	logger, closeFn, err := logx.Setup(logx.Config{})
-	if err != nil {
-		t.Fatalf("Setup: %v", err)
-	}
-	defer func() { _ = closeFn() }()
-	// Must not panic and must not create any file.
+	logger := logx.Setup(logx.Config{})
+
+	// Must not panic and must not need a sink.
 	logger.Info("into the void", slog.String("token", "x"))
 }
 
 func TestSetupDefaultLevelIsInfo(t *testing.T) {
 	var buf bytes.Buffer
-	logger, closeFn, err := logx.Setup(logx.Config{TextEnabled: true, TextWriter: &buf})
-	if err != nil {
-		t.Fatalf("Setup: %v", err)
-	}
-	defer func() { _ = closeFn() }()
+	logger := logx.Setup(logx.Config{TextEnabled: true, TextWriter: &buf})
 
 	logger.Debug("hidden")
+
 	if buf.Len() != 0 {
 		t.Fatalf("debug record should be filtered at default level: %q", buf.String())
 	}
@@ -123,27 +79,14 @@ func TestSetupDefaultLevelIsInfo(t *testing.T) {
 func TestDebugEnvDoesNotBypassScrubbing(t *testing.T) {
 	t.Setenv(logx.EnvDebug, "1")
 
-	var buf bytes.Buffer
-	path := filepath.Join(t.TempDir(), "debug.jsonl")
-	logger, closeFn, err := logx.Setup(logx.Config{
-		TextEnabled: true, TextWriter: &buf, JSONPath: path,
-	})
-	if err != nil {
-		t.Fatalf("Setup: %v", err)
-	}
+	var text, jsonBuf bytes.Buffer
+	logger := logx.Setup(logx.Config{TextEnabled: true, TextWriter: &text, JSON: &jsonBuf})
 
 	logger.Debug("dbg dump",
 		slog.String("token", "super-secret-value"),
 		slog.String("hdr", "Authorization: Bearer abc123"))
-	if err := closeFn(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
 
-	jsonOut, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	for name, out := range map[string]string{"text": buf.String(), "json": string(jsonOut)} {
+	for name, out := range map[string]string{"text": text.String(), "json": jsonBuf.String()} {
 		if !strings.Contains(out, "dbg dump") {
 			t.Fatalf("%s: debug record missing (AGENTHUB_DEBUG should raise verbosity): %q", name, out)
 		}
@@ -153,12 +96,5 @@ func TestDebugEnvDoesNotBypassScrubbing(t *testing.T) {
 		if !strings.Contains(out, logx.Redacted) {
 			t.Fatalf("%s: expected %s marker: %q", name, logx.Redacted, out)
 		}
-	}
-}
-
-func TestSetupJSONPathUnwritable(t *testing.T) {
-	_, _, err := logx.Setup(logx.Config{JSONPath: filepath.Join(t.TempDir(), "missing", "x.jsonl")})
-	if err == nil {
-		t.Fatal("expected error for unwritable json path")
 	}
 }

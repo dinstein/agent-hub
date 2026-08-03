@@ -43,6 +43,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/event"
 	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/httpbridge"
+	"github.com/dinstein/agent-hub/internal/jsonl"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 	"github.com/dinstein/agent-hub/internal/platform"
@@ -518,22 +519,18 @@ func Run(ctx context.Context, cfg Config) error {
 // A JSON file failure downgrades to text-only: a daemon that cannot write
 // its log file should still coordinate.
 func buildLogger(cfg Config, logsDir string) (*slog.Logger, func() error, error) {
+	noop := func() error { return nil }
 	if cfg.Log != nil {
-		return cfg.Log, func() error { return nil }, nil
+		return cfg.Log, noop, nil
 	}
-	lc := logx.Config{
-		TextEnabled: true,
-		TextWriter:  cfg.LogWriter,
-		JSONPath:    filepath.Join(logsDir, LogFileName),
-	}
-	log, closeFn, err := logx.Setup(lc)
+	lc := logx.Config{TextEnabled: true, TextWriter: cfg.LogWriter}
+	sink, err := jsonl.NewLineWriter(filepath.Join(logsDir, LogFileName),
+		jsonl.WriterOptions{KeepSegments: jsonl.DefaultKeepSegments})
 	if err != nil {
-		log, closeFn, err = logx.Setup(logx.Config{TextEnabled: true, TextWriter: cfg.LogWriter})
-		if err != nil {
-			return nil, nil, fmt.Errorf("daemon: logger setup: %w", err)
-		}
+		return logx.Setup(lc), noop, nil
 	}
-	return log, closeFn, nil
+	lc.JSON = sink
+	return logx.Setup(lc), sink.Close, nil
 }
 
 // startWatch wires registry watching into the bus: on every external change

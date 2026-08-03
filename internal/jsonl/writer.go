@@ -26,6 +26,11 @@ const (
 	DefaultMaxBytes = 32 << 20 // 32 MiB
 	// DefaultBufferSize is the writer channel capacity.
 	DefaultBufferSize = 1024
+	// DefaultKeepSegments is the retention a stream here uses unless it has
+	// a reason of its own: the active file plus three rotated segments. It
+	// is one constant rather than one per stream so "how much history do
+	// these files keep" has a single answer.
+	DefaultKeepSegments = 3
 )
 
 // WriterOptions configures a Writer. The zero value uses the defaults

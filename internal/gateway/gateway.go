@@ -53,6 +53,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/discovery"
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/eventlog"
+	"github.com/dinstein/agent-hub/internal/jsonl"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/pipeline"
@@ -515,24 +516,22 @@ func newGateway(cfg Config) (*gateway, error) {
 // The JSON file failure is downgraded to text-only: a gateway that cannot
 // write its log file must still serve.
 func buildLogger(cfg Config, resolver *platform.Resolver) (*slog.Logger, func() error, error) {
+	noop := func() error { return nil }
 	if cfg.Log != nil {
-		return cfg.Log, func() error { return nil }, nil
+		return cfg.Log, noop, nil
 	}
 	lc := logx.Config{TextEnabled: true, TextWriter: cfg.LogWriter}
-	if dir, err := resolver.LogsDir(); err == nil {
-		if err := platform.EnsureDir(dir); err == nil {
-			lc.JSONPath = LogPath(dir, cfg.ClientID)
-		}
+	dir, err := resolver.LogsDir()
+	if err != nil || platform.EnsureDir(dir) != nil {
+		return logx.Setup(lc), noop, nil
 	}
-	log, closeFn, err := logx.Setup(lc)
+	sink, err := jsonl.NewLineWriter(LogPath(dir, cfg.ClientID),
+		jsonl.WriterOptions{KeepSegments: jsonl.DefaultKeepSegments})
 	if err != nil {
-		// Fall back to text-only rather than refusing to start.
-		log, closeFn, err = logx.Setup(logx.Config{TextEnabled: true, TextWriter: cfg.LogWriter})
-		if err != nil {
-			return nil, nil, fmt.Errorf("gateway: logger setup: %w", err)
-		}
+		return logx.Setup(lc), noop, nil
 	}
-	return log, closeFn, nil
+	lc.JSON = sink
+	return logx.Setup(lc), sink.Close, nil
 }
 
 // eventStream is what downstream.Deps reads at connect time.

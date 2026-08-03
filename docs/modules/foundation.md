@@ -196,14 +196,21 @@ scrubbed too — errors frequently wrap request or header dumps.
 
 **`WithAttrs` redacts eagerly**, so bound attributes are clean whatever record they later attach to.
 
-**Log files are 0600, opened for append**, one JSON object per line.
+**This package does not open the log file.** It is standard-library-only, while a file several
+processes append to needs the discipline `internal/jsonl` owns — a bounded line written in one
+`write(2)`, rotation by rename, retention. So `Config.JSON` takes an `io.Writer`, the assembly opens
+`jsonl.NewLineWriter` and hands the sink over, and the assembly closes it; `Setup` returns no closer
+because it holds nothing to close. Until that seam existed the process logs had none of it: a bare
+`os.OpenFile`, no line bound — so one long record could tear against another gateway's, and several
+gateways do share one file, which is exactly what `pid` is there for — no rotation, and no retention.
 
 ---
 
 ## internal/jsonl
 
 The append-only JSONL writer every on-disk stream goes through: the per-server wire trace
-(`internal/downstream`) and the control-plane event stream (`internal/eventlog`).
+(`internal/downstream`), the control-plane event stream (`internal/eventlog`), and — through
+`LineWriter` — the process logs `slog` writes.
 
 It is the one primitive that survived `internal/audit`: the governance streams went and the write
 discipline did not, because the discipline was never about audit — it is what any JSONL file written
@@ -234,6 +241,18 @@ by N processes at once needs.
   `tools/call` result, which is precisely what a trace is opened to see. It now marshals, measures
   and re-cuts until the line fits. Raising the bound instead would have traded dropped frames for
   torn ones.
+- **`Segments` and `Prune` are the reading and retention halves of the rotation scheme, and they live
+  here** because `segmentPath` is what names a rotated file. A caller composing that glob itself
+  would be the second place the scheme lives, and the way that goes wrong is a reader opening only
+  the ACTIVE file and reporting "nothing happened" for everything rotation moved aside — which is
+  the bug the retired savings projection shipped.
+- **Retention is opt-in (`KeepSegments`), and the sweep runs in `NewWriter`.** A stream that is
+  someone's archive must not lose history to a default. `DefaultKeepSegments` = 3 is the number every
+  stream here uses, in one place, so "how much history do these files keep" has one answer.
+- **`LineWriter` reports every write as accepted.** It is the `io.Writer` face for `log/slog`, which
+  discards whatever `Handle` returns — an error would reach no one while still tempting a caller to
+  treat a lost log line as a failed operation. Over-long records become oversize markers here too,
+  which is the intended pressure: full arguments and payloads belong in the ledger, never in `slog`.
 - **Dependency budget**: standard library only.
 
 ---
@@ -269,7 +288,7 @@ need, and both call sites sit together so neither can change without the other b
 - **The reader covers rotated segments.** `Read` walks `Segments(path)`, not just the active file.
   The retired savings projection opened only the active file, and the symptom was a report saying
   "nothing happened" rather than an error.
-- **Retention runs on `Open`**, keeping the newest three segments. Rotation happens at 32 MiB of
+- **Retention runs on `Open`** (`jsonl`'s `KeepSegments`), keeping the newest three segments. Rotation happens at 32 MiB of
   state-change records and is therefore rare, while gateway processes open this file constantly —
   one per `agenthub connect` — so the check is frequent in practice and costs one directory listing.
   A removal that fails is ignored: another process may have pruned it already, and a retention sweep
