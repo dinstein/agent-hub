@@ -30,8 +30,8 @@ flowchart LR
         G1["agenthub connect --client cursor"]
         G2["agenthub connect --client claude-code"]
     end
-    subgraph daemon["agenthub daemon (optional, long-running)"]
-        H["httpbridge: MCP data plane + agent tokens<br/>(off by default, enabled explicitly with --http-addr)"]
+    subgraph daemon["agenthub daemon (optional; owned by the app, or --headless)"]
+        H["httpbridge: MCP data plane + agent tokens<br/>(off by default, enabled explicitly with http.addr)"]
         CO["coordination plane: session registry<br/>OAuth singleflight / event stream"]
         CP["ctlapi: REST + SSE over UDS"]
     end
@@ -70,6 +70,22 @@ Degradation when the daemon is absent is now barely observable from the data pla
 gateway's scope comes entirely from the registry files, so killing the daemon changes nothing about
 what a client sees. What is lost is `session ls` / `session kill`, the event stream, and the shared
 HTTP pool; OAuth refresh falls back to file locks.
+
+**A daemon belongs to whoever started it, and there are exactly two answers.** The desktop
+application starts one and owns it: it runs as a supervised child, it is restarted if it falls over,
+and it stops when the application does — including when the application never gets to say so, because
+the daemon watches its owner rather than trusting it (a lifeline pipe, plus a pid poll as the
+backstop). The other answer is `--headless`, for a server with no desktop, CI, and the e2e suite: it
+belongs to nobody, watches nothing, and stops when an operator stops it. **A start that names neither
+is refused** (`E_DAEMON_UNOWNED`), because a hub nothing is responsible for is one the next launch
+finds, cannot claim, and must not kill.
+
+This does not make the daemon mandatory, and the paragraph above still holds in full: a client's
+scope comes from the registry files, so a machine with no hub running serves stdio clients exactly as
+before. What it makes conditional is the *value-add* — the shared HTTP pool, the session list and the
+event stream come and go with the application, and an agent connected over HTTP loses its endpoint
+when the desktop application quits. That is the trade the ownership rule buys: no orphaned hub, at
+the price of an HTTP face that keeps the application's hours unless an operator runs one headless.
 
 The price is that the discipline of multiple processes writing the same disk has to be right: one
 `O_APPEND` write per log line (`internal/jsonl`, with a multi-process test to prove it), a
@@ -418,7 +434,8 @@ four were removed. What survives refuses a call outright or lets it through unto
 ├── logs/                     # server-<name>.log + gateway-<client>.log + daemon.log
 ├── tokens.json  .token_key   # agent tokens (HMAC only)
 └── run/                      # on Linux, prefers $XDG_RUNTIME_DIR/AgentHub when AGENTHUB_DATA_DIR is unset
-    ├── ctl.sock  daemon.json # control socket + readiness handshake (written only after a successful bind)
+    ├── ctl.sock  daemon.json # control socket + readiness handshake (endpoint, pid, version, owner pid;
+    │                         # written only after a successful bind)
 ```
 
 `<data>` splits into two mutually unrelated directories by **build channel**:

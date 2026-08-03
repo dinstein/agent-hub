@@ -32,8 +32,8 @@ flowchart LR
         G1["agenthub connect --client cursor"]
         G2["agenthub connect --client claude-code"]
     end
-    subgraph daemon["agenthub daemon（可选常驻）"]
-        H["httpbridge：MCP 数据面 + agent token<br/>（默认不监听，--http-addr 显式开启）"]
+    subgraph daemon["agenthub daemon（可选；归应用所有，或 --headless）"]
+        H["httpbridge：MCP 数据面 + agent token<br/>（默认不监听，http.addr 显式开启）"]
         CO["协调面：session 注册表<br/>OAuth 单飞 / 事件流"]
         CP["ctlapi：REST + SSE over UDS"]
     end
@@ -68,13 +68,27 @@ flowchart LR
 stdio 网关的 scope 完全来自注册表文件，杀掉 daemon 不改变任何客户端看到的东西；
 失去的是 `session ls` / `session kill`、事件流和共享 HTTP 池，OAuth 刷新退回文件锁。
 
+**daemon 归启动它的人所有，而答案只有两个。** 桌面应用启动的那个归它所有：作为受监管的子进程运行、
+崩了会被拉起、应用退出时随之停止——包括应用来不及道别的那些退出方式，因为 daemon 是**盯着** owner
+而不是信任它（一条 lifeline 管道，外加 pid 轮询兜底）。另一个答案是 `--headless`：给没有桌面的服务器、
+CI 和 e2e 用，它不属于任何人、不盯任何人，由操作者停止。**两者都没说的启动会被拒绝**
+（`E_DAEMON_UNOWNED`）——一个没人负责的 hub，正是下一次启动会遇到、无法认领、又不能杀掉的那个。
+
+这没有让 daemon 变成必需品，上一段仍然整段成立：客户端的 scope 来自注册表文件，没有 hub 在跑的机器
+服务 stdio 客户端和以前完全一样。变成有条件的是那个**增值层**——共享 HTTP 池、会话列表和事件流随应用
+来去，通过 HTTP 连接的 agent 会在桌面应用退出时失去端点。这就是所有权规则买来的交易：不再有孤儿 hub，
+代价是 HTTP 面跟着应用的作息走，除非操作者自己跑一个 headless 的。
+
 代价是多进程共写磁盘的纪律必须做对：日志每行一次 `O_APPEND` 写（`internal/jsonl`，并有一个
 多进程测试证明它）、共享限流计数器外面套一把跨进程文件锁、registry 的每一次写都走原子改名。
 这些不是保险，是并发正确性依赖。
 
-**HTTP 数据面默认不存在。** `internal/httpbridge` 的 MCP 暴露面由 `agenthub daemon start
---http-addr <host:port>` 显式开启；**没有地址就没有监听器**（不是「有个默认端口」）。非 loopback
-地址还要再加 `--http-allow-remote`，否则 daemon **启动失败**而不是悄悄退回 loopback——配置声称的
+**HTTP 数据面默认不存在。** `internal/httpbridge` 的 MCP 暴露面显式开启：`agenthub config set
+http.addr <host:port>`，或者在会敲 flag 的那类启动上给 `--http-addr`；**没有地址就没有监听器**
+（不是「有个默认端口」）。落盘那种形式的存在理由是：现在启动 hub 的是桌面应用，而应用不敲 flag——
+只活在 argv 里的开关等于根本给不出来。它是同一个开关，写下来而不是每次重复；命令行仍然整组替换
+落盘的那一组。非 loopback 地址还要再加 `http.allowRemote` / `--http-allow-remote`，
+否则 daemon **启动失败**而不是悄悄退回 loopback——配置声称的
 暴露面必须兑现或报错。绑定本身还要过 `AuthorizeBind`：既无 admin token、又无活跃 agent token、
 又无注册客户端的监听器会被拒绝。
 

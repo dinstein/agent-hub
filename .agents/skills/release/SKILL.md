@@ -171,4 +171,5 @@ scripts/install-to-brew.sh --restore     # give the path back to Homebrew
 ```
 
 A dirty tree is fine here; the version carries `-dirty`. A dev-channel binary is refused. Replacing
-the file does not replace a running daemon — `agenthub daemon restart` does.
+the file does not replace a running daemon: quit and reopen AgentHub if the application is running
+one, or `agenthub daemon restart --headless` if an operator is.

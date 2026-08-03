@@ -89,6 +89,24 @@ killing the process by hand. What it needs is a Job Object, which is also what
 The failure is at least loud: the operation reports unsupported rather than reporting success and
 signalling nothing.
 
+### The owner watch has one mechanism here instead of two
+
+A hub belongs to the application that started it and must not outlive it
+(`internal/daemon/owner.go`). On unix that is enforced twice: a **lifeline** pipe whose close the
+kernel guarantees however the owner dies, and a pid **poll** as the backstop. Windows gets the poll
+alone — `os/exec` cannot hand a child an extra descriptor there, so `api.newLifeline` returns nothing
+and the child is started without `--owner-lifeline-fd`. The poll itself is implemented
+(`platform.ProcessAlive` opens the process and reads its exit code, because a pid `OpenProcess`
+accepts may name one that has already exited) and has never run on a real machine.
+
+Two consequences, in opposite directions. A hub can outlive its owner by up to one poll interval,
+which is the harmless direction — the next launch finds it and adopts nothing. And
+`api.Supervised.Stop` **kills rather than asks** here, because there is no SIGTERM to deliver: the
+alternative to a hard stop is not a gentler stop but no stop at all, leaving a hub running with the
+application gone, no window, no tray, and nothing on the machine that will ever end it. An abandoned
+in-flight call is the smaller loss. The Job Object that fixes `daemon stop` above fixes this too —
+one piece of work, and neither half is verifiable from here.
+
 ### No client has a user-level location on Windows
 
 `internal/clients/table.go` keys each client's user-level config path by GOOS, and `sameOnAll` /
