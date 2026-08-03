@@ -117,7 +117,10 @@ func TestDaemonRestartReregistersTheGateway(t *testing.T) {
 	enableServer(t, dataDir, "fake")
 
 	h := &daemonEnv{dataDir: dataDir, socket: socket, env: env}
-	runAgenthubEnv(t, env, "", "daemon", "start")
+	// --headless is how a hub with no desktop application behind it is
+	// started, and the suite goes through the same door an operator does: a
+	// hub the tests were exempted from admitting is one nothing has verified.
+	runAgenthubEnv(t, env, "", "daemon", "start", "--headless")
 	t.Cleanup(func() { h.killDaemon(t) })
 
 	c := startGatewayEnv(t, env, "e2e-restart")
@@ -142,7 +145,7 @@ func TestDaemonRestartReregistersTheGateway(t *testing.T) {
 	// --- restart: the daemon comes back with an EMPTY session table (its
 	// registry of live gateways died with it), and the gateway re-registers
 	// into it on the next ladder tick.
-	runAgenthubEnv(t, env, "", "daemon", "start")
+	runAgenthubEnv(t, env, "", "daemon", "start", "--headless")
 	if rows := listSessions(t, env, "e2e-restart"); len(rows) != 0 {
 		t.Fatalf("a restarted daemon already knows sessions: %+v — they cannot be real", rows)
 	}

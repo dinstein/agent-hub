@@ -122,7 +122,9 @@ func TestDaemonStartForegroundRefusesSecondInstance(t *testing.T) {
 	}
 	defer func() { _ = l.Close() }()
 
-	code, out, errOut := runCLI(t, "", "daemon", "start", "--foreground", "--json")
+	// --headless because admission (daemonowner.go) is checked first: an
+	// ownerless start never reaches the stale-socket probe this pins.
+	code, out, errOut := runCLI(t, "", "daemon", "start", "--foreground", "--headless", "--json")
 	if code != ExitGeneral {
 		t.Fatalf("exit = %d, want %d (stdout %q, stderr %q)", code, ExitGeneral, out, errOut)
 	}

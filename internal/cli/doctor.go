@@ -389,7 +389,7 @@ func (d *doctorRun) checkSocket(ctx context.Context) {
 	switch {
 	case errors.Is(statErr, fs.ErrNotExist):
 		d.add("ctl-socket", StatusWarn, socket+" absent (daemon not running)").Fix =
-			"start it with 'agenthub daemon start' if you want the shared pool"
+			"open AgentHub if you want the shared pool, or 'agenthub daemon start --headless' without a desktop"
 		return
 	case statErr != nil:
 		d.add("ctl-socket", StatusFail, statErr.Error())
@@ -406,7 +406,7 @@ func (d *doctorRun) checkSocket(ctx context.Context) {
 		// file, and changing its mode underneath it is not provably safe.
 		d.add("ctl-socket-perms", StatusFail, fmt.Sprintf(
 			"%s is mode %04o; the control plane relies on 0600 for authentication", socket, mode)).Fix =
-			"stop and restart the daemon: agenthub daemon restart"
+			"restart the hub: quit and reopen AgentHub, or 'agenthub daemon restart --headless'"
 	} else {
 		d.add("ctl-socket-perms", StatusOK, fmt.Sprintf("%s mode %04o", socket, info.Mode().Perm()))
 	}

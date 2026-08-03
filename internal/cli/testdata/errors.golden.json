@@ -46,7 +46,7 @@
     "code": "E_DAEMON_DOWN",
     "exitCode": 4,
     "message": "this command needs a running daemon",
-    "hint": "start it with 'agenthub daemon start'"
+    "hint": "open AgentHub, or run an operator-owned hub with 'agenthub daemon start --headless'"
   },
   {
     "name": "08-E_AUTH_FAILED",
@@ -134,5 +134,12 @@
     "code": "E_GENERAL",
     "exitCode": 1,
     "message": "an unclassified failure"
+  },
+  {
+    "name": "22-E_DAEMON_UNOWNED",
+    "code": "E_DAEMON_UNOWNED",
+    "exitCode": 2,
+    "message": "a hub belongs to the AgentHub application, which starts and stops it",
+    "hint": "open AgentHub, or run an operator-owned hub with 'agenthub daemon start --headless'"
   }
 ]

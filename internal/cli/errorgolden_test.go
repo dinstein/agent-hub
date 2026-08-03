@@ -74,6 +74,12 @@ func errorCorpus() []error {
 		registry.ErrLockTimeout,
 		quarantined,
 		errors.New("an unclassified failure"),
+		// Appended rather than filed next to E_DAEMON_RUNNING: a case name
+		// carries its index, so inserting in the middle renames every entry
+		// after it and buries one contract change in eight renumberings.
+		&Error{Code: CodeDaemonUnowned, ExitCode: ExitUsage,
+			Message: "a hub belongs to the AgentHub application, which starts and stops it",
+			Hint:    "open AgentHub, or run an operator-owned hub with 'agenthub daemon start --headless'"},
 	}
 }
 

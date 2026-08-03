@@ -1004,6 +1004,18 @@ latter reads the gateway's persisted tool cache, and that cache is only written 
 `server add` + `auth login` + `server test` workflow it doesn't exist at all. `server test` still doesn't write the cache — it is
 a direct-connection diagnostic with no persistent side effects.
 
+**An ownerless start is refused.** A hub belongs to the desktop application, so `daemon start` requires either the
+owner handshake (`--owner-pid`, plus `--owner-lifeline-fd` on a `--foreground` start — both hidden, both written by the
+application, never typed) or an explicit `--headless`. Anything else fails `E_DAEMON_UNOWNED` (exit 2) and names both
+ways forward. The check cannot be deferred to the daemon: "nobody owns me" and "my owner has not claimed me yet" are the
+same state seen at different moments, and a daemon that guesses is either unstoppable or shuts itself down during an
+ordinary launch. `--headless` is deliberately a flag rather than the meaning of an absent owner, because an operator
+running a hub on a server and a script that forgot the handshake produce identical command lines otherwise; CI and the
+e2e suite go through it, which is the point. `daemon restart` checks admission **before** it stops anything — finding
+out afterwards would leave the machine with the old hub stopped and no new one started. A backgrounded start refuses
+`--owner-lifeline-fd` outright rather than dropping it: the launcher execs again and exits, the descriptor would not
+arrive, and the caller would believe it had armed a watch it never got.
+
 **How `daemon start` backgrounds itself.** It forks `<self> daemon start --foreground` into its own session (`setsid`), then polls
 `run/daemon.json` plus ping until ready. The child's raw stderr goes to **a file rather than a pipe**: the parent exits once the
 child is ready, and writing into a pipe with no reader would SIGPIPE the daemon. If the child exits before becoming ready, what is

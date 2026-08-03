@@ -31,6 +31,7 @@ const (
 	CodeServerExists         = "E_SERVER_EXISTS"
 	CodeDaemonDown           = "E_DAEMON_DOWN"
 	CodeDaemonRunning        = "E_DAEMON_RUNNING"
+	CodeDaemonUnowned        = "E_DAEMON_UNOWNED"
 	CodeAuthFailed           = "E_AUTH_FAILED"
 	CodeDenied               = "E_GOVERNANCE_DENIED"
 	CodeLockTimeout          = "E_LOCK_TIMEOUT"
@@ -91,7 +92,10 @@ func DaemonDownf(format string, a ...any) *Error {
 	return &Error{
 		Code: CodeDaemonDown, ExitCode: ExitDaemonDown,
 		Message: fmt.Sprintf(format, a...),
-		Hint:    "start it with 'agenthub daemon start'",
+		// The hub is the application's now: opening AgentHub starts one, and
+		// naming `daemon start` first would send every user down the path
+		// that refuses them (daemonowner.go).
+		Hint: "open AgentHub, or run an operator-owned hub with 'agenthub daemon start --headless'",
 	}
 }
 

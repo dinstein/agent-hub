@@ -143,15 +143,16 @@ func (f *httpFlags) bind(cmd *cobra.Command) {
 func (a *App) newDaemonStartCmd() *cobra.Command {
 	var foreground bool
 	var http httpFlags
+	var owner ownerFlags
 	cmd := &cobra.Command{
-		Use:   "start [--foreground] [--http-addr host:port]",
-		Short: "Start the daemon (default: fork to background and wait until ready)",
+		Use:   "start [--headless] [--foreground] [--http-addr host:port]",
+		Short: "Start the hub (the AgentHub application does this; --headless is the operator's own)",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if foreground {
-				return a.runDaemonForeground(cmd.Context(), http)
+				return a.runDaemonForeground(cmd.Context(), http, owner)
 			}
-			res, err := a.startDaemonBackground(cmd.Context(), http)
+			res, err := a.startDaemonBackground(cmd.Context(), http, owner)
 			if err != nil {
 				return err
 			}
@@ -161,19 +162,27 @@ func (a *App) newDaemonStartCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&foreground, "foreground", false,
 		"run in this process until interrupted (what the background fork executes)")
 	http.bind(cmd)
+	owner.bind(cmd)
 	return cmd
 }
 
 // runDaemonForeground runs daemon.Run in-process until SIGINT/SIGTERM.
 // SIGTERM triggers the graceful path: stop accepting, drain, clean up
 // socket + daemon.json (docs/modules/controlplane.md).
-func (a *App) runDaemonForeground(ctx context.Context, http httpFlags) error {
+func (a *App) runDaemonForeground(ctx context.Context, http httpFlags, of ownerFlags) error {
+	owner, err := of.resolve(true)
+	if err != nil {
+		return err
+	}
 	sctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err := daemon.Run(sctx, daemon.Config{
+	err = daemon.Run(sctx, daemon.Config{
 		Version:   a.version,
 		Resolver:  a.resolver,
 		LogWriter: a.stderr,
+		// Who this hub belongs to, and how it learns that they are gone
+		// (daemonowner.go). The zero value is a headless hub.
+		Owner: owner,
 		// The data plane is opt-in through the flag alone. The admin bearer
 		// comes from the environment because a credential passed on argv is
 		// readable by every process on the machine.
@@ -200,7 +209,13 @@ func (a *App) runDaemonForeground(ctx context.Context, http httpFlags) error {
 // own session and polls run/daemon.json + ping until ready (the readiness
 // handshake of docs/architecture.md §10: no port-probe TOCTOU). Idempotent: a live
 // daemon yields AlreadyRunning instead of an error.
-func (a *App) startDaemonBackground(ctx context.Context, http httpFlags) (DaemonStatus, error) {
+func (a *App) startDaemonBackground(ctx context.Context, http httpFlags, of ownerFlags) (DaemonStatus, error) {
+	// Refused here as well as in the child: a start that is going to be
+	// rejected must say so on the terminal that ran it, not in a log file
+	// belonging to a process that already exited.
+	if _, err := of.resolve(false); err != nil {
+		return DaemonStatus{}, err
+	}
 	socket, runDir, logsDir, err := a.daemonPaths()
 	if err != nil {
 		return DaemonStatus{}, err
@@ -224,8 +239,8 @@ func (a *App) startDaemonBackground(ctx context.Context, http httpFlags) (Daemon
 		return DaemonStatus{}, fmt.Errorf("open daemon stderr file: %w", err)
 	}
 
-	spawn := exec.Command(a.executable(),
-		append([]string{"daemon", "start", "--foreground"}, http.args()...)...)
+	childArgs := append([]string{"daemon", "start", "--foreground"}, http.args()...)
+	spawn := exec.Command(a.executable(), append(childArgs, of.args()...)...)
 	spawn.Stdout = stderrFile
 	spawn.Stderr = stderrFile
 	spawn.SysProcAttr = daemonSysProcAttr()
@@ -436,18 +451,27 @@ func (a *App) newDaemonStatusCmd() *cobra.Command {
 
 func (a *App) newDaemonRestartCmd() *cobra.Command {
 	var http httpFlags
+	var owner ownerFlags
 	cmd := &cobra.Command{
-		Use:   "restart [--http-addr host:port]",
-		Short: "Stop then start the daemon (stdio sessions are unaffected by design)",
+		Use:   "restart [--headless] [--http-addr host:port]",
+		Short: "Stop then start the hub (stdio sessions are unaffected by design)",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Ownership is checked BEFORE the stop, not after it. The
+			// replacement is subject to the same admission as any other start,
+			// and finding that out afterwards would leave the machine with the
+			// hub stopped and no hub started — the one outcome a restart must
+			// never produce.
+			if _, err := owner.resolve(false); err != nil {
+				return err
+			}
 			if _, err := a.stopDaemon(cmd.Context(), false); err != nil {
 				return err
 			}
 			// The flags are NOT inherited from the daemon being replaced: a
 			// listener must be asked for every time, or a restart would
 			// resurrect an endpoint whose original opt-in nobody remembers.
-			res, err := a.startDaemonBackground(cmd.Context(), http)
+			res, err := a.startDaemonBackground(cmd.Context(), http, owner)
 			if err != nil {
 				return err
 			}
@@ -455,6 +479,7 @@ func (a *App) newDaemonRestartCmd() *cobra.Command {
 		},
 	}
 	http.bind(cmd)
+	owner.bind(cmd)
 	return cmd
 }
 
@@ -537,7 +562,7 @@ func (a *App) streamDaemonLogs(ctx context.Context, path string, filter logFilte
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			e := NotFoundf(CodeNotFound, "no daemon log at %s", path)
-			e.Hint = "the daemon writes it on first start ('agenthub daemon start')"
+			e.Hint = "the hub writes it the first time it runs; open AgentHub, or start one with --headless"
 			return e
 		}
 		return err
