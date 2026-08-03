@@ -23,9 +23,12 @@ type serverLogs struct {
 	Server string `json:"server"`
 	Path   string `json:"path"`
 	Frames []struct {
-		Dir     string `json:"dir"`
-		Method  string `json:"method"`
-		Payload string `json:"payload"`
+		Dir    string `json:"dir"`
+		Method string `json:"method"`
+		CallID string `json:"callId"`
+		Cause  string `json:"cause"`
+		Seq    int    `json:"seq"`
+		Bytes  int    `json:"bytes"`
 	} `json:"frames"`
 	Note string `json:"note"`
 }
@@ -83,15 +86,29 @@ func recordedWithin(t *testing.T, dataDir, id, marker string, grace time.Duratio
 	deadline := time.Now().Add(grace)
 	for {
 		for _, f := range readServerLogs(t, dataDir, id).Frames {
-			if strings.Contains(f.Payload, marker) {
-				return true
+			if f.CallID == "" || !strings.Contains(showCall(t, dataDir, f.CallID), marker) {
+				continue
 			}
+			return true
 		}
 		if !time.Now().Before(deadline) {
 			return false
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// showCall reads one call's stored bodies back. It is what makes the frame
+// assertions possible now that a body lives in the ledger's encrypted pack
+// rather than in a plaintext file: the frame line says WHICH call, and this
+// says what that call carried.
+func showCall(t *testing.T, dataDir, callID string) string {
+	t.Helper()
+	// --payloads: the frame bodies are the point of the assertion, and they
+	// are encrypted at rest, so reading them back is what proves the capture
+	// happened at the connection rather than after any redaction.
+	out, _ := runAgenthub(t, dataDir, "", "calls", "show", callID, "--payloads", "--json")
+	return out
 }
 
 // waitTraceState calls the tool repeatedly, with a fresh marker each time,
@@ -155,6 +172,12 @@ func TestServerTraceCapturesFramesForALiveGateway(t *testing.T) {
 	runAgenthub(t, dataDir, "", "server", "add", "traced", "--cmd", fakemcpBin, "--json")
 	enableServer(t, dataDir, "traced")
 
+	// The bodies live in the ledger's encrypted pack, so capturing them is
+	// the evidence tier's job — one key, one place, one protection, instead
+	// of a debugging switch writing unredacted traffic to a plaintext file
+	// beside an encrypted ledger holding the same bytes.
+	runAgenthub(t, dataDir, "", "calls", "enable", "--json")
+
 	c := startGateway(t, dataDir, "traceclient")
 	c.initialize()
 	c.waitForTool("traced__echo", 30*time.Second)
@@ -179,14 +202,21 @@ func TestServerTraceCapturesFramesForALiveGateway(t *testing.T) {
 	}
 	var sawRequest, sawResponse bool
 	for _, f := range readServerLogs(t, dataDir, "traced").Frames {
-		if f.Method != "tools/call" || !strings.Contains(f.Payload, marker) {
+		if f.Method != "tools/call" || f.CallID == "" ||
+			!strings.Contains(showCall(t, dataDir, f.CallID), marker) {
 			continue
 		}
+		// The frame's own kind is its direction, and both halves of the
+		// exchange must be there: one direction alone is a conversation with
+		// nobody answering.
 		switch f.Dir {
-		case "out":
+		case "sent":
 			sawRequest = true
-		case "in":
+		case "recv":
 			sawResponse = true
+		}
+		if f.Cause != "call" {
+			t.Errorf("a client call produced a frame with cause %q", f.Cause)
 		}
 	}
 	if !sawRequest {
@@ -198,6 +228,14 @@ func TestServerTraceCapturesFramesForALiveGateway(t *testing.T) {
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("`server trace` named %s but the frames went elsewhere: %v", path, err)
+	}
+	// The join key is what the move into the ledger bought: every frame of a
+	// client call names the call, so "what did this call actually do" is one
+	// question rather than two streams and a guess.
+	for _, f := range readServerLogs(t, dataDir, "traced").Frames {
+		if f.Cause == "call" && f.CallID == "" {
+			t.Fatalf("a call frame has no call id: %+v", f)
+		}
 	}
 
 	// And off again: the switch has to release as well as engage, or "turn

@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dinstein/agent-hub/internal/calllog"
 	"github.com/dinstein/agent-hub/internal/cli/output"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/downstream"
@@ -526,13 +527,13 @@ func (a *App) newServerTraceCmd() *cobra.Command {
 			if err != nil {
 				return opsError(err)
 			}
-			logsDir, err := a.resolver.LogsDir()
+			root, err := calllog.DefaultDir(a.resolver)
 			if err != nil {
 				return err
 			}
 			return a.printer().Emit(ServerTrace{
 				ID: id, Trace: on, Changed: res.Changed,
-				Path: downstream.ServerLogPath(logsDir, id),
+				Path: root,
 			}, warnings...)
 		},
 	}
@@ -632,11 +633,11 @@ func (a *App) newServerInspectCmd() *cobra.Command {
 			// renders is worth a warning, and every other line is still
 			// true (the same fail-open direction the credential probe takes).
 			if entry.Trace {
-				logsDir, lerr := a.resolver.LogsDir()
+				root, lerr := calllog.DefaultDir(a.resolver)
 				if lerr != nil {
-					warnings = append(warnings, "could not resolve the log directory: "+lerr.Error())
+					warnings = append(warnings, "could not resolve the ledger directory: "+lerr.Error())
 				} else {
-					out.TraceLog = downstream.ServerLogPath(logsDir, id)
+					out.TraceLog = root
 				}
 			}
 			// Who may see it: registry documents already in hand, plus the

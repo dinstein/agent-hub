@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/calllog"
+	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/pipeline"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -95,11 +96,15 @@ func (g *gateway) syncAudit() {
 	g.audit.mu.Unlock()
 
 	if !p.Enabled {
-		g.audit.swap(p, nil, nil)
+		// Metadata without evidence: no key, no payloads, nothing that can
+		// refuse a call. This is the ordinary state of an installation, and
+		// before it existed that state recorded NOTHING — a hub whose ledger
+		// was switched off could not say what any client had ever called.
+		g.openMetadataOnly(p)
 		return
 	}
 	if err := validateCallsPolicy(p); err != nil {
-		g.audit.swap(p, nil, fmt.Errorf("invalid audit policy: %w", err))
+		g.swapStore(p, nil, fmt.Errorf("invalid audit policy: %w", err))
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
 	}
@@ -120,7 +125,7 @@ func (g *gateway) syncAudit() {
 	g.audit.mu.Unlock()
 	if g.cfg.Secrets == nil {
 		err := errors.New("secret resolver is unavailable")
-		g.audit.swap(p, nil, err)
+		g.swapStore(p, nil, err)
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
 	}
@@ -135,7 +140,7 @@ func (g *gateway) syncAudit() {
 		if err == nil {
 			err = errors.New("audit encryption key is missing")
 		}
-		g.audit.swap(p, nil, err)
+		g.swapStore(p, nil, err)
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
 	}
@@ -144,7 +149,7 @@ func (g *gateway) syncAudit() {
 		if err == nil {
 			err = calllog.ErrBadKey
 		}
-		g.audit.swap(p, nil, err)
+		g.swapStore(p, nil, err)
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
 	}
@@ -154,14 +159,14 @@ func (g *gateway) syncAudit() {
 	}
 	if err != nil {
 		zeroBytes(key)
-		g.audit.swap(p, nil, err)
+		g.swapStore(p, nil, err)
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
 	}
 	root, err := calllog.DefaultDir(g.resolver)
 	if err != nil {
 		zeroBytes(key)
-		g.audit.swap(p, nil, err)
+		g.swapStore(p, nil, err)
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
 	}
@@ -171,19 +176,54 @@ func (g *gateway) syncAudit() {
 	})
 	zeroBytes(key)
 	if err != nil {
-		g.audit.swap(p, nil, err)
+		g.swapStore(p, nil, err)
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
 	}
-	g.audit.swap(p, store, nil)
+	g.swapStore(p, store, nil)
 	g.log.Info("audit policy applied", "results", p.ResultMode, "durability", p.Durability,
 		"retention_days", p.RetentionDays, "max_bytes", p.MaxBytes, "key_id", p.KeyID)
+}
+
+// openMetadataOnly opens the keyless store: bounded metadata lines and
+// frames, fail-open in every direction. A failure here leaves the gateway
+// serving, because a call that cannot be DESCRIBED is still a call that was
+// authorized — the fail-closed rule belongs to evidence, which is what a
+// governance answer is made of.
+func (g *gateway) openMetadataOnly(p registry.ResolvedCallsPolicy) {
+	root, err := calllog.DefaultDir(g.resolver)
+	if err == nil {
+		var store *calllog.Store
+		store, err = calllog.Open(calllog.Options{
+			Root: root, Durability: calllog.DurabilityWrite,
+			RetentionDays: p.RetentionDays, MaxBytes: p.MaxBytes, MinFreeBytes: p.MinFreeBytes,
+		})
+		if err == nil {
+			g.swapStore(p, store, nil)
+			g.log.Info("recording call metadata", "retention_days", p.RetentionDays)
+			return
+		}
+	}
+	g.swapStore(p, nil, nil)
+	g.log.Warn("call metadata will not be recorded; calls are unaffected", "error", err)
 }
 
 func zeroBytes(b []byte) {
 	for i := range b {
 		b[i] = 0
 	}
+}
+
+func (g *gateway) swapStore(p registry.ResolvedCallsPolicy, store *calllog.Store, unavailable error) {
+	g.audit.swap(p, store, unavailable)
+	// The frame switches follow the store, so a policy change cannot leave a
+	// server writing frames into a ledger nobody reads. capture follows the
+	// evidence tier: without a key there is nothing to seal a body with.
+	var sink downstream.FrameSink
+	if store != nil {
+		sink = store
+	}
+	g.traces.setSink(sink, store.HasKey() && p.Enabled)
 }
 
 func (m *auditManager) swap(p registry.ResolvedCallsPolicy, store *calllog.Store, unavailable error) {
@@ -220,23 +260,31 @@ func (g *gateway) auditBegin(req *mcp.Request) error {
 	m.mu.Lock()
 	p, store, unavailable := m.policy, m.store, m.unavailable
 	m.mu.Unlock()
-	if !p.Enabled {
-		return nil
-	}
-	if unavailable != nil || store == nil {
+	// Only EVIDENCE fails closed. With it off, a store that could not be
+	// opened costs the timeline a call and costs the call nothing.
+	if p.Enabled && (unavailable != nil || store == nil) {
 		if unavailable == nil {
 			unavailable = errors.New("ledger store is unavailable")
 		}
 		return unavailable
 	}
+	if store == nil {
+		return nil
+	}
 	callID, err := calllog.NewCallID()
 	if err != nil {
-		return err
+		if p.Enabled {
+			return err
+		}
+		return nil
 	}
 	started := time.Now().UTC()
-	request, err := store.PutPayload(started, callID, calllog.PayloadRequest, req.Params)
-	if err != nil {
-		return err
+	var request calllog.PayloadRef
+	if store.HasKey() {
+		request, err = store.PutPayload(started, callID, calllog.PayloadRequest, req.Params)
+		if err != nil {
+			return err
+		}
 	}
 	face := g.cfg.Face
 	if face == "" {
@@ -250,9 +298,15 @@ func (g *gateway) auditBegin(req *mcp.Request) error {
 		CallerTier: boundedAuditText(string(g.cfg.CallerTier)),
 	}
 	received := common
-	received.Kind, received.Request = calllog.EventReceived, &request
+	received.Kind = calllog.EventReceived
+	if store.HasKey() {
+		received.Request = &request
+	}
 	if err := store.Append(received); err != nil {
-		return err
+		if p.Enabled {
+			return err
+		}
+		return nil
 	}
 	span := &auditSpan{store: store, policy: p, started: started, common: common}
 	m.mu.Lock()
@@ -266,16 +320,31 @@ func (g *gateway) auditRoute(id mcp.ID, route router.Route, args json.RawMessage
 	if span == nil {
 		return nil
 	}
-	ref, err := span.store.PutPayload(time.Now().UTC(), span.common.CallID, calllog.PayloadEffectiveArgs, args)
-	if err != nil {
-		return err
-	}
 	span.route, span.provider = route, provider
 	e := span.common
 	e.TS, e.Kind = time.Now().UTC(), calllog.EventRouted
 	e.Exposed, e.Server, e.Tool = boundedAuditText(span.common.Exposed), boundedAuditText(route.ServerID), boundedAuditText(route.RawTool)
-	e.Provider, e.EffectiveArgs = provider, &ref
-	return span.store.Append(e)
+	e.Provider = provider
+	if span.store.HasKey() {
+		ref, err := span.store.PutPayload(e.TS, span.common.CallID, calllog.PayloadEffectiveArgs, args)
+		if err != nil {
+			return err
+		}
+		e.EffectiveArgs = &ref
+	}
+	if err := span.store.Append(e); err != nil && span.policy.Enabled {
+		return err
+	}
+	return nil
+}
+
+// auditCallID returns the ledger id of one in-flight request, or "" when
+// nothing is being recorded for it.
+func (g *gateway) auditCallID(id mcp.ID) string {
+	if span := g.auditSpan(id); span != nil {
+		return span.common.CallID
+	}
+	return ""
 }
 
 func (g *gateway) auditSetExposed(id mcp.ID, exposed string) {
@@ -378,7 +447,7 @@ func (s *auditSpan) finishResponse(res *mcp.Response) error {
 	default:
 		return fmt.Errorf("audit: unknown result mode %q", s.policy.ResultMode)
 	}
-	if capture {
+	if capture && s.store.HasKey() {
 		ref, err := s.store.PutPayload(e.TS, s.common.CallID, calllog.PayloadResult, stored)
 		if err != nil {
 			return err
@@ -392,7 +461,10 @@ func (s *auditSpan) finishResponse(res *mcp.Response) error {
 	} else {
 		e.ResultCapture = "none"
 	}
-	return s.store.Append(e)
+	if err := s.store.Append(e); err != nil && s.policy.Enabled {
+		return err
+	}
+	return nil
 }
 
 func (s *auditSpan) finished(outcome string, rpcErr *mcp.Error) calllog.Event {

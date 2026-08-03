@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/calllog"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 
@@ -190,7 +191,7 @@ func (s *Server) Health() Health { return s.health.snapshot() }
 func (s *Server) Ping(ctx context.Context) error {
 	pctx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
-	_, err := s.enqueue(pctx, kindPing, mcp.MethodPing, nil)
+	_, err := s.enqueue(pctx, kindPing, Origin{Cause: calllog.CauseProbe}, mcp.MethodPing, nil)
 	now := time.Now()
 	switch {
 	case err == nil, isAnswered(err):

@@ -401,8 +401,8 @@ func newGateway(cfg Config) (*gateway, error) {
 	g.audit = newAuditManager()
 	g.roots = &clientRoots{g: g}
 	// Before the pool: poolOptions closes over downstreamDeps, which reads
-	// g.traces to build TraceFor.
-	g.traces = newTraceLogs(resolver, log)
+	// g.traces to build FramesFor.
+	g.traces = newTraceLogs(log)
 	g.pool = downstream.NewPool(g.poolOptions())
 
 	// Tool cache first: it is what makes "answer before downstreams are

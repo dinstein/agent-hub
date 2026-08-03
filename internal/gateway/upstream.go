@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/discovery"
+	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
@@ -486,7 +487,13 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 				return nil, err
 			}
 			defer lease.Release()
-			return lease.Server.Call(ctx, route.RawTool, args)
+			// The ledger's call id travels with the call, so every frame it
+			// produces — including the ones a retry or a respawn adds — joins
+			// back to the lifecycle records of this same request. The closure
+			// already holds the span, which is why this is an argument rather
+			// than something hidden in the context.
+			return lease.Server.CallFor(ctx, downstream.CallOrigin(g.auditCallID(req.ID)),
+				route.RawTool, args)
 		},
 	}, args)
 }

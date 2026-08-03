@@ -123,7 +123,7 @@ func TestInspectNamesTheTraceFileWhileTracingIsOn(t *testing.T) {
 
 	mustRun(t, "", "server", "trace", "fs", "on")
 	_, out, _ = runCLI(t, "", "server", "inspect", "fs")
-	if !strings.Contains(out, "server-fs.log") || !strings.Contains(out, "BEFORE redaction") {
+	if !strings.Contains(out, "server logs fs") || !strings.Contains(out, "BEFORE redaction") {
 		t.Errorf("inspect does not report the trace file:\n%s", out)
 	}
 }

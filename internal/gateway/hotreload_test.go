@@ -3,13 +3,13 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/calllog"
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
@@ -277,16 +277,16 @@ func TestHotReloadServerTraceFlip(t *testing.T) {
 	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
 	waitForTools(t, c, "alpha__echo")
 
-	logsDir, err := resolver.LogsDir()
+	root, err := calllog.DefaultDir(resolver)
 	if err != nil {
-		t.Fatalf("LogsDir: %v", err)
+		t.Fatalf("ledger dir: %v", err)
 	}
-	path := downstream.ServerLogPath(logsDir, "alpha")
 
-	// Untraced: a call must leave nothing behind.
+	// Untraced: a call must leave no FRAMES behind. It does leave lifecycle
+	// records — those are the always-on half — so the count is of frames.
 	callToolOK(t, c, "alpha__echo")
-	if n := fileSize(t, path); n != 0 {
-		t.Fatalf("trace log holds %d bytes while tracing is off", n)
+	if n := frameCount(t, root, "alpha"); n != 0 {
+		t.Fatalf("%d frames recorded while tracing is off", n)
 	}
 
 	ext := externalRegistry(t, resolver)
@@ -300,7 +300,7 @@ func TestHotReloadServerTraceFlip(t *testing.T) {
 	// call until frames appear rather than guessing at the watch latency.
 	waitFor(t, "frames after the trace flip", func() bool {
 		callToolOK(t, c, "alpha__echo")
-		return fileSize(t, path) > 0
+		return frameCount(t, root, "alpha") > 0
 	})
 
 	if got := dials.count("alpha"); got != 1 {
@@ -308,16 +308,19 @@ func TestHotReloadServerTraceFlip(t *testing.T) {
 	}
 }
 
-// fileSize reports a file's size, treating "not created yet" as zero — the
-// writer only creates the file when it has something to write.
-func fileSize(t *testing.T, path string) int64 {
+// frameCount reports how many frames one server has recorded in the ledger.
+// A ledger directory that does not exist yet counts as zero: nothing has been
+// recorded is a normal state, not an error.
+func frameCount(t *testing.T, root, server string) int {
 	t.Helper()
-	fi, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return 0
+	n := 0
+	if _, err := calllog.ScanFramesSince(root, time.Time{}, func(e calllog.Event) error {
+		if e.Server == server {
+			n++
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("scan frames: %v", err)
 	}
-	if err != nil {
-		t.Fatalf("stat %s: %v", path, err)
-	}
-	return fi.Size()
+	return n
 }

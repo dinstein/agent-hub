@@ -148,13 +148,22 @@ func auditEventMatches(e calllog.Event, client, server, tool, outcome string) bo
 		(outcome == "" || e.Outcome == outcome)
 }
 
-// AuditCall is a complete metadata lifecycle and optional decrypted payloads.
+// AuditCall is one call's whole story: the lifecycle at the client boundary,
+// the frames at the downstream one, and — with --payloads — the bodies.
+//
+// The frames are what the ledger could not show before they moved into it. A
+// call that retried twice has one `routed` record and three sent/recv pairs,
+// and reading the two halves as one sequence is the only way that reads as
+// what happened rather than as a slow call with no explanation.
 type AuditCall struct {
 	CallID             string          `json:"callId"`
 	Events             []calllog.Event `json:"events"`
 	Request            string          `json:"request,omitempty"`
 	EffectiveArguments string          `json:"effectiveArguments,omitempty"`
 	Result             string          `json:"result,omitempty"`
+	// Frames holds the decrypted frame bodies in event order, one per
+	// sent/recv record that had one.
+	Frames []string `json:"frames,omitempty"`
 }
 
 func (c AuditCall) Human(w io.Writer) error {
@@ -166,6 +175,18 @@ func (c AuditCall) Human(w io.Writer) error {
 		}
 		if e.Server != "" || e.Tool != "" {
 			_, _ = fmt.Fprintf(w, "  target=%s/%s", e.Server, e.Tool)
+		}
+		if e.Method != "" {
+			_, _ = fmt.Fprintf(w, "  method=%s", e.Method)
+		}
+		if e.Seq > 1 {
+			// Only from the second attempt: printing "attempt 1" on every
+			// frame of a call that never retried is noise that hides the one
+			// case the number exists for.
+			_, _ = fmt.Fprintf(w, "  attempt=%d", e.Seq)
+		}
+		if e.DurationMs > 0 {
+			_, _ = fmt.Fprintf(w, "  %dms", e.DurationMs)
 		}
 		if e.Outcome != "" {
 			_, _ = fmt.Fprintf(w, "  outcome=%s", e.Outcome)
@@ -184,6 +205,9 @@ func (c AuditCall) Human(w io.Writer) error {
 	if c.Result != "" {
 		_, _ = fmt.Fprintf(w, "\nresult capture:\n%s\n", c.Result)
 	}
+	for i, f := range c.Frames {
+		_, _ = fmt.Fprintf(w, "\nframe %d:\n%s\n", i+1, f)
+	}
 	return nil
 }
 
@@ -199,15 +223,24 @@ func (a *App) newCallsShowCmd() *cobra.Command {
 				return err
 			}
 			var events []calllog.Event
-			_, err = calllog.ScanEvents(root, func(e calllog.Event) error {
+			collect := func(e calllog.Event) error {
 				if e.CallID == args[0] {
 					events = append(events, e)
 				}
 				return nil
-			})
-			if err != nil {
+			}
+			if _, err = calllog.ScanEvents(root, collect); err != nil {
 				return err
 			}
+			// The frames of the same call, merged in. They live in the
+			// per-process files rather than the shared day stream, so they
+			// are a second scan and one sort — which is the price of not
+			// making a debugging switch contend with the write path that
+			// decides whether a call may run.
+			if _, err = calllog.ScanFramesSince(root, time.Time{}, collect); err != nil {
+				return err
+			}
+			slices.SortStableFunc(events, func(a, b calllog.Event) int { return a.TS.Compare(b.TS) })
 			if len(events) == 0 {
 				return NotFoundf(CodeNotFound, "call %q not found", args[0])
 			}
@@ -230,6 +263,20 @@ func (a *App) newCallsShowCmd() *cobra.Command {
 
 func decryptAuditCall(root string, keys *auditKeyCache, events []calllog.Event, out *AuditCall) error {
 	for _, e := range events {
+		// Frame bodies are appended in event order rather than assigned to a
+		// named field: a call has exactly one request and one result, and any
+		// number of frames.
+		if e.Frame != nil {
+			key, err := keys.get(e.Frame.KeyID)
+			if err != nil {
+				return err
+			}
+			raw, err := calllog.ReadPayload(root, *e.Frame, key)
+			if err != nil {
+				return err
+			}
+			out.Frames = append(out.Frames, string(raw))
+		}
 		for _, item := range []struct {
 			ref *calllog.PayloadRef
 			dst *string

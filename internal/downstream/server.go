@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/calllog"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 	"github.com/dinstein/agent-hub/internal/mrtr"
@@ -33,6 +34,7 @@ const (
 type callReq struct {
 	kind   callKind
 	ctx    context.Context
+	origin Origin
 	method string
 	params json.RawMessage
 	probe  bool          // this call is the single half-open probe
@@ -76,12 +78,7 @@ type Server struct {
 
 	// trace is the per-server JSON-RPC frame log; nil = not wired (the
 	// nil *ServerLog methods are no-ops, so there is no nil check below).
-	trace *ServerLog
-	// traceInst is this instance's DeriveKey, stamped on every frame it
-	// writes. Derived instances of one server share one log file, so without
-	// it their frames interleave into what reads like a single conversation.
-	// "" is the base connection.
-	traceInst string
+	trace *FrameLog
 
 	// reconnects counts AUTOMATIC reconnects and is the exponent of the
 	// respawn backoff ladder. A successful respawn does not by itself reset
@@ -186,8 +183,7 @@ func Connect(ctx context.Context, spec Spec, deps Deps) (*Server, error) {
 		calls:          make(chan callReq, 1),
 		refreshCh:      make(chan struct{}, 1),
 		health:         newHealthTracker(time.Now(), srvLog, srvEvents),
-		trace:          deps.traceFor(spec),
-		traceInst:      string(spec.DeriveKey),
+		trace:          deps.framesFor(spec),
 		ownerDone:      make(chan struct{}),
 	}
 
@@ -273,13 +269,24 @@ const maxInputRounds = 4
 // separately, so a slow input collection (a human, on the other end of
 // roots/elicitation) never blocks other calls to this server.
 func (s *Server) Call(ctx context.Context, tool string, args json.RawMessage) (*mcp.CallResult, error) {
+	return s.CallFor(ctx, Origin{Cause: calllog.CauseCall}, tool, args)
+}
+
+// CallFor is Call with the origin named: the ledger id of the client call
+// this belongs to, so every frame it produces — including the ones a retry or
+// a respawn adds — joins back to it.
+//
+// It is an explicit parameter rather than something read out of the context
+// because the gateway's closure already holds the span, and a channel nobody
+// can see is how a field ends up unset at half the call sites.
+func (s *Server) CallFor(ctx context.Context, o Origin, tool string, args json.RawMessage) (*mcp.CallResult, error) {
 	p := mcp.CallToolParams{Name: tool, Arguments: args}
 	for round := 0; ; round++ {
 		params, err := json.Marshal(p)
 		if err != nil {
 			return nil, fmt.Errorf("downstream %q: encode tools/call params: %w", s.spec.ID, err)
 		}
-		raw, err := s.enqueue(ctx, kindCall, mcp.MethodToolsCall, params)
+		raw, err := s.enqueue(ctx, kindCall, o, mcp.MethodToolsCall, params)
 		if err != nil {
 			return nil, err
 		}
@@ -420,7 +427,7 @@ func (s *Server) Close() {
 // enqueue runs the breaker gate, posts the request to the owner queue, and
 // waits for the reply or cancellation. The breaker verdict precedes the
 // channel send by design: cooldown failures never occupy a queue slot.
-func (s *Server) enqueue(ctx context.Context, kind callKind, method string, params json.RawMessage) (json.RawMessage, error) {
+func (s *Server) enqueue(ctx context.Context, kind callKind, o Origin, method string, params json.RawMessage) (json.RawMessage, error) {
 	var probe bool
 	if kind == kindCall {
 		p, err := s.br.allow()
@@ -429,7 +436,7 @@ func (s *Server) enqueue(ctx context.Context, kind callKind, method string, para
 		}
 		probe = p
 	}
-	req := callReq{kind: kind, ctx: ctx, method: method, params: params, probe: probe, reply: make(chan callResp, 1)}
+	req := callReq{kind: kind, ctx: ctx, origin: o, method: method, params: params, probe: probe, reply: make(chan callResp, 1)}
 	select {
 	case s.calls <- req:
 	case <-ctx.Done():
@@ -480,7 +487,7 @@ func (s *Server) serve(req callReq) {
 	case kindPing:
 		// Breaker-exempt by construction (see Server.Ping): the probe reports
 		// through the health tracker, not through the breaker.
-		raw, err := s.roundTrip(req.ctx, req.method, req.params)
+		raw, err := s.roundTrip(req.ctx, req.origin, req.method, req.params)
 		req.reply <- callResp{raw: raw, err: err}
 		return
 	}
@@ -531,7 +538,10 @@ func (s *Server) execute(req callReq) (json.RawMessage, error) {
 	attempt := 1
 	respawned := false
 	for {
-		raw, err := s.callTransport(req.ctx, tr, req.method, req.params)
+		// The attempt number IS the frame seq: a retry ladder produces
+		// sent/recv pairs 1, 2, 3 under one call id, which is exactly the
+		// question the old per-server trace could not answer.
+		raw, err := s.callTransport(req.ctx, tr, req.origin, attempt, req.method, req.params)
 		if err == nil {
 			return raw, nil
 		}
@@ -572,6 +582,7 @@ func (s *Server) execute(req callReq) (json.RawMessage, error) {
 			}
 			respawned = true
 			tr = ntr
+			attempt++
 			continue
 		}
 		return nil, err
@@ -581,24 +592,27 @@ func (s *Server) execute(req callReq) (json.RawMessage, error) {
 // roundTrip performs one transport call on the CURRENT connection with
 // tracing. Used by the ping probe and the refresh path (neither retries nor
 // respawns).
-func (s *Server) roundTrip(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-	return s.callTransport(ctx, s.transport(), method, params)
+func (s *Server) roundTrip(ctx context.Context, o Origin, method string, params json.RawMessage) (json.RawMessage, error) {
+	return s.callTransport(ctx, s.transport(), o, 1, method, params)
 }
 
 // callTransport is the single place a JSON-RPC frame crosses the downstream
-// boundary, which is why it is also the single place the per-server trace
-// log is fed (serverlog.go). Tracing is off by default and never blocks.
-func (s *Server) callTransport(ctx context.Context, tr transport.Transport, method string, params json.RawMessage) (json.RawMessage, error) {
+// boundary, which is why it is also the single place frames are recorded
+// (frames.go). Recording is off by default and never blocks.
+func (s *Server) callTransport(
+	ctx context.Context, tr transport.Transport, o Origin, seq int,
+	method string, params json.RawMessage,
+) (json.RawMessage, error) {
 	if tr == nil {
 		return nil, &transport.Error{Class: transport.ClassUnavailable, Err: transport.ErrClosed}
 	}
 	if !s.trace.Enabled() {
 		return tr.Call(ctx, method, params)
 	}
-	s.trace.out(s.traceInst, method, params)
+	s.trace.sent(o, seq, method, params)
 	start := time.Now()
 	raw, err := tr.Call(ctx, method, params)
-	s.trace.in(s.traceInst, method, raw, err, time.Since(start))
+	s.trace.recv(o, seq, method, raw, err, time.Since(start))
 	return raw, err
 }
 
@@ -747,7 +761,10 @@ func (s *Server) dialAndInit(ctx context.Context) (transport.Transport, *mcp.Ini
 		ServerInfo:      hres.ServerInfo,
 		Instructions:    hres.Instructions,
 	}
-	raw, err := s.callTransport(ctx, tr, mcp.MethodToolsList, nil)
+	// The handshake's own tools/list. Its cause is `list` like every other
+	// catalog read: the frame is the same one, and which code path asked for
+	// it is not a distinction a reader of the conversation cares about.
+	raw, err := s.callTransport(ctx, tr, Origin{Cause: calllog.CauseList}, 1, mcp.MethodToolsList, nil)
 	if err != nil {
 		err = fmt.Errorf("downstream %q: initial tools/list: %w", s.spec.ID, withStderr(err, tr))
 		_ = tr.Close()
@@ -824,7 +841,7 @@ func (s *Server) autoRefresh() {
 // refreshOnce re-queries tools/list on the current connection and replaces
 // the cache. Owner goroutine only. Never respawns.
 func (s *Server) refreshOnce(ctx context.Context) error {
-	raw, err := s.roundTrip(ctx, mcp.MethodToolsList, nil)
+	raw, err := s.roundTrip(ctx, Origin{Cause: calllog.CauseList}, mcp.MethodToolsList, nil)
 	if err != nil {
 		return fmt.Errorf("downstream %q: refresh tools: %w", s.spec.ID, err)
 	}

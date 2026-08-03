@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/dinstein/agent-hub/internal/calllog"
 	"github.com/dinstein/agent-hub/internal/mcp"
 )
 
@@ -101,7 +102,7 @@ func (s *Server) refreshMerged(ctx context.Context) error {
 // refreshAsLeader performs the round trip and publishes its outcome.
 func (s *Server) refreshAsLeader(ctx context.Context, done chan struct{}) (err error) {
 	defer func() { s.listMerge.finish(done, err) }()
-	_, err = s.enqueue(ctx, kindRefresh, mcp.MethodToolsList, nil)
+	_, err = s.enqueue(ctx, kindRefresh, Origin{Cause: calllog.CauseList}, mcp.MethodToolsList, nil)
 	return err
 }
 

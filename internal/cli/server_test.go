@@ -443,8 +443,11 @@ func TestServerTraceRoundTrip(t *testing.T) {
 	if !row.Trace {
 		t.Error("trace on did not report the switch as on")
 	}
-	if !strings.HasSuffix(row.Path, "server-fake.log") {
-		t.Errorf("path = %q, want the per-server log the reader looks for", row.Path)
+	// The frames land in the call ledger now, so the path is its root: one
+	// place holds every server's conversation, joined to the calls that
+	// caused it. `server logs <id>` is still what reads one server out of it.
+	if !strings.HasSuffix(row.Path, "calls") {
+		t.Errorf("path = %q, want the call ledger the reader looks in", row.Path)
 	}
 
 	// Now it shows, so a forgotten trace is visible where servers are listed.

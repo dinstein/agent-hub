@@ -7,185 +7,167 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/dinstein/agent-hub/internal/downstream"
 )
 
-// writeTrace lays down a per-server trace log the way internal/downstream
-// writes it, resolving the path through the WRITER's own function so a
-// rename there breaks this test instead of silently breaking the command.
-func writeTrace(t *testing.T, dataDir, serverID string, frames []downstream.TraceFrame) string {
+// seedFrames writes a day of frame records the way a gateway would: one
+// process-owned file inside one UTC day of the ledger.
+func seedFrames(t *testing.T, dataDir string, lines ...string) string {
 	t.Helper()
-	logsDir := filepath.Join(dataDir, "logs")
-	if err := os.MkdirAll(logsDir, 0o700); err != nil {
+	day := time.Now().UTC().Format("2006-01-02")
+	dir := filepath.Join(dataDir, "calls", day)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	path := downstream.ServerLogPath(logsDir, serverID)
-	var b strings.Builder
-	for _, f := range frames {
-		line, err := json.Marshal(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		b.Write(line)
-		b.WriteByte('\n')
-	}
-	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+	path := filepath.Join(dir, "frames-abc123-p42.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
 }
 
-func sampleFrames() []downstream.TraceFrame {
-	ts := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
-	return []downstream.TraceFrame{
-		{TS: ts, Server: "fake", Dir: downstream.TraceOut, Method: "tools/call",
-			Bytes: 12, Payload: `{"name":"echo"}`},
-		{TS: ts.Add(time.Millisecond), Server: "fake", Dir: downstream.TraceIn,
-			Method: "tools/call", Bytes: 20, Payload: `{"content":[]}`, DurMs: 1},
+// frameLine builds one record with the current day's timestamp, so `since`
+// day-partition skipping cannot hide the fixture.
+func frameLine(t *testing.T, fields map[string]any) string {
+	t.Helper()
+	rec := map[string]any{"v": 1, "ts": time.Now().UTC().Format(time.RFC3339Nano), "pid": 42}
+	for k, v := range fields {
+		rec[k] = v
 	}
+	b, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 func TestServerLogsRendersFrames(t *testing.T) {
 	dir := setDataDir(t)
-	writeTrace(t, dir, "fake", sampleFrames())
+	seedFrames(t, dir,
+		frameLine(t, map[string]any{
+			"event": "sent", "server": "github", "method": "tools/call",
+			"callId": "abcdef0123456789", "cause": "call", "seq": 1, "bytes": 42,
+		}),
+		frameLine(t, map[string]any{
+			"event": "recv", "server": "github", "method": "tools/call",
+			"callId": "abcdef0123456789", "cause": "call", "seq": 1, "durationMs": 12,
+		}),
+		frameLine(t, map[string]any{
+			"event": "sent", "server": "other", "method": "ping", "cause": "probe",
+		}),
+	)
 
-	code, out, stderr := runCLI(t, "", "server", "logs", "fake", "--json")
-	if code != ExitOK {
-		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	code, out, errOut := runCLI(t, "", "server", "logs", "github")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
 	}
-	env := decodeEnvelope(t, out)
-	if !env.OK {
-		t.Fatalf("envelope not ok: %s", out)
+
+	if !strings.Contains(out, "sent") || !strings.Contains(out, "recv") {
+		t.Fatalf("both directions should be shown:\n%s", out)
 	}
-	var logs ServerLogs
-	if err := json.Unmarshal(env.Data, &logs); err != nil {
-		t.Fatalf("data is not a ServerLogs: %v\n%s", err, env.Data)
+	// The join key is the whole reason the frames moved into the ledger.
+	if !strings.Contains(out, "abcdef012345") {
+		t.Fatalf("the call id is missing from the table:\n%s", out)
 	}
-	if logs.Server != "fake" {
-		t.Errorf("server = %q, want fake", logs.Server)
-	}
-	if len(logs.Frames) != 2 {
-		t.Fatalf("frames = %d, want 2", len(logs.Frames))
-	}
-	if logs.Frames[0].Dir != downstream.TraceOut || logs.Frames[1].Dir != downstream.TraceIn {
-		t.Errorf("directions = %q/%q, want out/in in order",
-			logs.Frames[0].Dir, logs.Frames[1].Dir)
-	}
-	if logs.Frames[0].Method != "tools/call" {
-		t.Errorf("method = %q", logs.Frames[0].Method)
-	}
-	// Human mode renders the same data.
-	code, human, _ := runCLI(t, "", "server", "logs", "fake")
-	if code != ExitOK {
-		t.Fatalf("human exit = %d", code)
-	}
-	if !strings.Contains(human, "tools/call") {
-		t.Errorf("human output does not mention the method:\n%s", human)
+	if strings.Contains(out, "ping") {
+		t.Fatalf("another server's frames leaked into this one's view:\n%s", out)
 	}
 }
 
-// --limit keeps the LAST n frames: a trace is read from its tail.
+// A frame that belongs to no call is not an exception, and the reason it
+// exists has to be on the line: otherwise a health probe reads as a call
+// whose id went missing.
+func TestServerLogsShowsTheCauseOfCallLessFrames(t *testing.T) {
+	dir := setDataDir(t)
+	seedFrames(t, dir, frameLine(t, map[string]any{
+		"event": "sent", "server": "github", "method": "ping", "cause": "probe",
+	}))
+
+	code, out, errOut := runCLI(t, "", "server", "logs", "github")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+
+	if !strings.Contains(out, "probe") {
+		t.Fatalf("a frame with no call must say why it happened:\n%s", out)
+	}
+}
+
 func TestServerLogsLimitKeepsTail(t *testing.T) {
 	dir := setDataDir(t)
-	ts := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
-	var frames []downstream.TraceFrame
-	for i := 0; i < 10; i++ {
-		frames = append(frames, downstream.TraceFrame{
-			TS: ts.Add(time.Duration(i) * time.Second), Server: "fake",
-			Dir: downstream.TraceOut, Method: "m", Payload: strings.Repeat("x", i+1),
-		})
+	var lines []string
+	for i := range 5 {
+		lines = append(lines, frameLine(t, map[string]any{
+			"event": "sent", "server": "github", "method": "m" + string(rune('0'+i)),
+		}))
 	}
-	writeTrace(t, dir, "fake", frames)
+	seedFrames(t, dir, lines...)
 
-	code, out, _ := runCLI(t, "", "server", "logs", "fake", "--limit", "3", "--json")
-	if code != ExitOK {
-		t.Fatalf("exit = %d", code)
+	code, out, errOut := runCLI(t, "", "server", "logs", "github", "--limit", "2")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
 	}
-	var logs ServerLogs
-	if err := json.Unmarshal(decodeEnvelope(t, out).Data, &logs); err != nil {
-		t.Fatal(err)
-	}
-	if len(logs.Frames) != 3 {
-		t.Fatalf("frames = %d, want 3", len(logs.Frames))
-	}
-	if logs.Frames[2].Payload != strings.Repeat("x", 10) {
-		t.Errorf("last frame payload = %q, want the newest frame", logs.Frames[2].Payload)
+
+	if strings.Contains(out, "m0") || !strings.Contains(out, "m4") {
+		t.Fatalf("--limit must keep the NEWEST frames:\n%s", out)
 	}
 }
 
-// A missing log is not an error: tracing is off by default, and the command
-// must SAY that instead of failing or printing nothing.
-func TestServerLogsMissingFileExplainsItself(t *testing.T) {
+// Nothing recorded is a normal state, and the message has to distinguish it
+// from a server that sat idle — the switch is off by default.
+func TestServerLogsWithNothingRecordedExplainsItself(t *testing.T) {
 	setDataDir(t)
-	code, out, stderr := runCLI(t, "", "server", "logs", "never-traced", "--json")
-	if code != ExitOK {
-		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+
+	code, out, errOut := runCLI(t, "", "server", "logs", "github")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
 	}
-	var logs ServerLogs
-	if err := json.Unmarshal(decodeEnvelope(t, out).Data, &logs); err != nil {
-		t.Fatal(err)
-	}
-	if len(logs.Frames) != 0 {
-		t.Fatalf("frames = %d, want 0", len(logs.Frames))
-	}
-	if !strings.Contains(logs.Note, "tracing is off by default") {
-		t.Errorf("note = %q, want the tracing-is-off explanation", logs.Note)
-	}
-	if logs.Path == "" {
-		t.Error("note carries no path; the operator cannot tell where to look")
+	if !strings.Contains(out, "server trace github on") {
+		t.Fatalf("the empty result does not say how to record anything:\n%s", out)
 	}
 }
 
-// A torn last line (a writer killed mid-append) must not make the whole
-// trace unreadable — it is counted and skipped, like the audit reader does.
 func TestServerLogsCountsUndecodableLines(t *testing.T) {
 	dir := setDataDir(t)
-	path := writeTrace(t, dir, "fake", sampleFrames())
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString("{\"ts\":\"2026-07-26T12:00\n"); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
+	seedFrames(t, dir,
+		frameLine(t, map[string]any{"event": "sent", "server": "github", "method": "ping"}),
+		"{not json at all",
+	)
+
+	code, out, errOut := runCLI(t, "", "server", "logs", "github")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
 	}
 
-	code, out, _ := runCLI(t, "", "server", "logs", "fake", "--json")
-	if code != ExitOK {
-		t.Fatalf("exit = %d", code)
-	}
-	var logs ServerLogs
-	if err := json.Unmarshal(decodeEnvelope(t, out).Data, &logs); err != nil {
-		t.Fatal(err)
-	}
-	if len(logs.Frames) != 2 {
-		t.Fatalf("frames = %d, want the 2 intact frames", len(logs.Frames))
-	}
-	if logs.Skipped != 1 {
-		t.Fatalf("skipped = %d, want 1", logs.Skipped)
+	if !strings.Contains(out, "1 undecodable line") {
+		t.Fatalf("a torn line was dropped silently:\n%s", out)
 	}
 }
 
-// The command reads exactly the file internal/downstream writes.
-func TestServerLogsPathMatchesWriter(t *testing.T) {
+// --json is the machine face of the same read, and it carries the fields the
+// table has no room for.
+func TestServerLogsJSONCarriesTheJoinKeys(t *testing.T) {
 	dir := setDataDir(t)
-	path := writeTrace(t, dir, "with/slash", sampleFrames())
+	seedFrames(t, dir, frameLine(t, map[string]any{
+		"event": "recv", "server": "github", "method": "tools/call",
+		"callId": "call-1", "cause": "call", "seq": 3, "inst": "work", "durationMs": 7,
+	}))
 
-	code, out, stderr := runCLI(t, "", "server", "logs", "with/slash", "--json")
-	if code != ExitOK {
-		t.Fatalf("exit = %d, stderr: %s", code, stderr)
+	code, out, errOut := runCLI(t, "", "--json", "server", "logs", "github")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
 	}
-	var logs ServerLogs
-	if err := json.Unmarshal(decodeEnvelope(t, out).Data, &logs); err != nil {
-		t.Fatal(err)
+
+	var env struct {
+		Data ServerLogs `json:"data"`
 	}
-	if logs.Path != path {
-		t.Fatalf("path = %q, want %q", logs.Path, path)
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("decode: %v\n%s", err, out)
 	}
-	if len(logs.Frames) != 2 {
-		t.Fatalf("frames = %d, want 2 (reader and writer disagree on the file)", len(logs.Frames))
+	if len(env.Data.Frames) != 1 {
+		t.Fatalf("frames = %+v", env.Data.Frames)
+	}
+	f := env.Data.Frames[0]
+	if f.CallID != "call-1" || f.Seq != 3 || f.Cause != "call" || f.Inst != "work" || f.DurMs != 7 {
+		t.Fatalf("frame lost its join keys: %+v", f)
 	}
 }

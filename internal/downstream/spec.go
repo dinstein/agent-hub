@@ -287,7 +287,7 @@ type Deps struct {
 	// that server. There is no assembly for which that is correct, so the
 	// plain field is not kept as a fallback: keeping it would preserve the
 	// ability to express the bug.
-	TraceFor func(spec Spec) *ServerLog
+	FramesFor func(spec Spec) *FrameLog
 
 	// Events returns the shared control-plane event stream
 	// (internal/eventlog), or nil. A nil *Stream's Append is a no-op, so no
@@ -375,11 +375,11 @@ func (d Deps) eventsFor(spec Spec) serverEvents {
 
 // traceFor returns the frame log of one instance, or nil when the assembly
 // wired none.
-func (d Deps) traceFor(spec Spec) *ServerLog {
-	if d.TraceFor == nil {
+func (d Deps) framesFor(spec Spec) *FrameLog {
+	if d.FramesFor == nil {
 		return nil
 	}
-	return d.TraceFor(spec)
+	return d.FramesFor(spec)
 }
 
 // authFor returns the TokenSource of one instance: the per-instance source
