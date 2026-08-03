@@ -114,9 +114,17 @@ func readCallTail(root string, since time.Time, limit int, sel callSelector) (Au
 // followCalls prints every event recorded after the tail it was given.
 //
 // It tracks a record TIMESTAMP rather than a byte offset, for the reason
-// followEvents and followServerFrames do: the ledger is a directory of
-// day-partitioned files written by N gateway processes, so an offset into
-// "the file" is not a position in the stream at all.
+// followEvents does: the ledger is a directory of day-partitioned files
+// written by N gateway processes, so an offset into "the file" is not a
+// position in the stream at all.
+//
+// The cursor is the record's own time.Time, taken from the row before it is
+// rendered — NOT parsed back out of the printed stamp. followEvents explains
+// why at length: a rendered RFC3339 stamp is second resolution, so a cursor
+// read back from one advances a whole second and silently drops the rest of
+// that second's records. followServerFrames does exactly that today and is
+// the one follower of the four that still gets this wrong; copy this loop
+// rather than that one.
 //
 // The cursor is the newest record PRINTED, and admission is strictly after
 // it. A record sharing that instant is the one case this loses, and the
