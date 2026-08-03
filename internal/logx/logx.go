@@ -5,7 +5,7 @@
 //   - Setup: a dual-handler logger — human-readable text to stderr and JSON
 //     lines to a file, each independently switchable.
 //   - The mandatory field convention (server / tool / client / session /
-//     rev) as exported constants plus attr constructors.
+//     rev / pid / inst) as exported constants plus attr constructors.
 //   - Secret scrubbing as a slog.Handler middleware (see scrub.go).
 //
 // Invariants (canonical.md §2 rule 4, docs/modules/foundation.md):

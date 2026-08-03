@@ -5,10 +5,15 @@ import (
 	"os"
 )
 
-// Mandatory field convention (docs/modules/foundation.md). Every log record that
-// concerns a downstream server, a tool call, a client or a session must
-// use these exact keys so that log streams stay joinable across the
-// gateway, daemon and CLI. Do not invent synonyms ("srv", "toolName", ...).
+// Mandatory field convention (docs/modules/foundation.md). Every log record
+// that concerns a downstream server, a derived instance, a tool call, a
+// client, a session, a registry generation or the writing process must use
+// these exact keys so that log streams stay joinable across the gateway,
+// daemon and CLI. Do not invent synonyms ("srv", "toolName", ...).
+//
+// The constants below are the whole convention. A reader told not to invent
+// synonyms needs the list to be complete, or the field it fails to mention
+// is exactly the one that gets a second spelling.
 const (
 	// FieldServer is the downstream MCP server name.
 	FieldServer = "server"
