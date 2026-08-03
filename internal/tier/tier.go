@@ -2,11 +2,18 @@
 // (read | write | destructive) — the one ladder the whole repository
 // counts on.
 //
-// It lives in its own leaf package because five packages need it and none
+// It lives in its own leaf package because six packages import it and none
 // of them owns it: internal/pipeline gates calls by it, internal/httpbridge
 // stores it on agent tokens, internal/ctlapi mints those tokens,
-// internal/discovery names its intent variants after it, and internal/cli
-// parses it from user input. When the vocabulary lived in the pipeline, the
+// internal/gateway and internal/daemon carry it through an assembly, and
+// internal/cli parses it from user input.
+//
+// internal/discovery names its intent variants after these three values but
+// does NOT import this package: it maps a variant name to a tier itself.
+// That is deliberate and it is why the list above is an import list rather
+// than a list of everything the vocabulary reaches.
+//
+// When the vocabulary lived in the pipeline, the
 // control plane had to import the data plane's execution package to say the
 // word "read" — an edge that contradicts the layering AND made the
 // depguard proof for "pipeline must not import ctlapi" impossible to
