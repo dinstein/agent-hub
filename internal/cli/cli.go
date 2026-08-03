@@ -218,15 +218,18 @@ func (a *App) newRoot() *cobra.Command {
 	// instead of once per command, and `daemon` leads so the answer is the
 	// first thing on offer.
 	addGroupedHidden(root, a.reducedHelp, groupDaemon,
-		a.newDaemonCmd(), a.newSessionCmd(), a.newEventsCmd(), a.newTokenCmd())
+		a.newDaemonCmd(), a.newSessionCmd(), a.newTokenCmd())
 	// Everything else, and the title says so rather than naming a theme the
 	// membership does not honor. These run against local state with nothing
-	// started; `audit` is a projection of the access ledger on disk, which is
-	// why it does not belong above. Order is read-then-write within each pair,
-	// decide -> inspect -> repair across them.
+	// started; `audit`, `events` and `logs` are projections of files on disk,
+	// which is why none of them belongs above. `events` was in Daemon while
+	// it subscribed to the SSE stream; it now reads the event log, which a
+	// stdio gateway writes with no daemon in the picture, so the one testable
+	// question the split is made on answers differently.
 	addGroupedHidden(root, a.reducedHelp, groupManage,
 		a.newConfigCmd(),
 		a.newAuditCmd(),
+		a.newEventsCmd(),
 		a.newLogsCmd(),
 		a.newSkillCmd())
 	// `doctor` is VISIBLE, in a shipped build too, and it is alone.

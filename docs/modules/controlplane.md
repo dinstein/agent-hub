@@ -924,9 +924,8 @@ classifiable error — agents and scripts use all four, so silently rewording is
 `go test ./internal/cli -update`, **and the diff must be reviewed**.
 
 **The online/offline matrix is explicit.** Every command in the `session` group requires the daemon (a session is a runtime
-object that is never persisted), and offline is exit 4 rather **than** an invented offline answer. `events` is inherently
-online (the stream *is* the daemon), and offline is exit 4 rather than printing an empty stream that looks like "nothing
-happened". Conversely, `audit` and `logs` read files straight off disk and **work offline** — the records describe things
+object that is never persisted), and offline is exit 4 rather **than** an invented offline answer. Conversely, `audit`,
+`events` and `logs` read files straight off disk and **work offline** — the records describe things
 that already happened, and whether the daemon is up cannot change history. `logs` is the sharper case: a stdio gateway
 writes its log with no daemon anywhere in the picture, so requiring one to read it back would refuse exactly the
 installation with the most to explain. The whole `server tool` group is offline-capable too — choosing what a server
@@ -1117,20 +1116,21 @@ SIGTTIN/SIGTTOU.
 (`server`, `auth`, `secret`, `catalog` — `server add --url ...` is the general answer, so it leads, and the
 curated catalog trails because leading with it teaches a path that ends in "not listed" for most servers), Wire up
 (`profile`, `client` — a profile says what a surface *contains*, `client bind` says who gets it,
-so the two halves of one question sit together), Daemon (`daemon`, `session`, `events`, `token`), Manage
+so the two halves of one question sit together), Daemon (`daemon`, `session`, `token`), Manage
 (everything else), Diagnose (`doctor`, alone), and the machine entry point `connect`.
 
 **The back half is split on one testable question — does this command need a running daemon?** Every
-member of Daemon is inert without one: `session` and `events` say so in their own help text, and `token`
+member of Daemon is inert without one: `session` says so in its own help text, and `token`
 mints credentials for the daemon's HTTP data plane, so with no daemon it has no subject. Grouping by that
 shared prerequisite answers "is the daemon up?" once for the section instead of once per command, and
 `daemon` leads so the answer is the first thing on offer. Manage is named for what it honestly is — the
 remainder, usable against local state with nothing started. This replaced a thematic Govern/Operate split
 whose themes did not survive contact with their own membership: `token` is setup rather than
 governance, and `skill` is not an operation. A heading that mis-sorts its own members teaches the wrong
-model of the tool, which is why the fallback group is not given a theme it would then break. `audit` and `logs` are
-projections of files on disk, which is why neither sits under Daemon — `logs` least of all, since the gateway logs it
-exists to surface are written by processes that never needed a daemon to run.
+model of the tool, which is why the fallback group is not given a theme it would then break. `audit`, `events` and
+`logs` are projections of files on disk, which is why none of them sits under Daemon. `events` DID sit there, while it
+subscribed to the SSE stream; it now reads the event log, which a stdio gateway writes with no daemon in the picture, so
+the one testable question the split is made on answers differently.
 
 **`logs` is the third log reader, and the three do not overlap.** `daemon logs` reads one file for one process;
 `server logs` renders one downstream connection's JSON-RPC frames and is off unless tracing was switched on for that

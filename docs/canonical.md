@@ -124,7 +124,10 @@ the change is sealed inside one package, rather than borrowing one now.
   plural resource collection. Neither is `logs`: it is a read **across every process log at once**,
   which is what separates it from `daemon logs` (one process) and `server logs` (one downstream
   connection's frames). Three readers, three subjects — and the name is not free to move to any of
-  the other two. `activity` was one of these and is **gone, not renamed**: it projected
+  the other two. `events` kept its name through a change of meaning: it subscribed to the daemon SSE
+  stream and now reads the event LOG (`internal/eventlog`). The name stayed because it was always the
+  better fit — a notification channel is not a stream of events, a change log is — and because the two
+  never coexisted, so nothing is ambiguous about which one a reader has. `activity` was one of these and is **gone, not renamed**: it projected
   the token-savings ledger, and the ledger was removed rather than repaired (§7 decision 9). The
   OAuth group is **`auth`**, not `oauth`, and `catalog` takes
   **no plural alias**: there is one built-in list, so `catalogs` would name a thing that does not

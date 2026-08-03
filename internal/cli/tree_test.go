@@ -51,8 +51,8 @@ var withheldGroups = []*cobra.Group{groupDaemon, groupManage}
 // that teaches the everyday path has to name what to run when a step of it
 // fails, or the user's next move after a failed handshake is unspoken.
 var withheldCommands = []string{
-	"daemon", "session", "events", "token",
-	"config", "audit", "logs",
+	"daemon", "session", "token",
+	"config", "audit", "events", "logs",
 	"skill",
 	// `tool` is NOT here any more: it hangs off `server`, which is visible,
 	// so the group ships. That was the point of moving it — a global allow
@@ -276,9 +276,9 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		// Split on one testable question — does this need a running daemon?
 		// `token` mints credentials for the daemon's HTTP data plane, so it
 		// sits with the daemon rather than with the other governance verbs.
-		{"daemon", []string{"daemon", "session", "events", "token"}},
+		{"daemon", []string{"daemon", "session", "token"}},
 		{"manage", []string{
-			"config", "audit", "logs",
+			"config", "audit", "events", "logs",
 			"skill",
 		}},
 		// One member, and visible even in a shipped build: Setup and Wire up

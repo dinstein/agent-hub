@@ -298,9 +298,11 @@ flowchart LR
     subgraph obs["③ Observability flow: local disk only"]
         DSX["downstream"] --> A4["logs/server-&lt;name&gt;.log<br/>one per server, off by default"]
         GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log<br/>logs/daemon.log"]
+        GW --> A7["logs/events.jsonl<br/>state changes, closed vocabulary, default on"]
         GW --> A6["audit/YYYY-MM-DD/<br/>authenticated metadata + encrypted payload packs"]
         A4 -.->|"agenthub server logs"| F["CLI / GUI"]
         A5 -.->|"agenthub logs (offline, merged)<br/>agenthub daemon logs (daemon.log only)"| F
+        A7 -.->|"agenthub events (offline)"| F
         A6 -.->|"agenthub audit (offline)<br/>GUI Activity (selected-call detail)"| F
     end
 ```
@@ -431,7 +433,7 @@ four were removed. What survives refuses a call outright or lets it through unto
 ├── state/                    # ratelimits.json / run markers
 ├── skills/                   # content-addressed skill library + install index
 ├── cache/tools/<server>.json # tool catalog snapshots used for "answer from cache first"
-├── logs/                     # server-<name>.log + gateway-<client>.log + daemon.log
+├── logs/                     # events.jsonl + server-<name>.log + gateway-<client>.log + daemon.log
 ├── tokens.json  .token_key   # agent tokens (HMAC only)
 └── run/                      # on Linux, prefers $XDG_RUNTIME_DIR/AgentHub when AGENTHUB_DATA_DIR is unset
     ├── ctl.sock  daemon.json # control socket + readiness handshake (endpoint, pid, version, owner pid;
@@ -462,11 +464,12 @@ implementation of the rules, one lock, two entry points. A daemon that is runnin
 either: its registry watcher picks the CLI's write up and announces it. Change propagation uses a
 monotonic generation counter plus event pushes; mtime plays no semantic role.
 
-The CLI reaches the daemon **only for runtime objects** — `session ls/show/kill`, `events`, and the
-live status section of `server inspect` (best-effort there; offline it says so and reads the persisted
-cache). Those refuse with exit 4 rather than inventing an offline answer, because a session is never
-persisted and an empty event stream would read as "nothing happened". Everything else, configuration
-included, works with no daemon at all.
+The CLI reaches the daemon **only for runtime objects** — `session ls/show/kill` and the live status
+section of `server inspect` (best-effort there; offline it says so and reads the persisted cache).
+Those refuse with exit 4 rather than inventing an offline answer, because a session is never
+persisted. Everything else, configuration and every observability stream included, works with no
+daemon at all — `events` in particular, since a stdio gateway writes that stream with no daemon
+anywhere in the picture.
 
 ---
 

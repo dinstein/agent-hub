@@ -221,16 +221,29 @@ agenthub server test brave --tools      # live answer today
 | client sees nothing | `server inspect` first; did the user restart the client? |
 | a client points at an old binary | `doctor` reports it; `--fix` repoints it |
 | a call went wrong, or "did it even reach the server" | the call log (§9) — `audit tail`, then `audit show <call-id>` |
-| a server dropped, kept reconnecting, or died overnight | `agenthub logs --server <id>` (§8) — merged across the daemon and every gateway |
+| a server dropped, kept reconnecting, or died overnight | `agenthub events --server <id>` (§8) — the state changes; then `agenthub logs --server <id>` for the prose around them |
 | exit 4 | that command needs a running daemon; nothing on this path does |
 | exit 6 | governance denied it — report it, do not retry |
 
 `server inspect` always prints a **visibility** section — the first command for "enabled, credential stored, client still sees nothing". Lists which profiles include and exclude the server, bound clients that can and cannot reach it, what an unbound client gets, and local tool-override count.
 
-## 8. Process logs and the wire trace
+## 8. State changes, process logs and the wire trace
 
-**Process logs** — what the hub's own processes did. Start here for anything about a connection's
-life rather than a call's content:
+**State changes** — start here for anything about a connection's life rather than a call's content.
+`events` is a closed vocabulary (connected, circuit_open, respawn_failed, health_down, …), so it is
+what to grep, script or alert on:
+
+```bash
+agenthub events --server linear             # one downstream's whole history
+agenthub events --kind circuit_open --since 24h
+agenthub events -f                          # tail; survives a daemon restart
+```
+
+- Scopes are `server`, `gateway` and `daemon`, all in one time-ordered file.
+- Works offline. Default ON; `agenthub config set events.enabled false` turns it off.
+- An unknown `--scope`/`--kind` is an ERROR listing the valid names, never an empty result.
+
+**Process logs** — the same processes' prose, for when the vocabulary is not enough:
 
 ```bash
 agenthub logs --server linear          # every process's records about one downstream

@@ -272,9 +272,11 @@ flowchart LR
     subgraph obs["③ 观测流：只写本地磁盘"]
         DSX["downstream"] --> A4["logs/server-&lt;name&gt;.log<br/>每 server 一份，默认关闭"]
         GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log<br/>logs/daemon.log"]
+        GW --> A7["logs/events.jsonl<br/>状态变更，闭集词汇，默认开"]
         GW --> A6["audit/YYYY-MM-DD/<br/>认证元数据 + 加密 payload pack"]
         A4 -.->|"agenthub server logs"| F
         A5 -.->|"agenthub logs（离线，跨进程归并）<br/>agenthub daemon logs（只读 daemon.log）"| F
+        A7 -.->|"agenthub events（离线）"| F
         A6 -.->|"agenthub audit<br/>（离线读取；明文需显式开启）"| F
     end
 ```
@@ -386,7 +388,7 @@ fail-closed 的链里就是一个绕过形状。它包在调用本身外面—�
 ├── state/                    # ratelimits.json / run 标记
 ├── skills/                   # 内容寻址的技能库 + 安装索引
 ├── cache/tools/<server>.json # 「缓存先答」用的工具目录快照
-├── logs/                     # server-<name>.log + gateway-<client>.log + daemon.log
+├── logs/                     # events.jsonl + server-<name>.log + gateway-<client>.log + daemon.log
 ├── tokens.json  .token_key   # agent token（只存 HMAC）
 └── run/                      # Linux 未设 AGENTHUB_DATA_DIR 时优先 $XDG_RUNTIME_DIR/AgentHub
     ├── ctl.sock  daemon.json # 控制 socket + 就绪握手（bind 成功后才写）
