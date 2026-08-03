@@ -22,7 +22,7 @@ import (
 //
 // describe resolves through Surface.byExposed — the same map tools/list,
 // search_tools and ResolveCall read, which is the scope-filtered set
-// (docs/architecture.md §7, "one scope, three enforcement points"). Structurally there
+// (docs/architecture.md §7). Structurally there
 // is no other set it could reach, so describe can never reveal a tool search
 // hid. That is a property of the code, not a rule someone has to remember.
 //

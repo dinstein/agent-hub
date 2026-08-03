@@ -86,10 +86,12 @@ func vscodeUserDir(tail ...string) map[string][]string {
 // specs is THE adapter table. Every supported client is one row; the code
 // paths below are shape-generic.
 //
-// Placement order inside a row matters: project files come first because a
-// project-scoped connection is the least surprising default (it binds the
-// gateway to the tree the user is standing in, and it is reviewable in a
-// diff).
+// Placement order inside a row is the FALLBACK order, not the default: a
+// write with no placement named goes to DefaultPlacement (user-level, and see
+// clients.go for why), which defaultTarget looks up by name regardless of
+// where it sits in the row. Order decides only what a row falls back to when
+// it has no user-level location on this platform, and the order candidates are
+// listed and probed in.
 var specs = []clientSpec{
 	{
 		id:   "claude-code",

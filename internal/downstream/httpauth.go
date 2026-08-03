@@ -14,7 +14,7 @@ import (
 )
 
 // authRoundTripper attaches the downstream's bearer credential to every
-// request and performs the passive refresh of docs/modules/oauth.md, docs/flows.md §6:
+// request and performs the passive refresh of docs/modules/oauth.md, docs/flows.md §5:
 //
 //	401 or 403 ─► refresh ONCE ─► replay the request ONCE ─► give up
 //

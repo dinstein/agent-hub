@@ -17,7 +17,7 @@ const ShutdownGrace = 5 * time.Second
 
 // Listen binds addr and returns the listeners to serve on.
 //
-// Dual-stack loopback (docs/architecture.md §2 "dual IPv6 listeners"): a client told to reach
+// Dual-stack loopback (docs/architecture.md §2): a client told to reach
 // "localhost" may resolve it to either 127.0.0.1 or ::1, and which one it
 // picks is out of our hands. Binding only one family produces the worst
 // possible failure — it works on the developer's machine and refuses

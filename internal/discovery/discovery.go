@@ -195,7 +195,7 @@ type Options struct {
 // Surface is an immutable snapshot of one session's tool exposure: what
 // tools/list answers, how an incoming name is classified, and what
 // search_tools can rank. Safe for concurrent use; rebuild and swap on any
-// catalog or scope change (docs/architecture.md §2 snapshot discipline).
+// catalog or scope change (docs/architecture.md §2).
 //
 // SearchGuard is deliberately NOT part of a Surface: guard state is
 // per-session and must survive rebuilds, while it must be reset when the

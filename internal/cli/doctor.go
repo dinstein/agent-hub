@@ -585,7 +585,7 @@ func (d *doctorRun) checkBackups(regDir string) {
 
 // checkActiveProfile surfaces a dangling active profile, which fail-closes
 // every followActive binding to an EMPTY scope. toolport left this silent;
-// making it loud is the point (docs/architecture.md §7, improvement 5).
+// making it loud is the point (docs/architecture.md §7).
 func (d *doctorRun) checkActiveProfile() {
 	active := d.cfg.activeProfile
 	if active == "" {
