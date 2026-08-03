@@ -13,33 +13,16 @@ It no longer inspects **what a downstream returned**. Earlier versions scanned r
 injection and for leaked credentials, fingerprinted tool definitions to grade drift, and queued calls
 for a human decision. All of it was removed: what a client may reach is decided in advance by
 configuration, and a stage that reads a result in order to relabel or withhold it is the opposite of
-that model. The history is worth keeping in mind when reading old commits, but nothing in the tree
-does it today.
+that model. Worth knowing when reading old commits; nothing in the tree does it today.
 
-The packages collaborate in layers rather than as peers:
+`internal/guard/*` is the zero-business-dependency base (canonical.md §2 rule 4: standard library
+plus `internal/guard` itself, enforced by depguard). These packages know nothing about servers,
+sessions, or the pipeline; they make purely functional determinations and hand the result up for
+someone else to act on. `internal/oauthflow` is the only credential-acquisition path, and it consumes
+`netguard`'s predicates.
 
-- `internal/guard/*` is the zero-business-dependency base (canonical.md §2 rule 4: standard library
-  plus `internal/guard` itself only, enforced by depguard). These packages know nothing about
-  servers, sessions, or the pipeline; they make purely functional determinations and hand the result
-  up for someone else to act on.
-- `internal/oauthflow` is the only credential-acquisition path, and it in turn consumes
-  `internal/guard/netguard`'s predicates.
-
-```mermaid
-flowchart LR
-    subgraph base["internal/guard/* — pure decisions, zero business dependencies"]
-        NET[netguard<br/>destination]
-        SPAWN[spawnguard<br/>how it starts]
-    end
-    OAUTH[oauthflow<br/>credential acquisition]
-
-    NET --> OAUTH
-    SPAWN --> DOWN[downstream spawn]
-```
-
-Documenting the failure direction is a uniform convention in this layer: every exported symbol's doc
-comment spells out "Failure direction:", and when reading the code you should treat it as part of
-the signature.
+Every predicate and decision point here spells out `Failure direction:` in its doc comment; treat it
+as part of the signature.
 
 | Direction | Meaning | Typical examples |
 |---|---|---|
@@ -58,17 +41,11 @@ predicates encode exactly that into the shape of the API, outside the type syste
 **One-line responsibility**: provide the single decidable rejection sentinel for the whole guard
 layer, so callers can recognize "was this a guard rejection?" without importing every subpackage.
 
-The package is 25 lines and exports one `var ErrBlocked = errors.New("guard: blocked")`. The
-convention is that every typed rejection error in the subpackages — currently `*spawnguard.Blocked`
-and `*netguard.BlockedError` — implements `Unwrap() error { return guard.ErrBlocked }`, so
+It exports one `var ErrBlocked`. Every typed rejection in the subpackages — `*spawnguard.Blocked`,
+`*netguard.BlockedError` — implements `Unwrap() error { return guard.ErrBlocked }`, so
 `errors.Is(err, guard.ErrBlocked)` holds everywhere. The machine-readable code and the
 human-readable reason stay on the subpackages' concrete types; the sentinel only answers "was this
 blocked by a guard".
-
-Note that not every subpackage produces errors: some are detectors that never
-return an error while scanning — they return an `Action` — so they're outside the `ErrBlocked`
-system. `guard.ErrBlocked` covers "refusing an action" (starting a process, dialing a connection),
-not "labeling a piece of content".
 
 ---
 
@@ -80,14 +57,14 @@ server entry point.
 
 ### Positioning: anti-smuggling, not a sandbox
 
-The package comment is blunt about this, and you have to accept the framing before reading the code:
-`spawnguard` does pattern matching on command lines, not execution boundaries. A server the user
-configured themselves, that was always going to run code, still runs; `npx`, `uvx`, and `docker run`
-with ordinary project mounts all pass through untouched. What it blocks is the shape "an
-innocuous-looking entry point with `sh -c`, `LD_PRELOAD`, or `--privileged` hiding inside it". The
-real isolation story lives elsewhere, and it is shipped rather than pending: the Docker spawner
-(`internal/mcp/transport/docker.go`), reached by `runtime: docker`, which fails closed rather than
-degrading to host execution when the isolation an entry claims cannot be delivered.
+Accept the framing before reading the code: `spawnguard` does pattern matching on command lines, not
+execution boundaries. A server the user configured themselves, that was always going to run code,
+still runs; `npx`, `uvx`, and `docker run` with ordinary project mounts pass through untouched. What
+it blocks is the shape "an innocuous-looking entry point with `sh -c`, `LD_PRELOAD`, or
+`--privileged` hiding inside it". The real isolation story is elsewhere and is shipped rather than
+pending: the Docker spawner (`internal/mcp/transport/docker.go`), reached by `runtime: docker`, which
+fails closed rather than degrading to host execution when the isolation an entry claims cannot be
+delivered.
 
 ### Where it is attached
 
@@ -97,14 +74,13 @@ resolves to the shared `spawnguard.Guard.Check` unless an assembly overrides it 
 paths — plain stdio and the rewritten `docker run` line — consult on the **final** host command, after
 secret expansion and after any docker rewriting.
 
-It did not always work that way, and the shape of the omission is worth keeping: `Screen` was
-implemented and called, `spawnguard` was implemented and exhaustively tested, `Deps.Spawn` existed as
-`any` with the comment *"reserved for M1 spawnguard wiring; nil today"* — and nothing joined them.
-The guard's only production caller was `confops`, which sees **docker** entries at `server add` time
-and nothing else, so a host-runtime entry written straight into the registry was never screened at
-all, by anything, and every test on both sides stayed green. That is why the default here is the
-guard and the opt-out is an explicit field: a screen each assembly must remember to attach is one
-that will be missing from the next assembly.
+It did not always work that way. `Screen` was implemented and called, `spawnguard` was implemented
+and exhaustively tested, `Deps.Spawn` existed as `any` marked "reserved… nil today" — and nothing
+joined them. The guard's only production caller was `confops`, which sees **docker** entries at
+`server add` time and nothing else, so a host-runtime entry written straight into the registry was
+never screened at all, and every test on both sides stayed green. Hence the default is the guard and
+the opt-out is an explicit field: a screen each assembly must remember to attach is one that will be
+missing from the next assembly.
 
 ### Invariants and failure directions
 
@@ -134,20 +110,19 @@ that will be missing from the next assembly.
   ```
 
   The handling here is deliberately different from `docker run`: the option sets of coreutils and
-  sudo are **closed and documented**, so both tables can be complete, and whatever isn't listed is
-  treated as "a shape this build doesn't understand" and rejected. We don't "assume it takes a value"
-  the way the container side does, because at this layer **guessing wrong in either direction moves
-  where the command is**, so there is no safe default to pick. The cost of forgetting to register a
-  flag is loudly rejecting an uncommon but legitimate command line — the operator sees it and can fix
-  it; a silent bypass is neither.
+  sudo are **closed and documented**, so both tables can be complete, and whatever isn't listed is a
+  shape this build doesn't understand and is rejected. We don't "assume it takes a value" the way the
+  container side does, because at this layer **guessing wrong in either direction moves where the
+  command is** — there is no safe default. The cost of forgetting to register a flag is a loud
+  rejection of an uncommon but legitimate command line, which an operator can see and fix; a silent
+  bypass is neither.
 - **`env -S` is rejected outright rather than guessed at.** Split-string re-splits an opaque string
   into a command line, which is the very reason this package exists, so `-S`, `-S…`,
   `--split-string`, and `--split-string=…` all yield `CodeEnvSmuggling`. `NAME=VALUE` assignments
-  inside `env` go through the same `checkEnvEntry` as a direct env slice. `env`'s own options are
-  likewise registered in "takes a value / doesn't" tables, and anything unrecognized is rejected —
-  GNU env and BSD env simply have different option sets (BSD has `-P`, GNU has that group of signal
-  options), so no single table can be complete for both, which makes **rejection** the only answer
-  that doesn't depend on which `env` is installed.
+  inside `env` go through the same `checkEnvEntry` as a direct env slice. `env`'s own options get the
+  same two tables, and anything unrecognized is rejected: GNU env and BSD env have different option
+  sets (BSD has `-P`, GNU the signal options), so no single table can be complete for both, and
+  rejection is the only answer that doesn't depend on which `env` is installed.
 - **Docker's global flags (the ones before the subcommand) need two tables as well**, for a reason
   even harder than the run flags: misreading a global flag shifts the position of the **subcommand**,
   and when `sub` isn't `run|create|exec` the entire container check is skipped —
@@ -160,20 +135,18 @@ that will be missing from the next assembly.
 - **Every interpreter family has a table of "the value is the next argument" flags**, for **exactly
   the same** reason as the container case: a flag's value doesn't look like a flag either, and
   without skipping it the scan stops there treating it as an operand, so **the eval flag that follows
-  is never seen**. This had only been reasoned through on the container branch, not the interpreter
-  branch, so all of the following sailed right past:
+  is never seen**. This had only been reasoned through on the container branch, so all of the
+  following sailed right past:
 
   ```
   bash --rcfile /tmp/x -c 'evil'     perl -I /tmp -e 'evil'
   node --title svc -e 'evil'         php  -d k=v  -r 'evil'
   ```
 
-  Each is just the classic `sh -c` with one harmless flag in front. The value-taking flags of
-  shell / perl / ruby / php / python are a **closed set** and are now listed in full;
-  **node is not** — it adds new options every release, so `node --somenewflag value -e ...` remains
-  a residual possibility. Sealing it completely would require the scan to continue past the operand,
-  at the cost of false positives when a script carries its own `-e`/`-c`, which is a **policy change**
-  rather than a bug fix and was not done in this round.
+  The value-taking flags of shell / perl / ruby / php / python are a **closed set** and are listed in
+  full; **node is not** — it adds options every release, so `node --somenewflag value -e ...` remains
+  a residual possibility. Sealing it needs the scan to continue past the operand, at the cost of false
+  positives on scripts carrying their own `-e`/`-c`: a policy change, not a bug fix.
 - **The container check covers only `run|create|exec`** (including the second-level subcommand in
   `docker container run`), and the scan likewise stops at the first operand — the image name — to
   avoid false positives from the in-container command's arguments.
@@ -189,37 +162,31 @@ that will be missing from the next assembly.
   ```
 
   With the list inverted, **an unrecognized flag is assumed to take a value**: skip one argument and
-  keep scanning, so the `-v` further along is still judged. The cost of guessing wrong is at worst
-  walking into the container's own command line and raising one false positive on an argument that
-  never belonged to docker — **a false positive is loud and fixable; a bypass is neither**. That's
-  what moving the incompleteness to the safe side means.
-- **Bind mounts are blocked only for whole trees**: any subpath of `/`, `/etc`, `/root`, `/boot`,
-  `/dev`, `/var`, `/usr`, `/home`, `/proc`, and `/sys`, plus any path ending in
-  `docker.sock`/`podman.sock`/`containerd.sock`. Subdirectories of `/etc` are allowed — the target is
-  whole-tree exposure, not an enumeration of every possible secret. Named and anonymous volumes are
-  not host binds.
+  keep scanning, so the `-v` further along is still judged. Guessing wrong now costs at worst one
+  false positive on an argument that never belonged to docker — loud and fixable, unlike a bypass.
+- **Bind mounts are blocked for whole trees, matched on the cleaned source.** `-v`/`--volume` and
+  `--mount`'s `source=`/`src=` are both judged. Denied: the roots `/`, `/etc`, `/root`, `/boot`,
+  `/dev`, `/var`, `/usr`, `/home` **matched exactly**, anything at or under `/proc` or `/sys`, and any
+  path ending in `docker.sock`/`podman.sock`/`containerd.sock`. A subdirectory such as `/etc/myapp` is
+  therefore allowed — the target is whole-tree exposure, not an enumeration of every possible secret.
+  Named and anonymous volumes are not host binds.
 - **`--privileged` is judged by its value, not by its spelling, and the failure direction is ON.**
   docker parses the attached form with `strconv.ParseBool`, so `--privileged=true`, `=1` and `=T` all
   enable it; only an explicit parseable false is treated as off, and a value neither docker nor this
   build can parse (`--privileged=yes`) is not evidence that isolation is intact. Matching the bare
-  token alone was a bypass — `containerBoolFlags` had carried a `--privileged=false` entry since the
-  beginning, so the attached form had been anticipated and only its harmless half was ever wired up.
-  The `=false` branch is also the one place in the flag loop that continues **without** consuming a
-  value, which is the shape `containerBoolFlags` was inverted to prevent; `TestPrivilegedFalseDoesNotBlindTheScan`
-  is the regression for it.
+  token alone was a bypass. The `=false` branch is also the one place in the flag loop that continues
+  **without** consuming a value — the shape `containerBoolFlags` was inverted to prevent — and
+  `TestPrivilegedFalseDoesNotBlindTheScan` is the regression for it.
 - **`--cap-add` and `--security-opt` are matched by meaning, not by spelling** — the same lesson as
-  `--privileged` above, in two more places. `--cap-add` stripped `CAP_` **case-sensitively and only
-  then** upper-cased, so `cap_sys_admin` survived both steps as `CAP_SYS_ADMIN`, which is not a key in
-  `dangerousCaps` (it holds `SYS_ADMIN`) — the lower-cased spelling was allowed and the upper-cased one
-  refused, while docker grants the identical capability for both. It now folds case **before**
-  stripping, the order docker normalizes in. `--security-opt` matched only the `=` separator and the
-  exact string `label=disable`, but moby's `parseSecurityOpt` still falls back to `:` (the deprecation
-  was never carried through to a removal) and reads a bare `disable` as SELinux label-disable, so
-  `seccomp:unconfined`, `apparmor:unconfined` and `disable` each switched off a confinement layer this
-  guard's own error message claims to protect. The separator is now normalized before matching, and
-  both shorthands are covered. Adding confinement or naming a profile
-  (`seccomp=/path/profile.json`, `apparmor=docker-default`, `no-new-privileges`, `--cap-drop`) still
-  passes: a guard that refused those would push operators away from using them.
+  `--privileged`, in two more places. `--cap-add` folds case **before** stripping `CAP_`, the order
+  docker normalizes in; doing it the other way round let `cap_sys_admin` through while refusing
+  `CAP_SYS_ADMIN`, for a capability docker grants identically for both. `--security-opt` normalizes
+  the separator before matching, because moby's `parseSecurityOpt` still accepts the legacy `:` form
+  (the deprecation was never carried through to a removal) and reads a bare `disable` as SELinux
+  label-disable — so `seccomp:unconfined`, `apparmor:unconfined` and `disable` each switched off a
+  confinement layer this guard's own error message claims to protect. Adding confinement or naming a
+  profile (`seccomp=/path/profile.json`, `apparmor=docker-default`, `no-new-privileges`, `--cap-drop`)
+  still passes: a guard that refused those would push operators away from using them.
 - **`--device` is a DENY list of block and memory devices**, matched on the cleaned host source — the
   first colon-separated field of `host-src[:container-dest[:permissions]]`. Refusing only the exact
   path `/dev` blocked the one form docker itself rejects, while `--device=/dev/sda` handed over the
@@ -235,19 +202,12 @@ that will be missing from the next assembly.
   nodes cannot be completed: `/dev/dri`, `/dev/kvm`, `/dev/fuse`, `/dev/net/tun`, `/dev/snd`,
   `/dev/ttyUSB0` are all ordinary requests from a real server, and each new driver adds more. The
   denied set is the opposite shape — enumerable, stable across machines, and with no use inside an
-  MCP server.
-
-  **The cost of a false positive changed when the guard moved onto the spawn path**, which is why the
-  width matters more than it used to: a refused device is now a server that dies at connect with
-  `ClassFatal`, not a configuration rejected at `server add`. A narrow allow list shipped after that
-  move would have taken working GPU, VM, FUSE and serial-device servers down at their next connect.
+  MCP server. The cost of a false positive also changed when the guard moved onto the spawn path: a
+  refused device is now a server that dies at connect with `ClassFatal`, not a configuration rejected
+  at `server add`, so a narrow allow list shipped after that move would have taken working GPU, VM,
+  FUSE and serial-device servers down at their next connect.
 - **The runtime never generates `--privileged` or `--device` itself** — both can only arrive through
   an operator's `extraArgs` — so neither rule can invalidate a configuration AgentHub produced.
-
-| File | Contents |
-|---|---|
-| `spawnguard.go` | `Guard`/`Config`/`Blocked`, check ordering, the dangerous-env table and `checkEnvEntry`, basename extraction |
-| `shapes.go` | Wrapper unwrapping (including `env -S`), inline-eval shapes per interpreter family, container-escape shapes and sensitive-path determination |
 
 ---
 
@@ -256,58 +216,53 @@ that will be missing from the next assembly.
 **One-line responsibility**: answer "is this destination private / not publicly routable", and screen
 again at dial time against the IP actually resolved, closing the DNS-rebinding TOCTOU window.
 
-### Key types and entry points: why there are two predicates
+### Why there are two predicates
 
 This is the one design point to remember about the package: "is this host private?" is **two
 questions with opposite failure directions** depending on the use, so there are two exported
 predicates and they must never be substituted for each other.
 
-- `HostIsPrivate(host) bool` is for **refusing** (refusing an OAuth redirect target, a remote server
-  URL). **fail-closed**: an empty host, a DNS failure or timeout (5s), and an empty answer all return
+- `HostIsPrivate(host) bool` is for **refusing** (an OAuth redirect target, a remote server URL).
+  **fail-closed**: an empty host, a DNS failure or timeout (5s), and an empty answer all return
   `true`; if any record a hostname resolves to is a private address it returns `true` — one
   attacker-controlled A record has to be enough to trigger refusal.
 - `HostIsDefinitelyPrivate(host) bool` is for **granting trust** (treating a target as local,
   relaxing localhost-only rules). **fail-to-false**: only a literal IP or a localhost name returns
   `true`, and it **never resolves DNS** — a DNS answer is a claim the zone owner can change at any
   time, so it can negate trust but must never grant it. Its scope is also narrower than
-  `AddrIsPrivate`: only loopback, RFC1918, link-local unicast, and unspecified count, excluding
+  `AddrIsPrivate`: only loopback, RFC1918/ULA, link-local unicast, and unspecified count, excluding
   CGNAT, the documentation ranges, and the benchmark range — those addresses aren't routable, but
   they aren't "locally private" either and shouldn't unlock local trust.
 
 `AddrIsPrivate(netip.Addr) bool` is the address classifier both share. It returns `true` for an
 invalid zero-value `Addr` (fail-closed) and calls `Unmap()` before deciding, so `::ffff:10.0.0.1` is
-classified as `10.0.0.1`. Beyond the standard library's own classifications it additionally covers
-`0.0.0.0/8`, CGNAT `100.64.0.0/10`, the three TEST-NET ranges, benchmark `198.18.0.0/15`,
-`240.0.0.0/4`, the v6 documentation range, and **deprecated IPv6 site-local `fec0::/10`**.
+classified as `10.0.0.1`. Beyond the standard library's own loopback / private / unspecified /
+link-local / multicast classifiers it adds a prefix table: `0.0.0.0/8`, CGNAT, the IETF protocol
+assignments, the three TEST-NETs, benchmark `198.18.0.0/15`, `240.0.0.0/4`, the v6 discard and
+documentation ranges, **deprecated IPv6 site-local `fec0::/10`**, and the three v4-embedding
+prefixes.
 
-That last one is the shape to watch for in this list: `netip.Addr.IsPrivate` covers the ULA range
-`fc00::/7` that *replaced* site-local, and stops there, so `fec0::1` was not private to
-`AddrIsPrivate` at all. Because the hostname-time screen and the dial-time `DialControl` both consult
-that single function, one missing prefix opened both doors at once — a range being deprecated
-(RFC 3879) makes it *less* likely to be filtered elsewhere on the host, not more.
+Two shapes in that table are the ones to watch:
 
-**Three "v4 wrapped in v6" prefixes need their own coverage**: `64:ff9b::/96` (NAT64), `::/96`
-(IPv4-compatible, deprecated by RFC 4291), and `2002::/16` (6to4, deprecated by RFC 7526). All three
-are ways of writing an IPv4 address as IPv6, so **judging them by their v6 form answers the wrong
-question** — `::127.0.0.1`, `2002:7f00:1::`, and `64:ff9b::7f00:1` all mean 127.0.0.1, and none of
-them looks like loopback to `IsLoopback()`. (At one point only the NAT64 range was covered; the
-other two got past even `DialControl`.)
+- `netip.Addr.IsPrivate` covers the ULA range `fc00::/7` that *replaced* site-local and stops there,
+  so `fec0::1` was not private to `AddrIsPrivate` at all. Because the hostname-time screen and
+  `DialControl` both consult that single function, one missing prefix opened both doors at once — a
+  range being deprecated (RFC 3879) makes it *less* likely to be filtered elsewhere on the host, not
+  more.
+- `64:ff9b::/96` (NAT64), `::/96` (IPv4-compatible, deprecated by RFC 4291) and `2002::/16` (6to4,
+  deprecated by RFC 7526) are all ways of writing an IPv4 address as IPv6, so **judging them by their
+  v6 form answers the wrong question** — `::127.0.0.1`, `2002:7f00:1::` and `64:ff9b::7f00:1` all mean
+  127.0.0.1, and none of them looks like loopback to `IsLoopback()`. (At one point only the NAT64
+  range was covered; the other two got past even `DialControl`.) We reject the whole range rather than
+  extracting and reclassifying the embedded v4: the only purpose the two deprecated forms have **is
+  spelling an IPv4 address**, rejecting the range costs nothing, and it doesn't depend on a decoder
+  being correct.
 
-We reject the whole range rather than extracting and reclassifying the embedded v4: the only purpose
-the two deprecated forms have **is spelling an IPv4 address**, there's no use worth preserving,
-rejecting the range costs nothing, and it doesn't depend on a decoder being correct.
-
-`DialControl(network, address string, _ syscall.RawConn) error` is the package's real line of
-defense; install it on `net.Dialer.Control`:
-
-```go
-d := &net.Dialer{Control: netguard.DialControl}
-```
-
-The address it sees is the **already-resolved** address the socket is about to connect to, so
-whatever rebind window a hostname-level pre-check leaves open is closed here. It is fail-closed too:
-if it can't parse an IP literal it refuses rather than guesses, and refusals return a
-`*BlockedError` satisfying `errors.Is(err, guard.ErrBlocked)`.
+`DialControl` is the package's real line of defense; install it on `net.Dialer.Control`. The address
+it sees is the **already-resolved** address the socket is about to connect to, so whatever rebind
+window a hostname-level pre-check leaves open is closed here. It is fail-closed too: an address it
+cannot parse as an IP literal is refused rather than guessed at, and refusals return a `*BlockedError`
+satisfying `errors.Is(err, guard.ErrBlocked)`.
 
 ### Invariants and failure directions
 
@@ -318,7 +273,7 @@ if it can't parse an IP literal it refuses rather than guesses, and refusals ret
   goes through `net.DefaultResolver`.
 - Hostname pre-checks are **necessarily insufficient**, and the docs state plainly that they must be
   paired with `DialControl`. `oauthflow.Client` uses them exactly that way: `checkURL` screens the
-  URL's host before the request, and `dialControl` on the transport screens the actual IP at dial
+  URL's host before the request, and `dialControlFor` on the transport screens the actual IP at dial
   time.
 - `HostIsDefinitelyPrivate` is wired, and **both of its callers use it to REFUSE rather than to grant
   trust** — the opposite of the role its own doc comment describes, deliberately.
@@ -329,14 +284,9 @@ if it can't parse an IP literal it refuses rather than guesses, and refusals ret
   `internal/downstream` screens the name before it connects and the resolved address at dial time,
   which is the pair DNS rebinding cannot walk around. **Reach for it to refuse only when you can name
   the fail-closed check that runs after you**; with no such check the doubt it waves through is the
-  entire attack.
-- The pairing is the point, and is why this function survived a period with no caller at all: a
-  predicate that refuses on doubt and one that withholds trust on doubt are different functions, and
-  collapsing them is the mistake the pair exists to prevent.
-
-| File | Contents |
-|---|---|
-| `netguard.go` | `AddrIsPrivate`/`HostIsPrivate`/`HostIsDefinitelyPrivate`/`DialControl`, the non-public prefix table, `BlockedError` |
+  entire attack. The pairing is also why the function survived a period with no caller at all:
+  refusing on doubt and withholding trust on doubt are different functions, and collapsing them is
+  the mistake the pair exists to prevent.
 
 ---
 
@@ -351,8 +301,6 @@ downgraded, and don't get double-spent".
 > against / which provider deployment shapes work / known gaps", see [oauth.md](oauth.md). Read that
 > one first when you can't connect to some downstream OAuth server.
 
-### Key types and entry points
-
 A login is a pipeline, and each stage is a value usable on its own, so the CLI can emit NDJSON
 progress events between stages and the daemon can re-enter at the "token exchange" stage to refresh:
 
@@ -361,39 +309,10 @@ discovery ──► registration ──► authorization ──► token exchang
 (RFC 8414/9728)  (RFC 7591)   (loopback|manual|device)   (PKCE)      (vault)
 ```
 
-- `Client` (`NewClient(Config)`) is the HTTP surface, holding **two** `http.Client`s internally (see
-  below).
-- `Discoverer` (`DiscoverFromIssuer` / `DiscoverFromResource`) walks the RFC 9728 → RFC 8414 chain;
-  `MetadataCandidates`/`ProtectedResourceCandidates` are candidate-URL generators whose order is the
-  contract, `DefaultEndpoints` is the final synthesized fallback, and `ResourceMetadataURL` is the
-  dedicated scanner for `WWW-Authenticate`. When every RFC 9728 candidate comes up empty,
-  `fetchResourceOriginMetadata` makes a final attempt to find the RFC 8414 document on the
-  **resource server's own origin** (such deployments really exist: the per-resource
-  `authorization_endpoint` is published only on the RS domain, while the copy on the issuer domain is
-  a generic default). That hop deliberately steps outside the spec, so it is narrowed three ways: it
-  runs only after the PRM chain is entirely empty, it **does not synthesize endpoints** (it doesn't
-  call `DefaultEndpoints`, which would otherwise send the browser to a URL nobody declared), and its
-  result is recorded as `DiscoveryResourceOrigin` rather than `DiscoveryOK` — the document comes from
-  a publisher the spec never designated, its `issuer` was not validated against where it came from,
-  and that is exactly the shape of a mix-up attack.
-- `ClientRegistrar` is the migration seam for registration mechanisms, with three implementations:
-  `NewDCRRegistrar` (RFC 7591, marked deprecated upstream), `NewClientIDMetadataRegistrar` (the
-  successor mechanism; in M1 it's a seam only and `Register` returns `ErrNotImplemented`), and
-  `NewStaticRegistrar` (an operator-provisioned client_id).
-- `PKCE`/`NewPKCE`/`NewState`/`SupportsS256` are the proof-key layer; `BuildAuthorizeURL`
-  (pure renderer) with `Client.AuthorizeURL` (renders and screens — what the flows call),
-  `Client.Exchange`, `Client.Refresh`, and `TokenResponse` are the protocol layer.
-- Three modes: `LoopbackListener`/`LoopbackFlow` (bind → register → serve → open browser → wait),
-  `ParseManualCallback`/`NewManualInstructions` (pasted callback), and
-  `Client.StartDevice`/`DevicePoller` (RFC 8628). `SelectMode` picks automatically.
-- `Store` (`Load`/`LoadState`/`LoadAccessToken`/`Save`/`SaveFromToken`/`Clear`/
-  `ClearClientRegistration`) is the vault surface, and `State` is the structure of the
-  `__oauth_state__` entry.
-- `Coordinator` (implementing `Refresher`) plus the generic single-flight `Group[T]` is the refresh
-  coordination layer, and `Flow.Login` is the top level that strings all of the above together.
-- `FlowError` is the structured error running through logs, ctlapi, and the CLI, carrying
-  `Type`/`Discovery`/`Registration`/`Suggestion`/`CorrelationID`, and it always wraps a sentinel so
-  `errors.Is` always works.
+The two structural choices worth knowing before reading any of it: `Client` holds **two**
+`http.Client`s with different redirect policies (see the invariants below), and `ClientRegistrar` is
+a three-implementation seam (DCR, Client ID Metadata Documents, an operator-provisioned client_id) so
+that replacing the deprecated mechanism is a constructor swap rather than a rewrite of the flow.
 
 ### Invariants and failure directions
 
@@ -408,52 +327,44 @@ discovery ──► registration ──► authorization ──► token exchang
   when it was screened.
 
   **The carve-out is decided from the REQUESTED host, and needs the resolved address to agree.**
-  `dialControlFor` is built per dial from the `host:port` the transport was asked for — the URL's own
-  host, before any resolution — and it opens only when `isLiteralLoopbackHost` holds for that host
-  **and** the address being dialed is itself a loopback literal. Deciding it from the resolved address
-  alone (which is what it did) reopened the switch to precisely the DNS answer the sentence above says
-  cannot unlock it: a public-looking name that answered `127.0.0.1` was dialed without netguard being
-  consulted at all, delivering a discovery GET — or a `postForm` carrying a `code_verifier` or a
-  refresh token — to whatever listens on this host's loopback interface. Requiring both halves is what
-  keeps a poisoned `localhost` on the netguard branch. `isLiteralLoopbackHost` is DNS-free for this
-  reason and had, until then, never been consulted on the dial path.
+  `dialControlFor` is built per dial from the `host:port` the transport was asked for — before any
+  resolution — and opens only when `isLiteralLoopbackHost` holds for that host **and** the address
+  being dialed is itself a loopback literal. Deciding it from the resolved address alone (which is
+  what it did) reopened the switch to precisely the DNS answer that cannot unlock it: a public-looking
+  name answering `127.0.0.1` was dialed without netguard being consulted at all, delivering a
+  discovery GET — or a `postForm` carrying a `code_verifier` or a refresh token — to whatever listens
+  on this host's loopback interface. Requiring both halves keeps a poisoned `localhost` on the
+  netguard branch.
 - **A destination the USER'S BROWSER is sent to is screened by the same rules as one we would fetch
   ourselves.** `Client.AuthorizeURL` (the method every flow calls; `BuildAuthorizeURL` stays a pure
   renderer) and `StartDevice`'s two verification URIs all pass through `screenBrowserURL` →
   `checkURL`. The endpoints come out of a metadata document or a token-endpoint response that a remote
   authorization server wrote, and the browser carries the user's ambient cookies to whatever they
   name: an AS advertising `authorization_endpoint: https://10.0.0.5:8080/authorize` was otherwise an
-  SSRF whose client is the human's session rather than ours. Only the operator-PINNED endpoint used to
-  be screened, and `checkURL` gives the reason that applies identically to the discovered one — this
-  destination receives the user's authorization code, so it is exactly as sensitive.
-  `internal/cli/browser.go` refuses a non-`http(s)` scheme, which closed the `file://` half and not the
-  private-address half, and `Flow.Open` is injectable, so no opener could be relied on as the backstop.
-  Refusing an AS on a private address breaks nothing that worked: that server's token endpoint is
+  SSRF whose client is the human's session rather than ours (only the operator-PINNED endpoint used to
+  be screened). Refusing an AS on a private address breaks nothing that worked: its token endpoint is
   already screened in `postForm`, so the flow died one step later — after the browser had been sent
-  there. Two limits this cannot reach, and they are the reason the screen is not the whole defence: the
-  browser resolves the name itself, and an injected `Open` can ignore the answer.
-- **PKCE is never downgraded.** `ChallengeMethodS256` is the only method ever sent, and there is no
-  `plain` code path in the package. `randRead` is a package-level variable rather than a config
-  option — making the entropy source configurable would be manufacturing exactly that downgrade path.
-  `newRandomToken` uses `io.ReadFull` so a short read can't silently shorten the verifier, and on
-  failure returns `ErrEntropy` instead of falling back to `math/rand`. `BuildAuthorizeURL` errors
-  outright when `PKCE` is nil, the challenge is empty, or the method isn't S256; `Client.Exchange`
-  refuses to exchange without a verifier. The one random value allowed to degrade is
-  `correlationID()` — if the diagnostic ID can't be generated we use a fixed placeholder rather than
-  letting it turn an otherwise successful login into a failure.
+  there. Two limits this cannot reach, and they are why the screen is not the whole defence: the
+  browser resolves the name itself, and an injected `Flow.Open` can ignore the answer.
+- **PKCE is never downgraded.** `ChallengeMethodS256` is the only method ever sent and there is no
+  `plain` code path. `randRead` is a package-level variable rather than a config option — making the
+  entropy source configurable would be manufacturing exactly that downgrade path — and
+  `newRandomToken` uses `io.ReadFull` so a short read can't silently shorten the verifier, returning
+  `ErrEntropy` rather than falling back to `math/rand`. `BuildAuthorizeURL` errors outright when
+  `PKCE` is nil, the challenge is empty, or the method isn't S256; `Client.Exchange` refuses to
+  exchange without a verifier. The one random value allowed to degrade is `correlationID()`: a
+  diagnostic ID that can't be generated becomes a fixed placeholder rather than failing a login.
 - **POSTs carrying credentials follow zero redirects.** The `credential` client's `CheckRedirect`
   returns `http.ErrUseLastResponse`, and `postForm`/`postJSON` then treat any 3xx as an `ErrRedirect`.
   A 302 on a request carrying a code_verifier, a refresh token, or a client secret is an exfiltration
   primitive, not a routing detail. Logged `Location` values keep only scheme+host+path
   (`redactLocation`). By contrast the `discovery` client allows up to 3 hops, **re-screening every hop
   through `checkURL`** — metadata documents are public, and providers really do move them.
-- **Persistence write order: state first, then the access token.** `Store.Save` writes
-  `__oauth_state__` (which carries the **already-rotated** refresh token) before `__http_auth__`. The
-  two crash windows are asymmetric: in this order a crash leaves "new refresh token + old access
-  token", which self-heals on the next refresh; the reverse leaves "new access token + invalidated
-  refresh token", which is unrecoverable short of a manual `auth login`. So `Save` never parallelizes
-  the two writes and never proceeds past a failed first write. `Clear` mirrors the order (delete the
-  token, then the state).
+- **Persistence write order: state first, then the access token** ([flows.md §5](../flows.md#5-headless-oauth-and-refresh)
+  draws the two crash windows). `Store.Save` never parallelizes the two writes and never proceeds past
+  a failed first write; `Clear` mirrors the order, deleting the token first. A corrupt `__oauth_state__`
+  is a loud error rather than "no state": silently treating it as absent would trigger a fresh
+  registration and orphan a working refresh token.
 - **Two inherited rules in `SaveFromToken`**: a response without a refresh_token **does not clear** a
   stored one (non-rotating providers omit it on every refresh, and clearing it would turn the second
   refresh into a fresh login); and an omitted scope means "unchanged" per RFC 6749 §5.1.
@@ -482,35 +393,32 @@ discovery ──► registration ──► authorization ──► token exchang
 - **Scopes are sent verbatim, and `offline_access` is never added unilaterally.** Adding it looks like
   a convenience but is actually an escalation of consent scope: on some providers it turns a
   session-level grant into a long-lived one, and on others it makes the whole authorization fail
-  outright.
+  outright. An operator-supplied set also wins outright over the discovered one and is never merged
+  with it — `--scopes` is usually used to *narrow* a provider's default.
 - **Registration hardcodes `token_endpoint_auth_method: "none"`** and never negotiates it from
   metadata: agenthub is a public client running on the user's machine, any "client secret" it holds
   is readable by anyone who can read the vault, and what actually protects the code exchange is PKCE.
 - **The order in loopback mode cannot be rearranged**: bind → build (register) → **Serve** → open
-  browser → wait. Binding comes first because the port in the redirect_uri has to exist before it can
-  go into the authorization request or the registration; serving comes before opening the browser
-  because a socket merely sitting in the accept backlog makes a very fast redirect hang instead of
-  being answered. **Every attempt uses a fresh random port** (`127.0.0.1:0`): the classic fixed-port
-  bug is that a previous abandoned authorization leaves its listener running and it, not the new
-  flow, catches the new callback, so the new flow times out, the old one reports a state mismatch,
-  and the thing that gets blamed and turned off is the state validation that was working correctly.
-  Only providers requiring an exactly pre-registered redirect_uri use `State.CallbackPort` +
+  browser → wait, with a fresh random port every attempt
+  ([flows.md §5](../flows.md#5-headless-oauth-and-refresh) says why). What is local to this package:
+  only providers requiring an exactly pre-registered redirect_uri use `State.CallbackPort` +
   `ListenOnPort` to reuse a port, and when that port is taken the caller should discard the DCR
   credentials and re-register rather than silently switching ports. `Wait` always shuts down the
-  server and releases the port before returning.
+  server and releases the port before returning — a listener outliving its flow is the stale-
+  interceptor bug random ports exist to prevent.
 - **Callback acceptance rules**: a request with `error` fails with the AS's own error code; one with
   `code` and a matching `state` succeeds; one with `code` but a missing or mismatched `state`
   **fails loudly** (`ErrStateMismatch`) — under random ports there's no benign explanation; everything
   else (favicons, probes, a bare `GET /`) answers 204 and is ignored without ending the flow. The
-  callback page is static and echoes nothing from the query string, so it can't become reflected XSS
-  or a token display surface.
+  callback page is static, scriptless and echoes nothing from the query string, so it can't become
+  reflected XSS or a token display surface.
 - **`ParseManualCallback`'s state rules branch on input shape**: any input containing a query string
   **must** carry a state and it must match, with a missing state treated as a mismatch (every AS
   echoes state back when it receives one, so its absence means this isn't this flow's callback); a
-  bare code can't be validated and is still accepted — a user pasting a bare code has usually trimmed
-  the URL themselves, and PKCE still stands: an intercepted code is useless without the verifier that
-  never left this process. Manual mode's redirect_uri points at the **user's** machine's loopback,
-  and a headless host never binds it.
+  bare code can't be validated and is still accepted, because a user pasting one has usually trimmed
+  the URL themselves and PKCE still stands — an intercepted code is useless without the verifier that
+  never left this process. Manual mode's redirect_uri points at the **user's** loopback, which a
+  headless host never binds.
 - **Device flow loop rules**: `authorization_pending` keeps polling at the current interval;
   `slow_down` **permanently** increases the interval by `SlowDownIncrement` (5s, capped at 60s) rather
   than delaying once; `access_denied`/`expired_token` terminate; and any other error, transport errors
@@ -519,18 +427,24 @@ discovery ──► registration ──► authorization ──► token exchang
   independently of the interval, so a hostile `interval` can't extend it.
 - **Abort conditions in the discovery chain**: a candidate returning non-2xx or unparseable JSON moves
   on to the next (providers 404 the forms they don't implement); but a candidate blocked by the SSRF
-  screen or served over non-HTTPS **aborts the entire chain immediately** — that's a security
-  decision, not a "try the next one" condition, and continuing would only probe more private URLs. A
-  document that parses but lacks `token_endpoint`, or lacks both authorization endpoints, likewise
-  errors outright rather than silently trying the next candidate: that's a broken provider and the
-  operator needs to see it. The `resource_metadata` in `WWW-Authenticate` is a **hint, not an
-  instruction**: it comes from an unauthenticated 401 response, so it goes through `checkURL` all the
-  same, and when it can't be fetched we still fall back to the candidates derived from the resource
-  URL.
+  screen or served over non-HTTPS **aborts the entire chain immediately** — a security decision, not a
+  "try the next one" condition, since continuing would only probe more private URLs. A cancelled or
+  expired context aborts too: nobody is waiting. A document that parses but lacks `token_endpoint`, or
+  lacks both authorization endpoints, errors outright rather than silently trying the next candidate —
+  that's a broken provider and the operator needs to see it. (The exception is the off-spec
+  resource-origin hop, where an unusable document is an ordinary miss; see [oauth.md](oauth.md).) The
+  `resource_metadata` in `WWW-Authenticate` is a **hint, not an instruction**: it comes from an
+  unauthenticated 401, so it goes through `checkURL` all the same, and when it can't be fetched we
+  still fall back to the candidates derived from the resource URL.
 - **OAuth uses its own slow backoff ladder, `SlowBackoffLadder`** (5min/15min/1h/4h/24h): an OAuth
   failure during connection is waiting on a **human**, and ordinary exponential backoff retrying every
   few seconds would just keep popping browser windows or hammering the provider's authorization
-  endpoint.
+  endpoint. `RetryBackoff` puts the first `FastRetries` failures on the flat `RefreshRetryBackoff`
+  first, and lives beside the ladder because both proactive refreshers use it — a schedule
+  reimplemented on each side is a schedule that drifts.
+- **Every error is a sentinel or a `*FlowError` that unwraps to one**, so callers classify with
+  `errors.Is` and never by string matching. `FlowError.Suggestion` is operator-facing and must never
+  carry a secret.
 - **Dependency budget**: standard library + `internal/secrets` + `internal/guard/netguard`. It imports
   no control plane, no pipeline, and no logging package — it returns a structured `*FlowError` and
   lets the caller decide how to render it.
@@ -539,19 +453,17 @@ discovery ──► registration ──► authorization ──► token exchang
   path would rather refuse to run than run unordered**: two processes racing for one single-use
   refresh token is worse than one "unsupported" refresh failure.
 
-
 ## Raised by the 2026-07-31 sweep, not fixed on that branch
 
-Each of these survived three-lens adversarial verification and was re-read against the code. They are
-recorded beside the invariant they bend rather than in a backlog file, because that is who needs to
-see them. None was fixed on the sweep's branch, whose scope was the findings both engines confirmed
-independently plus the two single-engine highs.
+Recorded beside the invariant it bends rather than in a backlog file, because that is who needs to
+see it. It survived three-lens adversarial verification and was re-read against the code; it was not
+fixed on the sweep's branch, whose scope was the findings both engines confirmed independently plus
+the two single-engine highs.
 
 - **`netguard.go:113` — the non-public prefix table omits RFC 8215's local-use NAT64 prefix
   `64:ff9b:1::/48`.** The v4-embedding group lists `64:ff9b::/96`, `::/96` and `2002::/16` and nothing
   else, so on a network routing the local-use prefix through a NAT64 translator, a literal from it
   encodes an RFC1918 destination that `AddrIsPrivate` answers false for — passing both the hostname
   screen and the dial-time hook. The reasoning already written down for the v4-embedding block
-  ("classifying the v6 form on its own merits answers the wrong question") applies identically. The
-  paragraph above records that this set was widened once before, which makes this an incomplete
-  enumeration rather than a decision.
+  ("classifying the v6 form on its own merits answers the wrong question") applies identically, and
+  that set was widened once before, which makes this an incomplete enumeration rather than a decision.

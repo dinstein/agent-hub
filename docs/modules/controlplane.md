@@ -1,28 +1,14 @@
 # Control Plane and Frontends
 
 This layer answers "how do people and UIs manage this machine". The data plane (gateway, pipeline,
-downstream connections) lives elsewhere; the packages here do only three things: expose the daemon's
-state and governance actions as a stable local API, wrap that API in two peer frontends (CLI and GUI),
-and hold the compile-time constraint that "the GUI may be entirely absent".
+downstream connections) lives elsewhere; the packages here expose the daemon's state and governance
+actions as a stable local API, wrap it in two peer frontends (CLI and GUI), and hold the compile-time
+constraint that "the GUI may be entirely absent".
 
-The division of labor between packages goes like this. `api` is the public contract: the control
-plane's DTOs and Go client, depending only on the standard library and importing no `internal/*` —
-the GUI and third-party integrations may only go through it. `internal/ctlapi` is the server side of
-that same contract: REST + SSE over one Unix domain socket, authenticated by directory permissions
-plus peer credentials, with no tokens. `internal/confops` is **the only implementation of semantic
-writes**: the CLI and the control plane both call it, so there is exactly one copy of the rules.
-`internal/catalog` answers "what should I add next" — a curated catalog and paste parsing, both of
-which produce only **proposals** and never write to disk. `internal/daemon` does assembly only: it
-wires the registry, the event bus, the session manager and the OAuth refresh coordinator into `ctlapi`, then writes the readiness handshake file `run/daemon.json`.
-`internal/httpbridge` is the other face — the data plane's MCP Streamable HTTP entry point plus the
-tiered agent token credential layer; it shares a process with the control plane but not its
-authentication model. `internal/cli` is the command tree and `internal/cli/output` is its only
-rendering layer. `cmd/agenthub` and `cmd/agenthub-gui` are the two entry points, the latter using a
-build tag to keep the Wails dependency out of CI. The remaining three packages are foundation and
-proof: `internal/testutil/fakemcp` is the programmable fake downstream used by every test,
-`internal/depguardtest` proves with failing cases that the four dependency constraints really do
-block, and `test/e2e` runs end to end against real
-processes.
+Per-package responsibilities are in [architecture.md §3](../architecture.md#3-core-module-map); what
+matters for the shape below is that `internal/confops` is **the only implementation of semantic writes**
+and both frontends call it, `internal/catalog` produces **proposals** and never writes to disk, and
+`internal/httpbridge` shares a process with the control plane but not its authentication model.
 
 ```mermaid
 flowchart LR
@@ -38,220 +24,151 @@ flowchart LR
     HB -->|"CallerTier"| PIPE["internal/pipeline"]
 ```
 
-One thing needs saying up front, because every package below repeats it: **events are notifications,
-not snapshots**. Every frame on SSE says only "something changed", and consumers must go back and
-re-read state, then decide whether to adopt it by "the generation I read ≥ the generation I already
-applied", not by "equals the Rev in the event". The same sentence is written across the whole chain
-(`api.Event`, `ctlapi`'s coalescer, the GUI's `TopicEvent`), because it is the precondition that makes
-dropped frames tolerable.
+Two things every package below depends on. **SSE events are notifications, not snapshots**: every frame
+says only "something changed", and consumers re-read state and adopt it by "the generation I read ≥ the
+generation I already applied", never by "equals the Rev in the event" — which is what makes dropped
+frames tolerable. **The event log is a different thing wearing a similar name**: `GET /v1/events/log` and
+`agenthub events` read a durable record in a closed vocabulary of kinds a consumer may switch on
+([foundation.md](foundation.md) owns it). The stream answers "something changed just now", the log
+answers "what happened to this server". Do not merge them.
 
 ---
 
 ## api
 
-**Responsibility in one sentence**: the control plane's public contract — the wire DTOs, error codes,
-SSE topic names, and a Go client depending only on the standard library; the GUI and third-party
-integrations talk to the daemon through it.
+**Responsibility**: the control plane's public contract — wire DTOs, error codes, SSE topic names, and a
+Go client depending only on the standard library.
 
-### Key types and entry points
+`Client` (`New`, `Default`, `DialOrStart`) dials the socket through a `unix` dialer with a fake
+`http://agenthub` host, and every capability hangs off a typed resource service. **There is no raw
+request escape hatch** — deliberately: anything a frontend can do corresponds to an endpoint, and
+therefore to something the CLI can do too, so "the GUI is optional" is structural rather than a promise.
+`ComputeHealth`'s input constants are frozen here, and `healthgen` generates the GUI's TypeScript
+constants from this package's source.
 
-`Client` is the only entry point, constructed with `New(socketPath)`, `Default()`, or
-`DialOrStart(ctx)`. It swaps `http.Client`'s `DialContext` for a `unix` dialer and uses a fake host
-`http://agenthub` in URLs, since the hostname is never resolved. Every capability hangs off a typed
-resource service — `Servers`, `Sessions`, `Events`, `Skills`, `Profiles`, `Scope`, `Config`,
-`Secrets`, `Tokens`, `Clients`, `Auth`, `Catalog`, `Parse`, `Audit`. **There is no raw request escape hatch**
-— deliberately: anything a frontend can do necessarily corresponds to an endpoint, and therefore is
-necessarily something the CLI can do too, so "the GUI is optional" is structural rather than a
-promise. The count is deliberately not written down here: it moves with the endpoint set, and a
-number in prose is the part that stops matching first.
-
-`DialOrStart` is the "start it if you can't connect" path. It dials once; on failure it runs
-`exec agenthub daemon start`, then polls `run/daemon.json` within a deadline and re-dials. If the child
-process exits before becoming ready, what is returned is its real error plus a tail of stderr, not a
-"timeout" — a lesson taken from the reference implementation `desktop.rs`. It names no owner, so
-under the admission rule it now only starts a daemon for a caller that asks for one explicitly
-through `DaemonArgs`; the desktop application does not use it.
-
-`StartSupervised` is the path the application uses, and the difference is ownership rather than
-mechanism. It runs `daemon start --foreground` as a **direct child**, so death arrives through
-`cmd.Wait` (`Exited`/`Err`) instead of being discovered at the next call, and `Stop` signals a pid
-taken from the process handle rather than from a file that outlives an abrupt death. It appends the
-owner handshake — `--owner-pid`, plus `--owner-lifeline-fd` where a descriptor can be passed — so the
-hub it starts can be admitted and can notice on its own when the application is gone. A daemon that
-is already serving is **refused** (`ErrDaemonNotOurs`) rather than adopted: a hub this process did not
-start is not a hub it may stop. On Windows there is no lifeline and `Stop` kills rather than asks,
-because the alternative there is not a gentler stop but no stop at all (`docs/windows.md`).
-
-`Health`, `Server`, `SessionInfo` and `Event` are DTOs; `Error`/`ErrorBody` are errors;
-`ComputeHealth`'s input constants (`HealthLevel*`, `AdminState*`, `Action*`) are frozen here, and the
-GUI's TypeScript constants are generated from this package's source by `healthgen`.
+**Two start paths, differing in ownership rather than mechanism.** `DialOrStart` dials, and on failure
+execs `agenthub daemon start` and polls `run/daemon.json`; a child that exits before becoming ready
+returns its real error plus a stderr tail rather than a timeout (the `desktop.rs` lesson). It names no
+owner, so under the admission rule it starts a daemon only for a caller that asks explicitly through
+`DaemonArgs`. `StartSupervised` — the desktop application's path — runs `daemon start --foreground` as a
+**direct child**, so death arrives through `cmd.Wait` rather than at the next call and `Stop` signals a
+pid from the process handle rather than from a file that outlives an abrupt death, and it appends the
+owner handshake (`--owner-pid`, `--owner-lifeline-fd`). A daemon already serving is **refused**
+(`ErrDaemonNotOurs`), never adopted: a hub this process did not start is not a hub it may stop. On
+Windows there is no lifeline and `Stop` kills rather than asks ([windows.md](../windows.md)).
 
 ### Invariants and failure directions
 
-**Never imports `internal/*`, and never `go get`s a third party.** This is canonical.md §2 rule 1,
-enforced by depguard and proven by the failing cases in `internal/depguardtest`. The cost is that
-`paths.go` must reimplement `internal/platform`'s control socket path resolution logic; the
-compensation is a cross-package contract test (`internal/ctlapi/paths_contract_test.go`, living on the
-ctlapi side because only it can import both) asserting the two implementations are byte-identical in
-each environment.
+**Never imports `internal/*`, and never `go get`s a third party** (canonical.md §2 rule 1, enforced by
+depguard). The cost is that `paths.go` reimplements `internal/platform`'s socket path resolution; the
+compensation is a contract test (`internal/ctlapi/paths_contract_test.go`, on the ctlapi side because
+only it can import both) asserting the two agree in every environment.
 
-**The decode failure direction is fail-closed.** `decodeEnvelope` succeeds only when it can positively
-identify a well-formed success envelope: read within the 16 MiB limit, deserializable, `ok:true`,
-status code < 400, `data` non-empty and decodable into the target. Failing any one of those returns an
-`*Error` with the client-synthesized `Code` `E_BAD_RESPONSE` — a truncated body is never treated as a
-success. Server error bodies are passed through verbatim, never rewritten.
+**The decode failure direction is fail-closed.** `decodeEnvelope` succeeds only on a positively
+identified success envelope — within the 16 MiB limit, deserializable, `ok:true`, status < 400, `data`
+non-empty and decodable — and anything else is an `*Error` with the synthesized code `E_BAD_RESPONSE`, so
+a truncated body is never success. Server error bodies pass through verbatim.
 
-**`X-Request-Id` is generated per request** (overridable with `WithRequestID` to propagate across
-processes), echoed on the response and carried into error bodies, so one id follows a failure across
-every surface that reports it.
+**`X-Request-Id` is generated per request**, overridable with `WithRequestID` to propagate across
+processes, and carried into error bodies.
 
+**SSE consumption is tolerant.** `Subscribe` establishes the first connection synchronously, so the
+caller learns immediately whether the daemon is up, then maintains it with backoff and `Last-Event-ID`
+resumption; the channel closes only when the ctx ends, so falling out of a `range` means "the
+subscription ended", and an unparseable frame is skipped rather than fatal.
 
-**SSE consumption is tolerant and reconnection is automatic.** `EventsService.Subscribe` establishes
-the first connection synchronously (so the caller immediately knows whether the daemon is up), after
-which a goroutine maintains it: any stream error triggers exponential-backoff reconnection with
-`Last-Event-ID` resumption; the channel closes only when the ctx ends, so falling out of a `range`
-means "the subscription ended". A single frame that fails JSON parsing is skipped rather than fatal —
-the stream is still usable, and consumers were always going to realign by re-reading state.
+**The topic set is closed, and retiring one is a breaking change on both sides.** The daemon answers an
+unlisted topic with a **400 on the subscribe request**, not an empty stream, so a constant left standing
+after the daemon stopped serving it takes the whole subscription down and every other topic with it —
+which is what a retired `TopicApprovals` did to the GUI. `TestAPITopicsMatchTheServedSet`
+(`internal/ctlapi`) pins the two lists together.
 
-**The topic set is closed, and retiring one is a breaking change on both sides.** `TopicServers` /
-`TopicSessions` / `TopicSkills` mirror `internal/ctlapi`'s own list, and the daemon
-answers an unlisted name with a **400 on the subscribe request** rather than an empty stream. So a
-constant left standing here after the daemon stopped serving it does not degrade to "that topic is
-quiet" — it takes the whole subscription down, and every other topic with it. That is exactly what a
-retired `TopicApprovals` did to the GUI: four working topics went silent together because the fifth
-was still in the list.
-
-`sseParser` implements the WHATWG spec: arbitrary read boundaries, CRLF/LF, comment lines (keep-alive),
-multi-line data concatenation, and `id` tracking (ids containing NUL are ignored). An incomplete line at
-the end of the stream is discarded and never delivered as a truncated event.
+`sseParser` implements the WHATWG spec, and an incomplete trailing line is discarded rather than
+delivered as a truncated event.
 
 ---
 
 ## internal/ctlapi
 
-**Responsibility in one sentence**: the control plane server — expose the daemon's state and the
-configuration write surface over REST + SSE on a Unix domain socket only this user can connect to.
+**Responsibility**: the control plane server — the daemon's state and the configuration write surface
+over REST + SSE on a Unix domain socket only this user can connect to.
 
-### Key types and entry points
+`Registry`, `Sessions` and `Bus` are required in `Options`; every other collaborator is optional, and an
+absent one disables its routes into the uniform 404 rather than half-serving them. Routing is a
+**hand-written switch**, not `http.ServeMux`, because ServeMux's own 405s and 301s leak whether a route
+exists while hand-written dispatch makes every miss — unknown path, wrong method, unknown id — land in
+the same `writeNotFound`. The table lives in `server.go` and `nonreg.go` (`grep '"/v1/'`).
 
-`Listen(socketPath)` handles binding and authentication, `NewServer(Options)` handles assembly, and
-`Serve/Shutdown/Close` handle the lifecycle. In `Options`, `Registry`, `Sessions`, and `Bus` are
-required and the rest have defaults.
+### Rules the routing surface imposes on both frontends
 
-Routing is a **hand-written switch**, not `http.ServeMux`. The reason is in the comment on `route`:
-ServeMux emits its own 405s and 301s, and the shape of those responses leaks whether a route exists;
-hand-written dispatch makes every miss — unknown path, wrong method, unknown resource id — land in the
-same `writeNotFound`.
+Paths are `/v1/<resource>` with the id last, and every write accepts a `Precondition` and answers **409 +
+the current generation** on conflict.
 
-`ComputeHealth(HealthInput) api.Health` is the pure function behind the Health display contract.
-`gatewayLink` implements `session.ControlLink` and is the notification channel to stdio gateways.
-
-### The routing surface
-
-The naming convention is `/v1/<resource>`, with the last path segment being the id; everything passes
-through the X-Request-Id middleware and the unified 404. Write endpoints
-all accept a `Precondition` and return **409 + the current generation** on conflict. The route table
-itself is in `server.go` (`grep '"/v1/'` is authoritative).
-
-Four rules written down only here that both frontends must nonetheless uphold:
-
-**Credentials are never echoed back.** Reading a secret returns `{server, key, backend, set: true}` —
-there is no value field; it isn't "left blank", it **doesn't exist in the type**.
-
-**An agent token's plaintext appears exactly once** (in the creation response); every read thereafter
-gives only the prefix and metadata.
-
-**Dangerous operations must be distinguishable.** Deleting a server or clearing a client's binding are
-recoverable routine operations and need only a confirmation.
-
-**No polling after a write.** A write bumps the generation, the watcher publishes an event on the bus,
-and the control plane pushes it to the frontend over SSE. A frontend's own writes travel the same loop,
-so "someone else's change" and "my change" behave identically in the UI.
+- **Credentials are never echoed back.** Reading a secret returns `{server, key, backend, set: true}` —
+  no value field; it isn't "left blank", it **doesn't exist in the type**.
+- **An agent token's plaintext appears exactly once**, in the creation response.
+- **No polling after a write.** A write bumps the generation, the watcher publishes on the bus, the
+  control plane pushes over SSE — so a frontend's own write and someone else's behave identically.
 
 #### The one long-running exchange: an interactive login
 
-`POST /v1/auth/{server}/login` → `GET /v1/logins/{id}` → `DELETE /v1/logins/{id}`
-(`internal/ctlapi/nonreglogin.go`, driven by `internal/oauthlogin`).
+`POST /v1/auth/{server}/login` → `GET /v1/logins/{id}` → `DELETE /v1/logins/{id}` (`nonreglogin.go`,
+driven by `internal/oauthlogin`). This **reverses a decision once recorded in `api/auth.go`** ("an
+interactive login is NOT on this API"), which had left every graphical frontend answering a server that
+needs authorization with a dialog telling the user to go run a terminal command. It is affordable because
+it is **not a second code path**: the daemon drives the same `oauthflow.Flow` the CLI drives, and only
+the session bookkeeping is new. Four properties it must keep:
 
-This **reverses a decision that used to be recorded in `api/auth.go`**: "an interactive login is NOT on
-this API", because a loopback callback needs a local browser and a random port and would be "a second,
-easily-broken code path". Half of that held. The half that did not is the expensive half — with no login
-here, every graphical frontend's answer to a server needing authorization was a dialog telling the user to
-go and run a terminal command, inside a product whose premise is that clients never handle credentials.
+- **Start answers 202 before there is anything to show**, because choosing between the device and
+  loopback flows needs the authorization server's metadata and waiting for it puts a discovery timeout
+  inside a button press. `mode` empty on the first poll is a real state, not a missing field.
+- **The CALLER opens the browser, and it must be the host browser.** The daemon returns
+  `authorization_url` and never visits it — it may be headless and may not be where the user is — and an
+  authorization page inside the application's own webview is agenthub asking for a provider password in
+  a window agenthub controls.
+- **A failed session is a 200** carrying `phase: "failed"` and `oauthflow`'s own hint: the read
+  succeeded, and what failed is the thing it describes. Only an unknown id is a 404, and a finished
+  session stays readable for a retention window.
+- **The loopback SSRF carve-out follows the stored entry's provenance**, exactly as `auth login` does;
+  no request field can ask for it.
 
-What makes it affordable is that it is **not a second code path**: the daemon drives the same
-`oauthflow.Flow` the CLI drives, and what is new is only the session bookkeeping a flow too long for one
-request needs. The protocol keeps exactly one implementation, the rule `internal/mcp` follows.
-
-Four properties this exchange must keep:
-
-- **Start answers 202 before there is anything to show.** Choosing between the device and loopback flows
-  needs the authorization server's metadata; holding the response until then puts a discovery timeout
-  inside a button press. `mode` is empty on the first poll, and that is a real state, not a missing field.
-- **The CALLER opens the browser.** The daemon returns `authorization_url` and never visits it: it may be
-  headless, may have been started by a service manager with no session to draw into, and may not be where
-  the user is. A frontend must open it in the **host** browser — an authorization page inside the
-  application's own webview is agenthub asking for a provider password in a window agenthub controls,
-  which is the shape of a phishing screen and removes every check the user has.
-- **A failed session is a 200** carrying `phase: "failed"` and the reason: the read succeeded, and what
-  failed is the thing it describes. The hint is `oauthflow`'s own suggestion, so this surface and the CLI
-  answer one failure with one sentence. Only an id naming no session is a 404, and a finished session
-  stays readable for a retention window, so a poller one moment late is not told it never existed.
-- **The loopback SSRF carve-out follows the stored entry's provenance**, exactly as `auth login` does.
-  There is deliberately no request field that can ask for it, so no caller can exempt itself.
-
-A second login for a server that already has one running **joins the first**. Two concurrent flows would
+A second login for a server that already has one **joins the first**, because two concurrent flows would
 each bind a loopback port and race the same vault entry, leaving the loser's consent screen calling back
-into nothing — which is what a double-clicked button would otherwise arrange.
-
-The wire carries `user_code` (the string a human types into the provider's site) and never the device code
-polled with, never an authorization code and never a token. The test asserts on the **key set**, so it
-fails the day someone adds a field rather than the day someone leaks a particular string.
+into nothing. The wire carries `user_code` and never the device code, an authorization code or a token,
+and the test asserts on the **key set**, so it fails when a field is added rather than when a particular
+string leaks.
 
 ### Invariants and failure directions
 
-**Two authentication gates, both mandatory.** The first is file permissions: the socket's directory is
-0700, and the socket itself is chmod 0600 after bind (the instant between bind and chmod is covered by
-the 0700 directory and the second gate). The second is peer credentials: `SO_PEERCRED` on Linux,
-`LOCAL_PEERCRED` on macOS, comparing the peer's uid against this process's uid. There is no privileged
-bypass inside `sameUser` — **root (uid 0) is rejected too**. Any failure to obtain credentials is treated
-as a hostile peer: close the connection and keep accepting (one malicious dialer must not be able to wedge
-the control plane). **On platforms with no peer-cred implementation, `Listen` fails outright**
-(`peerCredSupported = false`); it never "listens first and worries later".
+**Two authentication gates, both mandatory.** The socket's directory is 0700 and the socket is chmod 0600
+after bind (the gap between the two is covered by the directory and the second gate); peer credentials
+(`SO_PEERCRED` / `LOCAL_PEERCRED`) compare the peer's uid against this process's, with **no privileged
+bypass — root is rejected too**. Any failure to obtain credentials is treated as a hostile peer: close
+and keep accepting, so one malicious dialer cannot wedge the control plane. **On a platform with no
+peer-cred implementation `Listen` fails outright** rather than listening first and worrying later.
 
-**A stale socket is removed only once it is proven unserved.** `removeStaleSocket` lstats first: a file
-that isn't a socket is never deleted; if it is a socket, it dials to test for life, and **a successful dial
-means a live daemon, returning `ErrAlreadyRunning`** — only a failed dial leads to removal. It can never
-delete a live endpoint.
+**A stale socket is removed only once proven unserved.** `removeStaleSocket` lstats first (a non-socket
+is never deleted), then dials; **a successful dial means a live daemon** (`ErrAlreadyRunning`), and only
+a failed dial leads to removal.
 
-**`X-Request-Id` is written into the response headers before the handler runs.** `withMiddleware` validates
-first (`^[A-Za-z0-9._-]{1,128}$`, anything non-conforming is replaced with a freshly generated one and never
-echoed back as an attacker-controlled string), then calls `rw.Header().Set`. Because `WriteHeader` snapshots
-the header map, setting it early guarantees the id is present on success, on failure, and even on a response
-after panic recovery. Panic recovery splits two ways: if the response hasn't started, write a 500 envelope; if
-it has (mid-SSE-stream, say), `panic(http.ErrAbortHandler)` and drop the connection — never append garbage after
-half a body, which would parse as a truncated success.
+**`X-Request-Id` is set before the handler runs.** The incoming id is validated
+(`^[A-Za-z0-9._-]{1,128}$`, anything else replaced and never echoed back as attacker-controlled text) and
+the header set early, because `WriteHeader` snapshots the header map — so the id is present on success,
+on failure, and after panic recovery. Panic recovery splits two ways: response not started → a 500
+envelope; already started, mid-SSE-stream say → `panic(http.ErrAbortHandler)` and drop the connection,
+never garbage after half a body, which would parse as a truncated success.
 
-**There is no control-plane/config-write audit trail.** This is recorded here rather than
-left implicit because for a long time the tree read as though the control existed: six comment sites asserted it
-("every write is audited with the key and both values, so `blockOnInjection went off at 03:00` is answerable
-after the fact"; "See `auditNonReg`"; an `Options.LogsDir` documented as feeding `/v1/audit` and `/v1/security`),
-while nothing ever wrote a record, `auditNonReg` had never existed, and neither route was served. `LogsDir` is
-removed along with the claims — nothing read it. **A governance write leaves no evidence beyond the daemon's own
-log**, so "who relaxed this switch, and when" is not answerable after the fact. `X-Request-Id` correlates a
-request across that log and nothing more; `HeaderActor` records a caller class for the same purpose. The tools/call
-access ledger in `internal/accesslog` records data-plane calls only and does not answer who edited governance.
-`TestNoCodeClaimsAnAuditTrailThatDoesNotExist` in `test/buildrules` therefore still protects ctlapi from claiming a
-write trail it does not implement. The reason this matters more than an ordinary stale comment: a reviewer, or the
-next sweep's finder, reads the comment first and concludes the control is in place.
+**There is no control-plane/config-write audit trail**, and it is recorded here because the tree once
+read as though there were: six comment sites asserted it while nothing wrote a record and neither cited
+route was served. **A governance write leaves no evidence beyond the daemon's own log**, so "who relaxed
+this switch, and when" is not answerable after the fact; `internal/accesslog` covers data-plane calls
+only. `TestNoCodeClaimsAnAuditTrailThatDoesNotExist` (`test/buildrules`) keeps the claim from coming
+back, because a reviewer reads the comment and concludes the control is in place.
 
-**The 404 text is unified and frozen byte for byte.** `notFoundMessage = "not found"`, and unknown routes,
-unknown sessions and unknown tokens all share one `(code, message, hint)`, differing only in
-request id. Tests assert it byte for byte.
-
-**Path matching runs on EscapedPath.** `sessionPathID` and `gatewayPath` both
-do prefix/suffix matching on the escaped path first, reject segments containing `/`, and only then
-`PathUnescape` the single segment — so an id containing `%2F` cannot smuggle in extra path segments.
+**The 404 text is unified and frozen byte for byte** (`notFoundMessage = "not found"`): unknown routes,
+sessions and tokens share one `(code, message, hint)`, differing only in request id. **Path matching runs
+on EscapedPath**, rejects segments containing `/`, and unescapes only the single segment, so an id
+containing `%2F` cannot smuggle in extra path segments.
 
 **Health is a seven-rung priority ladder, returning on the first hit**:
 
@@ -277,571 +194,423 @@ flowchart TD
     G -->|"conn = unknown"| G2["healthy / \"not observed\"<br/>(nobody is watching, not nothing is wrong)"]
 ```
 
-Two points worth recording separately: `disabled` **deliberately keeps `level=healthy`** (turning something off on
-purpose is not a fault), and an unrecognized connection state **fails toward visibility** (report unhealthy +
-view_logs) rather than defaulting to healthy. The frontend only renders, and must not re-derive the state from other fields.
+The frontend renders this and must not re-derive it from other fields. Four rungs are placed rather than
+convenient: `disabled` **keeps `level=healthy`**, because turning something off on purpose is not a
+fault; an unrecognized connection state **fails toward visibility** (unhealthy + view_logs); the
+handshake-auth branch is driven only by a **typed** 401/403 the gateway retained from the failed attempt,
+never by searching error text and never persisted as `needsAuth`, and it outranks the generic
+connection-error branch because restarting cannot repair it; and on rung 7 `unknown` means **no gateway
+currently holds a connection** — a fact about the observer, not the server — so `level` stays healthy
+while `summary` becomes `"not observed"`. On rung 4 `unknown` falls through with `connected`, because a
+server nobody is using whose token has expired must still report `token expired`.
 
-The handshake-auth branch is driven only by a typed HTTP 401/403 retained by the gateway from the failed
-connection attempt. It never searches error text — a proxy's 502 body may quote an upstream 401 — and it never
-persists `needsAuth` in the registry. This runtime witness outranks the generic connection-error branch because
-restarting cannot repair it; the resulting `login` action is what turns the GUI status cell into its working
-`Authenticate` button.
+**Push and pull share one payload.** `serverList()` feeds both `GET /v1/servers` and the `servers` SSE
+frames, so either is authoritative.
 
-The fourth is **the fork between `unknown` and `connected` on rung 7**. Once the state source was wired up,
-`unknown` acquired a precise meaning: **no gateway currently holds a connection to this server** (nobody is using
-it, or whoever is hasn't sent its first report yet). That is a statement about the **observer**, not about the
-server. So `level` stays healthy — painting every idle server yellow just swaps one misleading signal for a field
-of noise — but `summary` changes from `"ok"` to `"not observed"`: `ok` is a conclusion, and nobody has drawn it.
-On rung 4, `unknown` still falls through on the same branch as `connected`, because the secret/OAuth/token facts
-read by rungs 5 and 6 have nothing to do with whether anyone is connected: a server nobody is using whose token
-has already expired must still report `token expired`.
+**Three SSE delivery strategies.** `servers` goes through a 50ms coalescer with a **lazily built** payload
+(K bus events become one frame, the list marshaled once); scan-type topics (currently only `skills`)
+through a 750ms settler that compresses a started/progress/finished lifecycle into one `settled` frame;
+everything else passes event by event, because a session opening and a session closing are two distinct
+facts. Each connection has a 32-frame queue and **drops frames on overflow**, since consumers already
+have to recover by re-reading and blocking the coalescer's timer is never acceptable.
 
-**Push and pull share one payload.** `serverList()` feeds both `GET /v1/servers` and the `servers` SSE topic's
-frames, so both paths are byte-identical and the frontend can take either as authoritative.
+**Last-Event-ID is best-effort, not a replayable log.** An id older than the current global sequence, or
+unparseable, gets **no history replay** — the server sends one `sync` frame per subscribed stateful topic
+instead. An unknown `?topics=` value is a 400, never a silent empty stream.
 
-**Three SSE delivery strategies.** The `servers` topic goes through a 50ms coalescer with a **lazily built**
-payload: K bus events become one frame, and the full server list is marshaled once. Scan-type topics (currently
-only `skills`) go through a 750ms settler, compressing an entire "started / progress / … / finished" lifecycle into
-a single `settled` terminal frame whose payload is the burst's last event carrying the kind it settled at. All
-other topics pass through event by event — a session opening and a session closing are two distinct facts and must
-not be merged. Each connection has a 32-frame buffer queue and **drops frames on overflow** (the bus contract
-already requires consumers to recover by re-reading state, and blocking the coalescer's timer goroutine is never
-acceptable).
-
-**Last-Event-ID is best-effort, not a replayable log.** Frame ids are assigned globally and monotonically by
-`Server.eventSeq` (comparable across connections). A client returning with an id older than the current sequence,
-or with an unparseable id, gets **no history replay**; instead the server sends one `sync` frame per subscribed
-stateful topic (servers, sessions), forcing the client to re-read. An unknown `?topics=` value is a client error
-and returns 400 outright — it never silently pushes nothing.
-
-**The gateway link is one-way.** It carries registry-change notifications to the gateway, which re-reads the
-registry itself rather than trusting the frame. There used to be an ack protocol here, because the daemon pushed
-authoritative scope overlays and could not record one the gateway had not applied; with nothing to push there is
-nothing to correlate, and `GatewayAck`, the pending table and the ack endpoint went with the overlays.
-
-The link is single-use: a second attach returns 409, and re-registering yields a brand-new session. A session that
-hasn't attached a link within 30s of registering is declared dead by a watchdog and closed (stdio sessions are not
-TTL-reaped, otherwise a crash between register and link would leak a session forever). When the link drops, the
-session closes.
+**The gateway link is one-way**: it notifies, and the gateway re-reads the registry itself rather than
+trusting the frame. There used to be an ack protocol, because the daemon pushed authoritative scope
+overlays; with nothing to push there is nothing to correlate, so `GatewayAck`, the pending table and the
+ack endpoint went with the overlays. The link is single-use (a second attach is 409), a session that has
+not attached within 30s is reaped by a watchdog — stdio sessions are otherwise not TTL-reaped, or a crash
+between register and link would leak one forever — and when the link drops the session closes.
 
 ### The two faces of the handler set
 
-**The configuration face (`admin*.go`)** — the control plane's half of "one layer of semantics, two frontends":
-the CLI calls `internal/confops` in-process, the GUI goes through these routes, and both land on the same
-implementation. `GET|PUT /v1/scope/{client}` handles a client's static binding — *which profile it is on*,
-the only thing a client entry holds. There is **no session-scope endpoint** to confuse it with: the
-`/v1/sessions/` prefix serves listing and `POST /v1/sessions/{id}/kill`, and nothing else. A live
-session carries no scope of its own, so there is neither a read nor a write for one.
+**The configuration face (`admin*.go`)** is the control plane's half of "one layer of semantics, two
+frontends": the CLI calls `internal/confops` in-process, the GUI goes through these routes, both land on
+the same implementation. `GET|PUT /v1/scope/{client}` handles the only thing a client entry holds —
+which profile it is on — and there is **no session-scope endpoint**, because a live session carries no
+scope of its own; `/v1/sessions/` serves listing and `POST /v1/sessions/{id}/kill` and nothing else. The
+retired `servers` / `tools` / `discovery` fields are still **declared** on that wire type so a request
+carrying one gets a **400 naming the field**: a caller sending `servers` was asking to *narrow*, so
+accepting while dropping that half would report success for a **wider** surface than requested.
 
-`PUT /v1/scope/{client}` accepts a `profile` and nothing else, but the retired `servers` / `tools` /
-`discovery` fields are still **declared** on the wire type so that a request carrying one gets a **400
-naming the offending field** instead of a 200. That choice has a direction: a caller sending `servers`
-was asking to *narrow*, so accepting the request while silently dropping that half would report success
-for a **wider** surface than it requested. The error names the field and points at the replacement
-(`agenthub profile server` / `profile tool allow` / `profile discovery`, then bind the client to that
-profile).
+**The non-registry face (`nonreg*.go`)** is the half that does not land on the config registry:
+credentials, skills, agent tokens, client adapters, the OAuth lifecycle, the event log, and live
+self-tests. Rules visible only here:
 
-**The non-registry face (`nonreg*.go`)** — the half of the control plane that **doesn't land on the config
-registry**: credentials, skills, agent tokens, client adapters, the OAuth lifecycle, and live connection
-self-tests. A few rules only visible here: **verifying that a credential works is `POST /v1/servers/{id}/test`,
-not part of the secrets face**; a typed downstream 401/403 returns `E_AUTH_REQUIRED`, allowing a frontend to
-offer `Auth.StartLogin` without scraping the error copy; an unresolved vault placeholder returns
-`E_SECRET_REQUIRED` plus safe `missingSecrets` key names, allowing a frontend to open a prefilled
-write-only secret form without parsing prose; `POST /v1/servers/{id}/test` **probes a docker-runtime entry as a container**,
-because the dial carries `Spec.Docker` into the spawner instead of running the command on the host (this
-endpoint used to refuse such entries fail-closed, back when the dial could not);
-`POST /v1/clients/{id}/connect` may RUN that client's own configuration CLI for a format agenthub will not
-rewrite (codex), backing the file up first and verifying the result by re-reading it — set
-`AGENTHUB_NO_CLIENT_CLI=1` on the daemon to forbid that;
-client wiring resolves its write target as `path` > `placement` > the default
-user-level file, and a client lacking that placement gets a 400 refusal rather than a rewrite to a different
-location; **`GET /v1/clients` stats and never opens a file** (one macOS privacy prompt per client on every page
-load is worse than no listing), so "is agenthub actually wired into this one?" lives at
-`GET /v1/clients/{id}/inspect` — one client, named by the caller, which is what makes the prompt belong to a
-click rather than to opening a page. One unreadable location there does not fail the request: it is reported with
-its error next to the locations that read fine, and forces the state to `denied` rather than `not_connected`.
-That listing also reports **both** every client agenthub knows about and the subset it will not write itself, and
-it reports them separately on purpose: the first is what answers "why is my client missing", so it cannot be
-filtered down — and a frontend given only that list labels it "writable", which is what the GUI did, above rows
-carrying their own read-only badge. `PATCH /v1/skills/{id}` exposes **only** the coarse library-level switch.
-`POST /v1/parse/client-config` is read-only: it produces an entry **preview** and writes nothing.
+- **Verifying that a credential works is `POST /v1/servers/{id}/test`**, not part of the secrets face. A
+  typed downstream 401/403 returns `E_AUTH_REQUIRED` and an unresolved placeholder returns
+  `E_SECRET_REQUIRED` plus safe `missingSecrets` key names, so a frontend can offer a login or a
+  prefilled write-only form without scraping prose. The probe **runs a docker-runtime entry as a
+  container**; it used to refuse such entries fail-closed, back when the dial could not.
+- `POST /v1/clients/{id}/connect` may **run that client's own configuration CLI** for a format agenthub
+  will not rewrite (codex), backing the file up first and verifying by re-reading it, with
+  `AGENTHUB_NO_CLIENT_CLI=1` to forbid it. The target resolves `path` > `placement` > the default
+  user-level file, and a client lacking that placement gets a 400 rather than a rewrite elsewhere.
+- **`GET /v1/clients` stats and never opens a file** — one macOS privacy prompt per client per page load
+  is worse than no listing — so "is agenthub wired into this one?" is `GET /v1/clients/{id}/inspect`, one
+  client named by the caller, which makes the prompt belong to a click. One unreadable location does not
+  fail that request: it is reported beside the ones that read fine and forces `denied` rather than
+  `not_connected`. The listing reports **both** every known client and the subset agenthub will not write
+  itself, separately, because the first answers "why is my client missing" and cannot be filtered down.
+- `PATCH /v1/skills/{id}` exposes **only** the coarse library-level switch, and
+  `POST /v1/parse/client-config` is read-only.
+- `GET /v1/events/log` exists **for the GUI**, which may not import `internal/*` and so cannot read the
+  file; the CLI reads it directly and works with no daemon. Scope and kind validation comes from
+  `internal/eventlog` rather than a local copy — a hand-written list here can be wrong while the CLI's is
+  right, which is how this route once hinted a stale set of scopes.
 
-The encrypted access ledger also enters through this face, with one deliberate split. `GET /v1/audit/calls`
-and `/stats` read metadata records only, aggregate lifecycle events by the opaque `callId`, and never
-return payload references or event error strings. The calls collection filters search, client, server, tool,
-and outcome before paging; its opaque cursor is the last call's `(received time, callId)` rather than an
-offset, so calls arriving at the front of a live ledger do not shift later pages underneath the reader. Its
-`total` is the filtered total for the selected time range. Stats includes a range-wide server-to-tool count
-index so a frontend can narrow tool choices without deriving filters from one visible page.
-`GET /v1/audit/calls/{id}` is the explicit single-call
-disclosure: it resolves immutable key ids in the daemon's vault and returns Request, Effective arguments,
-and Result immediately with `Cache-Control: no-store`. Each rendered payload is capped to a 512 KiB preview
-and says when it was truncated, keeping the control plane's 16 MiB non-streaming response bound intact.
-The GUI discards the response when its drawer closes. Status and metadata remain available with only an
-audit root; detail, verification, enablement and rotation additionally require the key vault, and a missing
-collaborator keeps those routes uniformly unavailable rather than guessing a directory or key source.
-
-`PUT /v1/audit/enabled` and `POST /v1/audit/rotate-key` are registry writes and therefore carry the same
-generation precondition as every other GUI registry edit. They still land on `confops.SetAuditEnabled` /
-`SetAuditKeyID`; key bytes are persisted before the registry points at their public id and never cross the
-wire. Verification authenticates every event and referenced payload. Pruning removes only complete expired
-UTC partitions according to the effective retention policy; its dry-run and applying forms share one route.
+The encrypted access ledger enters through this face with one deliberate split. `GET /v1/audit/calls`
+and `/stats` read metadata only and never return payload references or event error strings; the
+collection's cursor is the last call's `(received time, callId)` rather than an offset, so calls arriving
+at the front of a live ledger do not shift later pages under the reader. `GET /v1/audit/calls/{id}` is
+the explicit single-call disclosure: it resolves key ids in the vault and returns Request, Effective
+arguments and Result with `Cache-Control: no-store`, each capped to a 512 KiB preview that says when it
+truncated. Status and metadata need only an audit root, while detail, verification, enablement and
+rotation additionally require the key vault, and a missing collaborator keeps those routes uniformly
+unavailable rather than guessing a directory or key source. `PUT /v1/audit/enabled` and
+`POST /v1/audit/rotate-key` are ordinary registry writes with the same generation precondition; key bytes
+are persisted before the registry points at their public id and never cross the wire.
 
 ---
 
 ## internal/confops
 
-**Responsibility in one sentence**: the single implementation of **every semantic write** against the config
-registry — adding a server, renaming a profile, binding a client, flipping a governance value, setting a
-server's tool allow list.
+**Responsibility**: the single implementation of **every semantic write** against the config registry.
 
-### Why it exists
+The CLI and the control plane are two frontends over one configuration, and if each assembled its own
+answer to "what does renaming a profile mean" the two would eventually differ. There is precedent:
+`SpecFromEntry`'s comment claimed to be the sole translation point while the gateway hand-rolled a second
+Spec, and **container isolation was silently dropped as a result**. So frontends own flag parsing,
+rendering and transport, and **own no rules**; a parity test asserts both paths produce **byte-identical**
+registry documents for the same operation.
 
-The CLI and the control plane are two frontends over the same configuration. If each assembles its own answer to
-"what does renaming a profile mean", the two will eventually produce different results for the same operation.
-There is precedent for that class of accident: `SpecFromEntry`'s comment claimed to be the sole translation point
-while the gateway hand-rolled a second Spec, and **container isolation was silently dropped as a result**.
-
-So the division here is rigid: frontends own flag parsing, rendering, and transport, and **own no rules**. A parity
-test asserts that the CLI path and the control plane path produce **byte-identical** registry documents for the same
-operation — they cannot drift, because they are the same code.
-
-### Operations, not setters
-
-The API's shape is **operations, not field setters**. `RenameProfile` also repoints every client binding
-referencing it — leaving the references in place would **fail-close those clients into an empty scope**, and that
-consequence belongs to this operation, not to its caller. That is what "operations, not setters" means. The
-governance key table (`GovernanceKey` / `GovernanceKeys()`) likewise lives only here: get/set/ls semantics have
-exactly one home.
-
-The table holds everything global that is **not** a scope decision — presentation (the discovery default, the result
-budgets), the audit policy, and, since the desktop application became what starts a hub, the daemon's own HTTP
-listener (`http.addr`, `http.allowRemote`, `http.insecureLoopback`). That last one arrived because an application
-types no flags: an opt-in that existed only as argv could no longer be given at all, so the choice was to store it or
-to lose the HTTP face entirely. **Storing an answer does not lower the bar for it** — a non-loopback address still
-needs its own confirmation, the credential-less endpoint still needs `insecureLoopback`, and the address is validated
-as a bindable `host:port` at write time, where the person who typed it is still watching. The command line remains
-the more specific statement and **replaces the stored set as a whole** whenever any of the three flags is given
-(`daemon.resolveHTTPFace`): merging them would let a confirmation stored months ago for one address authorise a
-different one named on the command line today.
+**The API's shape is operations, not field setters.** `RenameProfile` also repoints every client binding
+referencing it, because leaving them would **fail-close those clients into an empty scope** — a
+consequence belonging to the operation rather than to its caller. The governance key table likewise has
+exactly one home here, holding everything global that is **not** a scope decision, including the daemon's
+own HTTP listener (`http.addr`, `http.allowRemote`, `http.insecureLoopback`), which became storable
+because the desktop application that now starts hubs types no flags. **Storing an answer does not lower
+the bar for it**: a non-loopback address still needs its own confirmation, the credential-less endpoint
+still needs `insecureLoopback`, and the address is validated as a bindable `host:port` at write time. The
+command line is the more specific statement and **replaces the stored set as a whole** whenever any of
+the three flags is given (`daemon.resolveHTTPFace`) — merging would let a confirmation stored months ago
+for one address authorise a different one named today.
 
 ### Invariants and failure directions
 
-**Every operation is three steps, in an order that cannot change**: validate the arguments first (rejection happens
-before anything is opened) → mutate inside `registry.Store.Update` (holding the cross-process lock, against a
-document just re-read from disk) → return a `Result` carrying the post-commit generation.
+**Every operation is three steps in an order that cannot change**: validate the arguments (rejection
+before anything is opened) → mutate inside `registry.Store.Update` (cross-process lock, against a
+document just re-read from disk) → return a `Result` carrying the post-commit generation. **The
+precondition comparison happens inside that lock and before the mutation**, so there is no window between
+comparing and writing; `Precondition{}` means no check, which is what the CLI's non-interactive path uses.
 
-**The precondition comparison happens inside the lock and before the mutation**, so there is no window between
-comparing and writing. `Precondition{}` (generation 0) means no check, which is what the CLI's non-interactive path
-uses, so CLI behavior is unchanged.
+**Operations whose subject isn't the registry can only do weak checks.** Such a store has its own lock and
+the registry's generation can advance between comparison and write, so `checkSnapshot` is **advisory**: it
+catches "the operator's view is stale", not "nothing moved under my feet".
 
-**Operations whose subject isn't the registry can only do weak checks.** Such a store has its own lock, and the
-registry's generation can advance between comparison and write. `checkSnapshot` is therefore **advisory**: it catches "the operator's view is stale", not
-"nothing moved under my feet". The difference is expressed in the types; don't treat them as the same guarantee.
+**Validation rejects rather than normalizes** — an unknown transport or runtime leaves the registry
+untouched rather than landing on a default nobody asked for. **`Changed` is derived from the generation**,
+not from the operation diffing itself, so writing the same value twice reports `Changed == false`.
 
-**Validation rejects rather than normalizes.** An unknown transport, an unknown runtime, an unparseable boolean —
-each leaves the registry untouched rather than landing on a default the operator never asked for.
-
-**`Changed` is derived from the generation, not from the operation diffing itself.** The registry bumps only on an
-actual state change (its no-op guard compares parsed JSON values), so writing the same value twice naturally reports
-`Changed == false`.
-
-**Raised and not reproduced (security sweep) — the legacy active-profile marker, twice.** Both findings concern
-`MigrateActiveProfile` (`profile.go:434`) and the pre-migration `<state>/active-profile.json`:
-
-1. *that the migration runs only from the CLI's semantic-write path* (`internal/cli/confops.go:82-90`), so a daemon or
-   GUI start on an upgraded installation would read an empty `governance.activeProfile` and hand follow-active clients
-   the unrestricted server set;
-2. *that a truncated marker takes the same branch as a deliberately cleared one* (`profile.go:434-445`) — deleted, no
-   error, scopes then resolving as unrestricted.
-
-Both are sound as reasoning and **neither has a population**. No released build ever wrote that file: the only
-non-test references are the constant and the read, the sole writer is a test fixture (`profile_test.go:419`), and every
-tag from v0.1.0 to v0.14.0 carries the read-and-retire form. Reaching the state needs a machine that ran an
-*unreleased* dev build, executed `profile use` on it, upgraded, and then started the daemon without ever running a CLI
-write — and the first CLI write repairs it. The CLI-only placement is deliberate and reasoned where it sits, and pinned
-by `TestDoctorIsReadOnly`; moving it into daemon startup would add a registry write and a lock acquisition to every
-start for zero installations. Erroring on a corrupt marker instead of retiring it would make every CLI write command
-fail hard with no self-healing path, for the same empty population. **If a future version ever writes this file again,
-both findings become live and neither argument above survives.**
+**Raised and not reproduced (security sweep) — the legacy active-profile marker, twice.** Both findings
+concern `MigrateActiveProfile` (`profile.go`) and the pre-migration `<state>/active-profile.json`: that
+the migration runs only from the CLI's write path (`App.opsStore`, `internal/cli/confops.go`), so a daemon
+or GUI start on an upgraded installation would read an empty `governance.activeProfile` and hand
+follow-active clients the unrestricted server set; and that a truncated marker takes the same branch as a
+deliberately cleared one — deleted, no error, scopes resolving as unrestricted. Both are sound and
+**neither has a population**: no released build ever wrote that file (the sole writer is the test fixture
+`writeActiveProfile`), and every tag carries the read-and-retire form. The CLI-only placement is pinned by
+`TestDoctorIsReadOnly`; moving it into daemon startup would add a registry write and a lock acquisition to
+every start for zero installations, and erroring on a corrupt marker would make every CLI write fail hard
+with no self-healing path. **If a future version ever writes this file again, both findings become live.**
 
 ---
 
 ## internal/catalog
 
-**Responsibility in one sentence**: answer the question a config table cannot — "what can I add next, and what does
-it cost". It has two routes to "a proposed server definition", and **neither writes to disk**.
-
-### The two routes
-
-| Route | Contents |
-|---|---|
-| Curated catalog (`catalog.go` + embedded `seed.json`) | A small set of well-known MCP servers and the invocation their publishers' docs specify, so "add one" means picking from a list rather than recalling `npx -y @modelcontextprotocol/server-…` |
-| Paste parsing (`paste.go`) | A README snippet or another client's config already in the user's clipboard, converted into the same proposal shape for preview |
-
-Both produce **proposals**. `internal/confops` remains the only implementation of every registry write and the only
-place entries get validated — this package never opens the registry, so a catalog entry gets **exactly the same**
-scrutiny as a hand-typed one.
+**Responsibility**: answer the question a config table cannot — "what can I add next, and what does it
+cost". Two routes to a proposed server definition, and **neither writes to disk**: the curated catalog
+(`catalog.go` + embedded `seed.json`) and paste parsing (`paste.go`). `internal/confops` remains the only
+implementation of every registry write, so a catalog entry gets exactly the same scrutiny as a hand-typed
+one.
 
 ### Invariants and failure directions
 
-**Provenance is a source signal, not a cryptographic proof.** `Entry.Provenance` grades "where the definition came
-from" — curated (a maintainer reviewed it when writing it), registry (a remote index, not implemented), user (typed
-or pasted by the person at the keyboard). Together with `Publisher` and `Homepage` it is a **source signal**: nothing
-here is signed, nothing is verified at add time, and `npx -y <package>` will still pull whatever the repository serves
-at that moment. Curated means a maintainer believes that command line is the one in the publisher's docs; **it does
-not mean the code that ends up running is the code they read**. The defenses that actually make assertions about
-running code live elsewhere, and
-`internal/guard/spawnguard` screens what gets spawned. This package only feeds them a definition; it does not vouch
-for it.
+**Provenance is a source signal, not a cryptographic proof.** Curated means a maintainer believed that
+command line is the one in the publisher's docs; **it does not mean the code that ends up running is the
+code they read** — nothing is signed, nothing is verified at add time, and `npx -y <package>` still pulls
+whatever the repository serves at that moment. The defenses that make assertions about running code live
+elsewhere (`internal/guard/spawnguard` screens what gets spawned).
 
-**`needsConfig` is the test for "can this be one-click".** An entry that declares credentials, declares parameters, or
-still has unsubstituted placeholders in its command line/URL/environment/headers — any of the three means configuration
-is needed; everything else can be added as-is.
+**`needsConfig` is the test for "can this be one-click"**: declared credentials, declared parameters, or
+unsubstituted placeholders anywhere in the command line/URL/environment/headers. **Unsubstituted
+placeholders are a refusal, never a literal `{{directory}}` written through** — a server that fails at
+connect time because of a path nobody typed is far harder to explain than a refusal at add time.
 
-**Unsubstituted placeholders are a refusal, never a literal `{{directory}}` written through.** A server that fails at
-connect time because of a path nobody ever typed is far harder to explain than a refusal at add time.
+**The two routes treat an unknown field differently, deliberately**: a **warning** on the paste route, a
+**hard error** on `server add --stdin`. The preview shows verbatim what is about to be stored, so "these
+keys were ignored" is actionable; a write with no preview can only refuse, or the user never learns that
+the `oauth` block they pasted vanished.
 
-**The paste route only parses and never writes.** It doesn't open the registry, doesn't resolve secrets, and doesn't
-touch any client's files on disk. The result is a **preview**, which the caller renders and the user confirms, after
-which the normal add path has `confops` validate it exactly as it validates any entry.
+**Wrapper key paths come from `internal/clients`**, the same table that decides where each client's
+servers live, so adding one client row extends this parser for free.
 
-**The same thing is handled differently on the two routes, deliberately**: an unknown field is a **warning** on the
-paste route and a **hard error** on the CLI's `server add --stdin`. The preview shows the user verbatim what is about
-to be stored, so "these keys were ignored" is information they can act on; whereas a write with no preview can only
-refuse, or the user will never learn that the `oauth` block they pasted vanished.
-
-**Wrapper key paths come from `internal/clients`** — the same table that decides where on disk each client's servers
-live. So adding one client row extends this parser for free, instead of requiring a second inventory that would drift.
-
-**Raised and not reproduced (security sweep):** that `decodeAdminBody` uses `json.Unmarshal`, so a misspelled or
-unsupported narrowing key is dropped and the write then succeeds at the *wider* setting. The reasoning generalises from
-the `nil` vs `[]` rule and reads convincingly, but **no route on this API actually permits the widening**:
-`scopeBindingWire` declares the retired narrowing keys precisely so `retiredField()` can answer 400 by name
-(`adminscope.go:37-67`), `handleProfilePatch` refuses anything other than exactly one op, and `serverSetMode` /
-`toolSelectMode` map an unrecognised spelling to UNSET rather than to a permissive default. The one field genuinely
-ignored in silence is inside `PATCH /v1/servers/{id}`'s partial entry, where absent already means "keep the stored
-value" and the merged entry is echoed back in the response — an ergonomics wart, not a widening. A blanket
-`DisallowUnknownFields` was written and reverted: it would 400 bodies that work today (the precondition keys ride in the
-body while belonging to no handler's wire type) and would replace the specific retired-field hint above with a generic
-decode error. The per-route split immediately above is the recorded decision here.
+**Raised and not reproduced (security sweep):** that `decodeAdminBody` uses `json.Unmarshal`, so a
+misspelled narrowing key is dropped and the write succeeds at the *wider* setting. The reasoning
+generalises from the `nil` vs `[]` rule, but **no route actually permits the widening**:
+`scopeBindingWire` declares the retired keys precisely so `retiredField()` can answer 400 by name,
+`handleProfilePatch` refuses anything but exactly one op, and `serverSetMode` / `toolSelectMode` map an
+unrecognised spelling to UNSET rather than to a permissive default. The one field genuinely ignored in
+silence is inside `PATCH /v1/servers/{id}`'s partial entry, where absent already means "keep the stored
+value" and the merged entry is echoed back. A blanket `DisallowUnknownFields` was written and
+**reverted**: it would 400 bodies that work today (precondition keys ride in the body while belonging to
+no handler's wire type) and would replace the specific retired-field hint with a generic decode error.
 
 ---
 
 ## internal/daemon
 
-**Responsibility in one sentence**: assemble everything the control plane needs and run it as a process — it has no
-business logic of its own, only assembly order, the readiness handshake, and graceful shutdown.
-
-### Key types and entry points
-
-`Run(ctx, Config) error` is the only entry point. Every `Config` field has a production default and exists only for
-CLI and test injection (`Resolver`, `Log`, `OnReady`, various TTLs/windows, `Secrets`). `Info` mirrors
-`run/daemon.json`; `ReadInfo(runDir)` is the reader side (`api.DialOrStart` holds a copy of it). `refresher` is the
-proactive OAuth refresh loop.
+**Responsibility**: assemble everything the control plane needs and run it as a process — no business
+logic, only assembly order, the readiness handshake and graceful shutdown. `Run(ctx, Config) error` is
+the only entry point; every `Config` field has a production default and exists for CLI and test injection.
 
 ### Invariants and failure directions
 
-**`daemon.json` is written only after a successful bind**, so a well-formed `daemon.json` always describes an endpoint
-that was alive at the moment of writing — this replaces the TOCTOU-prone "probe the port then spawn" approach. The
-write goes through a temp file in the same directory + chmod 0600 + rename, so readers only ever see the old file or
-a complete new one.
+**`daemon.json` is written only after a successful bind**, so a well-formed file always describes an
+endpoint that was alive when it was written — replacing the TOCTOU-prone "probe the port then spawn". The
+write is temp file + chmod 0600 + rename, so readers see the old file or a complete new one.
 
-**Dependencies, and the failure direction of each.** A registry that won't open is fatal (the daemon *is* the
-coordination plane, unlike a gateway which can serve the data plane while impaired), but a document that was
-quarantined and self-healed is only a warning. A JSON log file that won't open degrades to plain text — a daemon
-that can't write logs should still coordinate. A registry watch that can't be established also only degrades: external changes are seen
-on the next explicit reload.
+**Dependencies, and the failure direction of each.** A registry that won't open is fatal — the daemon *is*
+the coordination plane, unlike a gateway which can serve the data plane while impaired — but a document
+that was quarantined and self-healed is only a warning, a JSON log file that won't open degrades to plain
+text, and a registry watch that can't be established degrades to seeing changes on the next explicit
+reload. **The non-registry collaborators are all optional**: credentials, skills, agent tokens, client
+adapters, OAuth state, the audit root/key reader and the event log each log and continue.
 
-**Graceful shutdown has three phases, and the first is what makes the second work.** After the ctx ends:
-`srv.CloseStreams()` ends every long-lived SSE handler, then `srv.Shutdown(grace)` (stop accepting, drain in-flight
-requests), and only if grace is spent does `srv.Close()` force the rest. Then cleanup: close the watcher, stop the
-background ctx, best-effort remove the socket, remove `daemon.json`. Internal goroutines (session reaper, watch pump,
-refresher) run on a **separate background ctx** so they survive the drain phase and stop only at cleanup.
+**Graceful shutdown has three phases, and the first is what makes the second work.** `CloseStreams()` ends
+every long-lived SSE handler, then `Shutdown(grace)` drains, and only then does `Close()` force the rest;
+internal goroutines run on a **separate background ctx** so they survive the drain. **`CloseStreams` is
+not an optimization**: `http.Server.Shutdown` waits for handlers to return and never cancels their request
+contexts, while both long-lived handlers — each stdio gateway's `/v1/gateway/{sid}/link` and whoever holds
+`/v1/events` — are parked until their client hangs up, so without it every stop spends the whole grace and
+then force-closes precisely the connections it spent it waiting for. Two streams need two doors, because
+`/v1/events` belongs to no link. `TestGracefulStopDrainsWithAGatewayAttached` pins it at the production
+grace.
 
-**`CloseStreams` is not an optimization.** `http.Server.Shutdown` waits for handlers to return and never cancels their
-request contexts, while both long-lived handlers — each stdio gateway's `/v1/gateway/{sid}/link` and whoever holds
-`/v1/events` — are parked until their client hangs up. Without it phase two can finish nothing: every stop spends the
-whole `ShutdownGrace` and then force-closes precisely the connections it spent it waiting for. That was the behavior
-until it was fixed. The daemon closed the *data plane* first, in the belief that the gateway links hung off it — they
-never did; the data plane is opt-in and normally not even listening, so the call was a no-op and the drain always ran
-to its deadline. Two streams, two doors: a link ends through its own `closed` channel, `/v1/events` through a
-server-wide `draining` channel, and both are needed because `/v1/events` belongs to no link.
-`TestGracefulStopDrainsWithAGatewayAttached` pins it at the production grace, and the `ctlapi` tests pin both that a
-drain completes after `CloseStreams` and that it does not without.
+**The stdio gateway depends on nothing here.** A dead daemon, even `kill -9`, costs only coordination —
+session list, event stream, centralized refresh — because a stdio gateway's scope comes entirely from the
+registry files; it re-registers with backoff.
 
-**The stdio gateway depends on nothing here.** The package comment states it outright: a dead daemon (even `kill -9`)
-costs only coordination — the session list, the event stream, centralized refresh. A stdio gateway's scope comes
-entirely from the registry files, so a dead daemon changes nothing about what a client sees; the gateway simply
-re-registers with backoff.
+**A daemon does not outlive its owner, and does not trust the owner to say so.** `Config.Owner` names the
+application process it belongs to, and the zero value is a **headless** daemon that stops only when an
+operator stops it. An owned daemon arms two watches before it opens anything (`owner.go`), so an owner
+dying during a slow startup is noticed too. The **lifeline** is the read end of a pipe the owner holds and
+never writes to: the kernel closes it however the owner dies, the read returns EOF in microseconds, and a
+recycled pid cannot fool it; it does not exist on Windows, where `os/exec` cannot hand a child an extra
+descriptor. The **poll** (`platform.ProcessAlive`) is the backstop, and its failure direction is
+load-bearing: it answers "alive", "not alive" and **"cannot tell"** separately, and only a definitive "not
+alive" stops the daemon — a hub that outlives its owner is recovered by the next launch, while a hub that
+shuts down under a live owner cuts off every connected client to fix nothing. Either watch routes into
+ordinary ctx cancellation, the same path a SIGTERM takes, with `errOwnerGone` as the cause.
 
-**A daemon does not outlive its owner, and does not trust the owner to say so.** `Config.Owner` names the application
-process this daemon belongs to; the zero value is a **headless** daemon, which belongs to nobody and stops only when an
-operator stops it. An owned daemon arms two watches before it opens anything (`owner.go`), so that an owner dying during
-a slow startup is noticed too. The **lifeline** is the read end of a pipe the owner holds and never writes to: the kernel
-closes it however the owner dies, the read returns EOF in microseconds, and a recycled pid cannot fool it. It does not
-exist on Windows, where `os/exec` cannot hand a child an extra descriptor. The **poll** (`platform.ProcessAlive`, every
-`OwnerPollInterval`) is the backstop, and its failure direction is the load-bearing part: `ProcessAlive` answers
-"alive", "not alive" and **"cannot tell"** separately, and only a definitive "not alive" stops the daemon. A hub that
-outlives its owner is recovered by the next launch; a hub that shuts down under a live owner cuts off every connected
-client to fix nothing. Either watch routes into the ordinary ctx cancellation — the same graceful path a SIGTERM takes —
-with `errOwnerGone` as the cause, so the shutdown log says which it was.
+**The registry watch's adoption test is monotonic.** A watch event is only a notification; the daemon
+re-`Reload`s and uses `registry.Applier` to adopt by "the generation I read ≥ the one I already applied",
+and only then publishes `ctlapi.TopicRegistry` (forwarded to every gateway link) and `server.registry`
+(driving the frontend's `servers` topic). A failed reload keeps the old snapshot.
 
-**The registry watch's adoption test is monotonic.** A watch event is only a notification; on receipt it re-`Reload`s
-and uses `registry.Applier` to decide adoption by "the generation I read ≥ the one I already applied", and only on
-adoption does it publish two things on the bus: `ctlapi.TopicRegistry` (forwarded to every gateway link) and
-`server.registry` (driving the frontend's `servers` topic, with the payload lazily rebuilt on the ctlapi side). A
-failed reload keeps the old snapshot.
+**Three decisions about proactive OAuth refresh** (the file comment gives the seemingly-obvious wrong
+alternative for each):
 
-**Three decisions about proactive OAuth refresh** (the file comment gives the "seemingly more obvious wrong
-alternative" for each):
+1. Use `oauthflow.Coordinator`'s **offline path** (a sibling `<server>.refresh.lock` plus re-reading
+   `expires_at` after acquiring it), not the online path with only in-process singleflight, which holds
+   only if the daemon is the sole vault writer — and `agenthub auth login/refresh` writes it directly. A
+   redundant lock costs one syscall; a missing one spends a one-time refresh token twice.
+2. Keep the in-process singleflight on top, so a future control plane `auth refresh` RPC hits the same
+   gate instead of racing the timer.
+3. **A token with no expiry is never proactively refreshed** — "no `expires_in`" means "never expires",
+   and such servers are covered by `internal/downstream`'s passive 401/403 path.
 
-1. Use `oauthflow.Coordinator`'s **offline path** (a `<server>.refresh.lock` sibling file lock plus re-reading
-   `expires_at` after acquiring it), not the online path with only in-process singleflight. The online path holds only
-   if the daemon is the sole vault writer, and `agenthub auth login/refresh` writes the vault directly today. The cost
-   of a redundant lock is one syscall; the cost of a missing one is a one-time refresh token being spent twice, locking
-   the user out until they manually re-authorize.
-2. Keep the in-process singleflight on top of that, so that a future control plane `auth refresh` RPC hits the same gate
-   instead of racing the timer.
-3. **A token with no expiry is never proactively refreshed.** "No `expires_in`" means "never expires", not "already
-   expired", and such servers are covered by `internal/downstream`'s passive 401/403 path.
+The backoff ladder (`oauthflow.RetryBackoff`, shared with the gateway's refresher so the two cannot drift)
+retries flat at 15s for the first `oauthflow.FastRetries` failures, then takes the slow OAuth ladder;
+`ErrNoRefreshToken`/`ErrNoState` jump straight to the slowest rung, since only `agenthub auth login` can
+fix those. `backoffState` records the `expires_at` observed at failure time, so a newer expiry in the
+vault voids the suppression window immediately, and backoff **only queries once the token has actually
+expired** — a suppression window can lower the attempt frequency but never mask that renewal is needed.
 
-The backoff ladder (`oauthflow.RetryBackoff`, shared with the gateway's proactive refresher so the two cannot
-drift): the first `oauthflow.FastRetries` consecutive failures retry flat at 15s, then it switches to the slow OAuth
-ladder (5m/15m/1h/4h/24h). `ErrNoRefreshToken`/`ErrNoState` jump straight to the slowest rung — only `agenthub auth login` can
-fix those, and retrying is pointless. `backoffState` records the `expires_at` observed at failure time: a newer expiry
-appearing in the vault means someone logged in again, and the suppression window earned by the old credential is voided
-immediately. Backoff **only queries when the token has actually expired**, so a suppression window can only lower the
-attempt frequency and never mask the fact that this token needs renewal.
+**The crash marker is armed after a successful bind and resolved only on the graceful shutdown branch**,
+so an abrupt death leaves it armed and the next start can tell a crash from a clean exit.
 
-**The crash marker is armed after a successful bind and resolved only on the graceful shutdown branch**, so an
-abrupt death leaves it armed and the next start can tell a crash from a clean exit.
-
-**The non-registry collaborators are all optional.** Credentials, skills, agent tokens, client adapters, OAuth
-state, and the audit root/key reader each log and continue on failure rather than refusing to start: a vault
-that won't open costs its secrets, audit detail and key-lifecycle endpoints while everything else keeps coordinating.
-
-**What the runtime state source is wired to**: a single `ctlapi.NewGatewayStates()` object is injected as both
-`Options.States` (read) and `Options.ServerReports` (write). The daemon **connects to no downstream while the data plane
-is off** — it has no data plane then (with the data plane disabled the daemon holds no downstreams), so state is reported
-over the control connection by the stdio gateways that actually hold the connections, and the daemon only aggregates.
-Standing up a second set of downstream processes just to display a status dot (one resident child process per stdio
-server, doubled OAuth and quotas for remote servers, plus reassembling secret resolution and netguard inside the daemon)
-is not a worthwhile trade. The aggregation rules are in the file comment of `internal/ctlapi/gatewaystate.go`.
-Those reports keep handshake authentication refusals distinct from generic dial failures, so a downstream 401/403
-produces the Health contract's `login` action instead of the misleading `restart` action.
-
-The desktop Servers page does not present this aggregate as its own diagnosis. It uses `/v1/servers` for registry
-membership and enabled state, then runs the existing per-server self-test endpoint and keeps those short-lived
-observations locally while the page is open. Thus one client's broken gateway remains visible through the API and
-CLI without being able to repaint the independent management-page probe.
+**What the runtime state source is wired to**: one `ctlapi.NewGatewayStates()` injected as both
+`Options.States` (read) and `Options.ServerReports` (write). The daemon **connects to no downstream while
+the data plane is off** — it has no data plane then — so the stdio gateways that hold the connections
+report state over the control connection and the daemon only aggregates. Standing up a second set of
+downstream processes just to display a status dot (a resident child per stdio server, doubled OAuth and
+quotas for remote ones, secret resolution and netguard reassembled inside the daemon) is not a worthwhile
+trade. Those reports keep handshake authentication refusals distinct from generic dial failures, so a
+downstream 401/403 produces the `login` action rather than the misleading `restart`. The desktop Servers
+page deliberately does not present this aggregate as its own diagnosis — it runs the per-server self-test
+and keeps those observations locally — so one client's broken gateway cannot repaint that page's probe.
 
 ---
 
 ## internal/httpbridge
 
-**Responsibility in one sentence**: the daemon's **data plane** exposure — the MCP Streamable HTTP entry point, the
-ingress hard limits guarding it, and the tiered agent token credential layer for callers.
+**Responsibility**: the daemon's **data plane** exposure — the MCP Streamable HTTP entry point, the
+ingress hard limits guarding it, and the tiered agent token credential layer.
 
-It is deliberately **not** the control plane. Management traffic goes over the UDS control socket, where identity is an
-operating system peer credential and no tokens exist; this package speaks only MCP.
-
-### Key types and entry points
-
-`Server` (constructed by `New(Options)`) answers exactly three verbs on one path: POST for one JSON-RPC message in and
-out, DELETE to terminate a session, and **GET returns 405**. `Dispatcher` is the only seam between this transport face
-and the MCP logic behind it, existing so that this package owns exactly one thing — a hardened HTTP entry point and
-credential layer — without growing a second gate chain. `Authenticator.Authenticate` produces a `*Caller`; `Store` is
-agent token persistence; `AuthorizeBind(BindConfig)` decides whether this listener **may be bound at all**; and
-`Listen`/`Serve` handle listening and lifecycle.
+It is deliberately **not** the control plane: management traffic goes over the UDS socket, where identity
+is an OS peer credential and no tokens exist. `Server` answers three verbs on one path — POST for one
+JSON-RPC message in and out, DELETE to terminate a session, **GET returns 405**. `Dispatcher` is the only
+seam to the MCP logic behind it, so this package owns one thing without growing a second gate chain.
 
 ### Invariants and failure directions
 
-**Binding is itself an authorization decision.** A listener with no admin token, no active agent token, and no registered
-clients would treat every local process as a legitimate agent, so `AuthorizeBind` **refuses** to create it (inherited from
-toolport's `http_bind_is_authorized`). `--insecure-loopback` is the only escape hatch, and it is narrower than its name:
-**a non-loopback address always requires a token** — neither registered clients nor the escape hatch suffice to authorize
-exposing tool execution to the network; the "registered clients" path likewise only authorizes a loopback bind, because
-entries in `clients.json` are configuration, not credentials. `AddrIsLoopback` fails toward false: an empty host
-(`:8080`, i.e. all interfaces), a hostname, or an unresolvable address is **not** loopback — this predicate is used to
-grant a weaker authorization, so it must be the one in the pair that is false when it cannot prove otherwise.
+**Binding is itself an authorization decision.** A listener with no admin token, no active agent token
+and no registered clients would treat every local process as a legitimate agent, so `AuthorizeBind`
+**refuses** to create it (inherited from toolport's `http_bind_is_authorized`). `--insecure-loopback` is
+the only escape hatch and is narrower than its name: **a non-loopback address always requires a token**,
+and the "registered clients" path authorizes a loopback bind only, because entries in `clients.json` are
+configuration, not credentials. `AddrIsLoopback` fails toward false — an empty host (`:8080`), a hostname
+or an unresolvable address is **not** loopback — because it grants a weaker authorization, so it must be
+the predicate that is false when it cannot prove otherwise; it is **exported** so the assembler decides
+the same question with the same code.
 
-**The escape hatch is judged before anything can authorize the bind, and refused rather than ignored.** That narrowing
-used to live only in the last-resort branch of `AuthorizeBind`'s switch, where `--insecure-loopback` was one *reason* a
-bind could be permitted. A configured token returned from the switch first, so on
-`--http-addr 0.0.0.0:7777 --http-allow-remote --insecure-loopback` the flag was never looked at — and it was passed
-through to the `Authenticator` regardless, which answered **every unauthenticated LAN request at the destructive tier**.
-The narrowing was real, correct, and unreachable in the one configuration where it mattered. Refusing to start (rather
-than dropping the flag) is the "delivered or refused" rule: an operator who asked for unauthenticated access on a public
-address asked for something this build will not do, and silently ignoring it leaves them believing it took effect.
+**The escape hatch is judged before anything can authorize the bind, and refused rather than ignored.** It
+used to live only in the last-resort branch of the switch, so a configured token returned first and
+`--http-addr 0.0.0.0:7777 --http-allow-remote --insecure-loopback` never looked at the flag — while
+passing it to the `Authenticator`, which answered **every unauthenticated LAN request at the destructive
+tier**. Refusing to start rather than dropping the flag is the "delivered or refused" rule.
 
-**The channel is not encrypted, and a non-loopback bind is told so.** This package terminates no TLS — there is no
-certificate, no TLS configuration and no `ServeTLS` in it — so everything above insists on a credential for a
-network-reachable listener and that credential then crosses the network in the clear, along with every tool call and
-result. An on-path observer reads the bearer and replays it at its tier. **Terminating TLS is deliberately out of
-scope**: certificate material, rotation and trust configuration are a feature with their own argument, not something a
-bind check should invent, and the usual deployment answer is a TLS-terminating proxy or a private network. Silence was
-not acceptable either — "delivered or refused" applies to the channel as much as to a container runtime — so
-`AuthorizeBind` sets `BindDecision.Cleartext` on every non-loopback bind and the daemon logs it at WARN. Loopback binds
-are not warned, because a warning printed on every ordinary start is one nobody reads. `TestNonLoopbackBindIsToldItIsUnencrypted`
-is where this decision is written down; if TLS is ever implemented, that test changes with it.
+**The channel is not encrypted, and a non-loopback bind is told so.** This package terminates no TLS, so
+the credential everything above insists on crosses the network in the clear along with every call and
+result. **Terminating TLS is deliberately out of scope** — certificate material, rotation and trust
+configuration are a feature with their own argument, and the deployment answer is a terminating proxy —
+but silence was not acceptable either, so `BindDecision.Cleartext` is set on every non-loopback bind and
+the daemon logs it at WARN. Loopback binds are not warned, because a warning on every ordinary start is
+one nobody reads. `TestNonLoopbackBindIsToldItIsUnencrypted` is where this is written down.
 
-**`Authenticate` re-checks the peer, and `peerIsLoopback` fails toward false.** The no-credential path requires *both*
-`InsecureLoopback` and a loopback `RemoteAddr`. This is deliberate duplication: `InsecureLoopback` reaches the
-`Authenticator` as a bare bool carrying no evidence of the address the listener actually got, which is precisely how the
-bug above stayed invisible from inside this package. `RemoteAddr` is the kernel's view of the peer rather than a header —
-**no `X-Forwarded-For` handling belongs here**, as this package binds TCP itself and is never fronted by a proxy, so
-honouring that header would turn a header into an authentication bypass.
+**`Authenticate` re-checks the peer, and `peerIsLoopback` fails toward false.** The no-credential path
+requires *both* `InsecureLoopback` and a loopback `RemoteAddr`, and the duplication is deliberate:
+`InsecureLoopback` arrives as a bare bool carrying no evidence of the address the listener actually got,
+which is exactly how the bug above stayed invisible from inside this package. `RemoteAddr` is the kernel's
+view, never a header — **no `X-Forwarded-For` handling belongs here**, since this package binds TCP itself
+and is never fronted by a proxy.
 
-**A browser Origin must be a provably loopback authority, not merely equal to `Host`.** The equality rule that preceded
-it carried a comment claiming it stopped DNS rebinding — "an attacker page that resolves its own hostname to 127.0.0.1
-still sends its own Origin". The premise is true; the conclusion does not follow, because under rebinding the `Host`
-header carries the attacker's hostname as well. A page from `http://evil.example:7777` whose DNS has been rebound sends
-both headers as `evil.example:7777`, they compare equal, and `Sec-Fetch-Site` reads `same-origin` — from the browser's
-point of view it *is* same-origin, which is also why no preflight is sent. **Equality is the one relation rebinding
-preserves.** Both authorities now have to pass `AddrIsLoopback`, which is false for anything it cannot prove
-(`127.0.0.1.nip.io`, `localhost.evil.example`, an unparsable authority). The check runs before authentication, so its
-false positives cost a browser-shaped client a 403 and its false negatives cost tool execution.
+**A browser Origin must be a provably loopback authority, not merely equal to `Host`.** **Equality is the
+one relation DNS rebinding preserves**: a rebound page sends both headers as `evil.example:7777`, they
+compare equal, and `Sec-Fetch-Site` reads `same-origin`. Both authorities now have to pass
+`AddrIsLoopback`, false for anything it cannot prove (`127.0.0.1.nip.io`, `localhost.evil.example`, an
+unparsable authority), and the check runs before authentication. `Sec-Fetch-Site` is the second
+browser-facing gate — set by the browser, unforgeable by page scripts, absent on non-browser clients.
+**The CORS invariant: this server never echoes an Origin and never emits `Access-Control-Allow-*`**,
+because no browser client needs enabling and the only effect would be to let a page read tool results.
 
-**The per-request ordering invariant: ingress limits → authentication → session binding → dispatch.** Every level is
-fail-closed, and every rejection is distinguishable (413/401/403/404/503), so operations reading access logs can tell
-"body too large" from "token revoked" from "someone else's session". **Rate limiting happens before authentication** —
-the whole point of an in-flight cap is to limit the work an unauthenticated caller can induce; over the limit means a 503
-shed rather than queuing (queuing behind a saturated downstream connection pool turns a slow server into an unbounded
-memory sink).
+**The per-request ordering invariant: ingress limits → authentication → session binding → dispatch.**
+Every level is fail-closed and every rejection distinguishable (413/401/403/404/503), so an operator
+reading access logs can tell "body too large" from "token revoked" from "someone else's session".
+**Rate limiting happens before authentication**, because the point of an in-flight cap is to limit the
+work an unauthenticated caller can induce, and over the limit is a 503 shed rather than queuing — queuing
+behind a saturated downstream pool turns a slow server into an unbounded memory sink.
 
-**Ingress hard limits** (header size, header read deadline, body size, body read deadline, concurrency) are constants
-in `ingress.go`. The two header limits **cannot be enforced inside the handler** (by the time the handler runs, the
-headers are already read): they are `http.Server` fields, so they come from `Server.HTTPServer()` and from nothing else.
-`Serve` already builds through it, which is why the daemon does not have to know; an assembly bringing its own listener
-does, and one that mounts `Handler()` bare is choosing to serve without a header-size limit or a head read deadline.
-`Handler()`'s own comment used to invite exactly that ("mount it directly") — the one instruction that drops them
-silently — and now says what it costs. The body read deadline is set per request via `ResponseController` — a
-server-level `ReadTimeout` would also limit long-lived connections.
+**Ingress hard limits** (header size, header read deadline, body size, body read deadline, concurrency)
+are constants in `ingress.go`. The two header limits **cannot be enforced inside the handler**, since by
+then the headers are read, so they are `http.Server` fields reachable only through `Server.HTTPServer()`;
+an assembly that mounts `Handler()` bare is choosing to serve without a header-size limit or a head read
+deadline, and that comment now says so instead of inviting it. The body read deadline is per request via
+`ResponseController`, because a server-level `ReadTimeout` would also limit long-lived connections.
 
-**Only Streamable HTTP is exposed.** canonical.md §5b freezes the transport asymmetry: agenthub **reads** legacy HTTP+SSE
-downstreams but **never grows a new SSE exposure surface**, so GET returns 405 rather than upgrading to a stream.
+**Only Streamable HTTP is exposed.** canonical.md §5b freezes the asymmetry: agenthub **reads** legacy
+HTTP+SSE downstreams but **never grows a new SSE exposure surface**, so GET is a 405.
 
-**Two gates facing the browser.** `Sec-Fetch-Site` is set by the browser and cannot be forged by page scripts: non-browser
-clients don't send it (unaffected), and a malicious cross-origin page cannot hide that it is a page. The `Origin` check
-also blocks DNS rebinding — an attack page resolving its own domain to 127.0.0.1 still sends its own Origin. **The CORS
-invariant: this server never echoes an Origin and never emits `Access-Control-Allow-*`**, because no browser client needs
-to be enabled, and the only effect of permissive CORS headers would be to let a page read tool results.
+**Token shape and storage.** `agt_` plus 64 hex characters, and **dispatch is by prefix and mutually
+exclusive in both directions**: `agt_` is only ever looked up in the store, everything else only ever
+compared against the admin token — without that, a caller could probe the store with admin-shaped
+candidates, and an admin token beginning with the agent prefix would become unusable. Stored is only
+`hex(HMAC-SHA256(key, plaintext))`, HMAC rather than bare SHA-256 to defeat offline cracking, and the key
+file is a dotfile **beside rather than inside** the token list, so copying `tokens.json` into a bug report
+does not hand over verification capability. **A corrupt key file is a hard error**: regenerating it would
+silently invalidate every issued token. First creation uses `O_EXCL`, and the loser of a race reads the
+winner's key.
 
-**Token shape and storage.** The prefix `agt_` plus 64 hex characters. **Dispatch is by prefix and mutually exclusive in
-both directions**: anything starting with `agt_` is only ever looked up in the store, and everything else is only ever
-compared against the admin token. Without that exclusivity a caller could probe the store with admin-shaped candidates,
-and an admin token that happened to start with the agent prefix would become unusable. What is stored is only
-`hex(HMAC-SHA256(key, plaintext))`: HMAC rather than bare SHA-256 defends against offline cracking — an attacker who
-steals `tokens.json` without `.token_key` cannot verify candidate tokens offline. The key file is a dotfile and sits
-**beside rather than inside** the token list, so copying `tokens.json` into a bug report doesn't hand over verification
-capability too. **A corrupt key file is a hard error**: regenerating it would silently invalidate every issued token,
-looking like everything is fine to operations and like an outage to every agent. First creation uses `O_EXCL`, and the
-loser of an initialization race reads the winner's key.
+**Lookup is an authentication face that is not an oracle.** Unknown, revoked and expired return the same
+`ok=false` and the same 401, and comparison walks the whole table with `hmac.Equal` **without
+short-circuiting**. `Token.Active` folds tier legality into "active": a tier this binary does not
+recognize (hand-edited file, downgrade after a new tier landed) is rejected rather than defaulted.
 
-**Lookup is an authentication face that is not an oracle.** Unknown, revoked, and expired all return the same `ok=false`,
-and the layer above always returns 401. Comparison walks the entire table using `hmac.Equal` **without short-circuiting** —
-loop duration must not depend on where the match sits in the table. `Token.Active` folds tier legality into "active": a
-tier this binary doesn't recognize (hand-edited file, downgrade after a new tier was added) must be rejected rather than
-defaulted.
-
-**The nil/empty tri-state.** A nil `Token.Servers` means "no restriction configured, allow all", and a non-nil empty slice
-means "allow nothing". That is why the field is serialized **without `omitempty`**, and it is the same tri-state as the
+**The nil/empty tri-state.** A nil `Token.Servers` means "no restriction, allow all"; a non-nil empty
+slice means "allow nothing". Hence serialization **without `omitempty`** — the same tri-state as the
 registry's `ToolSelector`.
 
-**The store's concurrency discipline.** Uniqueness and the `MaxTokens` cap are checked **inside** the flock transaction,
-against the very list that transaction is about to write back — checking against a snapshot read outside the transaction
-would let two concurrent `token create` calls both win. Write-back uses the full hardened ladder: temp file in the same
-directory → chmod 0600 → write → fsync → rename → fsync parent directory. A missing file is an empty store (first run),
-but **a malformed file is an error**: silently treating a corrupt credential store as "no tokens" would make bind
-authorization fail open. `MaxTokens = 64` is not resource protection but governance protection — an unbounded credential
-list is a list nobody reads. Records are **retained** after revocation (the name stays taken and the row keeps
-appearing in `token ls`), so a name always resolves back to exactly one credential.
+**The store's concurrency discipline.** Uniqueness and the `MaxTokens` cap are checked **inside** the flock
+transaction, against the list it is about to write back, since checking a snapshot read outside would let
+two concurrent `token create` calls both win. Write-back is temp file → chmod 0600 → write → fsync →
+rename → fsync parent. A missing file is an empty store, but **a malformed file is an error**: treating a
+corrupt credential store as "no tokens" would make bind authorization fail open. `MaxTokens = 64` is
+governance protection, not resource protection — an unbounded credential list is a list nobody reads — and
+records are **retained** after revocation, so a name always resolves to exactly one credential.
 
-**Session binding is fail-closed and validates the whole identity.** `Caller.Identity()` composes kind, token name, tier,
-allowlist, and profile into a fingerprint; a session freezes the fingerprint at creation and **compares the whole thing on
-every request** — a token whose tier or allowlist was later narrowed cannot keep riding an old session with old
-privileges. **The allowlist enters that fingerprint as a tri-state, never as a joined list**: nil (every server), `[]`
-(no server at all) and any list of names are pairwise distinct, with a length prefix separating `[]` from `[""]`. A join
-renders the first two identically, which made the single most consequential edit an operator can make to
-`<data>/tokens.json` — `"servers": null` to `"servers": []` — invisible to both this check and the per-credential
-gateway cache below, so a token cut down to nothing kept reaching every server until its gateway went 30 minutes idle.
-This is the nil-vs-`[]` distinction AGENTS.md calls load-bearing, on the one path where the two are opposite
-authorities rather than opposite spellings of the same one; `TestIdentitySeparatesEveryAllowlistState` pins it. Not found, expired, and owned by someone else all return the same false, and the handler answers the same
-frozen 404 text (anti-probing). **A session owned by someone else is deliberately not deleted**: an outside prober must not
-be able to destroy other people's sessions by guessing ids. When the table is full, **creation fails rather than evicting**
-— quietly discarding someone else's live session to make room for a new connection would turn a load spike into a data
-plane error aimed at the wrong caller.
+**Session binding is fail-closed and validates the whole identity.** `Caller.Identity()` composes kind,
+token name, tier, allowlist and profile into a fingerprint that a session freezes at creation and
+**compares in full on every request**, so a token narrowed later cannot keep riding an old session.
+**The allowlist enters that fingerprint as a tri-state, never as a joined list**: nil, `[]` and a list of
+names are pairwise distinct, with a length prefix separating `[]` from `[""]`. A join renders the first
+two identically, which made the single most consequential edit to `<data>/tokens.json` — `"servers": null`
+to `"servers": []` — invisible to both this check and the per-credential gateway cache, so a token cut
+down to nothing kept reaching every server until its gateway went 30 minutes idle;
+`TestIdentitySeparatesEveryAllowlistState` pins it. Not found, expired and owned by someone else all
+return the same false and the same frozen 404 (anti-probing), and **a session owned by someone else is
+deliberately not deleted**: a prober must not be able to destroy other people's sessions by guessing ids.
+When the table is full, **creation fails rather than evicting**.
 
-**Dual-stack loopback in Listen.** A client told to connect to "localhost" might resolve to 127.0.0.1 or to ::1, and which
-one is not ours to decide; binding only one address family produces the worst failure shape — works on the developer's
-machine, connection refused on the user's. So "localhost" **binds both**, and with port 0 the actual port of the first
-listener is read back and used for the second (otherwise the two halves would land on different ports). A second family
-that fails to bind returns only a warning rather than failing (a machine without IPv6 should not be refused startup); only
-both failing is a hard error.
+**Dual-stack loopback in Listen.** "localhost" may resolve to 127.0.0.1 or ::1, and binding one family
+produces the worst failure shape — works on the developer's machine, connection refused on the user's —
+so it **binds both**, reading back the first listener's port when the port is 0. A second family that
+fails to bind is a warning; only both failing is a hard error.
 
-**Tiers are only minted here, not enforced here.** `Caller.Tier` flows into `pipeline.CallRequest.CallerTier`, and the
-actual comparison (against the tier derived from tool annotations) happens in the token tier gate in `internal/pipeline` —
-the second of the two defence lines (scope → token tier). `Profile` joins the scope intersection as an ordinary
-layer, and like every other layer it can only tighten.
-
-`AddrIsLoopback` is **exported** because the assembler needs the very same predicate to decide whether explicit
-remote confirmation is required — two implementations of "is this loopback" would eventually disagree, and the
-disagreement would land on the permissive side.
+**Tiers are minted here, not enforced here.** `Caller.Tier` flows into `pipeline.CallRequest.CallerTier`,
+and the comparison against the tier derived from tool annotations happens in the token tier gate in
+`internal/pipeline`. `Profile` joins the scope intersection as an ordinary layer and can only tighten.
 
 ### Who assembles it
 
-`internal/daemon` (`httpserve.go` + `httpdata.go`). Assembly is **explicit opt-in**, from one of two sources and never
-half of each (`resolveHTTPFace`): the command line when any of the three flags is given, otherwise the stored
-`http.*` governance keys. When neither names an address — the default, and the state of an installation that has never
-configured one — **no listener is created at all**. A non-loopback address additionally requires the matching
-confirmation from that same source, and its absence fails daemon startup rather than quietly downgrading to loopback
-("what the configuration claims must be honored or error out", the same discipline as `runtime: docker`).
-`AuthorizeBind`'s credential check comes after all that and is still the final fail-closed gate.
+`internal/daemon` (`httpserve.go` + `httpdata.go`). Assembly is **explicit opt-in**, from one of two
+sources and never half of each (`resolveHTTPFace`): the command line when any of the three flags is given,
+otherwise the stored `http.*` governance keys. When neither names an address — the default — **no listener
+is created at all**, and a non-loopback address additionally requires the matching confirmation from that
+same source, whose absence fails startup rather than quietly downgrading to loopback.
 
-`Dispatcher`'s implementation `httpPlane` is deliberately thin: it maps an authenticated credential to a `gateway.Conn` —
-the very same gateway body as `agenthub connect`, attached to an in-memory pipe — and writes request frames into it.
-**There is no second assembly, and therefore no second execution path**: an HTTP request traverses the same discovery
-surface, the same router, and the same `pipeline.Execute` call site. Credentials enter the governance chain through only
-two existing entry points: `Caller.Tier` becomes `gateway.Config.CallerTier` → `pipeline.CallRequest.CallerTier`; and
-`Caller.Servers` and `Caller.Profile` become extra layers in `scope.Sources.Extra`, intersected by the same `Merge` as the
-five persisted layers (they are security fields and can only narrow). Connections are keyed and reused by the **whole
-credential** (kind/name/tier/allowlist/profile), so a token narrowed after issuance gets a new gateway rather than the old
-privileges — the same rule as the session's `Caller.Identity()`; reclaimed after 30 minutes idle.
-
-The test proving "there is no fork" is `TestInProcGateCountParity` in `internal/gateway/inproc_test.go`: a `tools/call`
-through `Conn` and one through the stdio pipe advance **exactly the same** gate counts — the same test as the one used for
-the "direct call / `call_tool`" pair.
+`httpPlane` is deliberately thin: it maps an authenticated credential to a `gateway.Conn` — the same
+gateway body as `agenthub connect`, attached to an in-memory pipe. **There is no second assembly, and
+therefore no second execution path**: an HTTP request traverses the same discovery surface, the same
+router and the same `pipeline.Execute` call site. Credentials enter the governance chain through two
+existing entry points only: `Caller.Tier` → `gateway.Config.CallerTier` → `pipeline.CallRequest`, and
+`Caller.Servers` / `Caller.Profile` as extra layers in `scope.Sources.Extra`, intersected by the same
+`Merge` as the persisted ones. Connections are keyed and reused by the **whole credential**, so a token
+narrowed after issuance gets a new gateway rather than the old privileges; reclaimed after 30 minutes
+idle. `TestInProcGateCountParity` (`internal/gateway/inproc_test.go`) proves there is no fork: a
+`tools/call` through `Conn` and one through the stdio pipe advance exactly the same gate counts.
 
 ---
 
 ## internal/cli
 
-**Responsibility in one sentence**: the entire `agenthub` command tree — offline registry editing, online control plane
-operations, and unifying both under one set of exit codes and one `--json` envelope.
+**Responsibility**: the entire `agenthub` command tree — offline registry editing, online control plane
+operations, and one set of exit codes and `--json` envelope over both. Command naming rules (singular
+name + plural alias, `ls`, the `tool` group at two altitudes, `add`/`enable` as separate primitives, no
+`scope` group, the three non-overlapping log readers) are **canonical.md §3's**, enforced by
+`tree_test.go`, and are not restated here.
 
-### Key types and entry points
-
-`Main(Options) int` is the only entry point and returns the process exit code. It is the **only** place that classifies
-errors (`ExitCodeFor`) and reports them (`Printer.Fail`); every `RunE` returns only typed errors and never prints its own.
-`App` holds all the injectable state for one invocation (version, the three streams, `platform.Resolver`, lock timeout,
-the `--json` switch), so tests can run commands fully hermetically.
-
-`Error` is the typed CLI error, carrying a stable machine code (`Code*`), a process exit code (`Exit*`), and a
-human-facing hint all at once. Five constructors — `Usagef`/`NotFoundf`/`DaemonDownf`/`AuthFailedf`/`Deniedf` — cover the
-categories in the frozen table, but only the first three have production callers: a command that needs a *hint* alongside
-the message builds the `Error` literally, and exits 5 and 6 always do. The last two are the table's declaration of those
-rows, exercised by `errors_test.go` and the failure-envelope golden, and that is what they are for. `silentExitError` is
-for commands that already rendered their result through the output layer (doctor's per-item status), preventing Main from
-printing a second error.
-
-`ctlClient` is raw control plane access, for the faces the typed `api` client does not cover. It
-speaks the same envelope over the same UDS, but its wire DTOs come straight from `internal/ctlapi` — the CLI is inside the
-module and isn't constrained the way the public `api` package is.
+`Main(Options) int` is the **only** place that classifies errors (`ExitCodeFor`) and reports them
+(`Printer.Fail`); every `RunE` returns typed errors and never prints. `ctlClient` is raw control plane
+access for faces the typed `api` client does not cover: same envelope and socket, but its wire DTOs come
+straight from `internal/ctlapi`, since the CLI is inside the module.
 
 ### Invariants and failure directions
 
-**The exit code table is frozen**, and the mapping exists in exactly one place, `ExitCodeFor`:
+**The exit code table is frozen**, and the mapping lives in exactly one place, `ExitCodeFor`:
 
 | Code | Meaning | Triggered by |
 |---|---|---|
@@ -851,681 +620,431 @@ module and isn't constrained the way the public `api` package is.
 | 3 | Resource not found | server/profile/secret/skill/session/tool |
 | 4 | Daemon offline but the command requires it | `DaemonDownf` |
 | 5 | Authentication/authorization failure | the OAuth flows; a downstream answering 401/403 to `server test`; a secret file that will not decrypt |
-| 6 | Refused by a guard | a skill's integrity pin (tampered, drifted, or a directory carrying no agenthub marker) and the spawn guard screening a generated `docker run` |
-| 7 | Lock contention timeout, or a state file corrupt and **unable to self-heal** | The locks with a timeout ladder — registry, skills, the HTTP-bridge token store; plus `registry.UnreadableError`, the skills corrupt-state path, and `confops.KindState` |
+| 6 | Refused by a guard | a skill's integrity pin, and the spawn guard screening a generated `docker run` |
+| 7 | Lock contention timeout, or a state file corrupt and **unable to self-heal** | the locks with a timeout ladder (registry, skills, token store), plus `registry.UnreadableError`, the skills corrupt-state path, `confops.KindState` |
 
-**"A cobra parse error = exit 2" is guaranteed by construction, not by convention.** The root sets
-`SetFlagErrorFunc`, funneling every flag parse error into `Usagef`; `exactArgs`/`noArgs`/`rangeArgs` are typed replacements
-for cobra's same-named validators; and every group uses `Args: cobra.ArbitraryArgs` + `groupRunE`, so an unmatched
-subcommand name lands in a typed usage error rather than cobra's own untyped "unknown command". `SilenceUsage` and
-`SilenceErrors` are both on, because Main owns error reporting exclusively.
+**"A cobra parse error = exit 2" is guaranteed by construction**: `SetFlagErrorFunc` funnels flag errors
+into `Usagef`, typed `exactArgs`/`noArgs`/`rangeArgs` replace cobra's validators, and every group uses
+`cobra.ArbitraryArgs` + `groupRunE` so an unmatched subcommand becomes a typed usage error rather than
+cobra's untyped "unknown command".
 
-`groupRunE` had one hole, and Main closes it before `Execute`. cobra answers a help flag *before* RunE, so
-`agenthub secret get --help` printed the `secret` group's page and exited 0 — the same answer a real subcommand
-gives, which is what made a nonexistent `secret get` look like one that exists (stored credential values have no
-read path at all, so that page contradicted a design rule rather than merely a fact).
-`helpForUnknownSubcommand` resolves the args with `root.Find` and refuses a leftover non-flag token on a command
-that HAS subcommands. **That hole has two doors, and closing one is not closing it**: the help flag, and cobra's
-help *command* — `agenthub help secret get`, whose own implementation resolves the deepest match and drops
-whatever is left over, producing the same page with the same zero status. One question spelled two ways, so
-`helpRequest` reduces both to one path rather than checking twice. It is scoped to exactly that hole — without a
-request for help RunE already answers, and a leaf command is entitled to positional args — and
-`TestHelpForEveryRealCommandStillExits0` walks the whole tree in the other direction, in all three spellings,
-because a check running before cobra is one that could break `--help` everywhere.
+**The help-flag hole has two doors, and closing one is not closing it.** cobra answers a help flag
+*before* RunE, so `agenthub secret get --help` printed the group's page and exited 0 — the answer a real
+subcommand gives, making a nonexistent command look like one that exists — and `agenthub help secret get`
+is the same question spelled differently. `helpRequest` (run before `Execute`) reduces both to one path,
+scoped to that hole alone since a leaf command is entitled to positional args, and
+`TestHelpForEveryRealCommandStillExits0` walks the tree from the other side in all three spellings,
+because a check running before cobra could break `--help` everywhere.
 
-**"Already-healed quarantine" degrades to a warning and doesn't consume exit 7.** `splitQuarantine` separates
-`registry.UnreadableError` (a document that couldn't be read but was quarantined and reset to defaults, with the store still
-fully usable) out of the fatal errors and turns it into warnings on the success envelope. Exit 7 is reserved for "corrupt
-and unable to self-heal".
+**"Already-healed quarantine" degrades to a warning and doesn't consume exit 7.** `splitQuarantine`
+separates `registry.UnreadableError` — unreadable, but quarantined and reset with the store still usable
+— from the fatal errors; exit 7 means "corrupt and unable to self-heal".
 
-**The command tree's shape is pinned by tests** (`tree_test.go`) rather than by review: every command in the tree must exist
-and be spelled consistently; resource groups must be **singular canonical name + plural cobra alias** (server/servers,
-profile/profiles, client/clients, session/sessions, skill/skills, secret/secrets, plus the nested server/tool) and the alias must
-actually resolve; list subcommands are always called `ls` (`list`/`dump`/`ls-all` are all
-violations); and **every command must be able to take `--json`** (it is a persistent flag on the root, and what this test
-really asserts is that no command shadows or removes it). Action/streaming groups (daemon, auth,
-events, config, doctor, connect) keep their names and get no plural alias. There is no `scope` group: binding a
-client to a profile is `client bind` / `client unbind` / `client ls`, and the narrowing itself is `profile server`
-/ `profile tool` / `profile discovery` — spelled exactly like `server tool`, the same commands one layer up. Every group invoked bare prints help and exits 0,
-and an unknown subcommand exits 2.
+**Error text is frozen by golden tests** (`errorgolden_test.go`), one of canonical.md §6's three golden
+families: machine code, exit code, message and hint, because agents and scripts use all four. Regenerate
+with `go test ./internal/cli -update`, **and review the diff**.
 
-**The `tool` group is `ls | inspect | allow` at BOTH altitudes, and the test lists both** (canonical.md §7.8). The pair had
-matching writers and a reader at the global altitude only, so "what does this profile actually let through" — the intersection,
-which is the sole thing a bound client gets — had no command and was left to the reader per tool. `profile tool ls` is the same
-rendering of the same catalog with one more layer merged in, and `TestBothToolListingsTakeTheSameFlags` compares the two flag
-sets directly: a flag added to one and forgotten on the other is how one mechanism quietly becomes two. `inspect` is the
-exception that proves the rule — it is inherently cross-layer, so there is ONE implementation and `profile tool inspect` is that
-report narrowed after it is computed, keeping the machine-wide verdict because that layer can still be the answer.
+**The online/offline matrix is explicit.** Every `session` command requires the daemon (a session is a
+runtime object, never persisted) and offline is exit 4, never an invented answer. `audit`, `events` and
+`logs` **work offline**, because those records describe what already happened — sharpest for `logs`,
+since a stdio gateway writes its log with no daemon in the picture and requiring one would refuse exactly
+the installation with the most to explain. `server tool` is offline-capable too: choosing what a server
+offers must not require starting it.
 
-**A rule is reported by the resource that stores it; a listing reports its effect.** The global allow list is a field on the
-server entry, so `server ls` carries it in a TOOLS column and `server inspect` spells it out with the names — as `profile ls`
-has carried a profile's selectors all along. It is why `server tool ls --rules` is hidden and going: a boolean that swaps the
-row type answers with two JSON contracts from one command, and it was the rule's only reader while the two views that describe
-a server had it in neither. The `ls` column follows the AUTH/TRACE rule and appears only when some server carries a rule; a
-column that reads the same on every row for the rest of time is one readers learn to skip.
+**Credentials are never printed, guaranteed at the type level**: the `secret` group's result types have
+**no value field at all**, `auth status` reports only issuer/expiry/mode/refresh-token-present, and there
+is no `--show`; `token create` is the one exception, since its plaintext must leave the process once.
+`readNoEcho` **errors rather than reading from a non-terminal fd**, and **a defer alone did not restore
+the terminal**: `ISIG` stays enabled so Ctrl-C works at a hidden prompt, and Go's default SIGINT
+disposition terminates without running deferred functions, so `restoreOnSignal` restores **before**
+re-raising the signal.
 
-**`(default)` is one token across every listing that renders a binding.** The fallback an unbound client
-follows is a *display* row, not an object: `profile ls` heads its table with it (always, and carrying
-the `*` whenever it is the row in force — including when the active profile is missing, since the row
-that would have carried it is the one that does not exist), `client ls` prints it in the PROFILE column,
-and `client inspect` plus the bind/unbind echo go through the same two helpers,
-`describeDefaultProfile` / `describeActiveProfile`. It replaced a per-table `(active)` that named
-nothing the user could look up. `confops.validateProfileName` refuses a name starting with `(` so the
-token cannot be shadowed, and the `default` object is kept **out of** `profiles[]` in the JSON so a
-script walking that array keeps getting names it can pass back to `profile rm`.
+**`server ls` can display header values verbatim**, because a registry entry never holds a credential —
+values are `${SECRET_X}` placeholders resolved at connect time in `internal/downstream`. Which vault keys
+an entry needs comes from `downstream.SecretKeysIn`, not a local `${...}` scan, whose private list failed
+the very cross-check against `secret ls` it existed for. **One exception**: a *literal* `Authorization`
+value is a pasted token, so the human view refuses to read it back to a terminal — a deliberately narrow
+test, since guessing which other header authenticates would start hiding ordinary configuration.
 
-**The two dangling directions are reported in different places, and both must stay reported.** A client
-bound to a missing profile is flagged per row (`dangling`); a missing *active* profile fail-closes every
-client that follows it, which no row can carry — those rows have no binding of their own — so it lives on
-the listing (`active_dangling`) and, in `client inspect`, on the one client the command is about.
+**`server inspect`'s `spawns` line is the exact `docker run` argv the spawner would execute**, rendered
+by `confops.DockerRunLine` — the same translator the spawn guard screens, so "isolation a config claims
+must be delivered" is checkable by reading, and a test compares the printed line against the dialed one.
+Two neighbours exist for the same reason: the tool allow list prints on **every** report including "all",
+since the absence of a rule is what a missing line cannot express, and the cache line distinguishes **"no
+catalog stored" from "0 tools"**.
 
-**Error text is frozen by golden tests** (`errorgolden_test.go`). canonical.md §6 requires three families of golden test to
-run in CI from day one, and this is the third (the other two are signature grammar and search ranking, in
-`internal/discovery`). What is frozen is the entire failure contract: the machine code, exit code, message, and hint of every
-classifiable error — agents and scripts use all four, so silently rewording is a contract break. Regenerate with
-`go test ./internal/cli -update`, **and the diff must be reviewed**.
+**`visibility` is the arithmetic behind "everything is healthy and my client still sees no tools".**
+Three states stay distinct because they need different repairs: a **disabled** server reaches nobody
+whatever the profiles say, a profile that **excludes** it is named, and a binding naming a **missing**
+profile fail-closes to an empty scope, which from outside looks exactly like deliberate exclusion. It is
+computed from the **registry alone**, so the answer survives on the broken machine, and it is an upper
+bound: an agent token's own allowlist can take more away on the HTTP face.
 
-**The online/offline matrix is explicit.** Every command in the `session` group requires the daemon (a session is a runtime
-object that is never persisted), and offline is exit 4 rather **than** an invented offline answer. Conversely, `audit`,
-`events` and `logs` read files straight off disk and **work offline** — the records describe things
-that already happened, and whether the daemon is up cannot change history. `logs` is the sharper case: a stdio gateway
-writes its log with no daemon anywhere in the picture, so requiring one to read it back would refuse exactly the
-installation with the most to explain. The whole `server tool` group is offline-capable too — choosing what a server
-offers must not require starting it first, and neither must reading back what was chosen.
+**The `AUTH` column reports what is STORED, never whether it works** — the line the ban on a persisted
+`needsAuth` draws. On its first-match-wins ladder a missing secret outranks everything, so the CLI and
+`ComputeHealth` cannot disagree about one server; a literal `Authorization` header outranks the stored
+credential, because `attachBearer` leaves it alone and the token behind it is never sent; and the last
+rung does **not** guess (`-`, never "probably needs a login"). Reading it is **index-first**, a cost rule
+rather than an optimization: a command that pops a keychain dialog is one people stop running. Failure
+direction is **fail-open for the listing, fail-visible for the cells** — an unreadable vault still prints
+every registry fact, but its cells read `error`, never `-`.
 
-**Credentials are never printed, and that is guaranteed at the type level.** The `secret` group's result types **have no value
-field at all**, `ls` renders only key names and backends, and `auth status` reports only issuer/expiry/mode/whether a refresh
-token exists; there is no `--show` escape hatch. The one exception is `token create`: the plaintext must leave the process
-once or the token could never be handed to an agent — so it prints once with a "this is the only time" warning, and the store
-keeps only the HMAC. Reading a password from a terminal goes through `readNoEcho`, which **returns an error rather than reading
-from a non-terminal fd** (redirected stdin must not silently echo credentials into a log), and restores terminal state on every
-path so an interrupted read never leaves the user's shell with echo off. **A defer alone did not deliver that**, which is worth
-recording because it read as if it did: `readNoEcho` leaves `ISIG` enabled on purpose so Ctrl-C still works at a hidden prompt,
-and Go's default disposition for SIGINT terminates the process without running a single deferred function — so the one
-interruption the promise was about was the one it did not cover, and the operator was left typing blind until they thought of
-`stty sane`. `restoreOnSignal` now watches SIGINT/SIGTERM/SIGQUIT and restores the terminal **before** re-raising the signal with
-its default disposition. Re-raising rather than swallowing is not optional: Ctrl-C at a password prompt must stop the program.
+**A rule is reported by the resource that stores it; a listing reports its effect** (canonical.md §3), so
+`server tool ls --rules` is hidden and going. `TestBothToolListingsTakeTheSameFlags` compares the two
+listings' flag sets directly: a flag added to one and forgotten on the other is how one mechanism quietly
+becomes two.
 
-**`server ls` can safely display header values verbatim**, because a registry entry never contains a credential — the values are
-`${SECRET_X}` placeholders, and resolution happens at connect time inside `internal/downstream`. The **vault keys** an entry needs
-come from `downstream.SecretKeysIn`, not from a local `${...}` scan: only `${SECRET_<KEY>}` is a credential and the entry it names
-is `<KEY>` without the prefix, so a private scan produced a list that failed at the very cross-check against `secret ls` it exists
-for. `server inspect` prints them under `configuration` for the same reason and with **one exception**: a *literal* `Authorization`
-value is the case where that assumption is already broken — it is a pasted token, not a placeholder — and the human view refuses to
-read it back out to a terminal. The test is the narrow one `hasLiteralAuthorization` makes, because guessing which other header
-authenticates something would start hiding ordinary configuration; the `--json` envelope is unchanged, for programs that already
-hold the file.
+**`(default)` is a display row, not an object.** `confops.validateProfileName` refuses a name starting
+with `(` so the token cannot be shadowed, and the `default` object stays **out of** `profiles[]` in the
+JSON so a script walking that array keeps getting names it can pass back to `profile rm`.
 
-**`server inspect` is the one view of a WHOLE server, and it is laid out as four sections** (`internal/cli/serverinspect.go`):
-`configuration` (target, cwd, the tool allow list, container run line, derive policy, a declared-local endpoint, the trace file,
-env and headers — the allow list on **every** report including "all", because unlike the rest of them the absence of a rule is
-exactly what a missing line cannot express),
-`credentials` (the classification below, the login hints, the per-key vault state), `visibility` (below), and `status` (the
-daemon's live view, then the dated tool cache). A section prints only when it has something to say, so a plain local subprocess
-still fits in a few lines. Two of its lines exist because nothing else prints them: **`spawns` is the exact `docker run` argv the
-spawner would execute** — rendered by `confops.DockerRunLine`, the same translator the spawn guard screens, so "isolation a config
-claims must be delivered" is checkable by reading, and a test compares the printed line against the dialed one — and the cache line
-distinguishes **"no catalog stored" from "0 tools"**, which the old wording could not: only one of the two is a fact about the
-server. Labels sit in a fixed column rather than a `tabwriter`'s, because a detail view breaks its column blocks at every section
-heading and the computed width then drifts between them.
+**The two dangling directions are reported in different places, and both must stay reported**: a client
+bound to a missing profile is flagged per row (`dangling`), while a missing *active* profile fail-closes
+every client that follows it and no row can carry that, so it lives on the listing (`active_dangling`)
+and on the single client `client inspect` is about.
 
-**`visibility` joins the profile and client bindings for one server** (`internal/cli/servervisibility.go`), which is the arithmetic
-behind "everything is healthy and my client still sees no tools". Three states stay distinct because they need different repairs: a
-**disabled** server reaches nobody whatever the profiles say (the global switch outranks them, so that sentence *replaces* the
-client lists), a profile that **excludes** the server is named (a list of the others cannot answer "which profile forgot it"), and a
-binding naming a profile that **does not exist** fail-closes to an empty scope — which from outside looks exactly like deliberate
-exclusion. What an *unbound* client gets is stated on every report rather than only when it changes the answer, because "which of my
-clients is bound" is what the reader does not know. It is computed from the **registry alone**: no client configuration file is
-opened (that is `client inspect`'s deliberate per-client act, with its macOS privacy prompt) and no daemon is required, so the
-answer survives on the machine that is broken. Since the scope chain only ever narrows, what it reports is an upper bound —
-on the HTTP face an agent token's own server allowlist can still take servers away below it.
+**`auth login` enables the server it just authorized**, which is what makes an already-running gateway
+pick the credential up: the vault is not a registry document, so storing a token fires no hot-reload
+event, and `syncServers` would keep the connection anyway because `specEqual` ignores credentials —
+flipping `enabled` is a spec change the differ acts on. It fails open: a failed enable is a warning,
+never a failed login.
 
-**The `AUTH` column reports what is STORED, never whether it works** (`internal/cli/serverauth.go`). This is the line the ban on a
-persisted `needsAuth` draws: "this machine holds an OAuth token for notion" is a local fact readable with every downstream
-unreachable, while "notion will accept it" is a live 401 and belongs to the enable probe and the Health contract. The column says
-`oauth`, `oauth:expiring`, `oauth:expired`, `oauth:login`, `token`, `secret`, `secret:missing`, `header`, `error` or `-`, and no
-value of it may be read as health. It is classified by a **first-match-wins ladder** whose first two rungs are placed rather than
-convenient: a missing secret outranks everything so that the CLI and `ComputeHealth` cannot disagree about the same server, and a
-literal `Authorization` header outranks the stored credential because `attachBearer` leaves an explicit header alone — reporting
-the token behind one would name a credential that is never sent. The last rung does **not** guess: an HTTP endpoint with no
-credential and no hints is `-`, not "probably needs a login". `server inspect` renders the same classification unabbreviated, and
-the footer hints prefer `auth refresh` over `auth login` whenever a refresh token exists — both repair an expiry, only one needs a
-browser.
+**OAuth login hints are configuration, not runtime state.** `server add --oauth-*` writes
+`registry.OAuthHint` through the same `confops.ValidateOAuthHint` as `--stdin`'s `oauth` block (https,
+http only with `--local`, no private addresses, no query/fragment on the issuer per RFC 8414 §2, one
+scope per value per RFC 6749 §3.3), and all three fields are transport-independent, since a stdio
+subprocess may proxy to a remote authorization server. No flags means `nil`, not an empty `"oauth": {}`.
 
-**Reading it is index-first, and that is a cost rule, not an optimization.** One `Chain.List` — the enc-file map plus the keyring
-key registry, both plain files — answers *which* entries exist without touching the OS keychain; only a server that actually has
-`__oauth_state__` costs a value read, and `__http_auth__` is never read at all (its value is the token, and presence is the whole
-question). `server ls` is where every error hint sends people, and doctor's `checkVault` already states the consequence: a command
-that pops a keychain dialog is a command people stop running. Failure direction: **fail-open for the listing, fail-visible for the
-cells** — an unreadable vault still prints every registry fact, but its cells read `error`, never `-`, because "no credential
-needed" is the one answer it must not invent. The column appears only when at least one server has a credential, for the same
-reason `TRACE` appears only when something is being traced.
+**`server test --tools/--schema` reads the live handshake and never touches the cache** — a different
+source from `server inspect --schema`, which reads the gateway's persisted tool cache, written only by an
+actual gateway session and therefore absent under `server add` + `auth login` + `server test`.
 
-**`server add` writes configuration only; `server enable` puts the server into service** (CANONICAL §3). `add` makes no
-connection and leaves the entry **disabled**, so it stays deterministic and safe to run against a downstream that is
-unreachable right now. The connection probe lives in `enable`, where the operator has said they want to use the server — and
-it **reports without vetoing**: the enable always happens, and a server needing a login is enabled and says so (`--no-probe`
-skips the dial). Two callers compose the pair rather than duplicating it: `catalog add` runs both so a curated entry stays one
-command, and `auth login` enables the server it just authorized. That last one is not mere convenience — it is what makes an
-already-running gateway pick the credential up. The vault is not a registry document, so storing a token fires no hot-reload
-event, and `syncServers` would keep the existing connection anyway because `specEqual` does not compare credentials; flipping
-`enabled` is a spec change the differ does act on. It fails open: the credential is already stored, so a failed enable is a
-warning, never a failed login.
+**`daemon status` reports the owner** — `owned by pid N` or `headless` — taken from the ping rather than
+`run/daemon.json`, which names a process an abrupt death may have outlived. Omitting the field for a
+headless hub would read as "this build does not know", which is the state an operator wants to tell apart.
 
-**OAuth login hints are configuration, not runtime state.** `server add --oauth-issuer/--oauth-scope/--oauth-resource-metadata`
-writes all three fields of `registry.OAuthHint`, the same target and the same validation as `--stdin`'s `oauth` block
-(`confops.ValidateOAuthHint`: https (http only with `--local`), no private addresses, an issuer with no query/fragment
-(RFC 8414 §2), and no stuffing two scopes into one scope value (RFC 6749 §3.3)). All three fields are transport-independent (a
-stdio subprocess may also proxy to a remote authorization server), so validation doesn't hang off either transport branch.
-Passing no flags means `nil`, not writing an empty `"oauth": {}`. `needsAuth` never lives here: it is runtime state discovered by
-a live 401.
+**An ownerless start is refused.** `daemon start` requires either the owner handshake (`--owner-pid`,
+plus `--owner-lifeline-fd` on a `--foreground` start, both hidden and never typed) or an explicit
+`--headless`; anything else is `E_DAEMON_UNOWNED` (exit 2). The check cannot be deferred to the daemon:
+"nobody owns me" and "my owner has not claimed me yet" are the same state at different moments, and a
+daemon that guesses is either unstoppable or shuts itself down during an ordinary launch. `daemon
+restart` checks admission **before** it stops anything, and a backgrounded start refuses
+`--owner-lifeline-fd` rather than dropping it, since the launcher execs again and the descriptor would
+never arrive.
 
-**`server test --tools/--schema` renders the definitions from this handshake and never touches the cache.** The `mcp.ToolDef`
-the handshake returns already carries the full `InputSchema`/`Description`, and `--tools` prints it using the compact signature
-from `internal/discovery/toolsig` — the same string the agent sees in `search_tools`, with no second format invented;
-`--schema <tool>` gives the downstream's raw bytes. This reads from a **different source** than `server inspect --schema`: the
-latter reads the gateway's persisted tool cache, and that cache is only written by an actual gateway session, so under a
-`server add` + `auth login` + `server test` workflow it doesn't exist at all. `server test` still doesn't write the cache — it is
-a direct-connection diagnostic with no persistent side effects.
+**A backgrounded start writes the child's stderr to a file rather than a pipe** (the parent exits once
+the child is ready, and a pipe with no reader would SIGPIPE the daemon), and reports a child that died
+before readiness with its real failure rather than a timeout. `daemonAlive` probes with signal 0 where
+**any error reads as false**: stop and status must never signal a pid whose ownership they cannot
+confirm.
 
-**`daemon status` reports the owner, and both answers are spelled out.** `owned by pid N` or `headless`, taken from the
-ping rather than from `run/daemon.json` — that file names a process, and an abrupt death leaves it naming one that no
-longer exists. Omitting the field for a headless hub would have been the cheaper rendering and the wrong one: an absent
-owner reads as "this build does not know", which is exactly the state an operator wants to tell apart from "nobody owns
-it". From a terminal there is no other way to ask whether this hub disappears when somebody quits an application.
+**The pid `stop` signals comes from the ping, never from `run/daemon.json`.** That file names a process
+but does not identify one, and the OS may reuse the number — which is how `daemon stop` came to SIGTERM
+an unrelated process and, with `--force`, its whole group. A successful ping proves both that a daemon is
+there and that `Hello.Pid` is that daemon naming itself over a 0600 peer-credentialed socket, and it
+settles the race where a replacement has bound the socket but not yet rewritten `daemon.json`. **Nothing
+answering means nothing can be verified, so nothing is signalled**, even with `--force`: the deliberate
+cost is that a badly wedged daemon can no longer be stopped from the CLI.
 
-**An ownerless start is refused.** A hub belongs to the desktop application, so `daemon start` requires either the
-owner handshake (`--owner-pid`, plus `--owner-lifeline-fd` on a `--foreground` start — both hidden, both written by the
-application, never typed) or an explicit `--headless`. Anything else fails `E_DAEMON_UNOWNED` (exit 2) and names both
-ways forward. The check cannot be deferred to the daemon: "nobody owns me" and "my owner has not claimed me yet" are the
-same state seen at different moments, and a daemon that guesses is either unstoppable or shuts itself down during an
-ordinary launch. `--headless` is deliberately a flag rather than the meaning of an absent owner, because an operator
-running a hub on a server and a script that forgot the handshake produce identical command lines otherwise; CI and the
-e2e suite go through it, which is the point. `daemon restart` checks admission **before** it stops anything — finding
-out afterwards would leave the machine with the old hub stopped and no new one started. A backgrounded start refuses
-`--owner-lifeline-fd` outright rather than dropping it: the launcher execs again and exits, the descriptor would not
-arrive, and the caller would believe it had armed a watch it never got.
+**Shutdown deletes the run directory's shared paths only while they are still this daemon's.** `Shutdown`
+closes the listener *before* draining and Go unlinks the socket on close, so for up to `ShutdownGrace` the
+run directory looks free: a replacement can bind and write its own `daemon.json`, and the departing
+daemon's cleanup would then unlink a **live** socket, leaving the replacement unreachable and invisible.
+`ownsRunFiles` gates both removes on `daemon.json` still naming this pid, and every doubt answers false,
+because deleting a live socket cannot be undone while a stale file costs one `removeStaleSocket` pass.
+**Every exit goes through that one `cleanup`**, including a data plane that refused to come up;
+`TestHTTPDataPlaneFailureLeavesNoRunFiles` pins it.
 
-**How `daemon start` backgrounds itself.** It forks `<self> daemon start --foreground` into its own session (`setsid`), then polls
-`run/daemon.json` plus ping until ready. The child's raw stderr goes to **a file rather than a pipe**: the parent exits once the
-child is ready, and writing into a pipe with no reader would SIGPIPE the daemon. If the child exits before becoming ready, what is
-reported is its real failure plus a 4 KiB stderr tail rather than a bare timeout. With a live daemon already running it returns
-`AlreadyRunning` idempotently. `daemon stop --force` kills the process group (the daemon is the session leader), with a plain pid
-kill as the fallback for foreground starts. `daemonAlive` probes with signal 0, and **any error (ESRCH, EPERM, …) reads as
-false** — stop/status must never signal a pid whose ownership it cannot confirm.
+**`doctor` only reads, never writes**, and deliberately **does not call `registry.Open`**: opening the
+store would create the directory, its documents and a lock file, turning a diagnostic into a writer that
+incidentally "fixes" what it reports on. `--fix` does only safe self-healing; destructive repairs are
+**suggested, never executed**. A launcher cold cache gets a "still installing" note rather than being
+misreported as broken — the report's most common false positive. Only `fail` sets the exit code.
 
-**Shutdown deletes the run directory's shared paths only while they are still this daemon's.** `Shutdown` closes the
-listener *before* it drains, and Go's unix listener unlinks the socket on close — so for up to `ShutdownGrace` the run
-directory looks free, a replacement can bind and write its own `daemon.json`, and the departing daemon's cleanup would then
-unlink a **live** control socket and delete a readiness file it never wrote. The replacement survives that with its registry
-watch and refresher still running, unreachable and invisible, and the next `daemon start` binds a fresh socket beside it.
-`ownsRunFiles` gates both removes on `daemon.json` still naming this pid, and every doubt — unreadable, unparsable, missing,
-another pid — answers false and leaves the paths alone: deleting a live daemon's socket cannot be undone, while a stale file
-costs the next start one `removeStaleSocket` pass. **Every exit goes through that one `cleanup`** — the clean stop, the serve
-failure, and a data plane that refused to come up. The last of those used to carry its own copy of the teardown, and the copy
-removed both paths with no ownership check at all; `TestHTTPDataPlaneFailureLeavesNoRunFiles` pins that the shared one runs
-there.
+**`registry:quarantined` is the only check reporting "data was set aside", and it has to exist
+separately**, because quarantine writes an **empty new document** after which `registry:servers` reports
+"readable" — true, and at the moment of "all my servers are gone" the worst thing to read. The
+quarantine-time warning is printed once by the command that triggered it; the person running doctor
+afterward is why this check exists.
 
-**The pid `stop` signals comes from the ping, never from `run/daemon.json`.** That file names a process, it does not identify
-one: an abrupt death leaves it behind, and the OS is then free to reuse the number. Reading a pid out of it and signalling that
-pid is how `daemon stop` came to SIGTERM an unrelated process — and, with `--force`, that process's whole group. A successful
-ping proves two things at once: a daemon is there, and `Hello.Pid` is that daemon naming itself over a socket that is 0600 with
-a peer-credential check. It also settles the race where a replacement has bound the socket but not yet rewritten `daemon.json`.
-**Nothing answering means nothing can be verified, so nothing is signalled** — even with `--force`. When the run file still
-names a live pid, `stop` reports why it refused and names both the pid and the file rather than acting on a guess. The cost is
-deliberate and worth stating: a daemon wedged badly enough to stop serving its control socket can no longer be stopped through
-the CLI, and the operator is told to stop it themselves.
+**`session ls -f` polls rather than using SSE**: the list is small, and polling won't quietly hang on a
+half-open stream.
 
-**`doctor` only reads, never writes.** It deliberately **does not call `registry.Open`**: opening the store would create the
-directory, five documents, and a lock file, which would turn a diagnostic tool into a writer and incidentally "fix" the state it is
-reporting on. All checks read raw files. `--fix` performs only safe self-healing (recreating missing directories, repointing stale
-client entries), and destructive repairs are **suggested, never executed**. A launcher cold cache (npx/uvx downloading a package
-for the first time) gets its own "still installing" note rather than being misreported as a broken server — the most common false
-positive in the whole report. Only `fail` affects the exit code; `warn` is informational.
+**Registry writes go direct and offline** through `registry.Store.Update`. `server tool ls` reads the
+catalog through `internal/router` + `internal/discovery` **with the gateway's own `search_tools` ranker**
+and merges `scope.ServerToolsLayer`, so the listing screens through `pipeline.ScopeAllows` exactly as a
+live call does rather than re-deciding visibility. `profile tool ls` stacks `scope.PinnedProfileLayer` on
+top (fail-closed on a name that does not resolve) and **attributes the difference between the two merges**
+to the layer that closed it, so the blame comes from the same merge as the verdict; only one distinction
+is read off the profile document — server-not-included versus selector-excludes — because those two need
+different repair commands. `inspect` is the cross-layer exception: one implementation, narrowed
+afterwards for the profile altitude.
 
-**`registry:quarantined` is the only check reporting "data was set aside", and it has to exist separately.** When the registry
-quarantines an unreadable document, it renames the corrupt file and writes an **empty new document** in its place — after which
-`registry:servers` reports "readable". That statement is entirely true, and at the moment of "all my servers are gone" it is
-precisely the worst thing to read. The warning at quarantine time is printed once by the command that triggered it; the person
-running doctor **afterward** to figure out where their config went is the reason this check exists. It looks for `*.unreadable-*`
-files and points at `backups/` — reporting bad news without a next step is the same as not reporting it. It is completely silent
-when nothing has been set aside; the warning persists until the operator deals with the file, which is exactly what makes it
-actionable rather than long-term noise.
-
-**`session ls -f` polls rather than using SSE**: the list is small, and polling won't quietly hang on a half-open stream the way a
-subscription can.
-
-**Registry writes go direct and offline.** `registry.Store.Update` brings its own cross-process `.lock` plus atomic writes, so the
-offline path and a future daemon-mediated path won't lose each other's updates. `server tool ls` reads the catalog through
-`internal/router` + `internal/discovery`, **using the same ranker as the gateway's `search_tools`**, avoiding two rankings —
-and applies the global allow list by merging `scope.ServerToolsLayer`, so the listing screens through
-`pipeline.ScopeAllows` exactly as a live call does rather than re-deciding visibility for itself. `profile tool ls` stacks
-`scope.PinnedProfileLayer` on top of that (fail-closed on a name that does not resolve, like every other reader of it) and
-**attributes the difference between the two merges** to the layer that closed it, so which layer blocked a tool is derived from
-the same merge as the verdict. Only one distinction is read off the profile document — server-not-included versus
-selector-excludes — and only for tools the merge has already dropped, because those two need different repair commands and no
-merge result can tell them apart.
-
-**`confops.go` is the bridge to `internal/confops`**: it translates confops' Kind + stable machine code into the
-CLI's own `*Error`, which is how the frozen exit code table and `--json` failure envelope stayed **word for word
-identical** after the rules moved out of this package. The CLI handles only flag parsing, rendering, and exit
-codes, and owns no rules.
-
-**`ConnectSnippet` is the single seam between preview and write** in the `client` group, so `client connect`
-cannot show the user one thing and write another. The entry it produces carries the client identity and
-nothing else — `connect --client <id>`. A profile is **never** written into the client's own MCP config
-file: that would be a second source of truth agenthub cannot edit, and switching profiles would then mean
-rewriting a file the client owns and restarting it, which is exactly the hot reload this design refuses to
-give up. The binding lives in `clients.json`, so `client bind` takes effect on sessions that are already
-running. `setsid_unix.go` detaches the gateway from the caller's process group specifically to prevent
+**`ConnectSnippet` is the single seam between preview and write**, so `client connect` cannot show one
+thing and write another. A profile is **never** written into the client's own MCP config file: that would
+be a second source of truth agenthub cannot edit, and switching profiles would mean rewriting a file the
+client owns and restarting it. The binding lives in `clients.json`, so `client bind` takes effect on
+running sessions. `setsid_unix.go` detaches the gateway from the caller's process group to prevent
 SIGTTIN/SIGTTOU.
 
-**The help page is grouped by task phase, and a release build shows a subset.** The groups are Setup
-(`server`, `auth`, `secret`, `catalog` — `server add --url ...` is the general answer, so it leads, and the
-curated catalog trails because leading with it teaches a path that ends in "not listed" for most servers), Wire up
-(`profile`, `client` — a profile says what a surface *contains*, `client bind` says who gets it,
-so the two halves of one question sit together), Daemon (`daemon`, `session`, `token`), Manage
-(everything else), Diagnose (`doctor`, alone), Observe (`audit`, `events`, `logs`), and the machine
-entry point `connect`.
+**The help page is grouped by task phase** — Setup, Wire up, Daemon, Manage, Diagnose, Observe, plus the
+machine entry point `connect` — and `Options.ReducedHelp` (release builds only) withholds **Daemon and
+Manage**, narrowing what the binary *teaches* while every withheld command stays registered and runnable.
+Two rules decide membership: **the withheld half is split on one testable question, does this command
+need a running daemon** (which is why `events` left Daemon when it stopped subscribing to SSE, and why
+the fallback group is named for being the remainder rather than given a theme its members break); and **a
+command a shipped page recommends must be a command that page teaches**, learned three times over from
+`secret`, `doctor` and the three record readers, each once withheld from a page that recommended or
+presupposed it.
 
-**The back half is split on one testable question — does this command need a running daemon?** Every
-member of Daemon is inert without one: `session` says so in its own help text, and `token`
-mints credentials for the daemon's HTTP data plane, so with no daemon it has no subject. Grouping by that
-shared prerequisite answers "is the daemon up?" once for the section instead of once per command, and
-`daemon` leads so the answer is the first thing on offer. Manage is named for what it honestly is — the
-remainder, usable against local state with nothing started. This replaced a thematic Govern/Operate split
-whose themes did not survive contact with their own membership: `token` is setup rather than
-governance, and `skill` is not an operation. A heading that mis-sorts its own members teaches the wrong
-model of the tool, which is why the fallback group is not given a theme it would then break. Manage is now that
-remainder and nothing else — a config editor and a skill materializer — since the three record readers it used to hold
-became Observe.
+**`logs`'s filters are the mandatory `logx` field names (`--client`, `--server`) rather than free text**,
+which is what makes a merged stream joinable at all, and they are **fail-closed** like
+`--since`/`--level`: a daemon record carries no `server`, so `--server x` excludes it rather than
+admitting a record it cannot classify. Unparseable lines are dropped rather than counted — with no
+timestamp there is no truthful position for one in a time-ordered stream. The merge is the point: the
+daemon never dials a downstream, so every circuit transition, health flip, respawn and connection close
+is observed by a **gateway**, and before this reader existed that half was written to files nothing in
+the tree could open.
 
-**Observe is visible in a shipped build, for the reason Diagnose is.** `audit`, `events` and `logs` were in Manage, so a
-release recorded every call a client made and every state change a server went through, and then withheld all three
-readers of that record. `doctor` answers "is the wiring right"; nothing on a shipped page answered "what did the client
-actually call, and what did the server do afterwards" — the questions that arrive once the wiring *is* right and the
-answer still came back wrong. A ledger nothing on the help page can open reads as no ledger at all, which is the
-`secret` fault a third time. It is a group rather than three more lines under Diagnose because these are not only
-failure tools: `audit tail` is how an operator reads what a client has been doing on a working installation. It sits
-*after* Diagnose in triage order — `doctor` decides in one command, these three ask the reader to know what they are
-looking for — and `audit` leads because the call is what a user came to ask about, `events` then says what the server
-was doing at the time, and `logs` carries the prose around both. The membership is one line: each is a projection of a
-file on disk and none needs a daemon, which is also why none of them can sit under Daemon. `events` DID sit there, while
-it subscribed to the SSE stream; it now reads the event log, which a stdio gateway writes with no daemon in the picture,
-so the one testable question that split is made on answers differently.
-
-**`logs` is the third log reader, and the three do not overlap.** `daemon logs` reads one file for one process;
-`server logs` renders one downstream connection's JSON-RPC frames and is off unless tracing was switched on for that
-server; `logs` merges `daemon.log` with every `gateway-<client>.log` into one time-ordered stream. The merge is the
-feature. `internal/ctlapi/gatewaystate.go` establishes that the daemon never dials a downstream, so every circuit
-transition, health flip, respawn and connection close is observed and recorded by a **gateway** — and before this reader
-existed, that half was written to files nothing in the tree could open. Filters are the mandatory `logx` field names
-(`--client`, `--server`) rather than free text, which is what makes a stream joinable in the first place, and they are
-**fail-closed** like `--since`/`--level`: a daemon record carries no `server`, so `--server x` excludes it instead of
-admitting a record it cannot classify. Unparseable lines are dropped rather than counted as `server logs` counts them —
-with no timestamp there is no position in a time-ordered stream where showing one would be truthful.
+**`events` validates its selectors against `internal/eventlog`**, and an unknown scope or kind is a
+**usage error, not an empty result**: the vocabulary is closed precisely so a caller can be told it got a
+name wrong. `--follow` tails the file rather than holding a subscription, so it survives a daemon restart.
 
 **Current assembly status — the two byte-offset followers can re-print a record.** `readLogBatch`
-(`internal/cli/logs.go`) and `followServerLogs` (`internal/cli/serverlogs.go`) both take the file size from a `stat`
-*before* reading, then read from the old offset to EOF and store that pre-read size as the new offset. Anything a writer
-appends between the `stat` and the reader reaching EOF is therefore printed on this tick and again on the next, because
-the stored offset sits behind what was actually consumed. The window is one poll's read of a file several processes
-append to, so it is narrow rather than theoretical. The fix is to advance the offset by what the read consumed rather
-than by the earlier `stat`; it is left as a note because a tidy pass does not change behaviour, and because the
-duplicate is exactly the failure `followEvents` documents itself as avoiding — a repeated record in a watched stream
-reads as the state having changed twice. Established by reading both functions, not by a test: reproducing it needs a
-write interleaved inside the read, which nothing in the suite can currently schedule.
+(`internal/cli/logs.go`) and `followServerLogs` (`internal/cli/serverlogs.go`) both take the file size
+from a `stat` *before* reading, then read from the old offset to EOF and store that pre-read size as the
+new offset. Anything a writer appends between the `stat` and the reader reaching EOF is printed on this
+tick and again on the next, because the stored offset sits behind what was actually consumed. The window
+is one poll's read of a file several processes append to, so it is narrow rather than theoretical. The
+fix is to advance the offset by what the read consumed; it is left as a note because a tidy pass does not
+change behaviour, and because the duplicate is exactly the failure `followEvents` documents itself as
+avoiding — a repeated record in a watched stream reads as the state having changed twice. Established by
+reading both functions, not by a test: reproducing it needs a write interleaved inside the read, which
+nothing in the suite can currently schedule.
 
-`skill` is deliberately not in Wire up: materializing skill packages is a separate job from giving a
-client MCP tools, and a shipped build's help page is a route recommendation — a third entry beside
-`profile` and `client` reads as a third required step. `secret`, by contrast, **is** in Setup, directly
-after `auth`: the two answer one question — how this server proves who we are — for the servers that hand
-out their own credential and the ones that take a key you already hold. It was withheld once, on the
-reasoning that credentials are handled for the operator anyway; they are not. `secret set` is the only
-command that ever reads a credential, and `catalog show` already prints "store it with 'agenthub secret
-set …'" for every entry needing one, so a release was recommending a command its own help page withheld.
-The path left when it is hidden is `--env KEY=<literal>`, which writes the key into the registry — the one
-thing the registry must never hold.
-`Options.ReducedHelp` (set for release builds only) withholds **Daemon and Manage**. Every withheld
-command stays registered and stays runnable: this narrows what the binary *teaches*, never what it can do.
-Withholding `profile` — which the retired Scope group used to do — left a shipped build able to connect a
-client while giving it no vocabulary for what that client would then see.
-
-**Diagnose exists so a shipped build can name the user's next move when a step fails.** `doctor` was in
-Manage, which meant a release taught a linear path — register a server, authorize it, build a profile,
-bind a client — and withheld the one command that says which step of it broke. That is the `secret` fault
-read from the other end, and worse than a dangling recommendation: the everyday path has failure modes
-(no handshake, a client config pointing at a stale binary, a cold launcher cache) and hiding `doctor`
-left the response to all of them unspoken. It is a group of one rather than a line in Wire up because it
-answers a different kind of question from everything around it — Setup and Wire up are steps to take,
-Diagnose is what to run when a step did not take, and filing it under either would read as a third
-required step in a path that has two. A second diagnostic belongs here only if it clears the same bar:
-a user following the everyday path is stuck without it.
-
-**The browser is launched with detached streams AND a detached environment** (`browser.go`). The stream
-half is about output: a handler that chatters on stdout would corrupt the NDJSON progress stream. The
-environment half is about credentials — `auth login` runs holding `AGENTHUB_SECRET_KEY`, every
-`AGENTHUB_SECRET_*` value and any bare secret variable the operator opted in, and the browser is the one
-child this process starts whose descendants it does not control. `browserEnvNames` is an **allow list**
-for the reason AGENTS.md gives for tool selectors: a bare opted-in secret is named by the operator, so no
-deny list can enumerate what appears tomorrow. Its failure direction is a handler that misbehaves, never
-a token in a browser's environment, and `browserEnv` never returns nil because os/exec reads a nil `Env`
-as "inherit everything" — the exact failure being closed. The URL check is the other half of the same
-door: a non-`http(s)` scheme is refused outright, because the URL came from an authorization-server
+**The browser is launched with detached streams AND a detached environment** (`browser.go`): streams
+because a chatty handler on stdout would corrupt the NDJSON progress stream, environment because
+`auth login` runs holding `AGENTHUB_SECRET_KEY`, every `AGENTHUB_SECRET_*` value and any bare secret the
+operator opted in — and the browser is the one child whose descendants this process does not control.
+`browserEnvNames` is an **allow list** for the reason AGENTS.md gives for tool selectors, and
+`browserEnv` never returns nil, because os/exec reads a nil `Env` as "inherit everything" — the exact
+failure being closed. A non-`http(s)` URL is refused outright, since it came from an authorization-server
 metadata document.
 
 ---
 
 ## internal/cli/output
 
-**Responsibility in one sentence**: the CLI's only rendering layer — human-readable output and the `--json` envelope are
-fed by **the same data value**, so the two representations cannot drift semantically.
+**Responsibility**: the CLI's only rendering layer — human output and the `--json` envelope are fed by
+**the same data value**, so the two cannot drift semantically. `Data` has one method,
+`Human(w io.Writer) error`, and `Printer.Emit` marshals that same value into the envelope's `data` field
+in JSON mode: **there is no second code path** by which the two modes could render different content.
 
-### Key types and entry points
+**In JSON mode the whole envelope is one line on stdout**, so scripts parse line by line; in human mode
+warnings and errors go to stderr, leaving stdout for tables and snippets. **The envelope shape is
+frozen**: success always has `data` and `warnings` (**never null**), failure always has `error` with at
+least `code` and `message`.
 
-The `Data` interface has one method, `Human(w io.Writer) error`. `Printer.Emit(data, warnings...)` is the whole thing: in
-JSON mode it marshals that value verbatim into the envelope's `data` field, and in human mode it calls its `Human`.
-**There is no second code path** by which the two modes could render different content — that is how "human output and
-machine output share one source" is implemented.
+**Four commands stream progress**, and the list decides how a script must parse them: `auth login`,
+`server test`, `server enable` (the post-enable probe, unless `--no-probe`) and `doctor`. A consumer that
+treats any of these as a single JSON object instead of NDJSON fails on the first progress line. In JSON
+mode each step is a compact object on its own stdout line and **the final envelope is always last**; in
+human mode progress goes to **stderr**, because progress is not a result and leaving stdout for the result
+is what makes `agenthub auth status | jq` behave the same in both modes. `ProgressEvent.MarshalJSON` drops
+any Fields key named `event`: the event name has one source.
 
-`ProgressEvent` + `Printer.Progress` handle intermediate steps for long commands. **Four of them stream**, and the
-list is worth keeping current because it decides how a script must parse the output: `auth login`, `server test`,
-`server enable` (the post-enable probe, unless `--no-probe`), and `doctor`. A consumer that treats any of these
-as a single JSON object instead of NDJSON fails on the first progress line.
-`Fail(ErrorDetail)` renders the failure envelope.
-
-### Invariants and failure directions
-
-**In JSON mode the whole envelope is written as one line to primary output (stdout)**, so scripts can parse line by line.
-In human mode, warnings and errors go to secondary output (stderr), leaving stdout for tables and code snippets only.
-
-**The envelope shape is frozen**: a success envelope always has the two keys `data` and `warnings` (the warnings array is
-**never null**), and a failure envelope always has `error`, which always has at least `code` and `message`.
-
-**Both progress rendering rules are deliberate**: in JSON mode each step is a compact object on its own line
-(`{"event":"awaiting_browser",…}`) written to stdout, so scripts see progress before the final envelope, and **the final
-envelope is always the last line**; in human mode progress goes to **stderr** — progress is not a result, and leaving stdout
-for the result itself is what makes `agenthub auth status | jq` and shell pipelines behave the same across both modes.
-`ProgressEvent.MarshalJSON` drops any Fields key named `event`: the event name has exactly one source.
-
-**Neither `Progress` nor `Fail` returns an error.** A progress line that can't be written must not stop the command from
-finishing and reporting its real result; and when reporting a failure itself fails, there is no better remedy than
-best-effort.
+**Neither `Progress` nor `Fail` returns an error.** A progress line that cannot be written must not stop
+the command from reporting its real result, and when reporting a failure itself fails there is no better
+remedy than best-effort.
 
 ---
 
 ## cmd/agenthub
 
-**Responsibility in one sentence**: the one required binary — the CLI management commands, the stdio gateway (`connect`),
-and the daemon are all subcommands of it.
-
-`main.go` is deliberately thin — it hands `os.Args[1:]` and the three standard streams to `cli.Main`. **Everything
-testable lives in `internal/cli`**, so the command tree can be driven hermetically in tests.
+**Responsibility**: the one required binary — the CLI, the stdio gateway (`connect`) and the daemon are
+all subcommands of it. `main.go` is deliberately thin, so **everything testable lives in `internal/cli`**
+and the command tree can be driven hermetically.
 
 ---
 
 ## cmd/agenthub-gui
 
-**Responsibility in one sentence**: the optional Wails3 desktop GUI — it must exist in a way that guarantees **its absence
-doesn't matter**.
-
-### Key types and entry points
-
-`services.Hub` is the bound service body: every method the frontend can call, plus the SSE→Wails event bridge.
-`services.HubService` is a thin shell around Hub (Wails binding promotes its methods), and `MarshalError` converts Go errors
-into the rejection cause the frontend receives. `services/window.go` holds the window-local preferences that decide what the
-close button does — in memory here, durably in the frontend's `localStorage`, because this package cannot touch the data
-directory and the registry has no opinion about one window on one machine ([gui.md](gui.md) §1.2). `healthgen` generates the frontend's TypeScript constants from the `api`
-package's source.
+**Responsibility**: the optional Wails3 desktop GUI — it must exist in a way that guarantees **its absence
+doesn't matter**. `services.Hub` is the bound service body plus the SSE→Wails event bridge, and
+`services/window.go` holds window-local preferences in memory here and durably in the frontend's
+`localStorage`, because this package cannot touch the data directory and the registry has no opinion about
+one window on one machine ([gui.md](gui.md) §1.2).
 
 ### Invariants and failure directions
 
-**Compile-time constraint: nothing under `cmd/agenthub-gui` — including `cmd/agenthub-gui/services` and
-`cmd/agenthub-gui/internal/healthgen` — ever imports the top-level `internal/*`**,
-and may only talk to the daemon through the public `api` package, exactly like any third-party integration. It also never
-reads or writes the data directory and never speaks MCP. The corollary is that **every single thing the GUI can do has a
-control plane endpoint, and is therefore something the CLI can do too** — so "the GUI is optional" is a compile-time property
-rather than a verbal promise. This is enforced by depguard and proven by two failing cases in `internal/depguardtest` (one
-for api, one for gui).
+**Compile-time constraint: nothing under `cmd/agenthub-gui` ever imports the top-level `internal/*`**, and
+it may only reach the daemon through the public `api` package, exactly like any third-party integration;
+it also never touches the data directory and never speaks MCP. The corollary is that **everything the GUI
+can do has a control plane endpoint, and is therefore something the CLI can do too** — "the GUI is
+optional" as a compile-time property rather than a verbal promise. Enforced by depguard, proven by two
+failing cases in `internal/depguardtest`.
 
-**Five bound methods have no control-plane call behind them**: `TrayAvailable`, `OwnsDaemon`, `SetWindowPreferences`,
-`HideWindow` and `QuitApplication`. They are not a hole in "the GUI is optional" — a CLI is not missing anything by being
-unable to hide a window — and none can reach configuration. Tray availability is display state on purpose: everything bound
-is settable from the webview, so the close path reads the assembly's own flag instead. A webview that could set it would be
-able to hide the window into a status area that is not there, leaving a process with no reachable surface.
+**Five bound methods have no control-plane call behind them**: `TrayAvailable`, `OwnsDaemon`,
+`SetWindowPreferences`, `HideWindow`, `QuitApplication`. They are not a hole in "the GUI is optional" — a
+CLI is not missing anything by being unable to hide a window — and none reaches configuration. Tray
+availability is display state on purpose: a webview that could set it could hide the window into a status
+area that is not there, leaving a process with no reachable surface.
 
-**Build tag isolation.** The default build (`go build ./...`, `golangci-lint run`) gets the placeholder program in `main.go`,
-which prints "this binary has no GUI, build with `make gui`" and exits 1. The real application sits behind
-`//go:build wails` in `gui_main.go`, because a webview build needs GTK/WebKit dev packages that CI runners don't have. The
-same cut is made inside the services package: **the entire service body lives in `hub.go` with no build tag**, so it still
-compiles, vets, and unit-tests on CI machines with no graphics libraries; only about 50 lines of Wails wiring sit behind the
-tag in `service_wails.go`. The system tray makes the same cut a third time: `tray.go` and `trayicon.go` decide and draw with
-no tag, `tray_wails.go` renders and routes behind one. The day Wails3 alpha stops building, only those three files break,
-leaving the page logic and the api layer untouched.
+**Build tag isolation.** The default build gets the placeholder `main.go`; the real application sits behind
+`//go:build wails`, because a webview build needs GTK/WebKit packages CI runners lack. The same cut is made
+inside services — **the whole service body is in `hub.go` with no build tag**, so it compiles, vets and
+unit-tests without graphics libraries — and a third time for the tray, so the day Wails3 alpha stops
+building only the tagged files break. Those files still have CI coverage in the separate `gui` job, which
+runs on macOS because on Linux `-tags wails` fails at the cgo preamble at **type-check time**, not link
+time, so a bare ubuntu runner cannot even get through `go vet`. That job is independent of `make ci`: the
+GUI must not become a prerequisite of the default build.
 
-**Those tagged files do have CI coverage, just in a different job.** The `gui` job in `.github/workflows/ci.yml` (a macOS
-runner) runs `make gui-frontend-ci` (`npm ci` + `tsc --noEmit` + vite), `make gui-go` (a real `-tags wails` compile), and
-`go vet -tags wails ./cmd/agenthub-gui/...`. It lives on macOS because on Linux `-tags wails` fails at the cgo preamble
-(`#cgo pkg-config: gtk4 webkitgtk-6.0`) — that is **type-check time**, not link time, so a bare ubuntu runner can't even get
-through `go vet`; the signal you'd buy by installing GTK/WebKit on every CI run, the macOS runner gives for free with its
-bundled SDK. This job is independent of `make ci`: the GUI must not become a prerequisite of the default build.
+**The GUI must be able to open when the daemon is down.** `ServiceStartup` returns nil even when it cannot
+reach the daemon, because returning non-nil aborts application startup and a GUI that refuses to open when
+the daemon died deprives the user of the interface for diagnosing it. Every data call then fails with
+`ErrOffline` until `Connect` succeeds, and **offline must fail loudly**: an empty server list and an
+unreachable daemon must never look the same.
 
-**The GUI must be able to open when the daemon is down.** `ServiceStartup` returns nil even when it can't reach the daemon —
-returning non-nil would abort application startup, and a GUI that refuses to open because the daemon died deprives the user of
-the interface for diagnosing it. Failures are reported through daemon status events, and every data call fails with
-`ErrOffline` until `Connect` succeeds.
+**Only `Connect` starts the daemon.** Every other method goes through `use()`, which **dials without
+starting**, so a repeatedly crashing daemon is not resurrected on every click. **Only transport failures
+discard the connection**: `dropClient` leaves the client alone for an `*api.Error`, which means the daemon
+answered and merely said no.
 
-**Offline must fail loudly and never quietly return empty.** `ErrOffline` is its own outcome: an empty server list and an
-unreachable daemon must never look the same in the UI.
+**The ownership claim is a process handle, never a memory of having started something.** `stop` ends the
+hub only when `h.proc` — the `api.Supervised` this process is running — is non-nil; a hub that merely
+answers the socket is used and never signalled, because taking it down would end somebody else's session.
+It replaced a bool written from "did my dial start one", a fact about a past call rather than about the hub
+in front of us: it outlived the daemon it described and could not tell "I started this" from "somebody
+else did, concurrently". A **transport failure no longer disowns anything** either — the connection is
+gone, the process is not — and what ends the claim is the process ending, which `watchProcess` observes
+directly and which carries the exit status into the offline banner.
 
-**Only `Connect` starts the daemon.** Every other method goes through `use()`, which **dials without starting**, so a
-repeatedly crashing daemon doesn't get resurrected on every click.
+**Health is rendered, never derived.** `ServerHealth` filters `ListServers` rather than calling a
+per-server endpoint: the list payload and the `servers` SSE payload are the same bytes, so Health has one
+source. **The event bridge doesn't retry the inner layer**, since the api client brings its own
+`Last-Event-ID` reconnection, and `EventPrefix = "agenthub:"` namespaces every event sent to the webview.
 
-**Only transport failures discard the connection.** `dropClient` first checks whether the error is an `*api.Error`: a control
-plane error (a well-formed error envelope) means the daemon answered and merely said no — the connection is left alone; only a
-transport-level failure clears the client and makes the next call re-dial.
-
-**The ownership claim is a process handle, never a memory of having started something.** `stop` ends the hub only when
-`h.proc` — the `api.Supervised` this process is running — is non-nil; a hub that merely answers the socket is used and never
-signalled, because taking it down would end somebody else's session to tidy up after ours. It replaced a bool written from
-"did my dial start one", which was a fact about a past call rather than about the hub in front of us: it outlived the daemon
-it described, and the launcher it was read from could not tell "I started this" from "somebody else did, concurrently". A
-**transport failure no longer disowns anything** either — the connection is gone, the process is not, and a hub that is
-briefly unreachable is still ours to stop and still ours to restart. What ends the claim is the process ending, which
-`watchProcess` observes directly, and which also carries the exit status into the offline banner.
-
-**Health is rendered, never derived.** `ServerHealth` is a filter over the result of `ListServers` rather than a call to a
-per-server endpoint: the list payload and the `servers` SSE payload are the same bytes, so Health has exactly one source and
-no second endpoint that could drift.
-
-**The event bridge doesn't retry the inner layer.** The api client brings its own `Last-Event-ID` reconnection, so `pump`
-only needs to retry the initial `Subscribe`. `EventPrefix = "agenthub:"` namespaces every event sent to the webview, so page
-code cannot collide with Wails' own event names.
-
-**healthgen reads the `api` package's source with go/ast rather than importing it**: a new constant on the Go side shows up here
-automatically, and a golden test fails when the checked-in TypeScript goes stale. Importing could only prove the generator is
-parroting itself. The failure direction is fail-closed: a group receiving zero constants, encountering a non-string constant, or
-a file that won't parse are all errors — silently generating a smaller set would produce a frontend that renders unknown states
-as blanks. File order is by name and declarations follow source order, because "determinism is a contract". File writing is
-atomic (temp file in the same directory + rename).
-
-`frontend/src/generated/health.ts` is **checked into the repository** and guarded by a golden test, so a drifted
-generator fails CI rather than shipping a frontend that silently renders unknown states as blanks.
+**healthgen reads the `api` package's source with go/ast rather than importing it**, so a new Go constant
+shows up automatically and a golden test fails when the checked-in TypeScript
+(`frontend/src/generated/health.ts`) goes stale; importing could only prove the generator parrots itself.
+Fail-closed: a group with zero constants, a non-string constant, or a file that won't parse are all errors,
+because silently generating a smaller set produces a frontend that renders unknown states as blanks.
 
 ---
 
 ## internal/testutil/fakemcp
 
-**Responsibility in one sentence**: a programmable fake downstream MCP server — every concurrency and security invariant in
-downstream / router / pipeline / gateway was tested against it, which makes it the foundation of the whole test suite.
+**Responsibility**: a programmable fake downstream MCP server — every concurrency and security invariant in
+downstream / router / pipeline / gateway was tested against it.
 
-### Key types and entry points
-
-`Script` is a complete behavior specification and is **pure data**: `json.Marshal`/`Unmarshal` round-trip exactly, so the same
-fault script can be passed to a subprocess through one environment variable. It has three layers: handshake configuration
-(`ServerInfo`/`ProtocolVersion`/`Capabilities`), the tool set served by the default `tools/list`+`tools/call`, and an ordered
-set of `Rule`s. Each inbound message is matched against the rules by method name (optionally further by Nth invocation), **the
-first match wins**, and a matched rule's `Actions` replace the default handling.
-
-Three ways to drive it: `Serve(ctx, in, out, errOut, script)` is the interpreter itself; `Connect(script)` is the in-process
-driver (a pair of OS pipes rather than `io.Pipe` — kernel buffering preserves the non-blocking best-effort writes of a real
-transport, such as a `notifications/cancelled` the server deliberately emits while sleeping); and `MaybeServe()` +
-`(*Script).StdioConfig()` is the subprocess driver, re-execing the current test binary. There is also a standalone
-`internal/testutil/fakemcp/cmd/fakemcp` binary for spawn tests that want a dedicated executable rather than the
-TestMain re-entry pattern.
+`Script` is **pure data** (`json.Marshal`/`Unmarshal` round-trip exactly), so the same fault script can
+reach a subprocess through one environment variable. Inbound messages match an ordered set of `Rule`s by
+method name, optionally by Nth invocation, **first match wins**, and a matched rule's `Actions` replace the
+default handling. Three drivers: `Serve` (the interpreter), `Connect` (in-process, using OS pipes rather
+than `io.Pipe`, because kernel buffering preserves the non-blocking best-effort writes of a real
+transport), and `MaybeServe()` + `StdioConfig()` (subprocess, re-execing the test binary); plus a
+standalone `internal/testutil/fakemcp/cmd/fakemcp` binary for spawn tests wanting a dedicated executable.
 
 ### Invariants and failure directions
 
-**Fault injection primitives** (`ActionKind`): slow responses, never responding, writing half a frame, malformed frames, giant
-frames beyond 16 MiB, crashing mid-handshake, `list_changed` storms, protocol violations (mismatched response ids, a notification
-in place of a response), and stderr noise. Version mismatch is scripted through `Script.ProtocolVersion`. `ActHalfFrame`
-**suppresses all subsequent scripted writes** after writing the first half of a frame (the stream is already poisoned mid-frame).
+**Fault injection primitives** (`ActionKind`): slow responses, never responding, half frames, malformed
+frames, frames beyond 16 MiB, crashing mid-handshake, `list_changed` storms, protocol violations, stderr
+noise; version mismatch comes from `Script.ProtocolVersion`. `ActHalfFrame` **suppresses all subsequent
+scripted writes**, because the stream is already poisoned mid-frame.
 
-**The interpreter executes strictly in order**: one message is fully handled (including its sleeps and storms) before the next
-frame is read, so scripted writes never interleave inside a frame.
+**The interpreter executes strictly in order**: one message is fully handled, sleeps and storms included,
+before the next frame is read, so scripted writes never interleave inside a frame.
 
-**It never panics on hostile input**: malformed inbound frames are ignored. `Serve` returns nil on client EOF or a scripted crash,
-returns `ctx.Err()` when the ctx is cancelled during a sleep/storm, and returns a non-nil error only for interpreter misuse
-(unknown action kind, an oversized scripted result) and an unreadable input stream.
+**It never panics on hostile input**: malformed inbound frames are ignored, `Serve` returns nil on client
+EOF or a scripted crash, `ctx.Err()` when cancelled mid-sleep, and a non-nil error only for interpreter
+misuse or an unreadable input stream.
 
-**The same script means the same thing under both drivers.** The transport returned by `Connect` deliberately mirrors the semantics
-of the internal stdio transport (which has no exported in-memory constructor): dispatching pending calls by id, `ClassUnavailable`
-on stream failure while preserving the mcp sentinel for `errors.Is`, `ClassFatal` for JSON-RPC error responses and oversized
-outbound frames, best-effort cancellation forwarding, inline peer request replies, `list_changed` callbacks, a 4 KiB stderr tail,
-and an idempotent Close. `test/e2e/httpserver_test.go` even wraps the same interpreter in an MCP Streamable HTTP frontend — fault
-scripts written for stdio mean exactly the same thing there, and there is no second fake server to maintain.
+**The same script means the same thing under both drivers.** `Connect`'s transport deliberately mirrors the
+internal stdio transport (which has no exported in-memory constructor) down to dispatch by id,
+`ClassUnavailable` on stream failure while preserving the mcp sentinel for `errors.Is`, `ClassFatal` for
+JSON-RPC errors and oversized outbound frames, best-effort cancellation forwarding, inline peer request
+replies, a 4 KiB stderr tail and an idempotent Close. `test/e2e/httpserver_test.go` wraps the same
+interpreter in a Streamable HTTP frontend, so a stdio fault script means the same thing there and there is
+no second fake server to maintain.
 
-**Like all non-`internal/mcp` code that speaks MCP, this package uses only the `internal/mcp` facade (plus its transport subpackage)
-and the standard library.**
+**Like all non-`internal/mcp` code that speaks MCP, this package uses only the `internal/mcp` facade (plus
+its transport subpackage) and the standard library.**
 
 ---
 
 ## internal/depguardtest
 
-**Responsibility in one sentence**: prove that canonical.md §2's four dependency-direction constraints **really do block**,
-rather than merely being documented. "A lint rule that is configured but silently ineffective is worse than no rule at all."
-
-### Key types and entry points
-
-There is one test, `TestDepguardRulesActuallyFire`, plus `TestProbeNamingConventionIsIgnoredByGit` guarding `.gitignore`. The
-method: for each rule, inject a deliberately violating probe file (`zz_depguard_probe_*.go`) into the constrained package, run
-`golangci-lint` on that package alone, and assert depguard reported a violation; each rule also gets a control — linting the same
-package without the probe must yield zero issues.
-
-Six cases are covered: `api` must not import `internal/*`, `cmd/agenthub-gui` must not import `internal/*`, `internal/mcp` may only
-use the standard library, `internal/pipeline` must not import `internal/ctlapi`, `internal/platform` is dependency-free, and
-`internal/logx` is dependency-free (the last is listed separately because it has its own depguard rule, and testing only platform
-would let it quietly rot).
+**Responsibility**: prove canonical.md §2's four dependency constraints **really do block**, rather than
+merely being documented. `TestDepguardRulesActuallyFire` injects a violating probe into each constrained
+package, runs `golangci-lint` on that package alone, and asserts depguard reported a violation; each rule
+also gets a control, the same package without the probe, which must lint clean. Six cases: `api` and
+`cmd/agenthub-gui` must not import `internal/*`, `internal/mcp` may use only the standard library,
+`internal/pipeline` must not import `internal/ctlapi`, and `internal/platform` and `internal/logx` are
+dependency-free — separate cases because each has its own rule, and testing one would let the other rot.
 
 ### Invariants and failure directions
 
-**Probes are written into a disposable copy of the checkout, never into the checkout itself.** `probeTree` copies the module
-(sources and configuration; `.git`, `node_modules` and build output are skipped) to a `$TMPDIR` path derived from the real root, and
-every probe path is rooted there. The reason is that the real tree is being *built* while this test runs: `go test ./...` runs
-package test binaries in parallel, `test/e2e`'s `TestMain` shells out to `go build ./cmd/agenthub`, and a build that lists a
-constrained package between a probe's creation and its removal dies with `open internal/platform/zz_depguard_probe_rule4.go: no
-such file or directory`. That is not hypothetical — it is how this proof turned the Linux CI job red, and hammering `go build`
-alongside the old in-tree version fails 6 builds out of 25. The copy's path is derived from the root rather than random because
-golangci-lint caches by absolute path: a fresh directory per run would mean a cold lint of every probe, every time.
+**Probes are written into a disposable copy of the checkout, never into the checkout itself.** The real
+tree is being *built* while this test runs — `go test ./...` runs package binaries in parallel and
+`test/e2e`'s `TestMain` shells out to `go build ./cmd/agenthub` — so a build that lists a constrained
+package between a probe's creation and its removal dies with `no such file or directory`. Not
+hypothetical: it is how this proof turned the Linux CI job red, and hammering `go build` alongside the old
+in-tree version fails 6 builds out of 25. The copy's path is derived from the real root rather than
+random, because golangci-lint caches by absolute path.
 
-**Inside the copy each probe is still removed by `t.Cleanup`**, even when the test fails — that is what lets each rule's control
-case lint the same package clean immediately afterwards. Rule 3's test creates the whole directory when `internal/pipeline` doesn't
-exist in the copy, and only `RemoveAll`s when it created it itself.
+**Inside the copy each probe is still removed by `t.Cleanup`** even when the test fails, which is what lets
+each control case lint clean immediately afterwards. **The real tree being read-only is asserted, not
+merely intended**: `assertNoProbesIn` walks the checkout afterwards and fails on any leftover, naming the
+cause instead of resurfacing as an unrelated flake in `test/e2e`.
 
-**The real tree being read-only is asserted, not merely intended**: when the proof is over, `assertNoProbesIn` walks the real
-checkout and fails on any `zz_depguard_probe_*` file. A change that moves a probe back into the tree fails here, in a message that
-names the cause, instead of resurfacing as an unrelated flake in `test/e2e`.
+**Every package a probe imports is in `go.mod` and type-checks**, so a lint failure **can only come from
+depguard and never from the compiler**; `assertBlocked` also requires the word "depguard" in the output.
 
-**Every package a probe imports is in `go.mod` and type-checks** (cobra, for instance), so a lint failure **can only come from
-depguard and never from the compiler**. Besides asserting failure, `assertBlocked` also asserts that the word "depguard" appears in
-the output, keeping the proof honest.
-
-**If `golangci-lint` can't be found it skips with an actionable hint** rather than failing; CI installs the binary before
-`make test`, so the proof really runs there. The `AGENTHUB_GOLANGCI_LINT` override is authoritative (pointing it at a nonexistent
-path skips rather than falling back), which makes the skip branch itself deterministically testable.
-
-**A second line of defense**: the probe naming pattern must appear in `.gitignore` — so that if a test ever crashes and leaves a
-probe file behind, git won't pick it up. This check is plain text comparison and does not depend on a git binary being present.
+**If `golangci-lint` can't be found it skips with an actionable hint** rather than failing, and CI installs
+it before `make test` so the proof really runs there. The `AGENTHUB_GOLANGCI_LINT` override is
+authoritative — a nonexistent path skips rather than falling back — which makes the skip branch itself
+testable. **A second line of defense**: `TestProbeNamingConventionIsIgnoredByGit` requires the probe
+pattern in `.gitignore`, so a crashed run's leftover is never committed.
 
 ---
 
 ## test/e2e
 
-**Responsibility in one sentence**: pin the full chain with real processes — TestMain compiles the real `agenthub` and `fakemcp`
-binaries, then drives them from the two directions a user does: as an AI client, and as the operator at a terminal.
+**Responsibility**: pin the full chain with real processes — TestMain compiles the real `agenthub` and
+`fakemcp` binaries, then drives them from the two directions a user does.
 
-### What it covers
-
-**Two axes, and a file belongs to one of them.** The *client* axis spawns a gateway and speaks MCP to it; the *operator* axis
-runs CLI verbs against a registry, and where the verb's contract is about a running gateway it keeps one alive and asserts on
-the exposed surface rather than on the file the CLI wrote. A registry edit that nothing propagates is precisely the failure
-worth catching, and only a live client can see it.
-
-`gatewayClient` in `mcpclient_test.go` is a **hand-written MCP stdio client**: it spawns a real
-`agenthub connect --client <id>` process and talks to it with newline-delimited JSON-RPC, exactly as Claude Code does. It
-**deliberately uses only `encoding/json`** (never importing `internal/mcp`), so the whole suite verifies the wire format from
-the outside.
-
-| File | Coverage |
-|---|---|
-| `main_test.go` | Compiling the two binaries, constructing an isolated subprocess environment, CLI invocation helpers |
-| `e2e_test.go` | The full chain against the fake downstream (register → initialize → tools/list → tools/call → clean EOF); the real npx filesystem server (the acceptance criterion case) |
-| `mcpclient_test.go` | The hand-written stdio client, reverse RPC replies, retry semantics, stderr tail and SIGQUIT stack dumps |
-| `daemonrestart_test.go` | A `kill -9`ed daemon leaves the data plane untouched; after a restart the gateway re-registers on the 30s ladder, and `session kill` proves the new registration is a live handle rather than a remembered row; self-skips under `-short` |
-| `daemonowner_test.go` | The ownership rule with real processes, which is the only place it can be checked: an ownerless `daemon start` is refused and leaves no daemon behind; a hub whose owner is `kill -9`ed stops on its own, having been sent nothing at all; a `--headless` hub keeps running through the same watch interval, so a watch that armed itself for nobody would be caught rather than looking like success |
-| `serverlifecycle_test.go` | add → ls → inspect → enable (with the probe) → disable → rm, and an unreachable probe that reports rather than vetoes |
-| `serverlive_test.go` | `server trace` engaging and releasing under a client that is never restarted, frames carrying the call argument verbatim, and `server disable` withdrawing a tool from a live session |
-| `profile_test.go` | Membership edits moving a live surface in both directions, a rename repointing bindings, and a deleted profile failing closed to an empty scope rather than widening |
-| `clientwiring_test.go` | `client detect` stats while `client inspect` reads, connect/disconnect leaving a foreign MCP entry untouched, and `client unbind` widening what a live session sees |
-| `httpserver_test.go` | The full chain against a streamable-http downstream, the downstream seeing a bearer resolved from the vault, and **a loopback URL being rejected at add time without `--local` provenance** (the fail-closed half) |
-| `lazy_test.go` | The lazy mode acceptance path: the frozen meta-tool `tools/list`, a `search_tools` hit, the truncation trailer, and `fetch_result` continuing the payload |
-| `profilehotreload_test.go` | Switching the active profile under a live gateway: registry watch → snapshot swap → scope invalidation → `notifications/tools/list_changed`, with no restart |
-| `serverlifecycle_test.go` | The `server` verbs the rest of the suite only ever used as scaffolding — `ls` / `inspect` / `disable` / `rm`, and `enable` run the way an operator runs it. Every other fixture passes `--no-probe`, so the enable **probe** has no coverage outside `internal/cli`, where "connect" is an in-process fake rather than a spawned child |
-| `profile_test.go` | The verbs that EDIT a profile in place — `server add`/`rm`, rename, `rm`, `discovery` — three of which change what a running client may see. Each case holds a live gateway and asserts on its exposed surface |
-| `clientwiring_test.go` | `client detect` / `inspect` / `unbind`, the three verbs that touch somebody else's files. Discovery goes through `HOME`, so each case plants one — nothing here can read or write the real one |
-| `serverlive_test.go` | The two `server` verbs whose contract is about a RUNNING gateway: `trace`/`logs` (wire capture switched on under a live client) and `disable` (taking a server away from one). Both are claims the CLI's help makes that a registry-only test cannot check |
+**Two axes, and a file belongs to one of them.** The *client* axis spawns a gateway and speaks MCP to it;
+the *operator* axis runs CLI verbs against a registry, and where the verb's contract is about a running
+gateway it keeps one alive and asserts on the exposed surface rather than on the file the CLI wrote — a
+registry edit that nothing propagates is precisely the failure worth catching, and only a live client can
+see it. `gatewayClient` (`mcpclient_test.go`) is a **hand-written MCP stdio client** that spawns a real
+`agenthub connect --client <id>` and talks newline-delimited JSON-RPC to it, **deliberately using only
+`encoding/json`**, so the suite verifies the wire format from the outside.
 
 ### Invariants and failure directions
 
-**No test can touch a real user's registry.** `testEnv` strips every `AGENTHUB_*` variable out of the environment and adds an
-`AGENTHUB_DATA_DIR` pointing at the test's own directory.
+**No test can touch a real user's registry.** `testEnv` strips every `AGENTHUB_*` variable and points
+`AGENTHUB_DATA_DIR` at the test's own directory. `XDG_RUNTIME_DIR` is **deliberately inherited rather than
+stripped**: it used to have to be stripped, because on Linux it alone determined the run directory and all
+concurrent e2e daemons shared one `$XDG_RUNTIME_DIR/AgentHub/ctl.sock`, but `AGENTHUB_DATA_DIR` now moves
+the run directory too (see `RunDir` in [foundation.md](foundation.md)), so passing the variable through is
+how that rule gets proven end to end on a CI runner. Stripping it would hide the one environment shape
+where the rule bites.
 
-`XDG_RUNTIME_DIR` is now **deliberately inherited rather than stripped**. It used to have to be stripped: on Linux it alone
-determined the run directory, so no matter how cleanly the data directories were separated, all concurrent e2e daemons still shared
-one `$XDG_RUNTIME_DIR/AgentHub/ctl.sock`. That has since become a property of the product itself — `AGENTHUB_DATA_DIR` moves the
-run directory along with it (see `RunDir` in [foundation.md](foundation.md)) — so passing the variable through is precisely how that
-rule gets proven end to end on a CI runner (which always sets it). Continuing to strip it would hide the one environment shape where
-the rule actually bites.
+**"The daemon really is dead" must be proven, not assumed.** `killDaemonStrict` requires `daemon.json` to
+be readable and fails loudly otherwise — that ambiguity cost three rounds of CI — and `assertSocketRefuses`
+further proves nothing is still serving the control socket, because a gated call may only be counted as
+failing closed once that holds; otherwise it would legitimately wait for a decision and the timeout would
+be charged to the wrong component.
 
-**"The daemon really is dead" must be proven, not assumed.** When a test depends on the daemon actually being dead (fail-closed
-assertions do), `killDaemonStrict` requires `daemon.json` to be readable and fails loudly if it is missing or unreadable — that
-ambiguity cost three rounds of CI. `assertSocketRefuses` further proves nothing is still serving that control socket: a gated call is
-only allowed to fail closed once that holds, or it would legitimately wait for a decision and the eventual timeout would be charged
-to the wrong component.
+**Lazy mode's readiness signal is different**: tools never appear in `tools/list`, so `waitForSearchHit`
+polls `search_tools` rather than using `waitForTool`. **Frozen ABI is written out here rather than
+imported**: lazy mode's meta-tool list and order live directly in `lazy_test.go`, because this suite drives
+the gateway from the **outside** and that surface is exactly the kind of ABI an external client depends on.
 
-**Lazy mode's readiness signal is different.** Under lazy, tools never appear in `tools/list`, so `waitForSearchHit` polls
-`search_tools` rather than using `waitForTool`.
+**The enable probe has no coverage here**: every fixture but `serverlifecycle_test.go` passes `--no-probe`,
+so the probe is exercised only in `internal/cli`, where "connect" is an in-process fake rather than a
+spawned child.
 
-**Frozen ABI is written out here rather than imported.** Lazy mode's meta-tool list and order are written directly into
-`lazy_test.go`, because this suite drives the gateway from the **outside** and the meta-tool surface is exactly the kind of ABI an
-external client depends on; the truncation trailer's wording is frozen by `internal/shaping`, and this is the reader side of that
-contract, written the way an agent would read it.
-
-**Only the real-npx case self-skips** (when `npx` is absent or `AGENTHUB_E2E_SKIP_NPX=1`); everything else always runs under
-`go test ./...`.
-
----
-
-## Closed: the 2026-07-31 sweep's ownership gap
-
-The sweep recorded that `DialOrStartSpawned` reported `spawned=true` for any daemon that became
-reachable after it ran the start command — the launcher exits 0 both when it detached a daemon of its
-own and when it found one already running — so a daemon started concurrently by a terminal or a login
-item was claimed as this process's own, and the GUI's shutdown acted on that claim. Its suggested fix
-was "ownership has to come from the launcher rather than from a successful dial: pass a startup nonce
-the daemon echoes back".
-
-That is what shipped, in a stronger form, and the function is gone rather than fixed: the application
-holds the child's **process handle** (`api.StartSupervised`), and the daemon echoes back the **owner
-pid** it was started with on `/v1/ping`. Nothing infers ownership from a dial any more, so there is no
-longer a caller for a function whose only purpose was to report that inference.
+**Only the real-npx case self-skips** (when `npx` is absent or `AGENTHUB_E2E_SKIP_NPX=1`); everything else
+always runs under `go test ./...`.

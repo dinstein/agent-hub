@@ -16,7 +16,7 @@ incident.
 
 | File | Packages covered |
 |---|---|
-| [foundation.md](foundation.md) | `platform`, `logx`, `jsonl`, `tier`, `mcp` (+ four `transport` implementations), `registry`, `accesslog` |
+| [foundation.md](foundation.md) | `platform`, `logx`, `jsonl`, `eventlog`, `accesslog`, `tier`, `mcp` (+ four `transport` implementations), `registry` |
 | [config.md](config.md) | `scope`, `session`, `event`, `secrets` (+ `secureenv`), `clients`, `skills` |
 | [dataplane.md](dataplane.md) | `downstream`, `router`, `pipeline`, `gateway`, `discovery` (+ `toolsig`), `shaping` (+ `toonenc`), `ratelimit` |
 | [security.md](security.md) | `guard` (`spawnguard`/`netguard`), `oauthflow` |
@@ -44,11 +44,11 @@ touches that code; a list of its own would not be.
 
 **The line numbers rot, and nothing catches it.** A pin is a number in prose; inserting a comment
 above the code it names moves it silently, and `make ci` cannot tell a citation that landed on the
-wrong function from one that landed on the right one. On the night this paragraph was written five of
-the seventeen `file.go:NNN` citations in these documents pointed at unrelated code — two of them moved
-by commits landed hours earlier in that same session, each of which had added lines near the top of a
-cited file. So: **re-read the pins in a package's section whenever you tidy that package**, and treat
-the surrounding prose as the real citation — it names the function, and the number is only there to
-save a search. A rule was considered and not written, because most pins here spell a bare basename
-(`profile.go:434`, `iss.go:41`) that resolves to more than one file in this tree; a check that
-silently skipped those would be the inert-rule failure `test/buildrules` exists to prevent.
+wrong function from one that landed on the right one. Twice now a sweep has found roughly a third of
+the `file.go:NNN` citations in these documents pointing at unrelated code, each time because a commit
+had added lines near the top of a cited file. So: **re-read the pins in a package's section whenever
+you tidy that package**, and treat the surrounding prose as the real citation — it names the function,
+and the number only saves a search. Prefer naming the function alone; the pins that survive here are
+the ones where a number genuinely saves a search. A check was considered and rejected: pins spell a
+bare basename (`store.go:190` — seven files in this tree are called `store.go`), and one that silently
+skipped the ambiguous ones would be the inert-rule failure `test/buildrules` exists to prevent.
