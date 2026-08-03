@@ -263,10 +263,10 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph obs["③ Observability flow: local disk only"]
-        DSX["downstream"] --> A4["logs/server-&lt;name&gt;.log<br/>one per server, off by default"]
+        DSX["downstream"] --> A4["calls/&lt;day&gt;/frames-*.jsonl<br/>one per process, off by default"]
         GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log<br/>logs/daemon.log"]
         GW --> A7["logs/events.jsonl<br/>state changes, closed vocabulary, default on"]
-        GW --> A6["calls/YYYY-MM-DD/<br/>authenticated metadata + encrypted payload packs"]
+        GW --> A6["calls/YYYY-MM-DD/<br/>metadata always, frames per server,<br/>encrypted payloads with a key"]
         A4 -.->|"agenthub server logs"| F["CLI / GUI"]
         A5 -.->|"agenthub logs (offline, merged)<br/>agenthub daemon logs (daemon.log only)"| F
         A7 -.->|"agenthub events (offline)<br/>GUI Events"| F
@@ -383,8 +383,8 @@ refuses a call outright or lets it through untouched.
 ├── state/                    # ratelimits.json / run markers
 ├── skills/                   # content-addressed skill library + install index
 ├── cache/tools/<server>.json # tool catalog snapshots used for "answer from cache first"
-├── logs/                     # events.jsonl + server-<name>.log + gateway-<client>.log + daemon.log
-├── calls/YYYY-MM-DD/         # the access ledger: authenticated metadata + encrypted payload packs
+├── logs/                     # events.jsonl + gateway-<client>.log + daemon.log (all rotated, 3 segments kept)
+├── calls/YYYY-MM-DD/         # the call ledger: calls.jsonl (shared metadata) + frames-*.jsonl (per process) + payload packs
 ├── tokens.json  .token_key   # agent tokens (HMAC only)
 └── run/                      # on Linux, prefers $XDG_RUNTIME_DIR/AgentHub when AGENTHUB_DATA_DIR is unset
     ├── ctl.sock  daemon.json # control socket + readiness handshake (endpoint, pid, version, owner pid;

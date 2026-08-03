@@ -275,7 +275,7 @@ dangerous direction: commit straight to `main`.
 |---|---|
 | Fake downstream MCP server | `internal/testutil/fakemcp` |
 | Where reference repositories are cloned | `~/Develop/_refs/` (**outside the repository**) |
-| Per-server log file | `<data>/logs/server-<name>.log` |
+| Per-process frame stream | `<data>/calls/<day>/frames-<bootid>-p<pid>.jsonl` |
 
 ### Every depguard constraint must have a failing case
 

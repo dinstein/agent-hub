@@ -152,9 +152,9 @@ caller's own helper stays a review question.
 call site. It exists because the log FILE is named after the CLIENT — every
 `agenthub connect --client claude-code` appends to `gateway-claude-code.log`, and a user normally
 has several running at once — so without it the interleaved lines of two gateways read as one
-gateway doing impossible things. The per-server trace log (`internal/downstream`, `TraceFrame`)
-carries it for the same reason one level down, alongside `inst`, because that file is named after
-the SERVER.
+gateway doing impossible things. A ledger frame record (`internal/downstream`, `FrameLog`) carries
+it for the same reason one level down, alongside `inst`: one server's conversation is written by
+every gateway process holding it open.
 
 ### Invariants and failure directions
 
@@ -208,9 +208,10 @@ gateways do share one file, which is exactly what `pid` is there for — no rota
 
 ## internal/jsonl
 
-The append-only JSONL writer every on-disk stream goes through: the per-server wire trace
-(`internal/downstream`), the control-plane event stream (`internal/eventlog`), and — through
-`LineWriter` — the process logs `slog` writes.
+The append-only JSONL writer the streams under `<data>/logs` go through: the control-plane event
+stream (`internal/eventlog`) and — through `LineWriter` — the process logs `slog` writes. The call
+ledger (`internal/calllog`) has its own writer, because capacity arbitration and encryption are not
+this package's business.
 
 It is the one primitive that survived `internal/audit`: the governance streams went and the write
 discipline did not, because the discipline was never about audit — it is what any JSONL file written
@@ -236,11 +237,11 @@ by N processes at once needs.
   decoding a frame.
 - **A writer must fit the SERIALIZED line, not its raw payload.** Truncating a body to N raw bytes
   says nothing about the line: the body enters a JSON string where quotes and backslashes double and
-  control bytes sextuple. `internal/downstream`'s trace log had both numbers set to 4096 and
+  control bytes sextuple. The retired per-server trace log had both numbers set to 4096 and
   therefore dropped every frame over roughly 2 KB of quote-heavy JSON — a large `tools/list`, a big
-  `tools/call` result, which is precisely what a trace is opened to see. It now marshals, measures
-  and re-cuts until the line fits. Raising the bound instead would have traded dropped frames for
-  torn ones.
+  `tools/call` result, which is precisely what a trace is opened to see. `internal/eventlog` fits
+  its `Detail` to the serialized size for the same reason. The frames themselves no longer face the
+  question: their bodies live in the ledger's packs, so only bounded metadata is ever on a line.
 - **`Segments` and `Prune` are the reading and retention halves of the rotation scheme, and they live
   here** because `segmentPath` is what names a rotated file. A caller composing that glob itself
   would be the second place the scheme lives, and the way that goes wrong is a reader opening only
@@ -385,21 +386,55 @@ the bare number rather than hiding it — a frontend older than its daemon must 
 
 ## internal/calllog
 
-A bounded, queryable metadata history for every `tools/call` lifecycle, plus the complete accepted
-request bytes retained in encrypted payload packs.
+Everything the hub records about an interaction with a downstream: the lifecycle of every
+`tools/call` at the CLIENT boundary, the frames at the DOWNSTREAM one, and — with a key — the bodies
+of both, in encrypted packs.
 
-Metadata and payload are deliberately separate. Every UTC day has one shared `calls.jsonl`; each
-gateway process owns payload packs named by a random boot id and pid. An event stays under 4096
-bytes and is appended in one `O_APPEND` write, while a request may be as large as MCP's 16 MiB frame
-bound without weakening that atomic-line contract. Payload entries are gzipped then sealed with
-XChaCha20-Poly1305; metadata points at one by `(day, file, offset, length, key id)`. `NewCallID`
-mints the cross-event join key — an upstream request id is not sufficient, because clients reuse it
-across sessions.
+One call reads as `received` → `routed` → `sent`/`recv` per attempt → `finished`, all under one
+`callId`. That join is the whole reason the frames live here: they used to be a per-server file with
+no call id in it, so a call that retried twice appeared there as three exchanges belonging to nobody
+while the ledger said only that it took 1.2 seconds, and "what did this call actually do" could not
+be asked of either stream.
+
+### Two tiers, and what each costs
+
+| | **metadata** | **evidence** |
+|---|---|---|
+| Switch | always on | `calls.enabled` (default off) |
+| Holds | one bounded line per lifecycle point and per frame: method, server, tool, outcome, gate, duration, size | the bodies — request, effective arguments, result, frame — gzipped and sealed with XChaCha20-Poly1305 |
+| Needs a key | no | yes; `Open` without one refuses `PutPayload` and writes no MAC |
+| Durability | `write` | `sync` |
+| Failure direction | **open** — a call that cannot be described still runs | **closed** — a `tools/call` that cannot be recorded does not run |
+
+The metadata tier exists because the ordinary installation had none. With the ledger off, a hub
+recorded NOTHING about what its clients called; the switch was all-or-nothing and its cost — a key,
+fsync per write, and a call refused when the disk is full — is not one an ordinary installation
+should have to pay to know what happened.
+
+### Three files, one schema
+
+Every UTC day holds `calls.jsonl` (shared, every process appends), `frames-<bootid>-p<pid>.jsonl`
+(one per process), and the payload packs (one writer each).
+
+**Frames are not in the shared file, and that is the same reason the shared file has a 4096-byte
+line bound**: PIPE_BUF is what makes one line atomic ACROSS PROCESSES, and it is needed only because
+that file is shared. Frames outnumber lifecycle records by one to two orders of magnitude and are
+process-local by nature, so putting them there would make a debugging switch the hot path of the
+file that decides whether a call may run. One schema, one directory, one retention policy; only the
+contention is split — and with it the failure direction, which is exactly the split the two tiers
+need.
 
 ### Invariants and failure directions
 
 - **Complete means every byte of an accepted request.** `MaxPayloadBytes` equals the MCP facade's
   accepted frame bound; it is not a second, narrower truncation policy.
+- **A frame never blocks its caller.** `AppendFrame` queues and returns; an overflow is counted
+  (`FrameCounters.Dropped`) and dropped. A trace is an instrument, and the one thing an instrument
+  must never do is take down the thing it measures. The lifecycle path is the opposite and stays
+  that way.
+- **A frame's SIZE is recorded even when its body is not.** Without a key there is nothing to seal a
+  body with, and a line that omitted the size too would make a large frame and a missing one read
+  the same.
 - **Metadata is bounded; payload is encrypted.** Full arguments never enter `slog`, a support
   bundle, or a shared JSONL line. An oversized metadata event is an error, never an oversize marker
   claiming the lifecycle was recorded.
@@ -423,8 +458,11 @@ across sessions.
 - **The package decides no permission.** An assembly may make a durable `received` record a
   prerequisite for execution, but that wrapper does not enter or reorder the frozen pipeline gates
   and it never inspects or modifies the arguments.
+- **An unkeyed record carries no MAC, and says so.** Both `mac` and `keyId` are empty rather than
+  filled with something unverifiable, so `calls verify` can report "unauthenticated" — a different
+  answer from "authentication failed", and one that must never be confused with it.
 - **Integrity has a stated boundary.** Each metadata event carries HMAC-SHA256 and each payload
-  entry is bound by AEAD to its call id, kind, sizes and codec, so `audit verify` detects edits,
+  entry is bound by AEAD to its call id, kind, sizes and codec, so `calls verify` detects edits,
   corruption and reference substitution. Independent records cannot prove an attacker deleted a
   whole day or the entire directory; deletion evidence needs an external immutable anchor, which
   this local-only design does not claim.

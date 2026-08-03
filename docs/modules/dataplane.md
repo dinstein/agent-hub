@@ -188,28 +188,38 @@ plus, for a derivation, `logx.FieldInstance`. Since `Spec.ID` does not change un
 the second field four derivations write four connections' worth of lines under one `server` value and none
 can be attributed. Bound, not stamped per call site — that is how one line ends up without it.
 
-**Frame logging lives here, not in `internal/mcp/transport`**, because transport is standard-library only
-and knows neither server identity nor the data directory. `callTransport` is the **only** place frames
-cross the downstream boundary, so it is the only feed. Writes go through `jsonl.Writer`, dropping rather
-than blocking under backpressure, and methods on a nil `*ServerLog` are no-ops. One file per server:
-derived instances share it, each frame carrying the derive key as `inst`, `omitempty` and last in the
-struct so a base connection's line stays byte-identical to one written before the field existed.
+**Frame recording lives here, not in `internal/mcp/transport`**, because transport is standard-library
+only and knows neither server identity nor a ledger. `callTransport` is the **only** place frames cross
+the downstream boundary, so it is the only feed. The frames themselves go to `internal/calllog` — there is
+no per-server file any more — and every one carries the `Origin` its caller named: the ledger call id when
+a client asked for it, and a `cause` (`list`, `probe`, `refresh`) when nobody did. **The origin is an
+argument, not a context value**: the gateway's call closure already holds the span, and a channel nobody
+can see is how a field ends up unset at half the call sites.
 
-**Two `Deps` seams are functions rather than fields, for two different reasons.** `TraceFor func(Spec)`
-because a `ServerLog` carries the server id it was opened with, in its filename and in every frame — one
-shared log would file every server's frames under whoever opened it, so no plain field is kept as a
-fallback. `Events func() *eventlog.Stream` because that stream is genuinely shared but is decided by
-**governance**, which a gateway loads *after* it builds its pool; since `Deps` is captured once at
-`NewPool`, a plain field would be read before the switch exists and every derived instance would be silent
-forever. The event vocabulary belongs to [foundation.md](foundation.md).
+**`seq` is the retry attempt.** One `routed` record can be followed by three `sent`/`recv` pairs when the
+connection died twice on the way, and without the number those read as one exchange reported three times —
+which is precisely what the retired per-server log could not express, having no call id either.
 
-**The trace switch is `ServerEntry.Trace`, applied as the log's enabled state**, and a log is opened for
+**Two `Deps` seams are functions rather than fields, for two different reasons.** `FramesFor func(Spec)`
+because a `FrameLog` carries the server id it was created with, stamped on every frame — one shared log
+would file every server's frames under whoever created it, so no plain field is kept as a fallback.
+`Events func() *eventlog.Stream` because that stream is genuinely shared but is decided by **governance**,
+which a gateway loads *after* it builds its pool; since `Deps` is captured once at `NewPool`, a plain field
+would be read before the switch exists and every derived instance would be silent forever. The event
+vocabulary belongs to [foundation.md](foundation.md).
+
+**The switch is `ServerEntry.Trace`, applied as the log's enabled state**, and a log is created for
 **every** server: `Server.trace` is captured once at `Connect`, so a nil handed out there could never be
 filled in later, whereas a disabled log can be enabled in place — which is what lets
 `agenthub server trace <id> on` reach a running client without reconnecting the server being debugged.
-**Failure direction: fail-open** — unresolvable directory, unwritable path, a line dropped under
-backpressure all degrade to less tracing, never to a failed call. The switch itself goes the other way:
-off unless the registry says otherwise, because frames are captured before anything else touches the bytes.
+**The SINK is settable for the same reason**: servers connect while the ledger policy is still being
+applied, and a log created in that window must start recording when the store arrives rather than stay
+silent for the life of the process.
+
+**Failure direction: fail-open** — no ledger, a full queue, a write that fails, all degrade to less
+tracing and never to a failed call. The switch itself goes the other way, off unless the registry says
+otherwise, because frames are captured before anything else touches the bytes — and a frame's BODY needs
+the evidence key, so unredacted downstream traffic is never written in the clear.
 
 **Three HTTP-side concerns live in this layer**, because the transport facade is pure standard library and
 is not allowed to know about them:
@@ -273,7 +283,7 @@ instance inherits its base server's login.
 
 ### Current wiring status
 
-`internal/gateway` wires `Log` / `Dial` / `ConnectTimeout` / `Secrets` / `AuthFor` / `TraceFor` / `Events`
+`internal/gateway` wires `Log` / `Dial` / `ConnectTimeout` / `Secrets` / `AuthFor` / `FramesFor` / `Events`
 / `ClientID`, and `specsFromSnapshot` translates through `SpecFromEntry`, which accepts **every**
 transport. HTTP transport, secret resolution, the OAuth bearer, frame tracing and event recording are all
 live on the gateway path.

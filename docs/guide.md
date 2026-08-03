@@ -361,10 +361,17 @@ Three things are worth knowing before turning it on:
 recording without being restarted, and the connection under investigation is
 not reconnected.
 
-**The file holds raw responses.** Frames are captured at the connection, before
-anything filters them, so whatever the server actually returned sits in
-`logs/server-<id>.log`. That is the point of it, and the reason to turn it off
-once you have your answer.
+**The frames go into the call ledger, and each one names the call it belongs to.**
+`agenthub server logs <id>` reads one server's conversation out of it, and
+`agenthub calls show <call-id>` shows one call's whole story — the request, the
+frames it produced, the retries, and the result. A call that retried twice reads
+as three attempts under one id rather than as three unrelated exchanges.
+
+**Bodies are captured at the connection, before anything filters them, and they
+need a key.** Frame bodies go into the ledger's encrypted pack, which is what
+`agenthub calls enable` sets up; without it you get every frame's method, size,
+duration and outcome, but not what it said. That is the trade: unredacted
+downstream traffic is never written in the clear.
 
 **It is per server, and it persists.** Nothing expires a trace, so one left on
 keeps recording across restarts. `server ls` grows a `TRACE` column while

@@ -7,7 +7,7 @@ description: Drive the agenthub CLI to give an AI client MCP tools - add a serve
 
 One gateway between every AI client and every MCP server. Wire a client up **once**; add, authorize, and narrow servers here afterwards without touching the client again.
 
-**Never guess a flag** — `agenthub <group> --help` decides. The page is grouped by task phase, and four groups show in every build: Setup (`server`, `auth`, `secret`, `catalog`), Wire up (`profile`, `client`), Diagnose (`doctor`) and Observe (`audit`, `events`, `logs` — §8, §9). A release build withholds two, Daemon (`daemon`, `session`, `token`) and Manage (`config`, `skill`), **from the page only**: they resolve and run identically there, and their own `--help` still prints.
+**Never guess a flag** — `agenthub <group> --help` decides. The page is grouped by task phase, and four groups show in every build: Setup (`server`, `auth`, `secret`, `catalog`), Wire up (`profile`, `client`), Diagnose (`doctor`) and Observe (`calls`, `events`, `logs` — §8, §9). A release build withholds two, Daemon (`daemon`, `session`, `token`) and Manage (`config`, `skill`), **from the page only**: they resolve and run identically there, and their own `--help` still prints.
 
 The path is always: **add → (credential) → enable → test → connect → narrow**.
 
@@ -194,7 +194,7 @@ agenthub profile use research    # fallback for every unbound client ("-" clears
 
 On a small surface where tools seem missing, check if the client is in `lazy` mode — tools are found via `search_tools`, not a handed list.
 
-**`server disable <id>`** is the kill switch above every profile. **Prefer `disable` over `rm`** — `server rm` destroys the whole footprint (credential, profile membership, baselines, cached tool list; audit records survive) without confirmation. Secrets cannot be read back.
+**`server disable <id>`** is the kill switch above every profile. **Prefer `disable` over `rm`** — `server rm` destroys the whole footprint (credential, profile membership, baselines, cached tool list; ledger records survive) without confirmation. Secrets cannot be read back.
 
 ## 7. Diagnose
 
@@ -220,7 +220,7 @@ agenthub server test brave --tools      # live answer today
 | a tool vanished | `server inspect <id>` visibility (§6) |
 | client sees nothing | `server inspect` first; did the user restart the client? |
 | a client points at an old binary | `doctor` reports it; `--fix` repoints it |
-| a call went wrong, or "did it even reach the server" | the call log (§9) — `audit tail`, then `audit show <call-id>` |
+| a call went wrong, or "did it even reach the server" | the call log (§9) — `calls tail`, then `calls show <call-id>` |
 | a server dropped, kept reconnecting, or died overnight | `agenthub events --server <id>` (§8) — the state changes; then `agenthub logs --server <id>` for the prose around them |
 | exit 4 | that command needs a running daemon; nothing on this path does |
 | exit 6 | governance denied it — report it, do not retry |
@@ -229,7 +229,7 @@ agenthub server test brave --tools      # live answer today
 
 ## 8. State changes, process logs and the wire trace
 
-`events`, `logs` and §9's `audit` are the **Observe** group on the help page: the record of what already
+`events`, `logs` and §9's `calls` are the **Observe** group on the help page: the record of what already
 happened, in every build and with no daemon running. The wire trace below is not in it — it hangs off
 `server`, because it is per-server and off until switched on.
 
@@ -273,33 +273,36 @@ agenthub server logs linear         # last 100 frames; -f to follow; --limit 0 f
 agenthub server trace linear off    # turn off when done
 ```
 
-- `logs` reads; `trace` fills the file. An empty log means nothing was recorded, not that the server was idle.
-- Frames are captured **before any redaction**, verbatim in `<data>/logs/server-<id>.log`. Read the file; never paste it wholesale into a chat or commit.
+- `logs` reads; `trace` records. An empty result means nothing was recorded, not that the server was idle.
+- **Every frame names the call it belongs to.** `agenthub calls show <call-id>` then gives that call's whole story — request, frames, retries, result. A call that retried twice reads as three attempts under one id.
+- Frames are captured **before any redaction**. Their BODIES need the ledger key (§9 `calls enable`); without it you get method, size, duration and outcome but not the contents. `calls show --payloads` decrypts them — read it in the terminal, never paste it into a chat or a commit.
 - Takes effect immediately — no client restart or server reconnect needed.
 - `server ls` grows a `TRACE` column while any trace is on.
 - Correct-looking frames plus a misbehaving client → the problem is above this layer (§6 narrowing, client restart).
 
 ## 9. Call log
 
-Every `tools/call` from every client, in one encrypted local ledger — the other half of §8: wire trace is verbatim frames for **one server**, this is the lifecycle of **every call**. **Off by default.**
+Every interaction with a downstream, in one local ledger: the lifecycle of every `tools/call` at the client boundary, and — for a server whose trace is on (§8) — the frames at the downstream one, joined by the call id.
+
+**Two tiers.** Metadata is **always recorded** and costs nothing anybody has to switch on: what was called, by whom, against which server, how it ended. Evidence — the bodies — is **off by default** and is what `calls enable` sets up, because storing them means a key, an fsync per write, and a call refused when the disk is full.
 
 ```bash
-agenthub audit status                      # effective capture, durability, retention; is it even on
-agenthub audit enable                      # creates the payload key, starts recording
-agenthub audit tail --limit 20             # metadata only, nothing decrypted; --since 24h by default
-agenthub audit tail --server linear --client claude-code --outcome tool_error
-agenthub audit stats --since 24h           # counts by outcome / client / server / tool
-agenthub audit show <call-id>              # one lifecycle
-agenthub audit show <call-id> --payloads   # + request, effective arguments, captured result
-agenthub audit disable                     # stops recording; keys and history stay
+agenthub calls status                      # effective capture, durability, retention; is evidence on
+agenthub calls enable                      # creates the payload key, starts storing bodies
+agenthub calls tail --limit 20             # metadata only, nothing decrypted; --since 24h by default
+agenthub calls tail --server linear --client claude-code --outcome tool_error
+agenthub calls stats --since 24h           # counts by outcome / client / server / tool
+agenthub calls show <call-id>              # one call: lifecycle + its frames, in order
+agenthub calls show <call-id> --payloads   # + request, effective arguments, result, frame bodies
+agenthub calls disable                     # stops storing bodies; metadata, keys and history stay
 ```
 
-- **Recording is fail-closed: a ledger that cannot write blocks the call.** Missing key, disk full, `maxBytes` or `minFreeBytes` crossed → the client gets a failure, never an unrecorded success. That is why `enable` is a decision, not a default.
-- **Three events per call**: `received` (before parsing), `routed` (a target was chosen), `finished` (outcome). No `routed` means it never reached a server; no `finished` means incomplete — `stats` counts those separately.
+- **Evidence is fail-closed: a ledger that cannot write blocks the call.** Missing key, disk full, `maxBytes` or `minFreeBytes` crossed → the client gets a failure, never an unrecorded success. That is why `enable` is a decision, not a default. **Metadata is fail-open** and can never refuse a call: a call that cannot be described still runs.
+- **Three events per call, plus its frames**: `received` (before parsing), `routed` (a target was chosen), `finished` (outcome), and `sent`/`recv` per attempt when the server is traced. No `routed` means it never reached a server; no `finished` means incomplete — `stats` counts those separately.
 - **The filters match events, not calls**, and are compared verbatim: `--server` / `--tool` can only ever hit `routed` and `finished`, which is where those fields exist, and a value outside the vocabulary (`success`, `tool_error`, `denied`, `busy`, `protocol_error`, `cancelled`) returns an empty list rather than an error.
-- **The `CALL` column is truncated to 12 characters and `show` wants all 32** — take `callId` from `agenthub --json audit tail`.
+- **The `CALL` column is truncated to 12 characters and `show` wants all 32** — take `callId` from `agenthub --json calls tail`.
 - **`--payloads` decrypts the user's data** — arguments and results, credentials included; the command says so on stderr. Read it in the terminal, never paste it into a chat or a commit.
-- Policy lives in governance: `agenthub config ls` names every `audit.*` key, `config set` moves one. **Arguments are always captured whole**; only result capture is tunable (`audit.results`: `none | errors | truncated | full`), alongside `durability`, `retentionDays`, `maxBytes` and `minFreeBytes`.
+- Policy lives in governance: `agenthub config ls` names every `calls.*` key (the old `audit.*` spellings still work), `config set` moves one. **Arguments are always captured whole**; only result capture is tunable (`calls.results`: `none | errors | truncated | full`), alongside `durability`, `retentionDays`, `maxBytes` and `minFreeBytes`.
 - `verify` authenticates every event and decrypts every payload; `export --output <new-file>` refuses an existing path; `prune --dry-run` first — it drops whole day partitions past retention; `rotate-key` keeps old keys so retained history stays readable.
 
 ## 10. From inside a session
