@@ -286,6 +286,16 @@ golangci-lint is absent it calls `t.Skip` and `make test` counts that as success
 the verbose output for `--- SKIP` and fails on it. **A check that can quietly not run is a check you
 do not have.**
 
+**Current assembly status — `guard-zero-dep` has no failing case.** §2 rule 4 is three depguard rules,
+one per foundation directory: `platform-zero-dep`, `logx-zero-dep` and `guard-zero-dep`. The first two
+each have a probe in `internal/depguardtest`; the third has none, so nothing demonstrates that a
+business import planted under `internal/guard/**` is actually rejected. The rule is configured and
+looks identical to the two that are proven, which is the shape this section calls more dangerous than
+no rule at all — the gap is invisible from `.golangci.yml`, and visible only by counting probes against
+rules. Closing it means one more `zz_depguard_probe_*.go` case shaped like the rule-4 pair already
+there. It is recorded rather than fixed because the constraints and their proofs are deliberately out
+of scope for a tidy pass.
+
 ### Test infrastructure
 
 A programmable **fake downstream MCP server** (`internal/testutil/fakemcp`) injects by script: slow
