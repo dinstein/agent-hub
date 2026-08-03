@@ -1,6 +1,6 @@
 // Package jsonl is the append-only JSONL writer shared by every stream this
 // product keeps on disk: the per-server wire trace (internal/downstream) and
-// the token-savings ledger (internal/savings).
+// the control-plane event stream (internal/eventlog).
 //
 // It was extracted from internal/audit, which owned it while the governance
 // streams existed. The streams went; the write discipline they were built on
