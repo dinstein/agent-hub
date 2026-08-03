@@ -87,9 +87,14 @@ type SessionHello struct {
 }
 
 // Session is one live session. Identity fields (ID..StartedAt) are
-// immutable after creation; mutable state (roots, overlay, last-seen) is
-// accessed through methods and safe for concurrent use. Sessions must not
-// be copied (contain atomics and a mutex).
+// immutable after creation; the mutable state is roots and last-seen, both
+// reached through methods and safe for concurrent use. Sessions must not be
+// copied (contain atomics and a mutex).
+//
+// Roots and last-seen are the whole list, which is what the package comment
+// means by "identity and liveness only": a root routes a call to a derived
+// instance, and last-seen decides reaping. Neither changes what the session
+// may SEE.
 type Session struct {
 	ID        SessionID
 	ClientID  string

@@ -72,7 +72,8 @@ type SessionManager interface {
 
 // Options configures a MemoryManager. Zero values select the defaults.
 type Options struct {
-	// Bus receives lifecycle/overlay events; nil disables publishing.
+	// Bus receives session lifecycle events (opened, closed); nil disables
+	// publishing.
 	Bus *event.Bus
 	// HTTPTTL is the idle TTL of HTTP sessions (default 24h).
 	HTTPTTL time.Duration
@@ -162,8 +163,9 @@ func (m *MemoryManager) OpenHTTP(ctx context.Context, hello SessionHello) (*Sess
 
 // mint builds a session with a fresh "client:seq" ID. Seq is per-client
 // monotonic for the daemon's lifetime and never reused, so a re-registered
-// gateway always gets a NEW identity (docs/architecture.md §7: overlay authority died
-// with the old one; references must break, not silently rebind).
+// gateway always gets a NEW identity (docs/architecture.md §7): a reference
+// held to the old session must break rather than silently rebind to the new
+// one, which is what reusing a seq would make it do.
 func (m *MemoryManager) mint(clientID string, origin Origin, roots []string, caps ClientCaps) *Session {
 	now := m.clock()
 	m.mu.Lock()

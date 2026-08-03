@@ -289,10 +289,11 @@ func (a *App) newSessionShowCmd() *cobra.Command {
 // resolveSessionScope resolves the PERSISTED layers (global and profile) for
 // one live session and merges them against the cached catalog.
 //
-// The session layer — the third and most specific — is deliberately absent:
-// the volatile overlay lives in the daemon's memory and is summarized by
-// OverlaySummary. Saying so in Note is the point — a view that silently
-// omitted it would read as "no overlay" and mislead exactly when it matters.
+// The session layer — the third and most specific — is absent because it no
+// longer has a source: 0bae283 removed session overlays, so nothing writes a
+// session-kind layer at all. Note says so rather than leaving it out, because
+// a view showing two of the three kinds reads as "the third one is empty"
+// when the truth is that there is no longer a third one to fill.
 func (a *App) resolveSessionScope(row SessionRow) (SessionDetail, []string, error) {
 	store, warnings, err := a.openStore()
 	if err != nil {
@@ -327,8 +328,8 @@ func (a *App) resolveSessionScope(row SessionRow) (SessionDetail, []string, erro
 		Effective: map[string][]string{},
 		Discovery: string(es.Discovery),
 		ScopeHash: hex.EncodeToString(es.Hash[:]),
-		Note: "layers cover the four PERSISTED layers; the session overlay is volatile daemon state " +
-			"(see the OVERLAY column) and the tool catalog comes from the gateway cache",
+		Note: "layers cover the persisted global and profile scope; there is no session layer " +
+			"(session overlays were removed) and the tool catalog comes from the gateway cache",
 	}
 	for _, l := range layers {
 		sl := SessionLayer{Kind: l.Kind.String(), Origin: l.Origin, Servers: l.Servers}
