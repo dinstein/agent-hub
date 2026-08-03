@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -171,6 +172,53 @@ func TestAManualConnectGivesTheSupervisorItsBudgetBack(t *testing.T) {
 		p := dl.lastProcess()
 		return p != nil && p != first
 	})
+}
+
+// The status line is the only place a user learns the hub fell over, so it
+// has to carry WHY. api already captures the exit status; dropping it left
+// "the hub stopped" as the whole of the report, and "signal: killed" and
+// "exit status 1" send somebody looking in two different places.
+func TestTheOfflineStatusSaysWhyTheHubStopped(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		exit error
+		want []string
+	}{
+		{
+			name: "a crash carries its signal",
+			exit: errors.New("signal: killed"),
+			want: []string{"stopped unexpectedly", "signal: killed"},
+		},
+		{
+			// nil is not "no failure" for a supervised hub: it is gone either
+			// way, and the banner must not read as if nothing happened.
+			name: "a clean exit is still a stop",
+			exit: nil,
+			want: []string{"stopped unexpectedly"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, dl := startOwned(t)
+			// No restart budget left, so the death message is the one that
+			// STAYS on screen. Without this the ladder's own failure
+			// overwrites it a millisecond later and the test races the very
+			// thing it is reading.
+			h.mu.Lock()
+			h.restarts = restartLimit
+			h.mu.Unlock()
+
+			dl.lastProcess().dieWith(tc.exit)
+
+			waitFor(t, "the stop to reach the status", func() bool {
+				return strings.Contains(h.Status().Error, "stopped unexpectedly")
+			})
+			for _, want := range tc.want {
+				if got := h.Status().Error; !strings.Contains(got, want) {
+					t.Errorf("status error = %q, want it to contain %q", got, want)
+				}
+			}
+		})
+	}
 }
 
 // A deliberate shutdown is not a fall: stopping the hub must not trip the

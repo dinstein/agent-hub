@@ -141,8 +141,9 @@ type hubProcess interface {
 	Exited() <-chan struct{}
 	// Stop asks it to drain and go, and waits.
 	Stop(ctx context.Context) error
-	// Pid identifies the process, from its handle rather than from a file.
-	Pid() int
+	// Err reports how the process ended, once Exited has closed. nil means it
+	// exited successfully, which for a hub still means it is gone.
+	Err() error
 }
 
 // supervisedProcess adapts api.Supervised to hubProcess. The only difference
@@ -525,9 +526,27 @@ func (h *Hub) watchProcess(proc hubProcess) {
 			return // a deliberate shutdown, not a fall
 		}
 
-		h.dropClient(fmt.Errorf("the hub stopped unexpectedly"))
+		// The exit status, not just the fact of the exit. api captured it
+		// (cmd.Wait) and this used to drop it on the floor, leaving the one
+		// line the user sees — the offline banner — saying only that the hub
+		// stopped. "signal: killed" and "exit status 1" send somebody looking
+		// in two different places, and this is the surface that decides which.
+		h.dropClient(hubStoppedError(proc.Err()))
 		h.restartHub()
 	}()
+}
+
+// hubStoppedError renders a hub's exit for the offline banner.
+//
+// A nil error is not "no failure" here: for a supervised hub, exit 0 still
+// means the hub is gone, and reporting it as success would leave the banner
+// reading "the hub stopped: <nothing>". Both shapes therefore lead with the
+// same sentence, and only the cause varies.
+func hubStoppedError(err error) error {
+	if err == nil {
+		return errors.New("the hub stopped unexpectedly")
+	}
+	return fmt.Errorf("the hub stopped unexpectedly: %w", err)
 }
 
 // restartHub brings the hub back after an unexpected exit, on a doubling

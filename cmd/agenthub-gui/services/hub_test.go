@@ -168,14 +168,20 @@ type fakeProcess struct {
 	client *api.Client
 	exited chan struct{}
 
-	mu    sync.Mutex
-	stops int
-	dead  bool
+	mu      sync.Mutex
+	stops   int
+	dead    bool
+	exitErr error
 }
 
 func (p *fakeProcess) Control() *api.Client    { return p.client }
 func (p *fakeProcess) Exited() <-chan struct{} { return p.exited }
-func (p *fakeProcess) Pid() int                { return 4242 }
+
+func (p *fakeProcess) Err() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.exitErr
+}
 
 func (p *fakeProcess) Stop(context.Context) error {
 	p.mu.Lock()
@@ -186,11 +192,15 @@ func (p *fakeProcess) Stop(context.Context) error {
 }
 
 // die ends the process, the way an exit or a crash would.
-func (p *fakeProcess) die() {
+func (p *fakeProcess) die() { p.dieWith(nil) }
+
+// dieWith ends the process with an exit status, the way a crash reports one.
+func (p *fakeProcess) dieWith(err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.dead {
 		p.dead = true
+		p.exitErr = err
 		close(p.exited)
 	}
 }
