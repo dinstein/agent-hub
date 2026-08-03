@@ -396,12 +396,19 @@ no call id in it, so a call that retried twice appeared there as three exchanges
 while the ledger said only that it took 1.2 seconds, and "what did this call actually do" could not
 be asked of either stream.
 
-**Every upstream request is recorded, not only the ones that route.** `initialize`, `tools/list`,
-`ping` and `server/discover` each leave a `received`/`finished` pair with no `routed` between them —
-because the first question anybody brings to the ledger is whether a client reached the hub at all,
-and a session that connected and then went quiet used to leave exactly the trace of one that never
-connected: none. Those pairs are fail-open even when evidence is on; only `tools/call` is governed,
-and only `tools/call` refuses to run unrecorded.
+**Every upstream request is recorded, not only the ones that route**, and on the SAME path: one span,
+the same payload capture, the same finish through `reply`. `initialize`, `tools/list`, `ping` and
+`server/discover` each leave a `received`/`finished` pair with no `routed` between them — because the
+first question anybody brings to the ledger is whether a client reached the hub at all, and a session
+that connected and then went quiet used to leave exactly the trace of one that never connected: none.
+A `tools/list` result is worth having for its own sake: it is the catalog the hub showed that client,
+which nothing else can reconstruct once the configuration moves.
+
+**The record is written on the read loop, before dispatch** — earlier than the handler goroutine
+`tools/call` runs in, and therefore earlier than any decision made about the request. Only
+`tools/call` refuses to run when it cannot be recorded; every other method fails open, because a
+ledger hiccup must not break a session's handshake. That is the whole of the difference between the
+governed method and the rest: same path, same fields, one precondition.
 
 **`Method` says what was asked and `Surface` which of agenthub's own faces answered** — `meta` for
 one of the hub's own tools, `group` for a grouped listing, `tool` for a name that routes straight

@@ -134,7 +134,7 @@ func TestCallsListIsMetadataOnlyAndDetailDecryptsImmediately(t *testing.T) {
 	key := []byte("0123456789abcdef0123456789abcdef")
 	keyID := seedControlAuditCall(t, root, "call-for-gui", key)
 	vault := newNRVault()
-	vault.stored[secrets.AuditEncryptionKeyRef(keyID).StorageKey()] =
+	vault.stored[secrets.CallsEncryptionKeyRef(keyID).StorageKey()] =
 		base64.RawStdEncoding.EncodeToString(key)
 	client, env := startServer(t, func(o *Options) {
 		o.NonRegistry.CallsRoot = root

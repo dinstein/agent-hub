@@ -241,14 +241,14 @@ func callEventMatches(e calllog.Event, client, server, tool, outcome string) boo
 		(outcome == "" || e.Outcome == outcome)
 }
 
-// AuditCall is one call's whole story: the lifecycle at the client boundary,
+// CallDetail is one call's whole story: the lifecycle at the client boundary,
 // the frames at the downstream one, and — with --payloads — the bodies.
 //
 // The frames are what the ledger could not show before they moved into it. A
 // call that retried twice has one `routed` record and three sent/recv pairs,
 // and reading the two halves as one sequence is the only way that reads as
 // what happened rather than as a slow call with no explanation.
-type AuditCall struct {
+type CallDetail struct {
 	CallID             string          `json:"callId"`
 	Events             []calllog.Event `json:"events"`
 	Request            string          `json:"request,omitempty"`
@@ -259,7 +259,7 @@ type AuditCall struct {
 	Frames []string `json:"frames,omitempty"`
 }
 
-func (c AuditCall) Human(w io.Writer) error {
+func (c CallDetail) Human(w io.Writer) error {
 	_, _ = fmt.Fprintf(w, "call: %s\n", c.CallID)
 	for _, e := range c.Events {
 		_, _ = fmt.Fprintf(w, "%s  %-8s", e.TS.Local().Format(time.RFC3339Nano), e.Kind)
@@ -337,12 +337,12 @@ func (a *App) newCallsShowCmd() *cobra.Command {
 			if len(events) == 0 {
 				return NotFoundf(CodeNotFound, "call %q not found", args[0])
 			}
-			out := AuditCall{CallID: args[0], Events: events}
+			out := CallDetail{CallID: args[0], Events: events}
 			var warnings []string
 			if payloads {
-				keys := newAuditKeyCache(a, cmd)
+				keys := newCallsKeyCache(a, cmd)
 				defer keys.close()
-				if err := decryptAuditCall(root, keys, events, &out); err != nil {
+				if err := decryptCall(root, keys, events, &out); err != nil {
 					return err
 				}
 				warnings = append(warnings, "decrypted audit payloads may contain credentials and private user data")
@@ -354,7 +354,7 @@ func (a *App) newCallsShowCmd() *cobra.Command {
 	return cmd
 }
 
-func decryptAuditCall(root string, keys *auditKeyCache, events []calllog.Event, out *AuditCall) error {
+func decryptCall(root string, keys *callsKeyCache, events []calllog.Event, out *CallDetail) error {
 	for _, e := range events {
 		// Frame bodies are appended in event order rather than assigned to a
 		// named field: a call has exactly one request and one result, and any
@@ -519,7 +519,7 @@ func (a *App) newCallsVerifyCmd() *cobra.Command {
 		Short: "Authenticate metadata and decrypt every referenced payload",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			keys := newAuditKeyCache(a, cmd)
+			keys := newCallsKeyCache(a, cmd)
 			defer keys.close()
 			root, err := calllog.DefaultDir(a.resolver)
 			if err != nil {
@@ -580,17 +580,17 @@ func (v *CallsVerify) addIssue(issue string) {
 	}
 }
 
-type auditKeyCache struct {
+type callsKeyCache struct {
 	a    *App
 	cmd  *cobra.Command
 	keys map[string][]byte
 }
 
-func newAuditKeyCache(a *App, cmd *cobra.Command) *auditKeyCache {
-	return &auditKeyCache{a: a, cmd: cmd, keys: map[string][]byte{}}
+func newCallsKeyCache(a *App, cmd *cobra.Command) *callsKeyCache {
+	return &callsKeyCache{a: a, cmd: cmd, keys: map[string][]byte{}}
 }
 
-func (c *auditKeyCache) get(keyID string) ([]byte, error) {
+func (c *callsKeyCache) get(keyID string) ([]byte, error) {
 	if key := c.keys[keyID]; key != nil {
 		return key, nil
 	}
@@ -602,7 +602,7 @@ func (c *auditKeyCache) get(keyID string) ([]byte, error) {
 	return key, nil
 }
 
-func (c *auditKeyCache) close() {
+func (c *callsKeyCache) close() {
 	for _, key := range c.keys {
 		zeroSecret(key)
 	}
@@ -616,9 +616,9 @@ func (a *App) loadAuditKeyID(cmd *cobra.Command, keyID string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	encoded, ok, err := chain.Get(cmd.Context(), secrets.AuditEncryptionKeyRef(keyID))
+	encoded, ok, err := chain.Get(cmd.Context(), secrets.CallsEncryptionKeyRef(keyID))
 	if err == nil && !ok {
-		encoded, ok, err = chain.Get(cmd.Context(), secrets.AuditEncryptionRef())
+		encoded, ok, err = chain.Get(cmd.Context(), secrets.CallsEncryptionRef())
 	}
 	if err != nil {
 		return nil, classifySecretsError(err)

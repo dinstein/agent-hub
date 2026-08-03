@@ -39,18 +39,21 @@ func (g *gateway) handleRequest(req *mcp.Request) {
 	if req.Method != mcp.MethodToolsCall && !g.acceptRequestMeta(req) {
 		return // rejected with CodeUnsupportedProtocolVersion, reply sent
 	}
-	// Everything a client asks of agenthub is recorded, not only the calls it
-	// routes. Without this the ledger could not answer the first question
-	// anybody brings to it — did this client reach us at all — because a
-	// session that initialized, listed and then went quiet left exactly the
-	// same trace as one that never connected.
+	// Everything a client asks of agenthub is recorded, not only what it
+	// routes, and all of it on ONE path: same span, same payload capture,
+	// same finish through reply(). Without it the ledger could not answer the
+	// first question anybody brings to it — did this client reach us at all —
+	// because a session that initialized, listed and then went quiet left
+	// exactly the trace of one that never connected.
 	//
-	// It is a metadata pair (received, finished) with no routing between
-	// them, and it is fail-open even when evidence is on: a ledger hiccup
-	// must not be able to break `initialize`. Only tools/call is governed,
-	// and only tools/call refuses to run unrecorded.
-	if req.Method != mcp.MethodToolsCall {
-		defer g.auditRequest(req)()
+	// The record is written HERE, on the read loop, before anything parses or
+	// dispatches: earlier than the handler goroutine tools/call runs in, and
+	// therefore earlier than any decision made about the request. Only
+	// tools/call refuses to run when it cannot be recorded; the rest fail
+	// open, because a ledger hiccup must not break a session's handshake.
+	if err := g.ledgerBegin(req); err != nil {
+		g.reply(mcp.NewErrorResponse(req.ID, ledgerRPCError(err)))
+		return
 	}
 	switch req.Method {
 	case mcp.MethodInitialize:
@@ -349,17 +352,16 @@ func (g *gateway) handleToolsCall(ctx context.Context, req *mcp.Request) {
 	defer g.unregisterInflight(req.ID)
 	defer func() {
 		if ctx.Err() != nil {
-			g.auditFinishCancelled(req.ID)
+			g.ledgerFinishCancelled(req.ID)
 		}
 	}()
 
-	// Strict ordering: persist the complete incoming params and the received
-	// event before parsing, routing, gates, or downstream work. A write
-	// failure refuses the call; discovery remains available for repair.
-	if err := g.auditBegin(req); err != nil {
-		g.reply(mcp.NewErrorResponse(req.ID, auditRPCError(err)))
-		return
-	}
+	// The received record was written by handleRequest, on the read loop,
+	// before this goroutine started — which is stricter than writing it here
+	// and is why the ordering rule holds for every method rather than for
+	// this one: the complete incoming params are durable before anything
+	// parses, routes or gates them, and a write failure refused the call
+	// there. Discovery remains available for repair either way.
 	if !g.acceptRequestMeta(req) {
 		return // rejection response was sent and finalized by reply
 	}
@@ -371,11 +373,11 @@ func (g *gateway) handleToolsCall(ctx context.Context, req *mcp.Request) {
 		}))
 		return
 	}
-	g.auditSetExposed(req.ID, p.Name)
+	g.ledgerSetExposed(req.ID, p.Name)
 
 	s := g.currentSurface()
 	kind := s.Classify(p.Name)
-	g.auditSetSurface(req.ID, kind.String())
+	g.ledgerSetSurface(req.ID, kind.String())
 	switch kind {
 	case discovery.KindMeta:
 		g.handleMetaCall(ctx, req, s, p)
@@ -507,7 +509,7 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 			// back to the lifecycle records of this same request. The closure
 			// already holds the span, which is why this is an argument rather
 			// than something hidden in the context.
-			return lease.Server.CallFor(ctx, downstream.CallOrigin(g.auditCallID(req.ID)),
+			return lease.Server.CallFor(ctx, downstream.CallOrigin(g.ledgerCallID(req.ID)),
 				route.RawTool, args)
 		},
 	}, args)
@@ -535,8 +537,8 @@ func (g *gateway) runCall(ctx context.Context, req *mcp.Request, t callTarget, a
 	// The routed event (including the complete effective arguments) is also
 	// durable before the frozen gate chain runs. This observes provenance;
 	// it is not a gate and never inspects or rewrites args.
-	if err := g.auditRoute(req.ID, route, args, t.provider); err != nil {
-		g.reply(mcp.NewErrorResponse(req.ID, auditRPCError(err)))
+	if err := g.ledgerRoute(req.ID, route, args, t.provider); err != nil {
+		g.reply(mcp.NewErrorResponse(req.ID, ledgerRPCError(err)))
 		return
 	}
 	callReq := pipeline.CallRequest{
@@ -580,7 +582,7 @@ func (g *gateway) runCall(ctx context.Context, req *mcp.Request, t callTarget, a
 		return
 	}
 	if err != nil {
-		g.auditMarkFailure(req.ID, err)
+		g.ledgerMarkFailure(req.ID, err)
 		g.logCallFailure(req, route, started, err)
 		g.reply(mcp.NewErrorResponse(req.ID, callError(err)))
 		return

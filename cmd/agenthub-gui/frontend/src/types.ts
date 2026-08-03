@@ -829,7 +829,7 @@ export interface TopicEvent<T = unknown> {
 // Encrypted access ledger
 // ---------------------------------------------------------------------------
 
-export interface AuditUsage {
+export interface CallsUsage {
   bytes: number;
   days: number;
   eventFiles: number;
@@ -848,10 +848,10 @@ export interface CallsStatus {
   minFreeBytes: number;
   pressure: string;
   keyId?: string;
-  storage: AuditUsage;
+  storage: CallsUsage;
 }
 
-export interface AuditCallSummary {
+export interface CallSummary {
   callId: string;
   time: string;
   client?: string;
@@ -873,9 +873,9 @@ export interface AuditCallSummary {
   complete: boolean;
 }
 
-export interface AuditCalls {
+export interface CallPage {
   since?: string;
-  calls: AuditCallSummary[];
+  calls: CallSummary[];
   total: number;
   nextCursor?: string;
   skippedMalformed: number;
@@ -951,7 +951,7 @@ export interface EventLog {
   skipped?: number;
 }
 
-export interface AuditEvent {
+export interface CallEvent {
   time: string;
   event: string;
   requestId?: string;
@@ -975,18 +975,18 @@ export interface AuditEvent {
   bytes?: number;
 }
 
-export interface AuditPayload {
+export interface CallPayload {
   text?: string;
   bytes?: number;
   truncated?: boolean;
 }
 
-export interface CallDetail extends AuditCallSummary {
-  events: AuditEvent[];
+export interface CallDetail extends CallSummary {
+  events: CallEvent[];
   error?: string;
-  request: AuditPayload;
-  effectiveArguments: AuditPayload;
-  result: AuditPayload;
+  request: CallPayload;
+  effectiveArguments: CallPayload;
+  result: CallPayload;
 }
 
 export interface CallsStats {
@@ -1004,7 +1004,7 @@ export interface CallsStats {
   serverTools?: Record<string, Record<string, number>>;
 }
 
-export interface AuditVerify {
+export interface CallsVerify {
   ok: boolean;
   events: number;
   payloads: number;
@@ -1013,7 +1013,7 @@ export interface AuditVerify {
   issues?: string[];
 }
 
-export interface AuditPrune {
+export interface CallsPrune {
   dryRun: boolean;
   before: string;
   days: number;
@@ -1021,7 +1021,7 @@ export interface AuditPrune {
   names?: string[];
 }
 
-export interface AuditKeyRotation {
+export interface CallsKeyRotation {
   previousKeyId: string;
   keyId: string;
   enabled: boolean;

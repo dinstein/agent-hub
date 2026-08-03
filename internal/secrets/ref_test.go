@@ -110,8 +110,8 @@ func TestWellKnownRefsAreDistinctAndFrozen(t *testing.T) {
 		"agenthub/v1/gh/_global/__http_auth__":                                HTTPAuthRef("gh"),
 		"agenthub/v1/gh/_global/__oauth_state__":                              OAuthStateRef("gh"),
 		"agenthub/v1/gh/_global/api_key":                                      UserRef("gh", "api_key"),
-		"agenthub/v1/_agenthub/_global/__audit_encryption__":                  AuditEncryptionRef(),
-		"agenthub/v1/_agenthub/_global/__audit_encryption_0123456789abcdef__": AuditEncryptionKeyRef("0123456789abcdef"),
+		"agenthub/v1/_agenthub/_global/__audit_encryption__":                  CallsEncryptionRef(),
+		"agenthub/v1/_agenthub/_global/__audit_encryption_0123456789abcdef__": CallsEncryptionKeyRef("0123456789abcdef"),
 	}
 	seen := map[string]string{}
 	for want, ref := range refs {

@@ -443,12 +443,12 @@ const (
 	// Audit policy defaults are conservative on both sides of the ledger:
 	// request arguments are always complete, result capture is bounded, and
 	// storage pressure refuses new calls instead of silently losing history.
-	DefaultAuditDurability          = "sync"
-	DefaultAuditResultMode          = "truncated"
-	DefaultAuditResultBytes         = 64 << 10
-	DefaultAuditRetentionDays       = 30
-	DefaultAuditMaxBytes      int64 = 5 << 30
-	DefaultAuditMinFree       int64 = 1 << 30
+	DefaultCallsDurability          = "sync"
+	DefaultCallsResultMode          = "truncated"
+	DefaultCallsResultBytes         = 64 << 10
+	DefaultCallsRetentionDays       = 30
+	DefaultCallsMaxBytes      int64 = 5 << 30
+	DefaultCallsMinFree       int64 = 1 << 30
 )
 
 // CallsPolicy is the persisted access-ledger policy. Zero values other than
@@ -648,9 +648,9 @@ func (g GovernanceDoc) IntentVariantsEnabled() bool {
 // ResolvedCalls returns the complete audit policy with bounded defaults.
 func (g GovernanceDoc) ResolvedCalls() ResolvedCallsPolicy {
 	p := ResolvedCallsPolicy{
-		Durability: DefaultAuditDurability, ResultMode: DefaultAuditResultMode,
-		ResultBytes: DefaultAuditResultBytes, RetentionDays: DefaultAuditRetentionDays,
-		MaxBytes: DefaultAuditMaxBytes, MinFreeBytes: DefaultAuditMinFree,
+		Durability: DefaultCallsDurability, ResultMode: DefaultCallsResultMode,
+		ResultBytes: DefaultCallsResultBytes, RetentionDays: DefaultCallsRetentionDays,
+		MaxBytes: DefaultCallsMaxBytes, MinFreeBytes: DefaultCallsMinFree,
 	}
 	stored := g.CallsDoc()
 	if stored == nil {

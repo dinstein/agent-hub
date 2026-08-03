@@ -3,10 +3,10 @@ import { clear, el, empty, loadingState, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot } from "../page";
 import type {
-  AuditEvent,
+  CallEvent,
   CallDetail,
-  AuditCallSummary,
-  AuditPayload,
+  CallSummary,
+  CallPayload,
   CallsStats,
   CallsStatus,
 } from "../types";
@@ -46,37 +46,54 @@ function formatTime(raw: string): string {
   }).format(date);
 }
 
-function targetOf(call: AuditCallSummary): string {
+/** What this call REACHED, as a title.
+ *
+ *  "Unrouted" is reserved for the one case it describes: a tools/call whose
+ *  name resolved to no server. A tools/list is not unrouted — agenthub
+ *  answered it — and labelling it so sent a reader looking for a routing
+ *  fault that never happened. */
+function targetOf(call: CallSummary): string {
   if (call.server || call.tool) return [call.server, call.tool].filter(Boolean).join(" / ");
   if (call.surface === "meta" && call.exposedTool) return `agenthub / ${call.exposedTool}`;
-  return call.exposedTool || "Unrouted";
+  if (call.exposedTool) return call.exposedTool;
+  if (call.method && call.method !== "tools/call") return `agenthub / ${call.method}`;
+  return "Unrouted";
 }
 
 /** methodLabel is what the client ASKED FOR, which is not always a call: a
  *  session's initialize and tools/list are recorded too, and a row that
  *  showed only the routed target would render them as blanks. */
-function methodLabel(call: AuditCallSummary): string {
+function methodLabel(call: CallSummary): string {
   return call.method || "tools/call";
+}
+
+/** surfaceLabel names which of agenthub's faces answered. The empty case is
+ *  not missing data: `surface` classifies a tools/call name, and initialize,
+ *  tools/list and ping carry none — the hub answered them itself. */
+function surfaceLabel(call: CallSummary): string {
+  if (call.surface) return call.surface;
+  if (call.method && call.method !== "tools/call") return "answered by agenthub";
+  return "—";
 }
 
 /** serverLabel says where a call went. "agenthub" rather than "Unrouted" for
  *  the hub's own tools: a search_tools call is not an unrouted attempt, it is
  *  a call the hub answered itself. */
-function serverLabel(call: AuditCallSummary): string {
+function serverLabel(call: CallSummary): string {
   if (call.server) return call.server;
   if (call.surface === "meta") return "agenthub";
   if (call.method && call.method !== "tools/call") return "agenthub";
   return "Unrouted";
 }
 
-function outcomeTone(call: AuditCallSummary): string {
+function outcomeTone(call: CallSummary): string {
   if (!call.complete) return "badge-degraded";
   if (call.outcome === "success") return "badge-healthy";
   if (call.outcome === "cancelled") return "badge-disabled";
   return "badge-unhealthy";
 }
 
-function outcomeLabel(call: AuditCallSummary): string {
+function outcomeLabel(call: CallSummary): string {
   return call.complete ? call.outcome || "finished" : "in progress";
 }
 
@@ -100,7 +117,7 @@ function prettyJSON(raw: string): string | null {
   }
 }
 
-function payloadPanel(title: string, payload: AuditPayload, primary = false): HTMLElement {
+function payloadPanel(title: string, payload: CallPayload, primary = false): HTMLElement {
   const raw = payload.text ?? "";
   const pretty = prettyJSON(raw);
   let prettyMode = pretty !== null;
@@ -155,9 +172,11 @@ function detailFacts(detail: CallDetail): HTMLElement {
     ]),
     el("div", {}, [
       el("span", { text: "Surface" }),
-      // Which of agenthub's own faces answered: one of the hub's own tools,
-      // a grouped listing, or a name that routed straight through.
-      el("strong", { text: detail.surface || "—" }),
+      // Which of agenthub's own faces answered. It is a classification of a
+      // tools/call NAME, so a request that carries no name has none — and
+      // saying "answered by agenthub" is the honest reading of that, where a
+      // dash reads as a field that failed to fill in.
+      el("strong", { text: surfaceLabel(detail) }),
     ]),
   ]);
 }
@@ -169,7 +188,7 @@ function detailFacts(detail: CallDetail): HTMLElement {
  *  being split into two panels: the reason to look at a frame at all is that
  *  something between `routed` and `finished` went wrong, and a reader should
  *  not have to interleave two lists by hand to see it. */
-function eventSubtitle(event: AuditEvent): string {
+function eventSubtitle(event: CallEvent): string {
   if (event.method) {
     const parts = [event.method];
     if (event.seq && event.seq > 1) parts.push(`attempt ${event.seq}`);
@@ -221,7 +240,7 @@ function detailPage(detail: CallDetail): HTMLElement {
 }
 
 function callDrawer(
-  call: AuditCallSummary,
+  call: CallSummary,
   load: () => Promise<CallDetail>,
   close: () => void,
 ): HTMLElement {
@@ -321,7 +340,7 @@ export function activityPage(): Page {
   let toolFilter = "";
   let outcome = "";
   let status: CallsStatus | null = null;
-  let calls: AuditCallSummary[] = [];
+  let calls: CallSummary[] = [];
   let callTotal = 0;
   let nextCursor = "";
   let pageIndex = 0;
@@ -341,7 +360,7 @@ export function activityPage(): Page {
     restoreFocus = null;
   }
 
-  function openCall(call: AuditCallSummary): void {
+  function openCall(call: CallSummary): void {
     closeDrawer();
     restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     drawer = callDrawer(call, () => hub.callDetail(call.callId), closeDrawer);

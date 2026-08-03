@@ -54,9 +54,9 @@ func (a *App) newCallsExportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var keys *auditKeyCache
+			var keys *callsKeyCache
 			if payloads {
-				keys = newAuditKeyCache(a, cmd)
+				keys = newCallsKeyCache(a, cmd)
 				defer keys.close()
 			}
 			out := CallsExport{Output: output, Payloads: payloads}
@@ -65,8 +65,8 @@ func (a *App) newCallsExportCmd() *cobra.Command {
 				out.Skipped, err = calllog.ScanEventsSince(root, since, func(e calllog.Event) error {
 					record := auditExportRecord{Event: e}
 					if payloads {
-						call := AuditCall{}
-						if err := decryptAuditCall(root, keys, []calllog.Event{e}, &call); err != nil {
+						call := CallDetail{}
+						if err := decryptCall(root, keys, []calllog.Event{e}, &call); err != nil {
 							return err
 						}
 						record.Request = call.Request

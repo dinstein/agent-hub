@@ -276,7 +276,7 @@ type gateway struct {
 	credWG      sync.WaitGroup
 	// audit is the strict tools/call ledger wrapper. It is outside pipe: it
 	// observes the one execute path without becoming a third governance gate.
-	audit *auditManager
+	audit *ledgerManager
 	// reloadMu serializes onRegistryChange (watcher + daemon link may fire
 	// concurrently; reload/diff/apply must not interleave).
 	reloadMu sync.Mutex
@@ -399,7 +399,7 @@ func newGateway(cfg Config) (*gateway, error) {
 		inflight:    make(map[string]context.CancelFunc),
 		pendingRPC:  make(map[string]chan *mcp.Response),
 	}
-	g.audit = newAuditManager()
+	g.audit = newLedgerManager()
 	g.roots = &clientRoots{g: g}
 	// Before the pool: poolOptions closes over downstreamDeps, which reads
 	// g.traces to build FramesFor.
@@ -422,7 +422,7 @@ func newGateway(cfg Config) (*gateway, error) {
 	specs, regOK := g.loadRegistry(resolver)
 	g.specs = specs
 	// The ledger is strict for calls but not for discovery: an invalid key or
-	// unwritable directory leaves the gateway up and makes auditBegin refuse
+	// unwritable directory leaves the gateway up and makes ledgerBegin refuse
 	// every tools/call before execution.
 	g.syncAudit()
 	// After the registry, because the switch that decides it lives in
@@ -747,9 +747,9 @@ func (g *gateway) shutdown() {
 // the caller (a dead pipe surfaces as EOF in the read loop).
 func (g *gateway) reply(msg any) {
 	if res, ok := msg.(*mcp.Response); ok {
-		if err := g.auditFinishResponse(res); err != nil {
+		if err := g.ledgerFinishResponse(res); err != nil {
 			g.log.Error("audit finish failed; replacing tools/call response", "id", res.ID.String(), "error", err)
-			msg = mcp.NewErrorResponse(res.ID, auditRPCError(err))
+			msg = mcp.NewErrorResponse(res.ID, ledgerRPCError(err))
 		}
 	}
 	if err := g.fw.WriteFrame(msg); err != nil {
@@ -757,10 +757,10 @@ func (g *gateway) reply(msg any) {
 	}
 }
 
-func auditRPCError(err error) *mcp.Error {
+func ledgerRPCError(err error) *mcp.Error {
 	return &mcp.Error{
 		Code:    mcp.CodeInternalError,
-		Message: "tool call blocked because the access ledger could not be written: " + boundedAuditText(err.Error()),
+		Message: "tool call blocked because the access ledger could not be written: " + boundedLedgerText(err.Error()),
 	}
 }
 

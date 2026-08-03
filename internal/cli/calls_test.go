@@ -114,7 +114,7 @@ func TestCallsPolicyConfig(t *testing.T) {
 func seedCLIAuditCall(t *testing.T, dataDir, callID string) string {
 	t.Helper()
 	chain := secrets.NewChain(secrets.ChainConfig{Dir: filepath.Join(dataDir, "secrets")})
-	encoded, ok, err := chain.Get(context.Background(), secrets.AuditEncryptionRef())
+	encoded, ok, err := chain.Get(context.Background(), secrets.CallsEncryptionRef())
 	if err != nil || !ok {
 		t.Fatalf("load audit key: ok=%v err=%v", ok, err)
 	}
@@ -181,12 +181,12 @@ func TestAuditReadCommandsAndIntegrityVerification(t *testing.T) {
 		t.Fatalf("stats = %+v", stats)
 	}
 
-	var metadata AuditCall
+	var metadata CallDetail
 	decodeInto(t, mustRun(t, "", "calls", "show", "call-for-cli", "--json"), &metadata)
 	if metadata.Request != "" || len(metadata.Events) != 3 {
 		t.Fatalf("metadata-only show = %+v", metadata)
 	}
-	var full AuditCall
+	var full CallDetail
 	out := mustRun(t, "", "calls", "show", "call-for-cli", "--payloads", "--json")
 	decodeInto(t, out, &full)
 	if !strings.Contains(full.Request, "request-value") || !strings.Contains(full.Result, "result-value") {
@@ -249,7 +249,7 @@ func TestCallsExportPruneAndKeyRotation(t *testing.T) {
 	if !verify.OK || verify.Events != 6 || verify.Payloads != 6 {
 		t.Fatalf("post-rotation verify = %+v", verify)
 	}
-	var old AuditCall
+	var old CallDetail
 	decodeInto(t, mustRun(t, "", "calls", "show", "before-rotation", "--payloads", "--json"), &old)
 	if !strings.Contains(old.Request, "request-value") {
 		t.Fatalf("old payload after rotation = %+v", old)

@@ -25,7 +25,7 @@ import (
 // page that needed the data, with `unknown bound method name` in it, and it
 // reaches a user because nothing before them looks at both sides.
 //
-// It has already happened once: a rename moved services.Hub.AuditCalls to
+// It has already happened once: a rename moved services.Hub.CallPage to
 // CallPage and the frontend to "CallList", and the Calls page shipped broken
 // in v0.24.0.
 //

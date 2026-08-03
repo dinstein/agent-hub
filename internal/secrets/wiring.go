@@ -26,15 +26,15 @@ func UserRef(serverID, key string) Ref {
 	return Ref{ServerID: serverID, Scope: DefaultScope, Key: key}
 }
 
-// AuditEncryptionRef is the single machine-local access-ledger key. The
+// CallsEncryptionRef is the single machine-local access-ledger key. The
 // reserved server component keeps it out of every downstream namespace.
-func AuditEncryptionRef() Ref {
-	return Ref{ServerID: "_agenthub", Scope: DefaultScope, Key: KeyAuditEncryption}
+func CallsEncryptionRef() Ref {
+	return Ref{ServerID: "_agenthub", Scope: DefaultScope, Key: KeyCallsEncryption}
 }
 
-// AuditEncryptionKeyRef names one immutable access-ledger key by its public
+// CallsEncryptionKeyRef names one immutable access-ledger key by its public
 // key id. Key-specific entries let old retained partitions remain readable
 // after rotation. Callers must pass an id returned by calllog.KeyID.
-func AuditEncryptionKeyRef(keyID string) Ref {
+func CallsEncryptionKeyRef(keyID string) Ref {
 	return Ref{ServerID: "_agenthub", Scope: DefaultScope, Key: "__audit_encryption_" + keyID + "__"}
 }

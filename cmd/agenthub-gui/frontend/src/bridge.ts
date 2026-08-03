@@ -24,12 +24,12 @@ import { Browser, Call, Clipboard, Events } from "@wailsio/runtime";
 import type {
   ProcLogPage,
   CallDetail,
-  AuditCalls,
-  AuditKeyRotation,
-  AuditPrune,
+  CallPage,
+  CallsKeyRotation,
+  CallsPrune,
   CallsStats,
   CallsStatus,
-  AuditVerify,
+  CallsVerify,
   AuthLoggedOut,
   AuthLogin,
   AuthRefreshed,
@@ -152,7 +152,7 @@ export const hub = {
     server = "",
     tool = "",
     outcome = "",
-  ) => call<AuditCalls>("CallList", sinceMillis, limit, cursor, "", client, server, tool, outcome),
+  ) => call<CallPage>("CallList", sinceMillis, limit, cursor, "", client, server, tool, outcome),
   /** Selecting a row is the disclosure action: payload previews are returned
    *  immediately, with no second decrypt control. */
   callDetail: (id: string) => call<CallDetail>("CallDetail", id),
@@ -160,9 +160,9 @@ export const hub = {
   setAuditEnabled: (enabled: boolean, generation: number) =>
     call<CallsStatus>("SetCallsEnabled", enabled, generation),
   rotateAuditKey: (generation: number) =>
-    call<AuditKeyRotation>("RotateCallsKey", generation),
-  verifyAudit: () => call<AuditVerify>("VerifyCalls"),
-  pruneAudit: (dryRun: boolean) => call<AuditPrune>("PruneCalls", dryRun),
+    call<CallsKeyRotation>("RotateCallsKey", generation),
+  verifyAudit: () => call<CallsVerify>("VerifyCalls"),
+  pruneAudit: (dryRun: boolean) => call<CallsPrune>("PruneCalls", dryRun),
 
   // -- control-plane event log ---------------------------------------------
   /** What HAPPENED, in a closed vocabulary — as opposed to EVT.servers, which

@@ -202,7 +202,7 @@ func (a *App) newCallsRotateKeyCmd() *cobra.Command {
 			}
 			// Persist by immutable id first. The configuration can then switch
 			// atomically between two keys that are both already readable.
-			if err := chain.Set(cmd.Context(), secrets.AuditEncryptionKeyRef(keyID), encoded); err != nil {
+			if err := chain.Set(cmd.Context(), secrets.CallsEncryptionKeyRef(keyID), encoded); err != nil {
 				return classifySecretsError(err)
 			}
 			res, err := confops.SetAuditKeyID(cmd.Context(), store, keyID, noPrecondition)
@@ -212,7 +212,7 @@ func (a *App) newCallsRotateKeyCmd() *cobra.Command {
 			}
 			// Keep the legacy current-key entry updated for older clients. New
 			// gateways resolve the immutable id entry above.
-			if err := chain.Set(cmd.Context(), secrets.AuditEncryptionRef(), encoded); err != nil {
+			if err := chain.Set(cmd.Context(), secrets.CallsEncryptionRef(), encoded); err != nil {
 				return classifySecretsError(err)
 			}
 			return a.printer().Emit(CallsKeyRotation{
@@ -227,7 +227,7 @@ func (a *App) loadOrCreateAuditKey(cmd *cobra.Command) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	ref := secrets.AuditEncryptionRef()
+	ref := secrets.CallsEncryptionRef()
 	encoded, ok, err := chain.Get(cmd.Context(), ref)
 	if err != nil {
 		return nil, classifySecretsError(err)
@@ -249,7 +249,7 @@ func (a *App) loadOrCreateAuditKey(cmd *cobra.Command) ([]byte, error) {
 			zeroSecret(key)
 			return nil, err
 		}
-		if err := chain.Set(cmd.Context(), secrets.AuditEncryptionKeyRef(keyID), encoded); err != nil {
+		if err := chain.Set(cmd.Context(), secrets.CallsEncryptionKeyRef(keyID), encoded); err != nil {
 			zeroSecret(key)
 			return nil, classifySecretsError(err)
 		}
@@ -266,7 +266,7 @@ func (a *App) loadOrCreateAuditKey(cmd *cobra.Command) ([]byte, error) {
 	}
 	// Backfill the immutable id entry for installations created by the first
 	// audit release. This is idempotent and keeps rotation lossless.
-	if err := chain.Set(cmd.Context(), secrets.AuditEncryptionKeyRef(keyID), encoded); err != nil {
+	if err := chain.Set(cmd.Context(), secrets.CallsEncryptionKeyRef(keyID), encoded); err != nil {
 		zeroSecret(key)
 		return nil, classifySecretsError(err)
 	}

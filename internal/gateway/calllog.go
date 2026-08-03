@@ -19,22 +19,22 @@ import (
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
-const auditTextBound = 1024
+const ledgerTextBound = 1024
 
-// auditManager owns the gateway's current ledger store and the in-flight
+// ledgerManager owns the gateway's current ledger store and the in-flight
 // spans keyed by upstream request id. Reconfiguration never closes the old
 // store immediately: a call that began under that policy must finish into
 // the same ledger even if audit is disabled or rotated while it runs.
-type auditManager struct {
+type ledgerManager struct {
 	mu          sync.Mutex
 	policy      registry.ResolvedCallsPolicy
 	store       *calllog.Store
 	unavailable error
 	retired     []*calllog.Store
-	spans       map[string]*auditSpan
+	spans       map[string]*ledgerSpan
 }
 
-type auditSpan struct {
+type ledgerSpan struct {
 	store   *calllog.Store
 	policy  registry.ResolvedCallsPolicy
 	started time.Time
@@ -44,10 +44,14 @@ type auditSpan struct {
 	provider string
 	gate     string
 	code     string
+	// governed marks the one method whose record is a precondition for
+	// running it. Everything else is recorded on this same path and fails
+	// open, so a ledger problem cannot break a session's handshake.
+	governed bool
 }
 
-func newAuditManager() *auditManager {
-	return &auditManager{spans: map[string]*auditSpan{}}
+func newLedgerManager() *ledgerManager {
+	return &ledgerManager{spans: map[string]*ledgerSpan{}}
 }
 
 func validateCallsPolicy(p registry.ResolvedCallsPolicy) error {
@@ -129,12 +133,12 @@ func (g *gateway) syncAudit() {
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
 	}
-	encoded, ok, err := g.cfg.Secrets(g.lifeCtx, secrets.AuditEncryptionKeyRef(p.KeyID))
+	encoded, ok, err := g.cfg.Secrets(g.lifeCtx, secrets.CallsEncryptionKeyRef(p.KeyID))
 	if err == nil && !ok {
 		// Compatibility with ledgers enabled before key-specific vault entries
 		// existed. The id check below prevents a legacy current key from being
 		// mistaken for the configured historical key.
-		encoded, ok, err = g.cfg.Secrets(g.lifeCtx, secrets.AuditEncryptionRef())
+		encoded, ok, err = g.cfg.Secrets(g.lifeCtx, secrets.CallsEncryptionRef())
 	}
 	if err != nil || !ok {
 		if err == nil {
@@ -226,7 +230,7 @@ func (g *gateway) swapStore(p registry.ResolvedCallsPolicy, store *calllog.Store
 	g.traces.setSink(sink, store.HasKey() && p.Enabled)
 }
 
-func (m *auditManager) swap(p registry.ResolvedCallsPolicy, store *calllog.Store, unavailable error) {
+func (m *ledgerManager) swap(p registry.ResolvedCallsPolicy, store *calllog.Store, unavailable error) {
 	m.mu.Lock()
 	if m.store != nil && m.store != store {
 		m.retired = append(m.retired, m.store)
@@ -235,7 +239,7 @@ func (m *auditManager) swap(p registry.ResolvedCallsPolicy, store *calllog.Store
 	m.mu.Unlock()
 }
 
-func (m *auditManager) close() error {
+func (m *ledgerManager) close() error {
 	m.mu.Lock()
 	stores := append([]*calllog.Store(nil), m.retired...)
 	if m.store != nil {
@@ -252,7 +256,7 @@ func (m *auditManager) close() error {
 	return errors.Join(errs...)
 }
 
-func (g *gateway) auditBegin(req *mcp.Request) error {
+func (g *gateway) ledgerBegin(req *mcp.Request) error {
 	m := g.audit
 	if m == nil {
 		return nil
@@ -260,9 +264,14 @@ func (g *gateway) auditBegin(req *mcp.Request) error {
 	m.mu.Lock()
 	p, store, unavailable := m.policy, m.store, m.unavailable
 	m.mu.Unlock()
-	// Only EVIDENCE fails closed. With it off, a store that could not be
-	// opened costs the timeline a call and costs the call nothing.
-	if p.Enabled && (unavailable != nil || store == nil) {
+	// Only EVIDENCE fails closed, and only for tools/call: that is the
+	// governed method, and it is the one that must not run unrecorded.
+	// Everything else a client asks of agenthub is recorded on the same path
+	// — same span, same payload capture, same finish — but a ledger that
+	// cannot take it costs the timeline a line rather than breaking the
+	// session's `initialize`.
+	governed := req.Method == mcp.MethodToolsCall
+	if governed && p.Enabled && (unavailable != nil || store == nil) {
 		if unavailable == nil {
 			unavailable = errors.New("ledger store is unavailable")
 		}
@@ -273,7 +282,7 @@ func (g *gateway) auditBegin(req *mcp.Request) error {
 	}
 	callID, err := calllog.NewCallID()
 	if err != nil {
-		if p.Enabled {
+		if governed && p.Enabled {
 			return err
 		}
 		return nil
@@ -283,37 +292,42 @@ func (g *gateway) auditBegin(req *mcp.Request) error {
 	if store.HasKey() {
 		request, err = store.PutPayload(started, callID, calllog.PayloadRequest, req.Params)
 		if err != nil {
-			return err
+			if governed {
+				return err
+			}
+			// An ungoverned request keeps its metadata line; losing the
+			// params costs the reader the body, not the fact.
+			request = calllog.PayloadRef{}
 		}
 	}
-	common := g.auditCommon(callID, req, started)
+	common := g.ledgerCommon(callID, req, started)
 	received := common
 	received.Kind = calllog.EventReceived
-	if store.HasKey() {
+	if store.HasKey() && request.Length > 0 {
 		received.Request = &request
 	}
 	if err := store.Append(received); err != nil {
-		if p.Enabled {
+		if governed && p.Enabled {
 			return err
 		}
 		return nil
 	}
-	span := &auditSpan{store: store, policy: p, started: started, common: common}
+	span := &ledgerSpan{store: store, policy: p, started: started, common: common, governed: governed}
 	m.mu.Lock()
 	m.spans[req.ID.Key()] = span
 	m.mu.Unlock()
 	return nil
 }
 
-func (g *gateway) auditRoute(id mcp.ID, route router.Route, args json.RawMessage, provider string) error {
-	span := g.auditSpan(id)
+func (g *gateway) ledgerRoute(id mcp.ID, route router.Route, args json.RawMessage, provider string) error {
+	span := g.ledgerSpan(id)
 	if span == nil {
 		return nil
 	}
 	span.route, span.provider = route, provider
 	e := span.common
 	e.TS, e.Kind = time.Now().UTC(), calllog.EventRouted
-	e.Exposed, e.Server, e.Tool = boundedAuditText(span.common.Exposed), boundedAuditText(route.ServerID), boundedAuditText(route.RawTool)
+	e.Exposed, e.Server, e.Tool = boundedLedgerText(span.common.Exposed), boundedLedgerText(route.ServerID), boundedLedgerText(route.RawTool)
 	e.Provider = provider
 	if span.store.HasKey() {
 		ref, err := span.store.PutPayload(e.TS, span.common.CallID, calllog.PayloadEffectiveArgs, args)
@@ -328,96 +342,55 @@ func (g *gateway) auditRoute(id mcp.ID, route router.Route, args json.RawMessage
 	return nil
 }
 
-// auditCommon is the identity every record of one upstream request carries:
+// ledgerCommon is the identity every record of one upstream request carries:
 // who asked, over which face, under which policy generation, and — since
 // every method is recorded now, not only tools/call — which method it was.
 //
 // One function because the two paths that build it were one copy apart, and
 // the copy that drifts is the one that leaves a record nobody can join.
-func (g *gateway) auditCommon(callID string, req *mcp.Request, started time.Time) calllog.Event {
+func (g *gateway) ledgerCommon(callID string, req *mcp.Request, started time.Time) calllog.Event {
 	face := g.cfg.Face
 	if face == "" {
 		face = "stdio"
 	}
-	face = boundedAuditText(face)
+	face = boundedLedgerText(face)
 	return calllog.Event{
-		TS: started, CallID: callID, Client: boundedAuditText(g.cfg.ClientID),
-		Session:   boundedAuditText(face + ":" + g.cfg.ClientID),
-		RequestID: boundedAuditText(req.ID.String()), Face: face,
-		Method:     boundedAuditText(req.Method),
-		Protocol:   boundedAuditText(g.auditRequestProtocol(req.Params)),
-		PolicyRev:  g.auditPolicyRev(),
-		CallerTier: boundedAuditText(string(g.cfg.CallerTier)),
+		TS: started, CallID: callID, Client: boundedLedgerText(g.cfg.ClientID),
+		Session:   boundedLedgerText(face + ":" + g.cfg.ClientID),
+		RequestID: boundedLedgerText(req.ID.String()), Face: face,
+		Method:     boundedLedgerText(req.Method),
+		Protocol:   boundedLedgerText(g.ledgerRequestProtocol(req.Params)),
+		PolicyRev:  g.ledgerPolicyRev(),
+		CallerTier: boundedLedgerText(string(g.cfg.CallerTier)),
 	}
 }
 
-// auditRequest records one NON-routed upstream request: what the client
-// asked agenthub for, and how long answering took. It returns the closure
-// that writes the finish, so a caller defers one call.
-//
-// Metadata only, and fail-open in every direction. These are not governed
-// calls — nothing here decides whether a downstream may be reached — so a
-// ledger that cannot be written costs the timeline a line and costs the
-// client nothing. tools/call is the one method that goes the other way.
-//
-// The outcome is coarse on purpose: this path answers "did the client reach
-// us, and with what", and the reply it produced is already the answer to
-// anything finer.
-func (g *gateway) auditRequest(req *mcp.Request) func() {
-	m := g.audit
-	if m == nil {
-		return func() {}
-	}
-	m.mu.Lock()
-	store := m.store
-	m.mu.Unlock()
-	if store == nil {
-		return func() {}
-	}
-	callID, err := calllog.NewCallID()
-	if err != nil {
-		return func() {}
-	}
-	started := time.Now().UTC()
-	common := g.auditCommon(callID, req, started)
-	received := common
-	received.Kind = calllog.EventReceived
-	_ = store.Append(received)
-	return func() {
-		finished := common
-		finished.TS, finished.Kind = time.Now().UTC(), calllog.EventFinished
-		finished.Outcome = "answered"
-		finished.DurationMs = time.Since(started).Milliseconds()
-		_ = store.Append(finished)
-	}
-}
-
-// auditCallID returns the ledger id of one in-flight request, or "" when
+// ledgerCallID returns the ledger id of one in-flight request, or "" when
 // nothing is being recorded for it.
-func (g *gateway) auditCallID(id mcp.ID) string {
-	if span := g.auditSpan(id); span != nil {
+func (g *gateway) ledgerCallID(id mcp.ID) string {
+	if span := g.ledgerSpan(id); span != nil {
 		return span.common.CallID
 	}
 	return ""
 }
 
-func (g *gateway) auditSetExposed(id mcp.ID, exposed string) {
-	if span := g.auditSpan(id); span != nil {
-		span.common.Exposed = boundedAuditText(exposed)
+func (g *gateway) ledgerSetExposed(id mcp.ID, exposed string) {
+	if span := g.ledgerSpan(id); span != nil {
+		span.common.Exposed = boundedLedgerText(exposed)
 	}
 }
 
-// auditSetSurface records which of agenthub's own surfaces the name reached.
+// ledgerSetSurface records which of agenthub's own surfaces the name reached.
 // It is set after classification and before anything acts on it, so a call
 // that fails a gate still says what it was asking for.
-func (g *gateway) auditSetSurface(id mcp.ID, surface string) {
-	if span := g.auditSpan(id); span != nil {
-		span.common.Surface = boundedAuditText(surface)
+func (g *gateway) ledgerSetSurface(id mcp.ID, surface string) {
+	if span := g.ledgerSpan(id); span != nil {
+		span.common.Surface = boundedLedgerText(surface)
 	}
 }
 
-func (g *gateway) auditMarkFailure(id mcp.ID, err error) {
-	span := g.auditSpan(id)
+func (g *gateway) ledgerMarkFailure(id mcp.ID, err error) {
+	span := g.ledgerSpan(id)
 	if span == nil {
 		return
 	}
@@ -427,7 +400,7 @@ func (g *gateway) auditMarkFailure(id mcp.ID, err error) {
 	}
 }
 
-func (g *gateway) auditSpan(id mcp.ID) *auditSpan {
+func (g *gateway) ledgerSpan(id mcp.ID) *ledgerSpan {
 	if g.audit == nil {
 		return nil
 	}
@@ -436,7 +409,7 @@ func (g *gateway) auditSpan(id mcp.ID) *auditSpan {
 	return g.audit.spans[id.Key()]
 }
 
-func (g *gateway) auditFinishResponse(res *mcp.Response) error {
+func (g *gateway) ledgerFinishResponse(res *mcp.Response) error {
 	if g.audit == nil || res == nil {
 		return nil
 	}
@@ -452,7 +425,7 @@ func (g *gateway) auditFinishResponse(res *mcp.Response) error {
 	return span.finishResponse(res)
 }
 
-func (g *gateway) auditFinishCancelled(id mcp.ID) {
+func (g *gateway) ledgerFinishCancelled(id mcp.ID) {
 	if g.audit == nil {
 		return
 	}
@@ -471,7 +444,7 @@ func (g *gateway) auditFinishCancelled(id mcp.ID) {
 	}
 }
 
-func (s *auditSpan) finishResponse(res *mcp.Response) error {
+func (s *ledgerSpan) finishResponse(res *mcp.Response) error {
 	outcome := "success"
 	var payload []byte
 	toolError := false
@@ -513,9 +486,16 @@ func (s *auditSpan) finishResponse(res *mcp.Response) error {
 	if capture && s.store.HasKey() {
 		ref, err := s.store.PutPayload(e.TS, s.common.CallID, calllog.PayloadResult, stored)
 		if err != nil {
-			return err
+			if s.governed {
+				return err
+			}
+			// Same trade as the request half: an ungoverned record keeps its
+			// line without the body.
+			ref = calllog.PayloadRef{}
 		}
-		e.Result = &ref
+		if ref.Length > 0 {
+			e.Result = &ref
+		}
 		if e.ResultCut {
 			e.ResultCapture = "truncated"
 		} else {
@@ -524,43 +504,43 @@ func (s *auditSpan) finishResponse(res *mcp.Response) error {
 	} else {
 		e.ResultCapture = "none"
 	}
-	if err := s.store.Append(e); err != nil && s.policy.Enabled {
+	if err := s.store.Append(e); err != nil && s.governed && s.policy.Enabled {
 		return err
 	}
 	return nil
 }
 
-func (s *auditSpan) finished(outcome string, rpcErr *mcp.Error) calllog.Event {
+func (s *ledgerSpan) finished(outcome string, rpcErr *mcp.Error) calllog.Event {
 	e := s.common
 	e.TS, e.Kind, e.Outcome = time.Now().UTC(), calllog.EventFinished, outcome
 	e.DurationMs = time.Since(s.started).Milliseconds()
-	e.Server, e.Tool, e.Provider = boundedAuditText(s.route.ServerID), boundedAuditText(s.route.RawTool), s.provider
+	e.Server, e.Tool, e.Provider = boundedLedgerText(s.route.ServerID), boundedLedgerText(s.route.RawTool), s.provider
 	e.Gate, e.Code = s.gate, s.code
 	if rpcErr != nil {
 		if e.Code == "" {
 			e.Code = strconv.Itoa(rpcErr.Code)
 		}
-		e.Error = boundedAuditText(rpcErr.Message)
+		e.Error = boundedLedgerText(rpcErr.Message)
 	}
 	return e
 }
 
-func boundedAuditText(s string) string {
+func boundedLedgerText(s string) string {
 	s = strings.ToValidUTF8(s, "�")
-	if len(s) <= auditTextBound {
+	if len(s) <= ledgerTextBound {
 		return s
 	}
-	return s[:auditTextBound]
+	return s[:ledgerTextBound]
 }
 
-func (g *gateway) auditPolicyRev() uint64 {
+func (g *gateway) ledgerPolicyRev() uint64 {
 	if snap := g.snap.Load(); snap != nil {
 		return snap.Generation
 	}
 	return 0
 }
 
-func (g *gateway) auditProtocol() string {
+func (g *gateway) ledgerProtocol() string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.protocol != "" {
@@ -572,12 +552,12 @@ func (g *gateway) auditProtocol() string {
 	return "stateful"
 }
 
-func (g *gateway) auditRequestProtocol(params json.RawMessage) string {
+func (g *gateway) ledgerRequestProtocol(params json.RawMessage) string {
 	var probe struct {
 		Meta *mcp.RequestMeta `json:"_meta"`
 	}
 	if json.Unmarshal(params, &probe) == nil && probe.Meta != nil && probe.Meta.ProtocolVersion != "" {
 		return probe.Meta.ProtocolVersion
 	}
-	return g.auditProtocol()
+	return g.ledgerProtocol()
 }

@@ -23,10 +23,10 @@ type CallsStatus struct {
 	MinFreeBytes  int64      `json:"minFreeBytes"`
 	Pressure      string     `json:"pressure"`
 	KeyID         string     `json:"keyId,omitempty"`
-	Storage       AuditUsage `json:"storage"`
+	Storage       CallsUsage `json:"storage"`
 }
 
-type AuditUsage struct {
+type CallsUsage struct {
 	Bytes      int64 `json:"bytes"`
 	Days       int   `json:"days"`
 	EventFiles int   `json:"eventFiles"`
@@ -65,7 +65,7 @@ type CallPage struct {
 	Skipped    int           `json:"skippedMalformed"`
 }
 
-type AuditEvent struct {
+type CallEvent struct {
 	Time       time.Time `json:"time"`
 	Event      string    `json:"event"`
 	RequestID  string    `json:"requestId,omitempty"`
@@ -95,9 +95,9 @@ type AuditEvent struct {
 	Bytes   int    `json:"bytes,omitempty"`
 }
 
-// AuditPayload is decrypted only for one explicitly selected call. Truncated
+// CallPayload is decrypted only for one explicitly selected call. Truncated
 // means the GUI preview is shorter than the authenticated ledger payload.
-type AuditPayload struct {
+type CallPayload struct {
 	Text      string `json:"text,omitempty"`
 	Bytes     int    `json:"bytes,omitempty"`
 	Truncated bool   `json:"truncated,omitempty"`
@@ -110,11 +110,11 @@ type CallDetail struct {
 	// One `routed` can be followed by several sent/recv pairs — that is a
 	// retry, and it is the thing neither stream could show before the frames
 	// moved into the ledger.
-	Events             []AuditEvent `json:"events"`
-	Error              string       `json:"error,omitempty"`
-	Request            AuditPayload `json:"request"`
-	EffectiveArguments AuditPayload `json:"effectiveArguments"`
-	Result             AuditPayload `json:"result"`
+	Events             []CallEvent `json:"events"`
+	Error              string      `json:"error,omitempty"`
+	Request            CallPayload `json:"request"`
+	EffectiveArguments CallPayload `json:"effectiveArguments"`
+	Result             CallPayload `json:"result"`
 }
 
 type CallsStats struct {

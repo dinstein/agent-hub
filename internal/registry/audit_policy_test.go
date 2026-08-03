@@ -10,10 +10,10 @@ import (
 func TestCallsPolicyDefaultsAndRoundTrip(t *testing.T) {
 	var g registry.GovernanceDoc
 	p := g.ResolvedCalls()
-	if p.Enabled || p.Durability != registry.DefaultAuditDurability ||
-		p.ResultMode != registry.DefaultAuditResultMode || p.ResultBytes != registry.DefaultAuditResultBytes ||
-		p.RetentionDays != registry.DefaultAuditRetentionDays || p.MaxBytes != registry.DefaultAuditMaxBytes ||
-		p.MinFreeBytes != registry.DefaultAuditMinFree || p.KeyID != "" {
+	if p.Enabled || p.Durability != registry.DefaultCallsDurability ||
+		p.ResultMode != registry.DefaultCallsResultMode || p.ResultBytes != registry.DefaultCallsResultBytes ||
+		p.RetentionDays != registry.DefaultCallsRetentionDays || p.MaxBytes != registry.DefaultCallsMaxBytes ||
+		p.MinFreeBytes != registry.DefaultCallsMinFree || p.KeyID != "" {
 		t.Fatalf("defaults = %+v", p)
 	}
 

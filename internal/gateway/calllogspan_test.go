@@ -17,12 +17,12 @@ import (
 	"github.com/dinstein/agent-hub/internal/testutil/fakemcp"
 )
 
-func auditTestKey() []byte { return bytes.Repeat([]byte{0x5a}, 32) }
+func ledgerTestKey() []byte { return bytes.Repeat([]byte{0x5a}, 32) }
 
-func auditSecretResolver(key []byte) secrets.Resolver {
+func ledgerSecretResolver(key []byte) secrets.Resolver {
 	encoded := base64.RawStdEncoding.EncodeToString(key)
 	return func(_ context.Context, ref secrets.Ref) (string, bool, error) {
-		if ref == secrets.AuditEncryptionRef() {
+		if ref == secrets.CallsEncryptionRef() {
 			return encoded, true, nil
 		}
 		return "", false, nil
@@ -31,7 +31,7 @@ func auditSecretResolver(key []byte) secrets.Resolver {
 
 func setCallsPolicy(t *testing.T, resolver *platform.Resolver, mutate func(*registry.CallsPolicy)) {
 	t.Helper()
-	keyID, err := calllog.KeyID(auditTestKey())
+	keyID, err := calllog.KeyID(ledgerTestKey())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,9 +39,9 @@ func setCallsPolicy(t *testing.T, resolver *platform.Resolver, mutate func(*regi
 	updateRegistry(t, st, func(tx *registry.Tx) {
 		p := registry.CallsPolicy{
 			Enabled: true, Durability: "sync",
-			ResultMode: "truncated", ResultBytes: registry.DefaultAuditResultBytes,
-			RetentionDays: registry.DefaultAuditRetentionDays,
-			MaxBytes:      registry.DefaultAuditMaxBytes, MinFreeBytes: registry.DefaultAuditMinFree,
+			ResultMode: "truncated", ResultBytes: registry.DefaultCallsResultBytes,
+			RetentionDays: registry.DefaultCallsRetentionDays,
+			MaxBytes:      registry.DefaultCallsMaxBytes, MinFreeBytes: registry.DefaultCallsMinFree,
 			KeyID: keyID,
 		}
 		mutate(&p)
@@ -49,7 +49,7 @@ func setCallsPolicy(t *testing.T, resolver *platform.Resolver, mutate func(*regi
 	})
 }
 
-func readAuditEvents(t *testing.T, resolver *platform.Resolver) []calllog.Event {
+func readLedgerEvents(t *testing.T, resolver *platform.Resolver) []calllog.Event {
 	t.Helper()
 	root, err := calllog.DefaultDir(resolver)
 	if err != nil {
@@ -74,7 +74,7 @@ func payloadOf(t *testing.T, resolver *platform.Resolver, ref *calllog.PayloadRe
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := calllog.ReadPayload(root, *ref, auditTestKey())
+	raw, err := calllog.ReadPayload(root, *ref, ledgerTestKey())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestAuditRecordsCompleteRequestRouteAndBoundedResult(t *testing.T) {
 	})
 	_, c, _ := startGateway(t, Config{
 		ClientID: "audited", Face: "http", Resolver: resolver,
-		Secrets: auditSecretResolver(auditTestKey()),
+		Secrets: ledgerSecretResolver(ledgerTestKey()),
 		Dial:    scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
 	})
 	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
@@ -180,7 +180,7 @@ func TestAuditRecordsCompleteRequestRouteAndBoundedResult(t *testing.T) {
 		t.Fatal(resp.Error)
 	}
 
-	events := toolCalls(readAuditEvents(t, resolver))
+	events := toolCalls(readLedgerEvents(t, resolver))
 	if len(events) != 3 {
 		t.Fatalf("events = %d, want received+routed+finished: %+v", len(events), events)
 	}
@@ -215,7 +215,7 @@ func TestAuditLazyCallToolKeepsWrapperAndEffectiveArguments(t *testing.T) {
 	ext := externalRegistry(t, resolver)
 	setGovernance(t, ext, func(g *registry.GovernanceDoc) { g.Discovery = "lazy" })
 	_, c, _ := startGateway(t, Config{
-		ClientID: "audit-lazy", Resolver: resolver, Secrets: auditSecretResolver(auditTestKey()),
+		ClientID: "audit-lazy", Resolver: resolver, Secrets: ledgerSecretResolver(ledgerTestKey()),
 		Dial: scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
 	})
 	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
@@ -226,7 +226,7 @@ func TestAuditLazyCallToolKeepsWrapperAndEffectiveArguments(t *testing.T) {
 	if res.IsError {
 		t.Fatal(resultText(t, res))
 	}
-	events := executedCall(t, readAuditEvents(t, resolver))
+	events := executedCall(t, readLedgerEvents(t, resolver))
 	routed := eventKind(t, events, calllog.EventRouted)
 	if routed.Exposed != discovery.MetaCallTool || routed.Server != "fake" || routed.Tool != "echo" {
 		t.Fatalf("lazy route = %+v", routed)
@@ -247,7 +247,7 @@ func TestAuditRecordsMetaAndUnroutableAttempts(t *testing.T) {
 	ext := externalRegistry(t, resolver)
 	setGovernance(t, ext, func(g *registry.GovernanceDoc) { g.Discovery = "lazy" })
 	_, c, _ := startGateway(t, Config{
-		ClientID: "audit-attempts", Resolver: resolver, Secrets: auditSecretResolver(auditTestKey()),
+		ClientID: "audit-attempts", Resolver: resolver, Secrets: ledgerSecretResolver(ledgerTestKey()),
 		Dial: scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
 	})
 	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
@@ -258,7 +258,7 @@ func TestAuditRecordsMetaAndUnroutableAttempts(t *testing.T) {
 	if resp := c.call(mcp.MethodToolsCall, mcp.CallToolParams{Name: "does-not-exist", Arguments: []byte(`{"x":1}`)}); resp.Error == nil {
 		t.Fatal("unknown tool succeeded")
 	}
-	events := toolCalls(readAuditEvents(t, resolver))
+	events := toolCalls(readLedgerEvents(t, resolver))
 	if len(events) != 4 {
 		t.Fatalf("events = %d, want two received+finished lifecycles: %+v", len(events), events)
 	}
@@ -288,14 +288,14 @@ func TestAuditRecordsUnsupportedProtocolToolAttempt(t *testing.T) {
 	seedRegistry(t, resolver)
 	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) { p.ResultMode = "errors" })
 	_, c, _ := startGateway(t, Config{
-		ClientID: "audit-protocol", Resolver: resolver, Secrets: auditSecretResolver(auditTestKey()),
+		ClientID: "audit-protocol", Resolver: resolver, Secrets: ledgerSecretResolver(ledgerTestKey()),
 	})
 	raw := json.RawMessage(`{"name":"status","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2099-01-01"}}`)
 	resp := c.call(mcp.MethodToolsCall, raw)
 	if resp.Error == nil || resp.Error.Code != mcp.CodeUnsupportedProtocolVersion {
 		t.Fatalf("response = %+v, want unsupported protocol", resp)
 	}
-	events := readAuditEvents(t, resolver)
+	events := readLedgerEvents(t, resolver)
 	if len(events) != 2 {
 		t.Fatalf("events = %d, want received+finished: %+v", len(events), events)
 	}
@@ -324,7 +324,7 @@ func TestAuditUnavailableBlocksBeforeTheGateChain(t *testing.T) {
 			t.Errorf("pipeline stage %s ran %d times despite pre-execution audit failure", stage, n)
 		}
 	}
-	if events := readAuditEvents(t, resolver); len(events) != 0 {
+	if events := readLedgerEvents(t, resolver); len(events) != 0 {
 		t.Fatalf("events without a usable key = %+v", events)
 	}
 }
@@ -334,7 +334,7 @@ func TestAuditCapacityBlocksBeforeTheGateChain(t *testing.T) {
 	seedRegistry(t, resolver, "fake")
 	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) { p.MaxBytes = 1 })
 	g, c, _ := startGateway(t, Config{
-		ClientID: "audit-full", Resolver: resolver, Secrets: auditSecretResolver(auditTestKey()),
+		ClientID: "audit-full", Resolver: resolver, Secrets: ledgerSecretResolver(ledgerTestKey()),
 		Dial: scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
 	})
 	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
@@ -371,7 +371,7 @@ func TestAuditRecordsGateDenial(t *testing.T) {
 		tx.Clients.V.Clients["audit-deny"] = registry.Doc[registry.ClientEntry]{V: registry.ClientEntry{Profile: "team"}}
 	})
 	_, c, _ := startGateway(t, Config{
-		ClientID: "audit-deny", Resolver: resolver, Secrets: auditSecretResolver(auditTestKey()),
+		ClientID: "audit-deny", Resolver: resolver, Secrets: ledgerSecretResolver(ledgerTestKey()),
 		Dial: scriptedDial(map[string]*fakemcp.Script{
 			"s1": fakemcp.Minimal("echo"), "s2": fakemcp.Minimal("echo"),
 		}),
@@ -382,7 +382,7 @@ func TestAuditRecordsGateDenial(t *testing.T) {
 	if resp.Error == nil || !strings.Contains(resp.Error.Message, "E_SCOPE_DENIED") {
 		t.Fatalf("denial response = %+v", resp)
 	}
-	events := toolCalls(readAuditEvents(t, resolver))
+	events := toolCalls(readLedgerEvents(t, resolver))
 	if len(events) != 3 {
 		t.Fatalf("denial events = %d, want 3: %+v", len(events), events)
 	}
@@ -398,7 +398,7 @@ func TestAuditRecordsCancellationWithoutReply(t *testing.T) {
 	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) { p.ResultMode = "none" })
 	script := fakemcp.Minimal("stuck").With(fakemcp.NeverRespond(mcp.MethodToolsCall))
 	g, c, _ := startGateway(t, Config{
-		ClientID: "audit-cancel", Resolver: resolver, Secrets: auditSecretResolver(auditTestKey()),
+		ClientID: "audit-cancel", Resolver: resolver, Secrets: ledgerSecretResolver(ledgerTestKey()),
 		Dial: scriptedDial(map[string]*fakemcp.Script{"hang": script}),
 	})
 	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
@@ -410,7 +410,7 @@ func TestAuditRecordsCancellationWithoutReply(t *testing.T) {
 	if c.hasResponse(id) {
 		t.Fatal("cancelled call received a response")
 	}
-	events := toolCalls(readAuditEvents(t, resolver))
+	events := toolCalls(readLedgerEvents(t, resolver))
 	if len(events) != 3 {
 		t.Fatalf("cancellation events = %d, want 3: %+v", len(events), events)
 	}
@@ -424,7 +424,7 @@ func TestAuditEnableHotReloadsIntoRunningGateway(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "fake")
 	g, c, _ := startGateway(t, Config{
-		ClientID: "audit-hot", Resolver: resolver, Secrets: auditSecretResolver(auditTestKey()),
+		ClientID: "audit-hot", Resolver: resolver, Secrets: ledgerSecretResolver(ledgerTestKey()),
 		Dial: scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
 	})
 	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
@@ -439,12 +439,14 @@ func TestAuditEnableHotReloadsIntoRunningGateway(t *testing.T) {
 	if resp.Error != nil {
 		t.Fatal(resp.Error)
 	}
-	if events := toolCalls(readAuditEvents(t, resolver)); len(events) != 3 {
+	if events := toolCalls(readLedgerEvents(t, resolver)); len(events) != 3 {
 		t.Fatalf("hot-reloaded audit events = %d, want 3: %+v", len(events), events)
 	}
 }
 
-// Everything a client asks of agenthub is recorded, not only what it routes.
+// Everything a client asks of agenthub is recorded, not only what it routes —
+// and on the SAME path, so these carry payloads and outcomes exactly as a
+// routed call does rather than a second, thinner shape.
 //
 // The question this answers is the first one anybody brings to the ledger:
 // did this client reach us at all. Before it, a session that initialized,
@@ -456,7 +458,7 @@ func TestAuditRecordsEveryUpstreamMethod(t *testing.T) {
 	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) {})
 	_, c, _ := startGateway(t, Config{
 		ClientID: "audit-methods", Resolver: resolver,
-		Secrets: auditSecretResolver(auditTestKey()),
+		Secrets: ledgerSecretResolver(ledgerTestKey()),
 		Dial:    scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
 	})
 	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
@@ -465,7 +467,7 @@ func TestAuditRecordsEveryUpstreamMethod(t *testing.T) {
 		t.Fatal(resp.Error)
 	}
 
-	events := readAuditEvents(t, resolver)
+	events := readLedgerEvents(t, resolver)
 	byMethod := map[string][]calllog.Event{}
 	for _, e := range events {
 		byMethod[e.Method] = append(byMethod[e.Method], e)
@@ -479,9 +481,11 @@ func TestAuditRecordsEveryUpstreamMethod(t *testing.T) {
 			t.Errorf("%s pair = %s, %s", method, got[0].Kind, got[1].Kind)
 		}
 		// No routing between them: these reach no downstream, and a `routed`
-		// record would claim one was chosen.
-		if got[1].Server != "" || got[1].Outcome != "answered" {
-			t.Errorf("%s finished = %+v, want no server and outcome=answered", method, got[1])
+		// record would claim one was chosen. The outcome comes from the
+		// response itself, on the same path a tools/call takes, so it is the
+		// same vocabulary rather than a second one for these.
+		if got[1].Server != "" || got[1].Outcome != "success" {
+			t.Errorf("%s finished = %+v, want no server and outcome=success", method, got[1])
 		}
 	}
 }
@@ -498,7 +502,7 @@ func TestAuditRecordsWhichSurfaceWasCalled(t *testing.T) {
 	setGovernance(t, externalRegistry(t, resolver), func(g *registry.GovernanceDoc) { g.Discovery = "lazy" })
 	_, c, _ := startGateway(t, Config{
 		ClientID: "audit-surface", Resolver: resolver,
-		Secrets: auditSecretResolver(auditTestKey()),
+		Secrets: ledgerSecretResolver(ledgerTestKey()),
 		Dial:    scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
 	})
 	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
@@ -510,7 +514,7 @@ func TestAuditRecordsWhichSurfaceWasCalled(t *testing.T) {
 		t.Fatal(resultText(t, res))
 	}
 
-	events := executedCall(t, readAuditEvents(t, resolver))
+	events := executedCall(t, readLedgerEvents(t, resolver))
 	routed := eventKind(t, events, calllog.EventRouted)
 	// A meta surface AND a real downstream target under one call id: the hub
 	// was asked, and the hub called the server.
@@ -519,5 +523,38 @@ func TestAuditRecordsWhichSurfaceWasCalled(t *testing.T) {
 	}
 	if routed.Server != "fake" || routed.Tool != "echo" {
 		t.Errorf("the meta call did not record its real target: %+v", routed)
+	}
+}
+
+// The client's own interaction data is stored for an unrouted request too.
+// `tools/list` is the case that matters: its result is the catalog agenthub
+// showed that client, which is not recoverable from anywhere else once the
+// configuration moves.
+func TestLedgerCapturesPayloadsForUnroutedRequests(t *testing.T) {
+	resolver := testResolver(t.TempDir())
+	seedRegistry(t, resolver, "fake")
+	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) { p.ResultMode = "full" })
+	_, c, _ := startGateway(t, Config{
+		ClientID: "ledger-unrouted", Resolver: resolver,
+		Secrets: ledgerSecretResolver(ledgerTestKey()),
+		Dial:    scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
+	})
+	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
+	waitForTools(t, c, "fake__echo")
+
+	var finished calllog.Event
+	for _, e := range readLedgerEvents(t, resolver) {
+		if e.Method == mcp.MethodToolsList && e.Kind == calllog.EventFinished {
+			finished = e
+		}
+	}
+	if finished.CallID == "" {
+		t.Fatal("no finished record for tools/list")
+	}
+	if finished.Result == nil {
+		t.Fatal("the catalog agenthub showed this client was not stored")
+	}
+	if body := string(payloadOf(t, resolver, finished.Result)); !strings.Contains(body, "fake__echo") {
+		t.Errorf("stored tools/list result does not hold the catalog: %s", body)
 	}
 }
