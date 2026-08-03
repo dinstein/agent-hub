@@ -119,8 +119,12 @@ When both handlers exist an internal `multiHandler` fans out and joins their err
 
 ### The field convention
 
-Any record touching a downstream server, a tool call, a client or a session must use the constants
-in `fields.go`, because that is what makes the gateway's, daemon's and CLI's streams joinable.
+Any record touching a downstream server, a derived instance, a tool call, a client, a session, a
+registry generation or the writing process must use the constants in `fields.go` — seven keys,
+`server / tool / client / session / rev / pid / inst` — because that is what makes the gateway's,
+daemon's and CLI's streams joinable. The constants are the whole list, and saying so is part of the
+rule: an enumeration presenting itself as complete while it is not points the next writer at exactly
+the field with no name reserved for it.
 **Do not invent synonyms.** Three ways that has already gone wrong:
 
 - **A synonym splits a join.** The derive key was spelled `derive_key` in four places and `inst` in
