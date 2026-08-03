@@ -12,7 +12,9 @@
 //  3. atomically write run/daemon.json (endpoint + pid + version, 0600) —
 //     only AFTER a successful bind, so a well-formed daemon.json always
 //     describes an endpoint that was live at write time (no TOCTOU probe);
-//  4. serve until ctx is done (the CLI cancels it on SIGTERM/SIGINT);
+//  4. serve until ctx is done — the CLI cancels it on SIGTERM/SIGINT, and
+//     for an owned daemon so does the owner watch (owner.go), which ends the
+//     run when the application this daemon belongs to disappears;
 //  5. graceful stop: end the long-lived SSE streams (they never drain by
 //     themselves, and Shutdown cannot interrupt them), close the listener
 //     (no new connections), drain in-flight requests for ShutdownGrace,
@@ -68,6 +70,12 @@ type Info struct {
 	Endpoint string `json:"endpoint"`
 	Pid      int    `json:"pid"`
 	Version  string `json:"version"`
+	// Owner is the pid of the application this daemon belongs to, or 0 for a
+	// headless one. It is written for diagnosis only — the authoritative
+	// answer to "who owns the running daemon" comes from a ping, for the
+	// reason `daemon stop` reads its pid from there too: this file names a
+	// process, it does not identify one, and it outlives an abrupt death.
+	Owner int `json:"owner,omitempty"`
 }
 
 // Config configures one daemon process. Everything has production defaults;
@@ -110,6 +118,14 @@ type Config struct {
 	// directory). The daemon is normally started from the user's shell, so
 	// its cwd is the project they are in.
 	ClientBaseDir string
+
+	// Owner is the application process this daemon belongs to and must not
+	// outlive (owner.go). The zero value is a headless daemon: nobody owns
+	// it, nothing watches, and only an operator stops it.
+	Owner Owner
+	// OwnerPollInterval overrides how often the owner watch re-asks whether
+	// the owner is alive (0 = DefaultOwnerPollInterval). Tests shrink it.
+	OwnerPollInterval time.Duration
 
 	// HTTPAddr is the MCP data plane's listen address ("host:port").
 	//
@@ -178,6 +194,18 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	defer func() { _ = logClose() }()
+
+	// The owner watch (owner.go) is what makes this daemon's lifetime the
+	// owning application's. It is armed here, before the registry is opened
+	// and long before the socket is bound, because an owner that dies DURING
+	// a slow startup is exactly the case that used to strand a daemon: the
+	// application is gone by the time there is anything to send a signal to.
+	// Cancelling ctx routes into the same graceful stop a SIGTERM takes, and
+	// the cause is what the shutdown log reports as the reason.
+	ctx, ownerLost := context.WithCancelCause(ctx)
+	defer ownerLost(nil)
+	ownerWatch := watchOwner(cfg.Owner, cfg.OwnerPollInterval, log, ownerLost)
+	defer ownerWatch.Close()
 
 	// Registry: unlike the gateway (which serves a data plane and tolerates
 	// a broken registry), the daemon IS the coordination plane — an
@@ -283,7 +311,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	// Readiness handshake: written atomically only after the successful
 	// bind above (docs/architecture.md §10 — replaces probe-then-spawn TOCTOU).
-	info := Info{Endpoint: socket, Pid: os.Getpid(), Version: cfg.Version}
+	info := Info{Endpoint: socket, Pid: os.Getpid(), Version: cfg.Version, Owner: cfg.Owner.PID}
 	infoPath := filepath.Join(runDir, InfoFileName)
 	if err := writeInfoFile(infoPath, info); err != nil {
 		_ = l.Close()
@@ -392,7 +420,12 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.OnHTTPReady(endpoint.Addrs())
 	}
 
-	log.Info("daemon ready", "socket", socket, logx.PID(), "version", cfg.Version)
+	// "owner" is logged on every start, including the headless 0. A hub that
+	// stopped on its own is diagnosed by asking who it was watching, and a
+	// field that only appears when there is an owner makes its absence
+	// unreadable: nothing in the log then distinguishes "headless" from "this
+	// build predates the owner watch".
+	log.Info("daemon ready", "socket", socket, logx.PID(), "version", cfg.Version, "owner", cfg.Owner.PID)
 	if cfg.OnReady != nil {
 		cfg.OnReady(info)
 	}

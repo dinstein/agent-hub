@@ -62,6 +62,14 @@ each have one additional environment-variable escape hatch.
 already exists with looser permissions they actively `chmod` it back down to 0700 — the run and state
 directories hold sockets and credentials and must not be group- or world-readable.
 
+`ProcessAlive(pid)` answers "is that process still there" with **two** booleans, `alive` and `known`,
+and the second is why it lives here rather than at either call site. The question has three answers —
+yes, no, and *this call may not look* — and a helper returning one bool forces every caller to fold
+the third into one of the other two. `daemon stop` needs an unanswerable probe to read as "not mine
+to signal"; the daemon's owner watch needs it to read as "still alive, do not shut down". Unix asks
+with signal 0 (`ESRCH` no, `EPERM` yes-but-not-yours); Windows opens the process and reads its exit
+code, because a pid `OpenProcess` accepts may still name one that has already exited.
+
 ### Invariants and failure directions
 
 **Frozen identifiers.** The directory name `AgentHub` and the three `AGENTHUB_*` environment variable

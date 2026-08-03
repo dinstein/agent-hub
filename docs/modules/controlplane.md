@@ -552,6 +552,18 @@ costs only coordination — the session list, the event stream, centralized refr
 entirely from the registry files, so a dead daemon changes nothing about what a client sees; the gateway simply
 re-registers with backoff.
 
+**A daemon does not outlive its owner, and does not trust the owner to say so.** `Config.Owner` names the application
+process this daemon belongs to; the zero value is a **headless** daemon, which belongs to nobody and stops only when an
+operator stops it. An owned daemon arms two watches before it opens anything (`owner.go`), so that an owner dying during
+a slow startup is noticed too. The **lifeline** is the read end of a pipe the owner holds and never writes to: the kernel
+closes it however the owner dies, the read returns EOF in microseconds, and a recycled pid cannot fool it. It does not
+exist on Windows, where `os/exec` cannot hand a child an extra descriptor. The **poll** (`platform.ProcessAlive`, every
+`OwnerPollInterval`) is the backstop, and its failure direction is the load-bearing part: `ProcessAlive` answers
+"alive", "not alive" and **"cannot tell"** separately, and only a definitive "not alive" stops the daemon. A hub that
+outlives its owner is recovered by the next launch; a hub that shuts down under a live owner cuts off every connected
+client to fix nothing. Either watch routes into the ordinary ctx cancellation — the same graceful path a SIGTERM takes —
+with `errOwnerGone` as the cause, so the shutdown log says which it was.
+
 **The registry watch's adoption test is monotonic.** A watch event is only a notification; on receipt it re-`Reload`s
 and uses `registry.Applier` to decide adoption by "the generation I read ≥ the one I already applied", and only on
 adoption does it publish two things on the bus: `ctlapi.TopicRegistry` (forwarded to every gateway link) and
