@@ -56,6 +56,23 @@ const TONES: Record<string, "bad" | "warn" | "good"> = {
   started: "good",
 };
 
+/** What `count` counts, per kind — the mirror of eventlog.CountNoun, kept
+ *  here for the same reason TONES is: this page may not import internal/*,
+ *  and the vocabulary it keys on is closed and published. An absent kind
+ *  falls back to `n=13`, which is what every count looked like before the
+ *  noun existed and is why a connect listing thirteen tools read as a
+ *  thirteenth attempt. */
+const COUNT_NOUN: Record<string, string> = {
+  connected: "tools",
+  tools_changed: "tools",
+  respawned: "respawns",
+  respawn_failed: "respawns",
+  disconnected: "reconnects",
+  circuit_open: "failures",
+  health_down: "failures",
+  health_up: "failures",
+};
+
 /** subjectOf is what a record is ABOUT: a server (with its derived instance
  *  when there is one) or the client whose gateway spoke. */
 export function subjectOf(e: EventRecord): string {
@@ -68,7 +85,11 @@ export function subjectOf(e: EventRecord): string {
 export function detailOf(e: EventRecord): string {
   const parts: string[] = [];
   if (e.from || e.to) parts.push(`${e.from || "—"} → ${e.to || "—"}`);
-  if (e.attempt) parts.push(`n=${e.attempt}`);
+  if (e.count) {
+    const noun = COUNT_NOUN[e.kind];
+    parts.push(noun ? `${e.count} ${noun}` : `n=${e.count}`);
+  }
+  if (e.rev) parts.push(`rev ${e.rev}`);
   if (e.durMs) parts.push(`${e.durMs}ms`);
   if (e.detail) parts.push(e.detail);
   return parts.join(" · ");

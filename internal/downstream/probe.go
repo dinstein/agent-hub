@@ -134,7 +134,7 @@ func (t *healthTracker) success(now time.Time) {
 		t.log.Info("downstream healthy again", append(pair, "failures_cleared", failures)...)
 		t.events.emit(eventlog.Record{
 			Kind: eventlog.KindHealthUp,
-			From: string(before), To: string(ConnConnected), Attempt: failures,
+			From: string(before), To: string(ConnConnected), Count: failures,
 		})
 	default:
 		// connecting → connected is the handshake, which the assembling
@@ -171,7 +171,7 @@ func (t *healthTracker) failure(now time.Time, err error, hard bool) {
 		"failures", failures, "hard", hard, "error", err)
 	t.events.emit(eventlog.Record{
 		Kind: eventlog.KindHealthDown,
-		From: string(before), To: string(after), Attempt: failures,
+		From: string(before), To: string(after), Count: failures,
 		Detail: err.Error(),
 	})
 }

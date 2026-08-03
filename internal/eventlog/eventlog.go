@@ -46,8 +46,8 @@ const (
 	KindConnectFailed Kind = "connect_failed"
 	// KindDisconnected: an established connection ended.
 	KindDisconnected Kind = "disconnected"
-	// KindRespawned: a stdio child died and was restarted. Attempt is the
-	// respawn count.
+	// KindRespawned: a stdio child died and was restarted. Count is the
+	// respawn number.
 	KindRespawned Kind = "respawned"
 	// KindRespawnFailed: the restart itself failed; the server stays down.
 	KindRespawnFailed Kind = "respawn_failed"
@@ -225,10 +225,45 @@ type Record struct {
 	// Detail is free text elaborating a failure. It is the only unbounded
 	// field and is fitted to the line budget on write.
 	Detail string `json:"detail,omitempty"`
-	// Attempt counts retries where the kind has them (respawns).
-	Attempt int `json:"attempt,omitempty"`
+	// Count is the one number a kind carries, and WHAT it counts is decided
+	// by the kind — CountNoun is the whole list. It was called Attempt while
+	// three writers put three different quantities in it, which made a
+	// connect that listed thirteen tools render as a thirteenth attempt.
+	//
+	// One field rather than one per meaning: they are mutually exclusive by
+	// kind, so separate fields would be a set of columns that are empty
+	// except for the one the kind selects.
+	Count int `json:"count,omitempty"`
+	// Rev is a registry generation, and is NOT a count — it identifies a
+	// config revision rather than tallying anything, so joining two records
+	// on it is meaningful and adding two of them is not. internal/logx draws
+	// the same line with FieldRev, and this field was folded into the count
+	// until `config_reloaded` started rendering generation 17 as seventeen
+	// of something.
+	Rev uint64 `json:"rev,omitempty"`
 	// DurMs is how long the thing being reported took.
 	DurMs int64 `json:"durMs,omitempty"`
+}
+
+// CountNoun names what Count holds for one kind, plural, or "" for a kind
+// that carries no count.
+//
+// It lives here rather than in a renderer because it is the field's MEANING,
+// not its presentation, and a meaning stated only in a doc comment is what
+// let three writers disagree about it. Every consumer that prints the number
+// reads this list, so none of them can label it differently.
+func CountNoun(kind Kind) string {
+	switch kind {
+	case KindConnected, KindToolsChanged:
+		return "tools"
+	case KindRespawned, KindRespawnFailed:
+		return "respawns"
+	case KindDisconnected:
+		return "reconnects"
+	case KindCircuitOpen, KindHealthDown, KindHealthUp:
+		return "failures"
+	}
+	return ""
 }
 
 const (

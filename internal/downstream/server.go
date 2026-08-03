@@ -206,7 +206,7 @@ func Connect(ctx context.Context, spec Spec, deps Deps) (*Server, error) {
 	}
 	s.attach(tr, initRes, tools)
 	s.health.success(time.Now()) // the handshake IS the first liveness proof
-	srvEvents.emit(eventlog.Record{Kind: eventlog.KindConnected, Attempt: len(tools)})
+	srvEvents.emit(eventlog.Record{Kind: eventlog.KindConnected, Count: len(tools)})
 	go s.owner()
 	if deps.PingInterval > 0 {
 		go s.runProbe(deps.PingInterval)
@@ -417,7 +417,7 @@ func (s *Server) Close() {
 			"reconnects", s.reconnects.Load(), "state", string(state))
 		s.events.emit(eventlog.Record{
 			Kind: eventlog.KindDisconnected,
-			From: string(state), Attempt: int(s.reconnects.Load()),
+			From: string(state), Count: int(s.reconnects.Load()),
 		})
 	})
 }
@@ -691,7 +691,7 @@ func (s *Server) respawn(ctx context.Context, cause respawnCause, trigger error)
 		fields := append(respawnFields(cause, trigger, n), "error", err)
 		s.log.Warn("respawn failed", withLastWords(fields, lastWords)...)
 		s.events.emit(eventlog.Record{
-			Kind: eventlog.KindRespawnFailed, Attempt: int(n), Detail: err.Error(),
+			Kind: eventlog.KindRespawnFailed, Count: int(n), Detail: err.Error(),
 		})
 		s.health.failure(time.Now(), err, hardConnError(err))
 		return nil, &transport.Error{Class: transport.ClassUnavailable, Err: fmt.Errorf("respawn: %w", err)}
@@ -699,7 +699,7 @@ func (s *Server) respawn(ctx context.Context, cause respawnCause, trigger error)
 	s.attach(tr, initRes, tools)
 	s.health.success(time.Now())
 	s.log.Info("respawned", withLastWords(respawnFields(cause, trigger, n), lastWords)...)
-	s.events.emit(eventlog.Record{Kind: eventlog.KindRespawned, Attempt: int(n), Detail: string(cause)})
+	s.events.emit(eventlog.Record{Kind: eventlog.KindRespawned, Count: int(n), Detail: string(cause)})
 	return tr, nil
 }
 
@@ -818,7 +818,7 @@ func (s *Server) autoRefresh() {
 		return
 	}
 	s.events.emit(eventlog.Record{
-		Kind: eventlog.KindToolsChanged, Attempt: len(s.Tools()),
+		Kind: eventlog.KindToolsChanged, Count: len(s.Tools()),
 	})
 }
 

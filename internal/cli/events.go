@@ -62,11 +62,12 @@ type EventRow struct {
 	From   string `json:"from,omitempty"`
 	To     string `json:"to,omitempty"`
 	Detail string `json:"detail,omitempty"`
-	// Attempt is a count whose meaning depends on the kind (respawn number,
-	// tool count, failure streak). It is deliberately not split per kind:
-	// the record carries one field and so does its projection.
-	Attempt int   `json:"attempt,omitempty"`
-	DurMs   int64 `json:"durMs,omitempty"`
+	// Count is the one number the kind carries; eventlog.CountNoun says what
+	// it counts. The record has one such field and so does its projection.
+	Count int `json:"count,omitempty"`
+	// Rev is a config generation, not a count — see eventlog.Record.
+	Rev   uint64 `json:"rev,omitempty"`
+	DurMs int64  `json:"durMs,omitempty"`
 }
 
 // EventList is the `events` result.
@@ -129,8 +130,11 @@ func eventDetail(e EventRow) string {
 	if e.From != "" || e.To != "" {
 		parts = append(parts, dash(e.From)+"->"+dash(e.To))
 	}
-	if e.Attempt != 0 {
-		parts = append(parts, fmt.Sprintf("n=%d", e.Attempt))
+	if e.Count != 0 {
+		parts = append(parts, countPhrase(e.Kind, e.Count))
+	}
+	if e.Rev != 0 {
+		parts = append(parts, fmt.Sprintf("rev %d", e.Rev))
 	}
 	if e.DurMs != 0 {
 		parts = append(parts, fmt.Sprintf("%dms", e.DurMs))
@@ -139,6 +143,20 @@ func eventDetail(e EventRow) string {
 		parts = append(parts, e.Detail)
 	}
 	return strings.Join(parts, " ")
+}
+
+// countPhrase renders Count with the noun its kind gives it.
+//
+// The fallback is a bare `n=13`, and it is what a kind this build does not
+// know gets — a record from a newer daemon still prints its number rather
+// than losing it. That is also what every count read as before the noun
+// existed, which is why a connect that listed thirteen tools looked like a
+// thirteenth attempt.
+func countPhrase(kind string, n int) string {
+	if noun := eventlog.CountNoun(eventlog.Kind(kind)); noun != "" {
+		return fmt.Sprintf("%d %s", n, noun)
+	}
+	return fmt.Sprintf("n=%d", n)
 }
 
 func (a *App) newEventsCmd() *cobra.Command {
@@ -254,7 +272,7 @@ func rowsOfEvents(records []eventlog.Record) []EventRow {
 			TS: r.TS.UTC().Format(time.RFC3339), Scope: string(r.Scope), Kind: string(r.Kind),
 			Server: r.Server, Inst: r.Inst, Client: r.Client, PID: r.PID,
 			From: r.From, To: r.To, Detail: r.Detail,
-			Attempt: r.Attempt, DurMs: r.DurMs,
+			Count: r.Count, Rev: r.Rev, DurMs: r.DurMs,
 		})
 	}
 	return out

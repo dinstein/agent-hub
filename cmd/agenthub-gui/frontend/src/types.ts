@@ -889,7 +889,13 @@ export interface EventRecord {
   from?: string;
   to?: string;
   detail?: string;
-  attempt?: number;
+  /** The one number the kind carries; COUNT_NOUN in pages/events.ts says what
+   *  it counts. Rendered unlabelled, a thirteen-tool connect reads as a
+   *  thirteenth attempt. */
+  count?: number;
+  /** A registry generation. It identifies a revision rather than counting
+   *  anything, so it is not folded into `count`. */
+  rev?: number;
   durMs?: number;
 }
 

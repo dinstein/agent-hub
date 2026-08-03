@@ -112,7 +112,7 @@ func (s *Server) handleEventLog(w http.ResponseWriter, r *http.Request) {
 			TS: rec.TS, Scope: string(rec.Scope), Kind: string(rec.Kind),
 			Server: rec.Server, Inst: rec.Inst, Client: rec.Client, PID: rec.PID,
 			From: rec.From, To: rec.To, Detail: rec.Detail,
-			Attempt: rec.Attempt, DurMs: rec.DurMs,
+			Count: rec.Count, Rev: rec.Rev, DurMs: rec.DurMs,
 		})
 	}
 	writeOK(w, http.StatusOK, out)

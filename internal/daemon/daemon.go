@@ -584,7 +584,7 @@ func startWatch(ctx context.Context, store *registry.Store, opts registry.WatchO
 				"kind", string(ch.Kind), "generation", snap.Generation)
 			events.Append(eventlog.Record{
 				Scope: eventlog.ScopeDaemon, Kind: eventlog.KindConfigReloaded,
-				Detail: string(ch.Kind), Attempt: int(snap.Generation),
+				Detail: string(ch.Kind), Rev: snap.Generation,
 			})
 			bus.Publish(event.Event{
 				Topic:   ctlapi.TopicRegistry,

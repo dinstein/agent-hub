@@ -375,6 +375,24 @@ Kinds are checked as a **(scope, kind) pair**, never a bare kind: a gateway and 
 | `gateway` | `started`, `stopped`, `client_attached`, `client_detached`, `registry_reload_failed`, `scope_changed` |
 | `daemon` | `started`, `stopping`, `listener_bound`, `ctl_socket_lost`, `config_reloaded` |
 
+### What `count` counts
+
+A record carries one number, and the **kind** decides what it is a number of. `CountNoun` holds the
+whole mapping in code, because a meaning stated only in a doc comment is what let three writers
+disagree about it: the field was called `attempt` while one writer put a respawn number in it, one a
+tool count and one a failure streak, so a connect that listed thirteen tools rendered as a thirteenth
+try.
+
+| Kinds | `count` is |
+|---|---|
+| `connected`, `tools_changed` | tools the server listed |
+| `respawned`, `respawn_failed` | which respawn this was |
+| `disconnected` | reconnects the connection had survived |
+| `circuit_open`, `health_down`, `health_up` | consecutive failures behind the flip |
+
+Every other kind leaves it zero. A renderer meeting a kind absent from this table prints the bare
+number rather than hiding it — a frontend older than its daemon must not silently drop a value.
+
 ---
 
 ## internal/accesslog

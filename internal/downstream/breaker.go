@@ -101,7 +101,7 @@ func (b *breaker) transition(from, to breakerState, failures int) {
 	case stateOpen:
 		b.log.Warn("circuit opened; calls to this server are rejected until the cooldown ends",
 			append(fields, "failures", failures, "cooldown", b.cooldown.String())...)
-		ev.Kind, ev.Attempt, ev.DurMs = eventlog.KindCircuitOpen, failures, b.cooldown.Milliseconds()
+		ev.Kind, ev.Count, ev.DurMs = eventlog.KindCircuitOpen, failures, b.cooldown.Milliseconds()
 	case stateHalfOpen:
 		b.log.Info("circuit half-open; admitting one probe", fields...)
 		ev.Kind = eventlog.KindCircuitHalfOpen

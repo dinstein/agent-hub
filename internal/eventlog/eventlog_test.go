@@ -293,6 +293,30 @@ func TestEveryKindIsInTheClosedSet(t *testing.T) {
 	}
 }
 
+// CountNoun is the field's meaning, so a noun attached to a kind the
+// vocabulary does not define is a meaning for a record that cannot exist —
+// and a renderer keyed on it would never fire.
+func TestCountNounNamesOnlyRealKinds(t *testing.T) {
+	nouns := 0
+	for _, name := range KindNames("") {
+		if CountNoun(Kind(name)) != "" {
+			nouns++
+		}
+	}
+	if nouns == 0 {
+		t.Fatal("no kind carries a count noun; this test asserted nothing")
+	}
+	// A kind outside the set has no meaning to state.
+	if got := CountNoun("no_such_kind"); got != "" {
+		t.Errorf("CountNoun(no_such_kind) = %q, want the empty fallback", got)
+	}
+	// And a kind that carries no number must not acquire a noun: a renderer
+	// printing "0 tools" for a disconnect is worse than printing nothing.
+	if got := CountNoun(KindCircuitClosed); got != "" {
+		t.Errorf("CountNoun(circuit_closed) = %q, want none: it carries no count", got)
+	}
+}
+
 // scopeOrder is what every hint, help string and listing is built from,
 // while KnownScope answers from allKinds. A scope in one and not the other
 // would be accepted by the validator and invisible in the list of what may

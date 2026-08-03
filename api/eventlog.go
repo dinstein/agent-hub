@@ -45,10 +45,17 @@ type EventRecord struct {
 	To   string `json:"to,omitempty"`
 	// Detail elaborates a failure.
 	Detail string `json:"detail,omitempty"`
-	// Attempt is a count whose meaning depends on the kind (respawn number,
-	// tool count, failure streak).
-	Attempt int   `json:"attempt,omitempty"`
-	DurMs   int64 `json:"durMs,omitempty"`
+	// Count is the one number the kind carries, and the KIND decides what it
+	// counts: tools for `connected` and `tools_changed`, respawns for
+	// `respawned`, consecutive failures for `circuit_open` and the health
+	// flips. The mapping is published beside the kinds in
+	// docs/modules/foundation.md, and a consumer that renders the number
+	// without consulting it labels a thirteen-tool connect a thirteenth try.
+	Count int `json:"count,omitempty"`
+	// Rev is a registry generation. It IDENTIFIES a config revision rather
+	// than counting anything, which is why it is not folded into Count.
+	Rev   uint64 `json:"rev,omitempty"`
+	DurMs int64  `json:"durMs,omitempty"`
 }
 
 // EventLog is the GET /v1/events/log response.
