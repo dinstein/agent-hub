@@ -24,6 +24,10 @@ var auditDenial = regexp.MustCompile(`(?i)(no audit|not audited|never (?:existed
 // TestNoCodeClaimsAnAuditTrailThatDoesNotExist keeps a control the tree does
 // not implement from being described as though it did.
 //
+// The trail this is about is the GOVERNANCE-WRITE trail: who changed which
+// setting and when. The call ledger (internal/calllog) is a different record
+// and does exist; nothing here is about it.
+//
 // The 2026-07-31 security sweep found six comment sites in internal/ctlapi
 // asserting an audit trail — "every write is audited with the key and both
 // values, so 'blockOnInjection went off at 03:00' is answerable after the
@@ -42,8 +46,13 @@ func TestNoCodeClaimsAnAuditTrailThatDoesNotExist(t *testing.T) {
 	root := repoRoot(t)
 
 	// Scoped to the control plane, which is where the claims were and where
-	// governance writes happen. The CLI has a real `agenthub audit` verb
-	// question of its own that this test must not prejudge.
+	// governance writes happen.
+	//
+	// It is deliberately NOT scoped to the call ledger, which is a real
+	// record with a real reader (`agenthub calls`): this test is about a
+	// GOVERNANCE-WRITE trail — who changed which setting, when — and that one
+	// still does not exist. The two are easy to confuse now that one of them
+	// is built, which is the reason to say so here.
 	dir := filepath.Join(root, "internal", "ctlapi")
 	entries, err := os.ReadDir(dir)
 	if err != nil {

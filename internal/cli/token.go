@@ -226,7 +226,7 @@ func (a *App) newTokenRevokeCmd() *cobra.Command {
 		Use:   "revoke <name>",
 		Short: "Revoke an agent token",
 		Long: "Revoke one agent token. The record is kept (the name stays reserved and\n" +
-			"the row stays visible in 'token ls') so audit entries referring to it\n" +
+			"the row stays visible in 'token ls') so ledger entries referring to it\n" +
 			"keep resolving to exactly one credential.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

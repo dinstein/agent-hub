@@ -106,7 +106,7 @@ type TokenRevoked struct {
 type TokensService struct{ c *Client }
 
 // List returns every stored token — prefixes and metadata only. Revoked rows
-// are KEPT: the name stays reserved and an operator reading an audit record
+// are KEPT: the name stays reserved and an operator reading a ledger record
 // can still resolve the name that produced it.
 func (s *TokensService) List(ctx context.Context) ([]Token, error) {
 	var out []Token

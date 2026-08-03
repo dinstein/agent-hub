@@ -66,7 +66,7 @@ type ErrorBody struct {
 // Error is the error type returned for every failed control-plane call.
 // The server's error body is passed through verbatim; Status and RequestID
 // carry the transport-level context (RequestID is the echoed X-Request-Id,
-// usable with `agenthub audit tail --request-id`).
+// usable with `agenthub calls tail` filtered by request id).
 type Error struct {
 	ErrorBody
 	// Status is the HTTP status code of the response (0 if none was read).

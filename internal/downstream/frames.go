@@ -128,16 +128,22 @@ func (l *FrameLog) SetCapture(on bool) {
 
 // Enabled reports whether frames are currently recorded: the switch is on
 // AND there is somewhere to record them.
-func (l *FrameLog) Enabled() bool {
-	return l != nil && l.on.Load() && l.currentSink() != nil
+func (l *FrameLog) Enabled() bool { return l.active() != nil }
+
+// active returns the sink to record to, or nil when this log is off or has
+// nowhere to write. One accessor rather than an Enabled() check followed by a
+// second read: between the two, a policy change could take the sink away, and
+// the caller would be holding a nil it had just been told was safe.
+func (l *FrameLog) active() FrameSink {
+	if l == nil || !l.on.Load() {
+		return nil
+	}
+	return l.currentSink()
 }
 
 // sent records an outbound request frame.
 func (l *FrameLog) sent(o Origin, seq int, method string, params json.RawMessage) {
-	if !l.Enabled() {
-		return
-	}
-	sink := l.currentSink()
+	sink := l.active()
 	if sink == nil {
 		return
 	}
@@ -146,7 +152,8 @@ func (l *FrameLog) sent(o Origin, seq int, method string, params json.RawMessage
 
 // recv records an inbound response frame, or the failure that replaced one.
 func (l *FrameLog) recv(o Origin, seq int, method string, raw json.RawMessage, err error, dur time.Duration) {
-	if !l.Enabled() {
+	sink := l.active()
+	if sink == nil {
 		return
 	}
 	e := l.event(calllog.EventRecv, o, seq, method)
@@ -156,10 +163,6 @@ func (l *FrameLog) recv(o Origin, seq int, method string, raw json.RawMessage, e
 		e.Outcome = "error"
 	} else {
 		e.Outcome = "success"
-	}
-	sink := l.currentSink()
-	if sink == nil {
-		return
 	}
 	sink.AppendFrame(e, raw, l.capture.Load())
 }

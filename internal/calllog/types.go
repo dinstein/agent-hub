@@ -126,7 +126,7 @@ type PayloadRef struct {
 	KeyID       string `json:"keyId"`
 }
 
-// Event is one bounded line in access.jsonl. Fields that do not apply to a
+// Event is one bounded line in calls.jsonl. Fields that do not apply to a
 // lifecycle point are omitted; readers join events by CallID.
 type Event struct {
 	Version int       `json:"v"`

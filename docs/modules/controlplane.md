@@ -262,17 +262,25 @@ self-tests. Rules visible only here:
   `internal/eventlog` rather than a local copy — a hand-written list here can be wrong while the CLI's is
   right, which is how this route once hinted a stale set of scopes.
 
-The encrypted access ledger enters through this face with one deliberate split. `GET /v1/audit/calls`
-and `/stats` read metadata only and never return payload references or event error strings; the
-collection's cursor is the last call's `(received time, callId)` rather than an offset, so calls arriving
-at the front of a live ledger do not shift later pages under the reader. `GET /v1/audit/calls/{id}` is
-the explicit single-call disclosure: it resolves key ids in the vault and returns Request, Effective
-arguments and Result with `Cache-Control: no-store`, each capped to a 512 KiB preview that says when it
-truncated. Status and metadata need only an audit root, while detail, verification, enablement and
-rotation additionally require the key vault, and a missing collaborator keeps those routes uniformly
-unavailable rather than guessing a directory or key source. `PUT /v1/audit/enabled` and
-`POST /v1/audit/rotate-key` are ordinary registry writes with the same generation precondition; key bytes
-are persisted before the registry points at their public id and never cross the wire.
+- `GET /v1/logs` serves the PROCESS logs for the same reason, and is the newest of the three: those
+  files were terminal-only, so the window could not show the half of the record that explains a
+  downstream failure — the daemon never dials one, and the gateway that does writes to its own file.
+  The reading is `internal/proclog`, shared with the CLI so the two cannot answer differently.
+
+**All three collections page the same way** (`pagecursor.go`): rows newest first, and a cursor naming
+the last row served rather than an offset. With an offset, records arriving between two requests make
+page two repeat rows page one already showed — a failure a reader blames on the hub rather than on the
+pager. A cursor cannot: a fresh record is newer than every cursor, so it can only appear on page one.
+
+The call ledger enters this face with one deliberate split. `GET /v1/calls` and `/v1/calls/stats` read
+metadata only and never return payload references or event error strings. `GET /v1/calls/{id}` is the
+explicit single-call disclosure: it resolves key ids in the vault and returns Request, Effective
+arguments, Result and the frame bodies with `Cache-Control: no-store`, each capped to a 512 KiB preview
+that says when it truncated. Status and metadata need only a ledger root, while detail, verification,
+enablement and rotation additionally require the key vault, and a missing collaborator keeps those
+routes uniformly unavailable rather than guessing a directory or key source. `PUT /v1/calls/enabled`
+and `POST /v1/calls/rotate-key` are ordinary registry writes with the same generation precondition; key
+bytes are persisted before the registry points at their public id and never cross the wire.
 
 ---
 

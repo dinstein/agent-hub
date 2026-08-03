@@ -108,7 +108,7 @@ func TestParseClientConfigShapesOverTheWire(t *testing.T) {
 	}
 }
 
-// Parsing writes NOTHING: no registry entry, no audit record. A preview is a
+// Parsing writes NOTHING: no registry entry, no ledger record. A preview is a
 // read, exactly like the dry-run of a client connect.
 func TestParseWritesNothing(t *testing.T) {
 	env, _, _ := adminServer(t, nil)

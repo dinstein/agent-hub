@@ -22,7 +22,7 @@ func TestAuditDefaultsAreBoundedAndStrict(t *testing.T) {
 	var got CallsStatus
 	decodeInto(t, mustRun(t, "", "calls", "status", "--json"), &got)
 	if got.Enabled || got.Arguments != "full" || got.Results != "truncated" || got.ResultBytes <= 0 {
-		t.Fatalf("default audit policy = %+v", got)
+		t.Fatalf("default calls policy = %+v", got)
 	}
 	if got.Durability != "sync" || got.RetentionDays <= 0 || got.MaxBytes <= 0 || got.MinFreeBytes <= 0 || got.Pressure != "block" {
 		t.Fatalf("default bounds = %+v", got)
@@ -55,11 +55,11 @@ func TestCallsEnableCreatesOneVaultKeyAndDisableKeepsIt(t *testing.T) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	audit, ok := doc["calls"].(map[string]any)
-	if !ok || audit["keyId"] != firstID {
-		t.Fatalf("governance audit metadata = %#v", doc["calls"])
+	stored, ok := doc["calls"].(map[string]any)
+	if !ok || stored["keyId"] != firstID {
+		t.Fatalf("governance calls metadata = %#v", doc["calls"])
 	}
-	if _, exists := audit["key"]; exists {
+	if _, exists := stored["key"]; exists {
 		t.Fatalf("governance contains key material: %s", raw)
 	}
 
@@ -84,6 +84,9 @@ func TestAuditCannotBeEnabledThroughConfigBeforeKeyCreation(t *testing.T) {
 
 func TestCallsPolicyConfig(t *testing.T) {
 	setDataDir(t)
+	// Both spellings on purpose: the `audit.*` names are aliases kept for the
+	// configurations written before the rename, and an alias nothing exercises
+	// is an alias that stops working without anybody noticing.
 	for _, pair := range [][2]string{
 		{"calls.durability", "write"},
 		{"calls.results", "errors"},

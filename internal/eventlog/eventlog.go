@@ -313,8 +313,10 @@ const (
 	// detailCap is the first, cheap cut: enough of an error to recognize it,
 	// little enough that no single event can dominate the file.
 	detailCap = 512
-	// keepSegments is how many rotated segments survive a prune, newest
-	// first, on top of the active file.
+	// keepSegments is how many rotated segments survive a prune, newest first,
+	// on top of the active file. It is the shared default rather than a
+	// number of this stream's own: "how much history do these files keep" has
+	// one answer for every stream under <data>/logs.
 	keepSegments = jsonl.DefaultKeepSegments
 )
 

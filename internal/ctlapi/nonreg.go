@@ -57,8 +57,8 @@ type SecretVault interface {
 }
 
 // CallsKeyVault is the deliberately separate, inward-reading face used by
-// the local audit service. Unlike SecretVault, it may resolve key material,
-// but audit handlers never return that material: it is used only to decrypt
+// the local call ledger. Unlike SecretVault, it may resolve key material,
+// but the ledger handlers never return that material: it is used only to decrypt
 // one selected call or authenticate the ledger.
 type CallsKeyVault interface {
 	Get(ctx context.Context, ref secrets.Ref) (string, bool, error)
