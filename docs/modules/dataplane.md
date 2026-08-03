@@ -958,9 +958,6 @@ cannot leak stale entries the way a mis-ordered LRU can. Fingerprints are hashed
 by construction aligned with the client connection and nothing needs to outlive a restart) and `FileStore` (used by the
 daemon's HTTP face — cursors must survive a daemon restart within the session TTL).
 
-`Savings` / `EstimateSavings` provide token savings estimates, with fields corresponding one-to-one to
-`savings.Record`, but this package **deliberately does not import** `internal/savings` (shaping is on the data path and
-must not drag a file writer in with it); the caller copies the fields across.
 
 ### Invariants and failure directions
 

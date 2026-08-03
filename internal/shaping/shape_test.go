@@ -75,10 +75,6 @@ func TestShapeGolden(t *testing.T) {
 	if c.CreatedAt != goldenNow || c.TTL != 30*time.Minute {
 		t.Errorf("cursor lifetime = %v +%v", c.CreatedAt, c.TTL)
 	}
-	want := Savings{BaselineBytes: 1013, ActualBytes: 425, BaselineTokens: 254, ActualTokens: 107, SavedTokens: 147}
-	if c.Savings != want {
-		t.Errorf("savings = %+v, want %+v", c.Savings, want)
-	}
 }
 
 // The cursor id shape is frozen: "rc-" plus a zero-padded sequence.
@@ -333,19 +329,6 @@ func TestSplitStaysOnRuneBoundary(t *testing.T) {
 			t.Fatalf("budget %d: delivered %d runes but cursor says %d",
 				budget, utf8.RuneCountInString(got), c.NextOffset)
 		}
-	}
-}
-
-func TestEstimateTokens(t *testing.T) {
-	cases := map[int]int64{-1: 0, 0: 0, 1: 1, 4: 1, 5: 2, 8: 2, 4000: 1000}
-	for in, want := range cases {
-		if got := EstimateTokens(in); got != want {
-			t.Errorf("EstimateTokens(%d) = %d, want %d", in, got, want)
-		}
-	}
-	// A shaped page that grew never reports a negative saving.
-	if s := EstimateSavings(10, 100); s.SavedTokens != 0 {
-		t.Errorf("SavedTokens = %d, want 0", s.SavedTokens)
 	}
 }
 

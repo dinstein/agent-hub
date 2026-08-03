@@ -79,18 +79,15 @@ func TestParseFormat(t *testing.T) {
 // json is a pure passthrough: the default must not touch a single byte.
 func TestFormatJSONIsPassthrough(t *testing.T) {
 	src := tabularResult()
-	out, sav, changed := Reformat(src, FormatJSON)
+	out, changed := Reformat(src, FormatJSON)
 	if changed || out != src {
 		t.Fatal("FormatJSON altered the result")
-	}
-	if sav.SavedTokens != 0 {
-		t.Fatalf("FormatJSON reported savings: %+v", sav)
 	}
 }
 
 func TestReformatTOON(t *testing.T) {
 	src := tabularResult()
-	out, sav, changed := Reformat(src, FormatTOON)
+	out, changed := Reformat(src, FormatTOON)
 	if !changed {
 		t.Fatal("a homogeneous object array must re-encode")
 	}
@@ -104,18 +101,12 @@ func TestReformatTOON(t *testing.T) {
 	if resultBytes(out) >= resultBytes(src) {
 		t.Fatalf("re-encoding grew the result: %d -> %d", resultBytes(src), resultBytes(out))
 	}
-	if sav.SavedTokens == 0 {
-		t.Fatalf("savings not reported: %+v", sav)
-	}
-	if sav.BaselineBytes != resultBytes(src) || sav.ActualBytes != resultBytes(out) {
-		t.Fatalf("savings do not describe the results: %+v", sav)
-	}
 }
 
 // The marker is a per-RESULT contract statement, not a per-block one.
 func TestContractMarkerAppearsOnce(t *testing.T) {
 	rows := tabularRows(12)
-	out, _, changed := Reformat(textResult(rows, rows), FormatTOON)
+	out, changed := Reformat(textResult(rows, rows), FormatTOON)
 	if !changed {
 		t.Fatal("expected re-encoding")
 	}
@@ -129,7 +120,7 @@ func TestContractMarkerAppearsOnce(t *testing.T) {
 func TestStructuredContentIsNeverReencoded(t *testing.T) {
 	src := tabularResult()
 	src.StructuredContent = json.RawMessage(`{"rows":[{"a":1,"b":2},{"a":3,"b":4}]}`)
-	out, _, changed := Reformat(src, FormatTOON)
+	out, changed := Reformat(src, FormatTOON)
 	if !changed {
 		t.Fatal("expected the text block to re-encode")
 	}
@@ -152,15 +143,12 @@ func TestReformatFailsOpen(t *testing.T) {
 		"deep nesting loses": {Content: json.RawMessage(`[{"type":"text","text":"{\"a\":{\"b\":{\"c\":{\"d\":{\"e\":1}}}}}"}]`)},
 	}
 	for name, src := range cases {
-		out, sav, changed := Reformat(src, FormatTOON)
+		out, changed := Reformat(src, FormatTOON)
 		if changed {
 			t.Fatalf("%s: re-encoded when it should not have:\n%s", name, out.Content)
 		}
 		if out != src {
 			t.Fatalf("%s: result identity changed", name)
-		}
-		if sav.SavedTokens != 0 {
-			t.Fatalf("%s: reported savings %+v", name, sav)
 		}
 	}
 }
@@ -181,16 +169,16 @@ func TestReformatIsNeverLarger(t *testing.T) {
 			t.Fatal(err)
 		}
 		src := &mcp.CallResult{Content: block}
-		out, _, _ := Reformat(src, FormatTOON)
+		out, _ := Reformat(src, FormatTOON)
 		if resultBytes(out) > resultBytes(src) {
 			t.Fatalf("text %q grew from %d to %d bytes", text, resultBytes(src), resultBytes(out))
 		}
 	}
 }
 
-// ShapeResult reports the end-to-end saving even when nothing was truncated —
-// the case Shape's three return values cannot express.
-func TestShapeResultReportsReformatOnlySavings(t *testing.T) {
+// ShapeResult re-encodes even with no budget at all: the two steps are
+// independent, and an unbudgeted session still gets the cheaper notation.
+func TestShapeResultReformatsWithoutTruncating(t *testing.T) {
 	src := tabularResult()
 	r := ShapeResult(src, Budget{Bytes: 0}, Options{Format: FormatTOON})
 	if r.Truncated || !r.Cursor.IsZero() {
@@ -199,11 +187,9 @@ func TestShapeResultReportsReformatOnlySavings(t *testing.T) {
 	if !r.Reformatted {
 		t.Fatal("expected re-encoding")
 	}
-	if r.Savings.SavedTokens == 0 {
-		t.Fatalf("savings not reported: %+v", r.Savings)
-	}
-	if r.Savings.BaselineBytes != resultBytes(src) || r.Savings.ActualBytes != resultBytes(r.Page) {
-		t.Fatalf("end-to-end savings do not describe the pair: %+v", r.Savings)
+	if resultBytes(r.Page) >= resultBytes(src) {
+		t.Fatalf("re-encoding did not shrink the result: %d -> %d",
+			resultBytes(src), resultBytes(r.Page))
 	}
 }
 
@@ -252,9 +238,6 @@ func TestShapeResultTrailerStaysLast(t *testing.T) {
 		if strings.HasPrefix(b.Text, "Truncated by agenthub") {
 			t.Fatal("a trailer appears before the last block")
 		}
-	}
-	if r.Savings.BaselineBytes != resultBytes(src) {
-		t.Fatalf("savings baseline is not the original result: %+v", r.Savings)
 	}
 }
 

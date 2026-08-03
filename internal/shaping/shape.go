@@ -61,9 +61,6 @@ type Cursor struct {
 	// CreatedAt / TTL define expiry.
 	CreatedAt time.Time
 	TTL       time.Duration
-	// Savings is the token-savings estimate for internal/audit's
-	// SavingsStream. This package only computes it; wiring is the caller's.
-	Savings Savings
 
 	// full is the retained payload, handed to the Store by Entry/Retain.
 	full string
@@ -190,7 +187,6 @@ func shape(res *mcp.CallResult, budget Budget, opts Options) (*mcp.CallResult, C
 		Budget:     budget,
 		CreatedAt:  now.UTC(),
 		TTL:        ttl,
-		Savings:    EstimateSavings(baselineBytes, actualBytes),
 		full:       full,
 	}
 	return out, c, true

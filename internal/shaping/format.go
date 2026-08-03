@@ -81,11 +81,9 @@ var toonOptions = toonenc.Options{
 //
 // Failure direction is open: an undecodable content array, a block that is
 // not JSON, an encoder error — all deliver the original.
-func Reformat(res *mcp.CallResult, f Format) (*mcp.CallResult, Savings, bool) {
+func Reformat(res *mcp.CallResult, f Format) (*mcp.CallResult, bool) {
 	baseline := resultBytes(res)
-	unchanged := func() (*mcp.CallResult, Savings, bool) {
-		return res, EstimateSavings(baseline, baseline), false
-	}
+	unchanged := func() (*mcp.CallResult, bool) { return res, false }
 	if res == nil || f != FormatTOON || len(res.Content) == 0 {
 		return unchanged()
 	}
@@ -127,14 +125,13 @@ func Reformat(res *mcp.CallResult, f Format) (*mcp.CallResult, Savings, bool) {
 		StructuredContent: res.StructuredContent,
 		IsError:           res.IsError,
 	}
-	actual := resultBytes(next)
-	if actual >= baseline {
+	if resultBytes(next) >= baseline {
 		// Never-larger, enforced a second time at result granularity: the
 		// per-block guarantee does not by itself bound the re-marshalled
 		// array (escaping differences, block reordering costs).
 		return unchanged()
 	}
-	return next, EstimateSavings(baseline, actual), true
+	return next, true
 }
 
 // textOf extracts the payload of an MCP text content block. A non-text block
@@ -175,9 +172,6 @@ type Result struct {
 	Truncated bool
 	// Reformatted reports that the encoding changed.
 	Reformatted bool
-	// Savings compares the ORIGINAL result against Page: one number for the
-	// whole stack, in the same units as EstimateSavings everywhere else.
-	Savings Savings
 }
 
 // ShapeResult is the format-aware delivery path: re-encode, then bound.
@@ -191,14 +185,12 @@ type Result struct {
 // The recovery trailer stays LAST regardless: it is appended by the
 // truncation step, which runs after re-encoding by construction.
 func ShapeResult(res *mcp.CallResult, budget Budget, opts Options) Result {
-	baseline := resultBytes(res)
-	src, _, reformatted := Reformat(res, opts.Format)
+	src, reformatted := Reformat(res, opts.Format)
 	page, cursor, truncated := shape(src, budget, opts)
 	return Result{
 		Page:        page,
 		Cursor:      cursor,
 		Truncated:   truncated,
 		Reformatted: reformatted,
-		Savings:     EstimateSavings(baseline, resultBytes(page)),
 	}
 }
