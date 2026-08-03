@@ -846,7 +846,7 @@ and be spelled consistently; resource groups must be **singular canonical name +
 profile/profiles, client/clients, session/sessions, skill/skills, secret/secrets, plus the nested server/tool) and the alias must
 actually resolve; list subcommands are always called `ls` (`list`/`dump`/`ls-all` are all
 violations); and **every command must be able to take `--json`** (it is a persistent flag on the root, and what this test
-really asserts is that no command shadows or removes it). Action/streaming groups (daemon, auth, activity,
+really asserts is that no command shadows or removes it). Action/streaming groups (daemon, auth,
 events, config, doctor, connect) keep their names and get no plural alias. There is no `scope` group: binding a
 client to a profile is `client bind` / `client unbind` / `client ls`, and the narrowing itself is `profile server`
 / `profile tool` / `profile discovery` — spelled exactly like `server tool`, the same commands one layer up. Every group invoked bare prints help and exits 0,
@@ -891,8 +891,8 @@ classifiable error — agents and scripts use all four, so silently rewording is
 **The online/offline matrix is explicit.** Every command in the `session` group requires the daemon (a session is a runtime
 object that is never persisted), and offline is exit 4 rather **than** an invented offline answer. `events` is inherently
 online (the stream *is* the daemon), and offline is exit 4 rather than printing an empty stream that looks like "nothing
-happened". Conversely, `activity` is a pure read of an append-only file and **works offline** — the numbers describe things that
-already happened, and whether the daemon is up cannot change history; the whole `server tool` group is offline-capable
+happened". Conversely, `audit` reads the access ledger straight off disk and **works offline** — the records describe things
+that already happened, and whether the daemon is up cannot change history; the whole `server tool` group is offline-capable
 too — choosing what a server offers must not require starting it first, and neither must reading back what was chosen.
 
 **Credentials are never printed, and that is guaranteed at the type level.** The `secret` group's result types **have no value
@@ -1078,10 +1078,9 @@ shared prerequisite answers "is the daemon up?" once for the section instead of 
 `daemon` leads so the answer is the first thing on offer. Manage is named for what it honestly is — the
 remainder, usable against local state with nothing started. This replaced a thematic Govern/Operate split
 whose themes did not survive contact with their own membership: `token` is setup rather than
-governance, and `skill` and `activity` are not operations. A heading that mis-sorts its own members
-teaches the wrong model of the tool, which is why the fallback group is not given a theme it would then
-break. `activity` is a projection of `savings.jsonl` — a file on disk, which is why it does not sit
-under Daemon.
+governance, and `skill` is not an operation. A heading that mis-sorts its own members teaches the wrong
+model of the tool, which is why the fallback group is not given a theme it would then break. `audit` is
+a projection of files on disk, which is why it does not sit under Daemon.
 
 `skill` is deliberately not in Wire up: materializing skill packages is a separate job from giving a
 client MCP tools, and a shipped build's help page is a route recommendation — a third entry beside

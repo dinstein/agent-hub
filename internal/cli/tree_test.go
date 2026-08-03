@@ -52,7 +52,7 @@ var withheldGroups = []*cobra.Group{groupDaemon, groupManage}
 // fails, or the user's next move after a failed handshake is unspoken.
 var withheldCommands = []string{
 	"daemon", "session", "events", "token",
-	"config", "audit", "activity",
+	"config", "audit",
 	"skill",
 	// `tool` is NOT here any more: it hangs off `server`, which is visible,
 	// so the group ships. That was the point of moving it — a global allow
@@ -118,7 +118,6 @@ func TestCommandTreeCoversDesign(t *testing.T) {
 		"agenthub auth login", "agenthub auth status",
 		"agenthub auth refresh", "agenthub auth logout",
 		"agenthub server tool ls", "agenthub server tool inspect", "agenthub server tool allow",
-		"agenthub activity",
 		"agenthub audit status", "agenthub audit tail", "agenthub audit show",
 		"agenthub audit stats", "agenthub audit verify", "agenthub audit export",
 		"agenthub audit prune", "agenthub audit rotate-key", "agenthub audit enable", "agenthub audit disable",
@@ -164,7 +163,7 @@ func TestEveryCommandHasJSON(t *testing.T) {
 }
 
 // TestResourceGroupsAreSingularWithPluralAlias pins the naming rule for the
-// resource groups. The action/flow groups (daemon, auth, activity, events,
+// resource groups. The action/flow groups (daemon, auth, events,
 // config, doctor, connect, catalog) keep their names unchanged and are
 // deliberately NOT in this list.
 //
@@ -278,7 +277,7 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		// sits with the daemon rather than with the other governance verbs.
 		{"daemon", []string{"daemon", "session", "events", "token"}},
 		{"manage", []string{
-			"config", "audit", "activity",
+			"config", "audit",
 			"skill",
 		}},
 		// One member, and visible even in a shipped build: Setup and Wire up
@@ -482,7 +481,7 @@ func TestHiddenCommandsStillRun(t *testing.T) {
 	for _, path := range [][]string{
 		{"token", "ls"}, {"token"},
 		{"config", "ls"}, {"audit", "status"},
-		{"daemon", "status"}, {"session", "ls"}, {"events"}, {"activity"}, {"doctor"},
+		{"daemon", "status"}, {"session", "ls"}, {"events"}, {"doctor"},
 	} {
 		cmd, _, err := root.Find(path)
 		if err != nil || cmd.Name() != path[len(path)-1] {

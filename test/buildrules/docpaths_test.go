@@ -33,6 +33,10 @@ var retiredNames = map[string]string{
 	"internal/audit":     "",
 	"internal/integrity": "",
 	"internal/approval":  "",
+	// The token-savings ledger, removed rather than replaced: nothing else
+	// records what a call cost against what it would have cost, so there is
+	// no forwarding address to write here (canonical.md §7 decision 9).
+	"internal/savings": "",
 }
 
 // docPathRef matches a backticked path rooted at one of the repository's

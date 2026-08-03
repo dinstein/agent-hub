@@ -3,8 +3,8 @@
 This layer is the part of AgentHub that everything depends on and that depends on nothing: nine
 packages that together answer six questions — **where do files go** (`internal/platform`),
 **what was said and how is it recorded** (`internal/logx`),
-**how does an append-only stream survive N processes writing it** (`internal/jsonl`,
-`internal/savings`, and the durable `internal/accesslog` ledger),
+**how does an append-only stream survive N processes writing it** (`internal/jsonl` and the durable
+`internal/accesslog` ledger),
 **who defines the words "read / write / destructive"** (`internal/tier`),
 **how do we talk to downstreams** (`internal/mcp` and `internal/mcp/transport`), and
 **in what form does configuration live on disk and get shared across processes**
@@ -272,8 +272,8 @@ whatever record they later attach to, with no need to rescrub per record.
 
 ### One-line responsibility
 
-The append-only JSONL writer every on-disk stream in the product goes through: the per-server wire
-trace (`internal/downstream`) and the token-savings ledger (`internal/savings`).
+The append-only JSONL writer every on-disk stream in the product goes through — today the per-server
+wire trace (`internal/downstream`).
 
 It was **extracted from `internal/audit`**, which owned it while the governance streams existed. The
 streams were removed and the write discipline was not, because the discipline was never about audit
@@ -302,32 +302,6 @@ it in `downstream` or keeping a governance package alive for one type.
 - **A writer must fit the SERIALIZED line, not the raw payload.** See `internal/logx` above for what
   getting this wrong cost the trace log.
 - **Dependency budget**: standard library only.
-
----
-
-## internal/savings
-
-### One-line responsibility
-
-The token-savings ledger — one JSONL line per shaped or discovery-assisted interaction, aggregated
-by `agenthub activity`.
-
-**It is accounting, not governance.** Nothing here decides anything about a call; it records what a
-call cost against what it would have cost. That is why it outlived the streams it used to sit beside:
-those existed to be read by a decision, and the decision went.
-
-### Invariants and failure directions
-
-- **`Record`'s field order is frozen** and golden-tested, for the reason every wire shape here is:
-  the file is parsed by things that are not this build.
-- **`SavedTokens` is recorded, not derived.** It is `BaselineTokens - ActualTokens`, written out
-  explicitly so two consumers cannot re-derive it inconsistently.
-- **`Mode` names the mechanism that produced the saving** (`lazy-discovery`, `grouped`, `shaping`,
-  `toon`), which is what makes the aggregate answerable — "how much did lazy mode buy me" is the
-  question, and it cannot be reconstructed from totals.
-- Everything else is `internal/jsonl`'s: same append discipline, same fail-open drop. A failure to
-  open the stream leaves it `nil`, and appending to a nil stream is a no-op — the ledger degrades to
-  nothing recorded, never to a failed call.
 
 ---
 

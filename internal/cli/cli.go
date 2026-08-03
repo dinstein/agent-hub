@@ -221,13 +221,12 @@ func (a *App) newRoot() *cobra.Command {
 		a.newDaemonCmd(), a.newSessionCmd(), a.newEventsCmd(), a.newTokenCmd())
 	// Everything else, and the title says so rather than naming a theme the
 	// membership does not honor. These run against local state with nothing
-	// started; `audit` and `activity` are projections of audit.jsonl and
-	// savings.jsonl, which is why neither belongs above. Order is read-then-
-	// write within each pair, decide -> inspect -> repair across them.
+	// started; `audit` is a projection of the access ledger on disk, which is
+	// why it does not belong above. Order is read-then-write within each pair,
+	// decide -> inspect -> repair across them.
 	addGroupedHidden(root, a.reducedHelp, groupManage,
 		a.newConfigCmd(),
 		a.newAuditCmd(),
-		a.newActivityCmd(),
 		a.newSkillCmd())
 	// `doctor` is VISIBLE, in a shipped build too, and it is alone.
 	//
@@ -269,8 +268,8 @@ func (a *App) newRoot() *cobra.Command {
 // command need a running daemon? — because that is the only line through the
 // back half of the CLI that a reader can check against behavior. The former Govern and
 // Operate split was thematic, and the themes did not survive contact with the
-// membership: `token` is setup, not governance, and `skill` and `activity` are
-// not operations. A heading that mis-sorts its own members teaches the wrong
+// membership: `token` is setup, not governance, and `skill` is not an
+// operation. A heading that mis-sorts its own members teaches the wrong
 // model of the tool, so the fallback group is named for what it honestly is —
 // the remainder — rather than given a theme to break.
 //

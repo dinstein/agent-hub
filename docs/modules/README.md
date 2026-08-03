@@ -16,7 +16,7 @@ incident.
 
 | File | Packages covered |
 |---|---|
-| [foundation.md](foundation.md) | `platform`, `logx`, `jsonl`, `tier`, `mcp` (+ four `transport` implementations), `registry`, `savings` |
+| [foundation.md](foundation.md) | `platform`, `logx`, `jsonl`, `tier`, `mcp` (+ four `transport` implementations), `registry`, `accesslog` |
 | [config.md](config.md) | `scope`, `session`, `event`, `secrets` (+ `secureenv`), `clients`, `skills` |
 | [dataplane.md](dataplane.md) | `downstream`, `router`, `pipeline`, `gateway`, `discovery` (+ `toolsig`), `shaping` (+ `toonenc`), `ratelimit` |
 | [security.md](security.md) | `guard` (`spawnguard`/`netguard`), `oauthflow` |

@@ -76,6 +76,7 @@ the rule unprovable.
 | `internal/vault` | `internal/secrets` |
 | `internal/secure/{integrity,injection,ssrf,audit}` | `internal/guard/*` — but only `ssrf` survived, as `netguard` |
 | `internal/integrity`, `internal/approval`, `internal/audit` | **Nothing.** Removed with the old runtime governance surface rather than renamed. The later `internal/accesslog` is a new, local observability ledger with a different on-disk format and no permission role; it is not a forwarding address for the old package. `internal/audit`'s one surviving primitive — the multi-writer JSONL append — was extracted first and is `internal/jsonl` |
+| `internal/savings` | **Nothing.** The token-savings ledger was removed rather than renamed or replaced (§7 decision 9); `agenthub activity`, which was its only reader, went with it |
 | `internal/gatewaymode` | `internal/gateway` |
 | `internal/downstream/transport` | `internal/mcp/transport` |
 | `package skill` | `package skills` |
@@ -118,9 +119,11 @@ the change is sealed inside one package, rather than borrowing one now.
 - **Resource groups are singular as the canonical name, with the plural as a cobra alias**:
   `server` / `profile` / `client` / `session` / `skill` / `secret` / `token` — one alias per group,
   and `grep -n 'Aliases' internal/cli/*.go` is the whole list
-- **Action/flow groups stay as they are**: `daemon`, `connect`, `auth`, `audit`, `activity`, `events`,
+- **Action/flow groups stay as they are**: `daemon`, `connect`, `auth`, `audit`, `events`,
   `config`, `doctor`, `catalog`. `audit` is the access-ledger lifecycle and inspection surface, not a
-  plural resource collection. The OAuth group is **`auth`**, not `oauth`, and `catalog` takes
+  plural resource collection. `activity` was one of these and is **gone, not renamed**: it projected
+  the token-savings ledger, and the ledger was removed rather than repaired (§7 decision 9). The
+  OAuth group is **`auth`**, not `oauth`, and `catalog` takes
   **no plural alias**: there is one built-in list, so `catalogs` would name a thing that does not
   exist. The rule is that the plural is an alias for a group you accumulate entries in, not
   decoration applied to every noun
@@ -501,6 +504,32 @@ silently reopened, and the numbering is cited from code.
    implementation: it is inherently cross-layer, so `profile tool inspect` is that same report
    narrowed after it is computed, with the machine-wide verdict deliberately kept — a report that
    hid it would say a profile allows something no client can reach.
+9. ~~Whether to repair the token-savings ledger or remove it~~ → **Decided: removed.**
+   `internal/savings`, `shaping`'s token estimator, the discovery-side projection and the
+   `agenthub activity` command are gone; `activity` leaves §3's action-group list with them.
+
+   The measurement did not survive being audited. It had one writer — `gateway.shapeResult`, mode
+   always `shaping` — which fires only when `resultBudget` cuts a result, and `resultBudget` has no
+   built-in default: on an untouched install `savings.jsonl` was never written at all. The
+   `activity` report's "search trace" section looked for five modes (`lazy-discovery`, `lazy`,
+   `grouped`, `search`, `search_tools`) that no code path ever wrote, so that table was
+   structurally empty. And the one figure worth having — what compact signatures saved against
+   shipping full input schemas — was computed in `discovery/meta.go` and discarded.
+
+   Three separate reasons not to repair it instead. **The unit was wrong**: four bytes per token is
+   ±20% on English JSON and understates CJK by about a quarter, so the headline number was least
+   accurate for the payloads most worth shrinking. **The claim was wrong**: what it measured is how
+   much a configured budget truncated, which is a consequence of the operator's own setting, not of
+   anything AgentHub does for them. **The absence was worse than silence**: a report that says 0
+   because nothing was ever recorded is indistinguishable from one that says 0 because the feature
+   does not work, and both read as "nobody uses this".
+
+   What must NOT be reintroduced under another name: an estimator with a fixed bytes-per-token
+   divisor. If per-mechanism accounting is ever wanted again, it measures **bytes** — bytes are a
+   fact this process observes, and the token count is a third party's tokenizer that the number
+   would then silently depend on. `internal/shaping/toonenc`'s `MinSavingsPct` is not an exception
+   to this and never was: it compares byte lengths to decide whether TOON is used at all, which is
+   a data-path decision with no accounting in it.
 
 ---
 
