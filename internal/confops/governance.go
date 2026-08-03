@@ -197,6 +197,27 @@ var governanceKeys = []GovernanceKey{
 			return nil
 		},
 	},
+	{
+		Name: "events.enabled", Kind: "bool",
+		Doc: "record server/gateway/daemon state changes (default on; a failed write is dropped, never a refused call)",
+		get: func(g registry.GovernanceDoc) string { return strconv.FormatBool(g.EventsEnabled()) },
+		set: func(g *registry.GovernanceDoc, raw string) error {
+			// "-" clears the field back to the default rather than writing
+			// the default's value, so `config ls` keeps showing "nobody set
+			// this" instead of "someone chose on". For a tri-state the two
+			// are different facts.
+			if raw == "-" {
+				g.Events = nil
+				return nil
+			}
+			v, err := parseBool("events.enabled", raw)
+			if err != nil {
+				return err
+			}
+			g.Events = &v
+			return nil
+		},
+	},
 }
 
 func httpForWrite(g *registry.GovernanceDoc) *registry.HTTPFace {

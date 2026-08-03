@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/dinstein/agent-hub/internal/registry"
 )
 
 func TestGovernanceKeyTableIsShared(t *testing.T) {
@@ -165,5 +167,37 @@ func TestSetGovernancePreconditionConflict(t *testing.T) {
 	wantStale(t, err, gen)
 	if st.Snapshot().Governance.V.Discovery == "full" {
 		t.Error("a stale set was applied anyway")
+	}
+}
+
+// The events switch is tri-state, and the third state has to survive a round
+// trip: "nobody set this" and "someone chose the default value" are different
+// facts, and only the first may render as unset.
+func TestEventsEnabledIsTriState(t *testing.T) {
+	var g registry.GovernanceDoc
+	if !g.EventsEnabled() {
+		t.Fatal("absent must resolve to the default, which is on")
+	}
+	key, ok := LookupGovernanceKey("events.enabled")
+	if !ok {
+		t.Fatal("events.enabled is not a governance key")
+	}
+	if err := key.set(&g, "false"); err != nil {
+		t.Fatal(err)
+	}
+	if g.Events == nil || g.EventsEnabled() {
+		t.Fatalf("set false = %v", g.Events)
+	}
+	if got := key.Get(g); got != "false" {
+		t.Errorf("Get = %q after set false", got)
+	}
+	if err := key.set(&g, "-"); err != nil {
+		t.Fatal(err)
+	}
+	if g.Events != nil {
+		t.Fatal(`"-" must clear the field, not write the default's value`)
+	}
+	if err := key.set(&g, "maybe"); err == nil {
+		t.Fatal("a non-boolean was accepted")
 	}
 }

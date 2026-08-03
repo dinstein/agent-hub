@@ -577,6 +577,20 @@ type GovernanceDoc struct {
 	// needs an explicit InsecureLoopback. Storing an answer does not lower
 	// the bar for it.
 	HTTP *Doc[HTTPFace] `json:"http,omitempty"`
+	// Events switches the control-plane event stream (internal/eventlog).
+	//
+	// It is a *bool for the reason IntentVariants is: absent means the
+	// DEFAULT, and this default is ON. Read it through EventsEnabled, never
+	// directly — a plain bool would make "nobody has touched this setting"
+	// indistinguishable from "someone turned it off", and those two must not
+	// look alike for a stream whose absence is what is being diagnosed.
+	//
+	// Unlike Audit it carries no policy beside the switch, which is the
+	// design and not an omission: events are state changes, not payloads.
+	// Nothing to encrypt, no key to rotate, no capture mode to tune — hence
+	// no `agenthub events enable` either. The one bit belongs to
+	// `agenthub config`, where the other one-bit switches are.
+	Events *bool `json:"events,omitempty"`
 }
 
 // HTTPFace is the MCP data plane's listener, as configured.
@@ -601,6 +615,20 @@ func (g GovernanceDoc) ResolvedHTTP() HTTPFace {
 		return HTTPFace{}
 	}
 	return g.HTTP.V
+}
+
+// EventsEnabled resolves the tri-state Events switch: absent = on.
+//
+// The default is ON, the opposite of Audit's, and the difference is cost.
+// Audit writes three records plus payloads for every tools/call and is
+// fail-closed. Events are state CHANGES, so a healthy server produces a
+// handful of lines a day. A stream that cheap has to be on by default, or it
+// is off at the only moment anyone wants it: the incident already happened.
+func (g GovernanceDoc) EventsEnabled() bool {
+	if g.Events == nil {
+		return true
+	}
+	return *g.Events
 }
 
 // IntentVariantsEnabled resolves the tri-state IntentVariants switch:
