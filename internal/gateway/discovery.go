@@ -9,7 +9,6 @@ import (
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/pipeline"
-	"github.com/dinstein/agent-hub/internal/savings"
 	"github.com/dinstein/agent-hub/internal/shaping"
 )
 
@@ -203,8 +202,8 @@ func (g *gateway) logSearch(res *discovery.SearchResult) {
 }
 
 // shapeResult is the pipeline's ResultShaper seam: bound the delivered
-// result to the session's byte budget, retain the remainder under a cursor,
-// and record the estimated saving.
+// result to the session's byte budget and retain the remainder under a
+// cursor.
 //
 // Every unexpected condition delivers the FULL result (shaping fails open —
 // internal/shaping doc.go): losing a caller's data to save tokens is a worse
@@ -232,7 +231,6 @@ func (g *gateway) shapeResult(ctx context.Context, req *pipeline.CallRequest, re
 			logx.Server(req.ServerID), logx.Tool(req.RawTool), "error", err)
 		return res
 	}
-	g.recordSavings(req.ServerID, cursor.Savings)
 	g.log.Info("result truncated",
 		logx.Server(req.ServerID), logx.Tool(req.RawTool),
 		"cursor", cursor.ID, "next_offset", cursor.NextOffset, "total", cursor.Total)
@@ -251,22 +249,4 @@ func (g *gateway) budgetFor(serverID string) int {
 		return b
 	}
 	return es.Budgets[budgetWildcard]
-}
-
-// recordSavings appends one savings.jsonl line. The stream drops on
-// backpressure by construction: an accounting record must never slow down
-// or fail a tool call.
-func (g *gateway) recordSavings(serverID string, s shaping.Savings) {
-	if g.savings == nil {
-		return
-	}
-	g.savings.Append(savings.Record{
-		Client:         g.cfg.ClientID,
-		Session:        string(g.owner),
-		Server:         serverID,
-		Mode:           shaping.SavingsMode,
-		BaselineTokens: s.BaselineTokens,
-		ActualTokens:   s.ActualTokens,
-		SavedTokens:    s.SavedTokens,
-	})
 }

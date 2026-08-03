@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,7 +11,6 @@ import (
 	"github.com/dinstein/agent-hub/internal/discovery"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/registry"
-	"github.com/dinstein/agent-hub/internal/savings"
 	"github.com/dinstein/agent-hub/internal/testutil/fakemcp"
 )
 
@@ -243,8 +241,8 @@ func TestGroupedModeListing(t *testing.T) {
 
 // TestResultShapingAndFetchResult drives the shaping leg: a result larger
 // than the session budget comes back truncated with a cursor trailer,
-// fetch_result serves the remainder, an unknown cursor gets the frozen
-// not-found reply, and the saving is recorded in savings.jsonl.
+// fetch_result serves the remainder, and an unknown cursor gets the frozen
+// not-found reply.
 func TestResultShapingAndFetchResult(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -317,24 +315,6 @@ func TestResultShapingAndFetchResult(t *testing.T) {
 		"Re-run the original tool call to obtain a fresh result and cursor."
 	if got := resultText(t, res); got != wantMiss {
 		t.Errorf("miss message = %q, want the frozen %q", got, wantMiss)
-	}
-
-	// The saving is accounted for.
-	savingsPath := filepath.Join(dir, "logs", savings.FileName)
-	var rec savings.Record
-	waitFor(t, "a savings.jsonl record", func() bool {
-		data, err := os.ReadFile(savingsPath)
-		if err != nil || len(data) == 0 {
-			return false
-		}
-		line := strings.SplitN(strings.TrimSpace(string(data)), "\n", 2)[0]
-		return json.Unmarshal([]byte(line), &rec) == nil && rec.Mode != ""
-	})
-	if rec.Mode != "shaping" || rec.Server != "fake" || rec.Client != "shape-client" {
-		t.Errorf("savings record = %+v, want mode=shaping server=fake client=shape-client", rec)
-	}
-	if rec.SavedTokens <= 0 || rec.BaselineTokens <= rec.ActualTokens {
-		t.Errorf("savings record = %+v, want a positive saving", rec)
 	}
 }
 

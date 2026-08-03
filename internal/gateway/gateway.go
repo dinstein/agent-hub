@@ -52,7 +52,6 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/discovery"
 	"github.com/dinstein/agent-hub/internal/downstream"
-	"github.com/dinstein/agent-hub/internal/jsonl"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/pipeline"
@@ -60,7 +59,6 @@ import (
 	"github.com/dinstein/agent-hub/internal/ratelimit"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/router"
-	"github.com/dinstein/agent-hub/internal/savings"
 	"github.com/dinstein/agent-hub/internal/scope"
 	"github.com/dinstein/agent-hub/internal/secrets"
 	"github.com/dinstein/agent-hub/internal/shaping"
@@ -210,9 +208,6 @@ type gateway struct {
 	// under a re-registration while the client connection — and therefore the
 	// cursors it holds — stays the same.
 	owner shaping.Owner
-	// savings appends the token-savings estimates (nil when the stream could
-	// not be opened; accounting never blocks serving).
-	savings *savings.Stream
 	// traces owns the per-server JSON-RPC frame logs (trace.go). nil when
 	// the logs directory could not be resolved, which disables tracing and
 	// nothing else.
@@ -390,7 +385,6 @@ func newGateway(cfg Config) (*gateway, error) {
 	}
 	g.audit = newAuditManager()
 	g.roots = &clientRoots{g: g}
-	g.savings = openSavings(resolver, log)
 	// Before the pool: poolOptions closes over downstreamDeps, which reads
 	// g.traces to build TraceFor.
 	g.traces = newTraceLogs(resolver, log)
@@ -521,24 +515,6 @@ func buildLogger(cfg Config, resolver *platform.Resolver) (*slog.Logger, func() 
 		}
 	}
 	return log, closeFn, nil
-}
-
-// openSavings opens the savings stream (<data>/logs/savings.jsonl). Every
-// failure degrades to nil — a gateway that cannot write its accounting
-// records must still serve tools.
-func openSavings(resolver *platform.Resolver, log *slog.Logger) *savings.Stream {
-	dir, err := resolver.LogsDir()
-	if err == nil {
-		err = platform.EnsureDir(dir)
-	}
-	if err == nil {
-		var st *savings.Stream
-		if st, err = savings.NewStream(filepath.Join(dir, savings.FileName), jsonl.WriterOptions{}); err == nil {
-			return st
-		}
-	}
-	log.Warn("savings stream unavailable; token savings will not be recorded", "error", err)
-	return nil
 }
 
 // loadRegistry opens the registry, applies its first snapshot and extracts
@@ -679,9 +655,6 @@ func (g *gateway) shutdown() {
 	g.mu.Unlock()
 	for _, s := range servers {
 		s.Close()
-	}
-	if g.savings != nil {
-		_ = g.savings.Close() // flushes queued records
 	}
 	// After the connections: a server closing may still emit frames, and a
 	// trace that stops one step early loses exactly the shutdown it was

@@ -1385,7 +1385,7 @@ the outside.
 | `profile_test.go` | Membership edits moving a live surface in both directions, a rename repointing bindings, and a deleted profile failing closed to an empty scope rather than widening |
 | `clientwiring_test.go` | `client detect` stats while `client inspect` reads, connect/disconnect leaving a foreign MCP entry untouched, and `client unbind` widening what a live session sees |
 | `httpserver_test.go` | The full chain against a streamable-http downstream, the downstream seeing a bearer resolved from the vault, and **a loopback URL being rejected at add time without `--local` provenance** (the fail-closed half) |
-| `lazy_test.go` | The lazy mode acceptance path: the frozen meta-tool `tools/list`, a `search_tools` hit, the truncation trailer, savings.jsonl landing on disk |
+| `lazy_test.go` | The lazy mode acceptance path: the frozen meta-tool `tools/list`, a `search_tools` hit, the truncation trailer, and `fetch_result` continuing the payload |
 | `profilehotreload_test.go` | Switching the active profile under a live gateway: registry watch → snapshot swap → scope invalidation → `notifications/tools/list_changed`, with no restart |
 | `serverlifecycle_test.go` | The `server` verbs the rest of the suite only ever used as scaffolding — `ls` / `inspect` / `disable` / `rm`, and `enable` run the way an operator runs it. Every other fixture passes `--no-probe`, so the enable **probe** has no coverage outside `internal/cli`, where "connect" is an in-process fake rather than a spawned child |
 | `profile_test.go` | The verbs that EDIT a profile in place — `server add`/`rm`, rename, `rm`, `discovery` — three of which change what a running client may see. Each case holds a live gateway and asserts on its exposed surface |

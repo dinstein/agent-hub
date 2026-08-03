@@ -122,9 +122,6 @@ func TestLazyDiscoveryFullChain(t *testing.T) {
 		c.fatalf("page 2 next offset = %d, want > %d", next, offset)
 	}
 
-	// The savings estimate was accounted for.
-	assertSavingsRecorded(t, dataDir)
-
 	c.close()
 }
 
@@ -195,34 +192,6 @@ func (c *gatewayClient) parseTrailer(text string) (cursor string, offset int) {
 		c.fatalf("unparsable trailer %q: %v", text[i:], err)
 	}
 	return cursor, offset
-}
-
-// assertSavingsRecorded checks that the shaped call produced a savings.jsonl
-// line. The writer is asynchronous, so the file is polled.
-func assertSavingsRecorded(t *testing.T, dataDir string) {
-	t.Helper()
-	path := filepath.Join(dataDir, "logs", "savings.jsonl")
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		data, err := os.ReadFile(path)
-		if err == nil && len(data) > 0 {
-			var rec struct {
-				Mode        string `json:"mode"`
-				Server      string `json:"server"`
-				SavedTokens int64  `json:"savedTokens"`
-			}
-			line := strings.SplitN(strings.TrimSpace(string(data)), "\n", 2)[0]
-			if err := json.Unmarshal([]byte(line), &rec); err != nil {
-				t.Fatalf("savings line is not JSON: %v\n%s", err, line)
-			}
-			if rec.Mode != "shaping" || rec.Server != "fake" || rec.SavedTokens <= 0 {
-				t.Fatalf("savings record = %+v, want a positive shaping saving for server fake", rec)
-			}
-			return
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	t.Fatalf("no savings record at %s", path)
 }
 
 func equalStrings(got, want []string) bool {

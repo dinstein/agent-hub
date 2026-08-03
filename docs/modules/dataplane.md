@@ -657,8 +657,8 @@ and costs nothing. When the remainder can't be stored, the **complete result is 
 continuation is already lost.
 
 **Every logging/metrics face degrades on failure without affecting service.** If the JSON log file won't open, it degrades
-to plain text; if the savings stream won't open, it becomes `nil`; if the tool cache directory is unavailable, caching is
-skipped. If the control socket path won't resolve, only coordination functionality is lost.
+to plain text; if the tool cache directory is unavailable, caching is skipped. If the control socket path won't resolve,
+only coordination functionality is lost.
 
 **Every completed `tools/call` ends on exactly one operational log line, and `runCall` is the only place that writes
 it.** This is distinct from the durable three-event access ledger described below. The log identity is the
