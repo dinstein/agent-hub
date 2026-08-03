@@ -1165,6 +1165,17 @@ existed, that half was written to files nothing in the tree could open. Filters 
 admitting a record it cannot classify. Unparseable lines are dropped rather than counted as `server logs` counts them —
 with no timestamp there is no position in a time-ordered stream where showing one would be truthful.
 
+**Current assembly status — the two byte-offset followers can re-print a record.** `readLogBatch`
+(`internal/cli/logs.go`) and `followServerLogs` (`internal/cli/serverlogs.go`) both take the file size from a `stat`
+*before* reading, then read from the old offset to EOF and store that pre-read size as the new offset. Anything a writer
+appends between the `stat` and the reader reaching EOF is therefore printed on this tick and again on the next, because
+the stored offset sits behind what was actually consumed. The window is one poll's read of a file several processes
+append to, so it is narrow rather than theoretical. The fix is to advance the offset by what the read consumed rather
+than by the earlier `stat`; it is left as a note because a tidy pass does not change behaviour, and because the
+duplicate is exactly the failure `followEvents` documents itself as avoiding — a repeated record in a watched stream
+reads as the state having changed twice. Established by reading both functions, not by a test: reproducing it needs a
+write interleaved inside the read, which nothing in the suite can currently schedule.
+
 `skill` is deliberately not in Wire up: materializing skill packages is a separate job from giving a
 client MCP tools, and a shipped build's help page is a route recommendation — a third entry beside
 `profile` and `client` reads as a third required step. `secret`, by contrast, **is** in Setup, directly
