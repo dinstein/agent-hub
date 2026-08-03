@@ -15,8 +15,8 @@ import (
 // docs/windows.md.
 //
 // Cross-process file locking for Windows, used by every package that keeps a
-// single-writer file (internal/registry, skills, audit, ratelimit,
-// httpbridge, integrity, oauthflow). Each of those owns a three-line
+// single-writer file (internal/registry, skills, calllog, ratelimit,
+// httpbridge, oauthflow). Each of those owns a three-line
 // flock_windows.go that calls in here; the Unix side stays local to each
 // package because syscall.Flock is a one-liner, while this is forty lines of
 // overlapped-IO plumbing that must not exist seven times.
@@ -54,7 +54,7 @@ const (
 // Read. Unix flock is advisory: the same reader succeeds. Locking the data
 // range would therefore not port flock, it would change what an unlocked
 // reader sees, and every read path in this repository that deliberately does
-// not lock (audit tails, `doctor`, the GUI's file views) would start failing
+// not lock (`calls tail`, `doctor`, the GUI's file views) would start failing
 // on Windows alone, while the writer looked correct.
 //
 // Locking a range past EOF is explicitly legal on Windows and is how SQLite
@@ -70,7 +70,7 @@ var (
 )
 
 // LockFile takes a blocking exclusive lock on f, for the callers whose
-// contract is "wait your turn" (internal/audit, internal/ratelimit).
+// contract is "wait your turn" (internal/calllog, internal/ratelimit).
 func LockFile(f *os.File) error { return lockFile(f, lockfileExclusiveLock) }
 
 // TryLockFile takes an exclusive lock on f without blocking. When another

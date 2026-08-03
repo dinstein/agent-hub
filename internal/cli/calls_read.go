@@ -345,7 +345,7 @@ func (a *App) newCallsShowCmd() *cobra.Command {
 				if err := decryptCall(root, keys, events, &out); err != nil {
 					return err
 				}
-				warnings = append(warnings, "decrypted audit payloads may contain credentials and private user data")
+				warnings = append(warnings, "decrypted call payloads may contain credentials and private user data")
 			}
 			return a.printer().Emit(out, warnings...)
 		},
