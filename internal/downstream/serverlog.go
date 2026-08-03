@@ -177,7 +177,11 @@ func OpenServerLog(logsDir, serverID string, enabled bool) (*ServerLog, error) {
 	if serverID == "" {
 		return nil, fmt.Errorf("downstream: server log needs a server id")
 	}
-	w, err := jsonl.NewWriter(ServerLogPath(logsDir, serverID), jsonl.WriterOptions{})
+	// Retention matters here for the same reason it does for the process
+	// logs: a traced server can produce 32 MiB segments indefinitely, and
+	// nobody goes looking for a debugging file that grew for a year.
+	w, err := jsonl.NewWriter(ServerLogPath(logsDir, serverID),
+		jsonl.WriterOptions{KeepSegments: jsonl.DefaultKeepSegments})
 	if err != nil {
 		return nil, fmt.Errorf("downstream: open server log: %w", err)
 	}
