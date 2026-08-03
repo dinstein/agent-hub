@@ -73,10 +73,14 @@ const COUNT_NOUN: Record<string, string> = {
 };
 
 /** subjectOf is what a record is ABOUT: a server (with its derived instance
- *  when there is one) or the client whose gateway spoke. */
+ *  when there is one), the client whose gateway spoke, or — on the HTTP face,
+ *  whose callers are tokens rather than configured clients — the session.
+ *
+ *  Narrowest first: a login carries both a server and a session, and the
+ *  server is what somebody scanning the column is looking for. */
 export function subjectOf(e: EventRecord): string {
-  if (!e.server) return e.client ?? "";
-  return e.inst ? `${e.server}/${e.inst}` : e.server;
+  if (e.server) return e.inst ? `${e.server}/${e.inst}` : e.server;
+  return e.client || e.session || "";
 }
 
 /** detailOf folds the transition, the count and the free text into one
@@ -111,23 +115,17 @@ export function eventRows(events: EventRecord[]): (Node | string)[][] {
   ]);
 }
 
-/** Kinds that mean something went wrong, derived from TONES rather than
- *  listed again — the fourth copy of the vocabulary in this file is the one
- *  that would drift.
+/** "Only what went wrong" is the daemon's own answer now: every record
+ *  carries a CLASS, routine or disruption, derived from its kind. This page
+ *  used to assemble that set itself out of TONES, which was a second copy of
+ *  a mapping that lives in internal/eventlog — and a copy that could only be
+ *  as current as the frontend build.
  *
- *  A deliberate shutdown is not a problem. `stopped` and `stopping` carry the
- *  warn tone because they change what is available, but an operator asking
- *  "show me only what went wrong" does not mean "show me every time I quit
- *  the app", and a filter that answers with those is one they stop using. */
-const NORMAL_SHUTDOWN = new Set(["stopped", "stopping"]);
-const PROBLEM_KINDS = Object.entries(TONES)
-  .filter(([kind, tone]) => tone !== "good" && !NORMAL_SHUTDOWN.has(kind))
-  .map(([kind]) => kind);
-
-/** The Kind select's sentinel for "anything that went wrong". It is a value
- *  in the same control rather than a separate toggle: both narrow by kind,
- *  and two controls writing one query field would have to define which wins. */
-const KIND_PROBLEMS = "\u0000problems";
+ *  Note what the class does that a tone cannot: `health_up` and
+ *  `circuit_closed` are GOOD news and still belong to the disruption, because
+ *  they are how it ended. A filter built from tones dropped them and showed
+ *  every outage beginning with none of them finishing. */
+const CLASS_DISRUPTION = "disruption";
 
 /** How many records the facet read pulls. Larger than PAGE because it exists
  *  to enumerate what CAN be selected, and a dropdown that omits a server
@@ -158,6 +156,7 @@ export function eventsPage(): Page {
   let scope = "";
   let server = "";
   let client = "";
+  let cls = "";
   let kind = "";
   let log: EventLog | null = null;
   let facets: Facets = { servers: {}, clients: {}, kinds: {} };
@@ -165,16 +164,8 @@ export function eventsPage(): Page {
   let loading = true;
 
   const sinceMillis = (): number => (rangeHours > 0 ? Date.now() - rangeHours * 3600_000 : 0);
-  const filtered = (): boolean => scope !== "" || server !== "" || client !== "" || kind !== "";
-
-  /** The kinds `kind` selects, as the API wants them. Problems-only is
-   *  intersected with what the facet read actually saw, so this can never
-   *  send a kind the daemon does not define — a hardcoded list that ran ahead
-   *  of the daemon would 400 the whole page instead of showing fewer rows. */
-  function selectedKinds(): string[] {
-    if (kind === KIND_PROBLEMS) return PROBLEM_KINDS.filter((k) => k in facets.kinds);
-    return kind ? [kind] : [];
-  }
+  const filtered = (): boolean =>
+    scope !== "" || server !== "" || client !== "" || cls !== "" || kind !== "";
 
   /** Every selector goes to the DAEMON, not to the rendered rows.
    *
@@ -185,7 +176,8 @@ export function eventsPage(): Page {
    *  is not there. */
   async function load(): Promise<void> {
     try {
-      log = await hub.eventLog(sinceMillis(), PAGE, scope, server, client, selectedKinds());
+      log = await hub.eventLog(sinceMillis(), PAGE, scope, server, client, cls,
+        kind ? [kind] : []);
       failure = null;
     } catch (err) {
       failure = err;
@@ -201,7 +193,7 @@ export function eventsPage(): Page {
    *  the only option in its own dropdown, with no way back. */
   async function loadFacets(): Promise<void> {
     try {
-      const all = await hub.eventLog(sinceMillis(), FACET_PAGE, "", "", "", []);
+      const all = await hub.eventLog(sinceMillis(), FACET_PAGE, "", "", "", "", []);
       facets = facetsOf(all.events);
     } catch {
       // A facet read that fails costs the dropdown its options, never the
@@ -268,14 +260,25 @@ export function eventsPage(): Page {
       refresh();
     });
 
-    // Problems-only leads the kind list, above the individual kinds, because
-    // it is the reason most people open this page. It is offered only when
-    // the range actually holds one — an option that can only ever return
-    // nothing is worse than no option.
-    const hasProblems = PROBLEM_KINDS.some((k) => k in facets.kinds);
+    // Class is its own control, above the kinds, because it is the reason
+    // most people open this page and because it is not a kind: it is the
+    // question "is this the hub working or the hub in trouble", which the
+    // daemon answers for every record including ones this build cannot name.
+    const classPick = selectInput(
+      [
+        { value: "", label: "Everything" },
+        { value: CLASS_DISRUPTION, label: "⚠ Disruptions only" },
+        { value: "routine", label: "Routine only" },
+      ],
+      cls,
+    );
+    classPick.addEventListener("change", () => {
+      cls = classPick.value;
+      refresh();
+    });
+
     const kindOptions = [{ value: "", label: "All kinds" }];
-    if (hasProblems) kindOptions.push({ value: KIND_PROBLEMS, label: "⚠ Problems only" });
-    if (kind && kind !== KIND_PROBLEMS && !(kind in facets.kinds)) {
+    if (kind && !(kind in facets.kinds)) {
       kindOptions.push({ value: kind, label: `${kind} (0)` });
     }
     for (const [k, count] of Object.entries(facets.kinds).sort((a, b) => a[0].localeCompare(b[0]))) {
@@ -289,6 +292,7 @@ export function eventsPage(): Page {
 
     return el("div", { class: "activity-toolbar" }, [
       field("Time range", range),
+      field("Show", classPick),
       field("Scope", scopePick),
       facetField("Server", "All servers", server, facets.servers, (v) => { server = v; }),
       facetField("Client", "All clients", client, facets.clients, (v) => { client = v; }),
@@ -297,7 +301,7 @@ export function eventsPage(): Page {
   }
 
   function clearFilters(): void {
-    scope = server = client = kind = "";
+    scope = server = client = cls = kind = "";
     refresh();
   }
 

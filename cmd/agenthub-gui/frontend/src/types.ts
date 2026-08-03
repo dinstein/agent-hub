@@ -882,9 +882,18 @@ export interface EventRecord {
   ts: string;
   scope: string;
   kind: string;
+  /** "routine" or "disruption": the hub running as intended versus the hub
+   *  reacting to something that went wrong, the recovery that ends an outage
+   *  included. Derived from `kind` by the daemon, so this frontend never has
+   *  to hold a second copy of which kinds are trouble. */
+  class: string;
   server?: string;
   inst?: string;
   client?: string;
+  /** The MCP session a record is about, on the HTTP face. Its callers are
+   *  tokens rather than configured clients, so for the session kinds this is
+   *  the only identity there is. */
+  session?: string;
   pid: number;
   from?: string;
   to?: string;

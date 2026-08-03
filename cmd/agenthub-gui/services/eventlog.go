@@ -17,12 +17,18 @@ import (
 //
 // sinceMillis is 0 for "no lower bound". Every other selector is exact-match
 // and empty means "no rule", never "match nothing".
+// class is "routine" or "disruption" — the hub running as intended versus the
+// hub reacting to something that went wrong. It is a server-side selector for
+// the reason every other one is: the read is limited, so a page filtered here
+// would search only the newest records and report "nothing went wrong" for an
+// outage that is merely older than the window.
 func (h *Hub) EventLog(
-	ctx context.Context, sinceMillis int64, limit int, scope, server, client string, kinds []string,
+	ctx context.Context, sinceMillis int64, limit int, scope, server, client, class string, kinds []string,
 ) (api.EventLog, error) {
 	return call(ctx, h, func(c *api.Client) (api.EventLog, error) {
 		f := api.EventLogFilter{
-			Limit: limit, Scope: scope, Server: server, Client: client, Kinds: kinds,
+			Limit: limit, Scope: scope, Server: server, Client: client,
+			Class: class, Kinds: kinds,
 		}
 		if sinceMillis > 0 {
 			f.Since = time.UnixMilli(sinceMillis)

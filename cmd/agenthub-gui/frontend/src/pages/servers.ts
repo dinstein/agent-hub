@@ -1459,7 +1459,7 @@ export function serversPage(): Page {
       renderEvents(host, body, cached);
     } else {
       void hub
-        .eventLog(0, SERVER_EVENT_LIMIT, "server", s.id, "", [])
+        .eventLog(0, SERVER_EVENT_LIMIT, "server", s.id, "", "", [])
         .then((log) => {
           eventCache.set(s.id, log.events);
           renderEvents(host, body, log.events);

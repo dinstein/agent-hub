@@ -172,8 +172,10 @@ export const hub = {
     scope = "",
     server = "",
     client = "",
+    /** "routine" | "disruption" | "" for both. */
+    cls = "",
     kinds: string[] = [],
-  ) => call<EventLog>("EventLog", sinceMillis, limit, scope, server, client, kinds),
+  ) => call<EventLog>("EventLog", sinceMillis, limit, scope, server, client, cls, kinds),
 
   // -- servers --------------------------------------------------------------
   listServers: () => call<Server[]>("ListServers"),
