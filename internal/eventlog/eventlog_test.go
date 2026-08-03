@@ -251,17 +251,15 @@ func TestQueryNarrowsOnEveryAxis(t *testing.T) {
 	}
 }
 
-// The vocabulary is closed, and a constant that is not in AllKinds is a
-// constant no consumer can be told about.
+// The vocabulary is closed, and a constant outside allKinds is a constant no
+// consumer can be told about.
 func TestEveryKindIsInTheClosedSet(t *testing.T) {
-	all := AllKinds()
-	var flat []Kind
-	for _, kinds := range all {
-		flat = append(flat, kinds...)
+	if len(KindNames("")) == 0 {
+		t.Fatal("the closed set is empty, so this test asserted nothing")
 	}
 	// Two scopes legitimately share a spelling (a gateway and the daemon
 	// both "start"), so a duplicate is only a fault WITHIN one scope.
-	for scope, kinds := range all {
+	for scope, kinds := range allKinds {
 		seen := map[Kind]bool{}
 		for _, k := range kinds {
 			if seen[k] {
@@ -270,18 +268,51 @@ func TestEveryKindIsInTheClosedSet(t *testing.T) {
 			seen[k] = true
 		}
 	}
-	if !Valid(ScopeServer, KindConnected) {
-		t.Error("Valid rejects a pair it defines")
+	if !KnownKind(ScopeServer, KindConnected) {
+		t.Error("KnownKind rejects a pair it defines")
 	}
 	// The pair is what is checked, never the kind alone: `started` is real
 	// at gateway and daemon scope and meaningless at server scope.
-	if Valid(ScopeServer, KindGatewayStarted) {
-		t.Error("Valid accepted a kind from another scope")
+	if KnownKind(ScopeServer, KindGatewayStarted) {
+		t.Error("KnownKind accepted a kind from another scope")
 	}
-	if Valid("nonsense", KindConnected) {
-		t.Error("Valid accepted an unknown scope")
+	if KnownKind("nonsense", KindConnected) {
+		t.Error("KnownKind accepted an unknown scope")
 	}
-	if len(flat) == 0 {
-		t.Fatal("the closed set is empty, so this test asserted nothing")
+	// The empty scope is "at any scope", not "an unknown scope". Two callers
+	// narrow by kind without naming one, and answering them `false` would
+	// turn every such query into a usage error.
+	if !KnownKind("", KindGatewayStarted) {
+		t.Error("KnownKind rejected a real kind under the any-scope query")
+	}
+	if KnownKind("", "no_such_kind") {
+		t.Error("KnownKind accepted an invented kind under the any-scope query")
+	}
+	if KnownScope("nonsense") || !KnownScope(ScopeDaemon) {
+		t.Error("KnownScope disagrees with the closed set")
+	}
+}
+
+// scopeOrder is what every hint, help string and listing is built from,
+// while KnownScope answers from allKinds. A scope in one and not the other
+// would be accepted by the validator and invisible in the list of what may
+// be asked for — a selector no error message admits exists.
+func TestScopeOrderCoversTheVocabulary(t *testing.T) {
+	if len(scopeOrder) != len(allKinds) {
+		t.Fatalf("scopeOrder has %d scopes, allKinds %d", len(scopeOrder), len(allKinds))
+	}
+	for _, s := range scopeOrder {
+		if !KnownScope(s) {
+			t.Errorf("scopeOrder lists %q, which allKinds does not define", s)
+		}
+	}
+	// KindNames("") is the union, so it must contain every scope's kinds.
+	union := KindNames("")
+	for scope, kinds := range allKinds {
+		for _, k := range kinds {
+			if !slices.Contains(union, string(k)) {
+				t.Errorf("kind %q at scope %q is missing from the any-scope listing", k, scope)
+			}
+		}
 	}
 }

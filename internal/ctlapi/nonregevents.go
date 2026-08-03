@@ -48,16 +48,19 @@ func (s *Server) handleEventLog(w http.ResponseWriter, r *http.Request) {
 	query.Server = strings.TrimSpace(q.Get("server"))
 	query.Client = strings.TrimSpace(q.Get("client"))
 
-	kinds := eventlog.AllKinds()
+	// The vocabulary answers for itself, from the same source `agenthub
+	// events` reads. The alternative is what stood here: a list of scopes
+	// written out by hand, which keeps reading convincingly after the real
+	// one has moved.
 	if scope := strings.TrimSpace(q.Get("scope")); scope != "" {
-		if _, ok := kinds[eventlog.Scope(scope)]; !ok {
+		if !eventlog.KnownScope(eventlog.Scope(scope)) {
 			// A closed vocabulary exists so a caller can be TOLD it got a
 			// name wrong. Answering with an empty page would be the same
 			// response as "this has not happened", which is the one
 			// confusion the closed set prevents.
 			writeErr(w, http.StatusBadRequest, CodeBadRequest,
 				"unknown scope "+strconv.Quote(scope),
-				"known scopes: server, gateway, daemon", reqID)
+				"known scopes: "+strings.Join(eventlog.ScopeNames(), ", "), reqID)
 			return
 		}
 		query.Scope = eventlog.Scope(scope)
@@ -68,10 +71,10 @@ func (s *Server) handleEventLog(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		k := eventlog.Kind(name)
-		if !knownEventKind(kinds, query.Scope, k) {
+		if !eventlog.KnownKind(query.Scope, k) {
 			writeErr(w, http.StatusBadRequest, CodeBadRequest,
 				"unknown kind "+strconv.Quote(name),
-				"see the event-kind table in docs/modules/foundation.md", reqID)
+				"known kinds: "+strings.Join(eventlog.KindNames(query.Scope), ", "), reqID)
 			return
 		}
 		query.Kinds = append(query.Kinds, k)
@@ -113,29 +116,4 @@ func (s *Server) handleEventLog(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeOK(w, http.StatusOK, out)
-}
-
-// knownEventKind validates a kind against one scope's vocabulary, or against
-// all of them when no scope was named. The check is on the PAIR: a gateway
-// and the daemon both `started`, and that spelling means nothing at server
-// scope.
-func knownEventKind(all map[eventlog.Scope][]eventlog.Kind, scope eventlog.Scope, k eventlog.Kind) bool {
-	if scope != "" {
-		return containsKind(all[scope], k)
-	}
-	for _, kinds := range all {
-		if containsKind(kinds, k) {
-			return true
-		}
-	}
-	return false
-}
-
-func containsKind(kinds []eventlog.Kind, k eventlog.Kind) bool {
-	for _, have := range kinds {
-		if have == k {
-			return true
-		}
-	}
-	return false
 }

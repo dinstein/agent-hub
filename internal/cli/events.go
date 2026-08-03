@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"slices"
+
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -156,7 +156,7 @@ func (a *App) newEventsCmd() *cobra.Command {
 		Short: "Read server, gateway and daemon state changes",
 		Long: "Reads <data>/logs/events.jsonl — every state change of a downstream\n" +
 			"server, a gateway or the daemon, in a closed vocabulary.\n\n" +
-			"Scopes: " + strings.Join(eventScopes(), ", ") + ".\n" +
+			"Scopes: " + strings.Join(eventlog.ScopeNames(), ", ") + ".\n" +
 			"Works offline: a stdio gateway writes this file with no daemon running.\n\n" +
 			"See also `agenthub logs` for the same processes' prose, and\n" +
 			"`agenthub audit` for what a client CALLED.",
@@ -184,20 +184,11 @@ func (a *App) newEventsCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "stay open and keep printing new events")
 	cmd.Flags().DurationVar(&since, "since", 0, "only events newer than this age (e.g. 24h)")
 	cmd.Flags().IntVar(&limit, "limit", eventsDefaultLimit, "how many events to show (0 = all of them)")
-	cmd.Flags().StringVar(&scope, "scope", "", "only this scope: "+strings.Join(eventScopes(), ", "))
+	cmd.Flags().StringVar(&scope, "scope", "", "only this scope: "+strings.Join(eventlog.ScopeNames(), ", "))
 	cmd.Flags().StringVar(&server, "server", "", "only events about this downstream server")
 	cmd.Flags().StringVar(&client, "client", "", "only events observed by this client's gateway")
 	cmd.Flags().StringSliceVar(&kinds, "kind", nil, "only these kinds (comma separated)")
 	return cmd
-}
-
-// eventScopes lists the scopes in a stable order for help text and errors.
-func eventScopes() []string {
-	return []string{
-		string(eventlog.ScopeServer),
-		string(eventlog.ScopeGateway),
-		string(eventlog.ScopeDaemon),
-	}
 }
 
 // eventQuery validates the selectors and builds the read query.
@@ -207,69 +198,35 @@ func eventScopes() []string {
 // wrong; answering a typo with "no events" hands back the same output as
 // "this has not happened", which is the one confusion a closed set exists to
 // prevent.
+//
+// Both the check and the hint come from internal/eventlog. This command and
+// the control plane's /events/log ask the same question of the same closed
+// set, and a local copy of the answer is one that can be right while the
+// other is wrong — which is how the control plane ended up hinting a list of
+// scopes written by hand.
 func eventQuery(scope, server, client string, kinds []string, since time.Duration) (eventlog.Query, error) {
 	q := eventlog.Query{Server: server, Client: client}
 	if since > 0 {
 		q.Since = time.Now().Add(-since)
 	}
-	all := eventlog.AllKinds()
 	if scope != "" {
-		if _, ok := all[eventlog.Scope(scope)]; !ok {
+		if !eventlog.KnownScope(eventlog.Scope(scope)) {
 			e := Usagef("unknown scope %q", scope)
-			e.Hint = "known scopes: " + strings.Join(eventScopes(), ", ")
+			e.Hint = "known scopes: " + strings.Join(eventlog.ScopeNames(), ", ")
 			return eventlog.Query{}, e
 		}
 		q.Scope = eventlog.Scope(scope)
 	}
 	for _, raw := range kinds {
 		k := eventlog.Kind(strings.TrimSpace(raw))
-		if !knownKind(all, q.Scope, k) {
+		if !eventlog.KnownKind(q.Scope, k) {
 			e := Usagef("unknown kind %q", raw)
-			e.Hint = "known kinds: " + strings.Join(kindNames(all, q.Scope), ", ")
+			e.Hint = "known kinds: " + strings.Join(eventlog.KindNames(q.Scope), ", ")
 			return eventlog.Query{}, e
 		}
 		q.Kinds = append(q.Kinds, k)
 	}
 	return q, nil
-}
-
-// knownKind checks a kind against one scope's vocabulary, or against all of
-// them when no scope was named.
-func knownKind(all map[eventlog.Scope][]eventlog.Kind, scope eventlog.Scope, k eventlog.Kind) bool {
-	if scope != "" {
-		return slices.Contains(all[scope], k)
-	}
-	for _, kinds := range all {
-		if slices.Contains(kinds, k) {
-			return true
-		}
-	}
-	return false
-}
-
-// kindNames lists the valid kinds for the hint, deduplicated and sorted: two
-// scopes share the spelling `started`, and printing it twice would read as
-// two different things.
-func kindNames(all map[eventlog.Scope][]eventlog.Kind, scope eventlog.Scope) []string {
-	seen := map[string]bool{}
-	var out []string
-	add := func(kinds []eventlog.Kind) {
-		for _, k := range kinds {
-			if !seen[string(k)] {
-				seen[string(k)] = true
-				out = append(out, string(k))
-			}
-		}
-	}
-	if scope != "" {
-		add(all[scope])
-	} else {
-		for _, s := range eventScopes() {
-			add(all[eventlog.Scope(s)])
-		}
-	}
-	slices.Sort(out)
-	return out
 }
 
 // readEventList reads and projects, keeping the newest `limit` records.

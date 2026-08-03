@@ -31,7 +31,7 @@ const (
 // CLOSED is the point. A consumer may switch on these values, colour a
 // timeline by them or alert on them, none of which is safe against a
 // free-text log message. Adding one means editing THREE places — the
-// constant, AllKinds below, and the table in docs/modules/foundation.md —
+// constant, allKinds below, and the table in docs/modules/foundation.md —
 // and test/buildrules fails until all three agree. Without that check the
 // omission is invisible: the event still gets written, and only the reader
 // that was supposed to recognize it silently does not.
@@ -103,36 +103,100 @@ const (
 	KindConfigReloaded Kind = "config_reloaded"
 )
 
-// AllKinds is the closed set, grouped by the scope each kind belongs to.
+// scopeOrder is how scopes are offered in help text, hints and the published
+// table: outermost subject first. Alphabetical order would put `daemon`
+// before `gateway` before `server`, which reads as a containment hierarchy
+// running the wrong way.
+var scopeOrder = []Scope{ScopeServer, ScopeGateway, ScopeDaemon}
+
+// allKinds is the closed set, grouped by the scope each kind belongs to.
 //
 // It is a map rather than a flat list because two scopes legitimately share
 // a spelling — a gateway and the daemon both "start" — and a flat set could
 // not say that `started` is meaningless at server scope. A reader validating
 // a record checks the pair, never the kind alone.
-func AllKinds() map[Scope][]Kind {
-	return map[Scope][]Kind{
-		ScopeServer: {
-			KindConnected, KindConnectFailed, KindDisconnected,
-			KindRespawned, KindRespawnFailed,
-			KindCircuitOpen, KindCircuitHalfOpen, KindCircuitClosed,
-			KindHealthDown, KindHealthUp, KindToolsChanged,
-			KindOAuthRefreshFailed, KindSecretsMissing,
-		},
-		ScopeGateway: {
-			KindGatewayStarted, KindGatewayStopped,
-			KindClientAttached, KindClientDetached,
-			KindRegistryReloadFailed, KindScopeChanged,
-		},
-		ScopeDaemon: {
-			KindDaemonStarted, KindDaemonStopping,
-			KindListenerBound, KindCtlSocketLost, KindConfigReloaded,
-		},
-	}
+//
+// UNEXPORTED, with the functions below as the entire public answer to "what
+// may appear here". Handing callers the raw map produced exactly what a
+// closed vocabulary exists to prevent: two of them walked it themselves and
+// wrote the same scope-or-any search twice, and the copy that could not see
+// this list grew a hardcoded prose list of scopes with nothing left to keep
+// the two in agreement.
+var allKinds = map[Scope][]Kind{
+	ScopeServer: {
+		KindConnected, KindConnectFailed, KindDisconnected,
+		KindRespawned, KindRespawnFailed,
+		KindCircuitOpen, KindCircuitHalfOpen, KindCircuitClosed,
+		KindHealthDown, KindHealthUp, KindToolsChanged,
+		KindOAuthRefreshFailed, KindSecretsMissing,
+	},
+	ScopeGateway: {
+		KindGatewayStarted, KindGatewayStopped,
+		KindClientAttached, KindClientDetached,
+		KindRegistryReloadFailed, KindScopeChanged,
+	},
+	ScopeDaemon: {
+		KindDaemonStarted, KindDaemonStopping,
+		KindListenerBound, KindCtlSocketLost, KindConfigReloaded,
+	},
 }
 
-// Valid reports whether (scope, kind) is a pair this package defines.
-func Valid(scope Scope, kind Kind) bool {
-	return slices.Contains(AllKinds()[scope], kind)
+// Scopes lists every scope in presentation order.
+func Scopes() []Scope { return slices.Clone(scopeOrder) }
+
+// ScopeNames is Scopes as strings, for help text and error hints.
+func ScopeNames() []string {
+	out := make([]string, 0, len(scopeOrder))
+	for _, s := range scopeOrder {
+		out = append(out, string(s))
+	}
+	return out
+}
+
+// KnownScope reports whether scope is one this package defines.
+func KnownScope(scope Scope) bool { return len(allKinds[scope]) > 0 }
+
+// KnownKind reports whether kind may appear at scope.
+//
+// The EMPTY scope means "at any scope" — the question a reader that narrowed
+// by kind alone is asking — and never "a scope that failed to validate".
+// Scope is checked separately, by KnownScope, so a typo in one selector is
+// never reported as a fault in the other.
+func KnownKind(scope Scope, kind Kind) bool {
+	if scope != "" {
+		return slices.Contains(allKinds[scope], kind)
+	}
+	for _, kinds := range allKinds {
+		if slices.Contains(kinds, kind) {
+			return true
+		}
+	}
+	return false
+}
+
+// KindNames lists the kinds valid at scope, or the whole vocabulary for the
+// empty scope. Sorted and deduplicated: two scopes share the spelling
+// `started`, and a hint printing it twice reads as two different things.
+func KindNames(scope Scope) []string {
+	seen := map[Kind]bool{}
+	var out []string
+	add := func(kinds []Kind) {
+		for _, k := range kinds {
+			if !seen[k] {
+				seen[k] = true
+				out = append(out, string(k))
+			}
+		}
+	}
+	if scope != "" {
+		add(allKinds[scope])
+	} else {
+		for _, s := range scopeOrder {
+			add(allKinds[s])
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // Record is one line of events.jsonl. Field order is frozen: the file is
