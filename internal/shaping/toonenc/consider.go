@@ -19,11 +19,10 @@ const (
 	ReasonEmpty Reason = "empty"
 )
 
-// Decision records what Consider did and what it cost, in BYTES. Token
-// estimation lives in internal/shaping (which imports this package, so the
-// estimator cannot travel down here without a cycle) and both layers use the
-// same divisor — the numbers are directly comparable with
-// shaping.EstimateSavings.
+// Decision records what Consider did and what it cost, in BYTES. Bytes are
+// the whole answer: 48c7e94 removed the token estimator, so nothing converts
+// these counts into tokens any more and no divisor has to agree between two
+// layers.
 type Decision struct {
 	// Applied reports whether the returned text is the TOON form.
 	Applied bool

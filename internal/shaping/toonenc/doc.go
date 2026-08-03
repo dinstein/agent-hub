@@ -80,8 +80,8 @@
 // survived. Truncation is honest and visible; it never cuts mid-row, so a
 // truncated table is still parseable by eye.
 //
-// The package depends on the standard library only. It reports byte counts
-// and lets internal/shaping convert them to token estimates, because the
-// parent package imports this one — the estimator cannot travel the other
-// way without a cycle.
+// The package depends on the standard library only, and it reports byte
+// counts. Nothing converts those into tokens: 48c7e94 removed the estimator
+// once nothing read its number, so a byte count is the measurement rather
+// than an input to one.
 package toonenc
