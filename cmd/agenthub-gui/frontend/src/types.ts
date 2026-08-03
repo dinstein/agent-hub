@@ -836,7 +836,7 @@ export interface AuditUsage {
   packFiles: number;
 }
 
-export interface AuditStatus {
+export interface CallsStatus {
   generation: number;
   enabled: boolean;
   arguments: string;
@@ -939,7 +939,7 @@ export interface AuditPayload {
   truncated?: boolean;
 }
 
-export interface AuditCallDetail extends AuditCallSummary {
+export interface CallDetail extends AuditCallSummary {
   events: AuditEvent[];
   error?: string;
   request: AuditPayload;
@@ -947,7 +947,7 @@ export interface AuditCallDetail extends AuditCallSummary {
   result: AuditPayload;
 }
 
-export interface AuditStats {
+export interface CallsStats {
   since?: string;
   events: number;
   calls: number;

@@ -1,4 +1,4 @@
-// Package accesslog stores the local, durable tools/call access ledger.
+// Package calllog stores the local, durable tools/call access ledger.
 //
 // Metadata and payloads deliberately have different shapes. Metadata is a
 // bounded JSONL event stream shared by every gateway process. Complete request
@@ -16,4 +16,4 @@
 // caller may nevertheless choose strict durability and refuse to execute when
 // Begin cannot persist the request. That failure direction belongs to the
 // assembly, not to the frozen pipeline gate chain.
-package accesslog
+package calllog

@@ -205,7 +205,7 @@ func (a *App) newRoot() *cobra.Command {
 	// `profile` and `client` reads as a third required step.
 	addGrouped(root, groupWire, a.newProfileCmd(), a.newClientCmd())
 	// Hidden takes these two groups off the help page only: cobra still
-	// resolves and runs them, so `agenthub config ls` or `agenthub audit tail`
+	// resolves and runs them, so `agenthub config ls` or `agenthub calls tail`
 	// behaves identically in a release build. Routing them through the same
 	// call as every other group is what keeps a newly added member of one of
 	// them from being left visible.
@@ -274,7 +274,7 @@ func (a *App) newRoot() *cobra.Command {
 	// differently. `audit` leads because the call is what a user came to ask
 	// about; `events` then says what the server was doing at the time, and
 	// `logs` carries the prose around both.
-	addGrouped(root, groupObserve, a.newAuditCmd(), a.newEventsCmd(), a.newLogsCmd())
+	addGrouped(root, groupObserve, a.newCallsCmd(), a.newEventsCmd(), a.newLogsCmd())
 	addGrouped(root, groupEntry, a.newConnectCmd())
 	return root
 }

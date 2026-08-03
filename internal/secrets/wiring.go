@@ -34,7 +34,7 @@ func AuditEncryptionRef() Ref {
 
 // AuditEncryptionKeyRef names one immutable access-ledger key by its public
 // key id. Key-specific entries let old retained partitions remain readable
-// after rotation. Callers must pass an id returned by accesslog.KeyID.
+// after rotation. Callers must pass an id returned by calllog.KeyID.
 func AuditEncryptionKeyRef(keyID string) Ref {
 	return Ref{ServerID: "_agenthub", Scope: DefaultScope, Key: "__audit_encryption_" + keyID + "__"}
 }

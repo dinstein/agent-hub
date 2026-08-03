@@ -200,7 +200,7 @@ func (a *App) newEventsCmd() *cobra.Command {
 			"keeps the recovery that ended it, so an outage never reads as still open.\n\n" +
 			"Works offline: a stdio gateway writes this file with no daemon running.\n\n" +
 			"See also `agenthub logs` for the same processes' prose, and\n" +
-			"`agenthub audit` for what a client CALLED.",
+			"`agenthub calls` for what a client CALLED.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			q, err := eventQuery(scope, server, client, class, kinds, since)

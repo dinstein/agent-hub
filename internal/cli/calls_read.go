@@ -10,12 +10,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dinstein/agent-hub/internal/accesslog"
+	"github.com/dinstein/agent-hub/internal/calllog"
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
-// AuditEventRow is the metadata-only projection used by audit tail.
-type AuditEventRow struct {
+// CallEventRow is the metadata-only projection used by audit tail.
+type CallEventRow struct {
 	Time          time.Time `json:"time"`
 	CallID        string    `json:"callId"`
 	Event         string    `json:"event"`
@@ -30,8 +30,8 @@ type AuditEventRow struct {
 	ResultCapture string    `json:"resultCapture,omitempty"`
 }
 
-func auditEventRow(e accesslog.Event) AuditEventRow {
-	return AuditEventRow{
+func auditEventRow(e calllog.Event) CallEventRow {
+	return CallEventRow{
 		Time: e.TS, CallID: e.CallID, Event: string(e.Kind), Client: e.Client,
 		Face: e.Face, ExposedTool: e.Exposed, Server: e.Server, Tool: e.Tool,
 		Outcome: e.Outcome, DurationMs: e.DurationMs, Code: e.Code,
@@ -41,9 +41,9 @@ func auditEventRow(e accesslog.Event) AuditEventRow {
 
 // AuditTail is a bounded recent-event view. Payloads are never decrypted.
 type AuditTail struct {
-	Since   time.Time       `json:"since,omitempty"`
-	Events  []AuditEventRow `json:"events"`
-	Skipped int             `json:"skippedMalformed"`
+	Since   time.Time      `json:"since,omitempty"`
+	Events  []CallEventRow `json:"events"`
+	Skipped int            `json:"skippedMalformed"`
 }
 
 func (t AuditTail) Human(w io.Writer) error {
@@ -72,7 +72,7 @@ func shortCallID(id string) string {
 	return id
 }
 
-func (a *App) newAuditTailCmd() *cobra.Command {
+func (a *App) newCallsTailCmd() *cobra.Command {
 	var (
 		sinceRaw string
 		limit    int
@@ -93,12 +93,12 @@ func (a *App) newAuditTailCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			root, err := accesslog.DefaultDir(a.resolver)
+			root, err := calllog.DefaultDir(a.resolver)
 			if err != nil {
 				return err
 			}
-			rows := make([]AuditEventRow, 0, limit)
-			skipped, err := accesslog.ScanEventsSince(root, since, func(e accesslog.Event) error {
+			rows := make([]CallEventRow, 0, limit)
+			skipped, err := calllog.ScanEventsSince(root, since, func(e calllog.Event) error {
 				if !auditEventMatches(e, client, server, tool, outcome) {
 					return nil
 				}
@@ -141,7 +141,7 @@ func parseAuditSince(raw string) (time.Time, error) {
 	return time.Time{}, Usagef("--since expects a duration such as 24h, RFC3339 time, or all")
 }
 
-func auditEventMatches(e accesslog.Event, client, server, tool, outcome string) bool {
+func auditEventMatches(e calllog.Event, client, server, tool, outcome string) bool {
 	return (client == "" || e.Client == client) &&
 		(server == "" || e.Server == server) &&
 		(tool == "" || e.Tool == tool || e.Exposed == tool) &&
@@ -150,11 +150,11 @@ func auditEventMatches(e accesslog.Event, client, server, tool, outcome string) 
 
 // AuditCall is a complete metadata lifecycle and optional decrypted payloads.
 type AuditCall struct {
-	CallID             string            `json:"callId"`
-	Events             []accesslog.Event `json:"events"`
-	Request            string            `json:"request,omitempty"`
-	EffectiveArguments string            `json:"effectiveArguments,omitempty"`
-	Result             string            `json:"result,omitempty"`
+	CallID             string          `json:"callId"`
+	Events             []calllog.Event `json:"events"`
+	Request            string          `json:"request,omitempty"`
+	EffectiveArguments string          `json:"effectiveArguments,omitempty"`
+	Result             string          `json:"result,omitempty"`
 }
 
 func (c AuditCall) Human(w io.Writer) error {
@@ -187,19 +187,19 @@ func (c AuditCall) Human(w io.Writer) error {
 	return nil
 }
 
-func (a *App) newAuditShowCmd() *cobra.Command {
+func (a *App) newCallsShowCmd() *cobra.Command {
 	var payloads bool
 	cmd := &cobra.Command{
 		Use:   "show <call-id>",
 		Short: "Show one call lifecycle; decrypt payloads only with --payloads",
 		Args:  exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := accesslog.DefaultDir(a.resolver)
+			root, err := calllog.DefaultDir(a.resolver)
 			if err != nil {
 				return err
 			}
-			var events []accesslog.Event
-			_, err = accesslog.ScanEvents(root, func(e accesslog.Event) error {
+			var events []calllog.Event
+			_, err = calllog.ScanEvents(root, func(e calllog.Event) error {
 				if e.CallID == args[0] {
 					events = append(events, e)
 				}
@@ -209,7 +209,7 @@ func (a *App) newAuditShowCmd() *cobra.Command {
 				return err
 			}
 			if len(events) == 0 {
-				return NotFoundf(CodeNotFound, "audit call %q not found", args[0])
+				return NotFoundf(CodeNotFound, "call %q not found", args[0])
 			}
 			out := AuditCall{CallID: args[0], Events: events}
 			var warnings []string
@@ -228,10 +228,10 @@ func (a *App) newAuditShowCmd() *cobra.Command {
 	return cmd
 }
 
-func decryptAuditCall(root string, keys *auditKeyCache, events []accesslog.Event, out *AuditCall) error {
+func decryptAuditCall(root string, keys *auditKeyCache, events []calllog.Event, out *AuditCall) error {
 	for _, e := range events {
 		for _, item := range []struct {
-			ref *accesslog.PayloadRef
+			ref *calllog.PayloadRef
 			dst *string
 		}{{e.Request, &out.Request}, {e.EffectiveArgs, &out.EffectiveArguments}, {e.Result, &out.Result}} {
 			if item.ref == nil {
@@ -241,7 +241,7 @@ func decryptAuditCall(root string, keys *auditKeyCache, events []accesslog.Event
 			if err != nil {
 				return err
 			}
-			raw, err := accesslog.ReadPayload(root, *item.ref, key)
+			raw, err := calllog.ReadPayload(root, *item.ref, key)
 			if err != nil {
 				return err
 			}
@@ -251,8 +251,8 @@ func decryptAuditCall(root string, keys *auditKeyCache, events []accesslog.Event
 	return nil
 }
 
-// AuditStats aggregates bounded metadata and payload byte counts.
-type AuditStats struct {
+// CallsStats aggregates bounded metadata and payload byte counts.
+type CallsStats struct {
 	Since         time.Time      `json:"since,omitempty"`
 	Events        int            `json:"events"`
 	Calls         int            `json:"calls"`
@@ -266,7 +266,7 @@ type AuditStats struct {
 	Tools         map[string]int `json:"tools"`
 }
 
-func (s AuditStats) Human(w io.Writer) error {
+func (s CallsStats) Human(w io.Writer) error {
 	_, _ = fmt.Fprintf(w, "calls: %d (%d incomplete)\nevents: %d (%d malformed skipped)\n", s.Calls, s.Incomplete, s.Events, s.Skipped)
 	_, _ = fmt.Fprintf(w, "payload: %d raw bytes, %d stored bytes\n", s.PayloadRaw, s.PayloadStored)
 	for _, section := range []struct {
@@ -289,7 +289,7 @@ func (s AuditStats) Human(w io.Writer) error {
 	return nil
 }
 
-func (a *App) newAuditStatsCmd() *cobra.Command {
+func (a *App) newCallsStatsCmd() *cobra.Command {
 	var sinceRaw string
 	cmd := &cobra.Command{
 		Use:   "stats",
@@ -300,22 +300,22 @@ func (a *App) newAuditStatsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			root, err := accesslog.DefaultDir(a.resolver)
+			root, err := calllog.DefaultDir(a.resolver)
 			if err != nil {
 				return err
 			}
-			out := AuditStats{
+			out := CallsStats{
 				Since: since, Outcomes: map[string]int{}, Clients: map[string]int{},
 				Servers: map[string]int{}, Tools: map[string]int{},
 			}
 			received, finished := map[string]bool{}, map[string]bool{}
-			out.Skipped, err = accesslog.ScanEventsSince(root, since, func(e accesslog.Event) error {
+			out.Skipped, err = calllog.ScanEventsSince(root, since, func(e calllog.Event) error {
 				out.Events++
-				if e.Kind == accesslog.EventReceived {
+				if e.Kind == calllog.EventReceived {
 					received[e.CallID] = true
 					out.Clients[e.Client]++
 				}
-				if e.Kind == accesslog.EventFinished {
+				if e.Kind == calllog.EventFinished {
 					finished[e.CallID] = true
 					out.Outcomes[e.Outcome]++
 					if e.Server != "" {
@@ -325,7 +325,7 @@ func (a *App) newAuditStatsCmd() *cobra.Command {
 						out.Tools[e.Tool]++
 					}
 				}
-				for _, ref := range []*accesslog.PayloadRef{e.Request, e.EffectiveArgs, e.Result} {
+				for _, ref := range []*calllog.PayloadRef{e.Request, e.EffectiveArgs, e.Result} {
 					if ref != nil {
 						out.PayloadRaw += int64(ref.RawBytes)
 						out.PayloadStored += int64(ref.StoredBytes)
@@ -349,9 +349,9 @@ func (a *App) newAuditStatsCmd() *cobra.Command {
 	return cmd
 }
 
-// AuditVerify is the integrity report. Independent event MACs detect edits;
+// CallsVerify is the integrity report. Independent event MACs detect edits;
 // payload AEAD and bindings detect corruption or reference substitution.
-type AuditVerify struct {
+type CallsVerify struct {
 	OK       bool     `json:"ok"`
 	Events   int      `json:"events"`
 	Payloads int      `json:"payloads"`
@@ -360,7 +360,7 @@ type AuditVerify struct {
 	Issues   []string `json:"issues,omitempty"`
 }
 
-func (v AuditVerify) Human(w io.Writer) error {
+func (v CallsVerify) Human(w io.Writer) error {
 	status := "ok"
 	if !v.OK {
 		status = "FAILED"
@@ -373,7 +373,7 @@ func (v AuditVerify) Human(w io.Writer) error {
 	return nil
 }
 
-func (a *App) newAuditVerifyCmd() *cobra.Command {
+func (a *App) newCallsVerifyCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "verify",
 		Short: "Authenticate metadata and decrypt every referenced payload",
@@ -381,25 +381,25 @@ func (a *App) newAuditVerifyCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			keys := newAuditKeyCache(a, cmd)
 			defer keys.close()
-			root, err := accesslog.DefaultDir(a.resolver)
+			root, err := calllog.DefaultDir(a.resolver)
 			if err != nil {
 				return err
 			}
-			out := AuditVerify{OK: true}
-			out.Skipped, err = accesslog.ScanEvents(root, func(e accesslog.Event) error {
+			out := CallsVerify{OK: true}
+			out.Skipped, err = calllog.ScanEvents(root, func(e calllog.Event) error {
 				out.Events++
 				key, keyErr := keys.get(e.KeyID)
 				if keyErr != nil {
 					out.addIssue(fmt.Sprintf("event %s/%s: %v", e.CallID, e.Kind, keyErr))
 					return nil
 				}
-				if err := accesslog.VerifyEvent(e, key); err != nil {
+				if err := calllog.VerifyEvent(e, key); err != nil {
 					out.addIssue(fmt.Sprintf("event %s/%s: %v", e.CallID, e.Kind, err))
 				}
 				for _, item := range []struct {
-					ref  *accesslog.PayloadRef
-					kind accesslog.PayloadKind
-				}{{e.Request, accesslog.PayloadRequest}, {e.EffectiveArgs, accesslog.PayloadEffectiveArgs}, {e.Result, accesslog.PayloadResult}} {
+					ref  *calllog.PayloadRef
+					kind calllog.PayloadKind
+				}{{e.Request, calllog.PayloadRequest}, {e.EffectiveArgs, calllog.PayloadEffectiveArgs}, {e.Result, calllog.PayloadResult}} {
 					if item.ref == nil {
 						continue
 					}
@@ -409,7 +409,7 @@ func (a *App) newAuditVerifyCmd() *cobra.Command {
 						out.addIssue(fmt.Sprintf("payload %s/%s: %v", e.CallID, item.kind, payloadKeyErr))
 						continue
 					}
-					if err := accesslog.VerifyPayload(root, *item.ref, payloadKey, e.CallID, item.kind); err != nil {
+					if err := calllog.VerifyPayload(root, *item.ref, payloadKey, e.CallID, item.kind); err != nil {
 						out.addIssue(fmt.Sprintf("payload %s/%s: %v", e.CallID, item.kind, err))
 					}
 				}
@@ -432,7 +432,7 @@ func (a *App) newAuditVerifyCmd() *cobra.Command {
 	}
 }
 
-func (v *AuditVerify) addIssue(issue string) {
+func (v *CallsVerify) addIssue(issue string) {
 	v.OK = false
 	v.Failures++
 	if len(v.Issues) < 50 {
@@ -470,7 +470,7 @@ func (c *auditKeyCache) close() {
 
 func (a *App) loadAuditKeyID(cmd *cobra.Command, keyID string) ([]byte, error) {
 	if len(keyID) != 16 {
-		return nil, NotFoundf(CodeSecretNotFound, "audit encryption key %q is invalid", keyID)
+		return nil, NotFoundf(CodeSecretNotFound, "ledger encryption key %q is invalid", keyID)
 	}
 	chain, _, err := a.secretChain()
 	if err != nil {
@@ -484,13 +484,13 @@ func (a *App) loadAuditKeyID(cmd *cobra.Command, keyID string) ([]byte, error) {
 		return nil, classifySecretsError(err)
 	}
 	if !ok {
-		return nil, NotFoundf(CodeSecretNotFound, "audit encryption key %q not found", keyID)
+		return nil, NotFoundf(CodeSecretNotFound, "ledger encryption key %q not found", keyID)
 	}
 	key, err := decodeAuditKey(encoded)
 	if err != nil {
 		return nil, err
 	}
-	got, err := accesslog.KeyID(key)
+	got, err := calllog.KeyID(key)
 	if err != nil || got != keyID {
 		zeroSecret(key)
 		return nil, &Error{Code: CodeStateCorrupt, ExitCode: ExitLocked, Message: fmt.Sprintf("stored audit key does not match id %q", keyID), Err: err}

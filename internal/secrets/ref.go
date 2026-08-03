@@ -21,7 +21,11 @@ const (
 	// KeyOAuthState holds the OAuth state JSON (token_endpoint, client_id,
 	// refresh_token, resource, issued_at, expires_at).
 	KeyOAuthState = "__oauth_state__"
-	// KeyAuditEncryption holds the machine-local access-ledger key. It is
+	// KeyAuditEncryption holds the machine-local ledger key.
+	//
+	// The stored NAME keeps its original spelling on purpose: it is what
+	// every existing installation's vault entry is filed under, and renaming
+	// it would lose the key that decrypts their history. It is
 	// internal infrastructure, never a downstream credential.
 	KeyAuditEncryption = "__audit_encryption__"
 )

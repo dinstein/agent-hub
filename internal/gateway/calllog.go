@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dinstein/agent-hub/internal/accesslog"
+	"github.com/dinstein/agent-hub/internal/calllog"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/pipeline"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -26,18 +26,18 @@ const auditTextBound = 1024
 // the same ledger even if audit is disabled or rotated while it runs.
 type auditManager struct {
 	mu          sync.Mutex
-	policy      registry.ResolvedAuditPolicy
-	store       *accesslog.Store
+	policy      registry.ResolvedCallsPolicy
+	store       *calllog.Store
 	unavailable error
-	retired     []*accesslog.Store
+	retired     []*calllog.Store
 	spans       map[string]*auditSpan
 }
 
 type auditSpan struct {
-	store   *accesslog.Store
-	policy  registry.ResolvedAuditPolicy
+	store   *calllog.Store
+	policy  registry.ResolvedCallsPolicy
 	started time.Time
-	common  accesslog.Event
+	common  calllog.Event
 
 	route    router.Route
 	provider string
@@ -49,7 +49,7 @@ func newAuditManager() *auditManager {
 	return &auditManager{spans: map[string]*auditSpan{}}
 }
 
-func validateAuditPolicy(p registry.ResolvedAuditPolicy) error {
+func validateCallsPolicy(p registry.ResolvedCallsPolicy) error {
 	if !p.Enabled {
 		return nil
 	}
@@ -61,8 +61,8 @@ func validateAuditPolicy(p registry.ResolvedAuditPolicy) error {
 	default:
 		return fmt.Errorf("unknown result mode %q", p.ResultMode)
 	}
-	if p.ResultBytes <= 0 || p.ResultBytes > accesslog.MaxPayloadBytes {
-		return fmt.Errorf("resultBytes %d is outside 1..%d", p.ResultBytes, accesslog.MaxPayloadBytes)
+	if p.ResultBytes <= 0 || p.ResultBytes > calllog.MaxPayloadBytes {
+		return fmt.Errorf("resultBytes %d is outside 1..%d", p.ResultBytes, calllog.MaxPayloadBytes)
 	}
 	if p.RetentionDays <= 0 || p.MaxBytes <= 0 || p.MinFreeBytes <= 0 {
 		return errors.New("retentionDays, maxBytes and minFreeBytes must be positive")
@@ -82,9 +82,9 @@ func (g *gateway) syncAudit() {
 	if g.audit == nil {
 		return
 	}
-	p := registry.ResolvedAuditPolicy{}
+	p := registry.ResolvedCallsPolicy{}
 	if snap := g.snap.Load(); snap != nil {
-		p = snap.Governance.V.ResolvedAudit()
+		p = snap.Governance.V.ResolvedCalls()
 	}
 
 	g.audit.mu.Lock()
@@ -98,7 +98,7 @@ func (g *gateway) syncAudit() {
 		g.audit.swap(p, nil, nil)
 		return
 	}
-	if err := validateAuditPolicy(p); err != nil {
+	if err := validateCallsPolicy(p); err != nil {
 		g.audit.swap(p, nil, fmt.Errorf("invalid audit policy: %w", err))
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
@@ -142,13 +142,13 @@ func (g *gateway) syncAudit() {
 	key, err := base64.RawStdEncoding.DecodeString(encoded)
 	if err != nil || len(key) != 32 {
 		if err == nil {
-			err = accesslog.ErrBadKey
+			err = calllog.ErrBadKey
 		}
 		g.audit.swap(p, nil, err)
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
 	}
-	keyID, err := accesslog.KeyID(key)
+	keyID, err := calllog.KeyID(key)
 	if err == nil && keyID != p.KeyID {
 		err = fmt.Errorf("audit key id %q does not match configured %q", keyID, p.KeyID)
 	}
@@ -158,15 +158,15 @@ func (g *gateway) syncAudit() {
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
 	}
-	root, err := accesslog.DefaultDir(g.resolver)
+	root, err := calllog.DefaultDir(g.resolver)
 	if err != nil {
 		zeroBytes(key)
 		g.audit.swap(p, nil, err)
 		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
 		return
 	}
-	store, err := accesslog.Open(accesslog.Options{
-		Root: root, Key: key, KeyID: keyID, Durability: accesslog.Durability(p.Durability),
+	store, err := calllog.Open(calllog.Options{
+		Root: root, Key: key, KeyID: keyID, Durability: calllog.Durability(p.Durability),
 		RetentionDays: p.RetentionDays, MaxBytes: p.MaxBytes, MinFreeBytes: p.MinFreeBytes,
 	})
 	zeroBytes(key)
@@ -186,7 +186,7 @@ func zeroBytes(b []byte) {
 	}
 }
 
-func (m *auditManager) swap(p registry.ResolvedAuditPolicy, store *accesslog.Store, unavailable error) {
+func (m *auditManager) swap(p registry.ResolvedCallsPolicy, store *calllog.Store, unavailable error) {
 	m.mu.Lock()
 	if m.store != nil && m.store != store {
 		m.retired = append(m.retired, m.store)
@@ -197,7 +197,7 @@ func (m *auditManager) swap(p registry.ResolvedAuditPolicy, store *accesslog.Sto
 
 func (m *auditManager) close() error {
 	m.mu.Lock()
-	stores := append([]*accesslog.Store(nil), m.retired...)
+	stores := append([]*calllog.Store(nil), m.retired...)
 	if m.store != nil {
 		stores = append(stores, m.store)
 	}
@@ -229,12 +229,12 @@ func (g *gateway) auditBegin(req *mcp.Request) error {
 		}
 		return unavailable
 	}
-	callID, err := accesslog.NewCallID()
+	callID, err := calllog.NewCallID()
 	if err != nil {
 		return err
 	}
 	started := time.Now().UTC()
-	request, err := store.PutPayload(started, callID, accesslog.PayloadRequest, req.Params)
+	request, err := store.PutPayload(started, callID, calllog.PayloadRequest, req.Params)
 	if err != nil {
 		return err
 	}
@@ -243,14 +243,14 @@ func (g *gateway) auditBegin(req *mcp.Request) error {
 		face = "stdio"
 	}
 	face = boundedAuditText(face)
-	common := accesslog.Event{
+	common := calllog.Event{
 		TS: started, CallID: callID, Client: boundedAuditText(g.cfg.ClientID),
 		Session: boundedAuditText(face + ":" + g.cfg.ClientID), RequestID: boundedAuditText(req.ID.String()),
 		Face: face, Protocol: boundedAuditText(g.auditRequestProtocol(req.Params)), PolicyRev: g.auditPolicyRev(),
 		CallerTier: boundedAuditText(string(g.cfg.CallerTier)),
 	}
 	received := common
-	received.Kind, received.Request = accesslog.EventReceived, &request
+	received.Kind, received.Request = calllog.EventReceived, &request
 	if err := store.Append(received); err != nil {
 		return err
 	}
@@ -266,13 +266,13 @@ func (g *gateway) auditRoute(id mcp.ID, route router.Route, args json.RawMessage
 	if span == nil {
 		return nil
 	}
-	ref, err := span.store.PutPayload(time.Now().UTC(), span.common.CallID, accesslog.PayloadEffectiveArgs, args)
+	ref, err := span.store.PutPayload(time.Now().UTC(), span.common.CallID, calllog.PayloadEffectiveArgs, args)
 	if err != nil {
 		return err
 	}
 	span.route, span.provider = route, provider
 	e := span.common
-	e.TS, e.Kind = time.Now().UTC(), accesslog.EventRouted
+	e.TS, e.Kind = time.Now().UTC(), calllog.EventRouted
 	e.Exposed, e.Server, e.Tool = boundedAuditText(span.common.Exposed), boundedAuditText(route.ServerID), boundedAuditText(route.RawTool)
 	e.Provider, e.EffectiveArgs = provider, &ref
 	return span.store.Append(e)
@@ -379,7 +379,7 @@ func (s *auditSpan) finishResponse(res *mcp.Response) error {
 		return fmt.Errorf("audit: unknown result mode %q", s.policy.ResultMode)
 	}
 	if capture {
-		ref, err := s.store.PutPayload(e.TS, s.common.CallID, accesslog.PayloadResult, stored)
+		ref, err := s.store.PutPayload(e.TS, s.common.CallID, calllog.PayloadResult, stored)
 		if err != nil {
 			return err
 		}
@@ -395,9 +395,9 @@ func (s *auditSpan) finishResponse(res *mcp.Response) error {
 	return s.store.Append(e)
 }
 
-func (s *auditSpan) finished(outcome string, rpcErr *mcp.Error) accesslog.Event {
+func (s *auditSpan) finished(outcome string, rpcErr *mcp.Error) calllog.Event {
 	e := s.common
-	e.TS, e.Kind, e.Outcome = time.Now().UTC(), accesslog.EventFinished, outcome
+	e.TS, e.Kind, e.Outcome = time.Now().UTC(), calllog.EventFinished, outcome
 	e.DurationMs = time.Since(s.started).Milliseconds()
 	e.Server, e.Tool, e.Provider = boundedAuditText(s.route.ServerID), boundedAuditText(s.route.RawTool), s.provider
 	e.Gate, e.Code = s.gate, s.code

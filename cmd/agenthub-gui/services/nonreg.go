@@ -19,7 +19,7 @@ import (
 // changed it" affordance on these — it would be describing a race that
 // cannot happen. Each store serializes its own writes with its own lock.
 //
-// Audit has a mixed read/write lifecycle and lives in audit.go.
+// Audit has a mixed read/write lifecycle and lives in calls.go.
 
 // secretRedacted replaces any message that would have carried a credential
 // to the frontend. It says what happened and nothing else.

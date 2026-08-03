@@ -451,14 +451,14 @@ const (
 	DefaultAuditMinFree       int64 = 1 << 30
 )
 
-// AuditPolicy is the persisted access-ledger policy. Zero values other than
+// CallsPolicy is the persisted access-ledger policy. Zero values other than
 // Enabled mean "use the built-in default" so an older governance document
 // remains bounded when a newer binary first reads it.
 //
 // Request arguments deliberately have no switch: an enabled ledger always
 // records them completely. Results may be omitted, limited to tool errors,
 // truncated, or stored in full up to the MCP frame bound.
-type AuditPolicy struct {
+type CallsPolicy struct {
 	Enabled       bool   `json:"enabled,omitempty"`
 	Durability    string `json:"durability,omitempty"`
 	ResultMode    string `json:"results,omitempty"`
@@ -469,9 +469,9 @@ type AuditPolicy struct {
 	KeyID         string `json:"keyId,omitempty"`
 }
 
-// ResolvedAuditPolicy is a complete immutable policy snapshot used by a
+// ResolvedCallsPolicy is a complete immutable policy snapshot used by a
 // gateway and rendered by the CLI.
-type ResolvedAuditPolicy struct {
+type ResolvedCallsPolicy struct {
 	Enabled       bool
 	Durability    string
 	ResultMode    string
@@ -559,7 +559,12 @@ type GovernanceDoc struct {
 	// every tools/call attempt is written before execution and storage
 	// failure blocks the call; it never changes which server or tool is in
 	// scope. The payload key lives in the secret vault, never this document.
-	Audit *Doc[AuditPolicy] `json:"audit,omitempty"`
+	Calls *Doc[CallsPolicy] `json:"calls,omitempty"`
+	// Audit is what Calls was called before the ledger grew past tools/call
+	// evidence. It is READ so an installation that upgrades keeps its policy
+	// and its key id; it is never written, and callsDoc folds it into Calls
+	// on the first write.
+	Audit *Doc[CallsPolicy] `json:"audit,omitempty"`
 	// HTTP is the MCP data plane's stored opt-in: the address the daemon
 	// serves Streamable HTTP on, and the two confirmations that address
 	// needs. Absent — the default — means no listener at all.
@@ -640,36 +645,50 @@ func (g GovernanceDoc) IntentVariantsEnabled() bool {
 	return *g.IntentVariants
 }
 
-// ResolvedAudit returns the complete audit policy with bounded defaults.
-func (g GovernanceDoc) ResolvedAudit() ResolvedAuditPolicy {
-	p := ResolvedAuditPolicy{
+// ResolvedCalls returns the complete audit policy with bounded defaults.
+func (g GovernanceDoc) ResolvedCalls() ResolvedCallsPolicy {
+	p := ResolvedCallsPolicy{
 		Durability: DefaultAuditDurability, ResultMode: DefaultAuditResultMode,
 		ResultBytes: DefaultAuditResultBytes, RetentionDays: DefaultAuditRetentionDays,
 		MaxBytes: DefaultAuditMaxBytes, MinFreeBytes: DefaultAuditMinFree,
 	}
-	if g.Audit == nil {
+	stored := g.CallsDoc()
+	if stored == nil {
 		return p
 	}
-	p.Enabled, p.KeyID = g.Audit.V.Enabled, g.Audit.V.KeyID
-	if g.Audit.V.Durability != "" {
-		p.Durability = g.Audit.V.Durability
+	p.Enabled, p.KeyID = stored.V.Enabled, stored.V.KeyID
+	if stored.V.Durability != "" {
+		p.Durability = stored.V.Durability
 	}
-	if g.Audit.V.ResultMode != "" {
-		p.ResultMode = g.Audit.V.ResultMode
+	if stored.V.ResultMode != "" {
+		p.ResultMode = stored.V.ResultMode
 	}
-	if g.Audit.V.ResultBytes > 0 {
-		p.ResultBytes = g.Audit.V.ResultBytes
+	if stored.V.ResultBytes > 0 {
+		p.ResultBytes = stored.V.ResultBytes
 	}
-	if g.Audit.V.RetentionDays > 0 {
-		p.RetentionDays = g.Audit.V.RetentionDays
+	if stored.V.RetentionDays > 0 {
+		p.RetentionDays = stored.V.RetentionDays
 	}
-	if g.Audit.V.MaxBytes > 0 {
-		p.MaxBytes = g.Audit.V.MaxBytes
+	if stored.V.MaxBytes > 0 {
+		p.MaxBytes = stored.V.MaxBytes
 	}
-	if g.Audit.V.MinFreeBytes > 0 {
-		p.MinFreeBytes = g.Audit.V.MinFreeBytes
+	if stored.V.MinFreeBytes > 0 {
+		p.MinFreeBytes = stored.V.MinFreeBytes
 	}
 	return p
+}
+
+// CallsDoc returns the stored ledger policy under whichever key it was
+// written with, preferring the current one.
+//
+// Both are read because an upgrade must not silently reset the policy — and
+// with it the key id, without which the existing days cannot be decrypted at
+// all.
+func (g GovernanceDoc) CallsDoc() *Doc[CallsPolicy] {
+	if g.Calls != nil {
+		return g.Calls
+	}
+	return g.Audit
 }
 
 // Snapshot is an immutable view of the registry as of the last successful

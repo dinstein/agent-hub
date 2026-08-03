@@ -22,12 +22,12 @@
 
 import { Browser, Call, Clipboard, Events } from "@wailsio/runtime";
 import type {
-  AuditCallDetail,
+  CallDetail,
   AuditCalls,
   AuditKeyRotation,
   AuditPrune,
-  AuditStats,
-  AuditStatus,
+  CallsStats,
+  CallsStatus,
   AuditVerify,
   AuthLoggedOut,
   AuthLogin,
@@ -142,8 +142,8 @@ export const hub = {
   quitApplication: () => call<void>("QuitApplication"),
 
   // -- encrypted access ledger ---------------------------------------------
-  auditStatus: () => call<AuditStatus>("AuditStatus"),
-  auditCalls: (
+  callsStatus: () => call<CallsStatus>("CallsStatus"),
+  callList: (
     sinceMillis: number,
     limit: number,
     cursor = "",
@@ -151,17 +151,17 @@ export const hub = {
     server = "",
     tool = "",
     outcome = "",
-  ) => call<AuditCalls>("AuditCalls", sinceMillis, limit, cursor, "", client, server, tool, outcome),
+  ) => call<AuditCalls>("CallList", sinceMillis, limit, cursor, "", client, server, tool, outcome),
   /** Selecting a row is the disclosure action: payload previews are returned
    *  immediately, with no second decrypt control. */
-  auditCall: (id: string) => call<AuditCallDetail>("AuditCall", id),
-  auditStats: (sinceMillis: number) => call<AuditStats>("AuditStats", sinceMillis),
+  callDetail: (id: string) => call<CallDetail>("CallDetail", id),
+  callsStats: (sinceMillis: number) => call<CallsStats>("CallsStats", sinceMillis),
   setAuditEnabled: (enabled: boolean, generation: number) =>
-    call<AuditStatus>("SetAuditEnabled", enabled, generation),
+    call<CallsStatus>("SetCallsEnabled", enabled, generation),
   rotateAuditKey: (generation: number) =>
-    call<AuditKeyRotation>("RotateAuditKey", generation),
-  verifyAudit: () => call<AuditVerify>("VerifyAudit"),
-  pruneAudit: (dryRun: boolean) => call<AuditPrune>("PruneAudit", dryRun),
+    call<AuditKeyRotation>("RotateCallsKey", generation),
+  verifyAudit: () => call<AuditVerify>("VerifyCalls"),
+  pruneAudit: (dryRun: boolean) => call<AuditPrune>("PruneCalls", dryRun),
 
   // -- control-plane event log ---------------------------------------------
   /** What HAPPENED, in a closed vocabulary — as opposed to EVT.servers, which

@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-// AuditStatus is the effective access-ledger policy and its current storage
+// CallsStatus is the effective access-ledger policy and its current storage
 // footprint. KeyID is public key metadata; encryption key material never
 // crosses the control plane.
-type AuditStatus struct {
+type CallsStatus struct {
 	Generation    uint64     `json:"generation"`
 	Enabled       bool       `json:"enabled"`
 	Arguments     string     `json:"arguments"`
@@ -33,9 +33,9 @@ type AuditUsage struct {
 	PackFiles  int   `json:"packFiles"`
 }
 
-// AuditCallSummary joins one call's immutable lifecycle into a list-safe,
+// CallSummary joins one call's immutable lifecycle into a list-safe,
 // metadata-only row. Payload references are deliberately not exposed.
-type AuditCallSummary struct {
+type CallSummary struct {
 	CallID        string    `json:"callId"`
 	Time          time.Time `json:"time"`
 	Client        string    `json:"client,omitempty"`
@@ -50,12 +50,12 @@ type AuditCallSummary struct {
 	Complete      bool      `json:"complete"`
 }
 
-type AuditCalls struct {
-	Since      time.Time          `json:"since,omitempty"`
-	Calls      []AuditCallSummary `json:"calls"`
-	Total      int                `json:"total"`
-	NextCursor string             `json:"nextCursor,omitempty"`
-	Skipped    int                `json:"skippedMalformed"`
+type CallPage struct {
+	Since      time.Time     `json:"since,omitempty"`
+	Calls      []CallSummary `json:"calls"`
+	Total      int           `json:"total"`
+	NextCursor string        `json:"nextCursor,omitempty"`
+	Skipped    int           `json:"skippedMalformed"`
 }
 
 type AuditEvent struct {
@@ -83,8 +83,8 @@ type AuditPayload struct {
 	Truncated bool   `json:"truncated,omitempty"`
 }
 
-type AuditCallDetail struct {
-	AuditCallSummary
+type CallDetail struct {
+	CallSummary
 	Events             []AuditEvent `json:"events"`
 	Error              string       `json:"error,omitempty"`
 	Request            AuditPayload `json:"request"`
@@ -92,7 +92,7 @@ type AuditCallDetail struct {
 	Result             AuditPayload `json:"result"`
 }
 
-type AuditStats struct {
+type CallsStats struct {
 	Since         time.Time                 `json:"since,omitempty"`
 	Events        int                       `json:"events"`
 	Calls         int                       `json:"calls"`
@@ -107,7 +107,7 @@ type AuditStats struct {
 	ServerTools   map[string]map[string]int `json:"serverTools"`
 }
 
-type AuditVerify struct {
+type CallsVerify struct {
 	OK       bool     `json:"ok"`
 	Events   int      `json:"events"`
 	Payloads int      `json:"payloads"`
@@ -116,7 +116,7 @@ type AuditVerify struct {
 	Issues   []string `json:"issues,omitempty"`
 }
 
-type AuditPrune struct {
+type CallsPrune struct {
 	DryRun bool     `json:"dryRun"`
 	Before string   `json:"before"`
 	Days   int      `json:"days"`
@@ -124,21 +124,21 @@ type AuditPrune struct {
 	Names  []string `json:"names,omitempty"`
 }
 
-type AuditKeyRotation struct {
+type CallsKeyRotation struct {
 	PreviousKeyID string `json:"previousKeyId"`
 	KeyID         string `json:"keyId"`
 	Enabled       bool   `json:"enabled"`
 }
 
-type AuditService struct{ c *Client }
+type CallsService struct{ c *Client }
 
-func (s *AuditService) Status(ctx context.Context) (AuditStatus, error) {
-	var out AuditStatus
-	err := s.c.do(ctx, http.MethodGet, "/audit/status", nil, nil, &out)
+func (s *CallsService) Status(ctx context.Context) (CallsStatus, error) {
+	var out CallsStatus
+	err := s.c.do(ctx, http.MethodGet, "/calls/status", nil, nil, &out)
 	return out, err
 }
 
-type AuditCallFilter struct {
+type CallFilter struct {
 	Since   time.Time
 	Limit   int
 	Cursor  string
@@ -149,7 +149,7 @@ type AuditCallFilter struct {
 	Outcome string
 }
 
-func auditQuery(f AuditCallFilter) url.Values {
+func callQuery(f CallFilter) url.Values {
 	q := url.Values{}
 	if !f.Since.IsZero() {
 		q.Set("since", f.Since.Format(time.RFC3339Nano))
@@ -178,52 +178,52 @@ func auditQuery(f AuditCallFilter) url.Values {
 	return q
 }
 
-func (s *AuditService) Calls(ctx context.Context, f AuditCallFilter) (AuditCalls, error) {
-	var out AuditCalls
-	err := s.c.do(ctx, http.MethodGet, "/audit/calls", auditQuery(f), nil, &out)
+func (s *CallsService) List(ctx context.Context, f CallFilter) (CallPage, error) {
+	var out CallPage
+	err := s.c.do(ctx, http.MethodGet, "/calls", callQuery(f), nil, &out)
 	return out, err
 }
 
-func (s *AuditService) Call(ctx context.Context, id string) (AuditCallDetail, error) {
-	var out AuditCallDetail
-	err := s.c.do(ctx, http.MethodGet, "/audit/calls/"+url.PathEscape(id), nil, nil, &out)
+func (s *CallsService) Get(ctx context.Context, id string) (CallDetail, error) {
+	var out CallDetail
+	err := s.c.do(ctx, http.MethodGet, "/calls/"+url.PathEscape(id), nil, nil, &out)
 	return out, err
 }
 
-func (s *AuditService) Stats(ctx context.Context, since time.Time) (AuditStats, error) {
+func (s *CallsService) Stats(ctx context.Context, since time.Time) (CallsStats, error) {
 	q := url.Values{}
 	if !since.IsZero() {
 		q.Set("since", since.Format(time.RFC3339Nano))
 	}
-	var out AuditStats
-	err := s.c.do(ctx, http.MethodGet, "/audit/stats", q, nil, &out)
+	var out CallsStats
+	err := s.c.do(ctx, http.MethodGet, "/calls/stats", q, nil, &out)
 	return out, err
 }
 
-func (s *AuditService) SetEnabled(ctx context.Context, enabled bool, expectedGeneration uint64) (AuditStatus, error) {
-	var out AuditStatus
-	err := s.c.doWrite(ctx, http.MethodPut, "/audit/enabled", nil, expectedGeneration,
+func (s *CallsService) SetEnabled(ctx context.Context, enabled bool, expectedGeneration uint64) (CallsStatus, error) {
+	var out CallsStatus
+	err := s.c.doWrite(ctx, http.MethodPut, "/calls/enabled", nil, expectedGeneration,
 		struct {
 			Enabled bool `json:"enabled"`
 		}{enabled}, &out)
 	return out, err
 }
 
-func (s *AuditService) RotateKey(ctx context.Context, expectedGeneration uint64) (AuditKeyRotation, error) {
-	var out AuditKeyRotation
-	err := s.c.doWrite(ctx, http.MethodPost, "/audit/rotate-key", nil, expectedGeneration, struct{}{}, &out)
+func (s *CallsService) RotateKey(ctx context.Context, expectedGeneration uint64) (CallsKeyRotation, error) {
+	var out CallsKeyRotation
+	err := s.c.doWrite(ctx, http.MethodPost, "/calls/rotate-key", nil, expectedGeneration, struct{}{}, &out)
 	return out, err
 }
 
-func (s *AuditService) Verify(ctx context.Context) (AuditVerify, error) {
-	var out AuditVerify
-	err := s.c.do(ctx, http.MethodPost, "/audit/verify", nil, struct{}{}, &out)
+func (s *CallsService) Verify(ctx context.Context) (CallsVerify, error) {
+	var out CallsVerify
+	err := s.c.do(ctx, http.MethodPost, "/calls/verify", nil, struct{}{}, &out)
 	return out, err
 }
 
-func (s *AuditService) Prune(ctx context.Context, dryRun bool) (AuditPrune, error) {
-	var out AuditPrune
-	err := s.c.do(ctx, http.MethodPost, "/audit/prune", nil,
+func (s *CallsService) Prune(ctx context.Context, dryRun bool) (CallsPrune, error) {
+	var out CallsPrune
+	err := s.c.do(ctx, http.MethodPost, "/calls/prune", nil,
 		struct {
 			DryRun bool `json:"dryRun"`
 		}{dryRun}, &out)

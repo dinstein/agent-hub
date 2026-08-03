@@ -27,6 +27,7 @@ var retiredNames = map[string]string{
 	"internal/vault":                "internal/secrets",
 	"internal/gatewaymode":          "internal/gateway",
 	"internal/downstream/transport": "internal/mcp/transport",
+	"internal/accesslog":            "internal/calllog",
 	// Removed with the runtime governance surface. internal/audit's one
 	// surviving primitive was extracted to internal/jsonl first, which is a
 	// narrower claim than a rename and is why it is not spelled as one.

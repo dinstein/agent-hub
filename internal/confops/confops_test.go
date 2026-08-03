@@ -11,11 +11,20 @@ import (
 // newStore opens a fresh registry in a temp directory.
 func newStore(t *testing.T) *registry.Store {
 	t.Helper()
-	st, err := registry.Open(t.TempDir())
+	st, _ := newStoreDir(t)
+	return st
+}
+
+// newStoreDir also returns the directory, for tests that write a document by
+// hand — the shape an installation upgrading from an older build arrives in.
+func newStoreDir(t *testing.T) (*registry.Store, string) {
+	t.Helper()
+	dir := t.TempDir()
+	st, err := registry.Open(dir)
 	if err != nil {
 		t.Fatalf("open registry: %v", err)
 	}
-	return st
+	return st, dir
 }
 
 // stdio is a minimal valid stdio entry.

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/api"
-	"github.com/dinstein/agent-hub/internal/accesslog"
+	"github.com/dinstein/agent-hub/internal/calllog"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/secrets"
@@ -20,14 +20,14 @@ import (
 
 const auditPayloadPreviewBytes = 512 << 10
 
-func (s *Server) auditStatus() (api.AuditStatus, error) {
+func (s *Server) auditStatus() (api.CallsStatus, error) {
 	snap := s.opts.Registry.Snapshot()
-	p := snap.Governance.V.ResolvedAudit()
-	u, err := accesslog.Inspect(s.opts.NonRegistry.AuditRoot)
+	p := snap.Governance.V.ResolvedCalls()
+	u, err := calllog.Inspect(s.opts.NonRegistry.CallsRoot)
 	if err != nil {
-		return api.AuditStatus{}, err
+		return api.CallsStatus{}, err
 	}
-	return api.AuditStatus{
+	return api.CallsStatus{
 		Generation: snap.Generation, Enabled: p.Enabled, Arguments: "full",
 		Results: p.ResultMode, ResultBytes: p.ResultBytes, Durability: p.Durability,
 		RetentionDays: p.RetentionDays, MaxBytes: p.MaxBytes,
@@ -36,7 +36,7 @@ func (s *Server) auditStatus() (api.AuditStatus, error) {
 	}, nil
 }
 
-func (s *Server) handleAuditStatus(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCallsStatus(w http.ResponseWriter, r *http.Request) {
 	out, err := s.auditStatus()
 	if err != nil {
 		s.writeAuditError(w, r, err)
@@ -54,11 +54,11 @@ func auditSince(r *http.Request) (time.Time, bool) {
 	return t, err == nil
 }
 
-func eventIntoSummary(out *api.AuditCallSummary, e accesslog.Event) {
+func eventIntoSummary(out *api.CallSummary, e calllog.Event) {
 	if out.CallID == "" {
 		out.CallID, out.Time = e.CallID, e.TS
 	}
-	if e.Kind == accesslog.EventReceived {
+	if e.Kind == calllog.EventReceived {
 		out.Time, out.Client, out.Face, out.ExposedTool = e.TS, e.Client, e.Face, e.Exposed
 	}
 	if e.Server != "" {
@@ -67,14 +67,14 @@ func eventIntoSummary(out *api.AuditCallSummary, e accesslog.Event) {
 	if e.Tool != "" {
 		out.Tool = e.Tool
 	}
-	if e.Kind == accesslog.EventFinished {
+	if e.Kind == calllog.EventFinished {
 		out.Complete = true
 		out.Outcome, out.DurationMs, out.Code = e.Outcome, e.DurationMs, e.Code
 		out.ResultCapture = e.ResultCapture
 	}
 }
 
-func auditMatches(c api.AuditCallSummary, q map[string]string) bool {
+func auditMatches(c api.CallSummary, q map[string]string) bool {
 	if query := strings.ToLower(strings.TrimSpace(q["query"])); query != "" {
 		values := []string{c.CallID, c.Client, c.Face, c.ExposedTool, c.Server, c.Tool, c.Outcome, c.Code}
 		matched := false
@@ -99,12 +99,12 @@ type auditListCursor struct {
 	callID string
 }
 
-func encodeAuditListCursor(row api.AuditCallSummary) string {
+func encodeCallsListCursor(row api.CallSummary) string {
 	raw := row.Time.Format(time.RFC3339Nano) + "\n" + row.CallID
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
 }
 
-func decodeAuditListCursor(raw string) (auditListCursor, error) {
+func decodeCallsListCursor(raw string) (auditListCursor, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(raw)
 	if err != nil {
 		return auditListCursor{}, fmt.Errorf("decode cursor: %w", err)
@@ -120,11 +120,11 @@ func decodeAuditListCursor(raw string) (auditListCursor, error) {
 	return auditListCursor{time: t, callID: callID}, nil
 }
 
-func auditRowAfterCursor(row api.AuditCallSummary, cursor auditListCursor) bool {
+func auditRowAfterCursor(row api.CallSummary, cursor auditListCursor) bool {
 	return row.Time.Before(cursor.time) || (row.Time.Equal(cursor.time) && row.CallID < cursor.callID)
 }
 
-func (s *Server) handleAuditCalls(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCallPage(w http.ResponseWriter, r *http.Request) {
 	since, ok := auditSince(r)
 	if !ok {
 		writeErr(w, http.StatusBadRequest, CodeBadRequest, "since must be an RFC3339 timestamp", "choose a valid time range", requestIDFrom(r.Context()))
@@ -142,17 +142,17 @@ func (s *Server) handleAuditCalls(w http.ResponseWriter, r *http.Request) {
 	var cursor auditListCursor
 	if raw := strings.TrimSpace(r.URL.Query().Get("cursor")); raw != "" {
 		var err error
-		cursor, err = decodeAuditListCursor(raw)
+		cursor, err = decodeCallsListCursor(raw)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, CodeBadRequest, "cursor is invalid", "return to the first page", requestIDFrom(r.Context()))
 			return
 		}
 	}
-	byID := map[string]*api.AuditCallSummary{}
-	skipped, err := accesslog.ScanEventsSince(s.opts.NonRegistry.AuditRoot, since, func(e accesslog.Event) error {
+	byID := map[string]*api.CallSummary{}
+	skipped, err := calllog.ScanEventsSince(s.opts.NonRegistry.CallsRoot, since, func(e calllog.Event) error {
 		row := byID[e.CallID]
 		if row == nil {
-			row = &api.AuditCallSummary{}
+			row = &api.CallSummary{}
 			byID[e.CallID] = row
 		}
 		eventIntoSummary(row, e)
@@ -167,7 +167,7 @@ func (s *Server) handleAuditCalls(w http.ResponseWriter, r *http.Request) {
 		"server": r.URL.Query().Get("server"), "tool": r.URL.Query().Get("tool"),
 		"outcome": r.URL.Query().Get("outcome"),
 	}
-	rows := make([]api.AuditCallSummary, 0, len(byID))
+	rows := make([]api.CallSummary, 0, len(byID))
 	for _, row := range byID {
 		if auditMatches(*row, filters) {
 			rows = append(rows, *row)
@@ -188,14 +188,14 @@ func (s *Server) handleAuditCalls(w http.ResponseWriter, r *http.Request) {
 	page := rows[start:end]
 	nextCursor := ""
 	if end < len(rows) && len(page) > 0 {
-		nextCursor = encodeAuditListCursor(page[len(page)-1])
+		nextCursor = encodeCallsListCursor(page[len(page)-1])
 	}
-	writeOK(w, http.StatusOK, api.AuditCalls{
+	writeOK(w, http.StatusOK, api.CallPage{
 		Since: since, Calls: page, Total: total, NextCursor: nextCursor, Skipped: skipped,
 	})
 }
 
-func auditEventView(e accesslog.Event) api.AuditEvent {
+func auditEventView(e calllog.Event) api.AuditEvent {
 	return api.AuditEvent{Time: e.TS, Event: string(e.Kind), RequestID: e.RequestID,
 		Session: e.Session, PolicyRev: e.PolicyRev, Server: e.Server, Tool: e.Tool,
 		Outcome: e.Outcome, DurationMs: e.DurationMs, Gate: e.Gate, Rule: e.Rule,
@@ -235,7 +235,7 @@ func (c *auditKeyCache) get(id string) ([]byte, error) {
 	if err != nil || len(key) != 32 {
 		return nil, fmt.Errorf("stored audit encryption key is invalid")
 	}
-	got, err := accesslog.KeyID(key)
+	got, err := calllog.KeyID(key)
 	if err != nil || got != id {
 		clear(key)
 		return nil, fmt.Errorf("stored audit key does not match id %q", id)
@@ -254,8 +254,8 @@ func payloadView(raw []byte) api.AuditPayload {
 }
 
 func (s *Server) handleAuditCall(w http.ResponseWriter, r *http.Request, id string) {
-	var events []accesslog.Event
-	_, err := accesslog.ScanEvents(s.opts.NonRegistry.AuditRoot, func(e accesslog.Event) error {
+	var events []calllog.Event
+	_, err := calllog.ScanEvents(s.opts.NonRegistry.CallsRoot, func(e calllog.Event) error {
 		if e.CallID == id {
 			events = append(events, e)
 		}
@@ -269,19 +269,19 @@ func (s *Server) handleAuditCall(w http.ResponseWriter, r *http.Request, id stri
 		writeNotFound(w, r)
 		return
 	}
-	out := api.AuditCallDetail{}
+	out := api.CallDetail{}
 	for _, e := range events {
-		eventIntoSummary(&out.AuditCallSummary, e)
-		if e.Kind == accesslog.EventFinished {
+		eventIntoSummary(&out.CallSummary, e)
+		if e.Kind == calllog.EventFinished {
 			out.Error = e.Error
 		}
 		out.Events = append(out.Events, auditEventView(e))
 	}
-	keys := &auditKeyCache{ctx: r.Context(), vault: s.opts.NonRegistry.AuditKeys, keys: map[string][]byte{}}
+	keys := &auditKeyCache{ctx: r.Context(), vault: s.opts.NonRegistry.CallsKeys, keys: map[string][]byte{}}
 	defer keys.close()
 	for _, e := range events {
 		for _, item := range []struct {
-			ref *accesslog.PayloadRef
+			ref *calllog.PayloadRef
 			dst *api.AuditPayload
 		}{{e.Request, &out.Request}, {e.EffectiveArgs, &out.EffectiveArguments}, {e.Result, &out.Result}} {
 			if item.ref == nil {
@@ -292,7 +292,7 @@ func (s *Server) handleAuditCall(w http.ResponseWriter, r *http.Request, id stri
 				s.writeAuditError(w, r, keyErr)
 				return
 			}
-			raw, readErr := accesslog.ReadPayload(s.opts.NonRegistry.AuditRoot, *item.ref, key)
+			raw, readErr := calllog.ReadPayload(s.opts.NonRegistry.CallsRoot, *item.ref, key)
 			if readErr != nil {
 				s.writeAuditError(w, r, readErr)
 				return
@@ -304,25 +304,25 @@ func (s *Server) handleAuditCall(w http.ResponseWriter, r *http.Request, id stri
 	writeOK(w, http.StatusOK, out)
 }
 
-func (s *Server) handleAuditStats(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCallsStats(w http.ResponseWriter, r *http.Request) {
 	since, ok := auditSince(r)
 	if !ok {
 		writeErr(w, http.StatusBadRequest, CodeBadRequest, "since must be an RFC3339 timestamp", "choose a valid time range", requestIDFrom(r.Context()))
 		return
 	}
-	out := api.AuditStats{
+	out := api.CallsStats{
 		Since: since, Outcomes: map[string]int{}, Clients: map[string]int{},
 		Servers: map[string]int{}, Tools: map[string]int{}, ServerTools: map[string]map[string]int{},
 	}
 	received, finished := map[string]bool{}, map[string]bool{}
 	var err error
-	out.Skipped, err = accesslog.ScanEventsSince(s.opts.NonRegistry.AuditRoot, since, func(e accesslog.Event) error {
+	out.Skipped, err = calllog.ScanEventsSince(s.opts.NonRegistry.CallsRoot, since, func(e calllog.Event) error {
 		out.Events++
-		if e.Kind == accesslog.EventReceived {
+		if e.Kind == calllog.EventReceived {
 			received[e.CallID] = true
 			out.Clients[e.Client]++
 		}
-		if e.Kind == accesslog.EventFinished {
+		if e.Kind == calllog.EventFinished {
 			finished[e.CallID] = true
 			out.Outcomes[e.Outcome]++
 			if e.Server != "" {
@@ -338,7 +338,7 @@ func (s *Server) handleAuditStats(w http.ResponseWriter, r *http.Request) {
 				out.ServerTools[e.Server][e.Tool]++
 			}
 		}
-		for _, ref := range []*accesslog.PayloadRef{e.Request, e.EffectiveArgs, e.Result} {
+		for _, ref := range []*calllog.PayloadRef{e.Request, e.EffectiveArgs, e.Result} {
 			if ref != nil {
 				out.PayloadRaw += int64(ref.RawBytes)
 				out.PayloadStored += int64(ref.StoredBytes)
@@ -381,14 +381,14 @@ func (s *Server) handleAuditEnabled(w http.ResponseWriter, r *http.Request) {
 			s.writeAuditError(w, r, err)
 			return
 		}
-		keyID, err = accesslog.KeyID(key)
+		keyID, err = calllog.KeyID(key)
 		clear(key)
 		if err != nil {
 			s.writeAuditError(w, r, err)
 			return
 		}
 	}
-	res, err := confops.SetAuditEnabled(r.Context(), s.opts.Registry, req.Enabled, keyID, pre)
+	res, err := confops.SetCallsEnabled(r.Context(), s.opts.Registry, req.Enabled, keyID, pre)
 	if err != nil {
 		s.writeOpsError(w, r, err)
 		return
@@ -403,7 +403,7 @@ func (s *Server) handleAuditEnabled(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) loadOrCreateAuditKey(ctx context.Context) ([]byte, error) {
-	v := s.opts.NonRegistry.AuditKeys
+	v := s.opts.NonRegistry.CallsKeys
 	encoded, ok, err := v.Get(ctx, secrets.AuditEncryptionRef())
 	if err != nil {
 		return nil, err
@@ -425,7 +425,7 @@ func (s *Server) loadOrCreateAuditKey(ctx context.Context) ([]byte, error) {
 			return nil, err
 		}
 	}
-	id, err := accesslog.KeyID(key)
+	id, err := calllog.KeyID(key)
 	if err != nil {
 		clear(key)
 		return nil, err
@@ -446,7 +446,7 @@ func (s *Server) handleAuditRotateKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	previous := s.opts.Registry.Snapshot().Governance.V.ResolvedAudit()
+	previous := s.opts.Registry.Snapshot().Governance.V.ResolvedCalls()
 	if previous.KeyID == "" {
 		writeErr(w, http.StatusBadRequest, CodeBadRequest, "audit has no current key", "enable audit first", requestIDFrom(r.Context()))
 		return
@@ -457,13 +457,13 @@ func (s *Server) handleAuditRotateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer clear(key)
-	id, err := accesslog.KeyID(key)
+	id, err := calllog.KeyID(key)
 	if err != nil {
 		s.writeAuditError(w, r, err)
 		return
 	}
 	encoded := base64.RawStdEncoding.EncodeToString(key)
-	if err = s.opts.NonRegistry.AuditKeys.Set(r.Context(), secrets.AuditEncryptionKeyRef(id), encoded); err != nil {
+	if err = s.opts.NonRegistry.CallsKeys.Set(r.Context(), secrets.AuditEncryptionKeyRef(id), encoded); err != nil {
 		s.writeAuditError(w, r, err)
 		return
 	}
@@ -472,18 +472,18 @@ func (s *Server) handleAuditRotateKey(w http.ResponseWriter, r *http.Request) {
 		s.writeOpsError(w, r, err)
 		return
 	}
-	if err = s.opts.NonRegistry.AuditKeys.Set(r.Context(), secrets.AuditEncryptionRef(), encoded); err != nil {
+	if err = s.opts.NonRegistry.CallsKeys.Set(r.Context(), secrets.AuditEncryptionRef(), encoded); err != nil {
 		s.writeAuditError(w, r, err)
 		return
 	}
 	s.publishRegistryChange(registry.DocGovernance, res.Generation)
-	writeOK(w, http.StatusOK, api.AuditKeyRotation{PreviousKeyID: previous.KeyID, KeyID: id, Enabled: res.Policy.Enabled})
+	writeOK(w, http.StatusOK, api.CallsKeyRotation{PreviousKeyID: previous.KeyID, KeyID: id, Enabled: res.Policy.Enabled})
 }
 
-func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
-	keys := &auditKeyCache{ctx: r.Context(), vault: s.opts.NonRegistry.AuditKeys, keys: map[string][]byte{}}
+func (s *Server) handleCallsVerify(w http.ResponseWriter, r *http.Request) {
+	keys := &auditKeyCache{ctx: r.Context(), vault: s.opts.NonRegistry.CallsKeys, keys: map[string][]byte{}}
 	defer keys.close()
-	out := api.AuditVerify{OK: true}
+	out := api.CallsVerify{OK: true}
 	add := func(issue string) {
 		out.OK = false
 		out.Failures++
@@ -492,27 +492,27 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var err error
-	out.Skipped, err = accesslog.ScanEvents(s.opts.NonRegistry.AuditRoot, func(e accesslog.Event) error {
+	out.Skipped, err = calllog.ScanEvents(s.opts.NonRegistry.CallsRoot, func(e calllog.Event) error {
 		out.Events++
 		key, eerr := keys.get(e.KeyID)
 		if eerr != nil {
 			add(fmt.Sprintf("event %s/%s: %v", e.CallID, e.Kind, eerr))
 			return nil
 		}
-		if eerr = accesslog.VerifyEvent(e, key); eerr != nil {
+		if eerr = calllog.VerifyEvent(e, key); eerr != nil {
 			add(fmt.Sprintf("event %s/%s: %v", e.CallID, e.Kind, eerr))
 		}
 		for _, item := range []struct {
-			ref  *accesslog.PayloadRef
-			kind accesslog.PayloadKind
-		}{{e.Request, accesslog.PayloadRequest}, {e.EffectiveArgs, accesslog.PayloadEffectiveArgs}, {e.Result, accesslog.PayloadResult}} {
+			ref  *calllog.PayloadRef
+			kind calllog.PayloadKind
+		}{{e.Request, calllog.PayloadRequest}, {e.EffectiveArgs, calllog.PayloadEffectiveArgs}, {e.Result, calllog.PayloadResult}} {
 			if item.ref == nil {
 				continue
 			}
 			out.Payloads++
 			pkey, perr := keys.get(item.ref.KeyID)
 			if perr == nil {
-				perr = accesslog.VerifyPayload(s.opts.NonRegistry.AuditRoot, *item.ref, pkey, e.CallID, item.kind)
+				perr = calllog.VerifyPayload(s.opts.NonRegistry.CallsRoot, *item.ref, pkey, e.CallID, item.kind)
 			}
 			if perr != nil {
 				add(fmt.Sprintf("payload %s/%s: %v", e.CallID, item.kind, perr))
@@ -530,7 +530,7 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, http.StatusOK, out)
 }
 
-func (s *Server) handleAuditPrune(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCallsPrune(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		DryRun bool `json:"dryRun"`
 	}
@@ -538,14 +538,14 @@ func (s *Server) handleAuditPrune(w http.ResponseWriter, r *http.Request) {
 	if !ok || !decodeAdminBody(w, r, body, &req) {
 		return
 	}
-	p := s.opts.Registry.Snapshot().Governance.V.ResolvedAudit()
+	p := s.opts.Registry.Snapshot().Governance.V.ResolvedCalls()
 	cutoff := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -(p.RetentionDays - 1))
-	res, err := accesslog.Prune(s.opts.NonRegistry.AuditRoot, cutoff, req.DryRun)
+	res, err := calllog.Prune(s.opts.NonRegistry.CallsRoot, cutoff, req.DryRun)
 	if err != nil {
 		s.writeAuditError(w, r, err)
 		return
 	}
-	writeOK(w, http.StatusOK, api.AuditPrune{DryRun: req.DryRun, Before: cutoff.Format("2006-01-02"), Days: res.Days, Bytes: res.Bytes, Names: res.Names})
+	writeOK(w, http.StatusOK, api.CallsPrune{DryRun: req.DryRun, Before: cutoff.Format("2006-01-02"), Days: res.Days, Bytes: res.Bytes, Names: res.Names})
 }
 
 func (s *Server) writeAuditError(w http.ResponseWriter, r *http.Request, err error) {

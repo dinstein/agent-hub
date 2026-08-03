@@ -6,7 +6,7 @@
 // not exist. The other two answer different questions and neither could be
 // stretched to answer this one:
 //
-//   - internal/accesslog (`agenthub audit`) records who called which tool.
+//   - internal/calllog (`agenthub calls`) records who called which tool.
 //     It is encrypted, opt-in, and STRICT — a write failure refuses the call.
 //   - the process logs (`agenthub logs`) record what a process was doing, in
 //     free-text slog records meant for a human to read.
@@ -17,10 +17,10 @@
 // `--json` consumer or an alert needs a vocabulary that is allowed to be
 // matched on, which is what Kind is.
 //
-// # Failure direction: OPEN, and this is the difference from accesslog
+// # Failure direction: OPEN, and this is the difference from calllog
 //
 // An event that cannot be written is DROPPED. Never a blocked connection,
-// never a failed call. accesslog is fail-closed because an unrecorded call
+// never a failed call. calllog is fail-closed because an unrecorded call
 // is a governance gap; a missed state change is not — the state itself is
 // still observable, and refusing to serve a client because a note about it
 // could not be filed would be strictly worse than the gap it prevents.

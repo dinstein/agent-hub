@@ -270,13 +270,13 @@ the bounded storage is unavailable, the call is **refused** rather than executed
 with a hole in the history.
 
 ```bash
-agenthub audit enable
-agenthub audit status
-agenthub audit tail --since 24h
-agenthub audit show <call-id>                 # metadata only
-agenthub audit show <call-id> --payloads      # explicit decryption
-agenthub audit stats --since 7d
-agenthub audit verify
+agenthub calls enable
+agenthub calls status
+agenthub calls tail --since 24h
+agenthub calls show <call-id>                 # metadata only
+agenthub calls show <call-id> --payloads      # explicit decryption
+agenthub calls stats --since 7d
+agenthub calls verify
 ```
 
 The defaults retain 30 UTC days, cap the ledger at 5 GiB and reserve 1 GiB of
@@ -304,7 +304,7 @@ is what makes an incident take an hour:
 ```bash
 agenthub events --server linear          # what HAPPENED to it, in a closed vocabulary
 agenthub logs --server linear            # what the processes SAID about it, as prose
-agenthub audit tail --server linear      # what a client CALLED on it
+agenthub calls tail --server linear      # what a client CALLED on it
 ```
 
 `events` is the one to open first. Every state change of a downstream server,
@@ -324,7 +324,7 @@ agenthub events -f                           # tail it; survives a daemon restar
 It works with no daemon running, and that is not a fallback: a stdio gateway
 writes this file on its own, so the installation with no daemon is the ordinary
 case here. It is **on by default** — the one switch is `agenthub config set
-events.enabled false` — where `audit` is off until you ask for it, because that
+events.enabled false` — where `calls` is off until you ask for it, because that
 one records call arguments and results while this records only that something
 changed.
 

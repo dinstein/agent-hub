@@ -50,7 +50,7 @@ var withheldGroups = []*cobra.Group{groupDaemon, groupManage}
 // `doctor` is likewise NOT withheld, and has its own group: a shipped build
 // that teaches the everyday path has to name what to run when a step of it
 // fails, or the user's next move after a failed handshake is unspoken.
-// `audit`, `events` and `logs` are likewise NOT withheld, and share the
+// `calls`, `events` and `logs` are likewise NOT withheld, and share the
 // Observe group: a build that records every call and every state change, then
 // hides all three readers of that record, ships a ledger nothing on its help
 // page can open.
@@ -121,9 +121,9 @@ func TestCommandTreeCoversDesign(t *testing.T) {
 		"agenthub auth login", "agenthub auth status",
 		"agenthub auth refresh", "agenthub auth logout",
 		"agenthub server tool ls", "agenthub server tool inspect", "agenthub server tool allow",
-		"agenthub audit status", "agenthub audit tail", "agenthub audit show",
-		"agenthub audit stats", "agenthub audit verify", "agenthub audit export",
-		"agenthub audit prune", "agenthub audit rotate-key", "agenthub audit enable", "agenthub audit disable",
+		"agenthub calls status", "agenthub calls tail", "agenthub calls show",
+		"agenthub calls stats", "agenthub calls verify", "agenthub calls export",
+		"agenthub calls prune", "agenthub calls rotate-key", "agenthub calls enable", "agenthub calls disable",
 		"agenthub skill ls", "agenthub skill inspect", "agenthub skill add",
 		"agenthub skill rm", "agenthub skill enable", "agenthub skill disable",
 		"agenthub skill install-to", "agenthub skill sync",
@@ -236,7 +236,7 @@ func TestListingsAreNamedLs(t *testing.T) {
 func TestEveryGroupShowsHelpOnBareInvocation(t *testing.T) {
 	groups := [][]string{
 		{"server"}, {"profile"}, {"client"}, {"session"}, {"secret"}, {"token"},
-		{"server", "tool"}, {"skill"}, {"config"}, {"audit"}, {"daemon"}, {"auth"},
+		{"server", "tool"}, {"skill"}, {"config"}, {"calls"}, {"daemon"}, {"auth"},
 	}
 	for _, path := range groups {
 		g := strings.Join(path, " ")
@@ -286,8 +286,8 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		{"diagnose", []string{"doctor"}},
 		// Visible too, and after Diagnose in triage order: `doctor` decides in
 		// one command, these three ask the reader to know what they are looking
-		// for. `audit` leads because the call is what a user came to ask about.
-		{"observe", []string{"audit", "events", "logs"}},
+		// for. `calls` leads because the call is what a user came to ask about.
+		{"observe", []string{"calls", "events", "logs"}},
 		{"entry", []string{"connect"}},
 	}
 	root := newTestRoot(t)
@@ -458,7 +458,7 @@ func TestReleaseHidesExactlyTheWithheldCommands(t *testing.T) {
 	}
 	for _, other := range []string{
 		"catalog", "server", "auth", "secret", "profile", "client", "connect", "doctor",
-		"audit", "events", "logs",
+		"calls", "events", "logs",
 	} {
 		if !strings.Contains(out, "  "+other+" ") {
 			t.Errorf("release --help dropped %q, which is not withheld:\n%s", other, out)
@@ -488,7 +488,7 @@ func TestHiddenCommandsStillRun(t *testing.T) {
 	root := newReleaseTestRoot(t)
 	for _, path := range [][]string{
 		{"token", "ls"}, {"token"},
-		{"config", "ls"}, {"audit", "status"},
+		{"config", "ls"}, {"calls", "status"},
 		{"daemon", "status"}, {"session", "ls"}, {"events"}, {"doctor"},
 	} {
 		cmd, _, err := root.Find(path)

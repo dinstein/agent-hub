@@ -1,4 +1,4 @@
-package accesslog
+package calllog
 
 import (
 	"crypto/hmac"
@@ -67,7 +67,8 @@ func (d *dayWriter) close() error {
 	return errors.Join(errs...)
 }
 
-// DefaultDir resolves <data>/audit.
+// DefaultDir resolves <data>/calls, migrating the pre-rename <data>/audit
+// into it on the way.
 func DefaultDir(res *platform.Resolver) (string, error) {
 	if res == nil {
 		res = platform.Default()
@@ -76,32 +77,55 @@ func DefaultDir(res *platform.Resolver) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(data, DirectoryName), nil
+	dir := filepath.Join(data, DirectoryName)
+	migrateLegacyDir(filepath.Join(data, LegacyDirectoryName), dir)
+	return dir, nil
 }
 
-// Open opens a process-local store over the shared audit root.
+// migrateLegacyDir renames <data>/audit to <data>/calls, once, on the first
+// resolution after the upgrade.
+//
+// A rename rather than a copy: the ledger is authenticated, and two roots
+// holding the same events would let a reader pick whichever one it was
+// pointed at. It is silent by design — every failure leaves the old directory
+// exactly where it was, and the new root simply starts empty, which is the
+// one outcome that cannot lose anything.
+func migrateLegacyDir(legacy, current string) {
+	if legacy == current {
+		return
+	}
+	if _, err := os.Stat(current); err == nil || !os.IsNotExist(err) {
+		return
+	}
+	if fi, err := os.Stat(legacy); err != nil || !fi.IsDir() {
+		return
+	}
+	_ = os.Rename(legacy, current)
+}
+
+// Open opens a process-local store over the shared ledger root.
 func Open(opts Options) (*Store, error) {
 	if opts.Root == "" {
-		return nil, errors.New("accesslog: empty root")
+		return nil, errors.New("calllog: empty root")
 	}
 	if len(opts.Key) != 32 {
 		return nil, ErrBadKey
 	}
 	if opts.KeyID == "" {
-		return nil, errors.New("accesslog: empty key id")
+		return nil, errors.New("calllog: empty key id")
 	}
 	keyID, err := KeyID(opts.Key)
 	if err != nil {
 		return nil, err
 	}
 	if keyID != opts.KeyID {
-		return nil, fmt.Errorf("accesslog: key id %q does not match key %q", opts.KeyID, keyID)
+		return nil, fmt.Errorf("calllog: key id %q does not match key %q", opts.KeyID, keyID)
 	}
 	if opts.Durability == "" {
 		opts.Durability = DurabilitySync
 	}
 	if opts.Durability != DurabilitySync && opts.Durability != DurabilityWrite {
-		return nil, fmt.Errorf("accesslog: unknown durability %q", opts.Durability)
+		return nil, fmt.Errorf("calllog: unknown durability %q", opts.Durability)
 	}
 	if opts.MaxPackBytes <= 0 {
 		opts.MaxPackBytes = DefaultMaxPackBytes
@@ -110,22 +134,22 @@ func Open(opts Options) (*Store, error) {
 		opts.Clock = time.Now
 	}
 	if opts.RetentionDays < 0 || opts.MaxBytes < 0 || opts.MinFreeBytes < 0 {
-		return nil, errors.New("accesslog: retention and capacity limits cannot be negative")
+		return nil, errors.New("calllog: retention and capacity limits cannot be negative")
 	}
 	if (opts.RetentionDays > 0 || opts.MaxBytes > 0 || opts.MinFreeBytes > 0) && !crossProcessLockSupported {
-		return nil, errors.New("accesslog: bounded retention requires a cross-process lock on this platform")
+		return nil, errors.New("calllog: bounded retention requires a cross-process lock on this platform")
 	}
 	if err := platform.EnsureDir(opts.Root); err != nil {
 		return nil, err
 	}
-	lock, err := os.OpenFile(filepath.Join(opts.Root, ".audit.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	lock, err := os.OpenFile(filepath.Join(opts.Root, ".calls.lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("accesslog: open capacity lock: %w", err)
+		return nil, fmt.Errorf("calllog: open capacity lock: %w", err)
 	}
 	boot := make([]byte, 8)
 	if _, err := rand.Read(boot); err != nil {
 		_ = lock.Close()
-		return nil, fmt.Errorf("accesslog: boot id: %w", err)
+		return nil, fmt.Errorf("calllog: boot id: %w", err)
 	}
 	key := append([]byte(nil), opts.Key...)
 	return &Store{
@@ -148,7 +172,7 @@ func (s *Store) BootID() string {
 func NewCallID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("accesslog: call id: %w", err)
+		return "", fmt.Errorf("calllog: call id: %w", err)
 	}
 	return hex.EncodeToString(b), nil
 }
@@ -178,7 +202,7 @@ func (s *Store) dayLocked(day string) (*dayWriter, error) {
 	}
 	events, err := os.OpenFile(filepath.Join(dir, EventFileName), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("accesslog: open events: %w", err)
+		return nil, fmt.Errorf("calllog: open events: %w", err)
 	}
 	pack, err := newPackWriter(dir, s.bootID, s.key, s.keyID, s.maxPack, func(added int64, write func() error) error {
 		return s.withCapacityLocked(day, added, write)
@@ -202,12 +226,12 @@ func (s *Store) PutPayload(ts time.Time, callID string, kind PayloadKind, raw []
 		return PayloadRef{}, fmt.Errorf("%w: %d bytes", ErrPayloadTooBig, len(raw))
 	}
 	if len(callID) == 0 || len(callID) > 128 {
-		return PayloadRef{}, errors.New("accesslog: invalid call id")
+		return PayloadRef{}, errors.New("calllog: invalid call id")
 	}
 	switch kind {
 	case PayloadRequest, PayloadEffectiveArgs, PayloadResult:
 	default:
-		return PayloadRef{}, fmt.Errorf("accesslog: unknown payload kind %q", kind)
+		return PayloadRef{}, fmt.Errorf("calllog: unknown payload kind %q", kind)
 	}
 	day := utcDay(ts)
 	s.mu.Lock()
@@ -246,7 +270,7 @@ func (s *Store) Append(e Event) error {
 	e.MAC = mac
 	line, err := json.Marshal(e)
 	if err != nil {
-		return fmt.Errorf("accesslog: encode event: %w", err)
+		return fmt.Errorf("calllog: encode event: %w", err)
 	}
 	if len(line)+1 > MaxEventLineBytes {
 		return fmt.Errorf("%w: %d bytes", ErrEventTooLarge, len(line)+1)
@@ -261,11 +285,11 @@ func (s *Store) Append(e Event) error {
 	}
 	return s.withCapacityLocked(day, int64(len(line)), func() error {
 		if _, err := d.events.Write(line); err != nil {
-			return fmt.Errorf("accesslog: append event: %w", err)
+			return fmt.Errorf("calllog: append event: %w", err)
 		}
 		if s.durability == DurabilitySync {
 			if err := d.events.Sync(); err != nil {
-				return fmt.Errorf("accesslog: sync event: %w", err)
+				return fmt.Errorf("calllog: sync event: %w", err)
 			}
 		}
 		return nil
@@ -279,7 +303,7 @@ func eventMAC(e Event, key []byte) (string, error) {
 	e.MAC = ""
 	raw, err := json.Marshal(e)
 	if err != nil {
-		return "", fmt.Errorf("accesslog: encode event mac: %w", err)
+		return "", fmt.Errorf("calllog: encode event mac: %w", err)
 	}
 	h := hmac.New(sha256.New, key)
 	_, _ = h.Write(raw)
@@ -289,14 +313,14 @@ func eventMAC(e Event, key []byte) (string, error) {
 // VerifyEvent authenticates one metadata event with its payload key.
 func VerifyEvent(e Event, key []byte) error {
 	if e.MAC == "" || e.KeyID == "" {
-		return errors.New("accesslog: event has no authentication tag")
+		return errors.New("calllog: event has no authentication tag")
 	}
 	keyID, err := KeyID(key)
 	if err != nil {
 		return err
 	}
 	if keyID != e.KeyID {
-		return fmt.Errorf("accesslog: event key id %q does not match key %q", e.KeyID, keyID)
+		return fmt.Errorf("calllog: event key id %q does not match key %q", e.KeyID, keyID)
 	}
 	want, err := eventMAC(e, key)
 	if err != nil {
@@ -304,7 +328,7 @@ func VerifyEvent(e Event, key []byte) error {
 	}
 	got, err := hex.DecodeString(e.MAC)
 	if err != nil || !hmac.Equal(got, mustDecodeHex(want)) {
-		return errors.New("accesslog: event authentication failed")
+		return errors.New("calllog: event authentication failed")
 	}
 	return nil
 }

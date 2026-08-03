@@ -3,11 +3,11 @@ import { clear, el, empty, loadingState, pageHeader } from "../dom";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot } from "../page";
 import type {
-  AuditCallDetail,
+  CallDetail,
   AuditCallSummary,
   AuditPayload,
-  AuditStats,
-  AuditStatus,
+  CallsStats,
+  CallsStatus,
 } from "../types";
 import { copyButton } from "../ui";
 
@@ -124,7 +124,7 @@ function payloadPanel(title: string, payload: AuditPayload, primary = false): HT
   ]);
 }
 
-function detailFacts(detail: AuditCallDetail): HTMLElement {
+function detailFacts(detail: CallDetail): HTMLElement {
   return el("div", { class: "activity-detail-facts" }, [
     el("div", {}, [el("span", { text: "Client" }), el("strong", { text: detail.client || "Unknown" })]),
     el("div", {}, [el("span", { text: "Started" }), el("strong", { text: formatTime(detail.time) })]),
@@ -133,7 +133,7 @@ function detailFacts(detail: AuditCallDetail): HTMLElement {
   ]);
 }
 
-function detailPage(detail: AuditCallDetail): HTMLElement {
+function detailPage(detail: CallDetail): HTMLElement {
   const timeline = el("details", { class: "activity-timeline" }, [
     el("summary", { class: "activity-section-head" }, [
       el("strong", { text: "Lifecycle" }),
@@ -167,7 +167,7 @@ function detailPage(detail: AuditCallDetail): HTMLElement {
 
 function callDrawer(
   call: AuditCallSummary,
-  load: () => Promise<AuditCallDetail>,
+  load: () => Promise<CallDetail>,
   close: () => void,
 ): HTMLElement {
   const overlay = el("div", { class: "activity-drawer-layer" });
@@ -265,13 +265,13 @@ export function activityPage(): Page {
   let serverFilter = "";
   let toolFilter = "";
   let outcome = "";
-  let status: AuditStatus | null = null;
+  let status: CallsStatus | null = null;
   let calls: AuditCallSummary[] = [];
   let callTotal = 0;
   let nextCursor = "";
   let pageIndex = 0;
   let pageCursors = [""];
-  let stats: AuditStats | null = null;
+  let stats: CallsStats | null = null;
   let loadError: unknown = null;
   let drawer: HTMLElement | null = null;
   let restoreFocus: HTMLElement | null = null;
@@ -289,7 +289,7 @@ export function activityPage(): Page {
   function openCall(call: AuditCallSummary): void {
     closeDrawer();
     restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    drawer = callDrawer(call, () => hub.auditCall(call.callId), closeDrawer);
+    drawer = callDrawer(call, () => hub.callDetail(call.callId), closeDrawer);
     document.body.append(drawer);
   }
 
@@ -299,12 +299,12 @@ export function activityPage(): Page {
     loadError = null;
     try {
       const [nextStatus, nextCalls, nextStats] = await Promise.all([
-        hub.auditStatus(),
-        hub.auditCalls(
+        hub.callsStatus(),
+        hub.callList(
           sinceMillis(rangeHours), pageSize, pageCursors[pageIndex],
           clientFilter, serverFilter, toolFilter, outcome,
         ),
-        hub.auditStats(sinceMillis(rangeHours)),
+        hub.callsStats(sinceMillis(rangeHours)),
       ]);
       if (!root || request !== epoch || callsRequest !== callsEpoch) return;
       status = nextStatus;
@@ -329,7 +329,7 @@ export function activityPage(): Page {
     const request = ++callsEpoch;
     loadError = null;
     try {
-      const next = await hub.auditCalls(
+      const next = await hub.callList(
         sinceMillis(rangeHours), pageSize, pageCursors[pageIndex],
         clientFilter, serverFilter, toolFilter, outcome,
       );

@@ -131,8 +131,8 @@ type Connector func(ctx context.Context, spec downstream.Spec, deps downstream.D
 // answer the uniform 404), which is what lets a partially assembled daemon —
 // and every existing test — keep working unchanged.
 type NonRegistryDeps struct {
-	// AuditRoot is <data>/audit. Empty keeps every /v1/audit endpoint off.
-	AuditRoot string
+	// CallsRoot is <data>/audit. Empty keeps every /v1/audit endpoint off.
+	CallsRoot string
 	// EventLogPath is <data>/logs/events.jsonl. Empty keeps
 	// /v1/events/log off.
 	//
@@ -140,9 +140,9 @@ type NonRegistryDeps struct {
 	// cannot read the file itself; the CLI reads it directly and works with
 	// no daemon at all.
 	EventLogPath string
-	// AuditKeys resolves the immutable encryption keys used by detail and
+	// CallsKeys resolves the immutable encryption keys used by detail and
 	// verification operations. Metadata listing does not consult it.
-	AuditKeys AuditKeyVault
+	CallsKeys AuditKeyVault
 	// Secrets is the credential vault behind /v1/secrets.
 	Secrets SecretVault
 	// SecretsDir is <data>/secrets. It is read (never written) to classify
@@ -197,26 +197,26 @@ func (s *Server) routeNonRegistry(w http.ResponseWriter, r *http.Request) bool {
 
 	// Collection endpoints (exact paths).
 	switch {
-	case p == "/v1/audit/status" && d.AuditRoot != "" && r.Method == http.MethodGet:
-		s.handleAuditStatus(w, r)
+	case p == "/v1/calls/status" && d.CallsRoot != "" && r.Method == http.MethodGet:
+		s.handleCallsStatus(w, r)
 		return true
-	case p == "/v1/audit/calls" && d.AuditRoot != "" && r.Method == http.MethodGet:
-		s.handleAuditCalls(w, r)
+	case p == "/v1/calls" && d.CallsRoot != "" && r.Method == http.MethodGet:
+		s.handleCallPage(w, r)
 		return true
-	case p == "/v1/audit/stats" && d.AuditRoot != "" && r.Method == http.MethodGet:
-		s.handleAuditStats(w, r)
+	case p == "/v1/calls/stats" && d.CallsRoot != "" && r.Method == http.MethodGet:
+		s.handleCallsStats(w, r)
 		return true
-	case p == "/v1/audit/enabled" && d.AuditRoot != "" && d.AuditKeys != nil && r.Method == http.MethodPut:
+	case p == "/v1/calls/enabled" && d.CallsRoot != "" && d.CallsKeys != nil && r.Method == http.MethodPut:
 		s.handleAuditEnabled(w, r)
 		return true
-	case p == "/v1/audit/rotate-key" && d.AuditRoot != "" && d.AuditKeys != nil && r.Method == http.MethodPost:
+	case p == "/v1/calls/rotate-key" && d.CallsRoot != "" && d.CallsKeys != nil && r.Method == http.MethodPost:
 		s.handleAuditRotateKey(w, r)
 		return true
-	case p == "/v1/audit/verify" && d.AuditRoot != "" && d.AuditKeys != nil && r.Method == http.MethodPost:
-		s.handleAuditVerify(w, r)
+	case p == "/v1/calls/verify" && d.CallsRoot != "" && d.CallsKeys != nil && r.Method == http.MethodPost:
+		s.handleCallsVerify(w, r)
 		return true
-	case p == "/v1/audit/prune" && d.AuditRoot != "" && r.Method == http.MethodPost:
-		s.handleAuditPrune(w, r)
+	case p == "/v1/calls/prune" && d.CallsRoot != "" && r.Method == http.MethodPost:
+		s.handleCallsPrune(w, r)
 		return true
 	case p == "/v1/events/log" && d.EventLogPath != "" && r.Method == http.MethodGet:
 		s.handleEventLog(w, r)
@@ -240,8 +240,8 @@ func (s *Server) routeNonRegistry(w http.ResponseWriter, r *http.Request) bool {
 		s.handleAuthStatus(w, r)
 		return true
 	}
-	if d.AuditRoot != "" && d.AuditKeys != nil {
-		if seg, ok := pathSegments(r, "/v1/audit/calls/", 1); ok && r.Method == http.MethodGet {
+	if d.CallsRoot != "" && d.CallsKeys != nil {
+		if seg, ok := pathSegments(r, "/v1/calls/", 1); ok && r.Method == http.MethodGet {
 			s.handleAuditCall(w, r, seg[0])
 			return true
 		}

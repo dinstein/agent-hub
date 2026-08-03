@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dinstein/agent-hub/internal/accesslog"
+	"github.com/dinstein/agent-hub/internal/calllog"
 	"github.com/dinstein/agent-hub/internal/discovery"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/platform"
@@ -29,15 +29,15 @@ func auditSecretResolver(key []byte) secrets.Resolver {
 	}
 }
 
-func setAuditPolicy(t *testing.T, resolver *platform.Resolver, mutate func(*registry.AuditPolicy)) {
+func setCallsPolicy(t *testing.T, resolver *platform.Resolver, mutate func(*registry.CallsPolicy)) {
 	t.Helper()
-	keyID, err := accesslog.KeyID(auditTestKey())
+	keyID, err := calllog.KeyID(auditTestKey())
 	if err != nil {
 		t.Fatal(err)
 	}
 	st := externalRegistry(t, resolver)
 	updateRegistry(t, st, func(tx *registry.Tx) {
-		p := registry.AuditPolicy{
+		p := registry.CallsPolicy{
 			Enabled: true, Durability: "sync",
 			ResultMode: "truncated", ResultBytes: registry.DefaultAuditResultBytes,
 			RetentionDays: registry.DefaultAuditRetentionDays,
@@ -45,17 +45,17 @@ func setAuditPolicy(t *testing.T, resolver *platform.Resolver, mutate func(*regi
 			KeyID: keyID,
 		}
 		mutate(&p)
-		tx.Governance.V.Audit = &registry.Doc[registry.AuditPolicy]{V: p}
+		tx.Governance.V.Audit = &registry.Doc[registry.CallsPolicy]{V: p}
 	})
 }
 
-func readAuditEvents(t *testing.T, resolver *platform.Resolver) []accesslog.Event {
+func readAuditEvents(t *testing.T, resolver *platform.Resolver) []calllog.Event {
 	t.Helper()
-	root, err := accesslog.DefaultDir(resolver)
+	root, err := calllog.DefaultDir(resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, skipped, err := accesslog.ReadEvents(root)
+	events, skipped, err := calllog.ReadEvents(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,23 +65,23 @@ func readAuditEvents(t *testing.T, resolver *platform.Resolver) []accesslog.Even
 	return events
 }
 
-func payloadOf(t *testing.T, resolver *platform.Resolver, ref *accesslog.PayloadRef) []byte {
+func payloadOf(t *testing.T, resolver *platform.Resolver, ref *calllog.PayloadRef) []byte {
 	t.Helper()
 	if ref == nil {
 		t.Fatal("missing payload reference")
 	}
-	root, err := accesslog.DefaultDir(resolver)
+	root, err := calllog.DefaultDir(resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := accesslog.ReadPayload(root, *ref, auditTestKey())
+	raw, err := calllog.ReadPayload(root, *ref, auditTestKey())
 	if err != nil {
 		t.Fatal(err)
 	}
 	return raw
 }
 
-func eventKind(t *testing.T, events []accesslog.Event, kind accesslog.EventKind) accesslog.Event {
+func eventKind(t *testing.T, events []calllog.Event, kind calllog.EventKind) calllog.Event {
 	t.Helper()
 	for _, e := range events {
 		if e.Kind == kind {
@@ -89,7 +89,7 @@ func eventKind(t *testing.T, events []accesslog.Event, kind accesslog.EventKind)
 		}
 	}
 	t.Fatalf("no %s event in %+v", kind, events)
-	return accesslog.Event{}
+	return calllog.Event{}
 }
 
 // executedCall isolates the events of the ONE call that reached a downstream,
@@ -107,11 +107,11 @@ func eventKind(t *testing.T, events []accesslog.Event, kind accesslog.EventKind)
 // The strictness is kept where it belongs: the executed call must have
 // exactly its three events, and an event that is neither part of it nor part
 // of a busy refusal still fails the test rather than being tolerated.
-func executedCall(t *testing.T, events []accesslog.Event) []accesslog.Event {
+func executedCall(t *testing.T, events []calllog.Event) []calllog.Event {
 	t.Helper()
 	var callID string
 	for _, e := range events {
-		if e.Kind == accesslog.EventRouted {
+		if e.Kind == calllog.EventRouted {
 			if callID != "" && e.CallID != callID {
 				t.Fatalf("two calls routed; only one was made: %+v", events)
 			}
@@ -121,7 +121,7 @@ func executedCall(t *testing.T, events []accesslog.Event) []accesslog.Event {
 	if callID == "" {
 		t.Fatalf("no call reached a downstream: %+v", events)
 	}
-	var executed []accesslog.Event
+	var executed []calllog.Event
 	for _, e := range events {
 		if e.CallID == callID {
 			executed = append(executed, e)
@@ -130,10 +130,10 @@ func executedCall(t *testing.T, events []accesslog.Event) []accesslog.Event {
 		// Anything else must be a refused attempt: received, then finished
 		// with the busy outcome. A third kind, or a different outcome, is an
 		// unexplained record and must not pass silently.
-		if e.Kind == accesslog.EventReceived {
+		if e.Kind == calllog.EventReceived {
 			continue
 		}
-		if e.Kind != accesslog.EventFinished || e.Outcome != "busy" {
+		if e.Kind != calllog.EventFinished || e.Outcome != "busy" {
 			t.Fatalf("unexplained audit event outside the executed call: %+v", e)
 		}
 	}
@@ -147,7 +147,7 @@ func executedCall(t *testing.T, events []accesslog.Event) []accesslog.Event {
 func TestAuditRecordsCompleteRequestRouteAndBoundedResult(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "fake")
-	setAuditPolicy(t, resolver, func(p *registry.AuditPolicy) {
+	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) {
 		p.ResultMode, p.ResultBytes = "truncated", 24
 	})
 	_, c, _ := startGateway(t, Config{
@@ -167,7 +167,7 @@ func TestAuditRecordsCompleteRequestRouteAndBoundedResult(t *testing.T) {
 	if len(events) != 3 {
 		t.Fatalf("events = %d, want received+routed+finished: %+v", len(events), events)
 	}
-	received := eventKind(t, events, accesslog.EventReceived)
+	received := eventKind(t, events, calllog.EventReceived)
 	var request mcp.CallToolParams
 	if err := json.Unmarshal(payloadOf(t, resolver, received.Request), &request); err != nil {
 		t.Fatal(err)
@@ -175,14 +175,14 @@ func TestAuditRecordsCompleteRequestRouteAndBoundedResult(t *testing.T) {
 	if request.Name != "fake__echo" || !bytes.Equal(request.Arguments, args) {
 		t.Fatalf("recorded request = %+v", request)
 	}
-	routed := eventKind(t, events, accesslog.EventRouted)
+	routed := eventKind(t, events, calllog.EventRouted)
 	if routed.Server != "fake" || routed.Tool != "echo" || routed.Exposed != "fake__echo" || routed.Face != "http" {
 		t.Fatalf("routed = %+v", routed)
 	}
 	if got := payloadOf(t, resolver, routed.EffectiveArgs); !bytes.Equal(got, args) {
 		t.Fatalf("effective args = %s, want %s", got, args)
 	}
-	finished := eventKind(t, events, accesslog.EventFinished)
+	finished := eventKind(t, events, calllog.EventFinished)
 	if finished.Outcome != "success" || !finished.ResultCut || finished.Result == nil || finished.ResultBytes <= 24 {
 		t.Fatalf("finished = %+v", finished)
 	}
@@ -194,7 +194,7 @@ func TestAuditRecordsCompleteRequestRouteAndBoundedResult(t *testing.T) {
 func TestAuditLazyCallToolKeepsWrapperAndEffectiveArguments(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "fake")
-	setAuditPolicy(t, resolver, func(p *registry.AuditPolicy) { p.ResultMode = "none" })
+	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) { p.ResultMode = "none" })
 	ext := externalRegistry(t, resolver)
 	setGovernance(t, ext, func(g *registry.GovernanceDoc) { g.Discovery = "lazy" })
 	_, c, _ := startGateway(t, Config{
@@ -210,14 +210,14 @@ func TestAuditLazyCallToolKeepsWrapperAndEffectiveArguments(t *testing.T) {
 		t.Fatal(resultText(t, res))
 	}
 	events := executedCall(t, readAuditEvents(t, resolver))
-	routed := eventKind(t, events, accesslog.EventRouted)
+	routed := eventKind(t, events, calllog.EventRouted)
 	if routed.Exposed != discovery.MetaCallTool || routed.Server != "fake" || routed.Tool != "echo" {
 		t.Fatalf("lazy route = %+v", routed)
 	}
 	if got := string(payloadOf(t, resolver, routed.EffectiveArgs)); got != `{"marker":"lazy-audit"}` {
 		t.Fatalf("effective args = %s", got)
 	}
-	finished := eventKind(t, events, accesslog.EventFinished)
+	finished := eventKind(t, events, calllog.EventFinished)
 	if finished.Result != nil || finished.ResultCapture != "none" {
 		t.Fatalf("none result policy captured a result: %+v", finished)
 	}
@@ -226,7 +226,7 @@ func TestAuditLazyCallToolKeepsWrapperAndEffectiveArguments(t *testing.T) {
 func TestAuditRecordsMetaAndUnroutableAttempts(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "fake")
-	setAuditPolicy(t, resolver, func(p *registry.AuditPolicy) { p.ResultMode = "errors" })
+	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) { p.ResultMode = "errors" })
 	ext := externalRegistry(t, resolver)
 	setGovernance(t, ext, func(g *registry.GovernanceDoc) { g.Discovery = "lazy" })
 	_, c, _ := startGateway(t, Config{
@@ -248,10 +248,10 @@ func TestAuditRecordsMetaAndUnroutableAttempts(t *testing.T) {
 	finished := 0
 	protocolErrors := 0
 	for _, e := range events {
-		if e.Kind == accesslog.EventRouted {
+		if e.Kind == calllog.EventRouted {
 			t.Fatalf("meta/unroutable attempt unexpectedly routed: %+v", e)
 		}
-		if e.Kind == accesslog.EventFinished {
+		if e.Kind == calllog.EventFinished {
 			finished++
 			if e.Outcome == "protocol_error" {
 				protocolErrors++
@@ -269,7 +269,7 @@ func TestAuditRecordsMetaAndUnroutableAttempts(t *testing.T) {
 func TestAuditRecordsUnsupportedProtocolToolAttempt(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver)
-	setAuditPolicy(t, resolver, func(p *registry.AuditPolicy) { p.ResultMode = "errors" })
+	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) { p.ResultMode = "errors" })
 	_, c, _ := startGateway(t, Config{
 		ClientID: "audit-protocol", Resolver: resolver, Secrets: auditSecretResolver(auditTestKey()),
 	})
@@ -290,7 +290,7 @@ func TestAuditRecordsUnsupportedProtocolToolAttempt(t *testing.T) {
 func TestAuditUnavailableBlocksBeforeTheGateChain(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "fake")
-	setAuditPolicy(t, resolver, func(p *registry.AuditPolicy) {})
+	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) {})
 	g, c, _ := startGateway(t, Config{
 		ClientID: "audit-missing-key", Resolver: resolver,
 		Secrets: func(context.Context, secrets.Ref) (string, bool, error) { return "", false, nil },
@@ -315,7 +315,7 @@ func TestAuditUnavailableBlocksBeforeTheGateChain(t *testing.T) {
 func TestAuditCapacityBlocksBeforeTheGateChain(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "fake")
-	setAuditPolicy(t, resolver, func(p *registry.AuditPolicy) { p.MaxBytes = 1 })
+	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) { p.MaxBytes = 1 })
 	g, c, _ := startGateway(t, Config{
 		ClientID: "audit-full", Resolver: resolver, Secrets: auditSecretResolver(auditTestKey()),
 		Dial: scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
@@ -331,11 +331,11 @@ func TestAuditCapacityBlocksBeforeTheGateChain(t *testing.T) {
 			t.Errorf("pipeline stage %s ran %d times after hard-cap refusal", stage, n)
 		}
 	}
-	root, err := accesslog.DefaultDir(resolver)
+	root, err := calllog.DefaultDir(resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
-	usage, err := accesslog.Inspect(root)
+	usage, err := calllog.Inspect(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +347,7 @@ func TestAuditCapacityBlocksBeforeTheGateChain(t *testing.T) {
 func TestAuditRecordsGateDenial(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "s1", "s2")
-	setAuditPolicy(t, resolver, func(p *registry.AuditPolicy) { p.ResultMode = "errors" })
+	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) { p.ResultMode = "errors" })
 	ext := externalRegistry(t, resolver)
 	updateRegistry(t, ext, func(tx *registry.Tx) {
 		tx.Profiles.V.Profiles["team"] = registry.Doc[registry.Profile]{V: registry.Profile{Servers: []string{"s1"}}}
@@ -369,7 +369,7 @@ func TestAuditRecordsGateDenial(t *testing.T) {
 	if len(events) != 3 {
 		t.Fatalf("denial events = %d, want 3: %+v", len(events), events)
 	}
-	finished := eventKind(t, events, accesslog.EventFinished)
+	finished := eventKind(t, events, calllog.EventFinished)
 	if finished.Outcome != "denied" || finished.Gate != "scope" || finished.Code != "E_SCOPE_DENIED" || finished.Result == nil {
 		t.Fatalf("denial event = %+v", finished)
 	}
@@ -378,7 +378,7 @@ func TestAuditRecordsGateDenial(t *testing.T) {
 func TestAuditRecordsCancellationWithoutReply(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "hang")
-	setAuditPolicy(t, resolver, func(p *registry.AuditPolicy) { p.ResultMode = "none" })
+	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) { p.ResultMode = "none" })
 	script := fakemcp.Minimal("stuck").With(fakemcp.NeverRespond(mcp.MethodToolsCall))
 	g, c, _ := startGateway(t, Config{
 		ClientID: "audit-cancel", Resolver: resolver, Secrets: auditSecretResolver(auditTestKey()),
@@ -397,7 +397,7 @@ func TestAuditRecordsCancellationWithoutReply(t *testing.T) {
 	if len(events) != 3 {
 		t.Fatalf("cancellation events = %d, want 3: %+v", len(events), events)
 	}
-	finished := eventKind(t, events, accesslog.EventFinished)
+	finished := eventKind(t, events, calllog.EventFinished)
 	if finished.Outcome != "cancelled" || finished.Result != nil {
 		t.Fatalf("cancellation event = %+v", finished)
 	}
@@ -412,7 +412,7 @@ func TestAuditEnableHotReloadsIntoRunningGateway(t *testing.T) {
 	})
 	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
 	waitForTools(t, c, "fake__echo")
-	setAuditPolicy(t, resolver, func(p *registry.AuditPolicy) { p.ResultMode = "none" })
+	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) { p.ResultMode = "none" })
 	waitFor(t, "audit policy hot reload", func() bool {
 		g.audit.mu.Lock()
 		defer g.audit.mu.Unlock()

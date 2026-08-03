@@ -1,4 +1,4 @@
-package accesslog
+package calllog
 
 import (
 	"errors"
@@ -24,14 +24,14 @@ func retentionCutoff(now time.Time, days int) time.Time {
 
 func (s *Store) withCapacityLocked(day string, added int64, write func() error) (err error) {
 	if s.lock == nil {
-		return errors.New("accesslog: capacity lock is closed")
+		return errors.New("calllog: capacity lock is closed")
 	}
 	if err := flockExclusive(s.lock); err != nil {
-		return fmt.Errorf("accesslog: lock capacity: %w", err)
+		return fmt.Errorf("calllog: lock capacity: %w", err)
 	}
 	defer func() {
 		if unlockErr := flockUnlock(s.lock); err == nil && unlockErr != nil {
-			err = fmt.Errorf("accesslog: unlock capacity: %w", unlockErr)
+			err = fmt.Errorf("calllog: unlock capacity: %w", unlockErr)
 		}
 	}()
 	if s.retention > 0 {
@@ -55,7 +55,7 @@ func (s *Store) withCapacityLocked(day string, added int64, write func() error) 
 	if s.minFree > 0 {
 		free, err := freeBytes(s.root)
 		if err != nil {
-			return fmt.Errorf("accesslog: inspect free space: %w", err)
+			return fmt.Errorf("calllog: inspect free space: %w", err)
 		}
 		if added > free-s.minFree {
 			return fmt.Errorf("%w: %d free - %d new < %d", ErrFreeReserve, free, added, s.minFree)
@@ -69,12 +69,12 @@ func (s *Store) withCapacityLocked(day string, added int64, write func() error) 
 // deletion target from an unvalidated directory name.
 func Prune(root string, cutoff time.Time, dryRun bool) (out PruneResult, err error) {
 	if !crossProcessLockSupported {
-		return out, errors.New("accesslog: prune requires a cross-process lock on this platform")
+		return out, errors.New("calllog: prune requires a cross-process lock on this platform")
 	}
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return out, err
 	}
-	lock, err := os.OpenFile(filepath.Join(root, ".audit.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	lock, err := os.OpenFile(filepath.Join(root, ".calls.lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return out, err
 	}
@@ -112,7 +112,7 @@ func pruneUnlocked(root string, cutoff time.Time, dryRun bool) (PruneResult, err
 		out.Names = append(out.Names, name)
 		if !dryRun {
 			if err := os.RemoveAll(target); err != nil {
-				return out, fmt.Errorf("accesslog: remove expired partition %s: %w", name, err)
+				return out, fmt.Errorf("calllog: remove expired partition %s: %w", name, err)
 			}
 		}
 	}

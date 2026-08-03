@@ -1,6 +1,6 @@
 //go:build darwin || linux
 
-package accesslog
+package calllog
 
 import "syscall"
 

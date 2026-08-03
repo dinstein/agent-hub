@@ -161,7 +161,7 @@ never garbage after half a body, which would parse as a truncated success.
 **There is no control-plane/config-write audit trail**, and it is recorded here because the tree once
 read as though there were: six comment sites asserted it while nothing wrote a record and neither cited
 route was served. **A governance write leaves no evidence beyond the daemon's own log**, so "who relaxed
-this switch, and when" is not answerable after the fact; `internal/accesslog` covers data-plane calls
+this switch, and when" is not answerable after the fact; `internal/calllog` covers data-plane calls
 only. `TestNoCodeClaimsAnAuditTrailThatDoesNotExist` (`test/buildrules`) keeps the claim from coming
 back, because a reviewer reads the comment and concludes the control is in place.
 

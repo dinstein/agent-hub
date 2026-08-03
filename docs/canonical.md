@@ -68,7 +68,8 @@ packages need to say the word "read", and none should import another to do it. I
 | `internal/controlapi`, `internal/control` | `internal/ctlapi` (DTOs and client live in the public `api` package) |
 | `internal/vault` | `internal/secrets` |
 | `internal/secure/{integrity,injection,ssrf,audit}` | `internal/guard/*` — but only `ssrf` survived, as `netguard` |
-| `internal/integrity`, `internal/approval`, `internal/audit` | **Nothing.** Removed with the old runtime governance surface. `internal/accesslog` is a new local ledger with no permission role, not a forwarding address; `internal/audit`'s one surviving primitive, the multi-writer JSONL append, is `internal/jsonl` |
+| `internal/accesslog` | `internal/calllog`. The package was named for a ledger of `tools/call` evidence; it records every interaction with a downstream now, and `audit` named the use rather than the content. `<data>/audit` becomes `<data>/calls` (renamed once, on the first resolution), `access.jsonl` becomes `calls.jsonl` (the old name stays READABLE forever — an authenticated ledger does not restate its own history), the CLI group `audit` becomes `calls` with the `audit.*` settings kept as aliases, `/v1/audit/*` becomes `/v1/calls/*`, and the governance key `audit` becomes `calls` (read from both, written to one). The vault key name `__audit_encryption__` does NOT move: it is what every existing installation's key is filed under, and renaming it would lose the key that decrypts their days |
+| `internal/integrity`, `internal/approval`, `internal/audit` | **Nothing.** Removed with the old runtime governance surface. `internal/calllog` is a new local ledger with no permission role, not a forwarding address; `internal/audit`'s one surviving primitive, the multi-writer JSONL append, is `internal/jsonl` |
 | `internal/savings` | **Nothing.** Removed rather than renamed (§7 #9); `agenthub activity`, its only reader, went with it |
 | `internal/gatewaymode` | `internal/gateway` |
 | `internal/downstream/transport` | `internal/mcp/transport` |
@@ -107,7 +108,7 @@ needing precise control, while JSON-RPC encoding itself is not much work. The fa
 - **Resource groups are singular as the canonical name, with the plural as a cobra alias**:
   `server` / `profile` / `client` / `session` / `skill` / `secret` / `token`. One alias per group;
   `grep -n 'Aliases' internal/cli/*.go` is the whole list
-- **Action/flow groups take no plural alias**: `daemon`, `connect`, `auth`, `audit`, `logs`, `events`,
+- **Action/flow groups take no plural alias**: `daemon`, `connect`, `auth`, `calls`, `logs`, `events`,
   `config`, `doctor`, `catalog`. The plural marks a group you accumulate entries in, not every noun.
   `logs` reads **across every process log at once**, which is what separates it from `daemon logs`
   (one process) and `server logs` (one downstream connection's frames); the name may not move between

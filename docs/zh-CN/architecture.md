@@ -134,7 +134,7 @@ flowchart TD
         OALOG["internal/oauthlogin<br/>替没有浏览器的进程跑登录会话"]
         SKL["internal/skills<br/>库+安装两层"]
         CLNT["internal/clients<br/>12 种客户端适配"]
-        ACCESS["internal/accesslog<br/>加密 tools/call 账本"]
+        ACCESS["internal/calllog<br/>加密 tools/call 账本"]
     end
     subgraph L1["零业务依赖底座"]
         MCP["internal/mcp<br/>协议门面（+transport）"]
@@ -259,11 +259,11 @@ flowchart LR
         DSX["downstream"] --> A4["logs/server-&lt;name&gt;.log<br/>每 server 一份，默认关闭"]
         GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log<br/>logs/daemon.log"]
         GW --> A7["logs/events.jsonl<br/>状态变更，闭集词汇，默认开"]
-        GW --> A6["audit/YYYY-MM-DD/<br/>认证元数据 + 加密 payload pack"]
+        GW --> A6["calls/YYYY-MM-DD/<br/>认证元数据 + 加密 payload pack"]
         A4 -.->|"agenthub server logs"| F["CLI / GUI"]
         A5 -.->|"agenthub logs（离线，跨进程归并）<br/>agenthub daemon logs（只读 daemon.log）"| F
         A7 -.->|"agenthub events（离线）<br/>GUI Events"| F
-        A6 -.->|"agenthub audit（离线）<br/>GUI Calls（选中调用的详情）"| F
+        A6 -.->|"agenthub calls（离线）<br/>GUI Calls（选中调用的详情）"| F
     end
 ```
 
@@ -375,7 +375,7 @@ fail-closed 的链里就是一个绕过形状。它包在调用本身外面—�
 ├── skills/                   # 内容寻址的技能库 + 安装索引
 ├── cache/tools/<server>.json # 「缓存先答」用的工具目录快照
 ├── logs/                     # events.jsonl + server-<name>.log + gateway-<client>.log + daemon.log
-├── audit/YYYY-MM-DD/         # 访问账本：认证元数据 + 加密 payload pack
+├── calls/YYYY-MM-DD/         # 访问账本：认证元数据 + 加密 payload pack
 ├── tokens.json  .token_key   # agent token（只存 HMAC）
 └── run/                      # Linux 未设 AGENTHUB_DATA_DIR 时优先 $XDG_RUNTIME_DIR/AgentHub
     ├── ctl.sock  daemon.json # 控制 socket + 就绪握手（bind 成功后才写）

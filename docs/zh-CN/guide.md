@@ -231,13 +231,13 @@ pack，返回结果留一份截断副本——记录发生在门禁之前，所�
 密钥或有界存储不可用时，调用会被**拒绝**，而不是先执行、再在历史里留下一个空洞。
 
 ```bash
-agenthub audit enable
-agenthub audit status
-agenthub audit tail --since 24h
-agenthub audit show <call-id>                 # 默认只看元数据
-agenthub audit show <call-id> --payloads      # 显式解密
-agenthub audit stats --since 7d
-agenthub audit verify
+agenthub calls enable
+agenthub calls status
+agenthub calls tail --since 24h
+agenthub calls show <call-id>                 # 默认只看元数据
+agenthub calls show <call-id> --payloads      # 显式解密
+agenthub calls stats --since 7d
+agenthub calls verify
 ```
 
 默认保留 30 个 UTC 日、总量上限 5 GiB，并为所在文件系统预留 1 GiB 空间；改它们用
@@ -260,7 +260,7 @@ agenthub audit verify
 ```bash
 agenthub events --server linear          # 它「发生了什么」，闭集词汇
 agenthub logs --server linear            # 各进程「怎么描述它」，散文
-agenthub audit tail --server linear      # 客户端「调了它什么」
+agenthub calls tail --server linear      # 客户端「调了它什么」
 ```
 
 先开 `events`。下游服务器、gateway、daemon 的每一次状态变化都会写进
@@ -278,7 +278,7 @@ agenthub events -f                           # 跟随；daemon 重启也不会�
 
 没有 daemon 也能用，而且这不是降级路径：stdio gateway 自己就会写这个文件，所以「没有 daemon」
 在这里是常态。它**默认开启**——唯一的开关是 `agenthub config set events.enabled false`——
-而 `audit` 是你不开就没有的，因为那一头记的是调用参数和结果，这一头只记「有东西变了」。
+而 `calls` 是你不开就没有的，因为那一头记的是调用参数和结果，这一头只记「有东西变了」。
 
 `logs` 是与之并排的散文视图，跨进程归并 —— `daemon.log` 加上每个已连接客户端的
 `gateway-<client>.log` —— 输出成一条按时间排序的流。归并就是它存在的理由：daemon

@@ -1,4 +1,4 @@
-package accesslog
+package calllog
 
 import (
 	"bytes"
@@ -52,7 +52,7 @@ type cipherAEAD interface {
 func newPackWriter(dir, bootID string, key []byte, keyID string, maxBytes int64, guard func(int64, func() error) error) (*packWriter, error) {
 	aead, err := chacha20poly1305.NewX(key)
 	if err != nil {
-		return nil, fmt.Errorf("accesslog: payload cipher: %w", err)
+		return nil, fmt.Errorf("calllog: payload cipher: %w", err)
 	}
 	return &packWriter{dir: dir, bootID: bootID, keyID: keyID, maxBytes: maxBytes, aead: aead, guard: guard}, nil
 }
@@ -70,7 +70,7 @@ func (w *packWriter) openNext() error {
 	w.seq++
 	f, err := os.OpenFile(filepath.Join(w.dir, name), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("accesslog: open payload pack: %w", err)
+		return fmt.Errorf("calllog: open payload pack: %w", err)
 	}
 	fi, err := f.Stat()
 	if err != nil {
@@ -99,11 +99,11 @@ func gzipBytes(raw []byte) ([]byte, error) {
 func (w *packWriter) append(callID string, kind PayloadKind, raw []byte, sync bool, day string) (PayloadRef, error) {
 	compressed, err := gzipBytes(raw)
 	if err != nil {
-		return PayloadRef{}, fmt.Errorf("accesslog: compress payload: %w", err)
+		return PayloadRef{}, fmt.Errorf("calllog: compress payload: %w", err)
 	}
 	nonce := make([]byte, w.aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
-		return PayloadRef{}, fmt.Errorf("accesslog: payload nonce: %w", err)
+		return PayloadRef{}, fmt.Errorf("calllog: payload nonce: %w", err)
 	}
 	h := packHeader{Version: Version, CallID: callID, Kind: kind, Nonce: nonce, Raw: len(raw), Codec: "gzip"}
 	header, err := json.Marshal(h)
@@ -127,12 +127,12 @@ func (w *packWriter) append(callID string, kind PayloadKind, raw []byte, sync bo
 		}
 		offset = w.size
 		if _, err := w.f.Write(buf); err != nil {
-			return fmt.Errorf("accesslog: append payload: %w", err)
+			return fmt.Errorf("calllog: append payload: %w", err)
 		}
 		w.size += entryLen
 		if sync {
 			if err := w.f.Sync(); err != nil {
-				return fmt.Errorf("accesslog: sync payload: %w", err)
+				return fmt.Errorf("calllog: sync payload: %w", err)
 			}
 		}
 		return nil
@@ -171,10 +171,10 @@ func readPayload(root string, ref PayloadRef, key []byte) ([]byte, packHeader, e
 	r := io.NewSectionReader(f, ref.Offset, ref.Length)
 	prefix := make([]byte, packPrefixBytes)
 	if _, err := io.ReadFull(r, prefix); err != nil {
-		return nil, packHeader{}, fmt.Errorf("accesslog: read payload prefix: %w", err)
+		return nil, packHeader{}, fmt.Errorf("calllog: read payload prefix: %w", err)
 	}
 	if !bytes.Equal(prefix[:4], packMagic[:]) {
-		return nil, packHeader{}, fmt.Errorf("accesslog: bad payload magic")
+		return nil, packHeader{}, fmt.Errorf("calllog: bad payload magic")
 	}
 	headerLen := binary.BigEndian.Uint32(prefix[4:8])
 	cipherLen := binary.BigEndian.Uint64(prefix[8:16])
@@ -187,13 +187,13 @@ func readPayload(root string, ref PayloadRef, key []byte) ([]byte, packHeader, e
 	}
 	var h packHeader
 	if err := json.Unmarshal(header, &h); err != nil || h.Version != Version || h.Codec != "gzip" {
-		return nil, packHeader{}, fmt.Errorf("accesslog: invalid payload header")
+		return nil, packHeader{}, fmt.Errorf("calllog: invalid payload header")
 	}
 	if h.Raw < 0 || h.Raw > MaxPayloadBytes || len(h.Nonce) != chacha20poly1305.NonceSizeX {
-		return nil, packHeader{}, fmt.Errorf("accesslog: invalid payload bounds")
+		return nil, packHeader{}, fmt.Errorf("calllog: invalid payload bounds")
 	}
 	if h.Raw != ref.RawBytes || int(cipherLen) != ref.StoredBytes {
-		return nil, packHeader{}, fmt.Errorf("accesslog: payload reference size mismatch")
+		return nil, packHeader{}, fmt.Errorf("calllog: payload reference size mismatch")
 	}
 	ciphertext := make([]byte, cipherLen)
 	if _, err := io.ReadFull(r, ciphertext); err != nil {
@@ -205,11 +205,11 @@ func readPayload(root string, ref PayloadRef, key []byte) ([]byte, packHeader, e
 	}
 	keyID, err := KeyID(key)
 	if err != nil || keyID != ref.KeyID {
-		return nil, packHeader{}, fmt.Errorf("accesslog: payload key id mismatch")
+		return nil, packHeader{}, fmt.Errorf("calllog: payload key id mismatch")
 	}
 	compressed, err := aead.Open(nil, h.Nonce, ciphertext, header)
 	if err != nil {
-		return nil, packHeader{}, fmt.Errorf("accesslog: decrypt payload: %w", err)
+		return nil, packHeader{}, fmt.Errorf("calllog: decrypt payload: %w", err)
 	}
 	zr, err := gzip.NewReader(bytes.NewReader(compressed))
 	if err != nil {
@@ -225,7 +225,7 @@ func readPayload(root string, ref PayloadRef, key []byte) ([]byte, packHeader, e
 		return nil, packHeader{}, closeErr
 	}
 	if len(raw) != h.Raw {
-		return nil, packHeader{}, fmt.Errorf("accesslog: payload length %d, want %d", len(raw), h.Raw)
+		return nil, packHeader{}, fmt.Errorf("calllog: payload length %d, want %d", len(raw), h.Raw)
 	}
 	return raw, h, nil
 }

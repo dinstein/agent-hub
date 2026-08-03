@@ -1,6 +1,6 @@
 //go:build !darwin && !linux && !windows
 
-package accesslog
+package calllog
 
 import "os"
 

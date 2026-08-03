@@ -3,7 +3,7 @@
 Nine packages that everything depends on and that depend on nothing, answering six questions:
 **where do files go** (`internal/platform`), **what was said and how is it recorded**
 (`internal/logx`), **how does an append-only stream survive N processes writing it**
-(`internal/jsonl`, plus the `internal/eventlog` state stream and the durable `internal/accesslog`
+(`internal/jsonl`, plus the `internal/eventlog` state stream and the durable `internal/calllog`
 ledger), **who defines the words "read / write / destructive"** (`internal/tier`), **how do we talk
 to downstreams** (`internal/mcp` and `internal/mcp/transport`), and **in what form does
 configuration live on disk and get shared across processes** (`internal/registry`).
@@ -269,7 +269,7 @@ need, and both call sites sit together so neither can change without the other b
 
 ### Invariants and failure directions
 
-- **Failure direction is OPEN, and that is the difference from `internal/accesslog`.** A record that
+- **Failure direction is OPEN, and that is the difference from `internal/calllog`.** A record that
   cannot be written is dropped and counted; nothing is refused. `accesslog` is fail-closed because
   an unrecorded `tools/call` is a governance gap. A missed state change is not — the state itself is
   still observable — and refusing to serve a client because a note about it could not be filed would
@@ -383,12 +383,12 @@ the bare number rather than hiding it — a frontend older than its daemon must 
 
 ---
 
-## internal/accesslog
+## internal/calllog
 
 A bounded, queryable metadata history for every `tools/call` lifecycle, plus the complete accepted
 request bytes retained in encrypted payload packs.
 
-Metadata and payload are deliberately separate. Every UTC day has one shared `access.jsonl`; each
+Metadata and payload are deliberately separate. Every UTC day has one shared `calls.jsonl`; each
 gateway process owns payload packs named by a random boot id and pid. An event stays under 4096
 bytes and is appended in one `O_APPEND` write, while a request may be as large as MCP's 16 MiB frame
 bound without weakening that atomic-line contract. Payload entries are gzipped then sealed with
@@ -990,6 +990,6 @@ mean you have changed the other.
 
 **Windows cross-process locking is implemented but unverified.** The registry lock uses
 `LockFileEx`/`UnlockFileEx` delegating to `internal/platform`, the stub build tag was narrowed to
-`!darwin && !linux && !windows`, and `internal/ratelimit` and `internal/accesslog` both set
+`!darwin && !linux && !windows`, and `internal/ratelimit` and `internal/calllog` both set
 `crossProcessLockSupported = true` there. Nothing has run on a real Windows machine — see
 [../windows.md](../windows.md).

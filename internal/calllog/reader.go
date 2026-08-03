@@ -1,4 +1,4 @@
-package accesslog
+package calllog
 
 import (
 	"bufio"
@@ -55,7 +55,7 @@ func ScanEventsSince(root string, since time.Time, visit func(Event) error) (int
 		if cutoffDay != "" && day.Name() < cutoffDay {
 			continue
 		}
-		f, err := os.Open(filepath.Join(root, day.Name(), EventFileName))
+		f, err := openDayEvents(root, day.Name())
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
@@ -86,7 +86,7 @@ func ScanEventsSince(root string, since time.Time, visit func(Event) error) (int
 		}
 		if err := sc.Err(); err != nil {
 			_ = f.Close()
-			return skipped, fmt.Errorf("accesslog: read %s: %w", f.Name(), err)
+			return skipped, fmt.Errorf("calllog: read %s: %w", f.Name(), err)
 		}
 		if err := f.Close(); err != nil {
 			return skipped, err
@@ -108,7 +108,22 @@ func VerifyPayload(root string, ref PayloadRef, key []byte, callID string, kind 
 		return err
 	}
 	if header.CallID != callID || header.Kind != kind {
-		return fmt.Errorf("accesslog: payload binding is %s/%s, want %s/%s", header.CallID, header.Kind, callID, kind)
+		return fmt.Errorf("calllog: payload binding is %s/%s, want %s/%s", header.CallID, header.Kind, callID, kind)
 	}
 	return nil
+}
+
+// openDayEvents opens one day's metadata stream, falling back to the name it
+// had before the ledger was renamed.
+//
+// The fallback is a READ path only. A day written by an older build keeps the
+// file name it was written with — rewriting history to make it look current
+// is exactly what an authenticated ledger must not do — so both names are
+// readable forever and only new days get the current one.
+func openDayEvents(root, day string) (*os.File, error) {
+	f, err := os.Open(filepath.Join(root, day, EventFileName))
+	if err == nil || !os.IsNotExist(err) {
+		return f, err
+	}
+	return os.Open(filepath.Join(root, day, LegacyEventFileName))
 }

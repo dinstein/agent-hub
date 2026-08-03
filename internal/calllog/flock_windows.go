@@ -1,6 +1,6 @@
 //go:build windows
 
-package accesslog
+package calllog
 
 import (
 	"os"

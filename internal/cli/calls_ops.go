@@ -11,31 +11,31 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dinstein/agent-hub/internal/accesslog"
+	"github.com/dinstein/agent-hub/internal/calllog"
 )
 
-// AuditExport is the summary emitted after an export file is made.
-type AuditExport struct {
+// CallsExport is the summary emitted after an export file is made.
+type CallsExport struct {
 	Output   string `json:"output"`
 	Events   int    `json:"events"`
 	Skipped  int    `json:"skippedMalformed"`
 	Payloads bool   `json:"payloads"`
 }
 
-func (e AuditExport) Human(w io.Writer) error {
+func (e CallsExport) Human(w io.Writer) error {
 	_, err := fmt.Fprintf(w, "exported %d event(s) to %s (payloads: %s, malformed skipped: %d)\n",
 		e.Events, e.Output, boolText(e.Payloads), e.Skipped)
 	return err
 }
 
 type auditExportRecord struct {
-	Event              accesslog.Event `json:"event"`
-	Request            string          `json:"request,omitempty"`
-	EffectiveArguments string          `json:"effectiveArguments,omitempty"`
-	Result             string          `json:"result,omitempty"`
+	Event              calllog.Event `json:"event"`
+	Request            string        `json:"request,omitempty"`
+	EffectiveArguments string        `json:"effectiveArguments,omitempty"`
+	Result             string        `json:"result,omitempty"`
 }
 
-func (a *App) newAuditExportCmd() *cobra.Command {
+func (a *App) newCallsExportCmd() *cobra.Command {
 	var output, sinceRaw string
 	var payloads bool
 	cmd := &cobra.Command{
@@ -50,7 +50,7 @@ func (a *App) newAuditExportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			root, err := accesslog.DefaultDir(a.resolver)
+			root, err := calllog.DefaultDir(a.resolver)
 			if err != nil {
 				return err
 			}
@@ -59,14 +59,14 @@ func (a *App) newAuditExportCmd() *cobra.Command {
 				keys = newAuditKeyCache(a, cmd)
 				defer keys.close()
 			}
-			out := AuditExport{Output: output, Payloads: payloads}
+			out := CallsExport{Output: output, Payloads: payloads}
 			err = writeNewAtomic(output, func(w io.Writer) error {
 				enc := json.NewEncoder(w)
-				out.Skipped, err = accesslog.ScanEventsSince(root, since, func(e accesslog.Event) error {
+				out.Skipped, err = calllog.ScanEventsSince(root, since, func(e calllog.Event) error {
 					record := auditExportRecord{Event: e}
 					if payloads {
 						call := AuditCall{}
-						if err := decryptAuditCall(root, keys, []accesslog.Event{e}, &call); err != nil {
+						if err := decryptAuditCall(root, keys, []calllog.Event{e}, &call); err != nil {
 							return err
 						}
 						record.Request = call.Request
@@ -138,8 +138,8 @@ func writeNewAtomic(path string, write func(io.Writer) error) (err error) {
 	return nil
 }
 
-// AuditPrune is the result of applying the configured retention window.
-type AuditPrune struct {
+// CallsPrune is the result of applying the configured retention window.
+type CallsPrune struct {
 	DryRun bool     `json:"dryRun"`
 	Before string   `json:"before"`
 	Days   int      `json:"days"`
@@ -147,7 +147,7 @@ type AuditPrune struct {
 	Names  []string `json:"names,omitempty"`
 }
 
-func (p AuditPrune) Human(w io.Writer) error {
+func (p CallsPrune) Human(w io.Writer) error {
 	verb := "removed"
 	if p.DryRun {
 		verb = "would remove"
@@ -156,7 +156,7 @@ func (p AuditPrune) Human(w io.Writer) error {
 	return err
 }
 
-func (a *App) newAuditPruneCmd() *cobra.Command {
+func (a *App) newCallsPruneCmd() *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "prune",
@@ -167,17 +167,17 @@ func (a *App) newAuditPruneCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			policy := store.Snapshot().Governance.V.ResolvedAudit()
+			policy := store.Snapshot().Governance.V.ResolvedCalls()
 			cutoff := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -(policy.RetentionDays - 1))
-			root, err := accesslog.DefaultDir(a.resolver)
+			root, err := calllog.DefaultDir(a.resolver)
 			if err != nil {
 				return err
 			}
-			pruned, err := accesslog.Prune(root, cutoff, dryRun)
+			pruned, err := calllog.Prune(root, cutoff, dryRun)
 			if err != nil {
 				return err
 			}
-			return a.printer().Emit(AuditPrune{
+			return a.printer().Emit(CallsPrune{
 				DryRun: dryRun, Before: cutoff.Format("2006-01-02"), Days: pruned.Days,
 				Bytes: pruned.Bytes, Names: pruned.Names,
 			})

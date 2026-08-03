@@ -100,7 +100,7 @@ func TestClientsRoundTripGolden(t *testing.T) {
 
 func TestGovernanceRoundTripGolden(t *testing.T) {
 	input := `{
-  "audit": {"enabled": true, "future_audit": {"mode": "keep"}},
+  "calls": {"enabled": true, "future_audit": {"mode": "keep"}},
   "blockOnInjection": true,
   "denyDestructive": true,
   "discovery": "lazy",

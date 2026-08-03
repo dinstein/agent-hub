@@ -1,4 +1,4 @@
-package accesslog
+package calllog
 
 import (
 	"errors"
@@ -8,10 +8,17 @@ import (
 const (
 	// Version is the event and pack format version.
 	Version = 1
-	// DirectoryName is the access-ledger directory below the data directory.
-	DirectoryName = "audit"
+	// DirectoryName is the call ledger's directory below the data directory.
+	DirectoryName = "calls"
+	// LegacyDirectoryName is what it was called while the ledger recorded
+	// nothing but tools/call evidence. DefaultDir renames one to the other,
+	// once — see migrateLegacyDir.
+	LegacyDirectoryName = "audit"
 	// EventFileName is the shared bounded metadata stream inside one UTC day.
-	EventFileName = "access.jsonl"
+	EventFileName = "calls.jsonl"
+	// LegacyEventFileName is its previous name. A day directory holding one
+	// is read, never rewritten: history is not ours to restate.
+	LegacyEventFileName = "access.jsonl"
 	// MaxEventLineBytes preserves the multi-process one-write line contract.
 	MaxEventLineBytes = 4096
 	// DefaultMaxPackBytes rotates a process-owned payload pack at 64 MiB.
@@ -22,14 +29,14 @@ const (
 )
 
 var (
-	ErrClosed        = errors.New("accesslog: store is closed")
-	ErrEventTooLarge = errors.New("accesslog: event exceeds line bound")
-	ErrBadKey        = errors.New("accesslog: encryption key must be 32 bytes")
-	ErrBadReference  = errors.New("accesslog: invalid payload reference")
-	ErrPayloadTooBig = errors.New("accesslog: payload exceeds accepted MCP frame bound")
-	ErrCapacity      = errors.New("accesslog: storage limit reached")
-	ErrFreeReserve   = errors.New("accesslog: free-space reserve reached")
-	ErrExpired       = errors.New("accesslog: event is outside the retention window")
+	ErrClosed        = errors.New("calllog: store is closed")
+	ErrEventTooLarge = errors.New("calllog: event exceeds line bound")
+	ErrBadKey        = errors.New("calllog: encryption key must be 32 bytes")
+	ErrBadReference  = errors.New("calllog: invalid payload reference")
+	ErrPayloadTooBig = errors.New("calllog: payload exceeds accepted MCP frame bound")
+	ErrCapacity      = errors.New("calllog: storage limit reached")
+	ErrFreeReserve   = errors.New("calllog: free-space reserve reached")
+	ErrExpired       = errors.New("calllog: event is outside the retention window")
 )
 
 // Durability controls when a write is acknowledged.
@@ -113,7 +120,7 @@ type Event struct {
 	ResultCut     bool        `json:"resultTruncated,omitempty"`
 }
 
-// Options configures an access store. Root is normally <data>/audit.
+// Options configures a store. Root is normally <data>/calls.
 type Options struct {
 	Root          string
 	Key           []byte

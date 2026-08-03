@@ -133,7 +133,7 @@ func (a *App) newLogsCmd() *cobra.Command {
 			"downstream, so connection failures, circuit transitions, health flips and\n" +
 			"respawns are all observed and recorded by the gateway serving a client.\n\n" +
 			"Works offline. --server is usually the fastest way in when one downstream\n" +
-			"is misbehaving; `agenthub audit` answers what was CALLED, and\n" +
+			"is misbehaving; `agenthub calls` answers what was CALLED, and\n" +
 			"`agenthub server logs` shows the raw frames of one connection.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

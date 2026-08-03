@@ -63,93 +63,93 @@ var governanceKeys = []GovernanceKey{
 		},
 	},
 	{
-		Name: "audit.enabled", Kind: "bool", Doc: "record every tools/call attempt; storage failure blocks execution",
-		get: func(g registry.GovernanceDoc) string { return strconv.FormatBool(g.ResolvedAudit().Enabled) },
+		Name: "calls.enabled", Aliases: []string{"audit.enabled"}, Kind: "bool", Doc: "record every tools/call attempt; storage failure blocks execution",
+		get: func(g registry.GovernanceDoc) string { return strconv.FormatBool(g.ResolvedCalls().Enabled) },
 		set: func(g *registry.GovernanceDoc, raw string) error {
-			v, err := parseBool("audit.enabled", raw)
+			v, err := parseBool("calls.enabled", raw)
 			if err != nil {
 				return err
 			}
-			if v && g.ResolvedAudit().KeyID == "" {
-				return usagef("audit has no encryption key; use 'agenthub audit enable'")
+			if v && g.ResolvedCalls().KeyID == "" {
+				return usagef("the call ledger has no encryption key; use 'agenthub calls enable'")
 			}
-			auditForWrite(g).Enabled = v
+			callsForWrite(g).Enabled = v
 			return nil
 		},
 	},
 	{
-		Name: "audit.durability", Kind: "enum", Doc: "write acknowledgement: sync or write",
-		get: func(g registry.GovernanceDoc) string { return g.ResolvedAudit().Durability },
+		Name: "calls.durability", Aliases: []string{"audit.durability"}, Kind: "enum", Doc: "write acknowledgement: sync or write",
+		get: func(g registry.GovernanceDoc) string { return g.ResolvedCalls().Durability },
 		set: func(g *registry.GovernanceDoc, raw string) error {
 			if raw != "sync" && raw != "write" {
-				return usagef("audit.durability expects sync or write, got %q", raw)
+				return usagef("calls.durability expects sync or write, got %q", raw)
 			}
-			auditForWrite(g).Durability = raw
+			callsForWrite(g).Durability = raw
 			return nil
 		},
 	},
 	{
-		Name: "audit.results", Kind: "enum", Doc: "result capture: none, errors, truncated or full",
-		get: func(g registry.GovernanceDoc) string { return g.ResolvedAudit().ResultMode },
+		Name: "calls.results", Aliases: []string{"audit.results"}, Kind: "enum", Doc: "result capture: none, errors, truncated or full",
+		get: func(g registry.GovernanceDoc) string { return g.ResolvedCalls().ResultMode },
 		set: func(g *registry.GovernanceDoc, raw string) error {
 			switch raw {
 			case "none", "errors", "truncated", "full":
-				auditForWrite(g).ResultMode = raw
+				callsForWrite(g).ResultMode = raw
 				return nil
 			default:
-				return usagef("audit.results expects none, errors, truncated or full, got %q", raw)
+				return usagef("calls.results expects none, errors, truncated or full, got %q", raw)
 			}
 		},
 	},
 	{
-		Name: "audit.resultBytes", Aliases: []string{"audit.result_bytes"}, Kind: "bytes",
+		Name: "calls.resultBytes", Aliases: []string{"audit.resultBytes", "audit.result_bytes"}, Kind: "bytes",
 		Doc: "maximum captured result bytes in truncated mode",
-		get: func(g registry.GovernanceDoc) string { return strconv.Itoa(g.ResolvedAudit().ResultBytes) },
+		get: func(g registry.GovernanceDoc) string { return strconv.Itoa(g.ResolvedCalls().ResultBytes) },
 		set: func(g *registry.GovernanceDoc, raw string) error {
-			v, err := positiveInt("audit.resultBytes", raw, 16<<20)
+			v, err := positiveInt("calls.resultBytes", raw, 16<<20)
 			if err != nil {
 				return err
 			}
-			auditForWrite(g).ResultBytes = v
+			callsForWrite(g).ResultBytes = v
 			return nil
 		},
 	},
 	{
-		Name: "audit.retentionDays", Aliases: []string{"audit.retention_days"}, Kind: "integer",
+		Name: "calls.retentionDays", Aliases: []string{"audit.retentionDays", "audit.retention_days"}, Kind: "integer",
 		Doc: "days retained before a complete UTC partition may be pruned",
-		get: func(g registry.GovernanceDoc) string { return strconv.Itoa(g.ResolvedAudit().RetentionDays) },
+		get: func(g registry.GovernanceDoc) string { return strconv.Itoa(g.ResolvedCalls().RetentionDays) },
 		set: func(g *registry.GovernanceDoc, raw string) error {
-			v, err := positiveInt("audit.retentionDays", raw, 3650)
+			v, err := positiveInt("calls.retentionDays", raw, 3650)
 			if err != nil {
 				return err
 			}
-			auditForWrite(g).RetentionDays = v
+			callsForWrite(g).RetentionDays = v
 			return nil
 		},
 	},
 	{
-		Name: "audit.maxBytes", Aliases: []string{"audit.max_bytes"}, Kind: "bytes",
+		Name: "calls.maxBytes", Aliases: []string{"audit.maxBytes", "audit.max_bytes"}, Kind: "bytes",
 		Doc: "hard total ledger size; new calls block instead of deleting unexpired records",
-		get: func(g registry.GovernanceDoc) string { return strconv.FormatInt(g.ResolvedAudit().MaxBytes, 10) },
+		get: func(g registry.GovernanceDoc) string { return strconv.FormatInt(g.ResolvedCalls().MaxBytes, 10) },
 		set: func(g *registry.GovernanceDoc, raw string) error {
 			v, err := positiveInt64("audit.maxBytes", raw)
 			if err != nil {
 				return err
 			}
-			auditForWrite(g).MaxBytes = v
+			callsForWrite(g).MaxBytes = v
 			return nil
 		},
 	},
 	{
-		Name: "audit.minFreeBytes", Aliases: []string{"audit.min_free_bytes"}, Kind: "bytes",
+		Name: "calls.minFreeBytes", Aliases: []string{"audit.minFreeBytes", "audit.min_free_bytes"}, Kind: "bytes",
 		Doc: "free-disk reserve; new calls block before crossing it",
-		get: func(g registry.GovernanceDoc) string { return strconv.FormatInt(g.ResolvedAudit().MinFreeBytes, 10) },
+		get: func(g registry.GovernanceDoc) string { return strconv.FormatInt(g.ResolvedCalls().MinFreeBytes, 10) },
 		set: func(g *registry.GovernanceDoc, raw string) error {
 			v, err := positiveInt64("audit.minFreeBytes", raw)
 			if err != nil {
 				return err
 			}
-			auditForWrite(g).MinFreeBytes = v
+			callsForWrite(g).MinFreeBytes = v
 			return nil
 		},
 	},
@@ -252,11 +252,22 @@ func validateHostPort(raw string) error {
 	return nil
 }
 
-func auditForWrite(g *registry.GovernanceDoc) *registry.AuditPolicy {
-	if g.Audit == nil {
-		g.Audit = &registry.Doc[registry.AuditPolicy]{}
+// callsForWrite returns the policy to mutate, moving a pre-rename document
+// into the current key on the way.
+//
+// The old key is dropped in the same write rather than left behind: two keys
+// holding two policies is a file whose meaning depends on which one a reader
+// looks at first, and the reader that looks at the stale one enforces a
+// setting nobody chose.
+func callsForWrite(g *registry.GovernanceDoc) *registry.CallsPolicy {
+	if g.Calls == nil {
+		g.Calls = &registry.Doc[registry.CallsPolicy]{}
+		if g.Audit != nil {
+			*g.Calls = *g.Audit
+		}
 	}
-	return &g.Audit.V
+	g.Audit = nil
+	return &g.Calls.V
 }
 
 func parseBool(name, raw string) (bool, error) {
@@ -358,35 +369,35 @@ type GovernanceResult struct {
 	Previous string
 }
 
-// AuditPolicyResult is the semantic result of enabling or disabling the
+// CallsPolicyResult is the semantic result of enabling or disabling the
 // ledger. Enabling materializes every current default so an upgrade cannot
 // silently change the retention or capture contract of an existing install.
-type AuditPolicyResult struct {
+type CallsPolicyResult struct {
 	Result
-	Previous registry.ResolvedAuditPolicy
-	Policy   registry.ResolvedAuditPolicy
+	Previous registry.ResolvedCallsPolicy
+	Policy   registry.ResolvedCallsPolicy
 }
 
-// SetAuditEnabled changes the ledger's master switch. keyID is required when
+// SetCallsEnabled changes the ledger's master switch. keyID is required when
 // enabling and is public key metadata, not the encryption key itself.
-func SetAuditEnabled(
+func SetCallsEnabled(
 	ctx context.Context, st *registry.Store, enabled bool, keyID string, pre Precondition,
-) (AuditPolicyResult, error) {
-	out := AuditPolicyResult{}
+) (CallsPolicyResult, error) {
+	out := CallsPolicyResult{}
 	res, err := apply(ctx, st, pre, func(tx *registry.Tx) error {
 		g := tx.Governance.V
-		out.Previous = g.ResolvedAudit()
-		if !enabled && g.Audit == nil {
+		out.Previous = g.ResolvedCalls()
+		if !enabled && g.CallsDoc() == nil {
 			out.Policy = out.Previous
 			return nil
 		}
 		if enabled && strings.TrimSpace(keyID) == "" {
-			return usagef("enabling audit requires a key id")
+			return usagef("enabling the call ledger requires a key id")
 		}
-		p := auditForWrite(&g)
+		p := callsForWrite(&g)
 		p.Enabled = enabled
 		if enabled {
-			resolved := g.ResolvedAudit()
+			resolved := g.ResolvedCalls()
 			p.Durability = resolved.Durability
 			p.ResultMode = resolved.ResultMode
 			p.ResultBytes = resolved.ResultBytes
@@ -396,7 +407,7 @@ func SetAuditEnabled(
 			p.KeyID = keyID
 		}
 		tx.Governance.V = g
-		out.Policy = g.ResolvedAudit()
+		out.Policy = g.ResolvedCalls()
 		return nil
 	})
 	out.Result = res
@@ -412,21 +423,21 @@ func SetAuditEnabled(
 // paused as well as while it is live.
 func SetAuditKeyID(
 	ctx context.Context, st *registry.Store, keyID string, pre Precondition,
-) (AuditPolicyResult, error) {
-	out := AuditPolicyResult{}
+) (CallsPolicyResult, error) {
+	out := CallsPolicyResult{}
 	res, err := apply(ctx, st, pre, func(tx *registry.Tx) error {
 		g := tx.Governance.V
-		out.Previous = g.ResolvedAudit()
-		if g.Audit == nil || strings.TrimSpace(g.Audit.V.KeyID) == "" {
-			return usagef("audit has no current key; run agenthub audit enable first")
+		out.Previous = g.ResolvedCalls()
+		if doc := g.CallsDoc(); doc == nil || strings.TrimSpace(doc.V.KeyID) == "" {
+			return usagef("the ledger has no current key; run agenthub calls enable first")
 		}
 		if strings.TrimSpace(keyID) == "" {
-			return usagef("rotating audit requires a key id")
+			return usagef("rotating the ledger key requires a key id")
 		}
-		p := auditForWrite(&g)
+		p := callsForWrite(&g)
 		p.KeyID = keyID
 		tx.Governance.V = g
-		out.Policy = g.ResolvedAudit()
+		out.Policy = g.ResolvedCalls()
 		return nil
 	})
 	out.Result = res

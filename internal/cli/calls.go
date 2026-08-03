@@ -8,42 +8,42 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dinstein/agent-hub/internal/accesslog"
+	"github.com/dinstein/agent-hub/internal/calllog"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
-// AuditStatus is the public policy view. It deliberately carries the key ID
+// CallsStatus is the public policy view. It deliberately carries the key ID
 // but never the encryption key.
-type AuditStatus struct {
-	Enabled       bool            `json:"enabled"`
-	Arguments     string          `json:"arguments"`
-	Results       string          `json:"results"`
-	ResultBytes   int             `json:"resultBytes"`
-	Durability    string          `json:"durability"`
-	RetentionDays int             `json:"retentionDays"`
-	MaxBytes      int64           `json:"maxBytes"`
-	MinFreeBytes  int64           `json:"minFreeBytes"`
-	Pressure      string          `json:"pressure"`
-	KeyID         string          `json:"keyId,omitempty"`
-	Storage       accesslog.Usage `json:"storage"`
+type CallsStatus struct {
+	Enabled       bool          `json:"enabled"`
+	Arguments     string        `json:"arguments"`
+	Results       string        `json:"results"`
+	ResultBytes   int           `json:"resultBytes"`
+	Durability    string        `json:"durability"`
+	RetentionDays int           `json:"retentionDays"`
+	MaxBytes      int64         `json:"maxBytes"`
+	MinFreeBytes  int64         `json:"minFreeBytes"`
+	Pressure      string        `json:"pressure"`
+	KeyID         string        `json:"keyId,omitempty"`
+	Storage       calllog.Usage `json:"storage"`
 }
 
-// AuditKeyRotation reports only public key identifiers.
-type AuditKeyRotation struct {
+// CallsKeyRotation reports only public key identifiers.
+type CallsKeyRotation struct {
 	PreviousKeyID string `json:"previousKeyId"`
 	KeyID         string `json:"keyId"`
 	Enabled       bool   `json:"enabled"`
 }
 
-func (r AuditKeyRotation) Human(w io.Writer) error {
-	_, err := fmt.Fprintf(w, "audit key rotated: %s -> %s (enabled: %s)\n", r.PreviousKeyID, r.KeyID, boolText(r.Enabled))
+func (r CallsKeyRotation) Human(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "ledger key rotated: %s -> %s (enabled: %s)\n", r.PreviousKeyID, r.KeyID, boolText(r.Enabled))
 	return err
 }
 
-func auditStatusOf(p registry.ResolvedAuditPolicy) AuditStatus {
-	return AuditStatus{
+func auditStatusOf(p registry.ResolvedCallsPolicy) CallsStatus {
+	return CallsStatus{
 		Enabled: p.Enabled, Arguments: "full", Results: p.ResultMode,
 		ResultBytes: p.ResultBytes, Durability: p.Durability,
 		RetentionDays: p.RetentionDays, MaxBytes: p.MaxBytes,
@@ -51,18 +51,18 @@ func auditStatusOf(p registry.ResolvedAuditPolicy) AuditStatus {
 	}
 }
 
-func (a *App) auditStatus(p registry.ResolvedAuditPolicy) (AuditStatus, error) {
+func (a *App) auditStatus(p registry.ResolvedCallsPolicy) (CallsStatus, error) {
 	status := auditStatusOf(p)
-	root, err := accesslog.DefaultDir(a.resolver)
+	root, err := calllog.DefaultDir(a.resolver)
 	if err != nil {
-		return AuditStatus{}, err
+		return CallsStatus{}, err
 	}
-	status.Storage, err = accesslog.Inspect(root)
+	status.Storage, err = calllog.Inspect(root)
 	return status, err
 }
 
 // Human renders the effective policy, including defaults.
-func (s AuditStatus) Human(w io.Writer) error {
+func (s CallsStatus) Human(w io.Writer) error {
 	_, err := fmt.Fprintf(w,
 		"enabled: %s\narguments: %s\nresults: %s (%d bytes)\n"+
 			"durability: %s\nretention: %d days\nmax size: %d bytes\n"+
@@ -78,23 +78,23 @@ func (s AuditStatus) Human(w io.Writer) error {
 	return err
 }
 
-func (a *App) newAuditCmd() *cobra.Command {
+func (a *App) newCallsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "audit",
-		Short: "Configure and inspect the local tools/call access ledger",
+		Use:   "calls",
+		Short: "Configure and inspect the local record of what clients called",
 		Args:  cobra.ArbitraryArgs,
 		RunE:  groupRunE,
 	}
 	cmd.AddCommand(
-		a.newAuditStatusCmd(), a.newAuditTailCmd(), a.newAuditShowCmd(),
-		a.newAuditStatsCmd(), a.newAuditVerifyCmd(), a.newAuditExportCmd(),
-		a.newAuditPruneCmd(), a.newAuditRotateKeyCmd(),
-		a.newAuditEnableCmd(), a.newAuditDisableCmd(),
+		a.newCallsStatusCmd(), a.newCallsTailCmd(), a.newCallsShowCmd(),
+		a.newCallsStatsCmd(), a.newCallsVerifyCmd(), a.newCallsExportCmd(),
+		a.newCallsPruneCmd(), a.newCallsRotateKeyCmd(),
+		a.newCallsEnableCmd(), a.newCallsDisableCmd(),
 	)
 	return cmd
 }
 
-func (a *App) newAuditStatusCmd() *cobra.Command {
+func (a *App) newCallsStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Print the effective capture, durability and retention policy",
@@ -104,7 +104,7 @@ func (a *App) newAuditStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			status, err := a.auditStatus(store.Snapshot().Governance.V.ResolvedAudit())
+			status, err := a.auditStatus(store.Snapshot().Governance.V.ResolvedCalls())
 			if err != nil {
 				return err
 			}
@@ -113,7 +113,7 @@ func (a *App) newAuditStatusCmd() *cobra.Command {
 	}
 }
 
-func (a *App) newAuditEnableCmd() *cobra.Command {
+func (a *App) newCallsEnableCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "enable",
 		Short: "Create the payload key if needed and enable strict access recording",
@@ -127,14 +127,14 @@ func (a *App) newAuditEnableCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			keyID, err := accesslog.KeyID(key)
+			keyID, err := calllog.KeyID(key)
 			if err != nil {
 				return err
 			}
 			for i := range key {
 				key[i] = 0
 			}
-			res, err := confops.SetAuditEnabled(cmd.Context(), store, true, keyID, noPrecondition)
+			res, err := confops.SetCallsEnabled(cmd.Context(), store, true, keyID, noPrecondition)
 			warnings = append(warnings, res.Warnings...)
 			if err != nil {
 				return opsError(err)
@@ -148,7 +148,7 @@ func (a *App) newAuditEnableCmd() *cobra.Command {
 	}
 }
 
-func (a *App) newAuditDisableCmd() *cobra.Command {
+func (a *App) newCallsDisableCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "disable",
 		Short: "Stop recording new calls without deleting keys or existing history",
@@ -158,7 +158,7 @@ func (a *App) newAuditDisableCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := confops.SetAuditEnabled(cmd.Context(), store, false, "", noPrecondition)
+			res, err := confops.SetCallsEnabled(cmd.Context(), store, false, "", noPrecondition)
 			warnings = append(warnings, res.Warnings...)
 			if err != nil {
 				return opsError(err)
@@ -172,7 +172,7 @@ func (a *App) newAuditDisableCmd() *cobra.Command {
 	}
 }
 
-func (a *App) newAuditRotateKeyCmd() *cobra.Command {
+func (a *App) newCallsRotateKeyCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "rotate-key",
 		Short: "Create a new payload key while retaining old keys for history",
@@ -182,16 +182,16 @@ func (a *App) newAuditRotateKeyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			previous := store.Snapshot().Governance.V.ResolvedAudit()
+			previous := store.Snapshot().Governance.V.ResolvedCalls()
 			if previous.KeyID == "" {
-				return Usagef("audit has no current key; run agenthub audit enable first")
+				return Usagef("the ledger has no current key; run agenthub calls enable first")
 			}
 			key := make([]byte, 32)
 			if _, err := rand.Read(key); err != nil {
 				return fmt.Errorf("generate audit encryption key: %w", err)
 			}
 			defer zeroSecret(key)
-			keyID, err := accesslog.KeyID(key)
+			keyID, err := calllog.KeyID(key)
 			if err != nil {
 				return err
 			}
@@ -215,7 +215,7 @@ func (a *App) newAuditRotateKeyCmd() *cobra.Command {
 			if err := chain.Set(cmd.Context(), secrets.AuditEncryptionRef(), encoded); err != nil {
 				return classifySecretsError(err)
 			}
-			return a.printer().Emit(AuditKeyRotation{
+			return a.printer().Emit(CallsKeyRotation{
 				PreviousKeyID: previous.KeyID, KeyID: keyID, Enabled: res.Policy.Enabled,
 			}, warnings...)
 		},
@@ -244,7 +244,7 @@ func (a *App) loadOrCreateAuditKey(cmd *cobra.Command) ([]byte, error) {
 			}
 			return nil, classifySecretsError(err)
 		}
-		keyID, err := accesslog.KeyID(key)
+		keyID, err := calllog.KeyID(key)
 		if err != nil {
 			zeroSecret(key)
 			return nil, err
@@ -259,7 +259,7 @@ func (a *App) loadOrCreateAuditKey(cmd *cobra.Command) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	keyID, err := accesslog.KeyID(key)
+	keyID, err := calllog.KeyID(key)
 	if err != nil {
 		zeroSecret(key)
 		return nil, err

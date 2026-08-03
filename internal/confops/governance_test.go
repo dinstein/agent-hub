@@ -2,6 +2,8 @@ package confops
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -18,7 +20,7 @@ func TestGovernanceKeyTableIsShared(t *testing.T) {
 	if GovernanceKeys()[0].Name == "tampered" {
 		t.Error("GovernanceKeys returned the live table")
 	}
-	for _, want := range []string{"discovery", "audit.enabled", "audit.durability", "audit.results", "audit.resultBytes", "audit.retentionDays", "audit.maxBytes", "audit.minFreeBytes"} {
+	for _, want := range []string{"discovery", "calls.enabled", "calls.durability", "calls.results", "calls.resultBytes", "calls.retentionDays", "calls.maxBytes", "calls.minFreeBytes"} {
 		if _, ok := LookupGovernanceKey(want); !ok {
 			t.Errorf("key %q is missing", want)
 		}
@@ -30,31 +32,31 @@ func TestGovernanceKeyTableIsShared(t *testing.T) {
 	}
 }
 
-func TestAuditGovernanceDefaultsValidationAndEnable(t *testing.T) {
+func TestCallsGovernanceDefaultsValidationAndEnable(t *testing.T) {
 	ctx := context.Background()
 	st := newStore(t)
-	p := st.Snapshot().Governance.V.ResolvedAudit()
+	p := st.Snapshot().Governance.V.ResolvedCalls()
 	if p.Enabled || p.Durability != "sync" || p.ResultMode != "truncated" || p.RetentionDays <= 0 || p.MaxBytes <= 0 {
 		t.Fatalf("defaults = %+v", p)
 	}
-	if _, err := SetGovernance(ctx, st, "audit.enabled", "true", Precondition{}); err == nil {
+	if _, err := SetGovernance(ctx, st, "calls.enabled", "true", Precondition{}); err == nil {
 		t.Fatal("enabled without a key id")
 	}
 
-	res, err := SetAuditEnabled(ctx, st, true, "key-1", Precondition{})
+	res, err := SetCallsEnabled(ctx, st, true, "key-1", Precondition{})
 	if err != nil || !res.Changed || !res.Policy.Enabled || res.Policy.KeyID != "key-1" {
 		t.Fatalf("enable = %+v, %v", res, err)
 	}
-	if st.Snapshot().Governance.V.Audit == nil || st.Snapshot().Governance.V.Audit.V.RetentionDays == 0 {
+	if doc := st.Snapshot().Governance.V.CallsDoc(); doc == nil || doc.V.RetentionDays == 0 {
 		t.Fatal("enable did not materialize bounded defaults")
 	}
-	if _, err := SetGovernance(ctx, st, "audit.enabled", "false", Precondition{}); err != nil {
+	if _, err := SetGovernance(ctx, st, "calls.enabled", "false", Precondition{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := SetGovernance(ctx, st, "audit.results", "full", Precondition{}); err != nil {
+	if _, err := SetGovernance(ctx, st, "calls.results", "full", Precondition{}); err != nil {
 		t.Fatal(err)
 	}
-	if got := st.Snapshot().Governance.V.ResolvedAudit(); got.Enabled || got.ResultMode != "full" || got.KeyID != "key-1" {
+	if got := st.Snapshot().Governance.V.ResolvedCalls(); got.Enabled || got.ResultMode != "full" || got.KeyID != "key-1" {
 		t.Fatalf("updated policy = %+v", got)
 	}
 }
@@ -199,5 +201,38 @@ func TestEventsEnabledIsTriState(t *testing.T) {
 	}
 	if err := key.set(&g, "maybe"); err == nil {
 		t.Fatal("a non-boolean was accepted")
+	}
+}
+
+// A governance.json written before the rename must keep its policy AND its
+// key id: without the key id the days already on disk cannot be decrypted at
+// all, so a silent reset here is not a lost setting but lost evidence.
+func TestPreRenameGovernanceKeyIsReadAndFoldedForward(t *testing.T) {
+	ctx := context.Background()
+	st, dir := newStoreDir(t)
+	legacy := `{"audit":{"enabled":true,"keyId":"key-old","results":"full"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "governance.json"), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Reload(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	got := st.Snapshot().Governance.V.ResolvedCalls()
+	if !got.Enabled || got.KeyID != "key-old" || got.ResultMode != "full" {
+		t.Fatalf("pre-rename policy was not read: %+v", got)
+	}
+
+	// The first write folds it into the current key and drops the old one,
+	// so no reader can later enforce whichever of the two it happened to see.
+	if _, err := SetGovernance(ctx, st, "calls.results", "errors", Precondition{}); err != nil {
+		t.Fatal(err)
+	}
+	g := st.Snapshot().Governance.V
+	if g.Audit != nil {
+		t.Errorf("the pre-rename key survived a write: %+v", g.Audit)
+	}
+	if g.Calls == nil || g.Calls.V.KeyID != "key-old" || g.Calls.V.ResultMode != "errors" {
+		t.Fatalf("folded policy = %+v", g.Calls)
 	}
 }

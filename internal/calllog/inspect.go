@@ -1,4 +1,4 @@
-package accesslog
+package calllog
 
 import (
 	"io/fs"
@@ -15,7 +15,7 @@ type Usage struct {
 	PackFiles  int   `json:"packFiles"`
 }
 
-// Inspect walks the audit directory without following symlinks.
+// Inspect walks the ledger directory without following symlinks.
 func Inspect(root string) (Usage, error) {
 	var out Usage
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -37,7 +37,7 @@ func Inspect(root string) (Usage, error) {
 		}
 		out.Bytes += info.Size()
 		switch {
-		case entry.Name() == EventFileName:
+		case entry.Name() == EventFileName, entry.Name() == LegacyEventFileName:
 			out.EventFiles++
 		case strings.HasSuffix(entry.Name(), ".pack"):
 			out.PackFiles++

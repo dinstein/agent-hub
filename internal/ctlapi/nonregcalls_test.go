@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/api"
-	"github.com/dinstein/agent-hub/internal/accesslog"
+	"github.com/dinstein/agent-hub/internal/calllog"
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
@@ -21,46 +21,46 @@ func seedControlAuditCallAt(
 	t *testing.T, root, callID string, key []byte, ts time.Time, client, server, tool string,
 ) string {
 	t.Helper()
-	keyID, err := accesslog.KeyID(key)
+	keyID, err := calllog.KeyID(key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := accesslog.Open(accesslog.Options{
-		Root: root, Key: key, KeyID: keyID, Durability: accesslog.DurabilitySync,
+	store, err := calllog.Open(calllog.Options{
+		Root: root, Key: key, KeyID: keyID, Durability: calllog.DurabilitySync,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := store.PutPayload(ts, callID, accesslog.PayloadRequest,
+	request, err := store.PutPayload(ts, callID, calllog.PayloadRequest,
 		[]byte(`{"name":"srv__tool","arguments":{"secret":"request-value"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Append(accesslog.Event{
-		TS: ts, Kind: accesslog.EventReceived, CallID: callID,
+	if err := store.Append(calllog.Event{
+		TS: ts, Kind: calllog.EventReceived, CallID: callID,
 		Client: client, Face: "stdio", Exposed: server + "__" + tool, Request: &request,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	args, err := store.PutPayload(ts.Add(time.Millisecond), callID,
-		accesslog.PayloadEffectiveArgs, []byte(`{"secret":"request-value"}`))
+		calllog.PayloadEffectiveArgs, []byte(`{"secret":"request-value"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Append(accesslog.Event{
-		TS: ts.Add(time.Millisecond), Kind: accesslog.EventRouted, CallID: callID,
+	if err := store.Append(calllog.Event{
+		TS: ts.Add(time.Millisecond), Kind: calllog.EventRouted, CallID: callID,
 		Client: client, Exposed: server + "__" + tool, Server: server, Tool: tool,
 		EffectiveArgs: &args,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	result, err := store.PutPayload(ts.Add(2*time.Millisecond), callID,
-		accesslog.PayloadResult, []byte(`{"content":[{"type":"text","text":"result-value"}]}`))
+		calllog.PayloadResult, []byte(`{"content":[{"type":"text","text":"result-value"}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Append(accesslog.Event{
-		TS: ts.Add(2 * time.Millisecond), Kind: accesslog.EventFinished, CallID: callID,
+	if err := store.Append(calllog.Event{
+		TS: ts.Add(2 * time.Millisecond), Kind: calllog.EventFinished, CallID: callID,
 		Client: client, Exposed: server + "__" + tool, Server: server, Tool: tool,
 		Outcome: "success", DurationMs: 12, Result: &result, ResultCapture: "full",
 	}); err != nil {
@@ -72,23 +72,23 @@ func seedControlAuditCallAt(
 	return keyID
 }
 
-func TestAuditCallsUseStableCursorAndServerSideFilters(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "audit")
+func TestCallPageUseStableCursorAndServerSideFilters(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "calls")
 	key := []byte("0123456789abcdef0123456789abcdef")
 	base := time.Now().UTC().Add(-time.Minute)
 	seedControlAuditCallAt(t, root, "call-alpha", key, base.Add(3*time.Second), "claude", "linear", "list_projects")
 	seedControlAuditCallAt(t, root, "call-beta", key, base.Add(2*time.Second), "codex", "github", "get_issue")
 	seedControlAuditCallAt(t, root, "call-gamma", key, base.Add(time.Second), "codex", "linear", "get_project")
-	client, env := startServer(t, func(o *Options) { o.NonRegistry.AuditRoot = root })
+	client, env := startServer(t, func(o *Options) { o.NonRegistry.CallsRoot = root })
 
-	first, err := client.Audit.Calls(t.Context(), api.AuditCallFilter{Since: base, Limit: 2})
+	first, err := client.Calls.List(t.Context(), api.CallFilter{Since: base, Limit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.Total != 3 || len(first.Calls) != 2 || first.NextCursor == "" {
 		t.Fatalf("first page = %+v", first)
 	}
-	second, err := client.Audit.Calls(t.Context(), api.AuditCallFilter{
+	second, err := client.Calls.List(t.Context(), api.CallFilter{
 		Since: base, Limit: 2, Cursor: first.NextCursor,
 	})
 	if err != nil {
@@ -105,7 +105,7 @@ func TestAuditCallsUseStableCursorAndServerSideFilters(t *testing.T) {
 		seen[row.CallID] = true
 	}
 
-	filtered, err := client.Audit.Calls(t.Context(), api.AuditCallFilter{
+	filtered, err := client.Calls.List(t.Context(), api.CallFilter{
 		Since: base, Limit: 10, Query: "PROJECTS", Client: "claude", Server: "linear",
 	})
 	if err != nil {
@@ -114,7 +114,7 @@ func TestAuditCallsUseStableCursorAndServerSideFilters(t *testing.T) {
 	if filtered.Total != 1 || len(filtered.Calls) != 1 || filtered.Calls[0].CallID != "call-alpha" {
 		t.Fatalf("filtered calls = %+v", filtered)
 	}
-	toolFiltered, err := client.Audit.Calls(t.Context(), api.AuditCallFilter{
+	toolFiltered, err := client.Calls.List(t.Context(), api.CallFilter{
 		Since: base, Limit: 10, Tool: "get_project",
 	})
 	if err != nil {
@@ -124,24 +124,24 @@ func TestAuditCallsUseStableCursorAndServerSideFilters(t *testing.T) {
 		t.Fatalf("tool-filtered calls = %+v", toolFiltered)
 	}
 
-	if status, _ := nrDo(t, env.sock, http.MethodGet, "/v1/audit/calls?cursor=not-a-cursor", nil); status != http.StatusBadRequest {
+	if status, _ := nrDo(t, env.sock, http.MethodGet, "/v1/calls?cursor=not-a-cursor", nil); status != http.StatusBadRequest {
 		t.Fatalf("invalid cursor status = %d, want %d", status, http.StatusBadRequest)
 	}
 }
 
-func TestAuditListIsMetadataOnlyAndDetailDecryptsImmediately(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "audit")
+func TestCallsListIsMetadataOnlyAndDetailDecryptsImmediately(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "calls")
 	key := []byte("0123456789abcdef0123456789abcdef")
 	keyID := seedControlAuditCall(t, root, "call-for-gui", key)
 	vault := newNRVault()
 	vault.stored[secrets.AuditEncryptionKeyRef(keyID).StorageKey()] =
 		base64.RawStdEncoding.EncodeToString(key)
 	client, env := startServer(t, func(o *Options) {
-		o.NonRegistry.AuditRoot = root
-		o.NonRegistry.AuditKeys = vault
+		o.NonRegistry.CallsRoot = root
+		o.NonRegistry.CallsKeys = vault
 	})
 
-	status, err := client.Audit.Status(t.Context())
+	status, err := client.Calls.Status(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,20 +149,20 @@ func TestAuditListIsMetadataOnlyAndDetailDecryptsImmediately(t *testing.T) {
 		t.Fatalf("status storage = %+v", status.Storage)
 	}
 
-	code, raw := nrDo(t, env.sock, http.MethodGet, "/v1/audit/calls", nil)
+	code, raw := nrDo(t, env.sock, http.MethodGet, "/v1/calls", nil)
 	if code != http.StatusOK {
 		t.Fatalf("calls status = %d: %s", code, raw)
 	}
 	if strings.Contains(string(raw), "request-value") || strings.Contains(string(raw), "result-value") {
 		t.Fatalf("metadata listing leaked decrypted payload: %s", raw)
 	}
-	var calls api.AuditCalls
+	var calls api.CallPage
 	nrData(t, raw, &calls)
 	if len(calls.Calls) != 1 || calls.Calls[0].Server != "srv" || !calls.Calls[0].Complete {
 		t.Fatalf("calls = %+v", calls)
 	}
 
-	detail, err := client.Audit.Call(t.Context(), "call-for-gui")
+	detail, err := client.Calls.Get(t.Context(), "call-for-gui")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestAuditListIsMetadataOnlyAndDetailDecryptsImmediately(t *testing.T) {
 		t.Fatalf("detail lifecycle = %+v", detail)
 	}
 
-	stats, err := client.Audit.Stats(t.Context(), time.Now().Add(-time.Hour))
+	stats, err := client.Calls.Stats(t.Context(), time.Now().Add(-time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestAuditListIsMetadataOnlyAndDetailDecryptsImmediately(t *testing.T) {
 		stats.ServerTools["srv"]["tool"] != 1 {
 		t.Fatalf("stats = %+v", stats)
 	}
-	verified, err := client.Audit.Verify(t.Context())
+	verified, err := client.Calls.Verify(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,36 +192,36 @@ func TestAuditListIsMetadataOnlyAndDetailDecryptsImmediately(t *testing.T) {
 	}
 }
 
-func TestAuditEnableCreatesKeyAndCanDisable(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "audit")
+func TestCallsEnableCreatesKeyAndCanDisable(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "calls")
 	vault := newNRVault()
 	client, _ := startServer(t, func(o *Options) {
-		o.NonRegistry.AuditRoot = root
-		o.NonRegistry.AuditKeys = vault
+		o.NonRegistry.CallsRoot = root
+		o.NonRegistry.CallsKeys = vault
 	})
-	status, err := client.Audit.Status(t.Context())
+	status, err := client.Calls.Status(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	enabled, err := client.Audit.SetEnabled(t.Context(), true, status.Generation)
+	enabled, err := client.Calls.SetEnabled(t.Context(), true, status.Generation)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !enabled.Enabled || enabled.KeyID == "" || len(vault.stored) != 2 {
 		t.Fatalf("enabled = %+v, stored keys = %d", enabled, len(vault.stored))
 	}
-	rotated, err := client.Audit.RotateKey(t.Context(), enabled.Generation)
+	rotated, err := client.Calls.RotateKey(t.Context(), enabled.Generation)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if rotated.PreviousKeyID != enabled.KeyID || rotated.KeyID == enabled.KeyID || len(vault.stored) != 3 {
 		t.Fatalf("rotated = %+v, stored keys = %d", rotated, len(vault.stored))
 	}
-	status, err = client.Audit.Status(t.Context())
+	status, err = client.Calls.Status(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	disabled, err := client.Audit.SetEnabled(t.Context(), false, status.Generation)
+	disabled, err := client.Calls.SetEnabled(t.Context(), false, status.Generation)
 	if err != nil {
 		t.Fatal(err)
 	}
