@@ -155,10 +155,8 @@ therefore the PR body. Confirmed but unapproved is not the same set, and does no
 for a different answer — two engines disagreeing is signal, the same engine twice is noise.
 
 **Per sweep:** the sweep ends at step 3's report — a complete run, not an abandoned one. The approval
-starts a branch, and that branch lands or is discarded the same day.
-
-**The bad end is a finding nobody wrote down, not one nobody fixed.** Waiting for an answer is the
-expected shape; closing the sweep with knowledge that lives only in a chat log is not.
+starts a branch, and that branch lands or is discarded the same day. Waiting for an answer is the
+expected shape; **the bad end is a finding nobody wrote down**, not one nobody fixed.
 
 **Across sweeps:** fixed is in `git log`; refuted, declined and unanswered are in `docs/modules/`. A
 ledger goes stale first.

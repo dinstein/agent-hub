@@ -104,7 +104,7 @@ gh run watch <run-id> --exit-status
 Six jobs, about four minutes: `verify` (checks tag against `VERSION` and the tap token; gates the
 rest), `cli` (darwin/linux/windows tarballs), `gui-macos` (universal DMG), `gui-windows` (amd64 and
 arm64 zips), `publish` (the Release with every artifact), `homebrew` (formula, cask and skill to the
-tap, one commit).
+tap, one commit — skipped, and saying so, when the `HOMEBREW_TAP_REPO` variable is unset).
 
 ## 7. Check what shipped
 

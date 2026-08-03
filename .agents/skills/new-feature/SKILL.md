@@ -60,13 +60,10 @@ $EDITOR "$(git rev-parse --git-dir)/pr-body.md"    # one line of what changes, t
 ## 3. The inner loop, once per subtask
 
 ```bash
-make fmt                                # after ANY import block change — go build stays silent
+make fmt                                # after ANY import block change — only make lint catches it
 make ci                                 # build + test + lint
 git add -A && git commit                # AGENTS.md's type(scope): summary convention
 ```
-
-`.golangci.yml` enables `gofmt`/`goimports` under `formatters:`, not `linters:`, so only `make lint`
-reports them, and the error names the `import (` line rather than the offending import.
 
 What `make ci` will not ask for:
 
@@ -92,9 +89,12 @@ gh pr create --draft --base main --title "<topic>: <what it changes>" \
   --body-file "$(git rev-parse --git-dir)/pr-body.md"
 
 # every subtask after: tick its box in that file, then
-git push && gh pr edit --body-file "$(git rev-parse --git-dir)/pr-body.md"
+git push origin HEAD && gh pr edit --body-file "$(git rev-parse --git-dir)/pr-body.md"
 gh pr comment --body "<why the plan changed>"      # only when it did
 ```
+
+**Name the refspec, never bare `git push`.** Under `push.default = matching` a bare push carries
+every other worktree's branch along with yours.
 
 Draft until step 4, because until then the branch cannot be landed. It cannot be opened before the
 first commit — GitHub refuses a head that does not differ from its base.
@@ -105,13 +105,9 @@ first commit — GitHub refuses a head that does not differ from its base.
 make ci-full                            # everything the CI workflow runs
 ```
 
-**`make ci` is not CI** — three gaps, all covered by `ci-full`:
-
-| Gap | Why `make ci` misses it |
-|---|---|
-| A skipped depguard proof | Without golangci-lint, `internal/depguardtest` calls `t.Skip` and `make test` counts it as success; CI greps for `--- SKIP` and fails |
-| The `gui` job | Deliberately outside `make ci`, so "the GUI is optional" does not become a prerequisite of the default build |
-| A stale `package-lock.json` | `make gui` runs `npm install` and repairs it; CI runs `npm ci` and rejects it |
+**`make ci` is not CI** — it misses a skipped depguard proof, the `gui` job, and a stale
+`package-lock.json`, all three covered by `ci-full`. AGENTS.md's *Testing and verification* section
+has the reasons.
 
 Then e2e **both ways** — one is the regression test for the other:
 
@@ -124,7 +120,7 @@ make e2e                                # this machine's environment
 suite exists to catch the day that stops being true.
 
 ```bash
-git push
+git push origin HEAD
 gh pr ready
 gh pr checks --watch                    # the same jobs main gets
 ```
@@ -138,7 +134,7 @@ never tested against.
 # in the worktree
 git fetch origin && git rebase origin/main
 make ci-landing >/tmp/landing.log 2>&1; echo $?      # 0, or read the log
-git push --force-with-lease             # the PR's head must be exactly what lands
+git push --force-with-lease origin HEAD  # the PR's head must be exactly what lands
 ```
 
 `ci-landing` drops the test cache and fails on any `(cached)` in its own log: `test/e2e` builds its
@@ -146,9 +142,9 @@ binary inside `TestMain`, which the Go cache key does not cover.
 
 **Read its exit status, not its last screenful — and redirect rather than pipe.** The target keeps
 `.make/ci.log` and arms `set -o pipefail` itself, so an outer `tee` only breaks the reading: `$?`
-then reports `tee`'s status. `${PIPESTATUS[0]}` is shell-specific — zsh spells it `$pipestatus` and
-indexes from 1, so the bash form silently evaluates to empty. A green run ends with `landing check:
-nothing came from cache, every package ran`.
+then reports `tee`'s status, and `${PIPESTATUS[0]}` evaluates to empty under zsh, which spells it
+`$pipestatus` and indexes from 1. A green run ends with `landing check: nothing came from cache,
+every package ran`.
 
 **That force-push is what closes the PR.** The rebase rewrote every commit; without it GitHub holds
 commits that will never reach `main`.
@@ -163,14 +159,12 @@ git push origin --delete <topic>
 git worktree remove ../agent-hub-<topic> && git branch -d <topic>
 ```
 
-**`OPEN` on the first read is usually the race, not the diagnosis.** GitHub marks a PR merged when it
-notices the head is an ancestor of `main`, and that happens after the push returns — a `gh pr view`
-issued immediately can win. Re-read it before concluding anything. Closing by hand is the one step
-here that cannot be undone: a closed PR is never marked merged afterwards, so the link the step
-exists to preserve is gone for good.
-
-Only once a re-read still says `OPEN` does it mean the head is not what landed. `main` is fine then;
-only the link is missing: `gh pr close <topic> --comment "landed on main as <sha>"`.
+**`OPEN` on the first read is usually the race, not the diagnosis.** GitHub marks a PR merged after
+the push returns, so a `gh pr view` issued immediately can win. Re-read before concluding anything:
+closing by hand is the one step here that cannot be undone — a closed PR is never marked merged
+afterwards, so the link the step exists to preserve is gone for good. Only once a re-read still says
+`OPEN` is the head not what landed; `main` is fine then, only the link is missing:
+`gh pr close <topic> --comment "landed on main as <sha>"`.
 
 **`--ff-only` is the enforcement, not a formality.** If it refuses, rebase again and re-run
 `ci-landing`. Never reach for a plain `git merge` — `main` is linear.
@@ -181,7 +175,7 @@ that has moved further each day.
 ## Rebasing your own branch mid-flight
 
 ```bash
-git fetch origin && git rebase origin/main && git push --force-with-lease
+git fetch origin && git rebase origin/main && git push --force-with-lease origin HEAD
 ```
 
 `main` moving under you is normal. Pull with `git pull --rebase` so an out-of-date `main` does not

@@ -93,11 +93,8 @@ Before moving anything, check it is allowed to move:
 | About to move | Check |
 |---|---|
 | A package, command, or identifier name | [docs/canonical.md](../../../docs/canonical.md) §1 — frozen identifiers do not move on a tidy night |
-| An import across a package boundary | AGENTS.md's four dependency constraints |
-| Anything in the gate chain | The order is frozen: scope → token tier, both deciding from configuration alone, both failing closed |
-| Anything on the call path | Exactly **one** execution path — direct calls and `call_tool` both go through `pipeline.Execute` |
-| Provenance for an exposed name | `RouteOf` only; splitting on `__` is forbidden |
-| A tool selector | An allow list, never a deny list; `nil` ≠ `[]`; `omitzero`, not `omitempty` |
+| An import across a package boundary | AGENTS.md's four hard constraints |
+| The gate chain, the call path, provenance for an exposed name, or a tool selector | AGENTS.md's *easiest things to get wrong* — each of those is frozen, and none of them move on a tidy night |
 
 If a refactor would be *nicer* but touches any row above, it does not happen here — write it down in
 the `docs/modules/` file and leave. A refactor that does change an invariant or a failure direction
@@ -129,9 +126,10 @@ What a human has to read for:
 
 ## 5. Land it
 
-Follow the [new-feature skill](../new-feature/SKILL.md) steps 4–5, unabbreviated. A tidy branch gets no shortcut; it is the
-branch most likely to have touched something whose test lives somewhere else. If the slice touched a
-parser reading untrusted input, this is a fuzz night too:
+Follow the [new-feature skill](../new-feature/SKILL.md) steps 4–5, unabbreviated — including the
+worktree and branch teardown. A tidy branch gets no shortcut; it is the branch most likely to have
+touched something whose test lives somewhere else. If the slice touched a parser reading untrusted
+input, this is a fuzz night too:
 
 ```bash
 make fuzz FUZZ=<target>                 # make ci runs only the seed corpora
@@ -147,13 +145,6 @@ overnight conflicts with real work and nobody remembers what it was for.
 
 **Across nights:** what was found and left alone goes in that package's `docs/modules/` file; what
 was fixed is in `git log`. A separate ledger is the thing that goes stale first.
-
-```bash
-sleep 3                                          # GitHub notices the push asynchronously
-gh pr view tidy-<slice> --json state,mergedAt    # MERGED — re-read before believing OPEN
-git push origin --delete tidy-<slice>
-git worktree remove ../agent-hub-tidy-<slice> && git branch -d tidy-<slice>
-```
 
 ## Never touch on a tidy night
 
