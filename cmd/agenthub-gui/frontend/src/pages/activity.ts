@@ -48,7 +48,25 @@ function formatTime(raw: string): string {
 
 function targetOf(call: AuditCallSummary): string {
   if (call.server || call.tool) return [call.server, call.tool].filter(Boolean).join(" / ");
+  if (call.surface === "meta" && call.exposedTool) return `agenthub / ${call.exposedTool}`;
   return call.exposedTool || "Unrouted";
+}
+
+/** methodLabel is what the client ASKED FOR, which is not always a call: a
+ *  session's initialize and tools/list are recorded too, and a row that
+ *  showed only the routed target would render them as blanks. */
+function methodLabel(call: AuditCallSummary): string {
+  return call.method || "tools/call";
+}
+
+/** serverLabel says where a call went. "agenthub" rather than "Unrouted" for
+ *  the hub's own tools: a search_tools call is not an unrouted attempt, it is
+ *  a call the hub answered itself. */
+function serverLabel(call: AuditCallSummary): string {
+  if (call.server) return call.server;
+  if (call.surface === "meta") return "agenthub";
+  if (call.method && call.method !== "tools/call") return "agenthub";
+  return "Unrouted";
 }
 
 function outcomeTone(call: AuditCallSummary): string {
@@ -131,6 +149,16 @@ function detailFacts(detail: CallDetail): HTMLElement {
     el("div", {}, [el("span", { text: "Started" }), el("strong", { text: formatTime(detail.time) })]),
     el("div", {}, [el("span", { text: "Duration" }), el("strong", { text: detail.durationMs ? `${detail.durationMs} ms` : "—" })]),
     el("div", {}, [el("span", { text: "Interface" }), el("strong", { text: detail.face || "—" })]),
+    el("div", {}, [
+      el("span", { text: "Asked for" }),
+      el("strong", { text: methodLabel(detail) }),
+    ]),
+    el("div", {}, [
+      el("span", { text: "Surface" }),
+      // Which of agenthub's own faces answered: one of the hub's own tools,
+      // a grouped listing, or a name that routed straight through.
+      el("strong", { text: detail.surface || "—" }),
+    ]),
   ]);
 }
 
@@ -530,12 +558,10 @@ export function activityPage(): Page {
               el("strong", { text: call.client || "Unknown client" }),
               el("span", { text: call.face || "gateway" }),
             ]),
-            el("strong", { class: "activity-call-server", text: call.server || "Unrouted" }),
+            el("strong", { class: "activity-call-server", text: serverLabel(call) }),
             el("div", { class: "activity-call-tool" }, [
-              el("strong", { text: call.tool || call.exposedTool || "—" }),
-              call.exposedTool && call.exposedTool !== call.tool
-                ? el("span", { class: "mono", text: call.exposedTool })
-                : null,
+              el("strong", { text: call.tool || call.exposedTool || methodLabel(call) }),
+              el("span", { class: "mono", text: methodLabel(call) }),
             ]),
             el("span", { class: `badge ${outcomeTone(call)}`, text: outcomeLabel(call) }),
             el("span", { class: "activity-duration", text: call.durationMs ? `${call.durationMs} ms` : "—" }),
@@ -566,7 +592,7 @@ export function activityPage(): Page {
       el("div", { class: "activity-toolbar" }, [clientSelect, serverSelect, toolSelect, outcomeField, rangeField]),
       el("div", { class: "activity-table-head" }, [
         el("span", { text: "Time" }), el("span", { text: "Client" }), el("span", { text: "Server" }),
-        el("span", { text: "Tool" }),
+        el("span", { text: "Tool / method" }),
         el("span", { text: "Outcome" }), el("span", { text: "Duration" }), el("span", {}),
       ]),
       body,

@@ -36,18 +36,25 @@ type AuditUsage struct {
 // CallSummary joins one call's immutable lifecycle into a list-safe,
 // metadata-only row. Payload references are deliberately not exposed.
 type CallSummary struct {
-	CallID        string    `json:"callId"`
-	Time          time.Time `json:"time"`
-	Client        string    `json:"client,omitempty"`
-	Face          string    `json:"face,omitempty"`
-	ExposedTool   string    `json:"exposedTool,omitempty"`
-	Server        string    `json:"server,omitempty"`
-	Tool          string    `json:"tool,omitempty"`
-	Outcome       string    `json:"outcome,omitempty"`
-	DurationMs    int64     `json:"durationMs,omitempty"`
-	Code          string    `json:"code,omitempty"`
-	ResultCapture string    `json:"resultCapture,omitempty"`
-	Complete      bool      `json:"complete"`
+	CallID      string    `json:"callId"`
+	Time        time.Time `json:"time"`
+	Client      string    `json:"client,omitempty"`
+	Face        string    `json:"face,omitempty"`
+	ExposedTool string    `json:"exposedTool,omitempty"`
+	// Method is what the client asked agenthub for — tools/call, tools/list,
+	// initialize, ping — and Surface which of the hub's own faces the name
+	// reached. A row carries both, so "the client called the server" and
+	// "the client asked the hub, which called the server" are distinguishable
+	// without opening the call.
+	Method        string `json:"method,omitempty"`
+	Surface       string `json:"surface,omitempty"`
+	Server        string `json:"server,omitempty"`
+	Tool          string `json:"tool,omitempty"`
+	Outcome       string `json:"outcome,omitempty"`
+	DurationMs    int64  `json:"durationMs,omitempty"`
+	Code          string `json:"code,omitempty"`
+	ResultCapture string `json:"resultCapture,omitempty"`
+	Complete      bool   `json:"complete"`
 }
 
 type CallPage struct {
@@ -77,9 +84,15 @@ type AuditEvent struct {
 	// what crossed the downstream boundary, why, which attempt it was, and
 	// how big it was. Empty on the three lifecycle events.
 	Method string `json:"method,omitempty"`
-	Cause  string `json:"cause,omitempty"`
-	Seq    int    `json:"seq,omitempty"`
-	Bytes  int    `json:"bytes,omitempty"`
+	// Surface is which of agenthub's own faces the client reached: `meta` for
+	// one of the hub's own tools, `group` for a grouped listing, `tool` for a
+	// name routed straight through. It is not derivable from the exposed
+	// name after the fact — the same name means different things under
+	// different discovery modes.
+	Surface string `json:"surface,omitempty"`
+	Cause   string `json:"cause,omitempty"`
+	Seq     int    `json:"seq,omitempty"`
+	Bytes   int    `json:"bytes,omitempty"`
 }
 
 // AuditPayload is decrypted only for one explicitly selected call. Truncated

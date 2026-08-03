@@ -62,6 +62,17 @@ func eventIntoSummary(out *api.CallSummary, e calllog.Event) {
 	if e.Kind == calllog.EventReceived {
 		out.Time, out.Client, out.Face, out.ExposedTool = e.TS, e.Client, e.Face, e.Exposed
 	}
+	if e.Method != "" {
+		out.Method = e.Method
+	}
+	// The surface is decided after `received`, so it arrives on a later
+	// record of the same call and must not be overwritten by an empty one.
+	if e.Surface != "" {
+		out.Surface = e.Surface
+	}
+	if e.Exposed != "" {
+		out.ExposedTool = e.Exposed
+	}
 	if e.Server != "" {
 		out.Server = e.Server
 	}
@@ -176,7 +187,8 @@ func auditEventView(e calllog.Event) api.AuditEvent {
 		Session: e.Session, PolicyRev: e.PolicyRev, Server: e.Server, Tool: e.Tool,
 		Outcome: e.Outcome, DurationMs: e.DurationMs, Gate: e.Gate, Rule: e.Rule,
 		Code: e.Code, Error: e.Error, ToolError: e.ToolError,
-		Method: e.Method, Cause: string(e.Cause), Seq: e.Seq, Bytes: e.Bytes}
+		Method: e.Method, Surface: e.Surface, Cause: string(e.Cause),
+		Seq: e.Seq, Bytes: e.Bytes}
 }
 
 type auditKeyCache struct {

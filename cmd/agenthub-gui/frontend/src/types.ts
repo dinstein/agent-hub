@@ -856,6 +856,13 @@ export interface AuditCallSummary {
   time: string;
   client?: string;
   face?: string;
+  /** What the client asked agenthub FOR — tools/call, tools/list, initialize,
+   *  ping — and which of the hub's own faces the name reached: "meta" for one
+   *  of agenthub's own tools, "group" for a grouped listing, "tool" for a name
+   *  routed straight through. The pair distinguishes "the client called the
+   *  server" from "the client asked the hub, which called the server". */
+  method?: string;
+  surface?: string;
   exposedTool?: string;
   server?: string;
   tool?: string;
