@@ -92,6 +92,58 @@ func eventKind(t *testing.T, events []accesslog.Event, kind accesslog.EventKind)
 	return accesslog.Event{}
 }
 
+// executedCall isolates the events of the ONE call that reached a downstream,
+// and proves every other event belongs to an attempt the gateway refused as
+// retryable-busy.
+//
+// callToolResult retries the busy error, because "downstream servers are still
+// connecting" is a legitimate answer for as long as the pool is warming up —
+// and the ledger records the refusal, correctly, as a two-event lifecycle. So
+// the number of events in the file is a function of how many attempts the
+// retry loop needed, which is a property of the machine, not of the ledger.
+// Asserting on the total made this test fail on a slow or contended runner
+// while the behaviour it exists to check was perfectly fine.
+//
+// The strictness is kept where it belongs: the executed call must have
+// exactly its three events, and an event that is neither part of it nor part
+// of a busy refusal still fails the test rather than being tolerated.
+func executedCall(t *testing.T, events []accesslog.Event) []accesslog.Event {
+	t.Helper()
+	var callID string
+	for _, e := range events {
+		if e.Kind == accesslog.EventRouted {
+			if callID != "" && e.CallID != callID {
+				t.Fatalf("two calls routed; only one was made: %+v", events)
+			}
+			callID = e.CallID
+		}
+	}
+	if callID == "" {
+		t.Fatalf("no call reached a downstream: %+v", events)
+	}
+	var executed []accesslog.Event
+	for _, e := range events {
+		if e.CallID == callID {
+			executed = append(executed, e)
+			continue
+		}
+		// Anything else must be a refused attempt: received, then finished
+		// with the busy outcome. A third kind, or a different outcome, is an
+		// unexplained record and must not pass silently.
+		if e.Kind == accesslog.EventReceived {
+			continue
+		}
+		if e.Kind != accesslog.EventFinished || e.Outcome != "busy" {
+			t.Fatalf("unexplained audit event outside the executed call: %+v", e)
+		}
+	}
+	if len(executed) != 3 {
+		t.Fatalf("executed call has %d events, want the received/routed/finished three: %+v",
+			len(executed), executed)
+	}
+	return executed
+}
+
 func TestAuditRecordsCompleteRequestRouteAndBoundedResult(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "fake")
@@ -157,10 +209,7 @@ func TestAuditLazyCallToolKeepsWrapperAndEffectiveArguments(t *testing.T) {
 	if res.IsError {
 		t.Fatal(resultText(t, res))
 	}
-	events := readAuditEvents(t, resolver)
-	if len(events) != 3 {
-		t.Fatalf("events = %d, want one three-event lifecycle: %+v", len(events), events)
-	}
+	events := executedCall(t, readAuditEvents(t, resolver))
 	routed := eventKind(t, events, accesslog.EventRouted)
 	if routed.Exposed != discovery.MetaCallTool || routed.Server != "fake" || routed.Tool != "echo" {
 		t.Fatalf("lazy route = %+v", routed)
