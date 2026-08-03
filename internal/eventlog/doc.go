@@ -29,7 +29,7 @@
 // nil check. That is what makes "the switch is off" and "the file would not
 // open" the same code path at every call site.
 //
-// # One file, two scopes
+// # One file, three scopes
 //
 // Server, gateway and daemon events share <data>/logs/events.jsonl rather
 // than being split by scope. The question an operator asks is a TIMELINE —
