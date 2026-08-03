@@ -105,7 +105,14 @@ func (a *App) newDaemonCmd() *cobra.Command {
 }
 
 // httpFlags are the MCP data plane's opt-in switches (see daemon.Config).
-// The zero value is the default assembly: nothing listens.
+//
+// The zero value no longer means "nothing listens" — it means "the stored
+// configuration decides" (`agenthub config set http.addr …`), which for an
+// installation that has never set one is still nothing. The flags remain the
+// more specific statement and REPLACE the stored set whenever any of them is
+// given, so an operator who names an address on the command line cannot be
+// let through by a confirmation somebody stored for a different one
+// (daemon.resolveHTTPFace).
 type httpFlags struct {
 	addr             string
 	allowRemote      bool
@@ -114,8 +121,8 @@ type httpFlags struct {
 
 // args renders the flags back into argv for the background fork. Only
 // non-default values are emitted, so a plain `daemon start` forks a plain
-// `daemon start --foreground` and the "no address, no listener" default
-// survives the hand-off.
+// `daemon start --foreground` and the child reads the stored configuration
+// exactly as this process would have.
 func (f httpFlags) args() []string {
 	var out []string
 	if f.addr != "" {
@@ -133,7 +140,7 @@ func (f httpFlags) args() []string {
 // bind registers the flags on cmd.
 func (f *httpFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.addr, "http-addr", "",
-		"serve MCP over Streamable HTTP on this address (default: no listener at all)")
+		"serve MCP over Streamable HTTP on this address, replacing the stored http.* configuration for this run")
 	cmd.Flags().BoolVar(&f.allowRemote, "http-allow-remote", false,
 		"confirm a non-loopback --http-addr; without it a non-loopback address is refused")
 	cmd.Flags().BoolVar(&f.insecureLoopback, "insecure-loopback", false,

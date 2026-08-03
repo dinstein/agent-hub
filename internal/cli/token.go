@@ -95,9 +95,11 @@ func (c TokenCreated) Human(w io.Writer) error {
 		"created agent token %q (tier %s, servers %s)\n\n  %s\n\n"+
 			"This is the only time the value is shown. Store it now; agenthub keeps\n"+
 			"only its HMAC and cannot print it again.\n\n"+
-			"The MCP endpoint that accepts it is opt-in and off by default. Start it\n"+
-			"with:  agenthub daemon restart --http-addr localhost:7777\n"+
-			"then point the agent at http://localhost:7777/mcp with this bearer token.\n",
+			"The MCP endpoint that accepts it is opt-in and off by default. Turn it\n"+
+			"on with:  agenthub config set http.addr localhost:7777\n"+
+			"then restart the hub (quit and reopen AgentHub, or 'agenthub daemon\n"+
+			"restart --headless') and point the agent at http://localhost:7777/mcp\n"+
+			"with this bearer token.\n",
 		c.Token.Name, c.Token.Tier, serversText(c.Token.Servers), c.Value)
 	return err
 }

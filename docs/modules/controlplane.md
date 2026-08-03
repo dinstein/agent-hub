@@ -414,6 +414,17 @@ consequence belongs to this operation, not to its caller. That is what "operatio
 governance key table (`GovernanceKey` / `GovernanceKeys()`) likewise lives only here: get/set/ls semantics have
 exactly one home.
 
+The table holds everything global that is **not** a scope decision — presentation (the discovery default, the result
+budgets), the audit policy, and, since the desktop application became what starts a hub, the daemon's own HTTP
+listener (`http.addr`, `http.allowRemote`, `http.insecureLoopback`). That last one arrived because an application
+types no flags: an opt-in that existed only as argv could no longer be given at all, so the choice was to store it or
+to lose the HTTP face entirely. **Storing an answer does not lower the bar for it** — a non-loopback address still
+needs its own confirmation, the credential-less endpoint still needs `insecureLoopback`, and the address is validated
+as a bindable `host:port` at write time, where the person who typed it is still watching. The command line remains
+the more specific statement and **replaces the stored set as a whole** whenever any of the three flags is given
+(`daemon.resolveHTTPFace`): merging them would let a confirmation stored months ago for one address authorise a
+different one named on the command line today.
+
 ### Invariants and failure directions
 
 **Every operation is three steps, in an order that cannot change**: validate the arguments first (rejection happens

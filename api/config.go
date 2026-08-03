@@ -15,6 +15,11 @@ const (
 	// GovernanceKindBytes is a byte budget, optionally suffixed "!" or
 	// " forced" to make it merge tighten-only.
 	GovernanceKindBytes = "bytes"
+	// GovernanceKindString is free text the daemon validates (today the HTTP
+	// data plane's host:port). A frontend renders a text field and sends the
+	// value verbatim; it must not pre-validate, because the daemon's check is
+	// the authoritative one and a second one would eventually disagree.
+	GovernanceKindString = "string"
 )
 
 // ResultBudgetPrefix introduces the dynamic key family

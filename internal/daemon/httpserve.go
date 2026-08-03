@@ -59,6 +59,44 @@ func (e *httpEndpoint) Close() {
 	})
 }
 
+// resolveHTTPFace answers where the data plane's opt-in comes from: the
+// command line, or the stored configuration.
+//
+// ONE SOURCE AT A TIME, never a merge. An address and its two confirmations
+// are a set: "expose this endpoint, to these callers, with this much
+// authentication". Taking the address from one place and a confirmation from
+// the other assembles a listener nobody asked for — the operator who types
+// `--http-addr 0.0.0.0:9999` expecting to be refused would instead be let
+// through by an allowRemote somebody stored months ago for a different
+// address.
+//
+// The command line wins whenever it says anything at all, because it is the
+// more specific statement: it applies to this run only, and the person typing
+// it is present. Otherwise the registry answers, which is the ordinary case
+// now that the desktop application starts the hub and passes no flags.
+func resolveHTTPFace(cfg Config, snap *registry.Snapshot, log *slog.Logger) registry.HTTPFace {
+	if strings.TrimSpace(cfg.HTTPAddr) != "" || cfg.HTTPAllowRemote || cfg.HTTPInsecureLoopback {
+		return registry.HTTPFace{
+			Addr:             cfg.HTTPAddr,
+			AllowRemote:      cfg.HTTPAllowRemote,
+			InsecureLoopback: cfg.HTTPInsecureLoopback,
+		}
+	}
+	if snap == nil {
+		return registry.HTTPFace{}
+	}
+	face := snap.Governance.V.ResolvedHTTP()
+	if strings.TrimSpace(face.Addr) != "" {
+		// Said out loud on every start. A listener that was configured once
+		// and then serves for months is otherwise invisible in the log, and
+		// "since when has this been open" is the first question asked about
+		// it.
+		log.Info("MCP data plane address comes from the stored configuration",
+			"addr", face.Addr, "allowRemote", face.AllowRemote, "insecureLoopback", face.InsecureLoopback)
+	}
+	return face
+}
+
 // startHTTPPlane binds and serves the MCP data plane described by cfg.
 //
 // Returns (nil, nil) when no address is configured — the default, and the
@@ -67,15 +105,17 @@ func (e *httpEndpoint) Close() {
 // fails the daemon rather than degrading it into a daemon without the data
 // plane its operator asked for.
 func startHTTPPlane(ctx context.Context, cfg Config, deps httpPlaneDeps, tokens *httpbridge.Store, snap *registry.Snapshot, log *slog.Logger) (*httpEndpoint, error) {
-	addr := strings.TrimSpace(cfg.HTTPAddr)
+	face := resolveHTTPFace(cfg, snap, log)
+	addr := strings.TrimSpace(face.Addr)
 	if addr == "" {
 		return nil, nil
 	}
-	if !httpbridge.AddrIsLoopback(addr) && !cfg.HTTPAllowRemote {
+	if !httpbridge.AddrIsLoopback(addr) && !face.AllowRemote {
 		return nil, fmt.Errorf(
 			"daemon: refusing to serve MCP on %s: it is not a loopback address. "+
 				"Exposing tool execution beyond this machine needs an explicit "+
-				"--http-allow-remote (and a token: --insecure-loopback never covers it)", addr)
+				"confirmation — --http-allow-remote, or `agenthub config set http.allowRemote true` "+
+				"— and a token (--insecure-loopback never covers it)", addr)
 	}
 
 	active := 0
@@ -98,7 +138,7 @@ func startHTTPPlane(ctx context.Context, cfg Config, deps httpPlaneDeps, tokens 
 		HasAdminToken:     cfg.HTTPAdminToken != "",
 		ActiveAgentTokens: active,
 		RegisteredClients: clients,
-		InsecureLoopback:  cfg.HTTPInsecureLoopback,
+		InsecureLoopback:  face.InsecureLoopback,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("daemon: %w", err)

@@ -3,6 +3,7 @@ package confops
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 
@@ -15,10 +16,17 @@ import (
 // (`config set discovery_mode lazy`).
 //
 // Nothing here decides what a client may reach: that is settled by
-// servers.json and profiles.json. What is left describes PRESENTATION — the
-// default discovery mode and the result budgets — and the reason get/set/ls
-// must all read the SAME table is unchanged: a key whose listing and whose
-// setter disagree is a setting nobody can trust.
+// servers.json and profiles.json. What is left is everything global that is
+// NOT a scope decision — presentation (the default discovery mode, the result
+// budgets), the audit policy, and the daemon's own HTTP listener. The last of
+// those arrived when the desktop application became the thing that starts a
+// hub: an application does not type flags, so an opt-in that only existed as
+// argv could no longer be given at all. Storing it does not lower any bar —
+// a non-loopback bind still needs its explicit confirmation, and the
+// credential-less endpoint still needs its own.
+//
+// The reason get/set/ls must all read the SAME table is unchanged: a key
+// whose listing and whose setter disagree is a setting nobody can trust.
 
 // GovernanceKey describes one settable governance field. Get and Set are the
 // single place a key's semantics live.
@@ -145,6 +153,82 @@ var governanceKeys = []GovernanceKey{
 			return nil
 		},
 	},
+	{
+		Name: "http.addr", Aliases: []string{"http_addr"}, Kind: "string",
+		Doc: "serve MCP over Streamable HTTP on this host:port; unset means no listener at all",
+		get: func(g registry.GovernanceDoc) string { return g.ResolvedHTTP().Addr },
+		set: func(g *registry.GovernanceDoc, raw string) error {
+			if raw == "" || raw == "-" {
+				httpForWrite(g).Addr = ""
+				return nil
+			}
+			if err := validateHostPort(raw); err != nil {
+				return err
+			}
+			httpForWrite(g).Addr = raw
+			return nil
+		},
+	},
+	{
+		Name: "http.allowRemote", Aliases: []string{"http_allow_remote"}, Kind: "bool",
+		Doc: "confirm a non-loopback http.addr; without it a non-loopback address refuses to serve",
+		get: func(g registry.GovernanceDoc) string { return strconv.FormatBool(g.ResolvedHTTP().AllowRemote) },
+		set: func(g *registry.GovernanceDoc, raw string) error {
+			v, err := parseBool("http.allowRemote", raw)
+			if err != nil {
+				return err
+			}
+			httpForWrite(g).AllowRemote = v
+			return nil
+		},
+	},
+	{
+		Name: "http.insecureLoopback", Aliases: []string{"http_insecure_loopback"}, Kind: "bool",
+		Doc: "accept unauthenticated loopback callers on http.addr; never covers a non-loopback bind",
+		get: func(g registry.GovernanceDoc) string {
+			return strconv.FormatBool(g.ResolvedHTTP().InsecureLoopback)
+		},
+		set: func(g *registry.GovernanceDoc, raw string) error {
+			v, err := parseBool("http.insecureLoopback", raw)
+			if err != nil {
+				return err
+			}
+			httpForWrite(g).InsecureLoopback = v
+			return nil
+		},
+	},
+}
+
+func httpForWrite(g *registry.GovernanceDoc) *registry.HTTPFace {
+	if g.HTTP == nil {
+		g.HTTP = &registry.Doc[registry.HTTPFace]{}
+	}
+	return &g.HTTP.V
+}
+
+// validateHostPort refuses anything that is not a bindable "host:port".
+//
+// It is a shape check, not a reachability one: the daemon will refuse a
+// non-loopback address without its confirmation, and will fail to bind an
+// address that is not this machine's. What this catches is the typo that
+// would otherwise be discovered at the next start of the hub — by which time
+// the person who wrote it is not watching.
+func validateHostPort(raw string) error {
+	host, port, err := net.SplitHostPort(raw)
+	if err != nil {
+		return usagef("http.addr expects host:port (e.g. localhost:7777), got %q", raw)
+	}
+	if port == "" {
+		return usagef("http.addr needs a port, got %q", raw)
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return usagef("http.addr port must be 1-65535, got %q", port)
+	}
+	// An empty host is legal and means every interface — which is exactly the
+	// case that needs the confirmation, so it is accepted here and decided
+	// there rather than being silently rewritten to loopback.
+	_ = host
+	return nil
 }
 
 func auditForWrite(g *registry.GovernanceDoc) *registry.AuditPolicy {

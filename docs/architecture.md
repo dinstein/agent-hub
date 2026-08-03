@@ -78,9 +78,13 @@ write, and a cross-process inspect-prune-write lock around the access ledger's h
 These aren't belt-and-braces; they're concurrency correctness dependencies.
 
 **The HTTP data plane doesn't exist by default.** The MCP exposure surface in `internal/httpbridge` is
-enabled explicitly by `agenthub daemon start --http-addr <host:port>`; **no address means no
-listener** (not "there's a default port"). A non-loopback address additionally requires
-`--http-allow-remote`, or the daemon **fails to start** rather than quietly falling back to loopback —
+enabled explicitly, by `agenthub config set http.addr <host:port>` or by a `--http-addr` on a start
+that types flags; **no address means no listener** (not "there's a default port"). The stored form
+exists because the desktop application is what starts a hub and an application types no flags: an
+opt-in that lived only in argv could not be given at all. It is the same opt-in written down rather
+than repeated, and a command line that names one still replaces the stored set as a whole. A
+non-loopback address additionally requires `http.allowRemote` / `--http-allow-remote`, or the daemon
+**fails to start** rather than quietly falling back to loopback —
 an exposure surface the configuration claims must either materialize or raise an error. The bind
 itself must also pass `AuthorizeBind`: a listener with no admin token, no active agent token, and no
 registered clients is refused.

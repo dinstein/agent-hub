@@ -560,6 +560,47 @@ type GovernanceDoc struct {
 	// failure blocks the call; it never changes which server or tool is in
 	// scope. The payload key lives in the secret vault, never this document.
 	Audit *Doc[AuditPolicy] `json:"audit,omitempty"`
+	// HTTP is the MCP data plane's stored opt-in: the address the daemon
+	// serves Streamable HTTP on, and the two confirmations that address
+	// needs. Absent — the default — means no listener at all.
+	//
+	// It is stored rather than only passed on a command line because the
+	// desktop application is now what starts a hub, and an application does
+	// not type flags. The opt-in it replaces had to be repeated on every
+	// start, which is a weaker record than a file the operator can read: the
+	// alternative to writing it down is not "confirm it each time", it is
+	// "the HTTP face cannot be turned on at all".
+	//
+	// It is not a scope decision — nothing here says what a client may reach
+	// — and the guards that make a bind safe are unchanged: a non-loopback
+	// address still needs AllowRemote, and the credential-less endpoint still
+	// needs an explicit InsecureLoopback. Storing an answer does not lower
+	// the bar for it.
+	HTTP *Doc[HTTPFace] `json:"http,omitempty"`
+}
+
+// HTTPFace is the MCP data plane's listener, as configured.
+type HTTPFace struct {
+	// Addr is "host:port". EMPTY MEANS NO LISTENER AT ALL, never a default
+	// port: binding a network socket because nobody said otherwise is a
+	// decision only an operator may make.
+	Addr string `json:"addr,omitempty"`
+	// AllowRemote is the explicit confirmation a non-loopback Addr requires.
+	// Without it a non-loopback address fails the daemon rather than
+	// silently downgrading to loopback.
+	AllowRemote bool `json:"allowRemote,omitempty"`
+	// InsecureLoopback accepts unauthenticated loopback callers. It never
+	// covers a non-loopback bind.
+	InsecureLoopback bool `json:"insecureLoopback,omitempty"`
+}
+
+// ResolvedHTTP returns the stored data-plane opt-in, or the zero value — no
+// listener — when there is none.
+func (g GovernanceDoc) ResolvedHTTP() HTTPFace {
+	if g.HTTP == nil {
+		return HTTPFace{}
+	}
+	return g.HTTP.V
 }
 
 // IntentVariantsEnabled resolves the tri-state IntentVariants switch:
