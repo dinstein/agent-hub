@@ -9,12 +9,12 @@
 //
 // INFORMATION ARCHITECTURE (docs/modules/gui.md / 2.2)
 //
-//   - Rows are grouped by "does this need you", not alphabetically. Needs
-//     attention / Active / Disabled, empty buckets not rendered at all, the
-//     disabled bucket collapsed by default and its collapse state remembered.
-//     Alphabetical order is only useful to someone who already knows which
-//     name they are looking for; the operator opening this window usually
-//     does not, which is why they opened it.
+//   - Rows are grouped by CONFIGURATION — Enabled and Disabled — and ordered
+//     by id inside each. Both sections are always on the page, empty or not,
+//     with a count beside the heading; the disabled one is collapsed by
+//     default and its collapse state is remembered. See isDisabled() for why
+//     grouping stopped following state, and sectionPlaceholder() for why an
+//     empty group stays.
 //   - The status cell is an ACTION where there is one. A "needs-auth" server
 //     does not display the words "needs auth" next to a menu the user then
 //     has to go and find — the status position becomes the button.
@@ -280,6 +280,40 @@ const SECTIONS = {
 } as const;
 
 type SectionName = keyof typeof SECTIONS;
+
+interface SectionHost {
+  node: HTMLDetailsElement;
+  body: HTMLElement;
+  count: HTMLElement;
+  placeholder: HTMLElement;
+}
+
+/**
+ * What an empty group says instead of disappearing.
+ *
+ * BOTH SECTIONS ARE ALWAYS ON THE PAGE. Hiding the empty one made the page's
+ * own structure depend on its contents: a first-run window showed no Enabled
+ * and no Disabled heading at all, so nothing on screen said that "enabled" and
+ * "disabled" are what a server is sorted by here, and switching the last
+ * server of a group off made a heading vanish rather than a row move. The
+ * count beside a permanent heading answers "none" perfectly well, and it
+ * answers it in the same place every time.
+ *
+ * The two reasons a group can be empty are not the same fact, so they do not
+ * get the same sentence: `filtered` means the rows exist and this view is
+ * narrowed — the one case where "none" without explanation would read as
+ * "they are gone".
+ */
+function sectionPlaceholder(name: SectionName, filtered: boolean): string {
+  if (filtered) {
+    return name === "enabled"
+      ? "No enabled server matches this filter."
+      : "No disabled server matches this filter.";
+  }
+  return name === "enabled"
+    ? "No servers are enabled. An enabled server is one agenthub offers to your clients."
+    : "No servers are disabled. A disabled server keeps its definition but is never connected.";
+}
 
 function sectionFolded(name: SectionName): boolean {
   try {
@@ -832,7 +866,7 @@ export function serversPage(): Page {
   const rowNodes = new Map<string, { node: HTMLElement; sig: string }>();
   let chipsHost: HTMLElement | null = null;
   let noticeHost: HTMLElement | null = null;
-  const sectionHosts = new Map<SectionName, { node: HTMLDetailsElement; body: HTMLElement; count: HTMLElement }>();
+  const sectionHosts = new Map<SectionName, SectionHost>();
   let chipsSignature = "";
   let noticeSignature = "";
 
@@ -2208,7 +2242,7 @@ export function serversPage(): Page {
    *  Built once because <details> carries state the user set: rebuilding the
    *  element on every probe result would close a section they had just opened,
    *  and the stored preference cannot distinguish that from a choice. */
-  function buildSection(name: SectionName): { node: HTMLDetailsElement; body: HTMLElement; count: HTMLElement } {
+  function buildSection(name: SectionName): SectionHost {
     const details = el("details", { class: "bucket" }) as HTMLDetailsElement;
     details.open = !sectionFolded(name);
     // Setting `open` above queues a toggle event of its own; ignore that one
@@ -2225,8 +2259,12 @@ export function serversPage(): Page {
     if (!details.open) settled = true;
     const count = el("span", { class: "bucket-count", text: "0" });
     const body = el("div", { class: "bucket-body ledger" });
+    // Built with the section and reused, never rebuilt: it is what the body
+    // holds while the group is empty, and a node replaced on every repaint
+    // would flicker underneath a fleet that is still settling.
+    const placeholder = el("p", { class: "bucket-empty meta" });
     details.append(el("summary", {}, [el("span", { text: SECTIONS[name].title }), count]), body);
-    return { node: details, body, count };
+    return { node: details, body, count, placeholder };
   }
 
   /**
@@ -2434,16 +2472,26 @@ export function serversPage(): Page {
       if (!present.has(id)) rowNodes.delete(id);
     }
 
-    reconcile(enabledHost.body, inService.map(rowFor));
-    reconcile(disabledHost.body, switchedOff.map(rowFor));
-    enabledHost.count.textContent = String(inService.length);
-    disabledHost.count.textContent = String(switchedOff.length);
+    // BOTH GROUPS ARE ALWAYS RENDERED, empty or not — see
+    // sectionPlaceholder(). An empty one shows its count and one sentence
+    // saying which of the two reasons it is empty for.
+    const anyEnabled = servers.some((s) => !isDisabled(s));
+    const anyDisabled = servers.some(isDisabled);
+    fill(enabledHost, "enabled", inService, anyEnabled);
+    fill(disabledHost, "disabled", switchedOff, anyDisabled);
+  }
 
-    // An empty group is not RENDERED, but its host survives: hiding is what
-    // keeps a section's open/closed state across a repaint that momentarily
-    // has nothing to put in it.
-    enabledHost.node.hidden = inService.length === 0;
-    disabledHost.node.hidden = switchedOff.length === 0;
+  /** Puts a group's rows in its body, or the placeholder when it has none.
+   *  `existsUnfiltered` separates "there are none" from "this view hides
+   *  them", which are different sentences to the reader. */
+  function fill(host: SectionHost, name: SectionName, rows: Server[], existsUnfiltered: boolean): void {
+    host.count.textContent = String(rows.length);
+    if (rows.length > 0) {
+      reconcile(host.body, rows.map(rowFor));
+      return;
+    }
+    host.placeholder.textContent = sectionPlaceholder(name, existsUnfiltered);
+    reconcile(host.body, [host.placeholder]);
   }
 
   async function draw(

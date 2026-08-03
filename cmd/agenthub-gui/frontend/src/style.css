@@ -2917,6 +2917,15 @@ pre.raw-text {
   border-top: 1px solid var(--line);
 }
 
+/* The line an always-present group shows when it holds nothing. `.bucket-body`
+ * deliberately carries no padding of its own — the rows bring theirs — so the
+ * placeholder brings its own rather than giving every row a margin it does not
+ * want. */
+.bucket-empty {
+  margin: 0;
+  padding: 12px 14px;
+}
+
 /* --- one server row ------------------------------------------------------- */
 
 
