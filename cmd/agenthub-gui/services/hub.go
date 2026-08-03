@@ -31,10 +31,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/dinstein/agent-hub/api"
@@ -103,6 +101,15 @@ type Status struct {
 	Pid       int    `json:"pid"`
 	// Generation is the registry generation from the last successful ping.
 	Generation uint64 `json:"generation"`
+	// Owned reports that THIS application is running the hub and will stop it
+	// on the way out.
+	Owned bool `json:"owned"`
+	// Guest reports the opposite case worth naming: a hub that belongs to
+	// another AgentHub window. Everything on the page works, but quitting
+	// here leaves it running, and a user who expected the hub to stop with
+	// the window has to be able to see why it did not. A headless hub is
+	// neither owned nor guest — it belongs to an operator.
+	Guest bool `json:"guest"`
 	// Error is the last connection failure message ("" when connected). It
 	// is a message for humans; frontends must not parse it.
 	Error string `json:"error,omitempty"`
@@ -115,15 +122,35 @@ type Status struct {
 var ErrOffline = errors.New("agenthub daemon is not reachable")
 
 // dialer abstracts client construction so tests can inject a fake daemon.
-// The two production implementations are api.DialOrStart (start allowed)
-// and api.Default + Ping (dial only).
 type dialer interface {
 	// dial connects without starting anything.
 	dial(ctx context.Context) (*api.Client, error)
-	// dialOrStart connects, starting the daemon if necessary. The bool
-	// reports whether THIS call started it — see api.DialOrStartSpawned.
-	dialOrStart(ctx context.Context) (*api.Client, bool, error)
+	// supervise starts a hub as a child of THIS process and returns the
+	// handle that owns it (api.StartSupervised).
+	supervise(ctx context.Context) (hubProcess, error)
 }
+
+// hubProcess is the running hub this application is responsible for. It is
+// api.Supervised, behind an interface so the Hub's supervision logic —
+// restart, backoff, shutdown — can be tested without spawning processes.
+type hubProcess interface {
+	// Control is the connection to the hub, live from the moment the process
+	// is returned.
+	Control() *api.Client
+	// Exited closes when the hub's process ends, for any reason.
+	Exited() <-chan struct{}
+	// Stop asks it to drain and go, and waits.
+	Stop(ctx context.Context) error
+	// Pid identifies the process, from its handle rather than from a file.
+	Pid() int
+}
+
+// supervisedProcess adapts api.Supervised to hubProcess. The only difference
+// is Control: api exposes the client as a field, and a field cannot satisfy
+// an interface.
+type supervisedProcess struct{ *api.Supervised }
+
+func (p supervisedProcess) Control() *api.Client { return p.Client }
 
 // Hub is the bound service body: every method the frontend can call, plus
 // the SSE bridge. The Wails service type embeds it (service_wails.go), so
@@ -162,10 +189,22 @@ type Hub struct {
 	mu     sync.Mutex
 	client *api.Client
 	status Status
-	// spawned records that OUR startup connect launched the daemon, which is
-	// what licenses stop to shut it down again. A daemon we merely found
-	// belongs to whoever started it.
-	spawned bool
+	// proc is the hub this application is running, and holding it IS the
+	// ownership claim: a hub we started is one we stop on the way out, and a
+	// hub we merely found — a headless one, or another window's — leaves this
+	// nil and is never signalled. The previous claim was a bool set from "did
+	// my dial start it", which outlived the daemon it described.
+	proc hubProcess
+	// stopping suppresses the supervisor's restart while the application is
+	// on its way out, so a hub we just asked to stop is not immediately
+	// started again.
+	stopping bool
+	// restarts counts consecutive failed supervision attempts, for the
+	// backoff. Reset by a hub that ran long enough to count as healthy.
+	restarts int
+	// backoff overrides the first restart wait (0 = restartBackoff). Tests
+	// shrink it; nothing in production sets it.
+	backoff time.Duration
 	// pumpCancel stops the running SSE bridge, if any.
 	pumpCancel context.CancelFunc
 	pumpDone   chan struct{}
@@ -188,8 +227,12 @@ func (realDialer) dial(ctx context.Context) (*api.Client, error) {
 	return c, nil
 }
 
-func (realDialer) dialOrStart(ctx context.Context) (*api.Client, bool, error) {
-	return api.DialOrStartSpawned(ctx, api.StartOptions{})
+func (realDialer) supervise(ctx context.Context) (hubProcess, error) {
+	s, err := api.StartSupervised(ctx, api.StartOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return supervisedProcess{s}, nil
 }
 
 // NewHub returns a Hub that talks to the platform-default control socket.
@@ -224,31 +267,29 @@ func (h *Hub) start(ctx context.Context) {
 	}()
 }
 
-// stop tears down the bridge, releases the client, and shuts the daemon down
-// again if this process is the one that started it. It is idempotent.
+// stop tears down the bridge, releases the client, and stops the hub this
+// application is running. It is idempotent.
 //
-// The ownership test is what keeps this safe. A daemon we spawned exists only
-// because the GUI wanted one, so leaving it behind on exit strands a process
-// the user never asked for. A daemon that was already running belongs to
-// whoever started it — a terminal, a login item, another client mid-session —
-// and taking it down would end their work to tidy up after ours.
+// The ownership test is what keeps this safe, and it is now a HANDLE rather
+// than a remembered bool: h.proc is non-nil exactly when this process started
+// the hub it is talking to. A hub we merely found — a headless one an operator
+// started, or one belonging to another window — leaves it nil and is never
+// signalled, because taking it down would end somebody else's work to tidy up
+// after ours.
 func (h *Hub) stop() {
 	h.mu.Lock()
 	cancel, done := h.pumpCancel, h.pumpDone
 	h.pumpCancel, h.pumpDone = nil, nil
 	c := h.client
 	h.client = nil
-	pid := h.status.Pid
-	ours := h.spawned
-	h.spawned = false
+	proc := h.proc
+	h.proc = nil
+	// Set before the stop below, so the supervisor watching this very process
+	// sees a deliberate shutdown rather than a hub that fell over and starts
+	// it again on the way out.
+	h.stopping = true
 	h.status = Status{Socket: h.status.Socket}
 	h.mu.Unlock()
-
-	defer func() {
-		if ours {
-			stopDaemon(pid)
-		}
-	}()
 
 	if cancel != nil {
 		cancel()
@@ -257,7 +298,20 @@ func (h *Hub) stop() {
 	if c != nil {
 		c.Close()
 	}
+	if proc != nil {
+		// Bounded: the application is already tearing down and there is no
+		// surface left to report on, but an unbounded wait would hang the
+		// quit on a hub that is wedged rather than draining.
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownWait)
+		defer cancel()
+		_ = proc.Stop(ctx)
+	}
 }
+
+// shutdownWait bounds how long quitting waits for the hub to drain. It is
+// api's own stop grace plus a moment: shorter, and the application would give
+// up on a drain that was about to finish.
+const shutdownWait = 10 * time.Second
 
 // Connect forces a connection attempt, starting the daemon if necessary. It
 // backs the "start daemon / retry" button; every other method only dials.
@@ -286,34 +340,18 @@ func (h *Hub) connect(ctx context.Context, allowStart bool) (*api.Client, error)
 	}
 	h.mu.Unlock()
 
-	var (
-		c   *api.Client
-		err error
-	)
-	// Every connect WRITES the ownership claim, it never merely raises it.
-	// dialOrStart answers "did this call start the daemon" both ways, and
-	// only the true half used to be recorded — so a false, which is
-	// dialOrStart saying "I found one already running", was discarded and
-	// whatever the claim happened to hold survived. Combined with the
-	// clearing in dropClient below, h.spawned now describes the daemon this
-	// Hub is talking to RIGHT NOW rather than one it once started.
-	if allowStart {
-		var spawned bool
-		c, spawned, err = h.dialer.dialOrStart(ctx)
+	// A dial always comes first, even when starting is allowed. It is what
+	// separates the two hubs this application must never confuse: one it may
+	// stop, and one it may only use. A headless hub an operator started, or
+	// one belonging to another AgentHub window, answers here and is ADOPTED AS
+	// A GUEST — everything works, nothing is ever signalled — while starting a
+	// second hub over it would only fail on the bound socket anyway.
+	c, err := h.dialer.dial(ctx)
+	var proc hubProcess
+	if err != nil && allowStart {
+		proc, err = h.dialer.supervise(ctx)
 		if err == nil {
-			h.mu.Lock()
-			h.spawned = spawned
-			h.mu.Unlock()
-		}
-	} else {
-		c, err = h.dialer.dial(ctx)
-		if err == nil {
-			// dial only ever FINDS a daemon. Reaching here means the
-			// previous client was dropped, so anything answering now
-			// started without us.
-			h.mu.Lock()
-			h.spawned = false
-			h.mu.Unlock()
+			c = proc.Control()
 		}
 	}
 	if err != nil {
@@ -328,6 +366,8 @@ func (h *Hub) connect(ctx context.Context, allowStart bool) (*api.Client, error)
 	cancel()
 	if perr == nil {
 		st.Version, st.Pid, st.Generation = hello.Version, hello.Pid, hello.Generation
+		st.Owned = proc != nil
+		st.Guest = proc == nil && hello.Owner != 0
 	}
 
 	h.mu.Lock()
@@ -335,12 +375,24 @@ func (h *Hub) connect(ctx context.Context, allowStart bool) (*api.Client, error)
 		other := h.client
 		h.mu.Unlock()
 		c.Close()
+		if proc != nil {
+			// We started a hub the winner of the race is not using. Nothing
+			// else will ever hold this handle, so it stops here rather than
+			// becoming the orphan the whole design exists to prevent.
+			sctx, scancel := context.WithTimeout(context.Background(), shutdownWait)
+			defer scancel()
+			_ = proc.Stop(sctx)
+		}
 		return other, nil
 	}
 	h.client = c
 	h.status = st
+	h.proc = proc
 	h.mu.Unlock()
 
+	if proc != nil {
+		h.watchProcess(proc)
+	}
 	h.emit(EventDaemon, st)
 	h.startPump()
 	return c, nil
@@ -393,13 +445,12 @@ func (h *Hub) dropClient(err error) {
 	h.mu.Lock()
 	c := h.client
 	h.client = nil
-	// The ownership claim dies with the client that carried it. It named a
-	// daemon reached over THIS connection, and a transport-level failure
-	// means that daemon is gone or unreachable; leaving the claim standing
-	// let the next connect — a plain dial, which cannot spawn — inherit it
-	// and point it at somebody else's daemon, which the GUI then SIGTERMed
-	// on window close.
-	h.spawned = false
+	// The ownership handle is NOT cleared here, and that is the difference
+	// from the bool it replaced. A transport-level failure says the
+	// connection is gone, not that the process is: a hub that is briefly
+	// unreachable is still ours to stop and still ours to restart. What
+	// clears it is the process actually exiting, which the supervisor sees
+	// directly (watchProcess) — the one event that really does end ownership.
 	h.status = Status{Socket: h.status.Socket, Error: err.Error()}
 	cancel, done := h.pumpCancel, h.pumpDone
 	h.pumpCancel, h.pumpDone = nil, nil
@@ -414,6 +465,98 @@ func (h *Hub) dropClient(err error) {
 		c.Close()
 	}
 	h.emit(EventDaemon, st)
+}
+
+// Supervision: keeping the hub up for as long as the application is up.
+//
+// The application is now the only thing that starts a hub, which makes it the
+// only thing that can start one AGAIN. Before, a daemon that fell over left
+// the GUI offline until the user pressed a button — acceptable when a daemon
+// was an optional extra that a terminal could also start, and not acceptable
+// now that closing this window is the only other way to get one back.
+//
+// It restarts on a backoff and gives up after restartLimit consecutive
+// failures, rather than retrying forever. A hub that cannot start does not
+// start on the fourth attempt either, and a loop that keeps trying spawns a
+// process per interval, writes a log line per interval, and buries the first
+// failure — the one that says why — under thousands of identical ones. Giving
+// up leaves the offline status and its error on screen, which is the surface
+// the user needs; Connect retries on demand.
+const (
+	// restartBackoff is the first wait; it doubles per consecutive failure.
+	restartBackoff = time.Second
+	// restartLimit is how many consecutive attempts are made.
+	restartLimit = 5
+	// healthyRun is how long a hub must survive for its run to count as
+	// healthy, resetting the backoff. Without it, a hub that dies once a day
+	// would eventually exhaust a counter that nothing ever cleared.
+	healthyRun = time.Minute
+)
+
+// watchProcess follows one supervised hub and reacts to its death.
+func (h *Hub) watchProcess(proc hubProcess) {
+	go func() {
+		started := time.Now()
+		<-proc.Exited()
+
+		h.mu.Lock()
+		// Not ours any more, whatever happens next: this handle names a
+		// process that has exited.
+		if h.proc == proc {
+			h.proc = nil
+		}
+		stopping := h.stopping
+		if time.Since(started) >= healthyRun {
+			h.restarts = 0
+		}
+		h.mu.Unlock()
+		if stopping {
+			return // a deliberate shutdown, not a fall
+		}
+
+		h.dropClient(fmt.Errorf("the hub stopped unexpectedly"))
+		h.restartHub()
+	}()
+}
+
+// restartHub brings the hub back after an unexpected exit, on a doubling
+// backoff, and stops trying after restartLimit consecutive failures.
+func (h *Hub) restartHub() {
+	for {
+		h.mu.Lock()
+		if h.stopping || h.restarts >= restartLimit {
+			h.mu.Unlock()
+			return
+		}
+		attempt := h.restarts
+		h.restarts++
+		base := h.backoff
+		h.mu.Unlock()
+		if base <= 0 {
+			base = restartBackoff
+		}
+
+		wait := base << attempt
+		timer := time.NewTimer(wait)
+		<-timer.C
+		timer.Stop()
+
+		h.mu.Lock()
+		stopping := h.stopping
+		h.mu.Unlock()
+		if stopping {
+			return
+		}
+		// connect installs the new process and its watch, so a hub that comes
+		// back and then falls over again is supervised exactly as the first
+		// one was.
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownWait)
+		_, err := h.connect(ctx, true)
+		cancel()
+		if err == nil {
+			return
+		}
+	}
 }
 
 func (h *Hub) setStatus(st Status) {
@@ -645,24 +788,9 @@ func MarshalError(err error) []byte {
 	return b
 }
 
-// stopDaemon asks the daemon we started to shut down, by SIGTERM to the pid
-// its own ping reported. That signal is the daemon's graceful path — stop
-// accepting, drain in-flight work, remove daemon.json — the same one
-// `agenthub daemon stop` uses.
-//
-// Every failure is silent and non-fatal. This runs while the application is
-// already tearing down, so there is no surface left to report on, and the
-// worst case is the pre-existing behaviour: a daemon outliving the GUI. It
-// is deliberately not escalated to SIGKILL — a daemon that needs longer to
-// drain is finishing work (a tool call in flight, a token write), and killing
-// it to speed up our own exit would be the wrong trade.
-func stopDaemon(pid int) {
-	if pid <= 0 {
-		return
-	}
-	p, err := os.FindProcess(pid)
-	if err != nil {
-		return
-	}
-	_ = p.Signal(syscall.SIGTERM)
-}
+// Stopping the hub used to live here: a SIGTERM aimed at the pid a ping had
+// reported. It is gone because the application no longer guesses at a
+// process — it holds one (api.Supervised), signals it through its own handle,
+// and waits for it to finish draining. Signalling a pid read back over a
+// connection cannot distinguish the hub we started from whatever the OS gave
+// that number to afterwards.

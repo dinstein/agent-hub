@@ -253,6 +253,35 @@ Three decisions are load-bearing:
   reaches the shutdown which stops a daemon this GUI started, so the item spells that out when it
   applies (`Quit AgentHub (stops the hub)`).
 
+### 1.3 The application runs the hub
+
+The application is now the only thing that starts a hub (`--headless` aside, for a server with no
+desktop), which changes three things here.
+
+**Ownership is a process handle, not a memory.** `Hub.proc` is an `api.Supervised` — the hub this
+process is running — and holding it *is* the claim that licenses stopping it. The bool it replaced
+was written from "did my dial start one": a fact about a past call, which outlived the daemon it
+described. A **transport failure no longer disowns anything**, either: the connection is gone, the
+process is not, and a hub that is briefly unreachable is still ours to stop and still ours to
+restart. What ends ownership is the process ending, which the supervisor sees directly.
+
+**A hub that is already answering is used, never adopted.** Every connect dials first. A headless hub
+an operator started, or one belonging to another AgentHub window, answers there and every page works
+against it — but `proc` stays nil, so quitting leaves it running. That is also what makes a second
+launch harmless, and why there is no separate single-instance lock: the danger a lock would have
+prevented is the second window stopping the first one's hub, and ownership already refuses that.
+Settings says which case applies (`Lifetime`), because otherwise the only way to find out is to quit.
+
+**A hub that falls over is started again.** Before, a dead daemon left the GUI offline until the user
+pressed a button — acceptable while a terminal could also start one, and not acceptable now that this
+application is the only other way to get one back. The supervisor restarts on a doubling backoff and
+**gives up after five consecutive failures**: a hub that cannot start will not start on the sixth
+attempt either, and a loop that keeps trying spawns a process per interval and buries the first
+failure — the one that says why — under thousands of identical ones. Giving up leaves the offline
+status and its error on screen, which is the surface the user needs; `Connect` retries on demand. A
+run lasting a minute counts as healthy and resets the ladder, so a hub that dies once a day never
+exhausts a counter nothing clears.
+
 The preference lives in `localStorage`, like the theme and for the same reason: it is a property of
 this window on this machine, and the registry having an opinion about it would be wrong. The Go side
 holds a runtime copy because the close arrives natively; the frontend pushes it at startup, and every

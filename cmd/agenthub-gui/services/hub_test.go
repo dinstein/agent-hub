@@ -92,12 +92,22 @@ type testDialer struct {
 	socket string
 	dials  int
 	starts int
-	spawns bool
-	err    error
-	gate   chan struct{}
+	// superviseErr fails the next supervise attempt.
+	superviseErr error
+	// processes records every hub the Hub has been given, so a test can end
+	// one the way a crash would.
+	processes []*fakeProcess
+	// err fails a plain DIAL only. Supervision reaches the same fake daemon
+	// regardless, which is what lets a test model the ordinary production
+	// case: nothing is answering yet, so the application starts a hub and
+	// then talks to it.
+	err  error
+	gate chan struct{}
 }
 
-func (d *testDialer) connect() (*api.Client, error) {
+// connect reaches the fake daemon. failDial selects whether the configured
+// dial error applies, which is the difference between the two callers.
+func (d *testDialer) connect(failDial bool) (*api.Client, error) {
 	d.mu.Lock()
 	gate := d.gate
 	d.mu.Unlock()
@@ -112,7 +122,7 @@ func (d *testDialer) connect() (*api.Client, error) {
 	d.mu.Lock()
 	sock, err := d.socket, d.err
 	d.mu.Unlock()
-	if err != nil {
+	if failDial && err != nil {
 		return nil, err
 	}
 	c := api.New(sock)
@@ -129,16 +139,83 @@ func (d *testDialer) dial(context.Context) (*api.Client, error) {
 	d.mu.Lock()
 	d.dials++
 	d.mu.Unlock()
-	return d.connect()
+	return d.connect(true)
 }
 
-func (d *testDialer) dialOrStart(context.Context) (*api.Client, bool, error) {
+// supervise stands in for api.StartSupervised: it hands back a process handle
+// that can be stopped and can be made to exit, with no process behind it.
+func (d *testDialer) supervise(context.Context) (hubProcess, error) {
 	d.mu.Lock()
 	d.starts++
-	spawned := d.spawns
+	failure := d.superviseErr
 	d.mu.Unlock()
-	c, err := d.connect()
-	return c, spawned && err == nil, err
+	if failure != nil {
+		return nil, failure
+	}
+	c, err := d.connect(false)
+	if err != nil {
+		return nil, err
+	}
+	p := &fakeProcess{client: c, exited: make(chan struct{})}
+	d.mu.Lock()
+	d.processes = append(d.processes, p)
+	d.mu.Unlock()
+	return p, nil
+}
+
+// fakeProcess is a supervised hub with no process behind it.
+type fakeProcess struct {
+	client *api.Client
+	exited chan struct{}
+
+	mu    sync.Mutex
+	stops int
+	dead  bool
+}
+
+func (p *fakeProcess) Control() *api.Client    { return p.client }
+func (p *fakeProcess) Exited() <-chan struct{} { return p.exited }
+func (p *fakeProcess) Pid() int                { return 4242 }
+
+func (p *fakeProcess) Stop(context.Context) error {
+	p.mu.Lock()
+	p.stops++
+	p.mu.Unlock()
+	p.die()
+	return nil
+}
+
+// die ends the process, the way an exit or a crash would.
+func (p *fakeProcess) die() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.dead {
+		p.dead = true
+		close(p.exited)
+	}
+}
+
+func (p *fakeProcess) stopCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.stops
+}
+
+// lastProcess returns the most recently supervised hub, or nil.
+func (d *testDialer) lastProcess() *fakeProcess {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.processes) == 0 {
+		return nil
+	}
+	return d.processes[len(d.processes)-1]
+}
+
+// setSuperviseErr fails every subsequent supervise attempt.
+func (d *testDialer) setSuperviseErr(err error) {
+	d.mu.Lock()
+	d.superviseErr = err
+	d.mu.Unlock()
 }
 
 // setGate installs a channel every subsequent dial blocks on until it is
@@ -149,11 +226,13 @@ func (d *testDialer) setGate(c chan struct{}) {
 	d.mu.Unlock()
 }
 
-// spawns makes the fake report that it launched the daemon, so ownership
-// (and therefore shutdown) can be exercised without a real process.
-func (d *testDialer) setSpawns(v bool) {
+// setDialErr decides how a plain dial ends. It is what selects between the
+// two hubs a Hub can end up with: a dial that SUCCEEDS is a hub somebody else
+// is running (used, never stopped), and a dial that fails is what sends the
+// Hub on to start one of its own.
+func (d *testDialer) setDialErr(err error) {
 	d.mu.Lock()
-	d.spawns = v
+	d.err = err
 	d.mu.Unlock()
 }
 
@@ -314,8 +393,14 @@ func TestStartConnectsInTheBackground(t *testing.T) {
 	h.start(t.Context())
 	waitFor(t, "connection", func() bool { return h.Status().Connected })
 	waitFor(t, "daemon status event", func() bool { return len(rec.byName(EventDaemon)) == 1 })
-	if _, starts := dl.counts(); starts != 1 {
-		t.Errorf("starts = %d, want 1", starts)
+	// A hub was already answering, so none is started: every connect dials
+	// first, and starting a second one over a bound socket could only fail.
+	dials, starts := dl.counts()
+	if starts != 0 {
+		t.Errorf("starts = %d, want 0 — a hub was already answering", starts)
+	}
+	if dials == 0 {
+		t.Error("startup never dialled")
 	}
 }
 
@@ -326,9 +411,12 @@ func TestApplicationVersionIsTheGUIBuild(t *testing.T) {
 	}
 }
 
-func TestConnectStartsDaemonAndPublishesStatus(t *testing.T) {
+func TestConnectStartsTheHubAndPublishesStatus(t *testing.T) {
 	rec := &recorder{}
 	h, dl := newHub(t, newFakeDaemon(t, pingMux(t)), rec)
+	// Nothing is answering: this is the ordinary first launch, where the
+	// application has to start the hub itself.
+	dl.setDialErr(errors.New("connect: no such file or directory"))
 
 	st, err := h.Connect(t.Context())
 	if err != nil {
@@ -336,6 +424,9 @@ func TestConnectStartsDaemonAndPublishesStatus(t *testing.T) {
 	}
 	if !st.Connected || st.Version != "test" || st.Pid != 1234 || st.Generation != 9 {
 		t.Errorf("status = %+v", st)
+	}
+	if !st.Owned {
+		t.Error("status does not say the hub is ours, so nothing on screen can say quitting stops it")
 	}
 	if _, starts := dl.counts(); starts != 1 {
 		t.Errorf("starts = %d, want 1", starts)
@@ -547,52 +638,5 @@ func TestUseWaitsForStartupConnect(t *testing.T) {
 	}
 }
 
-// TestStopShutsDownOnlyOurDaemon pins the ownership rule for shutdown: a
-// daemon this process started is stopped on exit, one it merely found is
-// left alone. Stopping a daemon we did not start would end another client's
-// session to tidy up after ours.
-func TestStopShutsDownOnlyOurDaemon(t *testing.T) {
-	t.Run("found daemon is left running", func(t *testing.T) {
-		d := newFakeDaemon(t, pingMux(t))
-		h, dl := newHub(t, d, nil)
-		dl.setSpawns(false)
-		h.start(context.Background())
-		waitFor(t, "daemon connected", func() bool { return h.Status().Connected })
-
-		h.stop()
-		if h.spawned {
-			t.Error("a daemon we only dialled was recorded as ours")
-		}
-	})
-
-	t.Run("spawned daemon is claimed", func(t *testing.T) {
-		d := newFakeDaemon(t, pingMux(t))
-		h, dl := newHub(t, d, nil)
-		dl.setSpawns(true)
-		h.start(context.Background())
-		waitFor(t, "daemon connected", func() bool { return h.Status().Connected })
-
-		h.mu.Lock()
-		ours := h.spawned
-		h.mu.Unlock()
-		if !ours {
-			t.Fatal("a daemon we spawned was not claimed; stop would leave it behind")
-		}
-		// stop clears the claim so a second call cannot signal a recycled pid.
-		h.stop()
-		h.mu.Lock()
-		again := h.spawned
-		h.mu.Unlock()
-		if again {
-			t.Error("stop left the ownership claim set; it is not idempotent")
-		}
-	})
-}
-
-// TestStopDaemonIgnoresBadPid pins that shutdown never panics or blocks on a
-// pid that is absent or nonsensical — it runs during teardown, where there
-// is no surface left to report a failure on.
-func TestStopDaemonIgnoresBadPid(t *testing.T) {
-	stopDaemon(0)
-	stopDaemon(-1)
-}
+// The shutdown half of the ownership rule lives in hubownership_test.go,
+// where the whole of it is pinned together.

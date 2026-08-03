@@ -18,6 +18,20 @@ import { themeControl, toggleSwitch } from "../ui";
 import type { Status } from "../types";
 import { onWindowPrefs, setWindowPrefs, windowPrefs } from "../window-prefs";
 
+/**
+ * Whether quitting stops the hub.
+ *
+ * Three answers, and they differ in what the user is about to lose. A hub
+ * this window runs goes with it; a hub belonging to another AgentHub window,
+ * or to an operator who started it headless, stays and keeps serving its
+ * clients. Without this row the only way to find out is to quit.
+ */
+function lifetimeText(st: Status): string {
+  if (st.owned) return "runs with this window — quitting stops it";
+  if (st.guest) return "belongs to another AgentHub window — quitting leaves it running";
+  return "started outside AgentHub — quitting leaves it running";
+}
+
 function statusTable(st: Status): HTMLElement {
   const row = (k: string, v: string) =>
     el("div", { class: "kv" }, [el("span", { class: "k", text: k }), el("span", { class: "v", text: v })]);
@@ -27,6 +41,7 @@ function statusTable(st: Status): HTMLElement {
     row("Daemon version", st.version || "—"),
     row("PID", st.pid ? String(st.pid) : "—"),
     row("Registry generation", String(st.generation ?? 0)),
+    st.connected ? row("Lifetime", lifetimeText(st)) : el("span", {}),
     st.error ? row("Last error", st.error) : el("span", {}),
   ]);
 }
@@ -95,7 +110,7 @@ export function settingsPage(): Page {
       // offline. Represent the missing runtime answer explicitly instead of
       // letting the router replace the entire Settings page with an error.
       statusError = err;
-      st = { connected: false, socket: "", version: "", pid: 0, generation: 0 };
+      st = { connected: false, socket: "", version: "", pid: 0, generation: 0, owned: false, guest: false };
     }
     clear(root);
 

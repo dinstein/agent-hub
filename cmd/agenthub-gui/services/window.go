@@ -117,14 +117,17 @@ func (h *Hub) SetTrayAvailable(v bool) { h.trayAvailable.Store(v) }
 // that silently does nothing.
 func (h *Hub) TrayAvailable() bool { return h.trayAvailable.Load() }
 
-// OwnsDaemon reports whether the daemon this GUI is connected to was started
-// BY this GUI — the same claim that licenses stop to shut it down again.
+// OwnsDaemon reports whether the hub this application is connected to is one
+// it is RUNNING — the same claim that licenses stop to shut it down again.
 //
 // It exists so the tray can say so on the Quit item. Once the close button
 // stops quitting, Quit is the only path that reaches that shutdown, which
-// makes the label the last place the consequence can be stated.
+// makes the label the last place the consequence can be stated. It is false
+// for a headless hub and for one belonging to another AgentHub window, and in
+// both cases the label is right to stay silent: quitting here will not stop
+// them.
 func (h *Hub) OwnsDaemon() bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.spawned
+	return h.proc != nil
 }

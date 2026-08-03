@@ -796,6 +796,12 @@ export interface Status {
   version: string;
   pid: number;
   generation: number;
+  /** This application is running the hub, and quitting stops it. */
+  owned: boolean;
+  /** The hub belongs to another AgentHub window: everything on the page
+   *  works, but quitting here leaves it running. A hub an operator started
+   *  headless is neither owned nor guest — it belongs to them. */
+  guest: boolean;
   error?: string;
 }
 

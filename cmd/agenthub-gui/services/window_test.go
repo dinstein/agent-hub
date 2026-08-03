@@ -54,12 +54,13 @@ func TestWindowPreferenceRoundTrip(t *testing.T) {
 	}
 }
 
-func TestOwnsDaemonFollowsTheLiveConnection(t *testing.T) {
-	// The Quit label is derived from this, and the claim has to describe the
-	// daemon the GUI is talking to right now — not one it started earlier.
+func TestOwnsDaemonFollowsTheHubWeAreRunning(t *testing.T) {
+	// The Quit label is derived from this, and it has to describe the hub
+	// this application is running right now — not one it started earlier, and
+	// not one that merely answers the socket.
 	d := newFakeDaemon(t, pingMux(t))
 	dl := &testDialer{socket: d.socket}
-	dl.setSpawns(true)
+	dl.setDialErr(errors.New("connect: no such file or directory"))
 	h := &Hub{dialer: dl, emitter: &recorder{}}
 	t.Cleanup(h.stop)
 
@@ -70,12 +71,14 @@ func TestOwnsDaemonFollowsTheLiveConnection(t *testing.T) {
 		t.Fatalf("Connect: %v", err)
 	}
 	if !h.OwnsDaemon() {
-		t.Fatal("a daemon this Hub started is not claimed")
+		t.Fatal("a hub this application started is not claimed; Quit would not offer to stop it")
 	}
 
-	// A transport failure drops the client, and the claim dies with it.
+	// A transport failure drops the client. The claim SURVIVES it: the
+	// connection is gone, the process is not, and disowning it here is how an
+	// application quits while leaving its own hub running.
 	h.dropClient(errors.New("write: broken pipe"))
-	if h.OwnsDaemon() {
-		t.Fatal("the ownership claim outlived the connection that carried it")
+	if !h.OwnsDaemon() {
+		t.Fatal("a dropped connection disowned a hub whose process is still running")
 	}
 }
