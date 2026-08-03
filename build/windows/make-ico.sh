@@ -28,6 +28,10 @@ PNG=appicon.png
 command -v qlmanage >/dev/null || { echo "qlmanage not found (macOS only)" >&2; exit 1; }
 command -v wails3 >/dev/null || { echo "wails3 not found: go install github.com/wailsapp/wails/v3/cmd/wails3@latest" >&2; exit 1; }
 
+# Parse the source before rasterizing it, for the reason make-icns.sh gives:
+# qlmanage renders malformed XML as an error page and still exits 0.
+xmllint --noout "$SRC" || { echo "$SRC is not well-formed XML; not rasterizing it" >&2; exit 1; }
+
 # 1024 in, every smaller size derived by wails3. Rendering the largest once and
 # downscaling beats rendering each size from the SVG: qlmanage's small renders
 # lose the thin strokes, and a 16px icon is where that shows first.

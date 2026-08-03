@@ -21,6 +21,12 @@ ISET=AgentHub.iconset
 
 command -v iconutil >/dev/null || { echo "iconutil not found (macOS only)" >&2; exit 1; }
 
+# Parse the source before rasterizing it. qlmanage answers malformed XML with a
+# rendered error page and exit status 0, so without this check a stray double
+# hyphen inside a comment ships as the application icon and the first sign of
+# it is a pink box in the Dock.
+xmllint --noout "$SRC" || { echo "$SRC is not well-formed XML; not rasterizing it" >&2; exit 1; }
+
 rm -rf "$ISET" && mkdir -p "$ISET"
 
 # name:pixels — the @2x entries are the same pixel count as the next size up,

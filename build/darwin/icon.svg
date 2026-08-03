@@ -4,31 +4,62 @@
 
   The mark is the product's one-line definition drawn literally — several
   callers (Claude Code, Cursor, Codex, …) reaching one shared centre, rather
-  than each holding its own configuration and credentials. The six inbound
-  nodes are deliberately uneven in weight: two solid, four hollow, because a
-  hub whose clients are all identical is not a hub, it is a list.
+  than each holding its own configuration and credentials.
 
   The centre is a rounded square, not a circle: it echoes the app window and
   keeps the silhouette readable when macOS masks it into the squircle.
 
-  COLOUR. The GUI itself has no brand hue on purpose (see style.css: every hue
-  in the UI is a health claim). An icon lives outside that rule — it is never
-  next to a status badge — so it may carry one identity colour. The teal here
-  is chosen to survive both the light and dark Dock, and it appears nowhere in
-  the interface, so it can never be mistaken for a status.
+  ONE MARK, TWO EXPOSURES. This drawing is the large end of a ladder whose
+  small end is the tray glyph and the sidebar mark (trayicon.go, .brand-mark).
+  What keeps those one mark rather than three is that SHRINKING IS SUBTRACTION:
+  the six nodes sit on the vertices of one hexagon, and the three drawn SOLID —
+  up, lower-right, lower-left — are exactly the three those two keep. The
+  hollow three are the ones that go. Weight and survival therefore give one
+  answer instead of two; an earlier version made the bottom node solid and the
+  lower-left one hollow, so the reduced mark read as a different drawing rather
+  than as this one seen from further away.
+
+  The subtraction is a rule for the two hand-drawn small marks, not for this
+  file's own small variants: iconutil and wails3 derive 16px and 32px by
+  downsampling the drawing below, so the Dock's smallest sizes still carry six
+  nodes, blurred. Splitting the ladder there would mean a second source file
+  and a rasterizer that can be told which one to use per size, and the icon is
+  not seen at 16px often enough to buy that.
+
+  THE HUB IS SOLID, always. Hollow is not decoration here — the tray spends it
+  on a state, where a hub with a hole in it means "serving nothing". A centre
+  punched out of THIS file said exactly that, in the Dock, permanently.
+
+  COLOUR. The identity hue is the interface's own accent indigo (style.css's
+  accent token). This file used to carry a teal instead, reasoning that the GUI
+  gives every hue a health meaning so an icon must borrow one the interface
+  does not own. That reasoning is retired deliberately: it is what split the
+  icon from the product it belongs to, leaving the Dock, the menu bar and the
+  sidebar each with a different mark. The teal was a poor loan besides —
+  #5ee0c8 sits beside the success green #3bcb7a, so it could never come back
+  inside without reading as a health claim. Indigo is already the one hue
+  style.css reserves for identity and interaction and never for health, which
+  makes it the only hue the mark can wear in all three places at once.
+
+  Note for the next editor: an XML comment may not contain a double hyphen, so
+  the CSS custom properties are named here without their leading dashes. Break
+  that and qlmanage renders an error page, which make-icns.sh will package as
+  the application icon without complaint.
 
   Drawn at 1024×1024, the largest size macOS asks for; every smaller variant
   is downsampled from this file.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
+    <!-- The ground is the application's own two darkest surfaces, panel over
+         bg: the icon is made of the window it opens. -->
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#1b2733"/>
-      <stop offset="100%" stop-color="#0e1116"/>
+      <stop offset="0%" stop-color="#1c2333"/>
+      <stop offset="100%" stop-color="#0b0d12"/>
     </linearGradient>
     <linearGradient id="core" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#5ee0c8"/>
-      <stop offset="100%" stop-color="#2aa8a0"/>
+      <stop offset="0%" stop-color="#a8b1ff"/>
+      <stop offset="100%" stop-color="#5365e8"/>
     </linearGradient>
     <!-- The hairline that keeps the mark from dissolving into a dark Dock. -->
     <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
@@ -46,40 +77,41 @@
   <!-- Spokes, drawn under the nodes so the joins stay clean.
        Weight is set for the SMALL sizes: at 16px a 26px stroke disappears and
        the mark reads as loose dots. 38px survives the downsample, and the
-       large sizes can carry a heavier line without looking clumsy. -->
-  <g stroke="#5ee0c8" stroke-width="38" stroke-linecap="round" fill="none">
+       large sizes can carry a heavier line without looking clumsy. The three
+       carrying a solid node are the loud ones. -->
+  <g stroke="#7c8cff" stroke-width="38" stroke-linecap="round" fill="none">
     <g opacity="0.95">
       <path d="M512 512 L512 250"/>
       <path d="M512 512 L738 642"/>
+      <path d="M512 512 L286 642"/>
     </g>
-    <g opacity="0.5">
+    <g opacity="0.40">
       <path d="M512 512 L286 382"/>
       <path d="M512 512 L738 382"/>
-      <path d="M512 512 L286 642"/>
       <path d="M512 512 L512 774"/>
     </g>
   </g>
 
-  <!-- Client nodes. Two filled, four hollow: the hub serves callers that are
-       not interchangeable. -->
-  <g>
-    <circle cx="512" cy="250" r="62" fill="#5ee0c8"/>
-    <circle cx="738" cy="642" r="62" fill="#5ee0c8"/>
-    <g fill="#0e1116" stroke="#5ee0c8" stroke-width="22">
-      <circle cx="286" cy="382" r="52"/>
-      <circle cx="738" cy="382" r="52"/>
-      <circle cx="286" cy="642" r="52"/>
-      <circle cx="512" cy="774" r="52"/>
-    </g>
+  <!-- Client nodes, on the vertices of one hexagon. Solid: the three the tray
+       and the sidebar keep. Hollow: the three that drop away below 32px. -->
+  <g fill="#8f9dff">
+    <circle cx="512" cy="250" r="62"/>
+    <circle cx="738" cy="642" r="62"/>
+    <circle cx="286" cy="642" r="62"/>
+  </g>
+  <g fill="#0b0d12" stroke="#7c8cff" stroke-width="22" opacity="0.9">
+    <circle cx="286" cy="382" r="52"/>
+    <circle cx="738" cy="382" r="52"/>
+    <circle cx="512" cy="774" r="52"/>
   </g>
 
   <!-- The hub. Sized to read as the anchor at 16px, where the spokes have
        already blurred into a halo — so it is the one element that must not be
        subtle. The dark keyline separates it from the spokes converging under
-       it; without it the centre and the lines merge into one teal blob. -->
-  <rect x="376" y="376" width="272" height="272" rx="74" fill="url(#core)"/>
+       it; without it the centre and the lines merge into one indigo blob. It
+       is drawn first and painted over rather than stroked on top, so all of it
+       falls outside the hub and none of the hub's width is eaten. -->
   <rect x="376" y="376" width="272" height="272" rx="74" fill="none"
-        stroke="#0e1116" stroke-width="22"/>
-  <!-- The pipeline through the centre: one path, not several. -->
-  <rect x="454" y="454" width="116" height="116" rx="30" fill="#0e1116" opacity="0.85"/>
+        stroke="#0b0d12" stroke-width="44"/>
+  <rect x="376" y="376" width="272" height="272" rx="74" fill="url(#core)"/>
 </svg>
