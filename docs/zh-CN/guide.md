@@ -25,15 +25,10 @@ servers (enabled, + tool allow)   ← 上限：所有已启用的 server
 每一层都与它上面那层取交集，而且**没有任何一层能放宽**。这就是整套访问模型：
 一个 client 能碰到什么，由它连上来之前你写下的配置决定，调用进行中不再决定任何事情。
 
-由此直接推出两件值得说明白的事：
-
-**client 从不自己收窄。** 它只是选一个 profile，而不是在 profile 之上再叠规则。两个 client
-需要不同的工具面，就给它们两个 profile。这正是「这个 client 绑在哪个 profile 上」是一个完整
-答案、而不是半个答案的原因。
-
-**收窄只能收窄。** profile 只能从已启用集合里拿走能力，它永远不可能放出一台被禁用的 server，
-也变不出一个不存在的 tool。因此 `agenthub server disable` 是一个无条件的总闸：没有任何
-profile 能把它拉回来。
+由此推出两件事。**client 从不自己收窄**——它只是选一个 profile，而不是在 profile 之上再叠规则，
+所以「这个 client 绑在哪个 profile 上」是一个完整答案，而不是半个。两个 client 需要不同的工具面，
+就给它们两个 profile。以及**收窄只能收窄**：profile 永远不可能放出一台你禁用了的 server，
+也变不出一个不存在的 tool——这让 `agenthub server disable` 成了一个无条件的总闸。
 
 ## 日常路径
 
@@ -72,20 +67,18 @@ agenthub server tool allow github --none        # 这台 server 什么都不提�
 agenthub server tool allow github --all         # 退回「提供全部」
 ```
 
-写之前先读：`allow` 是**整条替换**，不是往上加。只要有任何一台 server 带了规则，
-`server ls` 就会多出一列 TOOLS；`agenthub server inspect github` 会把那一条摊开，
-名字也一并列出。三个里必须明说一个——裸写 `server tool allow github` 会报用法错误，
-因为它本来会有的那个含义（「什么都不提供」）跟你的本意之间只差一个忘了敲的参数。
+写之前先读：`allow` 是**整条替换**、不是往上加，而且三个里必须明说一个——裸写
+`server tool allow github` 会报用法错误，因为它本来会有的那个含义（「什么都不提供」）
+跟你的本意之间只差一个忘了敲的参数。
 
-这是**对所有 client 同时生效**的，是 `server disable` 在 tool 粒度上的孪生兄弟。
-它是白名单，永远不是黑名单；两者的区别会在 server 新增一个 tool 的那天显现：
-有规则在的时候，新 tool 会一直待在外面直到你把它加进来——这是关闭的方向。
-没有任何 profile 能把它拿走的东西放回来。
+这是**对所有 client 同时生效**的，是 `server disable` 在 tool 粒度上的孪生兄弟，
+而且它是白名单、永远不是黑名单：server 新增一个 tool 的那天，有规则在的话，新 tool 会一直
+待在外面直到你把它加进来。没有任何 profile 能把它拿走的东西放回来。
 
-规则是什么、规则的效果是什么，这是两个问题，各有各的答案。`agenthub server ls` 和
-`server inspect` 说规则**是什么**；`agenthub server tool ls` 列出规则生效之后真正提供的
-那些，并把被挡下的数量报出来，`--all` 会把它们一并列出、逐个标出状态。当某个 tool 在
-client 里不见了、又看不出是哪一层拿走的，`agenthub server tool inspect
+规则是什么、规则的效果是什么，这是两个问题，各有各的答案。`agenthub server ls`（只要有任何一台
+server 带了规则，它就多出一列 TOOLS）和 `server inspect github` 说规则**是什么**；
+`agenthub server tool ls` 列出规则生效之后真正提供的那些，`--all` 再把被挡下的也加上。
+当某个 tool 在 client 里不见了、又看不出是哪一层拿走的，`agenthub server tool inspect
 github__get_issue` 会指名道姓地说是哪一层。
 
 ## profile：当你想要的比「全部」少
@@ -120,8 +113,8 @@ client 实际拿到的东西；`--all` 会把被挡下的也列出来，逐个�
 
 要用 server 自己的 tool 名字，并且注意 `--only` 是一次**取交集**：写了一个这台 server 上没有的
 名字，这台 server 就一个 tool 都放不出来。规则仍然会被存下来——它的 catalog 可能只是还没被取过
-——但 agenthub 会拿这些名字去比对最近一次记下的 catalog，并对其中对不上的那些**发出警告**，好让
-拼错在敲下它的地方就说出来，而不是过后变成一份没人解释得清的空 tool 列表。
+——但 agenthub 会拿这些名字去对最近一次记下的 catalog，对里面没有的那些**发出警告**，好让拼错在
+敲下它的地方就说出来，而不是过后变成一份没人解释得清的空 tool 列表。
 
 **profile 不存在时 fail-closed。** 绑到一个不存在的名字上是被接受的，会给出警告，并把这个
 client 解析成一份**空**作用域——它什么都看不见。这是刻意的：删掉一个 profile 绝不能让引用过它的
@@ -137,8 +130,8 @@ agenthub profile use research     # 所有未绑定的 client 现在都跟随它
 agenthub profile use -            # 清除：未绑定的 client 看到全部已启用的 server
 ```
 
-没有任何 profile 处于激活状态时，「未绑定」就等于「全部已启用的 server」。这里不存在一个
-额外的「默认 profile」对象要你管理——不收窄本身就是默认值。
+没有任何 profile 处于激活状态时，「未绑定」就等于「全部已启用的 server」。这里没有一个
+「默认 profile」对象要你管理——不收窄本身就是默认值。
 
 但两张列表仍然会点它的名，因为「我从没绑过的 client 到底拿到什么」是它们必须回答的问题。
 `profile ls` 的表头第一行就是 `(default)`，`client ls` 的 PROFILE 列印的是同一个记号：
@@ -150,9 +143,9 @@ research                *       linear   lazy (inherited)  linear: only list_iss
 ```
 
 星号标的是**当前生效的那一行**，而 `(default)` 直接把兜底解析成什么摆出来，不用你再去查一次。
-它是一个显示记号，不是一个对象：只有 `agenthub profile use` 能挪动它；profile 名字不允许以
-`(` 开头，所以你建出来的东西不会被误认成它。激活的 profile 不存在时，这一行会写
-`MISSING -> empty scope`——和绑到不存在 profile 的 client 是同一个标记，也是同一个原因。
+它是一个显示记号，不是一个对象：只有 `agenthub profile use` 能挪动它，而且 profile 名字不允许以
+`(` 开头。激活的 profile 不存在时，这一行会写 `MISSING -> empty scope`——和绑到不存在 profile 的
+client 是同一个标记，也是同一个原因。
 
 ## discovery：工具面怎么呈现
 
@@ -179,10 +172,9 @@ agenthub profile discovery research lazy      # 或 grouped / full / -
 一个没出现在初始清单里的 tool，只要在作用域内就仍然调得动；而一个不在作用域内的 tool，
 你选哪个模式它都调不动。
 
-`lazy` 是默认值也是同一个理由。加到第四台 server 的时候没人会回头改这个设置，所以默认值
-就是绝大多数装机长期实际在跑的那个；而 `full` 花掉的上下文，恰好与你把这个网关用得有多
-充分成正比——光一台托管 server 就可能带来五十个工具。`lazy` 换来的代价是**可发现性**：
-客户端得自己搜，而不是被直接递上工具名。工具面小的时候这笔交换不划算，那就明说：
+`lazy` 是默认值也是同一个理由：加到第四台 server 的时候没人会回头改这个设置，而 `full` 花掉的
+上下文恰好与你把这个网关用得有多充分成正比。`lazy` 换来的代价是**可发现性**：客户端得自己搜，
+而不是被直接递上工具名。工具面小的时候这笔交换不划算，那就明说：
 
 ```bash
 agenthub config set discovery full
@@ -216,14 +208,14 @@ agenthub client ls                  # 谁接上了，以及谁绑在哪个 profi
 
 `server test` 是这里唯一**证明**而不是**转述**的检查：它会真的建立一次连接，所以通过就意味着
 凭据、传输、server 本身此刻全都是好的。`server inspect --tools` 列的是上一次接触时记录下来的
-东西，所以它答得飞快，也因此可能是过期的。Zed 和 VS Code 的 settings 是 JSONC（带注释的 JSON），Zed 还自带一段注释头，所以以前这类客户端
-agenthub 是不碰的。现在它只改自己那条的字节：你的注释、键序、排版原样返回；而只要这次编辑有一点
-证明不了是对的，它就拒绝写，并告诉你该贴什么。
+东西，所以它答得飞快，也因此可能是过期的。
 
-codex 是唯一一个 agenthub 不自己写的客户端——它的配置是 TOML，重编码会毁掉注释和排版。
-`client connect codex` 改成替你跑 `codex mcp add`：动手前先备份，事后再读一遍文件确认。
-如果你不希望 agenthub 去运行别的程序，加 `--manual`（或设 `AGENTHUB_NO_CLIENT_CLI=1`），
-它会改成告诉你该跑什么。
+`client connect` 改的是客户端自己的配置文件，其中两个客户端要特殊对待。Zed 和 VS Code 的配置是
+JSONC（带注释的 JSON），所以 agenthub 只改自己那条的字节：你的注释、键序、排版原样返回；
+而只要这次编辑有一点证明不了是对的，它就拒绝写，并告诉你该贴什么。codex 它干脆不写——重编码
+TOML 会毁掉注释和排版——`client connect codex` 改成替你跑 `codex mcp add`：动手前先备份，
+事后再读一遍确认。加 `--manual`（或设 `AGENTHUB_NO_CLIENT_CLI=1`）就让 agenthub 只把命令印出来，
+不去运行它。
 
 `client ls` 补上另一侧，每个客户端两个答案：CONNECTED 来自客户端自己的配置文件，
 PROFILE 是它**可以看见什么**——它自己的 profile，或者你从没绑过它时的 `(default)`，也就是
@@ -234,9 +226,9 @@ PROFILE 是它**可以看见什么**——它自己的 profile，或者你从没
 
 ## 保留 tools/call 访问历史
 
-访问账本默认关闭。启用之后，每一次 tools/call 尝试都会把完整请求参数与实际下游参数写进本地加密
-pack；返回结果默认只保留一段截断副本。它是严格记录：密钥或有界存储不可用时，调用会被拒绝，
-不会先执行再在历史里留下空洞。
+访问账本默认关闭。启用之后，每一次 tools/call **尝试**都会把请求参数与实际下游参数写进本地加密
+pack，返回结果留一份截断副本——记录发生在门禁之前，所以被拒绝的调用同样在历史里。它是严格记录：
+密钥或有界存储不可用时，调用会被**拒绝**，而不是先执行、再在历史里留下一个空洞。
 
 ```bash
 agenthub audit enable
@@ -248,18 +240,18 @@ agenthub audit stats --since 7d
 agenthub audit verify
 ```
 
-默认保留 30 个 UTC 日、总量硬上限 5 GiB，并为所在文件系统预留 1 GiB 空间。可用
-`config set audit.retentionDays`、`audit.maxBytes`、`audit.minFreeBytes` 修改；
-`audit prune --dry-run` 先预览过期日分区，`audit prune` 再整日删除。正常写入也会在容量检查前执行
-同一套清理。
+默认保留 30 个 UTC 日、总量上限 5 GiB，并为所在文件系统预留 1 GiB 空间；改它们用
+`config set audit.retentionDays`、`audit.maxBytes`、`audit.minFreeBytes`。
+`audit prune --dry-run` 先预览过期的日分区，`audit prune` 再整日删除——正常写入在自己那次容量
+检查之前也会跑同一套清理。
 
-`audit export --output history.jsonl` 只把元数据导出到一个新的 0600 文件，并拒绝覆盖已有文件。
-确实需要明文参数/结果时才加 `--payloads`；此时导出文件已离开有界账本，含有凭据与私人数据。
-`audit rotate-key` 换新当前密钥但保留旧密钥，让历史仍能读取；`audit disable` 只停止新增记录，
-不会顺手删除历史或密钥。
+导出和关掉它之前有两件事要知道。`audit export --output history.jsonl` 只把元数据写进一个新的
+0600 文件，并拒绝覆盖已有文件；确实需要明文参数与结果时才加 `--payloads`，因为导出文件从此就带着
+凭据离开了那个有界账本。以及 `audit disable` 只停止新增记录，不删历史也不删密钥，
+正如 `audit rotate-key` 会留着旧密钥，让已有历史仍然读得出来。
 
-`audit verify` 能发现元数据被改、payload 损坏和引用被调包；但所有证据都在同一本地目录里，
-所以无法证明某个完整日目录从未被删。威胁模型若要求删除证据，需要再接一个外部不可变归档。
+`audit verify` 能发现元数据被改、payload 损坏和引用被调包。但所有证据都在本地，所以它无法证明
+某个完整日目录从未被删过；删除证据对你重要的话，再接一个外部归档。
 
 ## 服务器出问题，而你当时没在看
 
@@ -272,10 +264,9 @@ agenthub audit tail --server linear      # 客户端「调了它什么」
 ```
 
 先开 `events`。下游服务器、gateway、daemon 的每一次状态变化都会写进
-`<data>/logs/events.jsonl`，每条记录带一个来自固定集合的 `kind` ——
-`connected`、`circuit_open`、`respawned`、`secrets_missing` 等，完整列表在
-`docs/modules/foundation.md`。固定正是要点：这些值可以拿来过滤和告警，而日志消息的
-措辞不能。
+`<data>/logs/events.jsonl`，带一个来自固定集合的 `kind`——`connected`、`circuit_open`、
+`respawned`、`secrets_missing` 等等。固定正是要点：这些值可以拿来过滤和告警，
+而日志消息的措辞不能。
 
 ```bash
 agenthub events --since 24h                  # 全部，最新的在最后
@@ -285,12 +276,9 @@ agenthub events --scope daemon               # 重启与配置重载
 agenthub events -f                           # 跟随；daemon 重启也不会断
 ```
 
-没有 daemon 也能用，而且这不是降级路径：stdio gateway 自己就会写这个文件，所以
-「没有 daemon」在这里是常态而不是残缺状态。
-
-它**默认开启**，唯一的开关是 `agenthub config set events.enabled false`。
-`audit` 背后的访问账本正好相反，默认关闭——因为它记录调用参数和结果，而这里只记录
-「状态变了」。
+没有 daemon 也能用，而且这不是降级路径：stdio gateway 自己就会写这个文件，所以「没有 daemon」
+在这里是常态。它**默认开启**——唯一的开关是 `agenthub config set events.enabled false`——
+而 `audit` 是你不开就没有的，因为那一头记的是调用参数和结果，这一头只记「有东西变了」。
 
 `logs` 是与之并排的散文视图，跨进程归并 —— `daemon.log` 加上每个已连接客户端的
 `gateway-<client>.log` —— 输出成一条按时间排序的流。归并就是它存在的理由：daemon
@@ -302,7 +290,7 @@ agenthub logs --client claude-code -f        # 跟随某个客户端的 gateway
 agenthub logs --source daemon                # 或者只看 daemon
 ```
 
-`agenthub daemon logs` 仍然保留且没有变化，它是只看 `daemon.log` 的单进程视图。
+`agenthub daemon logs` 仍然是只看 `daemon.log` 的那个单进程视图。
 
 ## 当你需要看到线上的原始流量
 
@@ -318,11 +306,10 @@ agenthub server trace linear off
 
 打开之前有三件事值得知道：
 
-**立刻生效。** 已经在跑的客户端不用重启就开始记录，而且它连的那台 server 不会被重连——正在被
-调查的那条连接不受打扰。
+**立刻生效。** 已经在跑的客户端不用重启就开始记录，而正在被调查的那条连接不会被重连。
 
-**文件里是原始响应。** 帧是在连接处捕获的，早于任何过滤，所以 server 实际返回了什么，就原样
-躺在 `logs/server-<id>.log` 里。这正是它的用处，也是拿到答案后就该关掉它的理由。
+**文件里是原始响应。** 帧是在连接处捕获的，早于任何过滤，所以 server 实际返回了什么，就原样躺在
+`logs/server-<id>.log` 里。这正是它的用处，也是拿到答案后就该关掉它的理由。
 
 **按 server 生效，而且会持久。** 没有任何机制让 trace 过期，开着不管就会跨重启一直录。只要还有
 东西在被 trace，`server ls` 就会多出一列 `TRACE`——想不起来开过哪台时就去那里看。

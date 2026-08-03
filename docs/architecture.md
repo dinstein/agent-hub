@@ -13,8 +13,8 @@ the conventions you don't get to change casually in [canonical.md](canonical.md)
 The client thinks it's connected to a single MCP server; it's actually connected to AgentHub's
 gateway. The gateway decides which tools it can see based on the current session's **effective
 scope**, every call passes through **the same execution pipeline** (gates → downstream → shaping),
-and the result goes back. Configuration and credentials converge
-at this layer, leaving the client side with a single line of `command`.
+and the result goes back. Configuration and credentials converge at this layer, leaving the client
+side with a single line of `command`.
 
 ---
 
@@ -55,82 +55,59 @@ flowchart LR
 ```
 
 **stdio access = one independent gateway process per client.** `agenthub connect --client <id>` is not
-a forwarding shell; it's a complete gateway: it reads the registry itself, connects downstreams
-according to this client's scope itself, injects credentials itself, and runs the security pipeline
-itself. That buys four kinds of isolation for free — credentials differentiated per client, connection
-parameters (`${ROOT}`/cwd) differentiated per client, one client's slow call never blocking another,
-and a downstream crash affecting only one client.
+a forwarding shell; it reads the registry, connects downstreams at this client's scope, injects
+credentials and runs the pipeline, all itself. That buys four kinds of isolation for free: per-client
+credentials, per-client connection parameters (`${ROOT}`/cwd), one client's slow call never blocking
+another, and a downstream crash reaching only one client.
 
-**The daemon is an optional value-add, not a requirement.** It handles three things: the HTTP access
-surface (a shared downstream connection pool), the control plane (the management API for CLI and GUI),
-and the coordination plane (session registry, OAuth refresh singleflight). The gateway **never
-auto-starts the daemon** — the stdio data plane having zero dependency on the daemon is the core
-selling point of this model, and auto-starting would turn "optional" into de facto mandatory.
-Degradation when the daemon is absent is now barely observable from the data plane: a stdio
-gateway's scope comes entirely from the registry files, so killing the daemon changes nothing about
-what a client sees. What is lost is `session ls` / `session kill`, the event stream, and the shared
-HTTP pool; OAuth refresh falls back to file locks.
+**The daemon is an optional value-add, and the gateway never auto-starts it** — the stdio data plane's
+zero dependency on it is the point, and auto-starting would make "optional" de facto mandatory. It
+holds the HTTP access surface, the control plane, and the coordination plane (session registry, OAuth
+singleflight). A stdio gateway's scope comes from the registry files, so killing the daemon changes
+nothing about what a client sees; what is lost is `session ls` / `session kill`, the control-plane
+event stream, and the shared HTTP pool, with OAuth refresh falling back to file locks.
 
-**A daemon belongs to whoever started it, and there are exactly two answers.** The desktop
-application starts one and owns it: it runs as a supervised child, it is restarted if it falls over,
-and it stops when the application does — including when the application never gets to say so, because
-the daemon watches its owner rather than trusting it (a lifeline pipe, plus a pid poll as the
-backstop). The other answer is `--headless`, for a server with no desktop, CI, and the e2e suite: it
-belongs to nobody, watches nothing, and stops when an operator stops it. **A start that names neither
-is refused** (`E_DAEMON_UNOWNED`), because a hub nothing is responsible for is one the next launch
-finds, cannot claim, and must not kill.
+**A daemon belongs to whoever started it, and there are exactly two answers.** The desktop application
+owns one as a supervised child, and the daemon watches its owner rather than trusting it to say
+goodbye (a lifeline pipe, with a pid poll as backstop that reads "cannot tell" as alive). The other is
+`--headless`, for servers, CI and the e2e suite: owned by nobody, stopped by an operator. **A start
+that names neither is refused** (`E_DAEMON_UNOWNED`) — a hub nothing is responsible for is one the next
+launch finds, cannot claim, and must not kill. The cost is that the value-add keeps the application's
+hours: an HTTP-connected agent loses its endpoint when the application quits.
 
-This does not make the daemon mandatory, and the paragraph above still holds in full: a client's
-scope comes from the registry files, so a machine with no hub running serves stdio clients exactly as
-before. What it makes conditional is the *value-add* — the shared HTTP pool, the session list and the
-event stream come and go with the application, and an agent connected over HTTP loses its endpoint
-when the desktop application quits. That is the trade the ownership rule buys: no orphaned hub, at
-the price of an HTTP face that keeps the application's hours unless an operator runs one headless.
+Several processes therefore write one data directory, and that discipline is a correctness dependency
+rather than belt-and-braces — `O_APPEND` line writes, cross-process locks around the rate-limit
+counters and the access ledger's storage limits, atomic rename for every registry write. `modules/`
+carries it per package.
 
-The price is that the discipline of multiple processes writing the same disk has to be right: one
-`O_APPEND` write per log line (`internal/jsonl`, with a multi-process test to prove it), a
-cross-process file lock around the shared rate-limit counters, atomic rename for every registry
-write, and a cross-process inspect-prune-write lock around the access ledger's hard storage limits.
-These aren't belt-and-braces; they're concurrency correctness dependencies.
-
-**The HTTP data plane doesn't exist by default.** The MCP exposure surface in `internal/httpbridge` is
-enabled explicitly, by `agenthub config set http.addr <host:port>` or by a `--http-addr` on a start
-that types flags; **no address means no listener** (not "there's a default port"). The stored form
-exists because the desktop application is what starts a hub and an application types no flags: an
-opt-in that lived only in argv could not be given at all. It is the same opt-in written down rather
-than repeated, and a command line that names one still replaces the stored set as a whole. A
-non-loopback address additionally requires `http.allowRemote` / `--http-allow-remote`, or the daemon
-**fails to start** rather than quietly falling back to loopback —
-an exposure surface the configuration claims must either materialize or raise an error. The bind
-itself must also pass `AuthorizeBind`: a listener with no admin token, no active agent token, and no
-registered clients is refused.
+**The HTTP data plane doesn't exist by default.** `internal/httpbridge` is enabled from one of two
+sources and never half of each: the command line when a start types `--http-addr`, otherwise the
+stored `http.*` keys (`agenthub config set http.addr <host:port>`). The stored form exists because the
+desktop application types no flags, so an argv-only opt-in could not be given at all. **No address
+from either means no listener** — not "there's a default port". A non-loopback address additionally
+requires `http.allowRemote` / `--http-allow-remote` from that same source or the daemon **fails to
+start** rather than falling back to loopback, and the bind must then pass `AuthorizeBind`: no admin
+token, no active agent token and no registered clients is refused.
 
 **The HTTP surface reuses the same gateway; it's not a second assembly.** The daemon maps an
-authenticated credential to a `gateway.Conn` — the very gateway body behind `agenthub connect`, just
-attached to an in-memory pipe instead of stdin/stdout. Requests are written into the same frame reader,
-so they pass through the same discovery surface, the same router, and the same `pipeline.Execute` call
-site. The credential enters the governance chain through only two existing entry points: `Caller.Tier`
-→ `pipeline.CallRequest.CallerTier` (the token tier gate), and `Caller.Servers` / `Caller.Profile` →
-an extra layer in `scope.Sources.Extra` (intersected by the same `Merge` used for the persisted
-layers, so it can only narrow). Connections are reused **per credential** and reclaimed once idle, so
-downstream connections are shared by credential rather than duplicated per HTTP session.
+authenticated credential to a `gateway.Conn` — the `connect` gateway body on an in-memory pipe — so it
+passes the same discovery surface, router and `pipeline.Execute` call site. The credential enters
+governance through exactly two existing entry points: `Caller.Tier` → the tier gate, and
+`Caller.Servers` / `Caller.Profile` → an extra layer in `scope.Sources.Extra`, merged by the same
+`Merge` as the persisted layers so it can only narrow.
 
-**"What state is this server in right now?" follows the same line.** The daemon doesn't connect
-downstreams when the data plane is off, so it also shouldn't reopen a connection just to light up a
-status indicator on `/v1/servers` (that would mean one extra resident child process per stdio server,
-and doubled OAuth and quota consumption for remote servers). The gateways are the ones actually holding
-connections, so the gateways **report** over the control connection —
-`POST /v1/gateway/{sid}/servers`, a full snapshot, living and dying with the session. The daemon's only
-job is folding N clients' N views of the same server into one: connection state takes the worst, tool
-count takes the max, and the detail spells out **who** saw it. When no gateway holds a given server, its
-status is `unknown / "not observed"` — a statement about observers, not a certificate of health.
+**Server status is reported by the gateways, not probed by the daemon.** Opening a connection just to
+light up an indicator would cost a resident child process per stdio server and doubled OAuth and quota
+consumption for remote ones. So each gateway pushes a full snapshot that lives and dies with its
+session, and the daemon folds N views into one: connection state takes the worst, tool count the max,
+detail says **who** saw it. Nobody holding a server means `unknown / "not observed"` — a statement
+about observers, not a certificate of health.
 
 ---
 
 ## 3. Core module map
 
-Packages belong to layers; per-package detail is in [modules/](modules/). This table answers "which
-package holds the thing I want to change."
+Which package holds the thing you want to change. Per-package detail is in [modules/](modules/).
 
 ```mermaid
 flowchart TD
@@ -154,12 +131,14 @@ flowchart TD
         DISC["internal/discovery<br/>full/grouped/lazy"]
         SHAPE["internal/shaping<br/>pagination/budget/TOON"]
         RL["internal/ratelimit<br/>cooperative quotas"]
+        MRTR["internal/mrtr<br/>multi-round-trip input resolution"]
     end
     subgraph L2["governance and configuration"]
         SCOPE["internal/scope<br/>three-layer resolution + Merge"]
         SESS["internal/session<br/>session identity"]
         SEC["internal/secrets<br/>four-level credential chain"]
         OAUTH["internal/oauthflow<br/>discovery/DCR/PKCE/refresh"]
+        OALOG["internal/oauthlogin<br/>login sessions for a browserless process"]
         SKL["internal/skills<br/>library+install tiers"]
         CLNT["internal/clients<br/>12 client adapters"]
         ACCESS["internal/accesslog<br/>encrypted tools/call ledger"]
@@ -171,7 +150,8 @@ flowchart TD
         GUARD["internal/guard/*<br/>spawn/net"]
         REG["internal/registry<br/>config source of truth + generation"]
         JL["internal/jsonl<br/>append-only line writer"]
-        EVT["internal/event"]
+        EVTL["internal/eventlog<br/>closed-vocabulary event stream"]
+        EVT["internal/event<br/>in-process bus"]
         TIER["internal/tier<br/>operation tier vocabulary"]
     end
     L5 --> L4
@@ -182,43 +162,36 @@ flowchart TD
     L3 --> L1
 ```
 
-The ten packages worth knowing first:
+The map is exhaustive: everything under `internal/` is above except the test-only
+`internal/depguardtest` (§4's proofs) and `internal/testutil`. Six are chokepoints, where a second
+implementation would be a second answer to a question that must have one:
 
-| Package | One-line responsibility | Why it matters |
-|---|---|---|
-| `internal/mcp` | The one MCP protocol facade, stdlib only | The only place in the repo allowed to touch protocol implementation; bounded reads, cancellation forwarding, and reverse RPC all live here |
-| `internal/registry` | Config source of truth: multi-document + atomic writes + generation + watch | This is what makes "the source of truth is the files, not the daemon's memory" real |
-| `internal/confops` | The **one** semantic-write implementation (add a server, edit a profile, flip a governance switch) | CLI and control plane are two frontends over one rule set; the rules exist once |
-| `internal/scope` | Three-layer resolution chain + pure `Merge` + content-addressed `EffectiveScope` | Every "who can see what" decision; security fields can only get tighter |
-| `internal/router` | Namespace aggregation and `RouteOf` as sole provenance | The only legal way to recover `(server, tool)` from an exposed name |
-| `internal/pipeline` | ★ The one execution pipeline: two gates + the shaping stage | Every call path converges here, so the gates cannot fork |
-| `internal/downstream` | Downstream connection lifecycle, serial queue, circuit breaker, derived instance pool | Downstream instability stops at this layer instead of leaking to callers |
-| `internal/gateway` | stdio gateway assembly and lifecycle (the implementation behind `connect`) | The data plane's assembly point; the HTTP surface reuses it too |
-| `internal/accesslog` | Encrypted, bounded lifecycle history for every tools/call attempt | Complete requests remain available for offline audit without entering ordinary logs; strict write failure blocks execution |
-| `internal/guard/*` | Spawn anti-smuggling / SSRF screening | Zero business dependencies, safely reusable by any layer. Neither is a permission: both refuse regardless of who asked |
+| Package | The chokepoint |
+|---|---|
+| `internal/mcp` | The only place allowed to touch protocol implementation |
+| `internal/registry` | The config source of truth is these files, not the daemon's memory |
+| `internal/confops` | One semantic-write rule set; CLI and control plane are two frontends over it |
+| `internal/scope` | Every "who can see what" decision, through one pure `Merge` |
+| `internal/router` | `RouteOf` is the only legal way to recover `(server, tool)` from an exposed name |
+| `internal/pipeline` | ★ Every call path converges here, so the gates cannot fork |
 
 ---
 
 ## 4. Layering and dependency direction
 
 Four dependency directions are **CI failure conditions**, not review conventions: `api` and
-`cmd/agenthub-gui` import no `internal/*` ("the GUI is optional and unprivileged" is a compile-time
-property); `internal/mcp` is stdlib-only and the only package touching protocol implementation;
-`internal/pipeline` must not import `internal/ctlapi` (the data plane does not depend on the control
-plane); and `internal/mcp`, `internal/platform`, `internal/logx`, `internal/guard/*` carry zero
-business dependencies, so any layer can reuse them. The normative wording — and the numbering that
-code comments cite as "§2 rule 3" — is [canonical.md §2](canonical.md#hard-dependency-direction-constraints-enforced-at-compile-time-by-depguard).
+`cmd/agenthub-gui` import no `internal/*`; `internal/mcp` is stdlib-only and the only package touching
+protocol implementation; `internal/pipeline` must not import `internal/ctlapi`; and `internal/mcp`,
+`internal/platform`, `internal/logx`, `internal/guard/*` carry zero business dependencies. The
+normative wording — and the numbering that code comments cite as "§2 rule 3" — is
+[canonical.md §2](canonical.md#hard-dependency-direction-constraints-enforced-at-compile-time-by-depguard).
 
 What belongs here is how they are *held*: `internal/depguardtest` plants violating probes in the
-constrained packages — inside a disposable copy of the checkout, never the checkout itself — and
-asserts golangci-lint reports each one. A lint rule that is configured but not in effect is more
-dangerous than no rule at all, so the implicit fifth constraint is that **every rule must have a
-failing case**, and that case must not be able to pass by skipping itself.
-
-The layering is also why `internal/tier` is a standalone leaf rather than a type inside `pipeline`:
-five packages need to say the word "read", and none of them should import another to do it. canonical.md
-§2 records what the old placement cost — it turned rule 3's failing case into an import cycle rather
-than a lint error, which left the rule unprovable.
+constrained packages — inside a disposable copy of the checkout — and asserts golangci-lint reports
+each one. A rule configured but not in effect is more dangerous than no rule, so the implicit fifth
+constraint is that **every rule must have a failing case that cannot pass by skipping itself**. That
+is also why `internal/tier` is a standalone leaf: inside `pipeline` it turned rule 3's failing case
+into an import cycle rather than a lint error, leaving the rule unprovable.
 
 ---
 
@@ -240,30 +213,24 @@ flowchart LR
     J --> AU3["audit<br/>outcome + configured result capture"] --> A
 ```
 
-Three unshakeable properties along this chain:
+**The gate chain order is frozen** (`scope → token tier`, `internal/pipeline`), pinned by tests. Both
+gates decide from configuration alone and both fail closed, and nothing in the chain inspects or
+rewrites a call's arguments: what the caller sent is what the downstream receives, and what the
+downstream answered is what the caller reads.
 
-**The gate chain order is frozen** (`scope → token tier`, see `internal/pipeline`), pinned by tests.
-Both gates decide from configuration alone and both fail closed. Nothing in the chain inspects a
-call's arguments or rewrites them: what the caller sent is what the downstream receives, and what
-the downstream answered is what the caller reads.
+**There is only one execution path.** A direct call and lazy mode's `call_tool` reach the same
+`pipeline.Execute`, and tests assert both advance every gate's counter identically. Any **new**
+execution path must carry the same assertions; "there are already tests" is not an exemption.
 
-**There is only one execution path.** A direct call and lazy mode's `call_tool` go through the same
-`pipeline.Execute`. This isn't upheld by convention: tests assert that both paths advance every gate's
-counter identically — the gates cannot fork. Any **new** execution path must carry the same counter
-assertions; "there are already tests" is not an exemption.
+**Success and error branches are shaped alike**: `defend_and_shape` runs once over the outcome
+whichever branch it came back on, so a large JSON-RPC error is budgeted like a large result. It kept
+its name after the defenses in it were removed, because the stdio/HTTP gate-count parity assertions
+compare these stage keys — renaming one would leave those tests passing while comparing nothing.
 
-**Success and error branches are shaped alike.** `defend_and_shape` runs once over the outcome
-whichever branch it came back on, so a large JSON-RPC error is budgeted the same way a large result
-is. The stage kept its name after the defenses in it were removed, and deliberately: the gate-count
-parity assertions between the stdio and HTTP faces compare these stage keys, so renaming one would
-leave those tests passing while comparing nothing.
-
-**The audit wrapper is strict observability, not a gate.** An enabled ledger persists the complete
-incoming `tools/call` parameters before parsing or execution, then the routed identity and effective
-arguments before the frozen gate chain. Every exit, including a protocol error, denial, busy reply,
-tool error and cancellation, receives a `finished` event. If a required audit write, key lookup or
-storage-pressure check fails, execution is refused before `pipeline.Execute`; the wrapper never
-changes scope, tier, arguments or results.
+**The audit wrapper is strict observability, not a gate.** It persists the raw `tools/call` parameters
+before parsing and the routed identity before the gate chain, and gives every exit a `finished` event.
+A failed write, key lookup or storage-pressure check refuses the call before `pipeline.Execute`, but
+the wrapper never changes scope, tier, arguments or results.
 
 ---
 
@@ -302,7 +269,7 @@ flowchart LR
         GW --> A6["audit/YYYY-MM-DD/<br/>authenticated metadata + encrypted payload packs"]
         A4 -.->|"agenthub server logs"| F["CLI / GUI"]
         A5 -.->|"agenthub logs (offline, merged)<br/>agenthub daemon logs (daemon.log only)"| F
-        A7 -.->|"agenthub events (offline)"| F
+        A7 -.->|"agenthub events (offline)<br/>GUI Events"| F
         A6 -.->|"agenthub audit (offline)<br/>GUI Calls (selected-call detail)"| F
     end
 ```
@@ -315,11 +282,11 @@ Each flow has one property you must not forget:
   rulings, `modules/foundation.md` the mechanism).
 - **Credential flow**: the vault key is the composite `(serverID, scopeName)` and has been since day
   one — one of the three things canonical.md §4 says must never be retrofitted.
-- **Observability flow**: ordinary logs never contain call arguments. The
-  separately enabled access ledger does: complete request parameters and effective arguments are
-  compressed and encrypted; result capture is `none | errors | truncated | full` (default
-  `truncated`). Metadata-only inspection is the default, and every decrypting CLI operation requires
-  explicit `--payloads`. Per-server wire trace remains a separate, off-by-default debugging surface.
+- **Observability flow**: ordinary logs never contain call arguments; the separately enabled access
+  ledger does, encrypted, with result capture `none | errors | truncated | full` (default
+  `truncated`) and `--payloads` required for every decrypting CLI operation. The streams fail in
+  opposite directions: an event that cannot be written is dropped, an audit record that cannot be
+  written refuses the call.
 
 ---
 
@@ -335,45 +302,32 @@ flowchart TD
     M{{"Merge: security fields intersect / OR<br/>experience fields overridden by the nearest layer"}} --> E["EffectiveScope (content-addressed, carries a Hash)"]
 ```
 
-**`clients.json` is not a layer.** It answers exactly one question — *which* profile this client is on
-(`agenthub client bind <client> <profile>`, or nothing, meaning "follow the globally active profile").
-It contributes no servers, no tool selectors, no discovery mode of its own. The chain used to have two
-more layers here: a client layer that narrowed on top of its profile, and a project layer keyed by
-longest-prefix match on the client's reported MCP root. Both are retired, for the same reason — they
-made "which profile is this client on" an *incomplete* answer to "what can this client see". An
-operator had to read two or three places and intersect them by hand, which is precisely the arithmetic
-this model exists to do for them. Narrowing now has one home, the profile; a client that needs a
-different surface gets bound to a different profile.
+**`clients.json` is not a layer.** It answers one question — *which* profile this client is on, or
+nothing, meaning "follow the globally active profile". A client layer and a project layer keyed by the
+client's reported MCP root were both retired: they made "which profile is this client on" an
+*incomplete* answer to "what can this client see", leaving an operator to intersect three places by
+hand. Narrowing now has one home; a client needing a different surface gets a different profile.
 
-The retirement has a direction, and it is the open one: both retired layers existed to **narrow**, so a
-configuration that still carries them now shows that client *more* than it used to. The registry
-preserves unknown JSON verbatim, so a legacy `projects` block survives on disk looking exactly as
-authoritative as it did while it worked. `agenthub doctor` therefore **warns** (not informs) on
-`scope:projects`, naming the clients and saying the block no longer applies — but never deletes it:
-doctor reports, the operator decides.
+That retirement fails in the **open** direction, which is why it is written here: both layers existed
+to narrow, so a configuration still carrying them now shows that client *more* than before, and the
+registry preserves unknown JSON verbatim — a legacy `projects` block survives looking as authoritative
+as it did while it worked. `agenthub doctor` therefore **warns** on `scope:projects` and never deletes
+it: doctor reports, the operator decides.
 
-The merge rules follow from the nature of each field, not from case-by-case judgment: **security
-fields** (server visibility, tool allow) intersect layer by layer — everything can only get tighter,
-and there is no deny list anywhere, because a deny would answer a newly-added downstream tool in the
-opposite direction from an allow. **Experience fields** (discovery mode, result budget) are
-won by the most specific layer. Two invariants: intersections are always keyed by the **original tool
-name** (otherwise renaming or disambiguation suffixes would let you slip past a narrowing), and a
-dangling profile reference resolves to the **empty set** rather than allow-all, with doctor raising an
-explicit warning rather than staying silent.
+The merge rules follow from the nature of each field: **security fields** (server visibility, tool
+allow) intersect layer by layer, and there is no deny list anywhere, because a deny would answer a
+newly-added downstream tool in the opposite direction from an allow. **Experience fields** (discovery
+mode, result budget) are won by the most specific layer. Two invariants: intersections are keyed by the
+**original tool name**, or a rename or disambiguation suffix would slip past a narrowing; and a
+dangling profile reference resolves to the **empty set** rather than allow-all, with a doctor warning.
 
 **The visibility plane and the connection plane are separate.** The gateway connects at this client's
-static high-water mark (global ∩ profile), while what each session sees is a query-time projection. So
-narrowing a session's scope doesn't rebuild the router and doesn't restart downstream processes — which
-is exactly why per-session granularity is feasible. Overlays are never persisted: a runtime loosening
-that comes back from the dead is a security incident. That is also why `session scope` has no way to
-write its edits back into configuration; the way to change what a client sees permanently is to edit
-its profile or bind it to another one.
-
-The session's root no longer enters resolution at all — with the project layer gone, no persisted layer
-reads it — so it is not part of the resolver's cache key either, which is now `(clientID, registry
-generation)`. Keeping the root in the key would have split one client's cache across
-every directory it happens to report from, for a value that cannot change the answer. The root still
-reaches `internal/downstream`, which derives per-root server instances from it.
+static high-water mark (global ∩ profile); what a session sees is a query-time projection. Narrowing a
+session's scope therefore rebuilds no router and restarts no process, which is what makes per-session
+granularity feasible. Overlays are never persisted — a runtime loosening that comes back from the dead
+is a security incident — which is also why `session scope` cannot write its edits into configuration.
+Nothing persisted reads the session root any more either, so the resolver's cache key is `(clientID,
+registry generation)`; the root reaches only `internal/downstream`, which derives per-root instances.
 
 ---
 
@@ -387,22 +341,17 @@ How the tool catalog is exposed to the agent is decided by `EffectiveScope.Disco
 | `grouped` | One aggregate tool per server + a generic call entry point | Many tools, but you still want to skip searching |
 | `lazy` | The five meta-tools: `status` / `search_tools` / `describe_tool` / `call_tool` / `fetch_result` | Very many tools; trades token budget for coverage. **`discovery.DefaultMode`** — what a scope that sets no mode gets |
 
-In lazy mode `call_tool` can be split by a governance switch into three variants, `call_tool_read` /
-`call_tool_write` / `call_tool_destructive`, so an IDE's tool allowlist can permit them separately. The
-tier is derived from downstream annotations, and **no annotations at all means destructive**
-(fail-closed); a variant that conflicts with the actual tier is rejected with a hint naming the correct
-variant.
-
-**The switch is not read yet.** `internal/discovery` implements all of the above and tests it, but the
-stdio gateway never sets `discovery.Options.IntentVariants` from `intentVariants`, so setting that field
-in governance changes nothing today — see the unwired-faces appendix in
-[modules/dataplane.md](modules/dataplane.md). This is written down here rather than only there because
-this section is where someone decides to turn it on.
+In lazy mode a governance switch can split `call_tool` into `call_tool_read` / `call_tool_write` /
+`call_tool_destructive`, so an IDE's tool allowlist can permit them separately. The tier comes from
+downstream annotations and **no annotations at all means destructive** (fail-closed). **The switch is
+not read yet**: the stdio gateway never sets `discovery.Options.IntentVariants` from the registry's
+`intentVariants`, so setting it in governance changes nothing today. Noted here rather than only in
+[modules/dataplane.md](modules/dataplane.md)'s unwired appendix because this is where someone decides
+to turn it on.
 
 Search results carry a **compact signature** rather than a full schema; the agent calls `describe_tool`
-when it needs detail. Every tool id that can't be shown — nonexistent, out of scope, or left out of
-its server's allow list — returns the same copy, because differentiated errors would turn
-`describe_tool` into an enumeration oracle.
+for detail. Every tool id that can't be shown — nonexistent, out of scope, or outside its server's
+allow list — returns the same copy, or `describe_tool` becomes an enumeration oracle.
 
 ---
 
@@ -418,10 +367,11 @@ flowchart LR
 | scope | server / tool visibility | Machine (layer intersection, from configuration) | Capabilities that should not be visible |
 | agent token tier + intent variants | Operation tier | Machine (token × annotations) | A read-only credential initiating a write/destructive operation |
 
-Both are decided before the call, from what an operator wrote down. Neither reads the arguments and
-neither reads the result: an earlier design added an argument pre-validator, a human approval queue,
-a prompt-injection scanner and a leak redactor between these two lines and the downstream, and all
-four were removed. What survives refuses a call outright or lets it through untouched.
+Both decide before the call, from what an operator wrote down, and their rejections stay individually
+distinguishable (`E_SCOPE_DENIED`, `E_TOKEN_TIER_DENIED`). Neither reads the arguments or the result:
+an earlier design put an argument pre-validator, a human approval queue, a prompt-injection scanner and
+a leak redactor between these lines and the downstream, and all four were removed. What survives
+refuses a call outright or lets it through untouched.
 
 ## 10. On-disk layout
 
@@ -434,6 +384,7 @@ four were removed. What survives refuses a call outright or lets it through unto
 ├── skills/                   # content-addressed skill library + install index
 ├── cache/tools/<server>.json # tool catalog snapshots used for "answer from cache first"
 ├── logs/                     # events.jsonl + server-<name>.log + gateway-<client>.log + daemon.log
+├── audit/YYYY-MM-DD/         # the access ledger: authenticated metadata + encrypted payload packs
 ├── tokens.json  .token_key   # agent tokens (HMAC only)
 └── run/                      # on Linux, prefers $XDG_RUNTIME_DIR/AgentHub when AGENTHUB_DATA_DIR is unset
     ├── ctl.sock  daemon.json # control socket + readiness handshake (endpoint, pid, version, owner pid;
@@ -448,28 +399,24 @@ four were removed. What survives refuses a call outright or lets it through unto
 | dev (default) | `~/Library/Application Support/AgentHubDev` | `${XDG_DATA_HOME:-~/.local/share}/AgentHubDev` |
 
 The two are **siblings, not parent and child**: a dev process can't reach the installed copy's registry
-by walking up one level, and `rm -rf` on one won't take the other with it. Which one you get is decided
-by the `channel` at the binary's entry point, defaulting to dev — `internal/platform` itself makes no
-such choice, it only resolves a path given an environment. `AGENTHUB_DATA_DIR` overrides both, which is
-what lets CI, e2e and two concurrent sandboxes coexist. The failure direction and what it costs to get
-backwards are in [canonical.md §1](canonical.md#1-frozen-identifiers-abi-unchangeable-as-of-v1).
+by walking up one level, and `rm -rf` on one won't take the other with it. The `channel` at the
+binary's entry point decides, defaulting to dev — `internal/platform` makes no such choice, it only
+resolves a path given an environment. `AGENTHUB_DATA_DIR` overrides both, which is what lets CI, e2e
+and two sandboxes coexist ([canonical.md §1](canonical.md#1-frozen-identifiers-abi-unchangeable-as-of-v1)
+has the failure direction).
 
-The config source of truth is always the files, **not the daemon's memory**, and that is what lets the
-two frontends write by different routes without disagreeing. The **CLI always writes the files
-directly** — `internal/confops` under the registry's cross-process lock, whether or not a daemon is
-running; it holds no long-lived view to be stale against, so it sends no precondition. The **GUI always
-writes through the daemon** (`api` → `ctlapi` → the same `internal/confops`), and because its window
-may be holding a minutes-old read, that route carries the optimistic-concurrency precondition. One
-implementation of the rules, one lock, two entry points. A daemon that is running does not get bypassed
-either: its registry watcher picks the CLI's write up and announces it. Change propagation uses a
-monotonic generation counter plus event pushes; mtime plays no semantic role.
+The files being the source of truth is what lets the two frontends write by different routes without
+disagreeing. The **CLI writes the files directly** — `internal/confops` under the registry's
+cross-process lock, daemon or no daemon; holding no long-lived view, it sends no precondition. The
+**GUI writes through the daemon** (`api` → `ctlapi` → the same `internal/confops`), and because its
+window may hold a minutes-old read, that route carries the optimistic-concurrency precondition. One
+rule set, one lock, two entry points; a running daemon is not bypassed either, since its watcher picks
+the CLI's write up and announces it. Propagation is the generation counter plus event pushes.
 
-The CLI reaches the daemon **only for runtime objects** — `session ls/show/kill` and the live status
-section of `server inspect` (best-effort there; offline it says so and reads the persisted cache).
-Those refuse with exit 4 rather than inventing an offline answer, because a session is never
-persisted. Everything else, configuration and every observability stream included, works with no
-daemon at all — `events` in particular, since a stdio gateway writes that stream with no daemon
-anywhere in the picture.
+The CLI reaches the daemon **only for runtime objects**: `session ls/show/kill` and the live status
+section of `server inspect`. Those refuse with exit 4 rather than inventing an offline answer, because
+a session is never persisted. Everything else — configuration and every observability stream, `events`
+included — works with no daemon anywhere in the picture.
 
 ---
 
@@ -482,55 +429,36 @@ anywhere in the picture.
 | Windows | **Experimental**: the platform layer is filled in — file locks (`LockFileEx`), named-pipe listener (SDDL-gated), api dialing, GUI channel wiring, and portable zip packaging — but `daemon stop` and `client connect`'s user-level paths are unimplemented above it, and **nothing has ever run on a real Windows machine**. See [windows.md](windows.md) |
 
 The GUI (`cmd/agenthub-gui`) is **not** part of the default build: linking a webview needs GTK/WebKit
-dev packages, which the Linux CI runner lacks. All Wails code sits behind `//go:build wails`; build it
-separately with `make gui`.
-
-Its CI coverage comes in two layers, and the split is worth knowing before you move code across it. The
-untagged half (the `services` service body, the golden test in `cmd/agenthub-gui/internal/healthgen`) is
-already inside `make test`'s `go test ./...` on both matrix legs. The `wails`-tagged shell and the
-frontend need a **separate `gui` job** (`make gui-frontend-ci` + `make gui-go` + `make gui-vet`) on a
-**macOS** runner: on Linux `-tags wails` dies in the cgo preamble (`pkg-config: gtk4 webkitgtk-6.0`)
-before `go vet` can even run, while the macOS runner ships the Cocoa/WebKit SDK and needs nothing
-installed. That job stays out of `make ci` on purpose — "the GUI is optional" is a compile-time
-property, and it must not become a prerequisite of the default build.
+dev packages the Linux CI runner lacks, so all Wails code sits behind `//go:build wails` and builds
+separately with `make gui`. Its untagged half is inside `make test` on both matrix legs; the tagged
+shell and the frontend need a **separate `gui` job on a macOS runner**, because on Linux `-tags wails`
+dies in the cgo preamble before `go vet` can run. That job stays out of `make ci` on purpose — "the GUI
+is optional" is a compile-time property and must not become a prerequisite of the default build.
 
 ---
 
 ## 12. Assembly status: implemented but not yet wired up
 
-Package-level completeness and **whether the runtime actually reaches it** are two different things: a
-package can be code-complete with tests of its own and still have nothing calling it. That gap is worth
-recording because "thought it was in effect but it wasn't" is far more dangerous than "known to be
-missing."
+A package can be code-complete with its own tests and still have nothing calling it, and "thought it
+was in effect but it wasn't" is far more dangerous than "known to be missing". **The inventory is not
+here**: it is the appendix at the end of [modules/dataplane.md](modules/dataplane.md), beside the code
+it describes, and confirmed gaps pinned to a line live in the owning [modules/](modules/) doc. The
+summary table this section used to hold is gone rather than emptied, because a summary kept away from
+its subject is the copy that rots unnoticed. Everything left unwired is presentational: **every
+governance entry that table once carried was removed rather than wired**, which is the right direction
+— an unwired governance seam reads to a hurried operator as protection that is already there.
 
-This section used to carry a summary table of them, and the table is gone rather than emptied. Two
-reasons, and the second is the load-bearing one. A summary of an unwired list outlives its subject —
-every row here had to be retired by hand each time something was wired up or deleted, and the copy that
-gets forgotten is indistinguishable from the current one. And **every governance entry it once held was
-removed rather than wired**: a router policy with deny sets, a fail-closed HITL default, leak and
-self-heal hooks on `pipeline.Options`. An unwired governance seam is the most dangerous thing such a
-table can list, because it reads to a hurried operator as protection that is already there.
-
-What remains unwired is presentational, and each entry lives beside the code it is about: the appendix
-at the end of [modules/dataplane.md](modules/dataplane.md) is the inventory. Read that, not this
-section, when the question is what is switched on today.
-
-The following are **deliberate** boundaries, not to-dos: the GUI isn't part of the default build,
-skills materialization only reaches client granularity, TOON has no decoder, and teams is
-unimplemented. See [canonical.md](canonical.md) §4, "Known capability boundaries."
-
-Windows is not one of them. Its platform layer is implemented and has never run on real hardware, and
-two things above that layer do not work at all — [windows.md](windows.md) is the only place that
-tracks which is which.
-
-Gaps that are confirmed and pinned to a line, but not yet fixed, live in the [modules/](modules/) doc of
-the package that owns them — next to the code they are about, rather than in a list of their own.
+Distinct from all of that are the **deliberate** boundaries, which are not to-dos: the GUI isn't in the
+default build, skills materialization only reaches client granularity, TOON has no decoder, teams is
+unimplemented ([canonical.md](canonical.md) §4, "Known capability boundaries"). Windows is neither — its
+platform layer is implemented, has never run on real hardware, and two things above it do not work at
+all; [windows.md](windows.md) tracks which is which.
 
 ---
 
 ## 13. Further reading
 
-- [flows.md](flows.md) — sequence diagrams for the key flows: gateway startup, a lazy call, config hot reload, OAuth, derived instances.
-- [modules/](modules/) — per-package docs: responsibilities, key types, invariants and failure directions, file map.
-- [canonical.md](canonical.md) — frozen identifiers, dependency constraints, command naming rules, engineering conventions, decision records.
-- [windows.md](windows.md) — Windows status and acceptance criteria.
+[flows.md](flows.md) for the seven flows as sequence diagrams and their failure branches;
+[modules/](modules/) for a package's own invariants before you change it; [canonical.md](canonical.md)
+for whether a name, dependency or convention may move at all; [windows.md](windows.md) for that
+platform's status. [docs/README.md](README.md) is the index and says which layer answers what.

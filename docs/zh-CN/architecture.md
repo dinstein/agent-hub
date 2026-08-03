@@ -56,63 +56,51 @@ flowchart LR
     GUI --> CP
 ```
 
-**stdio 接入 = 每个 client 一个独立网关进程。** `agenthub connect --client <id>` 不是转发壳，
-它是完整网关：自己读 registry、自己按本 client 的作用域连下游、自己注入凭据、自己跑安全管线。
+**stdio 接入 = 每个 client 一个独立网关进程。** `agenthub connect --client <id>` 不是转发壳：
+读 registry、按本 client 的作用域连下游、注入凭据、跑安全管线，全是它自己做。
 这样天然拿到四种隔离——凭据按 client 分化、连接参数（`${ROOT}`/cwd）按 client 分化、
-一个客户端的慢调用不会阻塞另一个、下游崩溃只影响一个客户端。
+一个客户端的慢调用不会阻塞另一个、下游崩溃只波及一个客户端。
 
-**daemon 是可选的增值层，不是必需品。** 它承担三件事：HTTP 接入面（共享下游连接池）、
-控制面（CLI 与 GUI 的管理 API）、协调面（会话注册表、OAuth 刷新单飞）。
-网关**永不自动拉起 daemon**——stdio 数据面对 daemon 零依赖是这个模型的核心卖点，
-自动拉起会把「可选」变成事实上的必选。daemon 不在时的降级如今在数据面上几乎观察不到：
-stdio 网关的 scope 完全来自注册表文件，杀掉 daemon 不改变任何客户端看到的东西；
-失去的是 `session ls` / `session kill`、事件流和共享 HTTP 池，OAuth 刷新退回文件锁。
+**daemon 是可选的增值层，而网关永不自动拉起它**——stdio 数据面对它零依赖正是这个模型的要点，
+自动拉起会把「可选」变成事实上的必选。它承担 HTTP 接入面、控制面，以及协调面（会话注册表、
+OAuth 单飞）。stdio 网关的 scope 来自注册表文件，杀掉 daemon 不改变任何客户端看到的东西；
+失去的是 `session ls` / `session kill`、控制面事件流和共享 HTTP 池，OAuth 刷新退回文件锁。
 
-**daemon 归启动它的人所有，而答案只有两个。** 桌面应用启动的那个归它所有：作为受监管的子进程运行、
-崩了会被拉起、应用退出时随之停止——包括应用来不及道别的那些退出方式，因为 daemon 是**盯着** owner
-而不是信任它（一条 lifeline 管道，外加 pid 轮询兜底）。另一个答案是 `--headless`：给没有桌面的服务器、
-CI 和 e2e 用，它不属于任何人、不盯任何人，由操作者停止。**两者都没说的启动会被拒绝**
-（`E_DAEMON_UNOWNED`）——一个没人负责的 hub，正是下一次启动会遇到、无法认领、又不能杀掉的那个。
+**daemon 归启动它的人所有，而答案只有两个。** 桌面应用把它作为受监管的子进程拥有，而 daemon 是
+**盯着** owner 而不是信任它会来道别（一条 lifeline 管道，外加 pid 轮询兜底，兜底把「判断不了」
+读作还活着）。另一个答案是 `--headless`：给没有桌面的服务器、CI 和 e2e 用，不属于任何人，
+由操作者停止。**两者都没说的启动会被拒绝**（`E_DAEMON_UNOWNED`）——一个没人负责的 hub，
+正是下一次启动会遇到、无法认领、又不能杀掉的那个。代价是那个增值层跟着应用的作息走：
+通过 HTTP 连接的 agent 会在桌面应用退出时失去端点。
 
-这没有让 daemon 变成必需品，上一段仍然整段成立：客户端的 scope 来自注册表文件，没有 hub 在跑的机器
-服务 stdio 客户端和以前完全一样。变成有条件的是那个**增值层**——共享 HTTP 池、会话列表和事件流随应用
-来去，通过 HTTP 连接的 agent 会在桌面应用退出时失去端点。这就是所有权规则买来的交易：不再有孤儿 hub，
-代价是 HTTP 面跟着应用的作息走，除非操作者自己跑一个 headless 的。
+于是多个进程共写同一个数据目录，而这份纪律是并发正确性依赖、不是保险：日志每行一次
+`O_APPEND` 写、限流计数器与访问账本的存储上限外面各套一把跨进程锁、registry 的每一次写都走
+原子改名。逐包的细节在 [modules/](../modules/)。
 
-代价是多进程共写磁盘的纪律必须做对：日志每行一次 `O_APPEND` 写（`internal/jsonl`，并有一个
-多进程测试证明它）、共享限流计数器外面套一把跨进程文件锁、registry 的每一次写都走原子改名。
-这些不是保险，是并发正确性依赖。
-
-**HTTP 数据面默认不存在。** `internal/httpbridge` 的 MCP 暴露面显式开启：`agenthub config set
-http.addr <host:port>`，或者在会敲 flag 的那类启动上给 `--http-addr`；**没有地址就没有监听器**
-（不是「有个默认端口」）。落盘那种形式的存在理由是：现在启动 hub 的是桌面应用，而应用不敲 flag——
-只活在 argv 里的开关等于根本给不出来。它是同一个开关，写下来而不是每次重复；命令行仍然整组替换
-落盘的那一组。非 loopback 地址还要再加 `http.allowRemote` / `--http-allow-remote`，
-否则 daemon **启动失败**而不是悄悄退回 loopback——配置声称的
-暴露面必须兑现或报错。绑定本身还要过 `AuthorizeBind`：既无 admin token、又无活跃 agent token、
-又无注册客户端的监听器会被拒绝。
+**HTTP 数据面默认不存在。** `internal/httpbridge` 从两个来源之一开启，绝不各取一半：会敲 flag
+的那类启动给了 `--http-addr` 就用命令行，否则用落盘的 `http.*`（`agenthub config set http.addr
+<host:port>`）。落盘那种形式的存在理由是桌面应用不敲 flag——只活在 argv 里的开关等于根本给不出来。
+**两个来源都没有地址就没有监听器**，不是「有个默认端口」。非 loopback 地址还要再加同一个来源里的
+`http.allowRemote` / `--http-allow-remote`，否则 daemon **启动失败**而不是退回 loopback；
+随后绑定还要过 `AuthorizeBind`：既无 admin token、又无活跃 agent token、又无注册客户端的会被拒绝。
 
 **HTTP 面复用的是同一套网关，不是第二套装配。** daemon 把一个认证过的凭据映射到一个
-`gateway.Conn`——即 `agenthub connect` 的那个网关体，只是接在内存管道上而不是 stdin/stdout。
-请求写进的是同一个 frame reader，因而穿过同一个 discovery surface、同一个 router、同一个
-`pipeline.Execute` 调用点。凭据只从两个既有入口进入治理链：`Caller.Tier` →
-`pipeline.CallRequest.CallerTier`（token 层级门），`Caller.Servers` / `Caller.Profile` →
-`scope.Sources.Extra` 的额外层（与持久化三层同一个 `Merge` 取交集，只能收窄）。
-连接按**凭据**复用并在空闲后回收，所以下游连接是按凭据共享的，而不是按 HTTP session 复制的。
+`gateway.Conn`——接在内存管道上的那个 `connect` 网关体——因而穿过同一个 discovery surface、
+同一个 router、同一个 `pipeline.Execute` 调用点。凭据只从两个既有入口进入治理链：
+`Caller.Tier` → 层级门，`Caller.Servers` / `Caller.Profile` → `scope.Sources.Extra` 的额外层
+（与持久化各层用同一个 `Merge` 合并，所以只能收窄）。
 
-**「服务器现在什么状态」这个问题也顺着同一条线走。** daemon 在数据面关闭时不连下游，所以它也不该为了
-在 `/v1/servers` 上点亮一个状态灯而去重开一份连接（那意味着每台 stdio server 多一个常驻子进程、
-远程 server 的 OAuth 与限额翻倍）。真正持有连接的是网关，于是由网关经控制连接**上报**——
-`POST /v1/gateway/{sid}/servers`，全量快照，随会话生死。daemon 只负责把 N 个客户端对同一台
-服务器的 N 份状态折成一份：连接状态取最差、工具数取最大、detail 里写清是**谁**看到的。
-没有任何网关持有某台服务器时，它的状态是 `unknown / "not observed"`——一句关于观察者的话，
-不是一张健康证明。
+**服务器状态由网关上报，而不是 daemon 去探。** 只为点亮一个状态灯就开一份连接，代价是每台
+stdio server 多一个常驻子进程、远程 server 的 OAuth 与限额翻倍。于是每个网关推送一份随会话
+生死的全量快照，daemon 把 N 份视角折成一份：连接状态取最差、工具数取最大、detail 里写清是
+**谁**看到的。没有任何网关持有某台服务器时，它的状态是 `unknown / "not observed"`——
+一句关于观察者的话，不是一张健康证明。
 
 ---
 
 ## 3. 核心模块地图
 
-包按层归属，逐包细节见 [modules/](../modules/)。这张表回答的是「我要改的东西在哪个包」。
+你要改的东西在哪个包。逐包细节见 [modules/](../modules/)。
 
 ```mermaid
 flowchart TD
@@ -136,12 +124,14 @@ flowchart TD
         DISC["internal/discovery<br/>full/grouped/lazy"]
         SHAPE["internal/shaping<br/>分页/预算/TOON"]
         RL["internal/ratelimit<br/>cooperative 配额"]
+        MRTR["internal/mrtr<br/>多轮回请求的输入解析"]
     end
     subgraph L2["治理与配置"]
         SCOPE["internal/scope<br/>三层解析 + Merge"]
         SESS["internal/session<br/>会话身份"]
         SEC["internal/secrets<br/>四级凭据解析链"]
         OAUTH["internal/oauthflow<br/>发现/DCR/PKCE/刷新"]
+        OALOG["internal/oauthlogin<br/>替没有浏览器的进程跑登录会话"]
         SKL["internal/skills<br/>库+安装两层"]
         CLNT["internal/clients<br/>12 种客户端适配"]
         ACCESS["internal/accesslog<br/>加密 tools/call 账本"]
@@ -153,7 +143,8 @@ flowchart TD
         GUARD["internal/guard/*<br/>spawn/net"]
         REG["internal/registry<br/>配置真源 + generation"]
         JL["internal/jsonl<br/>追加式行写入器"]
-        EVT["internal/event"]
+        EVTL["internal/eventlog<br/>闭集词汇的事件流"]
+        EVT["internal/event<br/>进程内事件总线"]
         TIER["internal/tier<br/>操作等级词汇表"]
     end
     L5 --> L4
@@ -164,27 +155,26 @@ flowchart TD
     L3 --> L1
 ```
 
-最值得先认识的十个包：
+这张地图是完备的：`internal/` 下的一切都在上面，只有仅供测试的 `internal/depguardtest`
+（§4 的失败用例）与 `internal/testutil` 不在。其中六个是收口点——在那里出现第二份实现，
+就是给一个只允许有一个答案的问题给出第二个答案：
 
-| 包 | 一句话职责 | 为什么它重要 |
-|---|---|---|
-| `internal/mcp` | MCP 协议唯一门面，只依赖标准库 | 全仓唯一允许触碰协议实现的地方；有界读、取消转发、反向 RPC 都在这里 |
-| `internal/registry` | 配置真源：多文档 + 原子写 + generation + watch | 「配置真源是文件而不是 daemon 内存」由它兑现 |
-| `internal/confops` | **唯一**的语义写实现（加 server、改 profile、翻治理开关） | CLI 与控制面是同一套规则的两个前端，规则只有一份 |
-| `internal/scope` | 三层解析链 + `Merge` 纯函数 + 内容寻址 `EffectiveScope` | 「谁能看见什么」的全部判定；安全字段只能越收越紧 |
-| `internal/router` | 命名空间聚合与 `RouteOf` 唯一溯源 | 暴露名 → `(server, tool)` 的唯一合法还原方式 |
-| `internal/pipeline` | ★ 唯一执行管线：两道门 + 整形 | 所有调用路径都在这里汇合，门禁不可能分叉 |
-| `internal/downstream` | 下游连接生命周期、串行队列、断路器、派生实例池 | 下游的不稳定被挡在这一层，不外溢到调用方 |
-| `internal/gateway` | stdio 网关装配与生命周期（`connect` 的实现体） | 数据面的组装点；HTTP 面复用的也是它 |
-| `internal/accesslog` | 每次 tools/call 尝试的加密、有界生命周期历史 | 完整请求不进普通日志仍可离线审计；严格写失败会阻止执行 |
-| `internal/guard/*` | spawn 反走私 / SSRF | 零业务依赖，可被任何层安全复用 |
+| 包 | 它收口的是什么 |
+|---|---|
+| `internal/mcp` | 全仓唯一允许触碰协议实现的地方 |
+| `internal/registry` | 配置真源是这些文件，不是 daemon 的内存 |
+| `internal/confops` | 唯一一套语义写规则；CLI 与控制面是它的两个前端 |
+| `internal/scope` | 「谁能看见什么」的全部判定，都过同一个纯函数 `Merge` |
+| `internal/router` | `RouteOf` 是把暴露名还原成 `(server, tool)` 的唯一合法方式 |
+| `internal/pipeline` | ★ 所有调用路径都在这里汇合，门禁不可能分叉 |
 
 ---
 
 ## 4. 分层与依赖方向
 
-四条依赖约束不是评审口头约定，而是 **CI 失败条件**，并且每一条都有一个「能证明它真的会拦」的
-失败用例（`internal/depguardtest` 往真实包里注入违规探针，断言 golangci-lint 报错）：
+四条依赖约束不是评审口头约定，而是 **CI 失败条件**。规范措辞——以及代码注释里引用的那套编号
+（「§2 规则 3」）——在
+[canonical.md §2](../canonical.md#hard-dependency-direction-constraints-enforced-at-compile-time-by-depguard)：
 
 | # | 约束 | 为什么 |
 |---|---|---|
@@ -193,12 +183,11 @@ flowchart TD
 | 3 | `internal/pipeline` 不得 import `internal/ctlapi` | 数据面不依赖控制面 |
 | 4 | `internal/mcp`、`internal/platform`、`internal/logx`、`internal/guard/*` 零业务依赖 | 底座可被任何层安全复用 |
 
-配置写了但没生效的 lint 规则比没有更危险，所以第 5 条隐含约束是：**规则必须有失败用例**。
-
-`internal/tier`（read / write / destructive 三级词汇表）单独作为叶子包存在，正是这套约束的产物：
-五个包都要说「read」这个词，谁也不该为此 import 别人。它曾经住在 `pipeline` 里，
-结果控制面要说 tier 就得 import 数据面的执行包——而那条 import 让「pipeline 不得 import ctlapi」
-的失败用例产生的是**编译环，不是 lint 报错**，规则因此不可证明。
+这一节真正该讲的是它们**怎么被守住**：`internal/depguardtest` 往受约束的包里注入违规探针——
+注在检出的一份用完即弃的副本里——并断言 golangci-lint 逐条报错。配置写了但没生效的 lint 规则
+比没有更危险，所以第 5 条隐含约束是：**每条规则都必须有一个失败用例，而且这个用例不能靠跳过
+自己来通过**。`internal/tier` 单独作为叶子包存在也是同一个产物：它住在 `pipeline` 里的时候，
+让第 3 条的失败用例产生的是**编译环而不是 lint 报错**，规则因此不可证明。
 
 ---
 
@@ -220,25 +209,22 @@ flowchart LR
     J --> AU3["audit<br/>结果 + 按策略截取返回"] --> A
 ```
 
-这条链上有三个不可动摇的性质：
-
 **门禁链顺序是冻结的**（`scope → token 层级`，见 `internal/pipeline`），顺序由测试钉死。
-两道门都只依据配置判定，都 fail-closed。链子里没有任何一环会读调用的参数或改写它：
+两道门都只依据配置判定，都 fail-closed；链子里没有任何一环会读调用的参数或改写它：
 调用方发出什么，下游就收到什么；下游答了什么，调用方就读到什么。
 
-**只有一条执行路径。** 直接调用与 lazy 模式的 `call_tool` 走的是同一个 `pipeline.Execute`。
-这不是靠约定维持的：测试断言两条路径把每个门的计数器推进得完全一致——门禁不可能分叉。
-任何**新增**执行路径都必须自带同样的计数断言，不能以「已经有测试了」为由免除。
+**只有一条执行路径。** 直接调用与 lazy 模式的 `call_tool` 走的是同一个 `pipeline.Execute`，
+测试断言两条路径把每个门的计数器推进得完全一致。任何**新增**执行路径都必须自带同样的断言，
+不能以「已经有测试了」为由免除。
 
-**成功与错误分支走同一条出口。** 整形对两个分支都生效，并且**只跑一次**——跑两次会重复消耗
-游标，还可能留下一个指向没人会收到的字节的截断提示。这一段在里面的防御被删掉之后仍叫
-`defend_and_shape`，而且是刻意的：stdio 面与 HTTP 面之间的门计数对等断言比的就是这些 stage
-键，改名会让那些测试继续通过、却什么都不再比。
+**成功与错误分支被同样地整形**：无论从哪个分支回来，`defend_and_shape` 都对结果跑一次，
+所以一个巨大的 JSON-RPC 错误和一个巨大的结果一样要过预算。它在里面的防御被删掉之后仍留着
+这个名字，是因为 stdio 面与 HTTP 面之间的门计数对等断言比的就是这些 stage 键——改名会让那些
+测试继续通过、却什么都不再比。
 
-**audit 包裹是严格观测，不是第三道门。** 启用后，它会在解析和执行前持久化完整的
-`tools/call` 参数，在冻结门禁链之前写下路由身份与实际参数，并为协议错误、拒绝、busy、tool error、
-成功和取消等每个出口补上 `finished`。必需的记录、密钥或存储压力检查失败时，调用会在
-`pipeline.Execute` 前被拒绝；它不会改变 scope、tier、参数或结果。
+**audit 包裹是严格观测，不是门。** 它在解析之前持久化原始的 `tools/call` 参数，在门禁链之前
+写下路由身份，并为每一个出口补上 `finished`。记录、密钥或存储压力检查失败时，调用会在
+`pipeline.Execute` 前被拒绝；但这层包裹从不改变 scope、tier、参数或结果。
 
 ---
 
@@ -274,10 +260,10 @@ flowchart LR
         GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log<br/>logs/daemon.log"]
         GW --> A7["logs/events.jsonl<br/>状态变更，闭集词汇，默认开"]
         GW --> A6["audit/YYYY-MM-DD/<br/>认证元数据 + 加密 payload pack"]
-        A4 -.->|"agenthub server logs"| F
+        A4 -.->|"agenthub server logs"| F["CLI / GUI"]
         A5 -.->|"agenthub logs（离线，跨进程归并）<br/>agenthub daemon logs（只读 daemon.log）"| F
-        A7 -.->|"agenthub events（离线）"| F
-        A6 -.->|"agenthub audit<br/>（离线读取；明文需显式开启）"| F
+        A7 -.->|"agenthub events（离线）<br/>GUI Events"| F
+        A6 -.->|"agenthub audit（离线）<br/>GUI Calls（选中调用的详情）"| F
     end
 ```
 
@@ -287,10 +273,9 @@ flowchart LR
   事件只是通知、不带快照，多次快速连续写时按相等判定会卡在旧版本等一个永远不会再来的事件。
 - **凭据流**：vault 键从第一天就是复合键 `(serverID, scopeName)`。事后再改要动 token store、
   回调 server 与刷新协调器的全部单例，所以它不是可以「先简单做」的东西。
-- **观测流**：普通日志永远不写调用参数。另行启用的访问账本会记录：完整请求
-  与实际参数先压缩再加密，返回捕获可配为 `none | errors | truncated | full`（默认 `truncated`）。
-  CLI 默认只读元数据，任何解密都必须显式加 `--payloads`。按 server 的 wire trace 仍是另一套默认
-  关闭的调试面。
+- **观测流**：普通日志永远不写调用参数；另行启用的访问账本会记录，加密存放，返回捕获可配为
+  `none | errors | truncated | full`（默认 `truncated`），CLI 里任何一次解密都必须显式加
+  `--payloads`。两条流的失败方向相反：写不出去的事件被丢弃，写不出去的审计记录会让调用被拒绝。
 
 ---
 
@@ -307,27 +292,28 @@ flowchart TD
     CL["clients.json：client 绑定<br/>只选 profile，不叠加收窄"] -. "选哪一个 profile" .-> P
 ```
 
-**client 不是一层。** `clients.json` 只回答「这个客户端跟哪个 profile」，绝不在 profile 之上再叠一层
-收窄。它曾经有自己的 servers / tools / discovery / 预算字段，结果是「这个 client 绑了哪个
-profile」不再是「这个 client 能看见什么」的完整答案——而后者正是整个模型存在的理由：操作者得翻两处
-再自己手算交集。收窄现在只有一个家（profile），需要不同面的 client 就绑到不同的 profile 上。
+**client 不是一层。** `clients.json` 只回答一个问题：这个客户端跟哪个 profile——或者什么都不写，
+意思是跟随全局激活的那个。这条链上曾经还有两层：一个在自己 profile 之上再收窄的 client 层，
+一个按客户端上报的 MCP root 做匹配的 project 层。两个都退役了，理由相同：它们让「这个 client 绑了
+哪个 profile」不再是「这个 client 能看见什么」的完整答案，操作者得翻三处再自己手算交集，
+而那正是这套模型该替他做的算术。收窄现在只有一个家，需要不同工具面的 client 就换一个 profile。
 
-**per-project 层已经退役。** 它按客户端上报的 MCP root 做最长前缀匹配，可以换 profile、可以再收窄。
-它的代价是同一个问题有了第二个答案，而这个答案还取决于客户端到底实现不实现 roots 能力——一个不报
-root 的客户端静默落回更宽的那一层。`clients.json` 里遗留的 `projects` 块会被 registry 的未知字段
-透传原样保留（看起来仍然权威），所以 `agenthub doctor` 的 `scope:projects` 会**告警**：那个块原本是
-用来收窄的，失效的方向是**放宽**。
+这次退役的失败方向是**放宽**，所以它写在这里：两层原本都是用来收窄的，于是还带着它们的配置现在
+让那个 client 看见的**比以前多**；而 registry 会原样透传未知 JSON，一个遗留的 `projects` 块留在
+盘上，看起来和它还生效时一样权威。`agenthub doctor` 因此对 `scope:projects` **告警**，
+但绝不删除它：doctor 报告，操作者决定。
 
-合并规则由字段性质决定，不是逐字段拍脑袋：**安全字段**（server 可见性、tool allow）逐层取交集，
-——只能越来越紧，而且任何地方都没有 deny 列表：deny 对「下游明天新增的工具」给出的答案与 allow 相反，
-一份配置不能有两个答案；**体验字段**（discovery 模式、结果预算）最具体层胜出。
-两条不变量：交集永远以**原始工具名**为键（否则改名或后缀消歧就能绕过收窄），
-悬垂的 profile 引用解析为**空集**而不是全放行，并且 doctor 会显式告警而不是静默。
+合并规则由字段性质决定：**安全字段**（server 可见性、tool allow）逐层取交集，而且任何地方都没有
+deny 列表——deny 对「下游明天新增的工具」给出的答案与 allow 相反；**体验字段**（discovery 模式、
+结果预算）最具体层胜出。两条不变量：交集永远以**原始工具名**为键，否则改名或后缀消歧就能绕过一次
+收窄；悬垂的 profile 引用解析为**空集**而不是全放行，并且 doctor 会为此告警。
 
-**可见性平面与连接平面是分开的。** 网关连接的是本 client 的静态水位（它绑定的 profile），
-而每个会话看见什么是查询期投影。所以收窄一个会话的作用域不会重建 router、不会重启下游进程——
-要改变一份面只能改配置——profile 的成员与工具白名单、server 自己的白名单、client 的绑定。
-活着的会话没有可以被改动的东西。
+**可见性平面与连接平面是分开的。** 网关连接的是本 client 的静态水位（global ∩ profile），
+而一个会话看见什么是查询期投影。所以收窄一个会话的作用域不重建 router、不重启任何进程，
+这正是按会话收窄可行的原因。覆盖层永不落盘——一个死而复生的运行期放宽是一次安全事故——
+这也是 `session scope` 没有办法把它的改动写回配置的原因。持久化的层里也已经没有谁会读会话 root，
+所以解析器的缓存键是 `(clientID, registry generation)`；root 只到达 `internal/downstream`，
+由它派生出按 root 的实例。
 
 ---
 
@@ -341,18 +327,17 @@ root 的客户端静默落回更宽的那一层。`clients.json` 里遗留的 `p
 | `grouped` | 每个 server 一个聚合工具 + 通用调用入口 | 工具多但仍想免搜索 |
 | `lazy` | 五件套 meta-tool：`status` / `search_tools` / `describe_tool` / `call_tool` / `fetch_result` | 工具很多，用 token 预算换覆盖面。**`discovery.DefaultMode`** —— 没有任何一层设过模式时就是它 |
 
-lazy 模式下 `call_tool` 可按治理开关拆成 `call_tool_read` / `call_tool_write` /
-`call_tool_destructive` 三个变体，好让 IDE 的工具白名单分别放行；等级由下游 annotations 推导，
-**完全没有 annotations 即视为 destructive**（fail-closed），变体与实际等级冲突即拒绝并提示正确变体。
-
-**但这个开关目前还没有人去读。** 上面这些 `internal/discovery` 都实现了、也有测试，可是 stdio 网关
-从来不会拿 `intentVariants` 去设 `discovery.Options.IntentVariants`——所以今天在治理里打开这个字段，
-什么都不会发生，详见 [modules/dataplane.md](../modules/dataplane.md) 里那份「已实现但尚未接线」的附录。
-这句话写在这里而不是只写在那边，是因为决定要不要打开它的人是在这一节里做这个决定的。
+lazy 模式下，一个治理开关可以把 `call_tool` 拆成 `call_tool_read` / `call_tool_write` /
+`call_tool_destructive`，好让 IDE 的工具白名单分别放行。等级由下游 annotations 推导，
+**完全没有 annotations 即视为 destructive**（fail-closed）。**但这个开关还没有人去读**：
+stdio 网关从来不会拿注册表里的 `intentVariants` 去设 `discovery.Options.IntentVariants`，
+所以今天在治理里打开它什么都不会发生。写在这里而不是只写在
+[modules/dataplane.md](../modules/dataplane.md) 那份「尚未接线」的附录里，是因为决定要不要
+打开它的人是在这一节里做这个决定的。
 
 搜索结果携带的是**紧凑签名**而不是完整 schema，agent 需要细节时再调 `describe_tool`。
 凡是不能展示的工具 id——不存在、作用域外、不在它所属 server 的白名单里——返回同一段文案，
-因为差异化的错误会把 `describe_tool` 变成一个枚举 oracle。
+否则 `describe_tool` 就成了一个枚举 oracle。
 
 ---
 
@@ -368,8 +353,9 @@ flowchart LR
 | scope | server / 工具可见性 | 机器（各层取交集，全部来自配置） | 不该看见的能力 |
 | agent token 层级 + 意图变体 | 操作等级 | 机器（token × annotations） | 只读凭据发起写/毁灭操作 |
 
-两道都在调用发生之前判定，依据的是运维事先写下的东西。两道都不读参数，也都不读结果：更早的设计
-在这两道防线和下游之间还塞过参数预校验、人工审批队列、提示注入扫描和泄漏脱敏，四样全部删除了。
+两道都在调用发生之前判定，依据的是运维事先写下的东西，而且各自的拒绝仍然可以分辨得开
+（`E_SCOPE_DENIED`、`E_TOKEN_TIER_DENIED`）。两道都不读参数，也都不读结果：更早的设计在这两道
+防线和下游之间还塞过参数预校验、人工审批队列、提示注入扫描和泄漏脱敏，四样全部删除了。
 留下来的要么直接拒绝一次调用，要么原样放行。
 
 `internal/ratelimit` **刻意不在门禁链里**：这条链是冻结且 fail-closed 的，
@@ -389,6 +375,7 @@ fail-closed 的链里就是一个绕过形状。它包在调用本身外面—�
 ├── skills/                   # 内容寻址的技能库 + 安装索引
 ├── cache/tools/<server>.json # 「缓存先答」用的工具目录快照
 ├── logs/                     # events.jsonl + server-<name>.log + gateway-<client>.log + daemon.log
+├── audit/YYYY-MM-DD/         # 访问账本：认证元数据 + 加密 payload pack
 ├── tokens.json  .token_key   # agent token（只存 HMAC）
 └── run/                      # Linux 未设 AGENTHUB_DATA_DIR 时优先 $XDG_RUNTIME_DIR/AgentHub
     ├── ctl.sock  daemon.json # 控制 socket + 就绪握手（bind 成功后才写）
@@ -402,16 +389,21 @@ fail-closed 的链里就是一个绕过形状。它包在调用本身外面—�
 | dev（默认） | `~/Library/Application Support/AgentHubDev` | `${XDG_DATA_HOME:-~/.local/share}/AgentHubDev` |
 
 两者是**兄弟目录而非父子**：dev 跑的进程不能靠往上走一级去改已安装副本的 registry，
-对一边的 `rm -rf` 也不会带走另一边。选哪个由二进制入口的 `channel` 决定
-（`main.channel` 默认 `"dev"`，只有显式按 release 构建的才解析到安装位置），
-`internal/platform` 本身不做这个选择——它只负责「给定环境，解析出路径」。
-**失败方向：忘了声明渠道的构建拿到 dev 目录，永远不会拿到 release 目录。**
-猜错这个方向的代价是多一个沙箱；猜错另一个方向会花掉用户真实安装里那个一次性的 OAuth refresh token，
-而那不可恢复。显式 `AGENTHUB_DATA_DIR` 仍然优先于两者（CI、e2e 与同时调两个沙箱的人都靠它）。
+对一边的 `rm -rf` 也不会带走另一边。选哪个由二进制入口的 `channel` 决定，默认 dev——
+`internal/platform` 本身不做这个选择，它只负责「给定环境，解析出路径」。`AGENTHUB_DATA_DIR`
+高于两者，CI、e2e 和同时开两个沙箱都靠它（失败方向记在
+[canonical.md §1](../canonical.md#1-frozen-identifiers-abi-unchangeable-as-of-v1)）。
 
-配置真源始终是文件，**不是 daemon 的内存**。CLI 在 daemon 离线时直接写文件（持锁 + 原子写），
-在线时经 daemon 写——两条路径用同一套锁与 no-op 守卫，所以互不丢更新。变更传播走
-generation 单调计数 + 事件推送，mtime 不参与语义。
+正因为真源是文件，两个前端才能各走各的写入路径而不打架。**CLI 直接写文件**——在 registry 的
+跨进程锁下走 `internal/confops`，有没有 daemon 都一样；它手里没有会过期的长期视图，所以它不带
+前置条件。**GUI 经 daemon 写**（`api` → `ctlapi` → 同一个 `internal/confops`），而因为它的窗口
+可能捧着几分钟前读到的东西，这条路径带上了乐观并发的前置条件。一套规则、一把锁、两个入口；
+在跑的 daemon 也没有被绕开——它的 registry watcher 会捡起 CLI 那次写并广播出去。
+变更传播靠 generation 单调计数加事件推送。
+
+CLI 只为**运行期对象**去找 daemon：`session ls/show/kill`，以及 `server inspect` 里的实时状态段。
+这些在 daemon 离线时以退出码 4 拒绝，而不是编一个离线答案出来，因为会话从不落盘。
+其余的一切——配置，以及包括 `events` 在内的每一条观测流——在整台机器没有 daemon 时照常工作。
 
 ---
 
@@ -423,41 +415,34 @@ generation 单调计数 + 事件推送，mtime 不参与语义。
 | Linux | 完整支持，CI 覆盖 |
 | Windows | **实验性**：平台层已补齐——文件锁（`LockFileEx`）、named pipe 监听器（SDDL 收口）、api 拨号、GUI 通道接线、便携 zip 打包——但这层之上 `daemon stop` 与 `client connect` 的用户级路径尚未实现，且**从未在真实 Windows 机器上跑过任何一行**。见 [windows.md](../windows.md) |
 
-GUI（`cmd/agenthub-gui`）默认**不参与**构建：链接 webview 需要 GTK/WebKit 开发包，
-Linux CI runner 上没有。Wails 代码全部在 `//go:build wails` 之后，用 `make gui` 单独构建。
-
-CI 覆盖分两层：不带标签的那一半（`services` 服务体、`cmd/agenthub-gui/internal/healthgen` 的 golden）
-本来就在 `make test` 的 `go test ./...` 里，双矩阵都跑；带 `wails` 标签的壳与前端由
-**独立的 `gui` job** 覆盖（`make gui-frontend-ci` + `make gui-go` + `make gui-vet`），
-跑在 macos runner 上——Linux 上 `-tags wails` 会在 cgo 前导（`pkg-config: gtk4
-webkitgtk-6.0`）就失败，连 `go vet` 都过不去，而 macOS runner 自带 Cocoa/WebKit SDK，
-不需要装任何包。这个 job 刻意**不在** `make ci` 里：「GUI 非必须」是编译期性质，
-它不能成为默认构建的前置。
+GUI（`cmd/agenthub-gui`）默认**不参与**构建：链接 webview 需要 Linux CI runner 上没有的
+GTK/WebKit 开发包，所以 Wails 代码全部在 `//go:build wails` 之后，用 `make gui` 单独构建。
+它不带标签的那一半本来就在 `make test` 里，双矩阵都跑；带标签的壳与前端要靠**跑在 macOS runner
+上的独立 `gui` job**，因为 Linux 上 `-tags wails` 会在 cgo 前导里就失败，连 `go vet` 都过不去。
+这个 job 刻意**不在** `make ci` 里：「GUI 非必须」是编译期性质，它不能成为默认构建的前置。
 
 ---
 
 ## 12. 装配现状：已实现但尚未接线的部分
 
-包级完成度与**运行时是否真的走到**是两件事。下面这些能力代码完整、各自有测试，
-但装配层还没接上——文档把它们标出来，是因为「以为在生效其实没生效」比「知道没做」危险得多。
+一个包可以代码完整、自带测试，却根本没有人调用它，而「以为在生效其实没生效」比「知道没做」
+危险得多。**但清单不在这里**：它是 [modules/dataplane.md](../modules/dataplane.md) 末尾那份
+附录，贴着它所描述的代码；已确认、已定位到行但尚未修复的缺口，同样记在拥有它的那个包的
+[modules/](../modules/) 文档里。这一节曾经有的那张汇总表是被删掉而不是被清空的——一份离开了
+主题的汇总，正是烂掉了也没人发现的那一份。剩下还没接线的东西都只关乎呈现：**那张表当年列过的
+每一条治理项，最后都是被删掉而不是被接上的**，而这是对的方向——一条没接线的治理接缝，
+在赶时间的运维眼里读起来就像一层已经在那儿的保护。
 
-| 能力 | 实现状态 | 装配现状 |
-|---|---|---|
-
-以下是**有意为之**的边界，不属于待办：GUI 不参与默认构建、skills 物化只到 client 粒度、
-TOON 无解码器、teams 未实现。详见 [canonical.md](../canonical.md) §4「已知的能力边界」。
-
-Windows 不属于这一类。它的平台层已实现、但从未在真机上跑过，而这层之上还有两处完全不能用——
-哪些是哪些，只有 [windows.md](../windows.md) 一处在追踪。
-
-已确认存在、已定位到行、但尚未修复的缺口，记在拥有它的那个包的 [modules/](../modules/) 文档里——
-贴着它所描述的代码，而不是另立一份清单。
+跟以上这些都不同的是**有意为之**的边界，它们不属于待办：GUI 不参与默认构建、skills 物化只到
+client 粒度、TOON 无解码器、teams 未实现（见 [canonical.md](../canonical.md) §4
+「已知的能力边界」）。Windows 两边都不属于——它的平台层已实现、从未在真机上跑过，
+而这层之上还有两处完全不能用；哪些是哪些，只有 [windows.md](../windows.md) 一处在追踪。
 
 ---
 
 ## 13. 延伸阅读
 
-- [flows.md](../flows.md) —— 关键流程的时序图：网关启动、一次 lazy 调用、配置热更新、OAuth、派生实例。
-- [modules/](../modules/) —— 逐包文档：职责、关键类型、不变量与失败方向、文件地图。
-- [canonical.md](../canonical.md) —— 冻结标识符、依赖约束、命令名规则、工程约定、裁决记录。
-- [windows.md](../windows.md) —— Windows 现状与验收标准。
+要七条流程的时序图和它们各自的失败分支，看 [flows.md](../flows.md)；动一个包之前要先知道它自己的
+不变量，看 [modules/](../modules/)；想知道一个名字、一条依赖或一项约定到底能不能改，看
+[canonical.md](../canonical.md)；那个平台的现状看 [windows.md](../windows.md)。
+[docs/README.md](../README.md) 是索引，它说明哪一层文档回答哪一类问题。

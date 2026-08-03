@@ -31,17 +31,12 @@ That is the whole access model: what a client may reach is settled by what you
 wrote down before it connected, and nothing is decided while a call is in
 flight.
 
-Two things follow from this that are worth stating outright:
-
-**A client never narrows on its own.** It selects a profile; it does not add
-rules on top of one. If two clients need different surfaces, they get two
-profiles. This is why "which profile is this client on" is a complete answer
-rather than half of one.
-
-**Narrowing only narrows.** A profile can only take capability away from the
-enabled set — it can never grant a server that is disabled, or a tool that
-does not exist. `agenthub server disable` is therefore an unconditional kill
-switch: no profile can bring it back.
+Two things follow. **A client never narrows on its own** — it selects a
+profile, it does not add rules on top of one, so "which profile is this client
+on" is a complete answer rather than half of one. If two clients need different
+surfaces, they get two profiles. And **narrowing only narrows**: a profile can
+never grant a server you disabled, or a tool that does not exist, which makes
+`agenthub server disable` an unconditional kill switch.
 
 ## The everyday path
 
@@ -81,24 +76,22 @@ agenthub server tool allow github --all         # back to offering everything
 ```
 
 Read the rule before writing one: `allow` **replaces** the list rather than
-adding to it. `server ls` grows a TOOLS column as soon as any server carries a
-rule, and `agenthub server inspect github` spells that one out, names included.
-And say which of the three you mean — a bare `server tool allow github` is a
-usage error, because the reading it would otherwise have had ("offer nothing")
-sits one forgotten argument from the opposite of the intent.
+adding to it, and you must say which of the three you mean — a bare `server
+tool allow github` is a usage error, because the reading it would otherwise
+have had ("offer nothing") sits one forgotten argument from the opposite of the
+intent.
 
-This is **for every client at once**, the tool-level twin of `server disable`.
-It is an allow list and never a deny list, and the difference shows up on the
-day the server adds a tool: with a rule in place the new tool stays out until
-you add it, which is the closed direction. No profile can put back what this
-takes away.
+This is **for every client at once**, the tool-level twin of `server disable`,
+and it is an allow list and never a deny list: on the day the server adds a
+tool, a rule keeps the new one out until you add it. No profile can put back
+what this takes away.
 
 The rules and their effect are two questions with two answers. `agenthub server
-ls` and `server inspect` say what the rules *are*; `agenthub server tool ls`
-lists what is actually offered after them and counts what they hold back, and
-`--all` shows those too with the state of each. When one tool is missing from a
-client and it is not clear which layer took it, `agenthub server tool inspect
-github__get_issue` names the one that did.
+ls` (which grows a TOOLS column once any rule exists) and `server inspect
+github` say what the rules *are*; `agenthub server tool ls` lists what is
+actually offered after them, with `--all` adding what they hold back. When one
+tool is missing from a client and it is not clear which layer took it,
+`agenthub server tool inspect github__get_issue` names the one that did.
 
 ## Profiles: when you want less than everything
 
@@ -136,9 +129,9 @@ already running — agenthub recomputes and pushes `tools/list_changed`. Only
 Use the server's own tool names, and mind that `--only` is an **intersection**:
 a name the server does not have lets *nothing* through for that server. The
 rule is stored anyway — the catalog may simply not have been fetched yet — but
-agenthub cross-checks the names against the last catalog it recorded and
-**warns** about any that are not in it, so a typo says so where it was typed
-rather than as an unexplained empty tool list later.
+agenthub checks the names against the last catalog it recorded and **warns**
+about any that are missing, so a typo says so where it was typed rather than as
+an unexplained empty tool list later.
 
 **A missing profile fails closed.** Binding to a name that does not exist is
 accepted, warns, and resolves that client to an *empty* scope — it sees
@@ -156,12 +149,11 @@ agenthub profile use -            # clear it: unbound clients see every enabled 
 ```
 
 With nothing active, "unbound" means "everything enabled". There is no
-separate default-profile object to manage — the absence of narrowing is the
-default.
+default-profile object to manage — the absence of narrowing is the default.
 
-Both listings still name it, because "what does a client I never bound get"
-is a question they have to answer. `profile ls` heads its table with a
-`(default)` row and `client ls` prints the same token in its PROFILE column:
+Both listings still name it, because "what does a client I never bound get" is
+a question they have to answer. `profile ls` heads its table with a `(default)`
+row and `client ls` prints the same token in its PROFILE column:
 
 ```
 NAME                    ACTIVE  SERVERS  DISCOVERY         TOOL RULES
@@ -170,12 +162,11 @@ research                *       linear   lazy (inherited)  linear: only list_iss
 ```
 
 The star marks whichever row is in force, and `(default)` shows what the
-fallback resolves to rather than making you look it up. It is a display
-token, not an object: `agenthub profile use` is the only thing that moves it,
-and a profile name may not start with `(`, so nothing you create can be
-mistaken for it. If the active profile does not exist, that row says
-`MISSING -> empty scope` — the same marker a client bound to a missing
-profile gets, for the same reason.
+fallback resolves to rather than making you look it up. It is a display token,
+not an object: only `agenthub profile use` moves it, and a profile name may not
+start with `(`. If the active profile does not exist, that row says `MISSING ->
+empty scope` — the same marker, for the same reason, that a client bound to a
+missing profile gets.
 
 ## Discovery: how the surface is presented
 
@@ -205,12 +196,11 @@ five names plus a search. Visibility is unchanged either way — a tool hidden
 from the initial list is still callable if it is in scope, and a tool out of
 scope is not callable no matter which mode you pick.
 
-That is also why `lazy` is the default. Nobody revisits this setting when the
-fourth server is added, so the default is what most installations run forever,
-and `full` spends context in proportion to how much you are using the gateway
-— one hosted server can bring fifty tools by itself. What `lazy` costs is
-discoverability: the client has to search for a tool instead of being handed
-its name. On a small surface that trade is not worth it, so say so:
+`lazy` is the default because nobody revisits this setting when the fourth
+server is added, and `full` spends context in proportion to how much you use
+the gateway. What `lazy` costs is discoverability: the client has to search for
+a tool instead of being handed its name. On a small surface that trade is not
+worth it, so say so:
 
 ```bash
 agenthub config set discovery full
@@ -248,18 +238,17 @@ agenthub client ls                  # who is wired up, and who is on which profi
 it: it connects for real, so a pass means credentials, transport and the
 server itself all work right now. `server inspect --tools` lists what was
 recorded at the last contact, which is why it answers instantly and can be
-stale. Zed and VS Code keep their settings as JSONC — JSON with comments — and Zed
-ships a comment header, so this used to be a client agenthub would not touch.
-It now edits only the bytes of its own entry: your comments, key order and
-formatting come back exactly as they were, and if anything about the edit
-cannot be proved correct it refuses and tells you what to paste instead.
+stale.
 
-Codex is the one client agenthub does not write itself — its config is TOML,
-and re-encoding it would cost you the comments and layout. `client connect
-codex` runs `codex mcp add` for you instead, after backing the file up and
-before checking the result by reading it back. Pass `--manual` (or set
-`AGENTHUB_NO_CLIENT_CLI=1`) if you would rather agenthub never ran another
-program, and it prints what to run instead.
+`client connect` edits your client's own config file, and two clients get
+special handling. Zed and VS Code keep theirs as JSONC — JSON with comments —
+so agenthub edits only the bytes of its own entry: comments, key order and
+formatting come back exactly as they were, and if the edit cannot be proved
+correct it refuses and tells you what to paste instead. Codex it does not write
+at all, because re-encoding TOML would cost you the comments and layout;
+`client connect codex` runs `codex mcp add` for you, backing the file up first
+and reading it back after. Pass `--manual` (or set `AGENTHUB_NO_CLIENT_CLI=1`)
+to have agenthub print the command rather than run it.
 
 `client ls` closes the loop on the other side, with both halves per client:
 CONNECTED comes from the client's own config file, and PROFILE is what it
@@ -272,10 +261,13 @@ itself: restart it and ask it to use a tool.
 
 ## Keeping a tools/call history
 
-The access ledger is off until you enable it. Once enabled, every tools/call attempt records complete request
-parameters and effective arguments in encrypted local packs; result capture defaults to a truncated copy. Recording
-is strict: if the key or bounded storage is unavailable, the call is refused rather than executed with a hole in the
-history.
+The access ledger is off until you enable it. Once enabled, every tools/call
+attempt records its request parameters and effective arguments into encrypted
+local packs, with a truncated copy of the result — the recording starts before
+the gates run, so a denied call is in the history too. Recording is strict: if
+the key or
+the bounded storage is unavailable, the call is **refused** rather than executed
+with a hole in the history.
 
 ```bash
 agenthub audit enable
@@ -287,20 +279,22 @@ agenthub audit stats --since 7d
 agenthub audit verify
 ```
 
-The defaults retain 30 UTC days, cap the ledger at 5 GiB, and reserve 1 GiB of filesystem free space. Change them
-with `config set audit.retentionDays`, `audit.maxBytes`, and `audit.minFreeBytes`; `audit prune --dry-run` previews the
-expired day partitions and `audit prune` removes them. Automatic writes apply the same pruning before their capacity
-check.
+The defaults retain 30 UTC days, cap the ledger at 5 GiB and reserve 1 GiB of
+free space; change them with `config set audit.retentionDays`,
+`audit.maxBytes` and `audit.minFreeBytes`. `audit prune --dry-run` previews the
+expired day partitions and `audit prune` removes them; ordinary writes run the
+same pruning before their own capacity check.
 
-`audit export --output history.jsonl` exports metadata into a new 0600 file and refuses to overwrite it. Add
-`--payloads` only when decrypted arguments/results are required; the exported file then carries credentials and
-private data outside the bounded ledger. `audit rotate-key` makes a new current key while retaining old keys so
-existing history remains readable. `audit disable` stops new capture but intentionally deletes neither history nor
-keys.
+Two things to know before exporting or turning it off. `audit export --output
+history.jsonl` writes metadata to a new 0600 file and refuses to overwrite one;
+add `--payloads` only when you truly need decrypted arguments and results,
+because the exported file then carries credentials outside the bounded ledger.
+And `audit disable` stops new capture without deleting history or keys, just as
+`audit rotate-key` keeps the old keys so existing history stays readable.
 
-`audit verify` detects modified metadata, corrupted payloads, and swapped references. Because all evidence is local,
-it cannot prove a whole day directory was deleted; use an external immutable archive if deletion evidence is part of
-your threat model.
+`audit verify` detects modified metadata, corrupted payloads and swapped
+references. All the evidence is local, so it cannot prove a whole day directory
+was deleted; if deletion evidence matters to you, archive externally.
 
 ## When a server misbehaves and you were not watching
 
@@ -314,11 +308,10 @@ agenthub audit tail --server linear      # what a client CALLED on it
 ```
 
 `events` is the one to open first. Every state change of a downstream server,
-a gateway or the daemon lands in `<data>/logs/events.jsonl` as a record with a
-`kind` from a fixed set — `connected`, `circuit_open`, `respawned`,
-`secrets_missing` and the rest, listed in `docs/modules/foundation.md`. Fixed
-is the point: you can filter and alert on those values, which you cannot
-safely do with the wording of a log message.
+a gateway or the daemon lands in `<data>/logs/events.jsonl` with a `kind` from
+a fixed set — `connected`, `circuit_open`, `respawned`, `secrets_missing` and
+the rest. Fixed is the point: you can filter and alert on those values, which
+you cannot safely do with the wording of a log message.
 
 ```bash
 agenthub events --since 24h                  # everything, newest last
@@ -328,14 +321,12 @@ agenthub events --scope daemon               # restarts and config reloads
 agenthub events -f                           # tail it; survives a daemon restart
 ```
 
-It works with no daemon running, and that is not a fallback — a stdio gateway
-writes this file on its own, so the installation with no daemon is the
-ordinary case here rather than a degraded one.
-
-It is **on by default**, and the one switch is `agenthub config set
-events.enabled false`. The access ledger behind `audit` is the opposite: off
-until you turn it on, because it records call arguments and results, while
-this records only that a state changed.
+It works with no daemon running, and that is not a fallback: a stdio gateway
+writes this file on its own, so the installation with no daemon is the ordinary
+case here. It is **on by default** — the one switch is `agenthub config set
+events.enabled false` — where `audit` is off until you ask for it, because that
+one records call arguments and results while this records only that something
+changed.
 
 `logs` is the prose alongside it, merged across every process — `daemon.log`
 plus one `gateway-<client>.log` per connected client — in one time-ordered
@@ -349,8 +340,7 @@ agenthub logs --client claude-code -f        # follow one client's gateway
 agenthub logs --source daemon                # or just the daemon
 ```
 
-`agenthub daemon logs` is still there and unchanged; it is the single-process
-view of `daemon.log` alone.
+`agenthub daemon logs` remains the single-process view of `daemon.log` alone.
 
 ## When you need to see the wire
 
@@ -368,16 +358,16 @@ agenthub server trace linear off
 Three things are worth knowing before turning it on:
 
 **It takes effect immediately.** A client that is already running starts
-recording without being restarted, and the server it talks to is not
-reconnected — the connection under investigation is left alone.
+recording without being restarted, and the connection under investigation is
+not reconnected.
 
-**The file holds raw responses.** Frames are captured at the connection,
-before anything filters them, so whatever the server actually returned sits
-in `logs/server-<id>.log`. That is the point of it, and the reason to turn it
-off once you have your answer.
+**The file holds raw responses.** Frames are captured at the connection, before
+anything filters them, so whatever the server actually returned sits in
+`logs/server-<id>.log`. That is the point of it, and the reason to turn it off
+once you have your answer.
 
-**It is per server, and it persists.** Nothing expires a trace, so one left
-on keeps recording across restarts. `server ls` grows a `TRACE` column while
+**It is per server, and it persists.** Nothing expires a trace, so one left on
+keeps recording across restarts. `server ls` grows a `TRACE` column while
 anything is being traced — that is where to look when you cannot remember.
 
 ## Common surprises
