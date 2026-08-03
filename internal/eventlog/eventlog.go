@@ -314,7 +314,7 @@ func Open(path string, opts Options) (*Stream, error) {
 	if s.pid == 0 {
 		s.pid = os.Getpid()
 	}
-	pruneSegments(path, keepSegments)
+	jsonl.Prune(path, keepSegments)
 	return s, nil
 }
 

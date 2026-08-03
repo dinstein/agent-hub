@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/dinstein/agent-hub/internal/jsonl"
 )
 
 // Reading side. The rule that matters here is the one the retired savings
@@ -19,7 +20,8 @@ import (
 //
 // jsonl.Writer rotates by renaming <base>.jsonl to
 // <base>-<RFC3339-ish stamp>.p<pid>.jsonl, so segments sort chronologically
-// by name and the active file is always newest.
+// by name and the active file is always newest. jsonl.Segments and
+// jsonl.Prune own that naming scheme; nothing here restates it.
 
 // maxLineBytes bounds one line while reading. The writer bounds what it
 // appends; a longer line means a foreign or corrupt file.
@@ -78,7 +80,7 @@ type Result struct {
 // state, and it is the state a fresh installation is in.
 func Read(path string, q Query) (Result, error) {
 	var out Result
-	for _, f := range Segments(path) {
+	for _, f := range jsonl.Segments(path) {
 		records, skipped, err := readFile(f, q)
 		if err != nil {
 			return Result{}, err
@@ -95,42 +97,6 @@ func Read(path string, q Query) (Result, error) {
 	// the boundary. Sorting is cheap and makes the result mean one thing.
 	slices.SortStableFunc(out.Records, func(a, b Record) int { return a.TS.Compare(b.TS) })
 	return out, nil
-}
-
-// Segments lists the stream's files oldest first, active file last.
-//
-// It is exported because it is the answer to "which files does this stream
-// occupy", which both the reader and any future prune need, and because a
-// caller that composed the glob itself would be the second place the naming
-// scheme lives.
-func Segments(path string) []string {
-	ext := filepath.Ext(path)
-	base := strings.TrimSuffix(path, ext)
-	matches, err := filepath.Glob(base + "-*" + ext)
-	if err != nil {
-		matches = nil
-	}
-	// The stamp is fixed-width and zero-padded, so lexical order is
-	// chronological order.
-	slices.Sort(matches)
-	return append(matches, path)
-}
-
-// pruneSegments deletes all but the newest keep rotated segments. The active
-// file is never touched.
-//
-// Failure to remove one is ignored on purpose: another process may have
-// pruned it already, and a retention sweep that could fail an Open would
-// make "the disk is briefly busy" into "this gateway does not start".
-func pruneSegments(path string, keep int) {
-	all := Segments(path)
-	segments := all[:len(all)-1] // drop the active file
-	if len(segments) <= keep {
-		return
-	}
-	for _, old := range segments[:len(segments)-keep] {
-		_ = os.Remove(old)
-	}
 }
 
 func readFile(path string, q Query) ([]Record, int, error) {

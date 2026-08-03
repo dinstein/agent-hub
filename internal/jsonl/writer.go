@@ -40,6 +40,15 @@ type WriterOptions struct {
 	MaxLineBytes int
 	// BufferSize is the channel capacity (0 = DefaultBufferSize).
 	BufferSize int
+	// KeepSegments is how many rotated segments survive, newest first. 0
+	// keeps every one of them — retention is opt-in, because a stream that
+	// is someone's archive must not lose history to a default.
+	//
+	// The sweep runs once, in NewWriter, rather than on a timer: rotation
+	// happens at MaxBytes and is therefore rare, while these files are
+	// opened constantly (one per `agenthub connect`), so the check is
+	// frequent in practice and costs one directory listing.
+	KeepSegments int
 	// Clock overrides time.Now (tests). Used for record timestamps and
 	// segment names.
 	Clock func() time.Time
@@ -122,6 +131,9 @@ func NewWriter(path string, opts WriterOptions) (*Writer, error) {
 		return nil, err
 	}
 	w.f = f
+	if opts.KeepSegments > 0 {
+		Prune(path, opts.KeepSegments)
+	}
 	go w.run()
 	return w, nil
 }
