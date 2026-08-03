@@ -27,11 +27,6 @@ import (
 // fsync-on-write path of the other one would make a debug switch able to slow
 // down or refuse a call. Here it can do neither.
 
-// frameWriter appends this process's frames for one UTC day.
-type frameWriter struct {
-	f *os.File
-}
-
 // FrameCounters reports what the frame path has done since the store opened.
 type FrameCounters struct {
 	// Written is frames appended.
@@ -71,9 +66,11 @@ type frames struct {
 	chMu   sync.RWMutex
 	closed bool
 
-	mu      sync.Mutex
-	day     string
-	writer  *frameWriter
+	mu  sync.Mutex
+	day string
+	// writer is this process's frame file for day, opened on that day's
+	// first frame.
+	writer  *os.File
 	counter FrameCounters
 }
 
@@ -190,7 +187,7 @@ func (f *frames) write(job frameJob) {
 		f.count(&f.counter.Failed)
 		return
 	}
-	if _, err := w.f.Write(line); err != nil {
+	if _, err := w.Write(line); err != nil {
 		f.count(&f.counter.Failed)
 		return
 	}
@@ -207,14 +204,14 @@ func (f *frames) count(field *uint64) {
 // first frame of that day. Nothing is created until something is recorded:
 // an empty file per day per process would make an installation that never
 // traced anything look like one that did.
-func (f *frames) writerFor(day string) (*frameWriter, error) {
+func (f *frames) writerFor(day string) (*os.File, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.writer != nil && f.day == day {
 		return f.writer, nil
 	}
 	if f.writer != nil {
-		_ = f.writer.f.Close()
+		_ = f.writer.Close()
 		f.writer = nil
 	}
 	dir := filepath.Join(f.store.root, day)
@@ -226,7 +223,7 @@ func (f *frames) writerFor(day string) (*frameWriter, error) {
 	if err != nil {
 		return nil, err
 	}
-	f.day, f.writer = day, &frameWriter{f: file}
+	f.day, f.writer = day, file
 	return f.writer, nil
 }
 
@@ -254,7 +251,7 @@ func (f *frames) close() error {
 	if f.writer == nil {
 		return nil
 	}
-	err := f.writer.f.Close()
+	err := f.writer.Close()
 	f.writer = nil
 	return err
 }

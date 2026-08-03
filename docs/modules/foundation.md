@@ -432,6 +432,14 @@ need.
   (`FrameCounters.Dropped`) and dropped. A trace is an instrument, and the one thing an instrument
   must never do is take down the thing it measures. The lifecycle path is the opposite and stays
   that way.
+  - *Current assembly status:* the promise has one hole. Counting a drop takes `frames.mu`, and
+    `writerFor` holds that same mutex across `EnsureDir` and `OpenFile`. So a caller whose frame
+    arrives with the queue full, while the writer goroutine is opening the next UTC day's file, waits
+    on the file system inside the call it was promised never to delay. Both conditions are needed and
+    the second happens once per process per day, so the window is narrow — but it is widest on exactly
+    the slow disk that fills the queue in the first place. The fix is to keep the counters off that
+    mutex (atomics, or a mutex that guards only the tally), leaving `frames.mu` to the file. Found by
+    reading; no test provokes it.
 - **A frame's SIZE is recorded even when its body is not.** Without a key there is nothing to seal a
   body with, and a line that omitted the size too would make a large frame and a missing one read
   the same.
