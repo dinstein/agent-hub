@@ -91,7 +91,35 @@ Responsive rules may stack information inside that boundary but never hide the n
   the release-plus-commit version **of this GUI process**, not of the connected daemon — the two may
   legitimately be different builds.
 
-### 1.3 Per-page rules worth keeping
+### 1.3 The three observability pages are one design
+
+**Calls, Events and Logs answer three questions about one installation**, and somebody comparing them
+switches between the three inside a minute. So the shared parts are shared in code
+(`pages/observe.ts`): the time range and its options, the filter bar's position and sizing, rows
+**newest first**, and one pager.
+
+**Every selector goes to the DAEMON, never to the rendered rows.** A page is one read deep, so
+filtering in the browser searches only that page and answers "nothing matches" for something that is
+merely older than it — and the two are indistinguishable to whoever is reading. This is why the
+control plane grew `class` on the event list and `/v1/logs` at all: the Events page used to assemble
+"only what went wrong" from its own tone table, and the process logs had no endpoint, so the GUI
+could not show the half of the record that explains a downstream failure.
+
+**Paging is by CURSOR, not by offset**, and the cursor names the last row served
+(`internal/ctlapi/pagecursor.go`). With an offset, ten records arriving between two requests make
+page two repeat ten rows it already showed — a failure a reader blames on the hub rather than on the
+pager. A cursor cannot: a fresh record is newer than every cursor, so it can only appear on page one.
+
+**Every filter change returns to page one.** A cursor taken under one filter names a row the next
+filter may not contain, and paging on from it would skip records without saying so.
+
+**The three differ only where their content does.** Calls has a drawer because a call has payloads;
+Events colours rows because it has a closed vocabulary to colour by; Logs has neither and is
+deliberately the plainest of the three — its whole job is to filter prose, order it and get out of
+the way. Logs also takes free text for client and server rather than facets: a process log has no
+bounded set of subjects, and a dropdown built from one page would offer only what that page held.
+
+### 1.4 Per-page rules worth keeping
 
 **Clients** keeps **file capability** and **connection state** separate: `writable`/`read-only`
 describes whether AgentHub may rewrite a file and says nothing about whether that file already
@@ -148,7 +176,7 @@ value, the timeline under it is the sequence that produced it. It loads per serv
 expanded, and is dropped alongside the cached self-test so a refresh never pairs a fresh badge with
 stale history.
 
-### 1.4 The window is not the application
+### 1.5 The window is not the application
 
 Closing the window used to end the process — and with it, on the ordinary path, the daemon that
 process had started. A GUI other programs depend on cannot have "tidy the desktop" and "cut off every
@@ -209,7 +237,7 @@ their uninstall residue), **notifications when a server drops** (a new dependenc
 and a debounce policy), and a **menu-bar-only mode** (`ActivationPolicy` accessory), which would make
 the tray the only way back into an application that is not a menu-bar utility.
 
-### 1.5 The application runs the hub
+### 1.6 The application runs the hub
 
 The application is the only thing that starts a hub (`--headless` aside), which fixes three rules.
 

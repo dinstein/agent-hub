@@ -20,19 +20,14 @@ import { clear, el, empty, loadingState, pageHeader, relTime, section, table } f
 import type { Page } from "../page";
 import { failureBox } from "../page";
 import { button, selectInput } from "../ui";
+import { Pager, filterBar, pagerFooter, rangeField, rangeMillis } from "./observe";
 import type { EventLog, EventRecord, TopicEvent } from "../types";
 
-/** How many records one read pulls. The stream is low-rate; this is an
- *  incident-sized window rather than a page of a long list. */
+/** How many records one PAGE holds. The stream is low-rate, so this is
+ *  usually the whole of an incident-sized window — but "usually" is not a
+ *  contract, and a hub that flapped for an hour has more to say than one
+ *  screen. The pager is what makes that readable rather than truncated. */
 const PAGE = 300;
-
-/** Ranges offered, in hours. */
-const RANGES: { label: string; hours: number }[] = [
-  { label: "Last hour", hours: 1 },
-  { label: "Last 24 hours", hours: 24 },
-  { label: "Last 7 days", hours: 24 * 7 },
-  { label: "Everything", hours: 0 },
-];
 
 /** Tone per kind. Anything unlisted is neutral — including a kind from a
  *  newer daemon, which must still be shown. */
@@ -159,11 +154,12 @@ export function eventsPage(): Page {
   let cls = "";
   let kind = "";
   let log: EventLog | null = null;
+  const pager = new Pager();
   let facets: Facets = { servers: {}, clients: {}, kinds: {} };
   let failure: unknown = null;
   let loading = true;
 
-  const sinceMillis = (): number => (rangeHours > 0 ? Date.now() - rangeHours * 3600_000 : 0);
+  const sinceMillis = (): number => rangeMillis(rangeHours);
   const filtered = (): boolean =>
     scope !== "" || server !== "" || client !== "" || cls !== "" || kind !== "";
 
@@ -177,7 +173,8 @@ export function eventsPage(): Page {
   async function load(): Promise<void> {
     try {
       log = await hub.eventLog(sinceMillis(), PAGE, scope, server, client, cls,
-        kind ? [kind] : []);
+        kind ? [kind] : [], pager.current());
+      pager.accept(log.nextCursor);
       failure = null;
     } catch (err) {
       failure = err;
@@ -205,6 +202,10 @@ export function eventsPage(): Page {
   /** Reload rows, and the facets too when the RANGE moved — the facet set is
    *  a function of the range alone. */
   function refresh(rangeMoved = false): void {
+    // Back to page one. A cursor taken under one filter names a row the next
+    // filter may not contain, and paging on from it would skip records
+    // without ever saying so.
+    pager.reset();
     loading = true;
     draw();
     void (rangeMoved ? loadFacets().then(load) : load());
@@ -237,15 +238,6 @@ export function eventsPage(): Page {
   }
 
   function filters(): HTMLElement {
-    const range = selectInput(
-      RANGES.map((r) => ({ value: String(r.hours), label: r.label })),
-      String(rangeHours),
-    );
-    range.addEventListener("change", () => {
-      rangeHours = Number(range.value);
-      refresh(true);
-    });
-
     const scopePick = selectInput(
       [
         { value: "", label: "All scopes" },
@@ -290,14 +282,17 @@ export function eventsPage(): Page {
       refresh();
     });
 
-    return el("div", { class: "activity-toolbar" }, [
-      field("Time range", range),
+    return filterBar(
+      rangeField(rangeHours, (hours) => {
+        rangeHours = hours;
+        refresh(true);
+      }),
       field("Show", classPick),
       field("Scope", scopePick),
       facetField("Server", "All servers", server, facets.servers, (v) => { server = v; }),
       facetField("Client", "All clients", client, facets.clients, (v) => { client = v; }),
       field("Kind", kindPick),
-    ]);
+    );
   }
 
   function clearFilters(): void {
@@ -329,9 +324,8 @@ export function eventsPage(): Page {
       }
       return empty("No state changes in this range.", "The hub has been quiet — which is the good case.");
     }
-    // Newest first here, unlike the wire order: an operator opens this page
-    // because something just happened.
-    // The daemon serves newest first, like the calls list; no reversing.
+    // The daemon serves newest first, like every other observability list:
+    // an operator opens this page because something just happened.
     return table(["When", "What", "Subject", "Detail"], eventRows(events));
   }
 
@@ -345,7 +339,18 @@ export function eventsPage(): Page {
         "Every state change of a server, a gateway or the daemon, in one timeline.",
         reload,
       ),
-      section("Timeline", filters(), body()),
+      section("Timeline", filters(), body(), pagerFooter({
+        pager,
+        pageSize: PAGE,
+        shown: log?.events?.length ?? 0,
+        total: log?.total ?? 0,
+        noun: "events",
+        onChange: () => {
+          loading = true;
+          draw();
+          void load();
+        },
+      })),
     );
   }
 

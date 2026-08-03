@@ -22,6 +22,7 @@
 
 import { Browser, Call, Clipboard, Events } from "@wailsio/runtime";
 import type {
+  ProcLogPage,
   CallDetail,
   AuditCalls,
   AuditKeyRotation,
@@ -175,7 +176,22 @@ export const hub = {
     /** "routine" | "disruption" | "" for both. */
     cls = "",
     kinds: string[] = [],
-  ) => call<EventLog>("EventLog", sinceMillis, limit, scope, server, client, cls, kinds),
+    cursor = "",
+  ) => call<EventLog>("EventLog", sinceMillis, limit, scope, server, client, cls, kinds, cursor),
+
+  // -- process logs ---------------------------------------------------------
+  /** What the daemon and the gateways DID, merged and newest first — the
+   *  prose beside EventLog's closed vocabulary. Empty selectors mean "no
+   *  rule"; cursor resumes a page. */
+  procLogs: (
+    sinceMillis: number,
+    limit: number,
+    source = "",
+    level = "",
+    client = "",
+    server = "",
+    cursor = "",
+  ) => call<ProcLogPage>("ProcLogs", sinceMillis, limit, source, level, client, server, cursor),
 
   // -- servers --------------------------------------------------------------
   listServers: () => call<Server[]>("ListServers"),

@@ -908,8 +908,36 @@ export interface EventRecord {
   durMs?: number;
 }
 
+/** One line of a process log (api.ProcLogRecord). The three join keys are
+ *  columns; everything else the line carried stays in `fields`, because slog
+ *  attrs are open-ended and a UI that showed only the named ones would
+ *  silently drop whatever the next log line adds. */
+export interface ProcLogRecord {
+  time: string;
+  origin: string;
+  level: string;
+  msg: string;
+  client?: string;
+  server?: string;
+  pid?: number;
+  fields?: Record<string, string>;
+}
+
+/** One page of process logs, newest first (api.ProcLogPage). */
+export interface ProcLogPage {
+  records: ProcLogRecord[];
+  /** How many matched from the cursor onward — what "of N" needs. */
+  total?: number;
+  /** The position to resume from; absent at the end of the list. */
+  nextCursor?: string;
+}
+
 export interface EventLog {
   events: EventRecord[];
+  /** How many matched from the cursor onward — what "of N" needs. */
+  total?: number;
+  /** The position to resume from; absent at the end of the list. */
+  nextCursor?: string;
   /** How many segments were read. 0 means nothing has ever been written,
    *  which is a different fact from an empty `events` over four files. */
   files: number;

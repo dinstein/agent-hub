@@ -17,6 +17,7 @@ import { initWindowPrefs } from "./window-prefs";
 import { authPage } from "./pages/auth";
 import { activityPage } from "./pages/activity";
 import { eventsPage } from "./pages/events";
+import { logsPage } from "./pages/logs";
 import { catalogPage } from "./pages/catalog";
 import { clientsPage } from "./pages/clients";
 import { configPage } from "./pages/config";
@@ -35,6 +36,7 @@ type Route =
   | "onboarding"
   | "activity"
   | "events"
+  | "logs"
   | "playground"
   | "servers"
   | "catalog"
@@ -51,6 +53,7 @@ type Route =
 const ROUTES: Record<Route, () => Page> = {
   activity: activityPage,
   events: eventsPage,
+  logs: logsPage,
   onboarding: onboardingPage,
   playground: playgroundPage,
   servers: serversPage,
