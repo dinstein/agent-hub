@@ -151,7 +151,6 @@ flowchart TD
         GUARD["internal/guard/*<br/>spawn/net"]
         REG["internal/registry<br/>config source of truth + generation"]
         JL["internal/jsonl<br/>append-only line writer"]
-        AUD["internal/savings<br/>token-savings ledger"]
         EVT["internal/event"]
         TIER["internal/tier<br/>operation tier vocabulary"]
     end
@@ -277,12 +276,10 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph obs["③ Observability flow: local disk only"]
-        P["pipeline / gateway"] --> A3["logs/savings.jsonl<br/>token savings + search traces"]
         DSX["downstream"] --> A4["logs/server-&lt;name&gt;.log<br/>one per server, off by default"]
         GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log<br/>logs/daemon.log"]
         GW --> A6["audit/YYYY-MM-DD/<br/>authenticated metadata + encrypted payload packs"]
-        A3 -.->|"agenthub activity<br/>(a plain file read, works offline)"| F["CLI / GUI"]
-        A4 -.->|"agenthub server logs"| F
+        A4 -.->|"agenthub server logs"| F["CLI / GUI"]
         A6 -.->|"agenthub audit (offline)<br/>GUI Activity (selected-call detail)"| F
     end
 ```
@@ -295,7 +292,7 @@ Each flow has one property you must not forget:
   rulings, `modules/foundation.md` the mechanism).
 - **Credential flow**: the vault key is the composite `(serverID, scopeName)` and has been since day
   one — one of the three things canonical.md §4 says must never be retrofitted.
-- **Observability flow**: ordinary logs and `savings.jsonl` never contain call arguments. The
+- **Observability flow**: ordinary logs never contain call arguments. The
   separately enabled access ledger does: complete request parameters and effective arguments are
   compressed and encrypted; result capture is `none | errors | truncated | full` (default
   `truncated`). Metadata-only inspection is the default, and every decrypting CLI operation requires
@@ -413,7 +410,7 @@ four were removed. What survives refuses a call outright or lets it through unto
 ├── state/                    # ratelimits.json / run markers
 ├── skills/                   # content-addressed skill library + install index
 ├── cache/tools/<server>.json # tool catalog snapshots used for "answer from cache first"
-├── logs/                     # savings.jsonl + server-<name>.log + daemon.log
+├── logs/                     # server-<name>.log + gateway-<client>.log + daemon.log
 ├── tokens.json  .token_key   # agent tokens (HMAC only)
 └── run/                      # on Linux, prefers $XDG_RUNTIME_DIR/AgentHub when AGENTHUB_DATA_DIR is unset
     ├── ctl.sock  daemon.json # control socket + readiness handshake (written only after a successful bind)

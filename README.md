@@ -93,7 +93,7 @@ again. Full walkthrough — profiles, narrowing, the whole model — in [docs/gu
 | Result shaping | Pagination / budgets / `fetch_result` caching / TOON one-way projection encoding (with two constructive guarantees: never-larger and numeric fidelity) |
 | Credentials | Four-level resolution chain (env → explicit bare env → `secrets.enc` → OS keyring), composite vault key `(serverID, scopeName)`, headless OAuth with three callback modes + refresh coordination |
 | Clients | Config adaptation for 12 client types (format-driven), two-layer skills management (library/install), skills-over-MCP provisioning |
-| Operations | `agenthub doctor` full health check; encrypted, bounded tools/call history behind `agenthub audit`; per-server JSON-RPC wire trace (off by default, `server trace`); token-savings ledger behind `agenthub activity`; X-Request-Id across the whole chain |
+| Operations | `agenthub doctor` full health check; encrypted, bounded tools/call history behind `agenthub audit`; per-server JSON-RPC wire trace (off by default, `server trace`); X-Request-Id across the whole chain |
 
 ## Documentation
 
@@ -129,7 +129,7 @@ The process makes only three kinds of outbound connection, all determined by you
 the downstream MCP servers in `servers.json`, those servers' OAuth authorization servers (only
 after you run `agenthub auth login`), and endpoints you specify explicitly (`server add --url`).
 
-The savings ledger (`savings.jsonl`) and per-server wire traces are **written to local disk only**. Version updates are left to your package manager.
+The access ledger and per-server wire traces are **written to local disk only**. Version updates are left to your package manager.
 See the decision record in [canonical.md](docs/canonical.md) §7, item 6.
 
 ## Development

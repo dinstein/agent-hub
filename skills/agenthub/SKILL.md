@@ -7,7 +7,7 @@ description: Drive the agenthub CLI to give an AI client MCP tools - add a serve
 
 One gateway between every AI client and every MCP server. Wire a client up **once**; add, authorize, and narrow servers here afterwards without touching the client again.
 
-**Never guess a flag** — `agenthub <group> --help` decides. A release build's help page lists the everyday path only (`server`, `auth`, `secret`, `catalog`, `profile`, `client`, `doctor`); `config`, `audit` and `activity` are withheld from that page and run identically — their own `--help` still prints.
+**Never guess a flag** — `agenthub <group> --help` decides. A release build's help page lists the everyday path only (`server`, `auth`, `secret`, `catalog`, `profile`, `client`, `doctor`); `config` and `audit` are withheld from that page and run identically — their own `--help` still prints.
 
 The path is always: **add → (credential) → enable → test → connect → narrow**.
 
@@ -265,8 +265,6 @@ agenthub audit disable                     # stops recording; keys and history s
 - **`--payloads` decrypts the user's data** — arguments and results, credentials included; the command says so on stderr. Read it in the terminal, never paste it into a chat or a commit.
 - Policy lives in governance: `agenthub config ls` names every `audit.*` key, `config set` moves one. **Arguments are always captured whole**; only result capture is tunable (`audit.results`: `none | errors | truncated | full`), alongside `durability`, `retentionDays`, `maxBytes` and `minFreeBytes`.
 - `verify` authenticates every event and decrypts every payload; `export --output <new-file>` refuses an existing path; `prune --dry-run` first — it drops whole day partitions past retention; `rotate-key` keeps old keys so retained history stays readable.
-
-`agenthub activity --since 24h` is a **different** projection — token savings and search traces from lazy discovery, not the call ledger.
 
 ## 10. From inside a session
 

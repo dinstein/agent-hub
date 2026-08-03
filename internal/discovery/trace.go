@@ -1,7 +1,7 @@
 package discovery
 
-// Trace is one searchtrace record (docs/flows.md: "persist searchtrace (tool
-// names only)"). It is the structure the gateway logs a search from.
+// Trace is one search-trace record: tool names only. It is the structure
+// the gateway logs a search from (gateway.logSearch).
 //
 // PRIVACY INVARIANT — the reason this type exists at all: a search query is
 // agent-authored free text and may carry secrets, file paths or an injected

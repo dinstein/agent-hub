@@ -139,7 +139,6 @@ flowchart TD
         GUARD["internal/guard/*<br/>spawn/net"]
         REG["internal/registry<br/>配置真源 + generation"]
         JL["internal/jsonl<br/>追加式行写入器"]
-        AUD["internal/savings<br/>token 节省账本"]
         EVT["internal/event"]
         TIER["internal/tier<br/>操作等级词汇表"]
     end
@@ -257,11 +256,9 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph obs["③ 观测流：只写本地磁盘"]
-        P["pipeline / gateway"] --> A3["logs/savings.jsonl<br/>token 节省 + 搜索轨迹"]
         DSX["downstream"] --> A4["logs/server-&lt;name&gt;.log<br/>每 server 一份，默认关闭"]
         GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log<br/>logs/daemon.log"]
         GW --> A6["audit/YYYY-MM-DD/<br/>认证元数据 + 加密 payload pack"]
-        A3 -.->|"agenthub activity<br/>（纯文件读，离线可用）"| F["CLI / GUI"]
         A4 -.->|"agenthub server logs"| F
         A6 -.->|"agenthub audit<br/>（离线读取；明文需显式开启）"| F
     end
@@ -273,7 +270,7 @@ flowchart LR
   事件只是通知、不带快照，多次快速连续写时按相等判定会卡在旧版本等一个永远不会再来的事件。
 - **凭据流**：vault 键从第一天就是复合键 `(serverID, scopeName)`。事后再改要动 token store、
   回调 server 与刷新协调器的全部单例，所以它不是可以「先简单做」的东西。
-- **观测流**：普通日志和 `savings.jsonl` 永远不写调用参数。另行启用的访问账本会记录：完整请求
+- **观测流**：普通日志永远不写调用参数。另行启用的访问账本会记录：完整请求
   与实际参数先压缩再加密，返回捕获可配为 `none | errors | truncated | full`（默认 `truncated`）。
   CLI 默认只读元数据，任何解密都必须显式加 `--payloads`。按 server 的 wire trace 仍是另一套默认
   关闭的调试面。
@@ -374,7 +371,7 @@ fail-closed 的链里就是一个绕过形状。它包在调用本身外面—�
 ├── state/                    # ratelimits.json / run 标记
 ├── skills/                   # 内容寻址的技能库 + 安装索引
 ├── cache/tools/<server>.json # 「缓存先答」用的工具目录快照
-├── logs/                     # savings.jsonl + server-<name>.log + daemon.log
+├── logs/                     # server-<name>.log + gateway-<client>.log + daemon.log
 ├── tokens.json  .token_key   # agent token（只存 HMAC）
 └── run/                      # Linux 未设 AGENTHUB_DATA_DIR 时优先 $XDG_RUNTIME_DIR/AgentHub
     ├── ctl.sock  daemon.json # 控制 socket + 就绪握手（bind 成功后才写）
