@@ -113,6 +113,10 @@ pager. A cursor cannot: a fresh record is newer than every cursor, so it can onl
 **Every filter change returns to page one.** A cursor taken under one filter names a row the next
 filter may not contain, and paging on from it would skip records without saying so.
 
+**Each of the three carries a Refresh in the header**, and it re-reads the CURRENT page rather than
+jumping to the newest one: somebody two pages back is asking whether a line arrived in the window
+they are reading, and moving them would lose the position that question is about.
+
 **The three differ only where their content does.** Calls has a drawer because a call has payloads;
 Events colours rows because it has a closed vocabulary to colour by; Logs has neither and is
 deliberately the plainest of the three — its whole job is to filter prose, order it and get out of

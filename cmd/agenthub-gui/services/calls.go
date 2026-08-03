@@ -14,9 +14,9 @@ func (h *Hub) CallsStatus(ctx context.Context) (api.CallsStatus, error) {
 	})
 }
 
-// CallPage returns metadata-only call rows. Decrypted payloads are available
+// CallList returns metadata-only call rows. Decrypted payloads are available
 // exclusively through CallDetail after a user selects one row.
-func (h *Hub) CallPage(
+func (h *Hub) CallList(
 	ctx context.Context, sinceMillis int64, limit int, cursor, query, client, server, tool, outcome string,
 ) (api.CallPage, error) {
 	return call(ctx, h, func(c *api.Client) (api.CallPage, error) {

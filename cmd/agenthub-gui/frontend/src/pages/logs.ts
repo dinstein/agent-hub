@@ -16,7 +16,7 @@ import { hub } from "../bridge";
 import { clear, el, empty, loadingState, pageHeader, relTime, table } from "../dom";
 import type { Page } from "../page";
 import { failureBox } from "../page";
-import { selectInput, textInput } from "../ui";
+import { button, selectInput, textInput } from "../ui";
 import type { ProcLogPage, ProcLogRecord } from "../types";
 import { Pager, filterBar, filterField, pagerFooter, rangeField, rangeMillis } from "./observe";
 
@@ -183,8 +183,17 @@ export function logsPage(): Page {
   function draw(): void {
     if (!root) return;
     clear(root);
+    // Refresh re-reads the CURRENT page rather than jumping to the newest:
+    // somebody two pages back who wants to see whether a line arrived is
+    // asking about this window, and moving them would lose the position they
+    // are reading from. The other two observability pages have the same
+    // button in the same corner.
     root.append(
-      pageHeader("Logs", "What the daemon and the gateways did, newest first."),
+      pageHeader(
+        "Logs",
+        "What the daemon and the gateways did, newest first.",
+        button("Refresh", "btn", reload),
+      ),
       el("div", { class: "activity-workspace" }, [
         filters(),
         el("div", {}, [body()]),
