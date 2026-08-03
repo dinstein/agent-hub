@@ -258,6 +258,41 @@ by N processes at once needs.
 
 ---
 
+## internal/proclog
+
+The reader for the PROCESS logs — `daemon.log` and every `gateway-<client>.log` — merged into one
+time-ordered stream.
+
+It exists because two callers need the same answer. `agenthub logs` reads the files directly and
+offline; the control plane serves them to the GUI, which cannot read a file at all. While the CLI held
+the only implementation, the window had no view of the half of the record that matters most: the daemon
+never dials a downstream, so every connection failure, circuit transition, health flip and respawn is
+observed and written by a gateway.
+
+### Invariants and failure directions
+
+- **Read-only by construction.** Nothing here opens a file for writing, so serving a page can never
+  disturb the multi-writer discipline the gateways and the daemon depend on.
+- **`Files` walks the rotated segments, not just the active file.** The process logs rotate now, so a
+  reader that opened one file would answer "nothing happened" for everything rotation moved aside —
+  the failure mode the retired savings projection shipped. The gateway glob matches the rotated names
+  too, so `jsonl.IsSegment` drops them: each segment is read as part of the stream it belongs to, and
+  reading one as a stream of its own would list its records twice.
+- **A selector that is active and a field that is absent means DROPPED.** A daemon record carries no
+  client, so `client=x` showing daemon lines would be a filtered view smuggling in records it cannot
+  classify.
+- **An unparseable line is dropped, not counted.** That differs from the frame reader, which counts
+  them, and the reason is the merge: a line that does not parse has no timestamp, so there is no
+  position in a merged stream where showing it would be truthful.
+- **The gateway file name has ONE speller.** `internal/gateway` is the writer and its `LogPath`
+  delegates here; a reader that sanitized a client id differently would look in the wrong place and
+  report "no records" for a client that has been logging all day.
+- **Following is the caller's business.** A request/response API has nowhere to keep per-file offsets,
+  so this package answers whole-window reads and the CLI keeps the offsets for `-f`.
+- **Dependency budget**: standard library plus `internal/jsonl` (the segment naming), `internal/logx`
+  (the field names) and `internal/platform`.
+
+
 ## internal/eventlog
 
 The control-plane event stream — one JSONL line per state change of a downstream server, a gateway

@@ -143,6 +143,7 @@ flowchart TD
         GUARD["internal/guard/*<br/>spawn/net"]
         REG["internal/registry<br/>配置真源 + generation"]
         JL["internal/jsonl<br/>追加式行写入器"]
+        PROC["internal/proclog<br/>进程日志归并读取"]
         EVTL["internal/eventlog<br/>闭集词汇的事件流"]
         EVT["internal/event<br/>进程内事件总线"]
         TIER["internal/tier<br/>操作等级词汇表"]

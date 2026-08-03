@@ -141,7 +141,7 @@ flowchart TD
         OALOG["internal/oauthlogin<br/>login sessions for a browserless process"]
         SKL["internal/skills<br/>library+install tiers"]
         CLNT["internal/clients<br/>12 client adapters"]
-        ACCESS["internal/calllog<br/>encrypted tools/call ledger"]
+        ACCESS["internal/calllog<br/>every interaction with a downstream:<br/>lifecycle, frames, encrypted payloads"]
     end
     subgraph L1["zero-business-dependency foundation"]
         MCP["internal/mcp<br/>protocol facade (+transport)"]
@@ -150,6 +150,7 @@ flowchart TD
         GUARD["internal/guard/*<br/>spawn/net"]
         REG["internal/registry<br/>config source of truth + generation"]
         JL["internal/jsonl<br/>append-only line writer"]
+        PROC["internal/proclog<br/>merged process-log reader"]
         EVTL["internal/eventlog<br/>closed-vocabulary event stream"]
         EVT["internal/event<br/>in-process bus"]
         TIER["internal/tier<br/>operation tier vocabulary"]

@@ -36,6 +36,13 @@ var retiredCommands = map[string]string{
 	"agenthub tool inspect":  "agenthub server tool inspect",
 	"agenthub profile tools": "agenthub profile tool allow",
 	"'profile tools'":        "'profile tool allow'",
+	// The ledger group, retired in 0.24.0. Unlike the entries above it keeps
+	// NO alias: `agenthub audit tail` does not print a deprecation, it fails
+	// with "unknown command". The prefix is safe to match here where the
+	// `agenthub tool ` one was not, because "agenthub audit" is an invocation
+	// in every place it appears and never a noun phrase — the security sweep
+	// is spelled `security-audit`, and the ledger is "the call ledger".
+	"agenthub audit ": "agenthub calls ",
 }
 
 // commandDocRoots are the trees whose text is read by a human or handed to an
