@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -50,6 +52,36 @@ func TestDaemonRestartRefusesBeforeStopping(t *testing.T) {
 	env := decodeEnvelope(t, out)
 	if env.Error == nil || env.Error.Code != CodeDaemonUnowned {
 		t.Fatalf("error envelope = %s", out)
+	}
+}
+
+// `daemon status` has to answer "will this hub still be here in an hour",
+// because from a terminal there is no other way to ask. Both answers are
+// spelled out rather than one being the absence of the other: a line that
+// simply omitted the owner would read as "this build does not know", which is
+// the state an operator most wants to tell apart from "nobody owns it".
+func TestDaemonStatusSaysWhoTheHubBelongsTo(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		owner int
+		want  string
+	}{
+		{name: "headless", owner: 0, want: "headless"},
+		{name: "owned by an application", owner: 4242, want: "owned by pid 4242"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			s := DaemonStatus{
+				Running: true, Pid: 100, Version: "test", Socket: "/tmp/ctl.sock",
+				Owner: tc.owner,
+			}
+			if err := s.Human(&buf); err != nil {
+				t.Fatalf("Human: %v", err)
+			}
+			if !strings.Contains(buf.String(), tc.want) {
+				t.Fatalf("status line = %q, want it to contain %q", buf.String(), tc.want)
+			}
+		})
 	}
 }
 

@@ -1026,6 +1026,12 @@ latter reads the gateway's persisted tool cache, and that cache is only written 
 `server add` + `auth login` + `server test` workflow it doesn't exist at all. `server test` still doesn't write the cache — it is
 a direct-connection diagnostic with no persistent side effects.
 
+**`daemon status` reports the owner, and both answers are spelled out.** `owned by pid N` or `headless`, taken from the
+ping rather than from `run/daemon.json` — that file names a process, and an abrupt death leaves it naming one that no
+longer exists. Omitting the field for a headless hub would have been the cheaper rendering and the wrong one: an absent
+owner reads as "this build does not know", which is exactly the state an operator wants to tell apart from "nobody owns
+it". From a terminal there is no other way to ask whether this hub disappears when somebody quits an application.
+
 **An ownerless start is refused.** A hub belongs to the desktop application, so `daemon start` requires either the
 owner handshake (`--owner-pid`, plus `--owner-lifeline-fd` on a `--foreground` start — both hidden, both written by the
 application, never typed) or an explicit `--headless`. Anything else fails `E_DAEMON_UNOWNED` (exit 2) and names both

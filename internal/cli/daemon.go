@@ -55,6 +55,13 @@ type DaemonStatus struct {
 	Generation     uint64 `json:"generation,omitempty"`
 	Sessions       int    `json:"sessions"`
 	Socket         string `json:"socket"`
+	// Owner is the pid of the application this hub belongs to, or 0 for a
+	// headless one. It answers the question an operator otherwise cannot ask
+	// from here — whether this hub disappears when somebody quits AgentHub —
+	// and it comes from the daemon over the control socket, so it describes
+	// the hub that is answering rather than whatever run/daemon.json was left
+	// saying by a process that died.
+	Owner int `json:"owner,omitempty"`
 }
 
 // Human renders the status.
@@ -67,9 +74,19 @@ func (s DaemonStatus) Human(w io.Writer) error {
 	if s.AlreadyRunning {
 		state = "already running"
 	}
-	_, err := fmt.Fprintf(w, "daemon %s: pid %d, version %s, %d session(s), socket %s\n",
-		state, s.Pid, s.Version, s.Sessions, s.Socket)
+	_, err := fmt.Fprintf(w, "daemon %s: pid %d, version %s, %s, %d session(s), socket %s\n",
+		state, s.Pid, s.Version, s.ownerText(), s.Sessions, s.Socket)
 	return err
+}
+
+// ownerText says who the hub belongs to, in the terms that matter to whoever
+// is reading: whether it will still be here after somebody quits an
+// application.
+func (s DaemonStatus) ownerText() string {
+	if s.Owner == 0 {
+		return "headless"
+	}
+	return fmt.Sprintf("owned by pid %d", s.Owner)
 }
 
 // DaemonStopResult is the `daemon stop` result.
@@ -230,7 +247,7 @@ func (a *App) startDaemonBackground(ctx context.Context, http httpFlags, of owne
 	if hello, perr := pingDaemon(ctx, socket); perr == nil {
 		return DaemonStatus{
 			Running: true, AlreadyRunning: true,
-			Pid: hello.Pid, Version: hello.Version, Generation: hello.Generation,
+			Pid: hello.Pid, Version: hello.Version, Generation: hello.Generation, Owner: hello.Owner,
 			Socket: socket,
 		}, nil
 	}
@@ -278,6 +295,7 @@ func (a *App) startDaemonBackground(ctx context.Context, http httpFlags, of owne
 			return DaemonStatus{
 				Running: true,
 				Pid:     hello.Pid, Version: hello.Version, Generation: hello.Generation,
+				Owner:  hello.Owner,
 				Socket: endpoint,
 			}, nil
 		}
@@ -440,6 +458,7 @@ func (a *App) newDaemonStatusCmd() *cobra.Command {
 			status := DaemonStatus{
 				Running: true,
 				Pid:     hello.Pid, Version: hello.Version, Generation: hello.Generation,
+				Owner:  hello.Owner,
 				Socket: socket,
 			}
 			// Session count is best-effort decoration; a race with a dying
