@@ -26,6 +26,11 @@ package main
 // What each state changes is then the smallest possible thing: the hub is
 // hollow when nothing is being served, solid when it is, and grows a badge on
 // its shoulder when a server wants attention.
+//
+// WHICH THREE. Not any three: the three the application icon draws solid, on
+// the hexagon it draws all six on (build/darwin/icon.svg). Reduction is
+// subtraction there, so this glyph is that drawing seen from further away
+// rather than a second drawing of the same idea.
 
 import (
 	"bytes"
@@ -62,6 +67,21 @@ const (
 	iconBadgeX      = 0.82
 	iconBadgeY      = 0.185
 )
+
+// iconOpticalShift moves the whole glyph down inside its box.
+//
+// Everything above is written about the box's true centre, which is the
+// readable way to state it and the wrong place to draw it: one node above the
+// hub and two below leaves the mark's bounding box ending 0.094 short at the
+// bottom, so a geometrically centred glyph hangs high in the menu bar with a
+// visible gap under it. The shift is applied once, to the sampled point, so
+// the constants keep saying where the shapes are in relation to each other and
+// only this line says where the group sits. The badge travels with it — it is
+// pinned to the hub's shoulder, not to the corner of the image.
+const iconOpticalShift = 0.094
+
+// iconCentreY is the mark's real centre, for anything that needs to probe it.
+const iconCentreY = 0.5 + iconOpticalShift
 
 // iconSupersample is the number of samples per pixel per axis. Four is enough
 // that curved edges stop stair-stepping at 16 pixels and cheap enough that the
@@ -117,6 +137,7 @@ func trayIconPNG(state trayIcon, size int, lightGlyph bool) ([]byte, error) {
 // square. Everything the three states differ by is in this function and the
 // one below it.
 func iconCovers(state trayIcon, x, y float64) bool {
+	y -= iconOpticalShift
 	if state != trayIconAttention {
 		return iconMarkCovers(state, x, y)
 	}

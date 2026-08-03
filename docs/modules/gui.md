@@ -272,11 +272,23 @@ The icon is the whole feature for anyone not currently looking at the window: th
 shoulder appears when an enabled server is not healthy. The mark is the application icon reduced —
 the rounded-square hub and the callers converging on it, three rather than six and detached rather
 than joined by spokes, because at 22 points six nodes smudge and a spoke fuses node, arm and core
-into one blob. It is deliberately **not** a ring: a ring says nothing this product says, and the
+into one blob. **Which three is not free**: `build/darwin/icon.svg` draws all six on one hexagon and
+draws exactly these three solid, so reduction is subtraction and this glyph is that drawing seen from
+further away rather than a second drawing of the same idea. It is deliberately **not** a ring: a ring
+says nothing this product says, and the
 other local MCP hubs already put one in the status area, so the two would be the same picture at a
 glance. The hollow state
 is an **outline**, not an absence — a two-pixel hole made "offline" and "serving" identical in the
 first draft, and `TestTrayIconOfflineKeepsTheHubVisible` is that draft's headstone.
+
+The geometry constants are written about the box's true centre and drawn one `iconOpticalShift`
+below it. One node above the hub and two below leaves the mark's bounding box short at the bottom, so
+a geometrically centred glyph hangs high in the menu bar with a gap underneath — twelve pixels at
+128, invisible on its own and obvious beside a neighbouring icon.
+`TestTrayIconSitsInTheMiddleOfItsBox` measures the painted bounding box rather than trusting the
+constants, because the shift is applied to the sampled point and a new shape that read the constants
+directly would be free to ignore it.
+
 Bucketing comes from the same `Health` contract the Servers page uses — a tray that
 re-derived status from connection flags would be the second opinion
 [controlplane.md](controlplane.md) forbids. Server rows are capped, sorted worst-first so the cap

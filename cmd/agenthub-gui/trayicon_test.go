@@ -27,6 +27,7 @@ func decodeIcon(t *testing.T, state trayIcon, size int, lightGlyph bool) image.I
 func TestTrayIconRendersEveryState(t *testing.T) {
 	t.Parallel()
 	const size = 32
+	px := func(unit float64) int { return int(unit * float64(size)) }
 	seen := map[string]trayIcon{}
 	for _, state := range []trayIcon{trayIconOffline, trayIconAttention, trayIconOK} {
 		img := decodeIcon(t, state, size, false)
@@ -36,8 +37,9 @@ func TestTrayIconRendersEveryState(t *testing.T) {
 			t.Errorf("%v icon paints its top-left corner", state)
 		}
 		// The centre says what the state is: solid when serving, hollow when
-		// there is nothing to serve.
-		_, _, _, centre := img.At(size/2, size/2).RGBA()
+		// there is nothing to serve. The mark's centre, not the image's — the
+		// two are one optical shift apart.
+		_, _, _, centre := img.At(size/2, px(iconCentreY)).RGBA()
 		if state == trayIconOffline && centre != 0 {
 			t.Errorf("offline icon has a filled centre; it must read as hollow")
 		}
@@ -63,7 +65,7 @@ func TestTrayIconAttentionCarriesTheBadge(t *testing.T) {
 	attention := decodeIcon(t, trayIconAttention, size, false)
 
 	px := func(unit float64) int { return int(unit * float64(size)) }
-	if _, _, _, a := attention.At(px(iconBadgeX), px(iconBadgeY)).RGBA(); a == 0 {
+	if _, _, _, a := attention.At(px(iconBadgeX), px(iconBadgeY+iconOpticalShift)).RGBA(); a == 0 {
 		t.Fatal("the attention badge is not painted")
 	}
 	// The badge is not merely drawn, it is cut free of the hub — otherwise
@@ -103,12 +105,13 @@ func TestTrayIconOfflineKeepsTheHubVisible(t *testing.T) {
 		img := decodeIcon(t, trayIconOffline, size, false)
 		px := func(unit float64) int { return int(unit * float64(size)) }
 
+		centre := px(iconCentreY)
 		edge := px(0.5 - iconCoreHalf + iconCoreStroke/2)
-		if _, _, _, a := img.At(edge, size/2).RGBA(); a == 0 {
+		if _, _, _, a := img.At(edge, centre).RGBA(); a == 0 {
 			t.Errorf("at %d px the offline hub has no outline left", size)
 		}
 		hole := px(0.5 - (iconCoreHalf - iconCoreStroke) + 0.02)
-		if _, _, _, a := img.At(hole, size/2).RGBA(); a != 0 {
+		if _, _, _, a := img.At(hole, centre).RGBA(); a != 0 {
 			t.Errorf("at %d px the offline hub's hole is filled in", size)
 		}
 	}
@@ -127,7 +130,7 @@ func TestTrayIconAlwaysDrawsItsClients(t *testing.T) {
 		for i := range iconNodeCount {
 			a := -math.Pi/2 + float64(i)*2*math.Pi/iconNodeCount
 			x := int((0.5 + math.Cos(a)*iconNodeOrbit) * size)
-			y := int((0.5 + math.Sin(a)*iconNodeOrbit) * size)
+			y := int((iconCentreY + math.Sin(a)*iconNodeOrbit) * size)
 			if _, _, _, alpha := img.At(x, y).RGBA(); alpha == 0 {
 				t.Errorf("%v icon is missing the client node at %d,%d", state, x, y)
 			}
@@ -138,16 +141,55 @@ func TestTrayIconAlwaysDrawsItsClients(t *testing.T) {
 func TestTrayIconGlyphColour(t *testing.T) {
 	t.Parallel()
 	const size = 32
+	px := func(unit float64) int { return int(unit * float64(size)) }
 	dark := decodeIcon(t, trayIconOK, size, false)
 	light := decodeIcon(t, trayIconOK, size, true)
 
-	r, g, b, a := dark.At(size/2, size/2).RGBA()
+	r, g, b, a := dark.At(size/2, px(iconCentreY)).RGBA()
 	if a == 0 || r != 0 || g != 0 || b != 0 {
 		t.Errorf("light-background glyph is not black: %d %d %d %d", r, g, b, a)
 	}
-	r, g, b, a = light.At(size/2, size/2).RGBA()
+	r, g, b, a = light.At(size/2, px(iconCentreY)).RGBA()
 	if a == 0 || r != a || g != a || b != a {
 		t.Errorf("dark-background glyph is not white: %d %d %d %d", r, g, b, a)
+	}
+}
+
+// TestTrayIconSitsInTheMiddleOfItsBox holds the correction that produced
+// iconOpticalShift. One node above the hub and two below makes the mark's
+// bounding box end short at the bottom, so drawing it about the box's own
+// centre hangs it high in the menu bar with a gap underneath — the kind of
+// misalignment that is obvious beside a neighbouring icon and invisible in
+// isolation. Only the states whose outline is symmetric are checked: the
+// attention badge is deliberately off to one shoulder.
+func TestTrayIconSitsInTheMiddleOfItsBox(t *testing.T) {
+	t.Parallel()
+	const size = 128
+	for _, state := range []trayIcon{trayIconOffline, trayIconOK} {
+		img := decodeIcon(t, state, size, false)
+
+		minX, minY, maxX, maxY := size, size, -1, -1
+		for y := range size {
+			for x := range size {
+				if _, _, _, a := img.At(x, y).RGBA(); a == 0 {
+					continue
+				}
+				minX, minY = min(minX, x), min(minY, y)
+				maxX, maxY = max(maxX, x), max(maxY, y)
+			}
+		}
+		if maxX < 0 {
+			t.Fatalf("%v icon painted nothing at all", state)
+		}
+		// One pixel of slack for the rounding of an antialiased edge. The
+		// bug this guards sat the mark twelve pixels high at this size:
+		// spans 2..101 of 128 rather than 14..113.
+		if off := (minX + maxX) - (size - 1); off < -1 || off > 1 {
+			t.Errorf("%v icon is off-centre horizontally: spans %d..%d of %d", state, minX, maxX, size)
+		}
+		if off := (minY + maxY) - (size - 1); off < -1 || off > 1 {
+			t.Errorf("%v icon is off-centre vertically: spans %d..%d of %d", state, minY, maxY, size)
+		}
 	}
 }
 
