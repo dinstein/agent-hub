@@ -261,6 +261,49 @@ agenthub audit verify
 `audit verify` 能发现元数据被改、payload 损坏和引用被调包；但所有证据都在同一本地目录里，
 所以无法证明某个完整日目录从未被删。威胁模型若要求删除证据，需要再接一个外部不可变归档。
 
+## 服务器出问题，而你当时没在看
+
+三个文件回答三个不同的问题，拿错了就是一次故障从十分钟拖到一小时的原因：
+
+```bash
+agenthub events --server linear          # 它「发生了什么」，闭集词汇
+agenthub logs --server linear            # 各进程「怎么描述它」，散文
+agenthub audit tail --server linear      # 客户端「调了它什么」
+```
+
+先开 `events`。下游服务器、gateway、daemon 的每一次状态变化都会写进
+`<data>/logs/events.jsonl`，每条记录带一个来自固定集合的 `kind` ——
+`connected`、`circuit_open`、`respawned`、`secrets_missing` 等，完整列表在
+`docs/modules/foundation.md`。固定正是要点：这些值可以拿来过滤和告警，而日志消息的
+措辞不能。
+
+```bash
+agenthub events --since 24h                  # 全部，最新的在最后
+agenthub events --server linear              # 单个下游的完整历史
+agenthub events --kind circuit_open,health_down
+agenthub events --scope daemon               # 重启与配置重载
+agenthub events -f                           # 跟随；daemon 重启也不会断
+```
+
+没有 daemon 也能用，而且这不是降级路径：stdio gateway 自己就会写这个文件，所以
+「没有 daemon」在这里是常态而不是残缺状态。
+
+它**默认开启**，唯一的开关是 `agenthub config set events.enabled false`。
+`audit` 背后的访问账本正好相反，默认关闭——因为它记录调用参数和结果，而这里只记录
+「状态变了」。
+
+`logs` 是与之并排的散文视图，跨进程归并 —— `daemon.log` 加上每个已连接客户端的
+`gateway-<client>.log` —— 输出成一条按时间排序的流。归并就是它存在的理由：daemon
+重启、两秒后六个 gateway 掉线，这是一个故事，却分散在七个文件里。
+
+```bash
+agenthub logs --level warn --since 1h        # 最近哪里出了问题，不限进程
+agenthub logs --client claude-code -f        # 跟随某个客户端的 gateway
+agenthub logs --source daemon                # 或者只看 daemon
+```
+
+`agenthub daemon logs` 仍然保留且没有变化，它是只看 `daemon.log` 的单进程视图。
+
 ## 当你需要看到线上的原始流量
 
 一台 server 过得了 `server test`、在客户端里却表现不对时，问题就不再是「连不连得上」，而是

@@ -303,7 +303,7 @@ flowchart LR
         A4 -.->|"agenthub server logs"| F["CLI / GUI"]
         A5 -.->|"agenthub logs (offline, merged)<br/>agenthub daemon logs (daemon.log only)"| F
         A7 -.->|"agenthub events (offline)"| F
-        A6 -.->|"agenthub audit (offline)<br/>GUI Activity (selected-call detail)"| F
+        A6 -.->|"agenthub audit (offline)<br/>GUI Calls (selected-call detail)"| F
     end
 ```
 

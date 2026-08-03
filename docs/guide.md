@@ -302,6 +302,56 @@ keys.
 it cannot prove a whole day directory was deleted; use an external immutable archive if deletion evidence is part of
 your threat model.
 
+## When a server misbehaves and you were not watching
+
+Three files answer three different questions, and reaching for the wrong one
+is what makes an incident take an hour:
+
+```bash
+agenthub events --server linear          # what HAPPENED to it, in a closed vocabulary
+agenthub logs --server linear            # what the processes SAID about it, as prose
+agenthub audit tail --server linear      # what a client CALLED on it
+```
+
+`events` is the one to open first. Every state change of a downstream server,
+a gateway or the daemon lands in `<data>/logs/events.jsonl` as a record with a
+`kind` from a fixed set — `connected`, `circuit_open`, `respawned`,
+`secrets_missing` and the rest, listed in `docs/modules/foundation.md`. Fixed
+is the point: you can filter and alert on those values, which you cannot
+safely do with the wording of a log message.
+
+```bash
+agenthub events --since 24h                  # everything, newest last
+agenthub events --server linear              # one downstream's whole history
+agenthub events --kind circuit_open,health_down
+agenthub events --scope daemon               # restarts and config reloads
+agenthub events -f                           # tail it; survives a daemon restart
+```
+
+It works with no daemon running, and that is not a fallback — a stdio gateway
+writes this file on its own, so the installation with no daemon is the
+ordinary case here rather than a degraded one.
+
+It is **on by default**, and the one switch is `agenthub config set
+events.enabled false`. The access ledger behind `audit` is the opposite: off
+until you turn it on, because it records call arguments and results, while
+this records only that a state changed.
+
+`logs` is the prose alongside it, merged across every process — `daemon.log`
+plus one `gateway-<client>.log` per connected client — in one time-ordered
+stream. That merge is the reason it exists: a daemon restart and the six
+gateways that lost their connections two seconds later is one story told in
+seven files.
+
+```bash
+agenthub logs --level warn --since 1h        # what went wrong recently, anywhere
+agenthub logs --client claude-code -f        # follow one client's gateway
+agenthub logs --source daemon                # or just the daemon
+```
+
+`agenthub daemon logs` is still there and unchanged; it is the single-process
+view of `daemon.log` alone.
+
 ## When you need to see the wire
 
 Once a server passes `server test` but still behaves wrongly in the client,
