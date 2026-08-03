@@ -503,7 +503,7 @@ func buildLogger(cfg Config, resolver *platform.Resolver) (*slog.Logger, func() 
 	lc := logx.Config{TextEnabled: true, TextWriter: cfg.LogWriter}
 	if dir, err := resolver.LogsDir(); err == nil {
 		if err := platform.EnsureDir(dir); err == nil {
-			lc.JSONPath = filepath.Join(dir, "gateway-"+fsSafe(cfg.ClientID)+".log")
+			lc.JSONPath = LogPath(dir, cfg.ClientID)
 		}
 	}
 	log, closeFn, err := logx.Setup(lc)
@@ -692,6 +692,30 @@ func (g *gateway) catalog() (rt *router.Router, ready bool, pending int) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.rt, g.ready, g.pending
+}
+
+// Log file naming. Exported because the WRITER is here and the reader is in
+// internal/cli: `agenthub logs` resolves the name through these rather than
+// re-spelling it, on the same rule as downstream.ServerLogPath — a reader and
+// a writer that each compose the name are one refactor away from disagreeing,
+// and the symptom is an empty log rather than an error.
+const (
+	// LogFilePrefix and LogFileExt bracket a gateway log's file name. A
+	// reader enumerating every gateway's log matches on the pair; there is
+	// no glob constant, because the only correct glob is built from these.
+	LogFilePrefix = "gateway-"
+	LogFileExt    = ".log"
+)
+
+// LogPath is where the gateway serving clientID writes its JSON log.
+//
+// The mapping is MANY-TO-ONE: fsSafe collapses every rune outside
+// [a-zA-Z0-9_-], so `a.b` and `a/b` share a file. A caller narrowing by
+// client may use this to choose which files to open — it never under-selects
+// — but must then filter on the records' own logx.FieldClient value, which
+// is the unsanitized id, to get the exact set.
+func LogPath(logsDir, clientID string) string {
+	return filepath.Join(logsDir, LogFilePrefix+fsSafe(clientID)+LogFileExt)
 }
 
 // fsSafe rewrites every rune outside [a-zA-Z0-9_-] to '_' for use in file

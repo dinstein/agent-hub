@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -91,5 +92,32 @@ func TestGatewayLogNeverRepeatsTheClientKey(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no log records were produced, so nothing was verified")
+	}
+}
+
+// LogPath is the one place the gateway log's file name is composed, and
+// `agenthub logs` reads it back through the same function. Two properties
+// matter to that reader and are pinned here.
+func TestLogPathNamingContract(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join("x", "logs")
+
+	if got, want := LogPath(dir, "claude-code"), filepath.Join(dir, "gateway-claude-code.log"); got != want {
+		t.Fatalf("LogPath = %q, want %q", got, want)
+	}
+
+	// Every name a reader enumerates is bracketed by the exported pair, so
+	// building the glob from them cannot miss a file the writer produced.
+	got := LogPath(dir, "a.b/c d")
+	base := filepath.Base(got)
+	if !strings.HasPrefix(base, LogFilePrefix) || !strings.HasSuffix(base, LogFileExt) {
+		t.Fatalf("%q is not bracketed by %q/%q", base, LogFilePrefix, LogFileExt)
+	}
+
+	// The mapping is MANY-TO-ONE. A reader narrowing by client may use the
+	// path to pick files (it never under-selects) but must then filter on
+	// the record's own client field, which keeps the unsanitized id.
+	if LogPath(dir, "a.b") != LogPath(dir, "a/b") {
+		t.Fatal("fsSafe no longer collapses distinct ids; the reader's exact-match rule assumed it does")
 	}
 }
