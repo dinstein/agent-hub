@@ -76,6 +76,13 @@ type EventLog struct {
 	Files int `json:"files"`
 	// Skipped counts undecodable lines.
 	Skipped int `json:"skipped,omitempty"`
+	// Total is how many records matched the filter from the cursor onward,
+	// which is what a "showing 100 of 4213" line needs.
+	Total int `json:"total,omitempty"`
+	// NextCursor is the position to resume from, empty at the end of the
+	// list. It names the last row served rather than an offset, so records
+	// arriving between two pages cannot shift a row from one to the next.
+	NextCursor string `json:"nextCursor,omitempty"`
 }
 
 // EventLogFilter narrows a read. The zero value reads the recent tail of
@@ -88,8 +95,10 @@ type EventLogFilter struct {
 	// Class narrows to "routine" or "disruption". Empty reads both.
 	Class string
 	Kinds []string
-	// Limit bounds the returned tail (server-side default when 0).
+	// Limit bounds one page (server-side default when 0).
 	Limit int
+	// Cursor resumes a previous read; empty starts at the newest record.
+	Cursor string
 }
 
 func eventLogQuery(f EventLogFilter) url.Values {
@@ -115,6 +124,9 @@ func eventLogQuery(f EventLogFilter) url.Values {
 	if f.Limit > 0 {
 		q.Set("limit", strconv.Itoa(f.Limit))
 	}
+	if f.Cursor != "" {
+		q.Set("cursor", f.Cursor)
+	}
 	return q
 }
 
@@ -123,4 +135,46 @@ func (s *EventsService) Log(ctx context.Context, f EventLogFilter) (EventLog, er
 	var out EventLog
 	err := s.c.do(ctx, http.MethodGet, "/events/log", eventLogQuery(f), nil, &out)
 	return out, err
+}
+
+// ProcLogRecord is one line of a process log — daemon.log or a
+// gateway-<client>.log — as the control plane serves it.
+//
+// The three join keys are columns because every consumer wants them and a
+// map lookup per row to find the client is a worse API than a field. The
+// rest stay in Fields, flattened to strings: slog attrs are open-ended by
+// design, and a UI that showed only the ones this struct happened to name
+// would silently drop whatever a new log line adds.
+type ProcLogRecord struct {
+	Time    time.Time `json:"time"`
+	Origin  string    `json:"origin"`
+	Level   string    `json:"level"`
+	Message string    `json:"msg"`
+	Client  string    `json:"client,omitempty"`
+	Server  string    `json:"server,omitempty"`
+	PID     int       `json:"pid,omitempty"`
+	// Fields is every remaining slog attribute, as text.
+	Fields map[string]string `json:"fields,omitempty"`
+}
+
+// ProcLogPage is the GET /v1/logs response: newest first, with the same
+// cursor contract the calls and events lists use.
+type ProcLogPage struct {
+	Records []ProcLogRecord `json:"records"`
+	// Total is how many records matched from the cursor onward.
+	Total int `json:"total,omitempty"`
+	// NextCursor is the position to resume from, empty at the end.
+	NextCursor string `json:"nextCursor,omitempty"`
+}
+
+// ProcLogFilter narrows a process-log read. Empty means "no rule".
+type ProcLogFilter struct {
+	Since time.Time
+	// Source is "daemon" or "gateway"; empty reads both.
+	Source string
+	// Level is the minimum: debug, info, warn or error.
+	Level          string
+	Client, Server string
+	Limit          int
+	Cursor         string
 }

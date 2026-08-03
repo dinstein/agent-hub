@@ -95,34 +95,9 @@ func auditMatches(c api.CallSummary, q map[string]string) bool {
 		(q["outcome"] == "" || c.Outcome == q["outcome"])
 }
 
-type auditListCursor struct {
-	time   time.Time
-	callID string
-}
-
-func encodeCallsListCursor(row api.CallSummary) string {
+func callsCursor(row api.CallSummary) string {
 	raw := row.Time.Format(time.RFC3339Nano) + "\n" + row.CallID
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
-}
-
-func decodeCallsListCursor(raw string) (auditListCursor, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(raw)
-	if err != nil {
-		return auditListCursor{}, fmt.Errorf("decode cursor: %w", err)
-	}
-	timestamp, callID, ok := strings.Cut(string(decoded), "\n")
-	if !ok || callID == "" {
-		return auditListCursor{}, fmt.Errorf("cursor has invalid shape")
-	}
-	t, err := time.Parse(time.RFC3339Nano, timestamp)
-	if err != nil {
-		return auditListCursor{}, fmt.Errorf("cursor has invalid timestamp: %w", err)
-	}
-	return auditListCursor{time: t, callID: callID}, nil
-}
-
-func auditRowAfterCursor(row api.CallSummary, cursor auditListCursor) bool {
-	return row.Time.Before(cursor.time) || (row.Time.Equal(cursor.time) && row.CallID < cursor.callID)
 }
 
 func (s *Server) handleCallPage(w http.ResponseWriter, r *http.Request) {
@@ -140,10 +115,10 @@ func (s *Server) handleCallPage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	var cursor auditListCursor
+	var cursor pageCursor
 	if raw := strings.TrimSpace(r.URL.Query().Get("cursor")); raw != "" {
 		var err error
-		cursor, err = decodeCallsListCursor(raw)
+		cursor, err = decodePageCursor(raw)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, CodeBadRequest, "cursor is invalid", "return to the first page", requestIDFrom(r.Context()))
 			return
@@ -182,14 +157,14 @@ func (s *Server) handleCallPage(w http.ResponseWriter, r *http.Request) {
 	})
 	total := len(rows)
 	start := 0
-	if !cursor.time.IsZero() {
-		start = sort.Search(len(rows), func(i int) bool { return auditRowAfterCursor(rows[i], cursor) })
+	if !cursor.isZero() {
+		start = sort.Search(len(rows), func(i int) bool { return cursor.after(rows[i].Time, rows[i].CallID) })
 	}
 	end := min(start+limit, len(rows))
 	page := rows[start:end]
 	nextCursor := ""
 	if end < len(rows) && len(page) > 0 {
-		nextCursor = encodeCallsListCursor(page[len(page)-1])
+		nextCursor = callsCursor(page[len(page)-1])
 	}
 	writeOK(w, http.StatusOK, api.CallPage{
 		Since: since, Calls: page, Total: total, NextCursor: nextCursor, Skipped: skipped,

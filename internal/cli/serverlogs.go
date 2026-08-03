@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strconv"
 	"text/tabwriter"
@@ -123,22 +122,6 @@ func dashInt(n int) string {
 		return "-"
 	}
 	return strconv.Itoa(n)
-}
-
-// fileExists and fileSize are used by the process-log reader in logs.go; they
-// live here because this file has always held the small file helpers the
-// Observe group shares.
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-func fileSize(path string) int64 {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return 0
-	}
-	return fi.Size()
 }
 
 func (a *App) newServerLogsCmd() *cobra.Command {

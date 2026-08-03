@@ -58,6 +58,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/pipeline"
 	"github.com/dinstein/agent-hub/internal/platform"
+	"github.com/dinstein/agent-hub/internal/proclog"
 	"github.com/dinstein/agent-hub/internal/ratelimit"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/router"
@@ -777,11 +778,13 @@ func (g *gateway) catalog() (rt *router.Router, ready bool, pending int) {
 // a writer that each compose the name are one refactor away from disagreeing,
 // and the symptom is an empty log rather than an error.
 const (
-	// LogFilePrefix and LogFileExt bracket a gateway log's file name. A
-	// reader enumerating every gateway's log matches on the pair; there is
-	// no glob constant, because the only correct glob is built from these.
-	LogFilePrefix = "gateway-"
-	LogFileExt    = ".log"
+	// LogFilePrefix and LogFileExt bracket a gateway log's file name. They
+	// are internal/proclog's, re-exported here because this package is the
+	// WRITER: one spelling, and a reader that composed its own would look in
+	// the wrong place and report "no records" for a client that has been
+	// logging all day.
+	LogFilePrefix = proclog.GatewayPrefix
+	LogFileExt    = proclog.GatewayExt
 )
 
 // LogPath is where the gateway serving clientID writes its JSON log.
@@ -792,7 +795,7 @@ const (
 // — but must then filter on the records' own logx.FieldClient value, which
 // is the unsanitized id, to get the exact set.
 func LogPath(logsDir, clientID string) string {
-	return filepath.Join(logsDir, LogFilePrefix+fsSafe(clientID)+LogFileExt)
+	return proclog.GatewayPath(logsDir, clientID)
 }
 
 // fsSafe rewrites every rune outside [a-zA-Z0-9_-] to '_' for use in file

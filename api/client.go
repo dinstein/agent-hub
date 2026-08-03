@@ -64,6 +64,7 @@ type Client struct {
 	Catalog  *CatalogService
 	Parse    *ParseService
 	Calls    *CallsService
+	Logs     *LogsService
 }
 
 // New returns a Client that connects to the daemon control socket at
@@ -98,6 +99,7 @@ func New(socketPath string) *Client {
 	c.Catalog = &CatalogService{c: c}
 	c.Parse = &ParseService{c: c}
 	c.Calls = &CallsService{c: c}
+	c.Logs = &LogsService{c: c}
 	return c
 }
 

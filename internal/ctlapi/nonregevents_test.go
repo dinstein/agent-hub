@@ -56,11 +56,14 @@ func TestEventLogServesRecordsAndFilters(t *testing.T) {
 	if len(all.Events) != 4 || all.Files != 1 {
 		t.Fatalf("unfiltered = %d events over %d files", len(all.Events), all.Files)
 	}
-	// Oldest first, so a UI can append rather than re-sort.
-	if !all.Events[0].TS.Equal(base) {
-		t.Errorf("first record = %v, want the oldest", all.Events[0].TS)
+	// NEWEST first, like every other observability list: a page is a prefix
+	// of the newest records and a cursor names the last row of one, so a
+	// record arriving between two pages can only appear on page one and can
+	// never shift a row from page two onto page three.
+	if !all.Events[0].TS.Equal(base.Add(3 * time.Second)) {
+		t.Errorf("first record = %v, want the newest", all.Events[0].TS)
 	}
-	circuit := all.Events[2]
+	circuit := all.Events[1]
 	if circuit.Server != "github" || circuit.Client != "claude-code" || circuit.PID != 77 {
 		t.Errorf("identity lost in transit: %+v", circuit)
 	}

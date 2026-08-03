@@ -2,6 +2,7 @@ package ctlapi
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +31,13 @@ const (
 	// `since`, which the stream is already ordered by.
 	eventLogMaxLimit = 2000
 )
+
+// eventTie breaks records sharing a timestamp. Scope, kind, subject and pid
+// is what a record has that is stable across reads; two records agreeing on
+// all four in the same nanosecond are the same state change reported twice.
+func eventTie(r eventlog.Record) string {
+	return string(r.Scope) + "/" + string(r.Kind) + "/" + r.Server + r.Client + "/" + strconv.Itoa(r.PID)
+}
 
 func (s *Server) handleEventLog(w http.ResponseWriter, r *http.Request) {
 	reqID := requestIDFrom(r.Context())
@@ -89,6 +97,17 @@ func (s *Server) handleEventLog(w http.ResponseWriter, r *http.Request) {
 		query.Kinds = append(query.Kinds, k)
 	}
 
+	var cursor pageCursor
+	if raw := strings.TrimSpace(q.Get("cursor")); raw != "" {
+		var cerr error
+		cursor, cerr = decodePageCursor(raw)
+		if cerr != nil {
+			writeErr(w, http.StatusBadRequest, CodeBadRequest,
+				"cursor is invalid", "return to the first page", reqID)
+			return
+		}
+	}
+
 	limit := eventLogDefaultLimit
 	if raw := q.Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
@@ -107,15 +126,31 @@ func (s *Server) handleEventLog(w http.ResponseWriter, r *http.Request) {
 			"reading the event log failed: "+err.Error(), "", reqID)
 		return
 	}
+	// Newest first, so a page is a prefix and a cursor is the last row of
+	// one — the same model the calls list uses. The reader hands them back
+	// oldest first, which is the right order for a tail and the wrong one
+	// for a pager.
 	records := res.Records
-	if len(records) > limit {
-		records = records[len(records)-limit:]
+	slices.Reverse(records)
+	if !cursor.isZero() {
+		start := 0
+		for start < len(records) && !cursor.after(records[start].TS, eventTie(records[start])) {
+			start++
+		}
+		records = records[start:]
 	}
 	out := api.EventLog{
-		Events:  make([]api.EventRecord, 0, len(records)),
 		Files:   len(res.Files),
 		Skipped: res.Skipped,
+		Total:   len(records),
 	}
+	if len(records) > limit {
+		records = records[:limit]
+		if n := len(records); n > 0 {
+			out.NextCursor = encodePageCursor(records[n-1].TS, eventTie(records[n-1]))
+		}
+	}
+	out.Events = make([]api.EventRecord, 0, len(records))
 	for _, rec := range records {
 		out.Events = append(out.Events, api.EventRecord{
 			TS: rec.TS, Scope: string(rec.Scope), Kind: string(rec.Kind),

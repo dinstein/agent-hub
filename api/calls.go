@@ -241,3 +241,34 @@ func (s *CallsService) Prune(ctx context.Context, dryRun bool) (CallsPrune, erro
 		}{dryRun}, &out)
 	return out, err
 }
+
+// LogsService reads the hub's process logs — what the daemon and the gateways
+// were doing — as opposed to CallsService (what a client called) and the
+// event log (what state changed).
+type LogsService struct{ c *Client }
+
+// List returns one page, newest first.
+func (s *LogsService) List(ctx context.Context, f ProcLogFilter) (ProcLogPage, error) {
+	var out ProcLogPage
+	err := s.c.do(ctx, http.MethodGet, "/logs", procLogQuery(f), nil, &out)
+	return out, err
+}
+
+func procLogQuery(f ProcLogFilter) url.Values {
+	q := url.Values{}
+	if !f.Since.IsZero() {
+		q.Set("since", f.Since.UTC().Format(time.RFC3339))
+	}
+	for key, value := range map[string]string{
+		"source": f.Source, "level": f.Level, "client": f.Client,
+		"server": f.Server, "cursor": f.Cursor,
+	} {
+		if value != "" {
+			q.Set(key, value)
+		}
+	}
+	if f.Limit > 0 {
+		q.Set("limit", strconv.Itoa(f.Limit))
+	}
+	return q
+}

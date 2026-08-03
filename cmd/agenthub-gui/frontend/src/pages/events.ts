@@ -331,7 +331,8 @@ export function eventsPage(): Page {
     }
     // Newest first here, unlike the wire order: an operator opens this page
     // because something just happened.
-    return table(["When", "What", "Subject", "Detail"], eventRows([...events].reverse()));
+    // The daemon serves newest first, like the calls list; no reversing.
+    return table(["When", "What", "Subject", "Detail"], eventRows(events));
   }
 
   function draw(): void {

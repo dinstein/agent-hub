@@ -131,8 +131,16 @@ type Connector func(ctx context.Context, spec downstream.Spec, deps downstream.D
 // answer the uniform 404), which is what lets a partially assembled daemon —
 // and every existing test — keep working unchanged.
 type NonRegistryDeps struct {
-	// CallsRoot is <data>/audit. Empty keeps every /v1/audit endpoint off.
+	// CallsRoot is <data>/calls. Empty keeps every /v1/calls endpoint off.
 	CallsRoot string
+	// LogsDir is <data>/logs, where the process logs live. Empty keeps
+	// /v1/logs off: the endpoint would have nothing to read, and an empty
+	// page is indistinguishable from a hub that has never logged anything.
+	//
+	// The route exists for the GUI, which may not import internal/* and so
+	// cannot read a file itself. The CLI reads the same files through the
+	// same package (internal/proclog) with no daemon at all.
+	LogsDir string
 	// EventLogPath is <data>/logs/events.jsonl. Empty keeps
 	// /v1/events/log off.
 	//
@@ -197,6 +205,9 @@ func (s *Server) routeNonRegistry(w http.ResponseWriter, r *http.Request) bool {
 
 	// Collection endpoints (exact paths).
 	switch {
+	case p == "/v1/logs" && d.LogsDir != "" && r.Method == http.MethodGet:
+		s.handleProcLogs(w, r)
+		return true
 	case p == "/v1/calls/status" && d.CallsRoot != "" && r.Method == http.MethodGet:
 		s.handleCallsStatus(w, r)
 		return true

@@ -70,6 +70,7 @@ func nonRegistryDeps(cfg Config, dataDir string, vault secrets.Store, log *slog.
 	deps := ctlapi.NonRegistryDeps{
 		CallsRoot:     filepath.Join(dataDir, "audit"),
 		EventLogPath:  filepath.Join(dataDir, "logs", eventlog.FileName),
+		LogsDir:       filepath.Join(dataDir, "logs"),
 		CallsKeys:     vault,
 		SecretsDir:    secretsDir,
 		ClientBaseDir: cfg.ClientBaseDir,

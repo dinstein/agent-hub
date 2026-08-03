@@ -2,10 +2,13 @@ package cli
 
 import (
 	"encoding/json"
+
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dinstein/agent-hub/internal/proclog"
 
 	"github.com/dinstein/agent-hub/internal/daemon"
 	"github.com/dinstein/agent-hub/internal/gateway"
@@ -279,9 +282,9 @@ func TestLogsFollowRestartsOnRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	files := []logFile{{path: path, origin: originDaemon}}
+	files := []proclog.File{{Path: path, Origin: proclog.OriginDaemon}}
 	offsets := map[string]int64{}
-	if got, err := readLogBatch(files, offsets, logSelector{}); err != nil || len(got) != 4 {
+	if got, err := readLogBatch(files, offsets, proclog.Query{}); err != nil || len(got) != 4 {
 		t.Fatalf("first batch = %d records, err %v", len(got), err)
 	}
 
@@ -290,7 +293,7 @@ func TestLogsFollowRestartsOnRotation(t *testing.T) {
 		`{"time":"2020-01-02T11:00:00Z","level":"INFO","msg":"after rotation"}`+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := readLogBatch(files, offsets, logSelector{})
+	got, err := readLogBatch(files, offsets, proclog.Query{})
 	if err != nil {
 		t.Fatal(err)
 	}
