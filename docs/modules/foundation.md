@@ -313,6 +313,70 @@ it in `downstream` or keeping a governance package alive for one type.
 
 ---
 
+## internal/eventlog
+
+### One-line responsibility
+
+The control-plane event stream — one JSONL line per state change of a downstream server, a gateway
+or the daemon, in a **closed vocabulary**.
+
+**Everything it records was already being logged.** `internal/downstream` has emitted circuit
+transitions, health flips, respawns and connection closes for a long time — as slog records, whose
+`msg` is prose. Prose is the right shape for a human reading `agenthub logs` and the wrong shape for
+anything else: a UI timeline, a `--json` consumer or an alert needs values it is allowed to switch
+on, and nothing may depend on the wording of a log message. `Kind` is that vocabulary. The two
+streams are not redundant — they are the same facts in the two shapes their two readers need — and
+both call sites sit together so neither can be changed without the other being visible.
+
+### Invariants and failure directions
+
+- **Failure direction is OPEN, and that is the difference from `internal/accesslog`.** A record that
+  cannot be written is dropped and counted; nothing is refused. `accesslog` is fail-closed because an
+  unrecorded `tools/call` is a governance gap. A missed state change is not — the state itself is
+  still observable — and refusing to serve a client because a note about it could not be filed would
+  be worse than the gap it prevents.
+- **A nil `*Stream` is usable and does nothing.** That is what makes "the switch is off" and "the
+  file would not open" one code path at every call site, rather than a nil check each of them can
+  forget differently.
+- **`PID` is stamped by the stream, never by the caller**, and carries no `omitempty`: N gateway
+  processes plus the daemon share one file, and a record attributed to no process cannot be placed at
+  all. This is `internal/logx`'s `FieldPID` lesson, and the trace log above had to learn it twice.
+- **One file, three scopes.** Server, gateway and daemon events share `events.jsonl` rather than
+  being split. The question is a timeline — "the daemon restarted at 11:03 and six servers dropped
+  two seconds later" — and splitting the file makes re-assembling it the reader's job.
+- **`Detail` is fitted to the SERIALIZED line, not capped raw.** Same rule and same reason as the
+  trace log above; what it prevents is a record replaced by an oversize marker, which reads back as a
+  row claiming nothing happened.
+- **The reader covers rotated segments.** `Read` walks `Segments(path)`, not just the active file.
+  The retired savings projection opened only the active file, and the symptom was a report that said
+  "nothing happened" rather than an error.
+- **Retention runs on `Open`**, keeping the newest three segments. Rotation happens at 32 MiB of
+  state-change records and is therefore rare, while gateway processes open this file constantly — one
+  per `agenthub connect` — so the check is frequent in practice and costs one directory listing. A
+  removal that fails is ignored: another process may have pruned it already, and a retention sweep
+  able to fail an `Open` would turn "the disk is briefly busy" into "this gateway does not start".
+- **Dependency budget**: standard library plus `internal/jsonl`.
+
+### The closed vocabulary
+
+Adding a kind means editing **three** places — the constant, `AllKinds`, and this table — and
+`test/buildrules` fails until all three agree. The omission is otherwise invisible: the event is
+still written and `make ci` stays green, while the consumer that was supposed to recognize it
+silently does not.
+
+Kinds are checked as a **(scope, kind) pair**, never a bare kind: a gateway and the daemon both
+`started`, and that spelling is meaningless at server scope.
+
+<!-- event-kinds -->
+
+| Scope | Kinds |
+|---|---|
+| `server` | `connected`, `connect_failed`, `disconnected`, `respawned`, `respawn_failed`, `circuit_open`, `circuit_half_open`, `circuit_closed`, `health_down`, `health_up`, `tools_changed`, `oauth_refresh_failed`, `secrets_missing` |
+| `gateway` | `started`, `stopped`, `client_attached`, `client_detached`, `registry_reload_failed`, `scope_changed` |
+| `daemon` | `started`, `stopping`, `listener_bound`, `ctl_socket_lost`, `config_reloaded` |
+
+---
+
 ## internal/accesslog
 
 ### One-line responsibility
