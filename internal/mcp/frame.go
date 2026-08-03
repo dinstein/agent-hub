@@ -11,8 +11,9 @@ import (
 )
 
 // MaxFrameSize is the hard upper bound on a single JSON-RPC frame
-// (newline excluded), applied on both read and write. 16 MiB, frozen by
-// (bounded read is a protocol-layer invariant of this facade).
+// (newline excluded), applied on both read and write. 16 MiB: a bounded
+// read is a protocol-layer invariant of this facade, described alongside
+// the rest of them in docs/modules/foundation.md.
 const MaxFrameSize = 16 << 20
 
 // ErrFrameTooLarge is the decidable sentinel for a frame exceeding
