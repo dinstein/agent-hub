@@ -71,7 +71,7 @@ func (h *stateLog) find(t *testing.T, from, to string) map[string]string {
 func newLoggedBreaker(cfg BreakerConfig) (*breaker, *fakeClock, *stateLog) {
 	h := &stateLog{}
 	clk := &fakeClock{t: time.Unix(1000, 0)}
-	b := newBreaker(cfg, slog.New(h))
+	b := newBreaker(cfg, slog.New(h), serverEvents{})
 	b.now = clk.now
 	return b, clk, h
 }

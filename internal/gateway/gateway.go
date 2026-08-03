@@ -52,6 +52,7 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/discovery"
 	"github.com/dinstein/agent-hub/internal/downstream"
+	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/pipeline"
@@ -212,6 +213,19 @@ type gateway struct {
 	// the logs directory could not be resolved, which disables tracing and
 	// nothing else.
 	traces *traceLogs
+	// events is the control-plane event stream (internal/eventlog), shared
+	// by every server this gateway connects. nil when the switch is off or
+	// the file could not be opened — and a nil *Stream is silent, so no
+	// call site distinguishes the two.
+	// events is the control-plane event stream (internal/eventlog), shared
+	// by every server this gateway connects. nil when the switch is off or
+	// the file could not be opened — and a nil *Stream is silent, so no call
+	// site can tell the two apart or act differently on them.
+	//
+	// Guarded by its own mutex rather than g.mu: it is read from every
+	// connect goroutine and written once, after the registry load.
+	eventsMu sync.Mutex
+	events   *eventlog.Stream
 
 	// Quota plane (internal/ratelimit, ratelimit.go): rlStore owns the
 	// counter file SHARED with every other gateway process and the daemon;
@@ -409,6 +423,10 @@ func newGateway(cfg Config) (*gateway, error) {
 	// unwritable directory leaves the gateway up and makes auditBegin refuse
 	// every tools/call before execution.
 	g.syncAudit()
+	// After the registry, because the switch that decides it lives in
+	// governance. Deps reads the stream through g.eventStream at connect
+	// time, so instances created before this point still get it.
+	g.syncEvents(resolver)
 
 	// Skills over MCP: opt-in governance switch, read from the snapshot the
 	// registry load just applied (nil snapshot = no governance = off).
@@ -515,6 +533,56 @@ func buildLogger(cfg Config, resolver *platform.Resolver) (*slog.Logger, func() 
 		}
 	}
 	return log, closeFn, nil
+}
+
+// eventStream is what downstream.Deps reads at connect time.
+func (g *gateway) eventStream() *eventlog.Stream {
+	g.eventsMu.Lock()
+	defer g.eventsMu.Unlock()
+	return g.events
+}
+
+// syncEvents opens the control-plane event stream if governance wants it.
+//
+// Every failure degrades to nil rather than to an error: the stream is
+// fail-open by contract (internal/eventlog), so a gateway that cannot write
+// its events must still serve tools. Disabled and unopenable are the same
+// nil, deliberately — no call site should be able to tell them apart and act
+// differently on them.
+func (g *gateway) syncEvents(resolver *platform.Resolver) {
+	enabled := true
+	if snap := g.snap.Load(); snap != nil {
+		enabled = snap.Governance.V.EventsEnabled()
+	}
+	st := openEvents(resolver, g.log, enabled)
+	g.eventsMu.Lock()
+	g.events = st
+	g.eventsMu.Unlock()
+	if st == nil {
+		return
+	}
+	st.Append(eventlog.Record{
+		Scope: eventlog.ScopeGateway, Kind: eventlog.KindGatewayStarted,
+		Client: g.cfg.ClientID, Detail: g.cfg.Face,
+	})
+}
+
+func openEvents(resolver *platform.Resolver, log *slog.Logger, enabled bool) *eventlog.Stream {
+	if !enabled {
+		return nil
+	}
+	dir, err := resolver.LogsDir()
+	if err == nil {
+		err = platform.EnsureDir(dir)
+	}
+	if err == nil {
+		var st *eventlog.Stream
+		if st, err = eventlog.Open(filepath.Join(dir, eventlog.FileName), eventlog.Options{}); err == nil {
+			return st
+		}
+	}
+	log.Warn("event stream unavailable; server state changes will not be recorded", "error", err)
+	return nil
 }
 
 // loadRegistry opens the registry, applies its first snapshot and extracts
@@ -655,6 +723,16 @@ func (g *gateway) shutdown() {
 	g.mu.Unlock()
 	for _, s := range servers {
 		s.Close()
+	}
+	// After the connections, for the reason the traces are: the shutdown is
+	// exactly what a reader opened this stream to see, so the last record
+	// must be this one and not a server's.
+	if st := g.eventStream(); st != nil {
+		st.Append(eventlog.Record{
+			Scope: eventlog.ScopeGateway, Kind: eventlog.KindGatewayStopped,
+			Client: g.cfg.ClientID,
+		})
+		_ = st.Close()
 	}
 	// After the connections: a server closing may still emit frames, and a
 	// trace that stops one step early loses exactly the shutdown it was

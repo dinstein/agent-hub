@@ -41,6 +41,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/event"
+	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/httpbridge"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
@@ -325,7 +326,14 @@ func Run(ctx context.Context, cfg Config) error {
 	defer bgStop()
 	go mgr.Run(bgCtx)
 
-	watcher := startWatch(bgCtx, store, cfg.Watch, bus, log)
+	// The control-plane event stream (internal/eventlog), opened before the
+	// watcher because the watcher records config reloads into it. Fail-open:
+	// a daemon that cannot write its events still coordinates, so every
+	// failure degrades to a nil stream, which is silent by contract.
+	events := openEvents(logsDir, log, store)
+	defer func() { _ = events.Close() }()
+
+	watcher := startWatch(bgCtx, store, cfg.Watch, bus, log, events)
 
 	// OAuth proactive refresh (docs/modules/oauth.md): the daemon is the component
 	// that is always up, so it is the one that renews tokens before they
@@ -421,6 +429,19 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.OnHTTPReady(endpoint.Addrs())
 	}
 
+	events.Append(eventlog.Record{
+		Scope: eventlog.ScopeDaemon, Kind: eventlog.KindDaemonStarted,
+		Detail: cfg.Version,
+	})
+	if endpoint != nil {
+		for _, addr := range endpoint.Addrs() {
+			events.Append(eventlog.Record{
+				Scope: eventlog.ScopeDaemon, Kind: eventlog.KindListenerBound,
+				Detail: addr,
+			})
+		}
+	}
+
 	// "owner" is logged on every start, including the headless 0. A hub that
 	// stopped on its own is diagnosed by asking who it was watching, and a
 	// field that only appears when there is an owner makes its absence
@@ -436,6 +457,14 @@ func Run(ctx context.Context, cfg Config) error {
 		// Graceful stop: end the long-lived streams, stop accepting, drain
 		// in-flight requests, then force-close whatever is still left.
 		log.Info("daemon stopping", "reason", context.Cause(ctx))
+		var reason string
+		if cause := context.Cause(ctx); cause != nil {
+			reason = cause.Error()
+		}
+		events.Append(eventlog.Record{
+			Scope: eventlog.ScopeDaemon, Kind: eventlog.KindDaemonStopping,
+			Detail: reason,
+		})
 		// The data plane goes first, for the reason cleanup states, and it
 		// goes here rather than only in cleanup so that the downstream
 		// processes are released before the drain rather than after it.
@@ -519,7 +548,7 @@ func buildLogger(cfg Config, logsDir string) (*slog.Logger, func() error, error)
 //
 // Watch failure degrades: the daemon still runs, changes surface on the
 // next explicit reload. Self-writes are already suppressed inside registry.
-func startWatch(ctx context.Context, store *registry.Store, opts registry.WatchOptions, bus *event.Bus, log *slog.Logger) *registry.Watcher {
+func startWatch(ctx context.Context, store *registry.Store, opts registry.WatchOptions, bus *event.Bus, log *slog.Logger, events *eventlog.Stream) *registry.Watcher {
 	w, err := store.WatchWith(opts)
 	if err != nil {
 		log.Warn("registry watch unavailable; external changes will not be noticed", "error", err)
@@ -553,6 +582,10 @@ func startWatch(ctx context.Context, store *registry.Store, opts registry.WatchO
 			}
 			log.Info("registry change applied",
 				"kind", string(ch.Kind), "generation", snap.Generation)
+			events.Append(eventlog.Record{
+				Scope: eventlog.ScopeDaemon, Kind: eventlog.KindConfigReloaded,
+				Detail: string(ch.Kind), Attempt: int(snap.Generation),
+			})
 			bus.Publish(event.Event{
 				Topic:   ctlapi.TopicRegistry,
 				Key:     string(ch.Kind),
@@ -630,4 +663,24 @@ func ReadInfo(runDir string) (Info, error) {
 		return info, fmt.Errorf("daemon: parsing %s: %w", InfoFileName, err)
 	}
 	return info, nil
+}
+
+// openEvents opens the control-plane event stream when governance wants it.
+//
+// Fail-open in every direction: the switch unset means ON, an unreadable
+// registry means ON (a stream is the thing you want when the config itself
+// is in doubt), and a file that will not open means nil — which is silent by
+// contract, so no caller distinguishes it from "switched off".
+func openEvents(logsDir string, log *slog.Logger, store *registry.Store) *eventlog.Stream {
+	if store != nil {
+		if snap := store.Snapshot(); !snap.Governance.V.EventsEnabled() {
+			return nil
+		}
+	}
+	st, err := eventlog.Open(filepath.Join(logsDir, eventlog.FileName), eventlog.Options{})
+	if err != nil {
+		log.Warn("event stream unavailable; daemon state changes will not be recorded", "error", err)
+		return nil
+	}
+	return st
 }

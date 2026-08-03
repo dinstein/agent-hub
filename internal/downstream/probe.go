@@ -12,6 +12,8 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
+
+	"github.com/dinstein/agent-hub/internal/eventlog"
 )
 
 // ConnState is the observed connection condition of one downstream server.
@@ -83,19 +85,20 @@ type Health struct {
 // hundred and twenty identical warnings instead — the shape that teaches a
 // reader to filter the message out, and the transition with it.
 type healthTracker struct {
-	mu  sync.Mutex
-	h   Health
-	log *slog.Logger
+	mu     sync.Mutex
+	h      Health
+	log    *slog.Logger
+	events serverEvents
 }
 
 // newHealthTracker builds the tracker for one connection. log is the
 // server's bound logger (it carries the server and, for a derivation, the
 // instance); nil means no logging.
-func newHealthTracker(now time.Time, log *slog.Logger) *healthTracker {
+func newHealthTracker(now time.Time, log *slog.Logger, events serverEvents) *healthTracker {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &healthTracker{h: Health{State: ConnConnecting, Since: now}, log: log}
+	return &healthTracker{h: Health{State: ConnConnecting, Since: now}, log: log, events: events}
 }
 
 func (t *healthTracker) snapshot() Health {
@@ -129,6 +132,10 @@ func (t *healthTracker) success(now time.Time) {
 		// only ever reports what fails, so without this a log shows a server
 		// going down and never coming back.
 		t.log.Info("downstream healthy again", append(pair, "failures_cleared", failures)...)
+		t.events.emit(eventlog.Record{
+			Kind: eventlog.KindHealthUp,
+			From: string(before), To: string(ConnConnected), Attempt: failures,
+		})
 	default:
 		// connecting → connected is the handshake, which the assembling
 		// layer already reports in its own words ("downstream connected",
@@ -162,6 +169,11 @@ func (t *healthTracker) failure(now time.Time, err error, hard bool) {
 	// and the two send a reader to different places.
 	t.log.Warn("downstream is not answering", "from", string(before), "to", string(after),
 		"failures", failures, "hard", hard, "error", err)
+	t.events.emit(eventlog.Record{
+		Kind: eventlog.KindHealthDown,
+		From: string(before), To: string(after), Attempt: failures,
+		Detail: err.Error(),
+	})
 }
 
 // Health returns the current probe-derived connection condition. Servers

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/guard/spawnguard"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 	"github.com/dinstein/agent-hub/internal/secrets"
@@ -286,6 +287,60 @@ type Deps struct {
 	// plain field is not kept as a fallback: keeping it would preserve the
 	// ability to express the bug.
 	TraceFor func(spec Spec) *ServerLog
+
+	// Events returns the shared control-plane event stream
+	// (internal/eventlog), or nil. A nil *Stream's Append is a no-op, so no
+	// call site needs a check, and "the switch is off" and "the file would
+	// not open" are deliberately the same answer.
+	//
+	// A function for a different reason from TraceFor and AuthFor above,
+	// which are functions because their value is PER SPEC. This one is
+	// shared by every server — one file, one timeline — but it is decided by
+	// GOVERNANCE, which a gateway loads after it has built its pool. Deps is
+	// captured once at NewPool, so a plain field would be read before the
+	// switch exists and every derived instance would be silent forever.
+	Events func() *eventlog.Stream
+
+	// ClientID names the client this gateway serves. It is stamped on every
+	// server event, so a record says which process observed it — the
+	// question a shared file forces, and the one the trace log's `pid` had
+	// to be added to answer. Empty for an assembly serving no single client.
+	ClientID string
+}
+
+// serverEvents binds the shared stream to one connection's identity, so a
+// call site passes only what varies. The zero value is usable and silent.
+//
+// It exists for the reason srvLog is bound once below rather than stamped
+// per call site: an identity each emit has to remember is an identity one
+// emit eventually forgets.
+type serverEvents struct {
+	stream *eventlog.Stream
+	server string
+	inst   string
+	client string
+}
+
+// emit fills in scope and identity and appends. Callers set Kind and
+// whatever that kind carries.
+func (e serverEvents) emit(r eventlog.Record) {
+	r.Scope = eventlog.ScopeServer
+	r.Server, r.Inst, r.Client = e.server, e.inst, e.client
+	e.stream.Append(r)
+}
+
+// eventsFor binds this Deps' stream to one spec.
+func (d Deps) eventsFor(spec Spec) serverEvents {
+	var stream *eventlog.Stream
+	if d.Events != nil {
+		stream = d.Events()
+	}
+	return serverEvents{
+		stream: stream,
+		server: spec.ID,
+		inst:   string(spec.DeriveKey),
+		client: d.ClientID,
+	}
 }
 
 // traceFor returns the frame log of one instance, or nil when the assembly

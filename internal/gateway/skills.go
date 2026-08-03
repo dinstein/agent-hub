@@ -143,6 +143,11 @@ func (g *gateway) downstreamDeps() downstream.Deps {
 		// traceLogs owns the id → log mapping and the registry-driven
 		// enabled state.
 		TraceFor: g.traces.logFor,
+		// Read at connect time, not here: the pool captures Deps once, and
+		// the governance switch that decides this stream is loaded after the
+		// pool is built. downstream binds the per-server identity from Spec.
+		Events:   g.eventStream,
+		ClientID: g.cfg.ClientID,
 		// Without a resolver every ${SECRET_X} placeholder is a dial error
 		// (downstream.ErrNoResolver, fail-closed) — which is exactly what
 		// used to happen here: the gateway is the path that serves real

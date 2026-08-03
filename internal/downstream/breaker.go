@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/dinstein/agent-hub/internal/eventlog"
 )
 
 // breakerState is the classic three-state circuit breaker state.
@@ -50,6 +52,7 @@ type breaker struct {
 	cooldown  time.Duration
 	now       func() time.Time // test seam; time.Now in production
 	log       *slog.Logger
+	events    serverEvents
 
 	mu       sync.Mutex
 	state    breakerState
@@ -61,7 +64,7 @@ type breaker struct {
 // newBreaker builds the breaker for one connection. log is the server's
 // bound logger (it already carries the server, and the derived instance when
 // there is one); nil means no logging, which is what the unit tests use.
-func newBreaker(cfg BreakerConfig, log *slog.Logger) *breaker {
+func newBreaker(cfg BreakerConfig, log *slog.Logger, events serverEvents) *breaker {
 	if cfg.FailureThreshold <= 0 {
 		cfg.FailureThreshold = 3
 	}
@@ -71,7 +74,10 @@ func newBreaker(cfg BreakerConfig, log *slog.Logger) *breaker {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &breaker{threshold: cfg.FailureThreshold, cooldown: cfg.Cooldown, now: time.Now, log: log}
+	return &breaker{
+		threshold: cfg.FailureThreshold, cooldown: cfg.Cooldown,
+		now: time.Now, log: log, events: events,
+	}
 }
 
 // transition logs one state change. It is called AFTER the mutex is
@@ -86,15 +92,24 @@ func (b *breaker) transition(from, to breakerState, failures int) {
 		return
 	}
 	fields := []any{"from", from.String(), "to", to.String()}
+	// Both streams, side by side. The slog line is prose for a human reading
+	// `agenthub logs`; the event is the same fact in the closed vocabulary a
+	// timeline or an alert may switch on (internal/eventlog). Keeping the two
+	// call sites adjacent is what stops one being updated without the other.
+	ev := eventlog.Record{From: from.String(), To: to.String()}
 	switch to {
 	case stateOpen:
 		b.log.Warn("circuit opened; calls to this server are rejected until the cooldown ends",
 			append(fields, "failures", failures, "cooldown", b.cooldown.String())...)
+		ev.Kind, ev.Attempt, ev.DurMs = eventlog.KindCircuitOpen, failures, b.cooldown.Milliseconds()
 	case stateHalfOpen:
 		b.log.Info("circuit half-open; admitting one probe", fields...)
+		ev.Kind = eventlog.KindCircuitHalfOpen
 	default:
 		b.log.Info("circuit closed; the server answered again", fields...)
+		ev.Kind = eventlog.KindCircuitClosed
 	}
+	b.events.emit(ev)
 }
 
 // allow reports whether a call may proceed. probe is true when this call is

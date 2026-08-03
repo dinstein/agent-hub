@@ -16,7 +16,7 @@ import (
 
 func newLoggedHealth() (*healthTracker, *stateLog) {
 	h := &stateLog{}
-	return newHealthTracker(time.Unix(1000, 0), slog.New(h)), h
+	return newHealthTracker(time.Unix(1000, 0), slog.New(h), serverEvents{}), h
 }
 
 func TestHealthTransientFailuresLogOnlyOnTheFlip(t *testing.T) {

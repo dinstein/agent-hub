@@ -13,6 +13,8 @@ import (
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 	"github.com/dinstein/agent-hub/internal/mrtr"
+
+	"github.com/dinstein/agent-hub/internal/eventlog"
 )
 
 // clientInfo is what agenthub declares as clientInfo when initializing a
@@ -47,11 +49,15 @@ type callResp struct {
 // through the owner goroutine;
 // see the package doc for the invariants.
 type Server struct {
-	spec  Spec
-	log   *slog.Logger
-	dial  DialFunc // also the respawn factory
-	br    *breaker
-	retry RetryConfig
+	spec Spec
+	log  *slog.Logger
+	// events is the control-plane event sink, bound to this connection's
+	// identity at Connect (spec.go). The zero value is silent, so a caller
+	// that wired no stream needs no check.
+	events serverEvents
+	dial   DialFunc // also the respawn factory
+	br     *breaker
+	retry  RetryConfig
 
 	connectTimeout time.Duration
 
@@ -165,12 +171,17 @@ func Connect(ctx context.Context, spec Spec, deps Deps) (*Server, error) {
 		srvLog = srvLog.With(logx.Instance(string(spec.DeriveKey)))
 	}
 
+	// Bound once for the whole connection, for the reason srvLog is: an
+	// identity every emit has to remember is one an emit eventually forgets.
+	srvEvents := deps.eventsFor(spec)
+
 	lifeCtx, stop := context.WithCancel(context.Background())
 	s := &Server{
 		spec:           spec,
 		log:            srvLog,
+		events:         srvEvents,
 		dial:           dial,
-		br:             newBreaker(deps.Breaker, srvLog),
+		br:             newBreaker(deps.Breaker, srvLog, srvEvents),
 		retry:          deps.Retry.withDefaults(),
 		reconnect:      deps.Reconnect.withReconnectDefaults(),
 		connectTimeout: timeout,
@@ -178,7 +189,7 @@ func Connect(ctx context.Context, spec Spec, deps Deps) (*Server, error) {
 		stop:           stop,
 		calls:          make(chan callReq, 1),
 		refreshCh:      make(chan struct{}, 1),
-		health:         newHealthTracker(time.Now(), srvLog),
+		health:         newHealthTracker(time.Now(), srvLog, srvEvents),
 		trace:          deps.traceFor(spec),
 		traceInst:      string(spec.DeriveKey),
 		ownerDone:      make(chan struct{}),
@@ -188,12 +199,14 @@ func Connect(ctx context.Context, spec Spec, deps Deps) (*Server, error) {
 	defer cancel()
 	tr, initRes, tools, err := s.dialAndInit(cctx)
 	if err != nil {
+		srvEvents.emit(eventlog.Record{Kind: eventlog.KindConnectFailed, Detail: err.Error()})
 		stop()
 		close(s.ownerDone)
 		return nil, err
 	}
 	s.attach(tr, initRes, tools)
 	s.health.success(time.Now()) // the handshake IS the first liveness proof
+	srvEvents.emit(eventlog.Record{Kind: eventlog.KindConnected, Attempt: len(tools)})
 	go s.owner()
 	if deps.PingInterval > 0 {
 		go s.runProbe(deps.PingInterval)
@@ -399,8 +412,13 @@ func (s *Server) Close() {
 		// Without it a server leaves the catalog — removed from the config,
 		// redefined, or taken down with the process — and the log's last word
 		// on it is that it connected, which reads as though it still is.
+		state := s.health.snapshot().State
 		s.log.Info("downstream connection closed",
-			"reconnects", s.reconnects.Load(), "state", string(s.health.snapshot().State))
+			"reconnects", s.reconnects.Load(), "state", string(state))
+		s.events.emit(eventlog.Record{
+			Kind: eventlog.KindDisconnected,
+			From: string(state), Attempt: int(s.reconnects.Load()),
+		})
 	})
 }
 
@@ -672,12 +690,16 @@ func (s *Server) respawn(ctx context.Context, cause respawnCause, trigger error)
 	if err != nil {
 		fields := append(respawnFields(cause, trigger, n), "error", err)
 		s.log.Warn("respawn failed", withLastWords(fields, lastWords)...)
+		s.events.emit(eventlog.Record{
+			Kind: eventlog.KindRespawnFailed, Attempt: int(n), Detail: err.Error(),
+		})
 		s.health.failure(time.Now(), err, hardConnError(err))
 		return nil, &transport.Error{Class: transport.ClassUnavailable, Err: fmt.Errorf("respawn: %w", err)}
 	}
 	s.attach(tr, initRes, tools)
 	s.health.success(time.Now())
 	s.log.Info("respawned", withLastWords(respawnFields(cause, trigger, n), lastWords)...)
+	s.events.emit(eventlog.Record{Kind: eventlog.KindRespawned, Attempt: int(n), Detail: string(cause)})
 	return tr, nil
 }
 
@@ -793,7 +815,11 @@ func (s *Server) autoRefresh() {
 		// Non-fatal: the cached list stays; a later notification or an
 		// explicit RefreshTools will retry.
 		s.log.Warn("tools refresh after list_changed failed", "error", err)
+		return
 	}
+	s.events.emit(eventlog.Record{
+		Kind: eventlog.KindToolsChanged, Attempt: len(s.Tools()),
+	})
 }
 
 // refreshOnce re-queries tools/list on the current connection and replaces
