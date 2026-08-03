@@ -253,16 +253,25 @@ func readEventList(path string, q eventlog.Query, limit int) (EventList, error) 
 	if err != nil {
 		return EventList{}, err
 	}
-	records := res.Records
+	return listOf(tailOf(res.Records, limit), res, path), nil
+}
+
+// tailOf keeps the newest limit records; 0 means all of them.
+func tailOf(records []eventlog.Record, limit int) []eventlog.Record {
 	if limit > 0 && len(records) > limit {
-		records = records[len(records)-limit:]
+		return records[len(records)-limit:]
 	}
+	return records
+}
+
+// listOf projects records into the result, carrying the read's provenance.
+func listOf(records []eventlog.Record, res eventlog.Result, path string) EventList {
 	list := EventList{Events: rowsOfEvents(records), Files: res.Files, Skipped: res.Skipped}
 	if len(res.Files) == 0 {
 		list.Note = fmt.Sprintf("no event stream at %s yet; any running gateway or daemon "+
 			"writes it unless 'events.enabled' is false", path)
 	}
-	return list, nil
+	return list
 }
 
 func rowsOfEvents(records []eventlog.Record) []EventRow {
@@ -285,16 +294,24 @@ func rowsOfEvents(records []eventlog.Record) []EventRow {
 // sequence, so a byte offset into "the file" is not a position in the stream
 // at all: after a rotation it points into a segment that is no longer the
 // end.
+//
+// The cursor is the RECORD's time.Time, not the rendered stamp. Reading it
+// back out of the projected row meant parsing an RFC3339 string with second
+// resolution, and the cursor then advanced a whole second past records that
+// had not been printed — so a burst inside one second silently lost its
+// tail. Records carry nanoseconds; keeping the cursor on the record side
+// costs nothing and the loss disappears.
 func (a *App) followEvents(ctx context.Context, path string, q eventlog.Query, limit int) error {
 	p := a.printer()
-	list, err := readEventList(path, q, limit)
+	res, err := eventlog.Read(path, q)
 	if err != nil {
 		return err
 	}
-	if err := p.Emit(list); err != nil {
+	records := tailOf(res.Records, limit)
+	if err := p.Emit(listOf(records, res, path)); err != nil {
 		return err
 	}
-	seen := lastSeen(list.Events)
+	seen := newest(records)
 	ticker := time.NewTicker(eventsFollowInterval)
 	defer ticker.Stop()
 	for {
@@ -307,48 +324,42 @@ func (a *App) followEvents(ctx context.Context, path string, q eventlog.Query, l
 		if err != nil {
 			return err
 		}
-		fresh := rowsOfEvents(res.Records)
+		fresh := res.Records
 		if !seen.IsZero() {
 			fresh = after(fresh, seen)
 		}
 		if len(fresh) == 0 {
 			continue
 		}
-		seen = lastSeen(fresh)
-		if err := p.Emit(EventList{Events: fresh}); err != nil {
+		seen = newest(fresh)
+		if err := p.Emit(EventList{Events: rowsOfEvents(fresh)}); err != nil {
 			return err
 		}
 	}
 }
 
-// lastSeen is the timestamp of the newest row, or the zero time.
-func lastSeen(rows []EventRow) time.Time {
-	if len(rows) == 0 {
+// newest is the timestamp of the last record, or the zero time.
+func newest(records []eventlog.Record) time.Time {
+	if len(records) == 0 {
 		return time.Time{}
 	}
-	ts, err := time.Parse(time.RFC3339, rows[len(rows)-1].TS)
-	if err != nil {
-		return time.Time{}
-	}
-	return ts
+	return records[len(records)-1].TS
 }
 
-// after keeps rows strictly newer than ts.
+// after keeps records strictly newer than ts.
 //
-// Strictly, so a record sharing the last-printed second is dropped rather
-// than printed twice. That is a real trade and is stated because it is one:
-// the rendered stamp has second resolution, so a burst inside one second can
-// lose its tail here. A duplicate is the worse failure in a stream someone
-// is watching for a state change — it reads as the state having changed
-// twice.
-func after(rows []EventRow, ts time.Time) []EventRow {
-	for i, r := range rows {
-		t, err := time.Parse(time.RFC3339, r.TS)
-		if err != nil {
-			continue
-		}
-		if t.After(ts) {
-			return rows[i:]
+// Strictly, so a record sharing an instant with the last printed one is
+// dropped rather than printed twice — and at nanosecond resolution that is a
+// genuine tie rather than the whole second the rendered stamp used to round
+// to. A duplicate is the worse failure in a stream someone is watching for a
+// state change: it reads as the state having changed twice.
+//
+// Read returns records sorted by time, so the first one past the cursor
+// begins the tail.
+func after(records []eventlog.Record, ts time.Time) []eventlog.Record {
+	for i, r := range records {
+		if r.TS.After(ts) {
+			return records[i:]
 		}
 	}
 	return nil
