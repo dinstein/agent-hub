@@ -73,6 +73,10 @@ type Route struct {
 
 // entry is one aggregated tool. Exactly one of srv / prov is set for a
 // callable entry; a cache-built entry has neither (listable, not callable).
+//
+// build groups candidates as entries too: a candidate is just an entry whose
+// exposed name has not been decided yet, so assigning the name is the last
+// step rather than a copy into a second identically-shaped struct.
 type entry struct {
 	route Route
 	def   mcp.ToolDef // Name rewritten to the exposed name
@@ -156,14 +160,8 @@ func BuildFromCacheWith(cached map[string][]mcp.ToolDef, providers []Provider) (
 
 // build is the shared aggregation core of Build / BuildFromCache.
 func build(sources []source) (*Router, error) {
-	type cand struct {
-		route Route
-		def   mcp.ToolDef
-		srv   *downstream.Server
-		prov  Provider
-	}
 	seen := make(map[string]bool, len(sources))
-	groups := make(map[string][]cand)
+	groups := make(map[string][]entry)
 	for _, src := range sources {
 		id := src.id
 		if id == "" {
@@ -175,7 +173,7 @@ func build(sources []source) (*Router, error) {
 		seen[id] = true
 		for _, def := range src.tools {
 			base := sanitize(id) + "__" + sanitize(def.Name)
-			groups[base] = append(groups[base], cand{
+			groups[base] = append(groups[base], entry{
 				route: Route{ServerID: id, RawTool: def.Name},
 				def:   def,
 				srv:   src.srv,
@@ -195,25 +193,24 @@ func build(sources []source) (*Router, error) {
 	byExposed := make(map[string]entry)
 	for _, base := range bases {
 		g := groups[base]
-		slices.SortFunc(g, func(a, b cand) int {
+		slices.SortFunc(g, func(a, b entry) int {
 			return cmp.Or(cmp.Compare(a.route.RawTool, b.route.RawTool), cmp.Compare(a.route.ServerID, b.route.ServerID))
 		})
-		for i, c := range g {
+		for i, e := range g {
 			name := ""
 			if i == 0 && !taken[base] {
 				name = base
 			} else {
 				for n := 2; ; n++ {
-					if cand := fmt.Sprintf("%s_%d", base, n); !taken[cand] {
-						name = cand
+					if suffixed := fmt.Sprintf("%s_%d", base, n); !taken[suffixed] {
+						name = suffixed
 						break
 					}
 				}
 			}
 			taken[name] = true
-			def := c.def
-			def.Name = name
-			byExposed[name] = entry{route: c.route, def: def, srv: c.srv, prov: c.prov}
+			e.def.Name = name
+			byExposed[name] = e
 		}
 	}
 
