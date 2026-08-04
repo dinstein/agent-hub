@@ -117,6 +117,43 @@ When both handlers exist an internal `multiHandler` fans out and joins their err
 `errors.Join`: **one sink failing never silences the other**. `Setup` wraps `ScrubHandler`
 **outermost**, so one redaction pass covers every sink and every `WithAttrs`-bound attribute.
 
+### The two sinks have separate levels, and that is the point
+
+Each handler gets **its own `HandlerOptions`**. They shared one until the split, which is precisely
+what made the level a single number, and sharing one again is how the split would quietly come
+undone the day a third sink is added.
+
+They are separate because the sinks have different owners. The JSON sink is a file this project
+names, rotates and prunes; the text sink is stderr, and **a stdio gateway's stderr belongs to the
+MCP client that spawned it**. So the all-or-nothing switch bought a diagnosis by filling someone
+else's log with our prose, and the predictable result was a setting nobody turned on.
+
+Resolution order, widest last — `Config` is the assembly's standing choice, made when the binary was
+written; the variables are the operator's, made in front of a problem, and the one diagnosing has the
+later word:
+
+| | Reaches |
+|---|---|
+| the `info` default | both |
+| `Config.Level` | both |
+| `Config.TextLevel` / `Config.JSONLevel` | one each |
+| `AGENTHUB_LOG_LEVEL` (`EnvLevel`) | both |
+| `AGENTHUB_LOG_FILE_LEVEL` (`EnvFileLevel`) | the JSON file |
+| `Config.Debug` / `AGENTHUB_DEBUG=1` (`EnvDebug`) | both, at `debug` |
+
+The case the split exists for is therefore
+`AGENTHUB_LOG_LEVEL=warn AGENTHUB_LOG_FILE_LEVEL=debug` — full detail on disk, a quiet stderr.
+`AGENTHUB_DEBUG` stays the blunt switch and outranks every per-sink setting: an assembly holding
+part of it back would defeat the one thing it is reached for. All three are `AGENTHUB_*` and so are
+**stripped before a downstream server is spawned** (canonical.md §1) — raising our own verbosity
+never reaches into someone else's process.
+
+**Failure direction: an unreadable level is reported and ignored, never fatal.** Logging is not the
+operation the process exists to perform, so a typo must not stop a gateway serving. But it is
+reported — at `warn`, through the logger it failed to configure, clearing the `info` fallback it
+lands in — because a level that did not apply and one that did are indistinguishable from inside,
+and an operator who cannot tell them apart goes on to trust logs that were never recorded.
+
 ### The field convention
 
 Any record touching a downstream server, a derived instance, a tool call, a client, a session, a
@@ -158,8 +195,10 @@ every gateway process holding it open.
 
 ### Invariants and failure directions
 
-**Redaction cannot be turned off.** No configuration switch, no environment variable.
-`AGENTHUB_DEBUG=1` (`EnvDebug`) only lowers the level; `ScrubString` reads no environment at all.
+**Redaction cannot be turned off.** No configuration switch, no environment variable. Every knob
+this package reads — `AGENTHUB_DEBUG`, `AGENTHUB_LOG_LEVEL`, `AGENTHUB_LOG_FILE_LEVEL` — moves a
+level filter and nothing else; `ScrubString` reads no environment at all. **A record that becomes
+visible was always going to be scrubbed**, so lowering a level can never be the thing that leaks.
 
 **Redaction fails closed.** Over-masking a harmless long random string is acceptable; leaking one
 credential is not. Five pattern classes apply in order: a sensitive key whose value opens with a
