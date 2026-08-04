@@ -271,10 +271,14 @@ client reach us at all, and what did it do" should not need one.
 **The bodies are the part you enable.** `agenthub calls enable` sets up the key
 that seals request parameters, effective arguments, results and — for a traced
 server — the frames, into encrypted local packs. Recording starts before the
-gates run, so a denied call is in the history too. This half is strict: if the
-key or the bounded storage is unavailable, a `tools/call` is **refused** rather
-than executed with a hole in the history. Every other method fails open, because
-a ledger problem must not break a session's handshake.
+gates run, so a denied call is in the history too.
+
+**Neither half can refuse a call.** If the key is missing or the storage bound
+is reached, the record is what is lost: the call runs, and the gateway logs
+`ledger record dropped` at Error — `agenthub logs --level error` is where a hole
+in the history shows up. A ledger that could stop your tools from working would
+put a full disk in the way of everything the hub does, and it would not save the
+record it was protecting: by the time the write fails, that record is already gone.
 
 ```bash
 agenthub calls enable

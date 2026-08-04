@@ -346,12 +346,14 @@ unknown names are evidence too. Both direct names and lazy `call_tool` keep two 
 incoming wrapper and the effective downstream arguments — and both are complete up to the MCP frame
 bound whatever the result capture setting (`none`, `errors`, `truncated`, `full`) is.
 
-**Storage failure refuses the call**, which is the opposite direction from the event stream
-(`internal/eventlog`), where an unwritable record is dropped rather than blocking anything. An enabled
-audit policy claims every call is recorded, so a missing key, invalid policy, full ledger, crossed
-free-space reserve or failed required write must not silently create a hole. The capacity decision and
-the write hold one cross-process lock, so four stdio gateways cannot each believe they own the same
-remaining bytes. Retention removes only complete validated UTC day directories, and `minFreeBytes`
+**Storage failure costs the record, never the call** (canonical.md §7 #11) — the same direction the
+event stream takes. A missing key, an invalid policy, a full ledger, a crossed free-space reserve or a
+failed write leaves a hole in the history, and the hole is reported: `ledger record dropped; the call
+is unaffected`, at Error, once per record. It is not silent, and it is not a refusal — by the time a
+write fails, the record it would have made is already lost, so refusing the call adds a second failure
+without preventing the first. **The bounds themselves stay hard**: nothing is written past `maxBytes`
+or into the free-space reserve. The capacity decision and the write hold one cross-process lock, so
+four stdio gateways cannot each believe they own the same remaining bytes. Retention removes only complete validated UTC day directories, and `minFreeBytes`
 protects the filesystem even if another process still holds a just-expired file open.
 
 Metadata is HMAC-authenticated and payloads use XChaCha20-Poly1305 with call/kind binding, which

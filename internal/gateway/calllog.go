@@ -26,9 +26,13 @@ const ledgerTextBound = 1024
 // store immediately: a call that began under that policy must finish into
 // the same ledger even if audit is disabled or rotated while it runs.
 type ledgerManager struct {
-	mu          sync.Mutex
-	policy      registry.ResolvedCallsPolicy
-	store       *calllog.Store
+	mu     sync.Mutex
+	policy registry.ResolvedCallsPolicy
+	store  *calllog.Store
+	// unavailable is why there is no store, remembered so a policy that
+	// cannot be applied is not re-attempted on every snapshot. Nothing reads
+	// it to decide anything: it stopped being able to refuse a call when the
+	// ledger stopped having a permission role.
 	unavailable error
 	retired     []*calllog.Store
 	spans       map[string]*ledgerSpan
@@ -44,10 +48,6 @@ type ledgerSpan struct {
 	provider string
 	gate     string
 	code     string
-	// governed marks the one method whose record is a precondition for
-	// running it. Everything else is recorded on this same path and fails
-	// open, so a ledger problem cannot break a session's handshake.
-	governed bool
 }
 
 func newLedgerManager() *ledgerManager {
@@ -78,11 +78,10 @@ func validateCallsPolicy(p registry.ResolvedCallsPolicy) error {
 	return nil
 }
 
-// syncAudit applies the current governance policy. Failure leaves the
-// gateway usable for discovery but marks the ledger unavailable, so every
-// subsequent tools/call is refused before execution until a valid policy is
-// applied. That is the strict failure direction without taking tools/list
-// and diagnostics down with it.
+// syncAudit applies the current governance policy. Failure marks the ledger
+// unavailable and leaves the gateway serving: calls run, and what they did is
+// not written down until a valid policy is applied. The Error log is the
+// whole of the report, which is why every one of the returns below makes it.
 func (g *gateway) syncAudit() {
 	if g.audit == nil {
 		return
@@ -100,16 +99,16 @@ func (g *gateway) syncAudit() {
 	g.audit.mu.Unlock()
 
 	if !p.Enabled {
-		// Metadata without evidence: no key, no payloads, nothing that can
-		// refuse a call. This is the ordinary state of an installation, and
-		// before it existed that state recorded NOTHING — a hub whose ledger
-		// was switched off could not say what any client had ever called.
+		// Metadata without evidence: no key and no payloads. This is the
+		// ordinary state of an installation, and before it existed that state
+		// recorded NOTHING — a hub whose ledger was switched off could not say
+		// what any client had ever called.
 		g.openMetadataOnly(p)
 		return
 	}
 	if err := validateCallsPolicy(p); err != nil {
 		g.swapStore(p, nil, fmt.Errorf("invalid audit policy: %w", err))
-		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
+		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
 		return
 	}
 	// Result capture changes do not require a new file handle or cipher. Reuse
@@ -130,7 +129,7 @@ func (g *gateway) syncAudit() {
 	if g.cfg.Secrets == nil {
 		err := errors.New("secret resolver is unavailable")
 		g.swapStore(p, nil, err)
-		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
+		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
 		return
 	}
 	encoded, ok, err := g.cfg.Secrets(g.lifeCtx, secrets.CallsEncryptionKeyRef(p.KeyID))
@@ -145,7 +144,7 @@ func (g *gateway) syncAudit() {
 			err = errors.New("audit encryption key is missing")
 		}
 		g.swapStore(p, nil, err)
-		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
+		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
 		return
 	}
 	key, err := base64.RawStdEncoding.DecodeString(encoded)
@@ -154,7 +153,7 @@ func (g *gateway) syncAudit() {
 			err = calllog.ErrBadKey
 		}
 		g.swapStore(p, nil, err)
-		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
+		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
 		return
 	}
 	keyID, err := calllog.KeyID(key)
@@ -164,14 +163,14 @@ func (g *gateway) syncAudit() {
 	if err != nil {
 		zeroBytes(key)
 		g.swapStore(p, nil, err)
-		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
+		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
 		return
 	}
 	root, err := calllog.DefaultDir(g.resolver)
 	if err != nil {
 		zeroBytes(key)
 		g.swapStore(p, nil, err)
-		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
+		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
 		return
 	}
 	store, err := calllog.Open(calllog.Options{
@@ -181,7 +180,7 @@ func (g *gateway) syncAudit() {
 	zeroBytes(key)
 	if err != nil {
 		g.swapStore(p, nil, err)
-		g.log.Error("audit unavailable; tools/call will be blocked", "error", err)
+		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
 		return
 	}
 	g.swapStore(p, store, nil)
@@ -190,10 +189,9 @@ func (g *gateway) syncAudit() {
 }
 
 // openMetadataOnly opens the keyless store: bounded metadata lines and
-// frames, fail-open in every direction. A failure here leaves the gateway
-// serving, because a call that cannot be DESCRIBED is still a call that was
-// authorized — the fail-closed rule belongs to evidence, which is what a
-// governance answer is made of.
+// frames, no payloads. A failure here leaves the gateway serving, as a
+// failure of the evidence tier now does too — the difference between the two
+// is what each RECORDS, never what either one may refuse.
 func (g *gateway) openMetadataOnly(p registry.ResolvedCallsPolicy) {
 	root, err := calllog.DefaultDir(g.resolver)
 	if err == nil {
@@ -256,47 +254,42 @@ func (m *ledgerManager) close() error {
 	return errors.Join(errs...)
 }
 
-func (g *gateway) ledgerBegin(req *mcp.Request) error {
+// ledgerBegin opens the span for one upstream request. It records; it does
+// NOT decide.
+//
+// It used to refuse a `tools/call` the evidence tier could not record, on the
+// rule that an unrecorded call is a governance gap. The rule is gone: the
+// ledger has no permission role, and making a full disk or a missing key stop
+// a client's work put an availability failure in the path of every call while
+// the thing it protected — knowing what happened — was already lost the
+// moment the write failed. What is left is a record that can be incomplete
+// and says so, in the log and by the gap itself.
+//
+// Every failure below therefore costs the timeline a line and nothing else.
+func (g *gateway) ledgerBegin(req *mcp.Request) {
 	m := g.audit
 	if m == nil {
-		return nil
+		return
 	}
 	m.mu.Lock()
-	p, store, unavailable := m.policy, m.store, m.unavailable
+	p, store := m.policy, m.store
 	m.mu.Unlock()
-	// Only EVIDENCE fails closed, and only for tools/call: that is the
-	// governed method, and it is the one that must not run unrecorded.
-	// Everything else a client asks of agenthub is recorded on the same path
-	// — same span, same payload capture, same finish — but a ledger that
-	// cannot take it costs the timeline a line rather than breaking the
-	// session's `initialize`.
-	governed := req.Method == mcp.MethodToolsCall
-	if governed && p.Enabled && (unavailable != nil || store == nil) {
-		if unavailable == nil {
-			unavailable = errors.New("ledger store is unavailable")
-		}
-		return unavailable
-	}
 	if store == nil {
-		return nil
+		return
 	}
 	callID, err := calllog.NewCallID()
 	if err != nil {
-		if governed && p.Enabled {
-			return err
-		}
-		return nil
+		g.ledgerDropped("call id", req.Method, err)
+		return
 	}
 	started := time.Now().UTC()
 	var request calllog.PayloadRef
 	if store.HasKey() {
 		request, err = store.PutPayload(started, callID, calllog.PayloadRequest, req.Params)
 		if err != nil {
-			if governed {
-				return err
-			}
-			// An ungoverned request keeps its metadata line; losing the
-			// params costs the reader the body, not the fact.
+			// The metadata line still goes in; losing the params costs the
+			// reader the body, not the fact.
+			g.ledgerDropped("request payload", req.Method, err)
 			request = calllog.PayloadRef{}
 		}
 	}
@@ -307,22 +300,30 @@ func (g *gateway) ledgerBegin(req *mcp.Request) error {
 		received.Request = &request
 	}
 	if err := store.Append(received); err != nil {
-		if governed && p.Enabled {
-			return err
-		}
-		return nil
+		g.ledgerDropped("received record", req.Method, err)
+		return
 	}
-	span := &ledgerSpan{store: store, policy: p, started: started, common: common, governed: governed}
+	span := &ledgerSpan{store: store, policy: p, started: started, common: common}
 	m.mu.Lock()
 	m.spans[req.ID.Key()] = span
 	m.mu.Unlock()
-	return nil
 }
 
-func (g *gateway) ledgerRoute(id mcp.ID, route router.Route, args json.RawMessage, provider string) error {
+// ledgerDropped reports one record the ledger could not take. It is the whole
+// of what a write failure now costs, so it is logged at Error: nothing else
+// in the process says the history has a hole in it.
+func (g *gateway) ledgerDropped(what, method string, err error) {
+	g.log.Error("ledger record dropped; the call is unaffected",
+		"record", what, "method", method, "error", err)
+}
+
+// ledgerRoute records where a call was sent, with its complete effective
+// arguments. Like ledgerBegin it observes provenance and decides nothing, so
+// a failure here also costs a line and never the call.
+func (g *gateway) ledgerRoute(id mcp.ID, route router.Route, args json.RawMessage, provider string) {
 	span := g.ledgerSpan(id)
 	if span == nil {
-		return nil
+		return
 	}
 	span.route, span.provider = route, provider
 	e := span.common
@@ -332,14 +333,14 @@ func (g *gateway) ledgerRoute(id mcp.ID, route router.Route, args json.RawMessag
 	if span.store.HasKey() {
 		ref, err := span.store.PutPayload(e.TS, span.common.CallID, calllog.PayloadEffectiveArgs, args)
 		if err != nil {
-			return err
+			g.ledgerDropped("effective arguments", mcp.MethodToolsCall, err)
+		} else {
+			e.EffectiveArgs = &ref
 		}
-		e.EffectiveArgs = &ref
 	}
-	if err := span.store.Append(e); err != nil && span.policy.Enabled {
-		return err
+	if err := span.store.Append(e); err != nil {
+		g.ledgerDropped("routed record", mcp.MethodToolsCall, err)
 	}
-	return nil
 }
 
 // ledgerCommon is the identity every record of one upstream request carries:
@@ -486,11 +487,10 @@ func (s *ledgerSpan) finishResponse(res *mcp.Response) error {
 	if capture && s.store.HasKey() {
 		ref, err := s.store.PutPayload(e.TS, s.common.CallID, calllog.PayloadResult, stored)
 		if err != nil {
-			if s.governed {
-				return err
-			}
-			// Same trade as the request half: an ungoverned record keeps its
-			// line without the body.
+			// Same trade as the request half: the record keeps its line
+			// without the body. Dropping the whole line because its payload
+			// would not fit loses the outcome too, and the outcome is the
+			// part no other stream carries.
 			ref = calllog.PayloadRef{}
 		}
 		if ref.Length > 0 {
@@ -504,10 +504,9 @@ func (s *ledgerSpan) finishResponse(res *mcp.Response) error {
 	} else {
 		e.ResultCapture = "none"
 	}
-	if err := s.store.Append(e); err != nil && s.governed && s.policy.Enabled {
-		return err
-	}
-	return nil
+	// The error reaches reply(), which logs it and serves the response
+	// regardless: by now the call has run.
+	return s.store.Append(e)
 }
 
 func (s *ledgerSpan) finished(outcome string, rpcErr *mcp.Error) calllog.Event {

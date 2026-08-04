@@ -17,13 +17,15 @@
 // `--json` consumer or an alert needs a vocabulary that is allowed to be
 // matched on, which is what Kind is.
 //
-// # Failure direction: OPEN, and this is the difference from calllog
+// # Failure direction: OPEN
 //
 // An event that cannot be written is DROPPED. Never a blocked connection,
-// never a failed call. calllog is fail-closed because an unrecorded call
-// is a governance gap; a missed state change is not — the state itself is
-// still observable, and refusing to serve a client because a note about it
-// could not be filed would be strictly worse than the gap it prevents.
+// never a failed call. Refusing to serve a client because a note about the
+// service could not be filed would be strictly worse than the gap it
+// prevents, and the state itself is still observable. calllog reaches the
+// same answer from the other end: its writes are synchronous and a failure
+// is reported rather than merely counted, but it too costs the history a
+// line and never a call.
 //
 // A nil *Stream is usable and does nothing, so callers hold one without a
 // nil check. That is what makes "the switch is off" and "the file would not

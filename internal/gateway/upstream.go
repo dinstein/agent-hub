@@ -48,13 +48,10 @@ func (g *gateway) handleRequest(req *mcp.Request) {
 	//
 	// The record is written HERE, on the read loop, before anything parses or
 	// dispatches: earlier than the handler goroutine tools/call runs in, and
-	// therefore earlier than any decision made about the request. Only
-	// tools/call refuses to run when it cannot be recorded; the rest fail
-	// open, because a ledger hiccup must not break a session's handshake.
-	if err := g.ledgerBegin(req); err != nil {
-		g.reply(mcp.NewErrorResponse(req.ID, ledgerRPCError(err)))
-		return
-	}
+	// therefore earlier than any decision made about the request. It cannot
+	// change that decision — ledgerBegin returns nothing, and a ledger that
+	// could not take the record has cost the timeline a line and nothing else.
+	g.ledgerBegin(req)
 	switch req.Method {
 	case mcp.MethodInitialize:
 		g.handleInitialize(req)
@@ -534,13 +531,11 @@ type callTarget struct {
 // outcome upstream.
 func (g *gateway) runCall(ctx context.Context, req *mcp.Request, t callTarget, args json.RawMessage) {
 	route := t.route
-	// The routed event (including the complete effective arguments) is also
-	// durable before the frozen gate chain runs. This observes provenance;
-	// it is not a gate and never inspects or rewrites args.
-	if err := g.ledgerRoute(req.ID, route, args, t.provider); err != nil {
-		g.reply(mcp.NewErrorResponse(req.ID, ledgerRPCError(err)))
-		return
-	}
+	// The routed event (including the complete effective arguments) is written
+	// before the frozen gate chain runs. This observes provenance; it is not a
+	// gate, never inspects or rewrites args, and cannot stop the call — a
+	// record the ledger could not take is a line missing from the history.
+	g.ledgerRoute(req.ID, route, args, t.provider)
 	callReq := pipeline.CallRequest{
 		Exposed:     t.exposed,
 		ServerID:    route.ServerID,

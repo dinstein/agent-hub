@@ -285,9 +285,10 @@ Each flow has one property you must not forget:
   one — one of the three things canonical.md §4 says must never be retrofitted.
 - **Observability flow**: ordinary logs never contain call arguments; the separately enabled access
   ledger does, encrypted, with result capture `none | errors | truncated | full` (default
-  `truncated`) and `--payloads` required for every decrypting CLI operation. The streams fail in
-  opposite directions: an event that cannot be written is dropped, an audit record that cannot be
-  written refuses the call.
+  `truncated`) and `--payloads` required for every decrypting CLI operation. Both streams fail OPEN:
+  an event that cannot be written is dropped and counted, a ledger record that cannot be written is
+  logged at Error and leaves a hole in the history. Neither may cost a client its call — the ledger
+  records what happened, it never decides whether anything may happen.
 
 ---
 

@@ -421,9 +421,8 @@ func newGateway(cfg Config) (*gateway, error) {
 	// Registry: docs/flows.md — a load failure must not kill the gateway.
 	specs, regOK := g.loadRegistry(resolver)
 	g.specs = specs
-	// The ledger is strict for calls but not for discovery: an invalid key or
-	// unwritable directory leaves the gateway up and makes ledgerBegin refuse
-	// every tools/call before execution.
+	// An invalid key or an unwritable directory leaves the gateway up and
+	// serving; what it costs is the history, which syncAudit logs at Error.
 	g.syncAudit()
 	// After the registry, because the switch that decides it lives in
 	// governance. Deps reads the stream through g.eventStream at connect
@@ -762,13 +761,6 @@ func (g *gateway) reply(msg any) {
 	}
 	if err := g.fw.WriteFrame(msg); err != nil {
 		g.log.Warn("upstream write failed", "error", err)
-	}
-}
-
-func ledgerRPCError(err error) *mcp.Error {
-	return &mcp.Error{
-		Code:    mcp.CodeInternalError,
-		Message: "tool call blocked because the access ledger could not be written: " + boundedLedgerText(err.Error()),
 	}
 }
 

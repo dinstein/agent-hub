@@ -14,19 +14,21 @@ import (
 
 // The frame half of the ledger.
 //
-// One schema, one directory, one retention policy — and two failure
-// directions, because the two halves answer to different masters:
+// One schema, one directory, one retention policy — and both halves fail
+// OPEN, but they reach it differently, which is why they are separate FILES
+// rather than separate packages:
 //
-//   - A lifecycle record is fail-CLOSED. An unrecorded tools/call is a
-//     governance gap, so a call that cannot be recorded does not run.
-//   - A frame is fail-OPEN. It is a debugging instrument, and the one thing
-//     an instrument must never do is take down the thing it measures. Frames
-//     are dropped and counted under backpressure, never waited on.
+//   - A lifecycle record is written synchronously, under the shared file's
+//     capacity lock and durability mode, and a failure is reported to the
+//     assembly. It costs the history a line.
+//   - A frame is never even reported. It is a debugging instrument, and the
+//     one thing an instrument must never do is take down the thing it
+//     measures, so frames are queued without blocking and dropped and counted
+//     under backpressure.
 //
-// Which is why they are separate FILES rather than separate packages: putting
-// a fail-open, high-volume stream through the shared, capacity-locked,
-// fsync-on-write path of the other one would make a debug switch able to slow
-// down or refuse a call. Here it can do neither.
+// Frames outnumber lifecycle records by one to two orders of magnitude, so
+// putting them through the shared, capacity-locked, fsync-on-write path would
+// make a debug switch the hot path of the file every call is described in.
 
 // FrameCounters reports what the frame path has done since the store opened.
 type FrameCounters struct {

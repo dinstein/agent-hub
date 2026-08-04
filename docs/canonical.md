@@ -445,6 +445,27 @@ silently reopened, and the numbering is cited from code.
     step — would be precisely the fourth egress category decision 6 forbids. Shipping one means
     amending decision 6 first, here, on the record.
 
+11. ~~Whether a `tools/call` that cannot be recorded may run~~ → **Decided: it runs.** Every
+    observability stream in the tree now fails OPEN — `logs`, `events`, the wire trace, and both
+    tiers of the call ledger. A write failure costs the history a line, is logged at Error
+    (`ledger record dropped; the call is unaffected`), and costs the call nothing.
+
+    The evidence tier used to refuse the governed method, on the rule that an unrecorded call is a
+    governance gap. Three things were wrong with it. **It protected nothing**: the record it was
+    defending was already lost at the moment the write failed, so refusing afterwards only added a
+    second failure. **It put availability in the wrong place**: a full disk or an unreadable vault
+    stopped every tool a client had, and this ledger has no permission role (§7 #9's neighbour,
+    the `internal/audit` retirement, says so — it is a local record, not a gate). **One of its three
+    sites could not even be safe**: the finish is written after the downstream has run, so replacing
+    that response reported a failure that had not happened and invited a client to repeat a side
+    effect.
+
+    What did not change: metadata is still always on, evidence is still opt-in behind
+    `calls.enabled`, recording still happens before the gate chain, and the capacity, retention and
+    free-space bounds are still hard — nothing is written past them. Fail-open is about the CALL,
+    never about the bound. The behaviour lives in `modules/foundation.md` (`internal/calllog`, the
+    two-tier table) and `flows.md`.
+
 ---
 
 ## 8. Historical ruling ids

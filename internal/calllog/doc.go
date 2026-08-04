@@ -12,8 +12,10 @@
 // fail closed: a configured bound is never silently weakened on a platform
 // that cannot provide the required locking or disk-space observation.
 //
-// This package records observability; it decides no scope or permission. A
-// caller may nevertheless choose strict durability and refuse to execute when
-// Begin cannot persist the request. That failure direction belongs to the
-// assembly, not to the frozen pipeline gate chain.
+// This package records observability; it decides no scope or permission, and
+// no assembly on top of it does either. A write that fails costs the history
+// a line and is reported; it never costs a call. The gateway used to refuse a
+// tools/call it could not record, which put an availability failure — a full
+// disk, an unreadable vault — in the path of every call, in exchange for a
+// record that was already lost by the time the refusal happened.
 package calllog

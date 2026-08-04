@@ -305,11 +305,12 @@ need, and both call sites sit together so neither can change without the other b
 
 ### Invariants and failure directions
 
-- **Failure direction is OPEN, and that is the difference from `internal/calllog`.** A record that
-  cannot be written is dropped and counted; nothing is refused. `calllog` is fail-closed because
-  an unrecorded `tools/call` is a governance gap. A missed state change is not — the state itself is
-  still observable — and refusing to serve a client because a note about it could not be filed would
-  be worse than the gap it prevents.
+- **Failure direction is OPEN.** A record that cannot be written is dropped and counted; nothing is
+  refused. `internal/calllog` reaches the same answer by a different route — its writes are
+  synchronous and reported, so a failure is visible rather than merely counted — but neither stream
+  may cost a client its work. Refusing to serve because a note about the service could not be filed
+  is worse than the gap it prevents, and the gap happens anyway: by the time the write fails, what
+  it would have recorded is already lost.
 - **A nil `*Stream` is usable and does nothing**, which makes "the switch is off" and "the file
   would not open" one code path at every call site rather than a nil check each can forget
   differently.
@@ -440,10 +441,17 @@ A `tools/list` result is worth having for its own sake: it is the catalog the hu
 which nothing else can reconstruct once the configuration moves.
 
 **The record is written on the read loop, before dispatch** — earlier than the handler goroutine
-`tools/call` runs in, and therefore earlier than any decision made about the request. Only
-`tools/call` refuses to run when it cannot be recorded; every other method fails open, because a
-ledger hiccup must not break a session's handshake. That is the whole of the difference between the
-governed method and the rest: same path, same fields, one precondition.
+`tools/call` runs in, and therefore earlier than any decision made about the request. It cannot
+change that decision: `ledgerBegin` and `ledgerRoute` return nothing, and every method is recorded
+on one path with one failure direction. `tools/call` used to refuse to run when it could not be
+recorded, which put a full disk or an unreadable vault in the way of every call in exchange for a
+record that the failure had already lost. What is left is a history that can have holes and says so
+— `ledger record dropped; the call is unaffected`, at Error, once per record.
+
+**Nothing later in the call may refuse it either, and the finish is the sharp case.** A finish is
+written after the downstream has run, so its side effect has already happened; replacing the
+response with an error there reports a failure that did not occur, and a client that retries makes
+the side effect happen twice.
 
 **`Method` says what was asked and `Surface` which of agenthub's own faces answered** — `meta` for
 one of the hub's own tools, `group` for a grouped listing, `tool` for a name that routes straight
@@ -459,11 +467,12 @@ under one call id is the whole story of "the client asked the hub, which called 
 | Holds | one bounded line per lifecycle point and per frame: method, server, tool, outcome, gate, duration, size | the bodies — request, effective arguments, result, frame — gzipped and sealed with XChaCha20-Poly1305 |
 | Needs a key | no | yes; `Open` without one refuses `PutPayload` and writes no MAC |
 | Durability | `write` | `sync` |
-| Failure direction | **open** — a call that cannot be described still runs | **closed** — a `tools/call` that cannot be recorded does not run |
+| Failure direction | **open** — a call that cannot be described still runs | **open**, and reported: a write failure is logged at Error and leaves a hole in the history, never a refused call |
 
 The metadata tier exists because the ordinary installation had none. With the ledger off, a hub
 recorded NOTHING about what its clients called; the switch was all-or-nothing and its cost — a key,
-fsync per write, and a call refused when the disk is full — is not one an ordinary installation
+fsync per write, and (until the ledger stopped deciding anything) a call refused when the disk is
+full — is not one an ordinary installation
 should have to pay to know what happened.
 
 ### Three files, one schema

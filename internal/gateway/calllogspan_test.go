@@ -344,7 +344,11 @@ func TestLedgerFinishFailureDoesNotReplaceTheServedResponse(t *testing.T) {
 	}
 }
 
-func TestAuditUnavailableBlocksBeforeTheGateChain(t *testing.T) {
+// Evidence is configured on and its key is missing, which is as unavailable
+// as the ledger gets. The call still runs: the ledger records what happened,
+// it does not decide whether anything may happen, and an installation whose
+// vault has gone missing must not also lose the use of its tools.
+func TestLedgerUnavailableDoesNotStopTheCall(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "fake")
 	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) {})
@@ -356,20 +360,27 @@ func TestAuditUnavailableBlocksBeforeTheGateChain(t *testing.T) {
 	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
 	waitForTools(t, c, "fake__echo")
 	resp := c.call(mcp.MethodToolsCall, mcp.CallToolParams{Name: "fake__echo", Arguments: []byte(`{}`)})
-	if resp.Error == nil || !strings.Contains(resp.Error.Message, "access ledger") {
-		t.Fatalf("response = %+v, want audit refusal", resp)
+	if resp.Error != nil {
+		t.Fatalf("a missing ledger key refused the call: %+v", resp.Error)
 	}
+	// Every gate still ran. Fail-open is about the RECORD, and a call that
+	// skipped the gate chain would be a different and much worse change.
 	for stage, n := range g.pipe.Counters() {
-		if n != 0 {
-			t.Errorf("pipeline stage %s ran %d times despite pre-execution audit failure", stage, n)
+		if n == 0 {
+			t.Errorf("pipeline stage %s did not run", stage)
 		}
 	}
+	// And the history is honestly empty rather than partly written: with no
+	// key there is no store, so there is nothing to half-record.
 	if events := readLedgerEvents(t, resolver); len(events) != 0 {
 		t.Fatalf("events without a usable key = %+v", events)
 	}
 }
 
-func TestAuditCapacityBlocksBeforeTheGateChain(t *testing.T) {
+// The same for the other way a ledger stops accepting writes: a hard byte
+// cap it has already reached. The cap is still honoured — nothing is written
+// past it — and the call runs regardless.
+func TestLedgerAtCapacityDoesNotStopTheCall(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "fake")
 	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) { p.MaxBytes = 1 })
@@ -379,13 +390,13 @@ func TestAuditCapacityBlocksBeforeTheGateChain(t *testing.T) {
 	})
 	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
 	waitForTools(t, c, "fake__echo")
-	resp := c.call(mcp.MethodToolsCall, mcp.CallToolParams{Name: "fake__echo", Arguments: []byte(`{"must":"not execute"}`)})
-	if resp.Error == nil || !strings.Contains(resp.Error.Message, "access ledger") {
-		t.Fatalf("response = %+v, want storage-pressure refusal", resp)
+	resp := c.call(mcp.MethodToolsCall, mcp.CallToolParams{Name: "fake__echo", Arguments: []byte(`{"runs":"anyway"}`)})
+	if resp.Error != nil {
+		t.Fatalf("a full ledger refused the call: %+v", resp.Error)
 	}
 	for stage, n := range g.pipe.Counters() {
-		if n != 0 {
-			t.Errorf("pipeline stage %s ran %d times after hard-cap refusal", stage, n)
+		if n == 0 {
+			t.Errorf("pipeline stage %s did not run", stage)
 		}
 	}
 	root, err := calllog.DefaultDir(resolver)
