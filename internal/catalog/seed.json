@@ -226,6 +226,26 @@
       "transport": "http",
       "url": "https://docs.mcp.cloudflare.com/mcp",
       "tags": ["docs", "search", "cloudflare"]
+    },
+    {
+      "id": "dune",
+      "name": "Dune",
+      "description": "Dune's hosted server: find onchain datasets, write and run SQL across 100+ chains, and read the results. Authenticates with a Dune API key; the server also offers OAuth, which this entry does not use.",
+      "publisher": "Dune",
+      "homepage": "https://docs.dune.com/api-reference/agents/mcp",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://api.dune.com/mcp/v1",
+      "headers": {
+        "X-DUNE-API-KEY": "${SECRET_DUNE_API_KEY}"
+      },
+      "keys": [
+        {
+          "key": "DUNE_API_KEY",
+          "description": "Dune API key, from Settings → API keys on dune.com."
+        }
+      ],
+      "tags": ["onchain", "blockchain", "crypto", "analytics", "sql"]
     }
   ]
 }

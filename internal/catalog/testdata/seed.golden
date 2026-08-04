@@ -2,6 +2,7 @@ asana	http	https://mcp.asana.com/v2/mcp	needsConfig=no	keys=-	params=-	auth=oaut
 brave-search	stdio	npx -y @brave/brave-search-mcp-server --transport stdio	needsConfig=yes	keys=BRAVE_API_KEY	params=-	auth=-
 chrome-devtools	stdio	npx -y chrome-devtools-mcp@latest	needsConfig=no	keys=-	params=-	auth=-
 cloudflare-docs	http	https://docs.mcp.cloudflare.com/mcp	needsConfig=no	keys=-	params=-	auth=-
+dune	http	https://api.dune.com/mcp/v1	needsConfig=yes	keys=DUNE_API_KEY	params=-	auth=-
 everything	stdio	npx -y @modelcontextprotocol/server-everything	needsConfig=no	keys=-	params=-	auth=-
 fetch	stdio	uvx mcp-server-fetch	needsConfig=no	keys=-	params=-	auth=-
 filesystem	stdio	npx -y @modelcontextprotocol/server-filesystem {{directory}}	needsConfig=yes	keys=-	params=directory	auth=-
