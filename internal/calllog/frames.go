@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/platform"
@@ -60,18 +61,29 @@ type frames struct {
 
 	// chMu guards the channel's OPEN/closed state and every send. It is
 	// separate from mu on purpose: sync() blocks on a full queue while
-	// holding it, and the writer goroutine — which takes mu for its counters
-	// and its file — must never need this one to make progress, or a full
-	// queue would deadlock the drain that empties it.
+	// holding it, and the writer goroutine — which takes mu for its file —
+	// must never need this one to make progress, or a full queue would
+	// deadlock the drain that empties it.
 	chMu   sync.RWMutex
 	closed bool
+
+	// The tallies are atomics rather than fields under mu, and that is a
+	// correctness requirement, not a style choice. mu is held by writerFor
+	// across EnsureDir and OpenFile — a file-system round trip, once per
+	// process per UTC day — and counting a drop is what a caller does when
+	// the queue is full. Under one mutex those two meet, and the caller waits
+	// on a disk inside the one call this package promises never to delay:
+	// both conditions at once are rare, but they are widest on exactly the
+	// slow disk that filled the queue. mu now guards the file alone.
+	written atomic.Uint64
+	dropped atomic.Uint64
+	failed  atomic.Uint64
 
 	mu  sync.Mutex
 	day string
 	// writer is this process's frame file for day, opened on that day's
 	// first frame.
-	writer  *os.File
-	counter FrameCounters
+	writer *os.File
 }
 
 func newFrames(s *Store) *frames {
@@ -102,13 +114,13 @@ func (s *Store) AppendFrame(e Event, body []byte, capture bool) {
 	f.chMu.RLock()
 	defer f.chMu.RUnlock()
 	if f.closed {
-		f.count(&f.counter.Dropped)
+		f.dropped.Add(1)
 		return
 	}
 	select {
 	case f.ch <- frameJob{event: e, body: body}:
 	default:
-		f.count(&f.counter.Dropped)
+		f.dropped.Add(1)
 	}
 }
 
@@ -117,9 +129,10 @@ func (s *Store) FrameCounters() FrameCounters {
 	if s == nil || s.frames == nil {
 		return FrameCounters{}
 	}
-	s.frames.mu.Lock()
-	defer s.frames.mu.Unlock()
-	return s.frames.counter
+	f := s.frames
+	return FrameCounters{
+		Written: f.written.Load(), Dropped: f.dropped.Load(), Failed: f.failed.Load(),
+	}
 }
 
 // run drains the queue. One goroutine, so frames from this process reach the
@@ -169,7 +182,7 @@ func (f *frames) write(job frameJob) {
 	}
 	line, err := json.Marshal(e)
 	if err != nil {
-		f.count(&f.counter.Failed)
+		f.failed.Add(1)
 		return
 	}
 	if len(line)+1 > MaxEventLineBytes {
@@ -177,27 +190,21 @@ func (f *frames) write(job frameJob) {
 		// this directory, and they reach it honestly: the body lives in the
 		// pack, so only the metadata is here and it cannot legitimately grow
 		// this large. A line that does is a bug, counted rather than torn.
-		f.count(&f.counter.Failed)
+		f.failed.Add(1)
 		return
 	}
 	line = append(line, '\n')
 
 	w, err := f.writerFor(day)
 	if err != nil {
-		f.count(&f.counter.Failed)
+		f.failed.Add(1)
 		return
 	}
 	if _, err := w.Write(line); err != nil {
-		f.count(&f.counter.Failed)
+		f.failed.Add(1)
 		return
 	}
-	f.count(&f.counter.Written)
-}
-
-func (f *frames) count(field *uint64) {
-	f.mu.Lock()
-	*field++
-	f.mu.Unlock()
+	f.written.Add(1)
 }
 
 // writerFor returns this process's frame file for one day, opening it on the
