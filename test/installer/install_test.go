@@ -164,6 +164,13 @@ func serve(t *testing.T, served, sums []byte) *release {
 // `daemon stop` inside the script cannot touch real state.
 func run(t *testing.T, home string, rel *release, args ...string) (string, error) {
 	t.Helper()
+	return runIn(t, home, t.TempDir(), rel, args...)
+}
+
+// runIn is run with the scratch directory named, for the one test that has to
+// look at what the script wrote OUTSIDE the directory it made for itself.
+func runIn(t *testing.T, home, tmpdir string, rel *release, args ...string) (string, error) {
+	t.Helper()
 	cmd := exec.Command("sh", append([]string{filepath.Join(repoRoot(t), "scripts", "install.sh")}, args...)...)
 	cmd.Env = []string{
 		"PATH=/usr/bin:/bin:/usr/sbin:/sbin",
@@ -171,7 +178,7 @@ func run(t *testing.T, home string, rel *release, args ...string) (string, error
 		"AGENTHUB_INSTALL_PREFIX=" + filepath.Join(home, ".local"),
 		"AGENTHUB_INSTALL_MANIFEST_URL=" + rel.url,
 		"AGENTHUB_DATA_DIR=" + filepath.Join(home, "data"),
-		"TMPDIR=" + t.TempDir(),
+		"TMPDIR=" + tmpdir,
 	}
 	out, err := cmd.CombinedOutput()
 	return string(out), err
@@ -251,6 +258,46 @@ func TestRefusesAChecksumMismatch(t *testing.T) {
 	}
 	if _, err := os.Stat(receiptPath(home)); err == nil {
 		t.Error("a receipt was written despite the checksum mismatch")
+	}
+}
+
+// TestRefusesAnAssetNameThatIsAPath covers the one manifest string that is
+// used as a LOCAL PATH, at a point where nothing has been verified yet.
+//
+// The asset name is appended to the scratch directory to name the download's
+// destination, and that write happens before the checksum is computed — it is
+// what the checksum is computed over. A name carrying `../` therefore puts
+// bytes the manifest alone vouches for somewhere the user did not ask for,
+// and the checksum failure that follows still prints "nothing was installed".
+// The manifest is fetched over HTTPS from the project's own Release, but
+// AGENTHUB_INSTALL_MANIFEST_URL exists so that it does not have to be, which
+// is exactly why the string it supplies is not a path.
+//
+// The assertion is that the scratch directory is empty afterwards: the script
+// removes the directory it made for itself, so anything left is something it
+// wrote outside of it.
+func TestRefusesAnAssetNameThatIsAPath(t *testing.T) {
+	tgz := tarball(t, buildAgenthub(t, true))
+	rel := serve(t, tgz, tgz)
+	// Every record at once: which one the script reads is a property of the
+	// machine running this test.
+	rel.manifest = strings.ReplaceAll(rel.manifest,
+		`"asset": "agenthub-`, `"asset": "../escaped-agenthub-`)
+	home, tmpdir := t.TempDir(), t.TempDir()
+
+	out, err := runIn(t, home, tmpdir, rel)
+	if err == nil {
+		t.Fatalf("installed from a manifest whose asset name is a path:\n%s", out)
+	}
+	left, readErr := os.ReadDir(tmpdir)
+	if readErr != nil {
+		t.Fatalf("reading the scratch directory: %v", readErr)
+	}
+	for _, e := range left {
+		t.Errorf("the run wrote %s outside the directory it made for itself", e.Name())
+	}
+	if _, err := os.Stat(binPath(home)); err == nil {
+		t.Error("a binary was installed despite the malformed asset name")
 	}
 }
 

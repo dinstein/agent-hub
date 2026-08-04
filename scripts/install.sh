@@ -289,6 +289,22 @@ asset="$(cli_field "$tmp/manifest.json" "$os" "$arch" asset)"
 want_sha="$(cli_field "$tmp/manifest.json" "$os" "$arch" sha256)"
 [ -n "$asset" ] && [ -n "$want_sha" ] ||
 	die "release $version has no $os/$arch build"
+# The asset is the one manifest string that becomes a LOCAL PATH, and it does
+# so at the download below — which happens BEFORE the checksum, because it is
+# what the checksum is computed over. A `../` in it therefore writes bytes
+# nothing has verified yet to a path the user never named, and the refusal
+# that follows still prints "nothing was installed". The manifest arrives over
+# HTTPS from the project's own Release, but AGENTHUB_INSTALL_MANIFEST_URL
+# exists precisely so it does not have to.
+#
+# An allow list of characters, not a search for `..`: this must also hold for
+# whatever a manifest names next year, and the two answer that arrival in
+# opposite directions.
+case "$asset" in
+*[!A-Za-z0-9._-]* | .*)
+	die "the manifest names \"$asset\" for $os/$arch, which is not a plain file name"
+	;;
+esac
 
 # Refuse to fight another package manager for one path. Two owners of
 # $bindir/agenthub is a state neither can detect afterwards, and `brew upgrade`
