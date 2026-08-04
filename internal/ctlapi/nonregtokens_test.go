@@ -3,6 +3,7 @@ package ctlapi
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -205,5 +206,38 @@ func TestTokenRevokeAlreadyRevokedIs409(t *testing.T) {
 	}
 	if code := nrErrCode(t, body); code != CodeConflict {
 		t.Errorf("code = %s", code)
+	}
+}
+
+// TestAnEmptyServerAllowlistSurvivesTheWire pins the three-state distinction
+// on the one request DTO callers marshal themselves.
+//
+// TokenCreateRequest is exported so a caller can build one. Its Servers field
+// documents "omitted/null = every server, [] = none", and it carried
+// omitempty, which drops an explicit [] off the wire entirely: a request for a
+// token scoped to NO servers arrived as one scoped to every server. Fail-open,
+// on a credential's allowlist — the direction AGENTS.md's `omitzero`, not
+// `omitempty` rule exists to prevent.
+//
+// Absence is asserted too, so a later "fix" cannot buy the empty case by
+// making nil serialize as null and losing the other half of the distinction.
+func TestAnEmptyServerAllowlistSurvivesTheWire(t *testing.T) {
+	empty, err := json.Marshal(TokenCreateRequest{Name: "ci", Servers: []string{}})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(empty), `"servers":[]`) {
+		t.Errorf("an explicit empty allowlist did not reach the wire: %s\n"+
+			"The server reads an absent `servers` as EVERY server, so this asks for the "+
+			"opposite of what the caller wrote.", empty)
+	}
+
+	absent, err := json.Marshal(TokenCreateRequest{Name: "ci"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(absent), `"servers"`) {
+		t.Errorf("an unset allowlist emitted a servers field: %s\n"+
+			"nil means \"no narrowing\" and must stay distinguishable from [].", absent)
 	}
 }

@@ -41,7 +41,14 @@ type profileCreateWire struct {
 	Name string `json:"name"`
 	// Servers is the initial membership; absent/null = no narrowing,
 	// [] = block-all.
-	Servers []string `json:"servers,omitempty"`
+	//
+	// omitzero, matching profileWire above and api.ProfileSpec, rather than
+	// the omitempty that stood here. Nothing marshals this struct — it is
+	// only ever decoded into — so the tag was inert, which is exactly what
+	// makes it worth correcting: it is a request DTO other request DTOs get
+	// copied from, and omitempty on a three-state selector drops [] into
+	// absent, the fail-OPEN direction the field's own comment is about.
+	Servers []string `json:"servers,omitzero"`
 }
 
 // profilePatchWire is the PATCH /v1/profiles/{name} body.
@@ -67,7 +74,7 @@ type profilePatchWire struct {
 type serverSelectionWire struct {
 	// Mode is "replace" (nil clears the narrowing), "add" or "remove".
 	Mode    string   `json:"mode"`
-	Servers []string `json:"servers,omitempty"`
+	Servers []string `json:"servers,omitzero"`
 }
 
 // profileToolsWire scopes one three-state selector to one server, which is

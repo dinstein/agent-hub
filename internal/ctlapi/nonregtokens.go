@@ -49,7 +49,12 @@ type TokenCreateRequest struct {
 	// come out able to delete things).
 	Tier string `json:"tier,omitempty"`
 	// Servers restricts the token: omitted/null = every server, [] = none.
-	Servers []string `json:"servers,omitempty"`
+	//
+	// omitzero, never omitempty: this type is EXPORTED and marshalled by
+	// callers, and omitempty dropped an explicit [] off the wire entirely —
+	// so a request for a token scoped to no servers arrived as one scoped to
+	// every server. Fail-open, on a credential.
+	Servers []string `json:"servers,omitzero"`
 	Profile string   `json:"profile,omitempty"`
 	// ExpiresInSeconds sets a hard deadline (0 = never expires).
 	ExpiresInSeconds int64 `json:"expires_in_seconds,omitempty"`
