@@ -1062,10 +1062,16 @@ is presentational, which is why it may wait.
   non-nil apply them regardless of `g.store` (build the resolver against an empty registry snapshot so the
   Extra layers still intersect), or refuse to assemble a gateway for a constrained credential with no
   registry authority.
-- **`http.ProxyFromEnvironment` routes around the dial-time screen** (`downstream/httpdial.go`). Both HTTP
-  clients set it, so with `HTTP_PROXY`/`HTTPS_PROXY` configured the guarded `DialContext` screens the
-  PROXY's address and the proxy then resolves and connects to the real destination: a hostname
-  `screenEndpoint` saw resolve publicly can be reached privately through the proxy's own DNS, and netguard
-  never sees the address that matters. This needs a decision rather than a patch — disabling environment
-  proxies breaks every operator behind a corporate proxy, while keeping them makes the SSRF screen advisory
-  whenever one is set.
+- **`http.ProxyFromEnvironment` routes around the dial-time screen.** Two transports set it, and they are
+  in two packages: `downstream/httpdial.go` (the auth client) and `mcp/transport/httpcommon.go`
+  (`newHTTPClient` — the one every HTTP and SSE downstream actually speaks over). With
+  `HTTP_PROXY`/`HTTPS_PROXY` configured the guarded `DialContext` screens the PROXY's address and the
+  proxy then resolves and connects to the real destination: a hostname `screenEndpoint` saw resolve
+  publicly can be reached privately through the proxy's own DNS, and netguard never sees the address that
+  matters. This needs a decision rather than a patch — disabling environment proxies breaks every operator
+  behind a corporate proxy, while keeping them makes the SSRF screen advisory whenever one is set.
+  **The second location constrains the shape of that decision**: `internal/mcp` is standard library only
+  (AGENTS.md constraint 2), so it can consult neither netguard nor a policy of its own, and its half has
+  to arrive as something the caller sets — the arrangement `DialContextFunc` already uses for the screen
+  itself. A fix applied to `httpdial.go` alone leaves the proxy in place on the transport that carries
+  the traffic, which is the half that matters.

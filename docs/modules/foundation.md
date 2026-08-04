@@ -809,6 +809,17 @@ hands `ParseMessage` one event at a time. Deleting the batch path is not the fix
 2025-03-26 servers, which may still answer with an array. An element cap, or decoding through a
 streaming `json.Decoder` so each element is validated and released as it arrives, is.
 
+**The dial screen a caller injects is defeated by an environment proxy, and half of that is here —
+owed, not fixed.** `newHTTPClient` sets `Proxy: http.ProxyFromEnvironment` on the same transport it
+gives the caller's `DialContextFunc`. With `HTTP_PROXY`/`HTTPS_PROXY` set, that screened dialer is
+handed the PROXY's address and the proxy resolves the real destination itself, so what the caller
+screened is not what gets connected to. This package cannot decide it: standard library only
+(AGENTS.md constraint 2) means no netguard and no policy of its own, so the answer has to arrive from
+outside, the way the dialer already does. The gap is owned by
+[dataplane.md](dataplane.md#open-gaps-raised-by-the-2026-07-31-sweep), where the other transport that
+sets it lives — recorded here too because a reader working in this file has no other way to learn
+that this line is half of something.
+
 **The one place `sseScanner` deviates from the dispatch rules is an empty data buffer**, which the
 spec drops and this scanner dispatches — so a bare `id:` line and a blank line, the way a resumable
 stream advances `Last-Event-ID` without sending a message, surfaces as a `message` event with no
