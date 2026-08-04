@@ -48,7 +48,14 @@ var retiredCommands = map[string]string{
 // commandDocRoots are the trees whose text is read by a human or handed to an
 // agent. Test files are excluded deliberately: a test asserting the retired
 // spelling still works has to name it.
-var commandDocRoots = []string{"docs", "skills", "internal", "cmd", "README.md"}
+//
+// `.agents` is this repository's own workflow skills — files an agent
+// EXECUTES rather than reads, which is the criterion above at its strongest,
+// and the one tree that satisfied it while being left out. It is not the same
+// directory as `skills` beside it: that one is published to the tap, this one
+// is how the release, new-feature, nightly-tidy and security-audit workflows
+// are carried out here, and it already teaches `agenthub daemon restart`.
+var commandDocRoots = []string{"docs", "skills", ".agents", "internal", "cmd", "README.md"}
 
 // TestNoDocumentTeachesARetiredCommand keeps the prose, the help strings and
 // the GUI on the command tree that exists.
