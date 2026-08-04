@@ -67,15 +67,36 @@ const COUNT_NOUN: Record<string, string> = {
   health_up: "failures",
 };
 
-/** subjectOf is what a record is ABOUT: a server (with its derived instance
- *  when there is one), the client whose gateway spoke, or — on the HTTP face,
- *  whose callers are tokens rather than configured clients — the session.
+/** serverOf is the downstream a record is about, with its derived instance
+ *  when there is one — one identity, so one cell. */
+export function serverOf(e: EventRecord): string {
+  if (!e.server) return "";
+  return e.inst ? `${e.server}/${e.inst}` : e.server;
+}
+
+/** actorCell is who ASKED, which is a different question from which server a
+ *  record is about and therefore a different column. A record can carry both:
+ *  one subject cell picking a winner between them showed a login's server and
+ *  never said whose session it was for.
  *
- *  Narrowest first: a login carries both a server and a session, and the
- *  server is what somebody scanning the column is looking for. */
-export function subjectOf(e: EventRecord): string {
-  if (e.server) return e.inst ? `${e.server}/${e.inst}` : e.server;
-  return e.client || e.session || "";
+ *  A session is labelled rather than printed bare. The HTTP face's callers are
+ *  tokens rather than configured clients, so a session id is all the identity
+ *  there is — and an opaque id sitting under a "Client" header reads as a
+ *  client whose name happens to look like a hash. */
+function actorCell(e: EventRecord): Node {
+  if (e.client) {
+    return el("div", {}, [
+      el("div", { text: e.client }),
+      e.session ? el("div", { class: "muted mono", text: `session ${e.session}` }) : null,
+    ]);
+  }
+  if (e.session) {
+    return el("div", {}, [
+      el("div", { class: "mono", text: e.session }),
+      el("div", { class: "muted", text: "session" }),
+    ]);
+  }
+  return el("div", { class: "muted", text: "—" });
 }
 
 /** detailOf folds the transition, the count and the free text into one
@@ -93,19 +114,26 @@ export function detailOf(e: EventRecord): string {
   return parts.join(" · ");
 }
 
-/** eventRows renders the shared table body, so the Servers drawer and this
- *  page cannot drift into two ways of reading one record. */
+/** The columns eventRows fills, in order. It ships beside the renderer for
+ *  the reason the renderer is shared at all: a caller holding its own header
+ *  list mislabels every cell under it the day this one moves. */
+export const EVENT_COLUMNS = ["Time", "PID", "Scope", "What", "Server", "Client", "Detail"];
+
+/** eventRows renders the shared table body, so the Servers panel and this
+ *  page cannot drift into two ways of reading one record.
+ *
+ *  One value per column, and the three that used to share a cell — the scope,
+ *  the server, the caller — each get their own. Stacked, a `daemon` under a
+ *  server's name read as a fourth identity of that server rather than as the
+ *  kind of process the record came from. */
 export function eventRows(events: EventRecord[]): (Node | string)[][] {
   return events.map((e) => [
-    el("div", {}, [
-      el("div", { text: relTime(e.ts) }),
-      el("div", { class: "muted", text: `pid ${e.pid}` }),
-    ]),
+    el("div", { text: relTime(e.ts) }),
+    el("div", { class: "muted mono", text: e.pid ? String(e.pid) : "—" }),
+    el("div", { class: "muted", text: e.scope || "—" }),
     el("span", { class: `badge ${TONES[e.kind] ?? "neutral"}`, text: e.kind }),
-    el("div", {}, [
-      el("div", { text: subjectOf(e) || "—" }),
-      el("div", { class: "muted", text: e.scope }),
-    ]),
+    el("div", { text: serverOf(e) || "—" }),
+    actorCell(e),
     el("div", { class: "muted", text: detailOf(e) || "—" }),
   ]);
 }
@@ -326,7 +354,7 @@ export function eventsPage(): Page {
     }
     // The daemon serves newest first, like every other observability list:
     // an operator opens this page because something just happened.
-    return table(["When", "What", "Subject", "Detail"], eventRows(events));
+    return table(EVENT_COLUMNS, eventRows(events), "observe-table");
   }
 
   function draw(): void {

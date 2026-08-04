@@ -33,7 +33,7 @@
 import { asCallError, EVT, hub, isCancelled, on, openExternal } from "../bridge";
 import { chip, chipRow, chipToggle, clear, el, emptyState, errorHeadline, icon, loadingState, pageHeader, reconcile, table } from "../dom";
 import { AdminState, HealthAction, HealthLevel } from "../generated/health";
-import { eventRows } from "./events";
+import { EVENT_COLUMNS, eventRows } from "./events";
 import type { Page } from "../page";
 import { failureBox, failureState, noticeSlot, runWrite } from "../page";
 import { consumeServerSecrets } from "../secret-guidance";
@@ -1560,7 +1560,7 @@ export function serversPage(): Page {
     // the order the Events page renders it in: the reason this section is
     // open is that something just happened. Reversing here put the oldest
     // record of the window under the badge it was supposed to explain.
-    body.append(table(["When", "What", "Subject", "Detail"], eventRows(events)));
+    body.append(table(EVENT_COLUMNS, eventRows(events), "observe-table"));
   }
 
   function authExpiry(status: AuthStatus): string {

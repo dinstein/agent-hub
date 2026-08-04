@@ -113,14 +113,23 @@ export function pageHeader(
   ]);
 }
 
-export function table(headers: string[], rows: (Node | string)[][]): HTMLElement {
+/** A table. `className` lands on the <table> itself rather than on the
+ *  wrapper, so a rule about a column can be written as a column selector
+ *  instead of as a fixed width guessed from the outside. */
+export function table(
+  headers: string[],
+  rows: (Node | string)[][],
+  className = "",
+): HTMLElement {
   const thead = el("thead", {}, [el("tr", {}, headers.map((h) => el("th", { text: h })))]);
   const tbody = el(
     "tbody",
     {},
     rows.map((r) => el("tr", {}, r.map((cell) => el("td", {}, [cell])))),
   );
-  return el("div", { class: "table-wrap" }, [el("table", {}, [thead, tbody])]);
+  return el("div", { class: "table-wrap" }, [
+    el("table", className ? { class: className } : {}, [thead, tbody]),
+  ]);
 }
 
 // ---------------------------------------------------------------------------

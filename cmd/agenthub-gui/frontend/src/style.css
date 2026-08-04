@@ -2215,6 +2215,16 @@ tr:last-child td {
   border-bottom: none;
 }
 
+/* The observability tables lead with four narrow columns of fixed shape — a
+ * relative time, a pid, a scope or a level, a process or a kind. Wrapping any
+ * of them buys nothing and costs the row the alignment that makes a page of
+ * them scannable, so the slack goes to the wide columns that end each table:
+ * a server, a caller, and the detail or message. */
+.observe-table th:nth-child(-n + 4),
+.observe-table td:nth-child(-n + 4) {
+  white-space: nowrap;
+}
+
 /* Row hover is a readability aid on wide tables — it ties a status cell on
  * the right back to the name on the left. It is deliberately weaker than
  * anything that signals state, so it never competes with the health colours
