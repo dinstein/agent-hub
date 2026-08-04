@@ -173,16 +173,11 @@ flowchart TD
 
 ## 4. 分层与依赖方向
 
-四条依赖约束不是评审口头约定，而是 **CI 失败条件**。规范措辞——以及代码注释里引用的那套编号
-（「§2 规则 3」）——在
-[canonical.md §2](../canonical.md#hard-dependency-direction-constraints-enforced-at-compile-time-by-depguard)：
-
-| # | 约束 | 为什么 |
-|---|---|---|
-| 1 | `cmd/agenthub-gui` 与 `api` 不得 import 任何 `internal/*` | 「GUI 非必须、无特权」是编译期约束，不是口号 |
-| 2 | `internal/mcp` 只依赖标准库；其余包不得 import 任何第三方 MCP 库 | 协议门面唯一，且协议层不变量要自己保证 |
-| 3 | `internal/pipeline` 不得 import `internal/ctlapi` | 数据面不依赖控制面 |
-| 4 | `internal/mcp`、`internal/platform`、`internal/logx`、`internal/guard/*` 零业务依赖 | 底座可被任何层安全复用 |
+四条依赖方向不是评审口头约定，而是 **CI 失败条件**：`api` 与 `cmd/agenthub-gui` 不 import 任何
+`internal/*`；`internal/mcp` 只依赖标准库，且是唯一触碰协议实现的包；`internal/pipeline` 不得
+import `internal/ctlapi`；`internal/mcp`、`internal/platform`、`internal/logx`、`internal/guard/*`
+零业务依赖。规范措辞——以及代码注释里引用的那套编号（「§2 规则 3」）——在
+[canonical.md §2](../canonical.md#hard-dependency-direction-constraints-enforced-at-compile-time-by-depguard)。
 
 这一节真正该讲的是它们**怎么被守住**：`internal/depguardtest` 往受约束的包里注入违规探针——
 注在检出的一份用完即弃的副本里——并断言 golangci-lint 逐条报错。配置写了但没生效的 lint 规则
