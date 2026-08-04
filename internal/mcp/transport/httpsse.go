@@ -321,12 +321,40 @@ func (t *httpSSE) postMessage(ctx context.Context, body []byte) *Error {
 		return requestError(err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return httpError(resp)
+		return t.postError(resp, u)
 	}
 	// The legacy binding answers 202 Accepted with no meaningful body; the
 	// real answer comes back on the stream.
 	drainClose(resp)
 	return nil
+}
+
+// postError classifies a failed POST, naming the one cause the status alone
+// hides: 405 on the stream URL itself.
+//
+// The POST address is not ours to choose — it is whatever the server's
+// endpoint event named — so a server that names its own GET-only stream
+// produces a bare "POST <stream url>: http 405", which reads like a client
+// bug and sends the operator to check their configuration, where the URL is
+// of course correct. Naming the endpoint event turns it into what it is: the
+// downstream handed out a POST address it does not serve, typically after a
+// rolling restart put an older or mismatched instance behind the same host.
+func (t *httpSSE) postError(resp *http.Response, post *url.URL) *Error {
+	err := httpError(resp)
+	if resp.StatusCode == http.StatusMethodNotAllowed && sameURL(post, t.endpoint) {
+		err.Err = fmt.Errorf("%w (the server's endpoint event named the SSE stream url itself as the "+
+			"POST address, and that url only answers GET)", err.Err)
+	}
+	return err
+}
+
+// sameURL compares two absolute URLs by everything that decides where a
+// request lands. Fragments are not sent, so they are not part of it.
+func sameURL(a, b *url.URL) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Scheme == b.Scheme && a.Host == b.Host && a.Path == b.Path && a.RawQuery == b.RawQuery
 }
 
 func (t *httpSSE) deliver(resp *mcp.Response) {

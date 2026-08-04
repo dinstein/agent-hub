@@ -337,6 +337,51 @@ func TestHTTPSSEPostStatusClassification(t *testing.T) {
 	}
 }
 
+// TestHTTPSSEPostToStreamURLExplainsThe405 covers the failure a status code
+// cannot explain on its own. The POST address is whatever the endpoint event
+// named, so a downstream naming its own GET-only stream produces
+// `POST <stream url>: http 405` — which reads as a client bug and sends the
+// operator to re-check a URL that was right all along.
+//
+// The 405-on-another-path case is the control: the same status there says
+// nothing about the endpoint event, so the hint must not appear.
+func TestHTTPSSEPostToStreamURLExplainsThe405(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		endpoint string // what the server's endpoint event names
+		wantHint bool
+	}{
+		{name: "endpoint names the stream itself", endpoint: "/sse", wantHint: true},
+		{name: "endpoint names another path", endpoint: "/messages", wantHint: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet {
+					s := startSSE(t, w)
+					s.event("endpoint", "", []byte(tc.endpoint))
+					<-r.Context().Done()
+					return
+				}
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			})
+			tr, err := DialHTTPSSE(testCtx(t), HTTPConfig{URL: fs.URL + "/sse"})
+			if err != nil {
+				t.Fatalf("dial: %v", err)
+			}
+			defer func() { _ = tr.Close() }()
+
+			_, err = tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+			if err == nil {
+				t.Fatal("a 405 POST was not reported as an error")
+			}
+			got := strings.Contains(err.Error(), "endpoint event named the SSE stream url itself")
+			if got != tc.wantHint {
+				t.Fatalf("hint present = %v, want %v; err = %v", got, tc.wantHint, err)
+			}
+		})
+	}
+}
+
 // TestHTTPSSEContextCancel pins cancellation: ctx.Err() surfaces and
 // notifications/cancelled is POSTed naming the abandoned request.
 func TestHTTPSSEContextCancel(t *testing.T) {
