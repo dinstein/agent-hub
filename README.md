@@ -45,6 +45,21 @@ hands each client exactly the surface you decided it should see.
 
 ## Install
 
+**The CLI, macOS and Linux, no package manager** — the same command installs and updates:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dinstein/agent-hub/main/scripts/install.sh | sh
+```
+
+`brew` runs `git`, so it needs Xcode Command Line Tools; this needs nothing the system does not
+already have. It puts `agenthub` in `~/.local/bin` (`--prefix` moves it), checks the download
+against the sha256 its release pins before anything is unpacked, and prints the `PATH` line to add
+rather than editing a shell profile. `--uninstall` reverses it, `--help` lists the rest, and
+[the script](scripts/install.sh) is worth reading first if piping one into a shell is not your
+habit.
+
+**With Homebrew** — and the only way to get the macOS app:
+
 ```bash
 brew tap dinstein/agenthub
 
@@ -52,12 +67,13 @@ brew install agenthub                 # the CLI, which is all you need
 brew install --cask agenthub-gui      # the macOS app, and the CLI with it
 ```
 
-The cask installs `AgentHub.app` and depends on the formula, so the `agenthub`
-on your `$PATH` has exactly one owner either way. The app is ad-hoc signed but **not
-notarized**: the cask clears the quarantine flag macOS puts on downloads, and its pinned
-sha256 is what vouches for the bytes instead of Gatekeeper. Windows and Linux have no
-package yet — take the `.zip` or the `.tar.gz` from
-[Releases](https://github.com/dinstein/agent-hub/releases).
+Take one path or the other: both put a binary at a path they each believe they own, and neither
+notices the other afterwards. The cask installs `AgentHub.app` and depends on the formula, so the
+`agenthub` on your `$PATH` has exactly one owner that way too. The app is ad-hoc signed but **not
+notarized**: the cask clears the quarantine flag macOS puts on downloads, and its pinned sha256 is
+what vouches for the bytes instead of Gatekeeper — the same thing the script's checksum does, and no
+stronger, since both ship from the release they describe. Windows has no package — take the `.zip`
+from [Releases](https://github.com/dinstein/agent-hub/releases).
 
 ## Quickstart
 

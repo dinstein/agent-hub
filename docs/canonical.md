@@ -419,6 +419,31 @@ silently reopened, and the numbering is cited from code.
    Per-mechanism accounting, if ever wanted again, measures **bytes** — a fact this process observes,
    not a third party's tokenizer. `MinSavingsPct` is not an exception: it compares byte lengths to
    decide whether TOON is used at all, a data-path decision with no accounting in it.
+10. ~~Whether anything but Homebrew installs the CLI, and what may read what it needs~~ →
+    **Decided: a shell installer, and nothing inside the binary.** `brew` runs `git`, so it requires
+    Xcode Command Line Tools; on a Mac without them the tap is not a slower path, it is no path.
+    `scripts/install.sh` covers macOS and Linux for the **CLI only**, using nothing but base-system
+    tools — sh, curl or wget, tar, awk, sed, one of shasum / sha256sum / openssl. The macOS app stays
+    a cask, because unpacking a DMG and owning `/Applications` is what a cask already does correctly.
+
+    It is driven by `manifest.json`, one stable-named asset per Release rendered by
+    `scripts/release-manifest.sh` from the same `checksums-cli.txt` the formula reads. The manifest
+    exists because the artifacts carry a build id in their names, which is exactly what GitHub's
+    `releases/latest/download/<name>` redirect cannot serve. Three properties are not decoration:
+    asset names and hashes are **read back** from the checksums file rather than recomposed (the rule
+    the formula and cask already follow); the download is verified before anything is unpacked or
+    moved and there is **no `--skip-verify`**; and the unpacked binary must identify itself as the
+    manifest's version and **not** as `(dev)` — the one failure a checksum cannot catch, whose only
+    other symptom is a user's servers appearing to vanish.
+
+    **What it does not buy.** The manifest ships from the release it describes, so it cannot vouch
+    for those bytes independently. This is the cask's chain of trust, not a stronger one; signing the
+    artifacts is what would change that, and there is none.
+
+    **Decision 6 is not reopened by this.** The manifest is fetched by a script the user ran on
+    purpose; no code under `internal/*` may request it, and `agenthub self-update` — the obvious next
+    step — would be precisely the fourth egress category decision 6 forbids. Shipping one means
+    amending decision 6 first, here, on the record.
 
 ---
 

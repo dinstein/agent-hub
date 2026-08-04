@@ -42,6 +42,20 @@ Claude Code · Cursor · Codex · Open WebUI · 以及另外 8 种
 
 ## 安装
 
+**CLI，macOS 与 Linux，不需要包管理器**——同一条命令既是安装也是升级：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dinstein/agent-hub/main/scripts/install.sh | sh
+```
+
+`brew` 自己要跑 `git`，因此需要 Xcode Command Line Tools；这条路只用系统自带的东西。
+它把 `agenthub` 装到 `~/.local/bin`（`--prefix` 可改），解包之前先用该版本锁定的 sha256
+校验下载，并且只打印需要追加的 `PATH` 那一行，不去改你的 shell 配置。`--uninstall` 卸载，
+`--help` 列出其余选项；不习惯把脚本直接管道进 shell 的话，[脚本本身](scripts/install.sh)
+值得先读一遍。
+
+**用 Homebrew**——也是拿到 macOS 应用的唯一途径：
+
 ```bash
 brew tap dinstein/agenthub
 
@@ -49,11 +63,13 @@ brew install agenthub                 # CLI，装它就够了
 brew install --cask agenthub-gui      # macOS 应用，CLI 随它一起装上
 ```
 
-cask 装的是 `AgentHub.app`，并且依赖上面那个 formula，所以两条路装下来，`$PATH` 上的
-`agenthub` 都只有一个归属。应用只做了 ad-hoc 签名，**没有做公证（notarization）**：
+两条路选一条：它们都会往一个自认为归自己管的路径上放二进制，而且事后谁也发现不了对方。
+cask 装的是 `AgentHub.app`，并且依赖上面那个 formula，所以走这条路 `$PATH` 上的
+`agenthub` 同样只有一个归属。应用只做了 ad-hoc 签名，**没有做公证（notarization）**：
 cask 会清掉 macOS 给下载文件打的 quarantine 标记，替 Gatekeeper 作保的是它锁定的
-sha256。Windows 和 Linux 目前没有包，从
-[Releases](https://github.com/dinstein/agent-hub/releases) 取 `.zip` 或 `.tar.gz`。
+sha256——脚本那边的校验和是同一件事，也不比它更强，因为两者都随它们所描述的那个 release
+一起发布。Windows 目前没有包，从
+[Releases](https://github.com/dinstein/agent-hub/releases) 取 `.zip`。
 
 ## 快速开始
 

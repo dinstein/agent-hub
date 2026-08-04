@@ -244,8 +244,21 @@ jobs:
             but has never run on a real Windows machine — treat surprises as
             expected and report them.
 
-            **CLI only** — download the `.tar.gz` for your platform and put
-            `agenthub` somewhere on your `$PATH`.
+            **CLI, without Homebrew (macOS + Linux)** — one command, and the
+            same command updates:
+
+            ```
+            curl -fsSL https://raw.githubusercontent.com/dinstein/agent-hub/main/scripts/install.sh | sh
+            ```
+
+            It needs no Xcode Command Line Tools (`brew` does), installs into
+            `~/.local/bin` unless `--prefix` says otherwise, and verifies the
+            download against the sha256 this release pins. Take this path or
+            Homebrew, not both: each puts a binary where it believes it is the
+            only owner.
+
+            **CLI only, by hand** — download the `.tar.gz` for your platform and
+            put `agenthub` somewhere on your `$PATH`.
 
             Verify downloads against `checksums-*.txt`.
 

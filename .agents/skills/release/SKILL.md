@@ -112,11 +112,25 @@ A green workflow is a weaker claim than a correct release.
 
 ```bash
 gh release view "v${new}" --json isDraft,isPrerelease -q '.isDraft, .isPrerelease'   # false false
-gh release view "v${new}" --json assets -q '.assets[].name' | wc -l                  # 11
+gh release view "v${new}" --json assets -q '.assets[].name' | wc -l                  # 12
 ```
 
-Eleven assets: four CLI tarballs (darwin/linux × amd64/arm64), the macOS DMG, a Windows amd64
-tarball, two Windows zips, three `checksums-*.txt`.
+Twelve assets: four CLI tarballs (darwin/linux × amd64/arm64), the macOS DMG, a Windows amd64
+tarball, two Windows zips, three `checksums-*.txt`, and `manifest.json`.
+
+That last one carries the whole Homebrew-less install path, and its absence is the invisible
+failure: the Release publishes, the tap updates, and only `curl … | sh` breaks.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dinstein/agent-hub/main/scripts/install.sh \
+  | sh -s -- --prefix /tmp/agenthub-check
+/tmp/agenthub-check/bin/agenthub --version          # ${new}, and must NOT say (dev)
+rm -rf /tmp/agenthub-check
+```
+
+`test/installer` runs that script end to end against a served release on every `make ci`; the two
+lines above are the half it cannot cover — that the real Release holds what the script goes looking
+for.
 
 Then the tap, a different repository that fails on its own:
 
