@@ -374,3 +374,52 @@ func TestConcurrentAllowInOneProcess(t *testing.T) {
 		t.Fatalf("allowed %d calls, want exactly 20 (the limit)", allowed)
 	}
 }
+
+// TestUnusableCounterFileReportsAtError pins the level, not just the text.
+//
+// The level is the difference between an operator alerting on a failed
+// protective capability and one who never hears that quotas stopped applying.
+// eventlog's Level names this exact condition as what Error is reserved for,
+// and its sibling example — "ledger unavailable; calls run unrecorded" — is
+// Error in internal/gateway. Nothing else ties the three together, and the
+// site sat at Warn for want of a check.
+//
+// Recovered corruption is deliberately NOT this case: counters restart, which
+// is degraded rather than absent, and TestCorruptStateFailsOpenLoudly
+// covers it. Asserted here too, so a future tightening cannot quietly promote
+// both and lose the distinction.
+func TestUnusableCounterFileReportsAtError(t *testing.T) {
+	tl := newTestLimiter(t, Config{Rules: []Rule{{Limit: 1, Window: Duration(time.Minute)}}})
+
+	// The store must become unwritable AFTER a successful build: New refuses
+	// to build at all on an unusable counter file while rules are configured,
+	// so this branch is only reachable by breaking one that worked. A
+	// read-only directory is how — the lock file and the atomic replacement
+	// both need to create a file in it.
+	if err := os.Chmod(tl.dir, 0o500); err != nil {
+		t.Fatalf("staging an unwritable state directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tl.dir, 0o700) })
+	// Fail hard rather than skip: running as root (or on a filesystem that
+	// ignores the mode) would make every assertion below vacuous, and a test
+	// that quietly proves nothing is worse than one that is absent.
+	if f, err := os.Create(filepath.Join(tl.dir, "precondition")); err == nil {
+		_ = f.Close()
+		t.Fatal("the state directory is still writable after chmod 0500, so this test would " +
+			"assert nothing; it cannot run as root or on a mode-ignoring filesystem")
+	}
+
+	dec := tl.Allow(Key{Server: "s", Tool: "t"})
+	if !dec.Allowed || !dec.Degraded {
+		t.Fatalf("an unusable counter file must fail open and report degraded, got %s", dec)
+	}
+
+	logs := tl.logText()
+	if !strings.Contains(logs, "counter file unusable") {
+		t.Fatalf("the uncounted pass was not reported at all:\n%s", logs)
+	}
+	if !strings.Contains(logs, "level=ERROR") {
+		t.Errorf("an unusable counter file reported below ERROR — an operator alerting on "+
+			"Error never learns the quota stopped applying:\n%s", logs)
+	}
+}

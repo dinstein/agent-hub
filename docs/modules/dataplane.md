@@ -1000,6 +1000,15 @@ and the assembler must wire both `Logger` and `OnEvent` — "the quota didn't fi
 running" must never look alike. `Event` fires only on DENIED or DEGRADED (one per call would drown its own
 signal) and carries identifiers only, never arguments or payloads.
 
+**The two degraded paths report at different levels, and the difference is the rule, not a preference.**
+A counter file that has become *unusable* — calls admitted uncounted, nothing enforcing anything — is
+**Error**, the level `internal/eventlog`'s `Level` reserves for a protective capability failing and names
+this exact condition as an example of; its sibling example, `internal/gateway`'s "ledger unavailable;
+calls run unrecorded", is Error for the same reason and also serves the call. Recovered *corruption* stays
+**Warn**: the file was quarantined and counters restarted, so this call went uncounted but enforcement is
+running again. Only the first is worth alerting on, and it is reachable only by breaking a store that
+built successfully — an unusable counter file with rules configured refuses to build at all.
+
 **File size is self-limiting**: buckets idle beyond `idleTTL` (1 hour) are dropped (untouched that long, a
 bucket has already refilled), and over `maxBuckets` (4096) the **least recently updated** go first —
 dropping a stale bucket is safe, dropping a hot one would pardon an active abuser.

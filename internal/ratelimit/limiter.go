@@ -200,11 +200,27 @@ func (l *Limiter) Allow(key Key) Decision {
 		// "And say so" is the load-bearing half. The state an attacker wants
 		// from a limiter is a SILENT admission — counters unreadable, calls
 		// flowing, nothing anywhere recording that the quota stopped
-		// applying. So this branch always warns AND always emits an Event
+		// applying. So this branch always reports AND always emits an Event
 		// with Degraded set (see below); an assembly wires both to its log
 		// and audit sinks. A quota that never fires and a quota that is not
 		// running must never look alike.
-		l.log.Warn("ratelimit: counter file unusable, admitting call uncounted",
+		//
+		// ERROR, not Warn, and the level is the repository's rule rather than
+		// this package's taste. eventlog's Level states it: Warn is
+		// "degraded, still serving", Error is reserved for a protective
+		// capability failing — and it names this exact condition as one of
+		// its two examples. The other example obeys it: "ledger unavailable;
+		// calls run unrecorded" is Error in internal/gateway, and that case
+		// serves the call too.
+		//
+		// It is also the level an operator alerts on, and this is the state
+		// worth waking for. A counter file that is unusable at assembly
+		// refuses to build at all while rules are configured, so reaching
+		// here means one that WAS usable has stopped being so — quotas have
+		// silently stopped applying on a machine where someone configured
+		// them. The recovered-corruption branch below stays at Warn through
+		// warnCorrupt: counters restarted, which is degraded, not absent.
+		l.log.Error("ratelimit: counter file unusable, admitting call uncounted",
 			"error", err, "path", l.store.Path(), "key", key.String())
 		dec = Decision{Allowed: true, Degraded: true}
 	case corrupt != nil:
