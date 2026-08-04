@@ -362,6 +362,66 @@ func TestRefusesASymlinkedBinary(t *testing.T) {
 	}
 }
 
+// TestRefusesAVersionThatCorruptsTheReceipt covers what a manifest can still
+// do to the file this script writes about itself.
+//
+// It cannot inject a key: top_field captures [^"]*, so no quote ever leaves
+// the manifest. It can end a version with a BACKSLASH, which escapes the quote
+// that was meant to close the string and leaves the receipt unparseable — and
+// that receipt is the only record of what was installed and where, read back
+// by --uninstall and by whoever is diagnosing the machine. There is no JSON
+// encoder in a POSIX shell script to notice this later, so the constraint
+// belongs where the strings enter.
+func TestRefusesAVersionThatCorruptsTheReceipt(t *testing.T) {
+	tgz := tarball(t, buildAgenthub(t, true))
+	rel := serve(t, tgz, tgz)
+	rel.manifest = strings.Replace(rel.manifest,
+		`"version": "`+testVersion+`"`,
+		`"version": "`+testVersion+`\\"`, 1)
+	home := t.TempDir()
+
+	out, err := run(t, home, rel)
+	if err == nil {
+		t.Fatalf("installed from a manifest whose version ends in a backslash:\n%s", out)
+	}
+	if _, err := os.Stat(receiptPath(home)); err == nil {
+		t.Error("a receipt was written that will not parse when it is read back")
+	}
+}
+
+// TestUninstallRefusesAnImplausibleReceipt bounds the other end of that file.
+// The receipt is a plain file on disk, and what comes out of it is EXECUTED
+// and then deleted; it may have been written by an older copy of this script,
+// or by something else entirely. One check that the path could have been an
+// install — absolute, and ending in the name being uninstalled — costs a case
+// statement and is the difference between removing an install and removing
+// whatever the file says.
+func TestUninstallRefusesAnImplausibleReceipt(t *testing.T) {
+	tgz := tarball(t, buildAgenthub(t, true))
+	rel := serve(t, tgz, tgz)
+	home := t.TempDir()
+	if out, err := run(t, home, rel); err != nil {
+		t.Fatalf("installing: %v\n%s", err, out)
+	}
+
+	victim := filepath.Join(t.TempDir(), "keep-me")
+	if err := os.WriteFile(victim, []byte("not agenthub\n"), 0o600); err != nil {
+		t.Fatalf("seeding the target: %v", err)
+	}
+	receipt := fmt.Sprintf("{\n  \"method\": \"script\",\n  \"bin\": %q\n}\n", victim)
+	if err := os.WriteFile(receiptPath(home), []byte(receipt), 0o644); err != nil {
+		t.Fatalf("rewriting the receipt: %v", err)
+	}
+
+	out, err := run(t, home, rel, "--uninstall")
+	if err == nil {
+		t.Fatalf("uninstalled a path the receipt merely claimed:\n%s", out)
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Errorf("--uninstall deleted a file that is not an install: %v", err)
+	}
+}
+
 // TestRefusesADevBuild guards the flag that decides which data directory a
 // shipped binary resolves.
 //

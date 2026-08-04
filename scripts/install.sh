@@ -219,7 +219,18 @@ if [ "$mode" = "uninstall" ]; then
 	target="$bindir/agenthub"
 	if [ -r "$receipt" ]; then
 		recorded="$(top_field "$receipt" bin)"
-		[ -n "$recorded" ] && target="$recorded"
+		# What comes back out of here is EXECUTED and then removed, out of a
+		# plain file that an older copy of this script — or anything else —
+		# may have written. One check that the path could have been an install
+		# is the difference between removing this script's own install and
+		# removing whatever the file happens to say.
+		case "$recorded" in
+		"") ;;
+		/*/agenthub) target="$recorded" ;;
+		*)
+			die "the receipt at $receipt names \"$recorded\", which is not a path this script could have installed; remove it by hand"
+			;;
+		esac
 	elif [ ! -x "$target" ]; then
 		die "no install receipt at $receipt and nothing at $target; if agenthub came from Homebrew, use \`brew uninstall agenthub\`"
 	fi
@@ -280,6 +291,18 @@ channel="$(top_field "$tmp/manifest.json" channel)"
 base_url="$(top_field "$tmp/manifest.json" base_url)"
 [ -n "$version" ] && [ -n "$commit" ] && [ -n "$base_url" ] ||
 	die "the manifest is missing version, commit or base_url"
+# Both are pasted into the hand-written JSON receipt at the end of this file,
+# and there is no encoder here to escape them on the way. top_field captures
+# [^"]*, so a quote cannot reach it — but a trailing BACKSLASH can, and it
+# escapes the quote that was meant to close the string. The receipt is then
+# unparseable, and it is the only record of what was installed and where.
+# Constrained where the strings enter rather than where they are written:
+# version and commit are read in four other places in between.
+case "$version$commit" in
+*[!A-Za-z0-9.+_-]*)
+	die "the manifest's version or commit carries something that is not part of one"
+	;;
+esac
 # A build whose channel is not `release` resolves the DEVELOPMENT data
 # directory, and the symptom is every server appearing to vanish. It is a
 # link-time flag, so nothing downstream of here could correct it.
