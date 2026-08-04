@@ -95,6 +95,16 @@ missing from the next assembly.
 - **Details of the dangerous-env decision**: an empty value is treated as inert (an explicit unset)
   and allowed; `AllowEnv` matches exactly and takes precedence over both the built-in table and the
   prefix table.
+- **The env rejection names its variable in a field, and deliberately cannot say where it came
+  from.** `Blocked.EnvVar` carries the name for `CodeEnvSmuggling` — empty for every other code, and
+  empty for the shape-based env blocks (`env -S`, an unrecognized `env` flag), which are about no
+  single variable. Provenance is not this package's answer to give: `Check` receives one flat
+  `[]string`, while `downstream.dialStdio` built that slice by laying the entry's `env` block over
+  the agenthub process's own environment, so only the caller can tell the two apart. It does, in
+  `explainBlockedEnv`, and the distinction is the entire fix — a declared variable is edited out of
+  the registry entry, an inherited one appears in no AgentHub file at all and has to be unset where
+  the process was started, which for a gateway means restarting the client holding that environment.
+  A message stopping at the name sent operators to grep a registry that never mentioned it.
 - **Wrapper unwrapping goes at most 4 levels deep** (`maxWrapperDepth`); beyond that it stops and the
   remaining outer wrapper is passed through the subsequent checks as-is (fail-open). The supported
   wrappers are `env`, `busybox`, `nohup`, `setsid`, `nice`, `stdbuf`, `timeout`, `sudo`, `doas`.
