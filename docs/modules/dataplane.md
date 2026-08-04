@@ -348,6 +348,42 @@ reported down until something calls it. `Breaker` / `Retry` / `Reconnect` run on
 
 ---
 
+## internal/mrtr
+
+**Responsibility in one sentence**: answer one round of a downstream's `InputRequiredResult` — the
+Multi Round-Trip Request input resolution that replaced in-band reverse RPC in MCP 2026-07-28 — and hand
+back the `inputResponses` map for the retry.
+
+One exported function, `Resolve(ctx, reqs, handler)`, and one seam: `Handler` answers a single request by
+method. `internal/downstream` fills it with the **same** peer-handler adapter that serves legacy
+server-initiated reverse RPCs, so both protocol generations answer `roots/list` — and refuse everything
+unimplemented — identically. The retry loop is not here: re-issuing the original request with a new
+JSON-RPC id, the echoed `requestState` and the collected responses lives in `internal/downstream`.
+
+### Invariants and failure directions
+
+**`requestState` never enters this package**, and that is the design rather than an omission. "The
+coordinator cannot inspect or modify it" is a property of the package boundary — `Resolve`'s signature
+cannot receive it — instead of a rule a reviewer has to keep applying.
+
+**Three fail-closed decisions, each closed for a different reason.**
+
+- **No input requests at all** → `ErrNoInputRequests`. Answering nothing and retrying the identical
+  request could only loop, so the round ends instead of spinning.
+- **`sampling/createMessage`** → `ErrSamplingUnsupported`. AgentHub does not proxy LLM calls
+  ([mcp-2026-07-28.md](../mcp-2026-07-28.md) §6.2) and the client capabilities it declares never include
+  sampling, so a server asking anyway is answered rather than obeyed. Callers surface it with
+  `CodeMissingRequiredClientCapability` (-32021) semantics.
+- **The first handler failure aborts the round**, and **no partial map is ever returned**. A retry
+  carrying some answers and not others is indistinguishable, from the server's side, from a client that
+  ignored a required input — so the failure has to be the whole round.
+
+**Requests are answered sequentially, in sorted key order.** The determinism is not for the wire: a
+handler may reach a human — a client eliciting the answer from its user — and stable ordering keeps that
+experience the same across runs.
+
+---
+
 ## internal/router
 
 **Responsibility in one sentence**: aggregate the tools of several downstream servers (plus host-supplied

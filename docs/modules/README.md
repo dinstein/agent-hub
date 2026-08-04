@@ -18,7 +18,7 @@ incident.
 |---|---|
 | [foundation.md](foundation.md) | `platform`, `logx`, `jsonl`, `proclog`, `eventlog`, `calllog`, `tier`, `mcp` (+ four `transport` implementations), `registry` |
 | [config.md](config.md) | `scope`, `session`, `event`, `secrets` (+ `secureenv`), `clients`, `skills` |
-| [dataplane.md](dataplane.md) | `downstream`, `router`, `pipeline`, `gateway`, `discovery` (+ `toolsig`), `shaping` (+ `toonenc`), `ratelimit` |
+| [dataplane.md](dataplane.md) | `downstream`, `mrtr`, `router`, `pipeline`, `gateway`, `discovery` (+ `toolsig`), `shaping` (+ `toonenc`), `ratelimit` |
 | [security.md](security.md) | `guard` (`spawnguard`/`netguard`), `oauthflow` |
 | [controlplane.md](controlplane.md) | `api`, `ctlapi`, `confops`, `catalog`, `daemon`, `httpbridge`, `cli` (+ `output`), the two `cmd/` binaries, `testutil/fakemcp`, `depguardtest`, `test/*` |
 | [oauth.md](oauth.md) | Topic: how well `oauthflow` conforms to the MCP authorization spec, which provider deployment shapes are supported, known gaps; `oauthlogin` (the same flow, as a pollable session) |
