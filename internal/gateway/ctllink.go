@@ -55,7 +55,7 @@ type ctlLink struct {
 	aliveCtx    context.Context
 	aliveCancel context.CancelFunc
 
-	loggedDown bool // first dial failure logs at Info, repeats at Debug
+	loggedDown bool // the first dial failure names the mode, repeats only confirm it
 }
 
 // armLocked replaces the alive context, cancelling whatever waited on the
@@ -261,16 +261,27 @@ func (l *ctlLink) clear(reason string) {
 	}
 }
 
-// reportDown logs a dial/registration failure: Info the first time, Debug
-// on repeats (a permanently absent daemon is normal operation and must not
-// spam the log every retry interval).
+// reportDown logs a dial/registration failure, at Debug.
+//
+// Standalone is a SUPPORTED MODE, not a degradation. The control link is
+// optional by design — nothing in the data plane depends on it
+// (docs/architecture.md §2) — and a gateway whose user never started a daemon
+// serves every call exactly as one that did. Reporting it at Info put a line
+// in the default log of an ordinary installation announcing that something
+// looked wrong, and a level people read is not where a supported
+// configuration should describe itself.
+//
+// The first/repeat split stays. The first line carries the retry interval and
+// names the mode that was entered; later ones only say nothing has changed.
+// With both at Debug the split is about what a reader needs once they turn it
+// on, rather than about how loudly each speaks.
 func (l *ctlLink) reportDown(err error) {
 	if l.loggedDown {
 		l.g.log.Debug("daemon still unreachable", "error", err)
 		return
 	}
 	l.loggedDown = true
-	l.g.log.Info("daemon unreachable; running standalone", "error", err, "retry", l.retry.String())
+	l.g.log.Debug("daemon unreachable; running standalone", "error", err, "retry", l.retry.String())
 }
 
 // setHeaders stamps the control-plane version and actor headers.
