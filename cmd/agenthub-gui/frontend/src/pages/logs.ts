@@ -24,6 +24,46 @@ import { Pager, filterBar, filterField, pagerFooter, rangeField, rangeMillis } f
  *  row of prose rather than a state change worth pausing on. */
 const PAGE = 200;
 
+/** How many records the SUGGESTION read pulls, and it is a window rather than
+ *  the whole range on purpose.
+ *
+ *  A process log has no bounded set of subjects, which is why the Client and
+ *  Server controls here are free text where the Events page has dropdowns.
+ *  That stays true: this list only offers what it has recently seen, and a
+ *  name older than the window is still typeable and still matches on the
+ *  daemon. Offering the same values as a dropdown would turn "not in the last
+ *  thousand lines" into "not filterable", which is the failure the Events
+ *  page's much wider facet read exists to avoid and this page cannot afford —
+ *  its stream is the noisiest of the three. */
+const SUGGEST_PAGE = 1000;
+
+/** The two suggestion lists. Their ids are constants because this page owns
+ *  its whole subtree and redraws all of it at once. */
+const CLIENT_VALUES = "logs-client-values";
+const SERVER_VALUES = "logs-server-values";
+
+/** What the inputs suggest: the distinct names seen in the window, sorted so
+ *  two readings agree. */
+interface Suggestions {
+  clients: string[];
+  servers: string[];
+}
+
+function suggestionsOf(records: ProcLogRecord[]): Suggestions {
+  const clients = new Set<string>();
+  const servers = new Set<string>();
+  for (const r of records) {
+    if (r.client) clients.add(r.client);
+    if (r.server) servers.add(r.server);
+  }
+  const sorted = (v: Set<string>): string[] => [...v].sort((a, b) => a.localeCompare(b));
+  return { clients: sorted(clients), servers: sorted(servers) };
+}
+
+function valueList(id: string, values: string[]): HTMLElement {
+  return el("datalist", { id }, values.map((v) => el("option", { value: v })));
+}
+
 /** Tone per level. WARN and ERROR are the reason anybody opens this page; the
  *  other two are context and stay quiet. */
 const TONES: Record<string, string> = {
@@ -83,6 +123,7 @@ export function logsPage(): Page {
   let failure: unknown = null;
   let loading = true;
   const pager = new Pager();
+  let suggest: Suggestions = { clients: [], servers: [] };
 
   const filtered = (): boolean =>
     source !== "" || level !== "" || client !== "" || server !== "";
@@ -108,14 +149,31 @@ export function logsPage(): Page {
     }
   }
 
+  /** The suggestion read is UNFILTERED, for the reason the Events page's
+   *  facet read is: narrowing to one client and then offering only that
+   *  client leaves no way back to the others. */
+  async function loadSuggestions(): Promise<void> {
+    try {
+      const seen = await hub.procLogs(rangeMillis(rangeHours), SUGGEST_PAGE, "", "", "", "");
+      suggest = suggestionsOf(seen.records);
+    } catch {
+      // A suggestion read that fails costs the inputs their hints, never the
+      // page its rows. Both controls still filter; they just stop guessing.
+      suggest = { clients: [], servers: [] };
+    }
+  }
+
   /** refresh reloads from page one. Every filter change goes through here:
    *  a cursor taken under one filter names a row the next filter may not
-   *  contain, and paging on from it would skip records without saying so. */
-  function refresh(): void {
+   *  contain, and paging on from it would skip records without saying so.
+   *
+   *  The suggestions follow the RANGE and nothing else — they are the names
+   *  that window holds, which no other selector changes. */
+  function refresh(rangeMoved = false): void {
     pager.reset();
     loading = true;
     draw();
-    void load();
+    void (rangeMoved ? loadSuggestions().then(load) : load());
   }
 
   function reload(): void {
@@ -151,28 +209,40 @@ export function logsPage(): Page {
       level = levelPick.value;
       refresh();
     });
-    // Client and server are free text rather than facets: unlike the event
-    // stream, a process log has no bounded set of subjects to enumerate, and
-    // a dropdown built from one page would offer only what that page held.
+    // Client and server stay free text rather than becoming facets: unlike
+    // the event stream, a process log has no bounded set of subjects to
+    // enumerate, and a dropdown is a claim that the list is complete.
+    //
+    // The attached value list is the other half of that: it says what has
+    // been seen recently, so nobody has to remember the exact spelling of a
+    // client id, while anything it omits is still typeable and still matches.
+    // A suggestion that is missing costs a keystroke; an option that is
+    // missing costs the filter.
     const clientInput = textInput(client, "any client");
+    clientInput.setAttribute("list", CLIENT_VALUES);
     clientInput.addEventListener("change", () => {
       client = clientInput.value.trim();
       refresh();
     });
     const serverInput = textInput(server, "any server");
+    serverInput.setAttribute("list", SERVER_VALUES);
     serverInput.addEventListener("change", () => {
       server = serverInput.value.trim();
       refresh();
     });
+    const clientField = filterField("Client", clientInput);
+    clientField.append(valueList(CLIENT_VALUES, suggest.clients));
+    const serverField = filterField("Server", serverInput);
+    serverField.append(valueList(SERVER_VALUES, suggest.servers));
     return filterBar(
       rangeField(rangeHours, (hours) => {
         rangeHours = hours;
-        refresh();
+        refresh(true);
       }),
       filterField("Process", sourcePick),
       filterField("Level", levelPick),
-      filterField("Client", clientInput),
-      filterField("Server", serverInput),
+      clientField,
+      serverField,
     );
   }
 
@@ -225,10 +295,15 @@ export function logsPage(): Page {
       root = host;
       loading = true;
       draw();
-      void load();
+      // Suggestions first, so the inputs are attached to a populated list by
+      // the time the rows land rather than filling in a moment later under
+      // the pointer — the same order the Events page loads its facets in.
+      void loadSuggestions().then(load);
     },
     dispose() {
       root = null;
+      page = null;
+      suggest = { clients: [], servers: [] };
     },
   };
 }

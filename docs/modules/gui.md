@@ -124,11 +124,25 @@ filter may not contain, and paging on from it would skip records without saying 
 jumping to the newest one: somebody two pages back is asking whether a line arrived in the window
 they are reading, and moving them would lose the position that question is about.
 
+**One identity per column, and never two stacked in one cell.** The daemon separates the scope, the
+server and the caller; a table that folds them back together makes the row unreadable in a way the
+reader cannot detect. Events showed a Subject that was a server *or* a client *or* a session,
+whichever came first, with the scope underneath — so a name could not be traced to a kind, and a
+record carrying both a server and a client showed only the server. Logs was worse than crowded: its
+`client || server` **lost** the server on every gateway line, which names both. Both tables now run
+Time, PID, then one column per join key, with the shapeless column (Detail, Message) last so the
+aligned ones stay aligned. The Events header list ships beside the shared renderer, because a caller
+holding its own copy mislabels every cell under it the day the renderer moves.
+
 **The three differ only where their content does.** Calls has a drawer because a call has payloads;
 Events colours rows because it has a closed vocabulary to colour by; Logs has neither and is
 deliberately the plainest of the three — its whole job is to filter prose, order it and get out of
 the way. Logs also takes free text for client and server rather than facets: a process log has no
 bounded set of subjects, and a dropdown built from one page would offer only what that page held.
+The inputs carry a `<datalist>` of the names seen in a bounded recent window, and that is a
+suggestion and not a facet: a missing suggestion costs a keystroke, where a missing option would cost
+the filter. This is why the window may be narrower than the range here while the Events facet read
+must span it — a dropdown has to be complete, a hint does not.
 
 ### 1.4 Per-page rules worth keeping
 
