@@ -379,7 +379,11 @@ a different way of being wrong: a kind missing from the table is still written, 
 green, and the consumer meant to recognize it silently does not; a kind nothing emits is still
 offered as a `--kind` selector and answers "no events" — the same answer as "this has not happened",
 which is the one confusion a closed set exists to prevent. Seven kinds shipped in that state before
-the second check existed.
+the second check existed. A kind missing from `allKinds` fails hardest of the three: it is declared,
+documented and written, so records carrying it accumulate here, while `KnownKind` answers false at
+every scope and the selector naming them is refused as a kind that does not exist. That edit is the
+one the first two checks could not see — both match the `KindX Kind = "wire"` declaration lines, and
+`allKinds` holds bare identifiers.
 
 Kinds are checked as a **(scope, kind) pair**, never a bare kind: a gateway and the daemon both
 `started`, and that spelling is meaningless at server scope.
