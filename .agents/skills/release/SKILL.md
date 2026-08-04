@@ -123,10 +123,17 @@ failure: the Release publishes, the tap updates, and only `curl … | sh` breaks
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dinstein/agent-hub/main/scripts/install.sh \
-  | sh -s -- --prefix /tmp/agenthub-check
+  | sh -s -- --prefix /tmp/agenthub-check --force
 /tmp/agenthub-check/bin/agenthub --version          # ${new}, and must NOT say (dev)
 rm -rf /tmp/agenthub-check
 ```
+
+`--force` is not optional here, and it is not loosening anything. The machine cutting a release
+almost always has agenthub from the tap — the section at the bottom of this file assumes exactly
+that — and the installer refuses, correctly, to fight another package manager for the name. Without
+the flag it dies before downloading anything, so the check cannot run on the machine it is written
+for. The flag is read in one place and only there: it skips that refusal. The install still goes to
+`--prefix`, and Homebrew's copy is not touched.
 
 `test/installer` runs that script end to end against a served release on every `make ci`; the two
 lines above are the half it cannot cover — that the real Release holds what the script goes looking
