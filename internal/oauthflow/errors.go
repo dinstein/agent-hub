@@ -149,6 +149,19 @@ type FlowError struct {
 	Issuer string
 	// Discovery is how far metadata discovery got.
 	Discovery DiscoveryStatus
+	// Attempted is the discovery chain that led here, when this error came
+	// out of one: every candidate tried, in order, with what it answered.
+	//
+	// A FAILED discovery is the case that needs the trace most, and the
+	// status was all a caller used to get — "failed", with no way to ask
+	// which URLs were tried or why each was passed over. The candidate list
+	// did reach the message string on some branches, but a sentence is not
+	// something a caller can render, filter or count: a reader wanting the
+	// third candidate's outcome had to parse English.
+	//
+	// Never carries secrets — these are metadata endpoint URLs, the same
+	// class Error() already interpolates.
+	Attempted []Attempt
 	// Registration is the client-credential provenance.
 	Registration RegistrationStatus
 	// Suggestion is the operator-facing remedy. Never contains secrets.

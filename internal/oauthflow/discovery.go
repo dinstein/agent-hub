@@ -165,6 +165,55 @@ func DefaultEndpoints(issuer *url.URL) *AuthServerMetadata {
 // fetched. Callers compare SourceURL against it to set DiscoveryDefaults.
 const defaultEndpointsSource = "(default endpoints, no metadata document)"
 
+// Attempt is one discovery candidate and what it answered.
+//
+// The URL alone was not enough to diagnose anything. A chain that tried four
+// candidates and failed looked identical whether every one of them 404'd
+// (the provider publishes nothing, so the issuer is wrong or the fallback is
+// wanted), one parsed but was unusable (the provider is broken, and this is
+// the URL to show them), or the first was refused by the SSRF screen (the
+// rest were never tried at all, so the list reads as evidence of a search
+// that did not happen).
+//
+// It is data rather than a log line for the reason scope.Step is: this
+// package is a leaf with no logging dependency, so it reports what happened
+// and lets its callers decide how to render it.
+type Attempt struct {
+	// URL is the candidate that was fetched.
+	URL string
+	// Outcome is one of the Attempt* constants.
+	Outcome string
+}
+
+// Outcomes of one discovery candidate.
+const (
+	// AttemptOK: the document was fetched and is usable. The chain stops here.
+	AttemptOK = "ok"
+	// AttemptNoDocument: non-2xx or unparsable. NOT an error — providers
+	// routinely 404 the candidate forms they do not implement, which is why
+	// the chain moves on rather than failing.
+	AttemptNoDocument = "no document"
+	// AttemptUnusable: the document parsed but lacks the members a flow needs.
+	// The chain STOPS: a broken provider is not a reason to keep guessing,
+	// and the operator needs to see which URL was wrong.
+	AttemptUnusable = "unusable document"
+	// AttemptRefused: the SSRF screen (or another fatal condition) refused
+	// this destination, so the chain aborts. Everything after it in the
+	// candidate list was never tried — which is exactly what a bare URL list
+	// could not say.
+	AttemptRefused = "refused"
+)
+
+// attemptURLs renders attempts as their URLs, for the error messages that
+// name what was tried.
+func attemptURLs(attempts []Attempt) []string {
+	out := make([]string, 0, len(attempts))
+	for _, a := range attempts {
+		out = append(out, a.URL)
+	}
+	return out
+}
+
 // DiscoveryResult is everything the discovery chain learned.
 type DiscoveryResult struct {
 	// Metadata is the authorization server metadata (never nil on success).
@@ -179,8 +228,9 @@ type DiscoveryResult struct {
 	Resource string
 	// Status records how the metadata was obtained.
 	Status DiscoveryStatus
-	// Attempted lists every candidate URL tried, in order, for diagnostics.
-	Attempted []string
+	// Attempted lists every candidate tried, in order, with what it
+	// answered (see Attempt).
+	Attempted []Attempt
 	// ChallengeScope is the RFC 6750 §3 `scope` parameter from the 401 that
 	// started this chain ("" = the server sent none). It is the first source
 	// in the spec's scope selection order; see ScopeSet.
@@ -254,9 +304,10 @@ func (d *Discoverer) DiscoverFromIssuer(ctx context.Context, issuer string) (*Di
 	}
 	if md == nil {
 		e := newFlowError(ErrorTypeDiscovery,
-			fmt.Errorf("%w: tried %s", ErrDiscovery, strings.Join(attempted, ", ")))
+			fmt.Errorf("%w: tried %s", ErrDiscovery, strings.Join(attemptURLs(attempted), ", ")))
 		e.Issuer = issuer
 		e.Discovery = DiscoveryFailed
+		e.Attempted = attempted
 		return nil, e
 	}
 	res.Metadata = md
@@ -293,17 +344,19 @@ func (d *Discoverer) DiscoverFromResource(ctx context.Context, resourceURL, reso
 	res := &DiscoveryResult{Status: DiscoveryFailed, Resource: canonicalResource(ru)}
 	var prm *ProtectedResourceMetadata
 	for _, c := range candidates {
-		res.Attempted = append(res.Attempted, c)
 		var doc ProtectedResourceMetadata
 		err := d.client.getJSON(ctx, c, &doc)
 		if err == nil {
 			doc.SourceURL = c
+			res.Attempted = append(res.Attempted, Attempt{URL: c, Outcome: AttemptOK})
 			prm = &doc
 			break
 		}
 		if isFatalDiscoveryError(err) {
+			res.Attempted = append(res.Attempted, Attempt{URL: c, Outcome: AttemptRefused})
 			return nil, err
 		}
+		res.Attempted = append(res.Attempted, Attempt{URL: c, Outcome: AttemptNoDocument})
 	}
 	if prm == nil {
 		// No RFC 9728 document. Before giving up, look for AS metadata on the
@@ -323,8 +376,10 @@ func (d *Discoverer) DiscoverFromResource(ctx context.Context, resourceURL, reso
 			return res, nil
 		}
 		e := newFlowError(ErrorTypeDiscovery,
-			fmt.Errorf("%w: no protected-resource metadata; tried %s", ErrDiscovery, strings.Join(res.Attempted, ", ")))
+			fmt.Errorf("%w: no protected-resource metadata; tried %s", ErrDiscovery,
+				strings.Join(attemptURLs(res.Attempted), ", ")))
 		e.Discovery = DiscoveryFailed
+		e.Attempted = res.Attempted
 		return nil, e
 	}
 	res.Protected = prm
@@ -351,9 +406,10 @@ func (d *Discoverer) DiscoverFromResource(ctx context.Context, resourceURL, reso
 	}
 	if md == nil {
 		e := newFlowError(ErrorTypeDiscovery,
-			fmt.Errorf("%w: tried %s", ErrDiscovery, strings.Join(attempted, ", ")))
+			fmt.Errorf("%w: tried %s", ErrDiscovery, strings.Join(attemptURLs(attempted), ", ")))
 		e.Issuer = prm.AuthorizationServers[0]
 		e.Discovery = DiscoveryFailed
+		e.Attempted = res.Attempted
 		return nil, e
 	}
 	res.Metadata = md
@@ -385,15 +441,15 @@ func (d *Discoverer) DiscoverFromResource(ctx context.Context, resourceURL, reso
 // Failure direction: fail-soft on absence (returns nil so the caller reports
 // the original "no protected-resource metadata" error), fatal on an SSRF
 // refusal, exactly like fetchMetadata.
-func (d *Discoverer) fetchResourceOriginMetadata(ctx context.Context, resource *url.URL) (*AuthServerMetadata, []string, error) {
+func (d *Discoverer) fetchResourceOriginMetadata(ctx context.Context, resource *url.URL) (*AuthServerMetadata, []Attempt, error) {
 	origin := &url.URL{Scheme: resource.Scheme, Host: resource.Host}
 	candidates := MetadataCandidates(resource)
 	if path := strings.Trim(resource.EscapedPath(), "/"); path != "" {
 		candidates = append(candidates, MetadataCandidates(origin)...)
 	}
-	var attempted []string
+	var attempted []Attempt
+	record := func(url, outcome string) { attempted = append(attempted, Attempt{URL: url, Outcome: outcome}) }
 	for _, c := range candidates {
-		attempted = append(attempted, c)
 		var md AuthServerMetadata
 		err := d.client.getJSON(ctx, c, &md)
 		if err == nil {
@@ -403,13 +459,22 @@ func (d *Discoverer) fetchResourceOriginMetadata(ctx context.Context, resource *
 				// rather than fatal: this whole hop is a fallback over paths
 				// the spec does not reserve, so a 200 that is not metadata is
 				// an ordinary miss, not a broken provider.
+				//
+				// Recorded as unusable all the same. The chain continuing is
+				// what the outcome does NOT say — that is the loop's business
+				// — while "this URL answered 200 with something that was not
+				// metadata" is exactly what a reader of the trace wants.
+				record(c, AttemptUnusable)
 				continue
 			}
+			record(c, AttemptOK)
 			return &md, attempted, nil
 		}
 		if isFatalDiscoveryError(err) {
+			record(c, AttemptRefused)
 			return nil, attempted, err
 		}
+		record(c, AttemptNoDocument)
 	}
 	return nil, attempted, nil
 }
@@ -417,10 +482,10 @@ func (d *Discoverer) fetchResourceOriginMetadata(ctx context.Context, resource *
 // fetchMetadata walks the candidate list. It returns (nil, attempted, nil)
 // when every candidate was absent — an outcome, not an error — and a
 // non-nil error only for conditions that must abort the whole flow.
-func (d *Discoverer) fetchMetadata(ctx context.Context, issuer *url.URL) (*AuthServerMetadata, []string, error) {
-	var attempted []string
+func (d *Discoverer) fetchMetadata(ctx context.Context, issuer *url.URL) (*AuthServerMetadata, []Attempt, error) {
+	var attempted []Attempt
+	record := func(url, outcome string) { attempted = append(attempted, Attempt{URL: url, Outcome: outcome}) }
 	for _, c := range MetadataCandidates(issuer) {
-		attempted = append(attempted, c)
 		var md AuthServerMetadata
 		err := d.client.getJSON(ctx, c, &md)
 		if err == nil {
@@ -429,16 +494,23 @@ func (d *Discoverer) fetchMetadata(ctx context.Context, issuer *url.URL) (*AuthS
 				// A document that parses but is unusable is not a reason
 				// to try the next candidate silently — it is a broken
 				// provider and the operator needs to see it.
+				record(c, AttemptUnusable)
 				e := newFlowError(ErrorTypeDiscovery, err)
 				e.Issuer = issuer.String()
 				e.Discovery = DiscoveryFailed
+				e.Attempted = attempted
 				return nil, attempted, e
 			}
+			record(c, AttemptOK)
 			return &md, attempted, nil
 		}
 		if isFatalDiscoveryError(err) {
+			// Refused, not absent — and the candidates after this one were
+			// never reached, which is the distinction the outcome carries.
+			record(c, AttemptRefused)
 			return nil, attempted, err
 		}
+		record(c, AttemptNoDocument)
 	}
 	if d.AllowDefaultEndpoints {
 		return DefaultEndpoints(issuer), attempted, nil
