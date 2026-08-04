@@ -252,7 +252,7 @@ rulings are what the mechanism exists to satisfy.
 
 **They live in [AGENTS.md](../AGENTS.md), not here** — worktree per feature, a draft PR per branch
 kept current and closed by the landing, one commit per subtask, `main` stays linear (rebase, never
-merge), `make ci-landing` **after** the rebase, `--ff-only` as the enforcement.
+merge), `make ci-landing` **after** a rebase that moved the branch, `--ff-only` as the enforcement.
 
 Development workflow is not an architectural convention, and `AGENTS.md` is the file every coding
 agent reads first. This section once carried its own copy, and the copy had gone stale in the

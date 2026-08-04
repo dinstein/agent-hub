@@ -203,8 +203,10 @@ the template is a prompt, while CI is the authority.
   it by hand naming the landed commit — an open PR claims work is still in flight.
 - **`main` is linear: rebase, never merge.** Several worktrees are normally in flight, and a merge
   commit per branch makes "what landed, when, on top of what" unreadable from `git log`.
-- **`make ci-landing` runs after the rebase, not before.** A rebase replays your commits onto code you
-  never tested against. It also drops the test cache and then fails on any `(cached)` in its own log:
+- **`make ci-landing` runs after the rebase, not before — and only when the rebase moved the branch.**
+  Its whole reason is commits replayed onto code they were never tested against, and a rebase that
+  changes no sha produces none: what is about to land is then what the PR's checks just graded, at the
+  same head. It also drops the test cache and then fails on any `(cached)` in its own log:
   `test/e2e` builds its binary inside `TestMain`, which the Go cache key does not cover, so the suite
   will otherwise report `ok (cached)` for a tree it never ran.
 - **`--ff-only` is the enforcement, not a formality.** If it refuses, the rebase did not happen or

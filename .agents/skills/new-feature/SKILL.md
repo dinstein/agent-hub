@@ -130,10 +130,28 @@ never tested against.
 
 ```bash
 # in the worktree
+before=$(git rev-parse HEAD)
 git fetch origin && git rebase origin/main
-make ci-landing >/tmp/landing.log 2>&1; echo $?      # 0, or read the log
+if [ "$(git rev-parse HEAD)" != "$before" ]; then
+  make ci-landing >/tmp/landing.log 2>&1; echo $?    # 0, or read the log
+fi
 git push --force-with-lease origin HEAD  # the PR's head must be exactly what lands
 ```
+
+**A rebase that moved nothing needs no landing run.** `ci-landing` exists for one reason — commits
+replayed onto a base they were never tested against — and when `origin/main` has not moved, the sha
+is unchanged and there is no such base: the tree about to land is the tree the PR's checks graded
+minutes ago. Skipping it then is the rule being applied, not relaxed. Two conditions come with it,
+and both are mechanical:
+
+```bash
+gh pr view --json headRefOid -q .headRefOid    # must equal git rev-parse HEAD
+gh pr checks                                   # green, for that head
+```
+
+If the head differs — an amend after the last push, a commit added since the watch — the checks
+graded something else, and `make ci-landing` is how you find out what. When in doubt, run it: the cost
+is minutes, and the thing it guards is the one irreversible step in this file.
 
 `ci-landing` drops the test cache and fails on any `(cached)` in its own log: `test/e2e` builds its
 binary inside `TestMain`, which the Go cache key does not cover.
