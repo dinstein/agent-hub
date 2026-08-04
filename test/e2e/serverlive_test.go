@@ -106,7 +106,7 @@ func showCall(t *testing.T, dataDir, callID string) string {
 	t.Helper()
 	// --payloads: the frame bodies are the point of the assertion, and they
 	// are encrypted at rest, so reading them back is what proves the capture
-	// happened at the connection rather than after any redaction.
+	// happened at the connection, before anything could filter it.
 	out, _ := runAgenthub(t, dataDir, "", "calls", "show", callID, "--payloads", "--json")
 	return out
 }
@@ -156,17 +156,15 @@ func waitTraceState(t *testing.T, c *gatewayClient, dataDir, id, tool string, wa
 // checkable without a real gateway process:
 //
 //   - it is OFF by default (a debugging aid that recorded by default would
-//     leave unredacted downstream traffic on disk on every install);
+//     leave every server's traffic on disk on every install);
 //   - a running client picks the change up, in both directions;
-//   - frames are captured at the connection, BEFORE any redaction, so what
-//     lands in the file is what the server actually said.
+//   - frames are captured at the connection, before anything filters them,
+//     so what is recorded is what the server actually said.
 //
-// The last one is also the line between this file and the audit log, which
-// is forbidden from holding arguments at all (AGENTS.md: audit records carry
-// argsHash, never args). Trace is the deliberate exception, switched on per
-// server and off again afterwards, and a test that did not look for the
-// argument would pass just as happily if the exception had quietly stopped
-// being one.
+// The last one is what the assertion on the ARGUMENT is for. A frame body is
+// the one place the exact bytes of an exchange are kept, and a test that only
+// counted frames would pass just as happily if the capture had quietly moved
+// to somewhere the payload had already been rewritten.
 func TestServerTraceCapturesFramesForALiveGateway(t *testing.T) {
 	dataDir := t.TempDir()
 	runAgenthub(t, dataDir, "", "server", "add", "traced", "--cmd", fakemcpBin, "--json")

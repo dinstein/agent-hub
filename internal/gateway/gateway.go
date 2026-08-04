@@ -774,9 +774,9 @@ func (g *gateway) catalog() (rt *router.Router, ready bool, pending int) {
 
 // Log file naming. Exported because the WRITER is here and the reader is in
 // internal/cli: `agenthub logs` resolves the name through these rather than
-// re-spelling it, on the same rule as downstream.ServerLogPath — a reader and
-// a writer that each compose the name are one refactor away from disagreeing,
-// and the symptom is an empty log rather than an error.
+// re-spelling it. A reader and a writer that each compose the name are one
+// refactor away from disagreeing, and the symptom is an empty log rather than
+// an error.
 const (
 	// LogFilePrefix and LogFileExt bracket a gateway log's file name. They
 	// are internal/proclog's, re-exported here because this package is the

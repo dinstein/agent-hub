@@ -114,11 +114,12 @@ type ServerInspect struct {
 	// operator can cross-check them against `agenthub secret ls`. Values
 	// are never resolved here.
 	Secrets []string `json:"secret_refs,omitempty"`
-	// TraceLog is where the recorded frames land, present only while
-	// tracing is on. It is printed because a trace nobody can find is a
-	// trace nobody reads — and because that file holds UNREDACTED payloads,
-	// which deserves to be named on the same line that says the switch is
-	// on.
+	// TraceLog is where the recorded frames land — the call ledger's
+	// directory, not a file of this server's own — and is present only while
+	// tracing is on. It is printed because a trace nobody can find is a trace
+	// nobody reads, and because what accumulates there is what the server
+	// actually said, which deserves to be named on the same line that says
+	// the switch is on.
 	TraceLog string `json:"trace_log,omitempty"`
 	// DockerRun is the exact command line the spawner would run for a
 	// containerized entry. "Isolation a config claims must be delivered" is
@@ -181,7 +182,7 @@ func (i ServerInspect) Human(w io.Writer) error {
 	}
 	if r.Trace {
 		d.field("trace", "on -> %s", dash(i.TraceLog))
-		d.cont("frames are recorded BEFORE redaction; 'agenthub server logs %s' reads them", r.ID)
+		d.cont("frames are captured at the connection, UNFILTERED; 'agenthub server logs %s' reads them", r.ID)
 	}
 	i.writeEnvAndHeaders(d)
 
@@ -461,12 +462,13 @@ type ServerTrace struct {
 	ID      string `json:"id"`
 	Trace   bool   `json:"trace"`
 	Changed bool   `json:"changed"`
-	// Path is where the frames land, printed even when switching off so the
-	// operator knows which file still holds what was already captured.
+	// Path is where the frames land — the call ledger's directory — printed
+	// even when switching off, so the operator knows what still holds the
+	// frames already captured.
 	Path string `json:"path"`
 }
 
-// Human renders the switch and the file behind it.
+// Human renders the switch and the ledger behind it.
 func (s ServerTrace) Human(w io.Writer) error {
 	state := "off"
 	if s.Trace {
@@ -478,7 +480,7 @@ func (s ServerTrace) Human(w io.Writer) error {
 	if !s.Trace {
 		return nil
 	}
-	_, err := fmt.Fprintf(w, "  frames are recorded before redaction; read them with "+
+	_, err := fmt.Fprintf(w, "  frames are captured at the connection, unfiltered; read them with "+
 		"'agenthub server logs %s'\n", s.ID)
 	return err
 }
@@ -490,19 +492,23 @@ func (s ServerTrace) Human(w io.Writer) error {
 // SERVICE, trace decides whether its wire is recorded — and folding them
 // would make one of the two invisible in the other's help text.
 //
-// The warning about redaction is in the command's own Long text, not only in
-// the docs: this is the one switch in the CLI that writes downstream results
-// to disk verbatim, and a person turning it on is exactly the person who has
-// not read the module documentation.
+// The warning is in the command's own Long text, not only in the docs: this
+// is the one switch in the CLI that writes downstream results to disk
+// verbatim, and a person turning it on is exactly the person who has not read
+// the module documentation.
 func (a *App) newServerTraceCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "trace <id> <on|off>",
 		Short: "Record the JSON-RPC frames exchanged with one server, for debugging",
-		Long: "Writes every request and response between agenthub and this server to\n" +
-			"<data>/logs/server-<id>.log, which 'agenthub server logs' reads back.\n\n" +
-			"Frames are captured at the connection, BEFORE any redaction, so the file\n" +
-			"holds whatever the server actually returned — turn it on to diagnose\n" +
-			"something, and off again afterwards. It is off by default, per server, and\n" +
+		Long: "Writes every request and response between agenthub and this server into\n" +
+			"the call ledger, which 'agenthub server logs' reads back. Each frame names\n" +
+			"the call that caused it, so 'agenthub calls show <call-id>' then tells that\n" +
+			"call's whole story.\n\n" +
+			"Frames are captured at the connection, before anything filters them, so what\n" +
+			"is recorded is whatever the server actually returned — turn it on to diagnose\n" +
+			"something, and off again afterwards. Bodies need the ledger's encryption key\n" +
+			"('agenthub calls enable'); without one you get each frame's method, size,\n" +
+			"duration and outcome but not its text. It is off by default, per server, and\n" +
 			"a running client picks the change up without being restarted.",
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {

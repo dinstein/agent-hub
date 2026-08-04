@@ -196,8 +196,10 @@ type ServerEntry struct {
 	// would turn expose-nothing into expose-everything.
 	Tools  []string `json:"tools,omitzero"`
 	Source string   `json:"source,omitempty"` // where the entry came from (cli/import/…)
-	// Trace records every JSON-RPC frame exchanged with this server to
-	// <data>/logs/server-<id>.log, which `agenthub server logs` reads back.
+	// Trace records every JSON-RPC frame exchanged with this server into the
+	// call ledger, which `agenthub server logs` reads back. It used to be a
+	// file of its own, <data>/logs/server-<id>.log, and that file is gone:
+	// each frame now carries the id of the call that caused it.
 	// Absent (false) is the default: payload capture is opt-in, per server.
 	//
 	// It is a CONNECTION-plane field, sitting beside Derive and Runtime, and
@@ -214,7 +216,10 @@ type ServerEntry struct {
 	// downstream of the capture redacts them either. This used to say "BEFORE
 	// leakguard redacts anything", which read as though a trace were the one
 	// unredacted copy; there is no leakguard, and a delivered result is as raw
-	// as a traced one.
+	// as a traced one. What bounds the cost instead is the ledger: a BODY is
+	// stored only when there is an evidence key to seal it with, so a trace
+	// on an installation that never ran `agenthub calls enable` records the
+	// method, size, duration and outcome of every frame and none of its text.
 	Trace bool `json:"trace,omitempty"`
 }
 

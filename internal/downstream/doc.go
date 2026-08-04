@@ -48,10 +48,10 @@
 //     resets it.
 //   - HTTP 410 Gone is terminal: ErrEndpointMoved is never retried and
 //     never respawned, and its error carries the "change the URL" hint.
-//   - Every JSON-RPC frame can be traced to <data>/logs/server-<name>.log
-//     (frames.go, off by default), and an initialization failure embeds
-//     the child's last 20 stderr LINES so a handshake crash is not reported
-//     as a bare deadline.
+//   - Every JSON-RPC frame can be traced into the call ledger, carrying the
+//     id of the call that caused it (frames.go, off by default), and an
+//     initialization failure embeds the child's last 20 stderr LINES so a
+//     handshake crash is not reported as a bare deadline.
 //
 // Derived instances (docs/modules/dataplane.md, derive.go / pool.go):
 //
