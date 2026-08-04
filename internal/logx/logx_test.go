@@ -72,6 +72,69 @@ func TestSetupDefaultLevelIsInfo(t *testing.T) {
 	}
 }
 
+// TestSinkLevelsAreIndependent is the point of the per-sink override: a
+// gateway raising the file to debug must not also raise stderr, which in
+// stdio mode is read by the MCP client that spawned it.
+func TestSinkLevelsAreIndependent(t *testing.T) {
+	var text, jsonBuf bytes.Buffer
+	logger := logx.Setup(logx.Config{
+		TextEnabled: true, TextWriter: &text, JSON: &jsonBuf,
+		TextLevel: slog.LevelWarn, JSONLevel: slog.LevelDebug,
+	})
+
+	logger.Debug("detail")
+	logger.Warn("trouble")
+
+	if strings.Contains(text.String(), "detail") {
+		t.Fatalf("text sink took a record below its own level: %q", text.String())
+	}
+	if !strings.Contains(text.String(), "trouble") {
+		t.Fatalf("text sink dropped a record at its own level: %q", text.String())
+	}
+	for _, want := range []string{"detail", "trouble"} {
+		if !strings.Contains(jsonBuf.String(), want) {
+			t.Fatalf("json sink missing %q: %s", want, jsonBuf.String())
+		}
+	}
+}
+
+// TestSinkLevelOverridesFollowLevel pins the precedence between the two: an
+// override moves one sink, and the sink without one keeps following Level
+// rather than reverting to the info default.
+func TestSinkLevelOverridesFollowLevel(t *testing.T) {
+	var text, jsonBuf bytes.Buffer
+	logger := logx.Setup(logx.Config{
+		TextEnabled: true, TextWriter: &text, JSON: &jsonBuf,
+		Level: slog.LevelDebug, TextLevel: slog.LevelError,
+	})
+
+	logger.Debug("detail")
+
+	if strings.Contains(text.String(), "detail") {
+		t.Fatalf("TextLevel did not override Level: %q", text.String())
+	}
+	if !strings.Contains(jsonBuf.String(), "detail") {
+		t.Fatalf("json sink should have followed Level=debug: %s", jsonBuf.String())
+	}
+}
+
+// TestDebugOverridesSinkLevels: AGENTHUB_DEBUG is the blunt switch, so a
+// per-sink setting must not be able to hold part of it back — a debug run
+// that silently kept one sink quiet is the failure this rules out.
+func TestDebugOverridesSinkLevels(t *testing.T) {
+	var text, jsonBuf bytes.Buffer
+	logger := logx.Setup(logx.Config{
+		TextEnabled: true, TextWriter: &text, JSON: &jsonBuf,
+		Debug: true, TextLevel: slog.LevelError, JSONLevel: slog.LevelError,
+	})
+
+	logger.Debug("detail")
+
+	if !strings.Contains(text.String(), "detail") || !strings.Contains(jsonBuf.String(), "detail") {
+		t.Fatalf("Debug did not override the per-sink levels: text=%q json=%s", text.String(), jsonBuf.String())
+	}
+}
+
 // TestDebugEnvDoesNotBypassScrubbing is the acceptance test for the
 // "AGENTHUB_DEBUG must not unlock secrets" invariant: with AGENTHUB_DEBUG=1
 // debug-level records do flow (verbosity is raised), but their secrets are
