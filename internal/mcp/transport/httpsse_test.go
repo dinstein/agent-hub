@@ -19,7 +19,8 @@ import (
 // stream carrying every server→client message, one POST address handed out
 // by the first event.
 //
-// DEPRECATED-UPSTREAM(http+sse, earliest-removal: deprecated 2025-03-26)
+// DEPRECATED-UPSTREAM(http+sse, earliest-removal: none) — deprecated
+// 2025-03-26; kept on the read side, see httpsse.go
 type legacyServer struct {
 	*fakeServer
 	events chan any // pushed onto the SSE stream

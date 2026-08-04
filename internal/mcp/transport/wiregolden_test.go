@@ -99,7 +99,8 @@ func TestStreamableHTTPWireGolden(t *testing.T) {
 // handshake, then initialize and notifications/initialized POSTed to the
 // server-supplied endpoint.
 //
-// DEPRECATED-UPSTREAM(http+sse, earliest-removal: deprecated 2025-03-26)
+// DEPRECATED-UPSTREAM(http+sse, earliest-removal: none) — deprecated
+// 2025-03-26; kept on the read side, see httpsse.go
 func TestHTTPSSEWireGolden(t *testing.T) {
 	ls := newLegacyServer(t, "/messages?sid=golden")
 	tr, err := DialHTTPSSE(testCtx(t), HTTPConfig{
