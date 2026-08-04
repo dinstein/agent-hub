@@ -304,6 +304,46 @@ func TestAuditRecordsUnsupportedProtocolToolAttempt(t *testing.T) {
 	}
 }
 
+// A finish that cannot be recorded must not touch the response. By the time
+// the finish is written the downstream has run and its side effect has
+// happened; an error at that point tells the client a call failed that did
+// not, and a client that retries makes the side effect happen twice.
+//
+// The failure is induced where the span reads its policy: an unknown result
+// mode is the one finishResponse error that needs no wedged disk.
+func TestLedgerFinishFailureDoesNotReplaceTheServedResponse(t *testing.T) {
+	resolver := testResolver(t.TempDir())
+	seedRegistry(t, resolver, "fake")
+	setCallsPolicy(t, resolver, func(p *registry.CallsPolicy) {})
+	g, c, _ := startGateway(t, Config{
+		ClientID: "finish-fails", Resolver: resolver,
+		Secrets: ledgerSecretResolver(ledgerTestKey()),
+		Dial:    scriptedDial(map[string]*fakemcp.Script{"fake": fakemcp.Minimal("echo")}),
+	})
+	c.initialize(mcp.ProtocolVersion, mcp.ClientCapabilities{})
+	waitForTools(t, c, "fake__echo")
+	g.audit.mu.Lock()
+	g.audit.policy.ResultMode = "no-such-mode"
+	g.audit.mu.Unlock()
+
+	resp := c.call(mcp.MethodToolsCall, mcp.CallToolParams{Name: "fake__echo", Arguments: []byte(`{"n":1}`)})
+	if resp.Error != nil {
+		t.Fatalf("a call that RAN was reported as failed because its finish "+
+			"could not be recorded: %+v", resp.Error)
+	}
+	// The hole in the history is real, and it is only the finish: everything
+	// recorded before the call ran was recorded normally.
+	events := toolCalls(readLedgerEvents(t, resolver))
+	for _, e := range events {
+		if e.Kind == calllog.EventFinished {
+			t.Fatalf("finished record written despite the failure: %+v", e)
+		}
+	}
+	if len(events) != 2 {
+		t.Fatalf("events = %d, want received+routed: %+v", len(events), events)
+	}
+}
+
 func TestAuditUnavailableBlocksBeforeTheGateChain(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "fake")

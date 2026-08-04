@@ -745,11 +745,19 @@ func (g *gateway) shutdown() {
 
 // reply writes one frame upstream; write failures are logged, not fatal to
 // the caller (a dead pipe surfaces as EOF in the read loop).
+//
+// A ledger that cannot record the FINISH is logged and nothing else. It used
+// to replace the response with an internal error, and that was fail-closed
+// applied where it protects nothing: by the time a finish is written the
+// downstream has already run and its side effect has already happened.
+// Refusing then cannot un-run it — it only tells the client a call failed
+// that did not, and a client that retries makes the side effect happen twice.
+// The gap in the history is real, and the log line is what says so.
 func (g *gateway) reply(msg any) {
 	if res, ok := msg.(*mcp.Response); ok {
 		if err := g.ledgerFinishResponse(res); err != nil {
-			g.log.Error("audit finish failed; replacing tools/call response", "id", res.ID.String(), "error", err)
-			msg = mcp.NewErrorResponse(res.ID, ledgerRPCError(err))
+			g.log.Error("ledger finish failed; the response is served anyway",
+				"id", res.ID.String(), "error", err)
 		}
 	}
 	if err := g.fw.WriteFrame(msg); err != nil {
