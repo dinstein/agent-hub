@@ -318,6 +318,16 @@ command line is the more specific statement and **replaces the stored set as a w
 the three flags is given (`daemon.resolveHTTPFace`) — merging would let a confirmation stored months ago
 for one address authorise a different one named today.
 
+Those three keys are the one family a **reduced (release) `config ls` leaves out** (`withheldKeyPrefix`,
+`internal/cli/config.go`), in both output modes, for the same reason the Daemon group is withheld: they
+configure a face that only exists while a daemon runs, and a page that recommends binding it while
+withholding every command that starts, inspects or credentials it names a switch with no path around it.
+The decision lives in the CLI rather than in the key table, because it is about what one front end
+teaches — the GUI reads the same table through `GET /v1/config` and keeps listing all three, which is how
+a hub with no command line gets an address at all. **Withholding is not disabling**, exactly as for a
+withheld command: `config get http.addr` and `config set http.addr` answer in a release build, and the
+daemon honours whatever is stored.
+
 ### Invariants and failure directions
 
 **Every operation is three steps in an order that cannot change**: validate the arguments (rejection

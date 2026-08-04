@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -16,6 +17,27 @@ import (
 
 // resultBudgetPrefix mirrors the confops key family `resultBudget.<id|*>`.
 const resultBudgetPrefix = confops.ResultBudgetPrefix
+
+// withheldKeyPrefix is the one key family a reduced (release) help surface
+// does not teach: the daemon's own HTTP listener, `http.addr` and the two
+// confirmations that go with it.
+//
+// It is withheld for the same reason the whole Daemon group is. Those three
+// keys configure a face that only exists while a daemon is running, and a
+// shipped build that teaches how to bind it withholds every command that
+// starts it, reads its state or mints a credential for it — so the listing
+// would name a switch with no path around it.
+//
+// The decision lives HERE, not in the confops key table, because it is about
+// what one front end teaches rather than what a key means: the GUI reads the
+// same table through the control plane and keeps listing all three, which is
+// how a hub with no command line gets an address at all.
+//
+// Withholding is not disabling, exactly as for a withheld command: `config
+// get http.addr` and `config set http.addr` answer in a release build, and
+// the daemon honors whatever is stored. What narrows is the listing, which is
+// the recommendation.
+const withheldKeyPrefix = "http."
 
 // ConfigEntry is one governance key as both output modes render it.
 type ConfigEntry struct {
@@ -134,6 +156,9 @@ func (a *App) newConfigLsCmd() *cobra.Command {
 			entries := confops.ListGovernance(store.Snapshot().Governance.V)
 			list := ConfigList{Entries: make([]ConfigEntry, 0, len(entries))}
 			for _, e := range entries {
+				if a.reducedHelp && strings.HasPrefix(e.Key, withheldKeyPrefix) {
+					continue
+				}
 				list.Entries = append(list.Entries, configEntryOf(e))
 			}
 			return a.printer().Emit(list, warnings...)

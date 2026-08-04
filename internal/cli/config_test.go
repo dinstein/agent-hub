@@ -110,3 +110,71 @@ func TestConfigResultBudget(t *testing.T) {
 		t.Errorf("negative budget exit = %d, want %d", code, ExitUsage)
 	}
 }
+
+// TestReleaseConfigLsWithholdsTheHTTPFace pins the reduced listing from both
+// sides. A release build must not RECOMMEND the daemon's HTTP listener — it
+// withholds every command that would then start, inspect or credential it —
+// and a development build must still show all three, because that is where
+// the face is worked on.
+//
+// Both output modes are asserted: `--json` is what a script reads, and a
+// listing that dropped a key from the table but kept it in the envelope would
+// be two answers to the same question.
+func TestReleaseConfigLsWithholdsTheHTTPFace(t *testing.T) {
+	setDataDir(t)
+
+	code, out, stderr := runCLIReleaseHelp(t, "", "config", "ls", "--json")
+	if code != ExitOK {
+		t.Fatalf("release `config ls` exit = %d, want %d (stderr %s)", code, ExitOK, stderr)
+	}
+	var release ConfigList
+	decodeInto(t, out, &release)
+	for _, e := range release.Entries {
+		if strings.HasPrefix(e.Key, withheldKeyPrefix) {
+			t.Errorf("release `config ls` lists the withheld key %q: %+v", e.Key, release.Entries)
+		}
+	}
+	// The rest of the table is untouched — this withholds one family, it does
+	// not empty the listing.
+	if len(release.Entries) == 0 {
+		t.Error("release `config ls` listed nothing at all")
+	}
+	if _, human, _ := runCLIReleaseHelp(t, "", "config", "ls"); strings.Contains(human, withheldKeyPrefix) {
+		t.Errorf("release `config ls` human output still names the withheld keys:\n%s", human)
+	}
+
+	var dev ConfigList
+	decodeInto(t, mustRun(t, "", "config", "ls", "--json"), &dev)
+	found := 0
+	for _, e := range dev.Entries {
+		if strings.HasPrefix(e.Key, withheldKeyPrefix) {
+			found++
+		}
+	}
+	if found != 3 {
+		t.Errorf("dev `config ls` listed %d %s* keys, want 3: %+v", found, withheldKeyPrefix, dev.Entries)
+	}
+}
+
+// TestReleaseStillReadsAndWritesTheWithheldKeys is the load-bearing half:
+// withholding a key from the listing must not become refusing it, exactly as
+// hiding a command must not become disabling it. The GUI can store an address
+// on this same installation, and a release CLI that could not read it back
+// would report a hub's own listener as unset.
+func TestReleaseStillReadsAndWritesTheWithheldKeys(t *testing.T) {
+	setDataDir(t)
+
+	code, _, stderr := runCLIReleaseHelp(t, "", "config", "set", "http.addr", "localhost:7777")
+	if code != ExitOK {
+		t.Fatalf("release `config set http.addr` exit = %d, want %d (stderr %s)", code, ExitOK, stderr)
+	}
+	code, out, stderr := runCLIReleaseHelp(t, "", "config", "get", "http.addr", "--json")
+	if code != ExitOK {
+		t.Fatalf("release `config get http.addr` exit = %d, want %d (stderr %s)", code, ExitOK, stderr)
+	}
+	var entry ConfigEntry
+	decodeInto(t, out, &entry)
+	if entry.Value != "localhost:7777" {
+		t.Errorf("release `config get http.addr` = %+v, want the value just written", entry)
+	}
+}
