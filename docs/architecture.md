@@ -230,8 +230,10 @@ compare these stage keys — renaming one would leave those tests passing while 
 
 **The audit wrapper is strict observability, not a gate.** It persists the raw `tools/call` parameters
 before parsing and the routed identity before the gate chain, and gives every exit a `finished` event.
-A failed write, key lookup or storage-pressure check refuses the call before `pipeline.Execute`, but
-the wrapper never changes scope, tier, arguments or results.
+A failed write, key lookup or storage-pressure check costs the record and never the call: the wrapper
+reports the failure and `pipeline.Execute` runs anyway. It never changes scope, tier, arguments or
+results, and it cannot withhold one — an observer that can take the tools away is a gate, whatever it
+is called.
 
 ---
 

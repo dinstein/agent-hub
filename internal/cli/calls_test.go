@@ -17,14 +17,21 @@ import (
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
-func TestAuditDefaultsAreBoundedAndStrict(t *testing.T) {
+// The bounds are the strict half: every one is set by default, so an
+// installation that never opens the configuration still has a capped ledger.
+// What `pressure` reports is the other half and is deliberately NOT strict —
+// c08fa41 made both tiers fail open, so crossing a bound costs the record and
+// never the call. This asserted "block" until then, and the assertion
+// outlived the behaviour because the value it checks is a constant that
+// changed on the same side.
+func TestAuditDefaultsAreBoundedAndFailOpen(t *testing.T) {
 	setDataDir(t)
 	var got CallsStatus
 	decodeInto(t, mustRun(t, "", "calls", "status", "--json"), &got)
 	if got.Enabled || got.Arguments != "full" || got.Results != "truncated" || got.ResultBytes <= 0 {
 		t.Fatalf("default calls policy = %+v", got)
 	}
-	if got.Durability != "sync" || got.RetentionDays <= 0 || got.MaxBytes <= 0 || got.MinFreeBytes <= 0 || got.Pressure != "block" {
+	if got.Durability != "sync" || got.RetentionDays <= 0 || got.MaxBytes <= 0 || got.MinFreeBytes <= 0 || got.Pressure != pressureDrop {
 		t.Fatalf("default bounds = %+v", got)
 	}
 }
