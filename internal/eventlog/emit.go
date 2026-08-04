@@ -58,6 +58,8 @@ func Level(kind Kind) slog.Level {
 // already bound to its server, instance, client and pid — slog's JSON handler
 // does not deduplicate, so passing them again would emit each field twice on
 // one line, and a reader taking the last (encoding/json included) reads the
+// second value.
+//
 // What it does add is the half of the record whose MEANING is fixed: the
 // transition, the generation, and the count — the last under the noun
 // CountNoun gives its kind, so the two streams cannot disagree about what the
