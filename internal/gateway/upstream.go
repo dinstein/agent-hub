@@ -582,7 +582,19 @@ func (g *gateway) runCall(ctx context.Context, req *mcp.Request, t callTarget, a
 		g.reply(mcp.NewErrorResponse(req.ID, callError(err)))
 		return
 	}
-	g.log.Debug("tools/call served", g.callFields(req, route, started)...)
+	// INFO, and the level is the point. This is the one thing the hub exists
+	// to do, and it was the only call outcome below the default: a failure is
+	// warn, a denial is warn, a cancellation is info, and success was debug.
+	// The ledger that would otherwise hold the record is disabled unless the
+	// operator enables it (registry.CallsPolicy.Enabled zero-values to
+	// false), and the event log records server lifecycle, not calls — so on
+	// a default installation a call that WORKED left no trace in any of the
+	// three streams, and "did the agent ever call this tool", "which tool is
+	// slow" and "was this server used at all" had no answer to read.
+	//
+	// One line per call is affordable: callFields is bounded and carries no
+	// arguments, and internal/jsonl rotates the file at 32 MiB.
+	g.log.Info("tools/call served", g.callFields(req, route, started)...)
 	// replyResult owns the marshal so resultType normalization (session
 	// generation, not downstream generation) has exactly one enforcement
 	// point for every result-shaped answer.

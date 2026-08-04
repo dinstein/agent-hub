@@ -195,10 +195,15 @@ func TestDeniedToolCallIsLoggedWithItsGateAndCode(t *testing.T) {
 	}
 }
 
-// The success line exists so a call can be followed end to end when a reader
-// asks for it, and sits at Debug so an agent making hundreds of calls does
-// not bury the failures at the level everyone reads.
-func TestServedToolCallIsLoggedAtDebug(t *testing.T) {
+// A served call is the one thing the hub exists to do, so it is recorded at
+// the level that is on by default. It sat at Debug to keep an agent's
+// hundreds of calls from burying the failures — but the failures are at Warn,
+// a level of their own that `logs --level warn` isolates, so hiding the
+// successes bought a separation the filter already provides. What it cost was
+// the record itself: the ledger is disabled unless an operator turns it on
+// and the event log tracks servers rather than calls, so a call that WORKED
+// was written down in none of the three streams.
+func TestServedToolCallIsLoggedAtInfo(t *testing.T) {
 	t.Parallel()
 	resolver := testResolver(t.TempDir())
 	seedRegistry(t, resolver, "alpha")
@@ -212,8 +217,8 @@ func TestServedToolCallIsLoggedAtDebug(t *testing.T) {
 	callToolOK(t, c, "alpha__echo")
 
 	rec := sink.find(t, "tools/call served")
-	if rec["level"] != slog.LevelDebug.String() {
-		t.Errorf("a served call logged at %s, want DEBUG", rec["level"])
+	if rec["level"] != slog.LevelInfo.String() {
+		t.Errorf("a served call logged at %s, want INFO", rec["level"])
 	}
 	assertCallIdentity(t, rec, "alpha", "echo")
 }
