@@ -295,7 +295,7 @@ agenthub server trace linear off    # turn off when done
 
 Every interaction with a downstream, in one local ledger: the lifecycle of every `tools/call` at the client boundary, and — for a server whose trace is on (§8) — the frames at the downstream one, joined by the call id.
 
-**Two tiers.** Metadata is **always recorded** and costs nothing anybody has to switch on: what was called, by whom, against which server, how it ended. Evidence — the bodies — is **off by default** and is what `calls enable` sets up, because storing them means a key, an fsync per write, and a call refused when the disk is full.
+**Two tiers.** Metadata is **always recorded** and costs nothing anybody has to switch on: what was called, by whom, against which server, how it ended. Evidence — the bodies — is **off by default** and is what `calls enable` sets up, because storing them means a key and an fsync per write.
 
 ```bash
 agenthub calls status                      # effective capture, durability, retention; is evidence on
@@ -309,7 +309,7 @@ agenthub calls show <call-id> --payloads   # + request, effective arguments, res
 agenthub calls disable                     # stops storing bodies; metadata, keys and history stay
 ```
 
-- **Evidence is fail-closed: a ledger that cannot write blocks the call.** Missing key, disk full, `maxBytes` or `minFreeBytes` crossed → the client gets a failure, never an unrecorded success. That is why `enable` is a decision, not a default. **Metadata is fail-open** and can never refuse a call: a call that cannot be described still runs.
+- **The ledger never refuses a call — both tiers fail open.** A missing key, a full disk, `maxBytes` or `minFreeBytes` crossed: the call runs and the history gets a hole, logged at Error, rather than the client getting a failure that did not happen. Blocking protected nothing, because the record is already lost by the time the write fails, and the finish is written *after* the downstream has run — so refusing there reported a side effect as failed once it had already happened, and invited a retry that would repeat it. Treat a gap in the history as a disk problem to fix, never as evidence that a call did not run.
 - **Three events per call, plus its frames**: `received` (before parsing), `routed` (a target was chosen), `finished` (outcome), and `sent`/`recv` per attempt when the server is traced. Every OTHER upstream method — `initialize`, `tools/list`, `ping` — leaves a received/finished pair too, so "did this client reach us at all" is answerable. `method` says what was asked; `surface` says whether it hit one of agenthub's own tools (`meta`), a grouped listing (`group`) or a name that routes straight through (`tool`). No `routed` means it never reached a server; no `finished` means incomplete — `stats` counts those separately.
 - **The filters match events, not calls**, and are compared verbatim: `--server` / `--tool` can only ever hit `routed` and `finished`, which is where those fields exist, and a value outside the vocabulary (`success`, `tool_error`, `denied`, `busy`, `protocol_error`, `cancelled`) returns an empty list rather than an error.
 - **The `CALL` column is truncated to 12 characters and `show` wants all 32** — take `callId` from `agenthub --json calls tail`.
