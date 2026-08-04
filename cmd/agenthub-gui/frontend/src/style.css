@@ -2200,7 +2200,12 @@ td {
   text-align: left;
   padding: 9px 10px;
   border-bottom: 1px solid var(--line);
-  vertical-align: top;
+  /* Baseline, not top. A row mixes plain text with controls that carry their
+   * own padding — a 38px button, a pill badge — so aligning the cells' top
+   * edges puts every label on a different line: the button's sits a padding
+   * lower than the text beside it. Aligning first baselines instead lands the
+   * row's words on one line and lets the taller control grow around it. */
+  vertical-align: baseline;
 }
 
 th {
@@ -2223,6 +2228,20 @@ tr:last-child td {
 .observe-table th:nth-child(-n + 4),
 .observe-table td:nth-child(-n + 4) {
   white-space: nowrap;
+}
+
+/* A trailing column whose header is empty holds the row's actions, not a
+ * field — that empty header is what says so, and so it is also what selects
+ * the column. Auto table layout hands the column a share of the table's
+ * slack, and a button left-aligned inside it stops short of the edge the eye
+ * reads the column against; every row's action then starts at a different
+ * distance from the table's right border. Pin the column to that border. */
+table:has(th:last-child:empty) :is(th, td):last-child {
+  text-align: right;
+}
+
+table:has(th:last-child:empty) td:last-child > .controls {
+  justify-content: flex-end;
 }
 
 /* Row hover is a readability aid on wide tables — it ties a status cell on
