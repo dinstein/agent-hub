@@ -124,3 +124,57 @@ func TestALoginThatNeverDiscoveredLogsNoChain(t *testing.T) {
 		t.Fatalf("a non-discovery failure invented a chain: %s", buf.String())
 	}
 }
+
+// The case above arrives as a plain error, which is the easy half. The half
+// that matters is a FlowError raised AFTER discovery — a browser that would
+// not open, a token exchange refused — because that is what nearly every
+// failure in oauthflow is, and it satisfies an errors.As on the type while
+// carrying nothing about the chain.
+func TestAFlowErrorFromALaterPhaseLogsNoChain(t *testing.T) {
+	flow := &fakeFlow{err: &oauthflow.FlowError{
+		Type: oauthflow.ErrorTypeAuthorization,
+		Err:  errNotDiscovery,
+	}}
+	m, buf := managerWithLog(t, flow)
+
+	sess, err := m.Start(Request{ServerID: "linear", Issuer: "https://as.example"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	waitFor(t, "the login to fail", func() bool {
+		s, gerr := m.Get(sess.ID)
+		return gerr == nil && s.Phase == PhaseFailed
+	})
+
+	// `status:""` is worse than silence: it is a chain summary, so a reader
+	// counting candidates gets zero and concludes the walk found nothing,
+	// when in fact no walk is being described at all.
+	if strings.Contains(buf.String(), "oauth discovery finished") {
+		t.Fatalf("a post-discovery FlowError described a chain that was never walked: %s", buf.String())
+	}
+}
+
+// A status with no candidates is not the empty chain the guard above rejects.
+// DiscoveryProtected says the RFC 9728 hop succeeded and the walk stopped
+// there; that is the diagnosis, and dropping it because no candidate line
+// follows would lose the one fact the error carries.
+func TestAStatusWithoutCandidatesIsStillLogged(t *testing.T) {
+	flow := &fakeFlow{err: &oauthflow.FlowError{
+		Type:      oauthflow.ErrorTypeDiscovery,
+		Discovery: oauthflow.DiscoveryProtected,
+	}}
+	m, buf := managerWithLog(t, flow)
+
+	sess, err := m.Start(Request{ServerID: "linear", Issuer: "https://as.example"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	waitFor(t, "the login to fail", func() bool {
+		s, gerr := m.Get(sess.ID)
+		return gerr == nil && s.Phase == PhaseFailed
+	})
+
+	if !strings.Contains(buf.String(), `"status":"`+string(oauthflow.DiscoveryProtected)+`"`) {
+		t.Fatalf("the status was dropped for carrying no candidates: %s", buf.String())
+	}
+}

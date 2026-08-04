@@ -437,7 +437,19 @@ func (m *Manager) logDiscovery(snap Session, res *oauthflow.LoginResult, loginEr
 		fe       *oauthflow.FlowError
 	)
 	switch {
-	case loginErr != nil && errors.As(loginErr, &fe):
+	// The STATUS, not merely the error's Go type, is what says this failure
+	// came out of the chain. FlowError is what nearly everything in oauthflow
+	// returns — a browser that would not open, a token exchange refused — and
+	// every branch that is not about discovery leaves Discovery at its zero
+	// value. Matching on the type alone therefore described a walk that never
+	// happened, as `status="" candidates=0`: the empty chain the default case
+	// below exists to avoid, reached through the door beside it.
+	//
+	// A set status with no attempts is a different thing and still logged.
+	// DiscoveryProtected on a document that lists no authorization_servers
+	// says where the walk stopped, which is the answer even when no candidate
+	// line follows it.
+	case loginErr != nil && errors.As(loginErr, &fe) && fe.Discovery != "":
 		status, attempts = fe.Discovery, fe.Attempted
 	case res != nil && res.Discovery != nil:
 		status, attempts = res.Discovery.Status, res.Discovery.Attempted
