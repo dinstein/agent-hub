@@ -829,6 +829,17 @@ the tree could open.
 **usage error, not an empty result**: the vocabulary is closed precisely so a caller can be told it got a
 name wrong. `--follow` tails the file rather than holding a subscription, so it survives a daemon restart.
 
+**Current assembly status — the `events` table hides one of two identities.** `eventSubject`
+(`internal/cli/events.go`) fills a single SUBJECT column from the first non-empty of server, client,
+session, so a record carrying a server AND the client whose gateway observed it shows only the server —
+and every server-scope event is such a record. The reader also cannot tell which of the three kinds a
+name is. `5df8822` fixed exactly this in the GUI, whose Events table now gives Server, Client and the
+session-as-client their own columns, and its reasoning transfers word for word: a name under no header
+of its own is a name a reader has to guess the type of. Nothing is lost from `--json` — `EventRow`
+carries both fields — so this is a rendering gap rather than a recording one. It is recorded rather
+than fixed because adding a column changes the shape of a command's output, which is a feature branch
+and not a tidy pass; the GUI change is the precedent for what it should look like.
+
 **Current assembly status — `logs -f` can re-print a record.** `readLogBatch` (`internal/cli/logs.go`)
 takes the file size from a `stat` *before* reading, then reads from the old offset to EOF and stores that
 pre-read size as the new offset. Anything a writer appends between the `stat` and the reader reaching EOF
