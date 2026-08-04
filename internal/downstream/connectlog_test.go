@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -32,6 +35,15 @@ func findLine(t *testing.T, out, msg string) string {
 	}
 	t.Fatalf("no %q record in:\n%s", msg, out)
 	return ""
+}
+
+func mustURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse %q: %v", raw, err)
+	}
+	return u
 }
 
 // The `connected` event says a connection exists and how many tools came with
@@ -147,3 +159,82 @@ func TestSpawningAStdioDownstreamIsRecorded(t *testing.T) {
 		t.Fatalf("the child environment reached the log: %s", line)
 	}
 }
+
+// The passive-refresh ladder ended every rung in a silent `return resp, nil`,
+// so a 401 could not be told apart from "we never tried", "the refresh broke"
+// and "the fresh credential was refused too" — three fixes, one symptom.
+func TestUnauthorizedReplayIsRecorded(t *testing.T) {
+	t.Parallel()
+	var seen int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		seen++
+		if seen == 1 {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	rt := newAuthRoundTripper(http.DefaultTransport, rotatingToken{}, mustURL(t, srv.URL),
+		serverEvents{log: log})
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	line := buf.String()
+	if !strings.Contains(line, "replayed an unauthorized request with a refreshed credential") {
+		t.Fatalf("the replay was not recorded: %s", line)
+	}
+	// Both statuses, because a replay that comes back 401 AGAIN is the case
+	// that sends people to the vault when the problem is scope or audience.
+	if !strings.Contains(line, `"was":401`) || !strings.Contains(line, `"now":200`) {
+		t.Fatalf("the replay record does not carry both statuses: %s", line)
+	}
+	if strings.Contains(line, "fresh-credential") || strings.Contains(line, "stale-credential") {
+		t.Fatalf("a credential reached the log: %s", line)
+	}
+}
+
+// A zero serverEvents is a supported value — Emit guards its nil logger and
+// several tests construct it — so the auth path must not turn it into a panic
+// on whichever request happens to get a 401.
+func TestUnauthorizedPathToleratesEventsWithoutALogger(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	rt := newAuthRoundTripper(http.DefaultTransport, staticToken("SECRET"),
+		mustURL(t, srv.URL), serverEvents{})
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := rt.RoundTrip(req) // must not panic
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	_ = resp.Body.Close()
+}
+
+// rotatingToken hands back a stale credential and renews to a different one,
+// so the refresh produces something the server has not already rejected —
+// which is what puts the replay branch on the path.
+type rotatingToken struct{}
+
+func (rotatingToken) Token(context.Context) (string, bool, error) {
+	return "stale-credential", true, nil
+}
+func (rotatingToken) Refresh(context.Context) (string, error) { return "fresh-credential", nil }

@@ -335,6 +335,20 @@ func (e serverEvents) emit(r eventlog.Record, msg string, attrs ...any) {
 	e.stream.Emit(e.log, r, msg, attrs...)
 }
 
+// logger returns the connection's bound logger, or a discarding one.
+//
+// A nil log is a SUPPORTED state of serverEvents — Emit guards it, and the
+// zero value is what several tests construct — so a caller that wants the
+// logger for something other than an event must guard it the same way.
+// Reaching for e.log directly is how the zero value silently becomes a panic
+// on whichever path happens to be exercised next.
+func (e serverEvents) logger() *slog.Logger {
+	if e.log == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	return e.log
+}
+
 // boundServerLog binds one connection's identity onto a logger: the server
 // id always, the derive key when this is a derived instance.
 //

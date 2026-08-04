@@ -181,19 +181,59 @@ func (a *authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	if !shouldRefreshOnStatus(resp.StatusCode) {
 		return resp, nil
 	}
+	// Everything below is the passive-refresh ladder, and every rung of it
+	// ended in a silent `return resp, nil`. An operator saw a 401 and could
+	// not tell whether a refresh had even been attempted, whether it worked,
+	// or whether the replay came back 401 again — three different problems
+	// with three different fixes and one indistinguishable symptom.
+	//
+	// Debug throughout: a healthy connection never reaches here, and the
+	// outcome this produces is already reported at its own level upstream.
+	log := a.events.logger()
 	replay, ok := replayable(req)
 	if !ok {
-		return resp, nil // cannot rebuild the body: never guess, never replay
+		// Not a failure of ours: a request whose body cannot be rebuilt must
+		// never be guessed at, so the 401 stands. But "agenthub did not even
+		// retry" reads as a bug until the reason is written down.
+		log.Debug("not replaying an unauthorized request: its body cannot be rebuilt",
+			"status", resp.StatusCode, "method", req.Method)
+		return resp, nil
 	}
 	fresh, rerr := a.refresh(req.Context(), tok)
 	if rerr != nil || fresh == "" || fresh == tok {
 		// Refresh failed, or produced the very credential that was just
 		// rejected. Hand the original 401/403 back: it carries the server's
 		// WWW-Authenticate hint, which is what the operator needs.
+		//
+		// One branch in code, three answers to the operator — the renewal
+		// broke, there was nothing to renew, or the renewal returned what the
+		// server had already refused (a revoked grant, or a vault holding a
+		// credential nobody rotated). Named apart so the log does not merge
+		// them back into the branch they share.
+		reason := "refresh returned the credential that was just rejected"
+		switch {
+		case rerr != nil:
+			reason = "refresh failed"
+		case fresh == "":
+			reason = "no credential to refresh"
+		}
+		log.Debug("not replaying an unauthorized request", "status", resp.StatusCode,
+			"reason", reason, "error", rerr)
 		return resp, nil
 	}
 	drain(resp)
-	return a.base.RoundTrip(a.attach(replay, fresh))
+	replayed, rtErr := a.base.RoundTrip(a.attach(replay, fresh))
+	if rtErr != nil {
+		log.Debug("the replay after a refresh did not complete", "error", rtErr)
+		return nil, rtErr
+	}
+	// Whether the fresh credential actually helped. A replay that comes back
+	// 401 again is the case that sends people to the wrong place: the vault is
+	// fine, the refresh worked, and the server still says no — which is a
+	// scope or audience problem, not a credential one.
+	log.Debug("replayed an unauthorized request with a refreshed credential",
+		"was", resp.StatusCode, "now", replayed.StatusCode)
+	return replayed, nil
 }
 
 // token returns the cached credential, loading it from the vault on first
