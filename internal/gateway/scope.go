@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"log/slog"
+
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/router"
 	"github.com/dinstein/agent-hub/internal/scope"
@@ -94,6 +96,38 @@ func (g *gateway) logScopeShape(reason string, es *scope.EffectiveScope) {
 	for _, d := range es.Diags {
 		g.log.Warn("scope diagnostic", "layer", d.Layer.String(),
 			"origin", d.Origin, "detail", d.Message)
+	}
+	g.logScopeConvergence()
+}
+
+// logScopeConvergence writes, at Debug, the shape each layer of the chain
+// leaves behind, in the order they are folded.
+//
+// The Info line above says what a session ended up with; this says which
+// layer took the rest away. The chain is an intersection and no layer can
+// widen, so a client seeing nothing has exactly ONE layer to blame — and
+// picking it out of a global rule, a server's own allow list, a profile and a
+// session overlay was otherwise guesswork against three config files.
+//
+// Gated on the level, which is not a micro-optimisation: Explain re-folds the
+// layer list once per layer, so the work is real and must not be done when
+// nobody will read it. Off, it costs one Enabled call.
+//
+// A failure is swallowed to Debug. This is the explanation of a scope, not
+// the scope: a diagnostic able to disturb a resolution would be a worse
+// trade than the missing explanation.
+func (g *gateway) logScopeConvergence() {
+	if g.scopeRes == nil || !g.log.Enabled(g.lifeCtx, slog.LevelDebug) {
+		return
+	}
+	steps, err := g.scopeRes.Explain(g.scopeKey())
+	if err != nil {
+		g.log.Debug("scope convergence unavailable", "error", err)
+		return
+	}
+	for _, s := range steps {
+		g.log.Debug("scope layer applied", "layer", s.Layer.String(),
+			"origin", s.Origin, "servers", s.Servers, "tools", s.Tools)
 	}
 }
 

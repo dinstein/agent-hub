@@ -29,6 +29,53 @@ func pickDiscovery(layers []ScopeLayer) (DiscoveryMode, LayerKind, bool) {
 	return disc, from, best >= 0
 }
 
+// Step is one layer's contribution to a resolution: the layer that was
+// applied, where it came from, and the shape that survived it.
+//
+// Counts rather than names, matching what a finished scope is reported as:
+// the question a trace answers is which layer moved the number, and a step
+// growing with the catalog is unreadable exactly where it is wanted.
+type Step struct {
+	Layer   LayerKind
+	Origin  string
+	Servers int
+	Tools   int
+}
+
+// Converge folds layers one at a time and reports the shape after each — the
+// same fold Merge performs, stopped at every rung.
+//
+// It exists because a finished scope cannot say WHICH layer narrowed it. The
+// chain is an intersection and no layer can widen, so a client that sees
+// nothing has exactly one layer to blame, and the result alone never names
+// it. Re-folding prefixes is safe precisely because Merge is pure: this
+// computes nothing the resolver did not already compute and mutates nothing,
+// which is also why it may be called off the resolution path entirely.
+//
+// An empty layer list yields no steps rather than one describing the bare
+// catalog: a fold with nothing folded in is not a narrowing, and reporting it
+// as one would put a spurious step in front of every trace.
+func Converge(layers []ScopeLayer, cat router.Catalog) ([]Step, error) {
+	steps := make([]Step, 0, len(layers))
+	for i := range layers {
+		es, err := Merge(layers[:i+1], cat)
+		if err != nil {
+			return nil, err
+		}
+		tools := 0
+		for _, view := range es.Servers {
+			tools += len(view.Tools)
+		}
+		steps = append(steps, Step{
+			Layer:   layers[i].Kind,
+			Origin:  layers[i].Origin,
+			Servers: len(es.Servers),
+			Tools:   tools,
+		})
+	}
+	return steps, nil
+}
+
 // Merge folds the given layers over the tool catalog into an EffectiveScope
 // (docs/architecture.md §7). It is a PURE function: deterministic, no side
 // effects, inputs are never mutated and never aliased by the output.

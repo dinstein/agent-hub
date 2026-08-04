@@ -129,15 +129,8 @@ func (r *CachedResolver) Resolve(ctx context.Context, key SessionKey) (*Effectiv
 	}
 	r.mu.Unlock()
 
-	layers, diags := FromRegistry(snap, key)
-	if r.src.Extra != nil {
-		layers = append(layers, r.src.Extra(key.SessionID)...)
-	}
-	var cat router.Catalog
-	if r.src.Catalog != nil {
-		cat = r.src.Catalog()
-	}
-	es, err := MergeWithDiagnostics(layers, cat, diags)
+	layers, diags := r.layersFor(snap, key)
+	es, err := MergeWithDiagnostics(layers, r.catalog(), diags)
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +144,51 @@ func (r *CachedResolver) Resolve(ctx context.Context, key SessionKey) (*Effectiv
 	}
 	r.mu.Unlock()
 	return es, nil
+}
+
+// layersFor composes the layer list Resolve merges: the persisted layers,
+// then whatever Extra supplies, in resolution order.
+//
+// It exists so that order lives in ONE place. Explain returns the same list
+// to a caller that wants to see the fold happen, and a second copy of the
+// composition is how a diagnostic starts describing a resolution that no
+// longer runs — the reason pickDiscovery is a function too.
+func (r *CachedResolver) layersFor(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diagnostic) {
+	layers, diags := FromRegistry(snap, key)
+	if r.src.Extra != nil {
+		layers = append(layers, r.src.Extra(key.SessionID)...)
+	}
+	return layers, diags
+}
+
+// catalog reads the current tool directory. A nil func is an empty catalog,
+// which resolves to zero visible servers — the closed direction.
+func (r *CachedResolver) catalog() router.Catalog {
+	if r.src.Catalog == nil {
+		return router.Catalog{}
+	}
+	return r.src.Catalog()
+}
+
+// Explain reports how one key's scope converged: the shape remaining after
+// each layer is folded in, in the order Resolve folds them.
+//
+// It answers the question the final shape cannot — WHICH layer narrowed it.
+// The scope chain is three intersecting layers and none can widen, so a
+// client seeing nothing has exactly one layer to blame, and a caller holding
+// only the result has no way to tell which. It is deliberately separate from
+// Resolve and never cached: this is a diagnostic, paid for only when someone
+// asks, and Merge is pure so re-folding prefixes is free of side effects.
+//
+// Fail-closed like Resolve: no registry snapshot is an error, never an empty
+// explanation that would read as "nothing narrowed anything".
+func (r *CachedResolver) Explain(key SessionKey) ([]Step, error) {
+	snap := r.src.Registry()
+	if snap == nil {
+		return nil, errors.New("scope: no registry snapshot available")
+	}
+	layers, _ := r.layersFor(snap, key)
+	return Converge(layers, r.catalog())
 }
 
 // Invalidate applies one invalidation event (see EventKind for the
