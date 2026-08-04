@@ -828,16 +828,15 @@ test: reproducing it needs a write interleaved inside the read, which nothing in
 schedule. `followServerLogs` used to share this defect and no longer exists — `e1fbe29` moved the wire
 trace into the call ledger, and its replacement tracks a timestamp instead.
 
-**Current assembly status — `server logs --follow` drops frames sharing a second.** `followServerFrames`
-(`internal/cli/serverlogs.go`) took the timestamp cursor from `followEvents`, which is the right shape,
-but reads it back out of the PROJECTED row: `serverLogRow` renders `TS` with `time.RFC3339`, which is
-second resolution, so `time.Parse` hands the cursor a whole second and `!ts.After(cursor)` then discards
-every frame of that second that had not been printed yet. This is exactly the loss `83bb725` fixed for
-`events -f`, whose comment still explains why the cursor must stay on the record's `time.Time` — the
-records carry nanoseconds and only the rendering rounds. It matters more here than it did there: a wire
-trace records two frames per call, so a second holding a burst is the ordinary case rather than the
-unlucky one. The fix is the same one `followEvents` already took: carry `calllog.Event.TS` as the cursor
-rather than re-parsing the string the table prints.
+**Both timestamp followers carry the RECORD's `time.Time`, never the stamp they printed.**
+`followServerFrames` (`internal/cli/serverlogs.go`) reads and cursors on `calllog.Event`, projecting to
+rows only to emit them; `collectServerFrames` exists for that reason alone. Taking the cursor back out of
+the row is a real defect, not a style point: `serverLogRow` renders `TS` with `time.RFC3339`, so the
+cursor would advance a whole second and `framesAfter` would then discard every frame of that second not
+yet printed. `events -f` lost records that way until `83bb725`, and it costs more here — a traced call
+records two frames, so a second holding a burst is the ordinary case rather than the unlucky one.
+`ScanFramesSince` is deliberately left inclusive of its bound (that bound is what lets it skip whole day
+partitions), so the tie is dropped by `framesAfter` in the reader, where nanoseconds are in scope.
 
 **The browser is launched with detached streams AND a detached environment** (`browser.go`): streams
 because a chatty handler on stdout would corrupt the NDJSON progress stream, environment because

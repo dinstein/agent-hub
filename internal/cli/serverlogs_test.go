@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dinstein/agent-hub/internal/calllog"
 )
 
 // seedFrames writes a day of frame records the way a gateway would: one
@@ -38,6 +40,46 @@ func frameLine(t *testing.T, fields map[string]any) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// The --follow cursor used to be read back out of the RENDERED row, whose
+// stamp has second resolution, so it advanced a whole second past frames it
+// had never printed. A traced call records two frames, so a second holding
+// several of them is the ordinary case: this walks the cursor exactly as
+// followServerFrames does and pins that every one is reachable.
+func TestServerLogsFollowCursorKeepsSubSecondFrames(t *testing.T) {
+	base := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	frames := make([]calllog.Event, 0, 6)
+	for i := range 6 {
+		frames = append(frames, calllog.Event{
+			TS: base.Add(time.Duration(i) * time.Microsecond), Server: "github",
+		})
+	}
+	cursor := newestFrame(frames[:1], time.Time{})
+	remaining := frames
+	for printed := 1; printed < len(frames); printed++ {
+		remaining = framesAfter(remaining, cursor)
+		if len(remaining) != len(frames)-printed {
+			t.Fatalf("after frame %d the cursor left %d frames, want %d — "+
+				"a frame sharing the second was skipped", printed, len(remaining), len(frames)-printed)
+		}
+		cursor = newestFrame(remaining[:1], cursor)
+	}
+	// And it must stay strict: re-asking with the newest timestamp returns
+	// nothing rather than reprinting the frame, which would read as the
+	// exchange having happened twice.
+	if got := framesAfter(frames, newestFrame(frames, time.Time{})); len(got) != 0 {
+		t.Errorf("the newest frame was returned again (%d frames)", len(got))
+	}
+}
+
+// With nothing recorded the cursor has to stay where it started, or the first
+// tick of --follow would re-print the whole tail it just showed.
+func TestNewestFrameFallsBackToTheCursor(t *testing.T) {
+	since := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	if got := newestFrame(nil, since); !got.Equal(since) {
+		t.Errorf("newestFrame(nil) = %v, want %v", got, since)
+	}
 }
 
 func TestServerLogsRendersFrames(t *testing.T) {

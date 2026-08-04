@@ -164,9 +164,13 @@ func (a *App) newServerLogsCmd() *cobra.Command {
 	return cmd
 }
 
-// readServerFrames collects one server's frames, keeping the newest `limit`.
-func readServerFrames(root, server string, since time.Time, limit int) (ServerLogs, error) {
-	out := ServerLogs{Server: server, Path: root}
+// collectServerFrames gathers one server's frames in time order, keeping the
+// newest `limit`.
+//
+// It returns the RECORDS rather than the rendered rows, because --follow
+// needs their timestamps at full resolution and the rows carry a stamp that
+// has been rounded for printing.
+func collectServerFrames(root, server string, since time.Time, limit int) ([]calllog.Event, int, error) {
 	var frames []calllog.Event
 	skipped, err := calllog.ScanFramesSince(root, since, func(e calllog.Event) error {
 		if e.Server != server {
@@ -176,9 +180,8 @@ func readServerFrames(root, server string, since time.Time, limit int) (ServerLo
 		return nil
 	})
 	if err != nil {
-		return ServerLogs{}, err
+		return nil, 0, err
 	}
-	out.Skipped = skipped
 	// The frames of N gateway processes are interleaved across N files, so
 	// the merge has to sort: a per-file order is the order one process saw,
 	// and printing file by file reads as one conversation jumping backwards.
@@ -186,6 +189,24 @@ func readServerFrames(root, server string, since time.Time, limit int) (ServerLo
 	if limit > 0 && len(frames) > limit {
 		frames = frames[len(frames)-limit:]
 	}
+	return frames, skipped, nil
+}
+
+// readServerFrames collects one server's frames, keeping the newest `limit`.
+func readServerFrames(root, server string, since time.Time, limit int) (ServerLogs, error) {
+	frames, skipped, err := collectServerFrames(root, server, since, limit)
+	if err != nil {
+		return ServerLogs{}, err
+	}
+	out := serverLogsOf(server, root, frames)
+	out.Skipped = skipped
+	return out, nil
+}
+
+// serverLogsOf renders a batch of frames as the result both output modes
+// print.
+func serverLogsOf(server, root string, frames []calllog.Event) ServerLogs {
+	out := ServerLogs{Server: server, Path: root}
 	for _, e := range frames {
 		out.Frames = append(out.Frames, serverLogRow(e))
 	}
@@ -193,7 +214,7 @@ func readServerFrames(root, server string, since time.Time, limit int) (ServerLo
 		out.Note = fmt.Sprintf("no frames recorded for %s; switch recording on with "+
 			"'agenthub server trace %s on'", server, server)
 	}
-	return out, nil
+	return out
 }
 
 func serverLogRow(e calllog.Event) ServerLogRow {
@@ -213,21 +234,25 @@ func serverLogRow(e calllog.Event) ServerLogRow {
 // followEvents does: one server's frames live in one file per process per
 // day, read as a single sequence, so an offset into "the file" is not a
 // position in the stream at all.
+//
+// The cursor is the RECORD's time.Time, not the rendered stamp — the same
+// correction followEvents already carries, and it matters more here. Reading
+// it back out of the projected row meant parsing an RFC3339 string with
+// second resolution, so the cursor jumped a whole second past frames that had
+// never been printed. A traced call records two frames, so a second holding a
+// burst is the ordinary case rather than the unlucky one.
 func (a *App) followServerFrames(ctx context.Context, root, server string, since time.Time, limit int) error {
 	p := a.printer()
-	logs, err := readServerFrames(root, server, since, limit)
+	frames, skipped, err := collectServerFrames(root, server, since, limit)
 	if err != nil {
 		return err
 	}
-	if err := p.Emit(logs); err != nil {
+	first := serverLogsOf(server, root, frames)
+	first.Skipped = skipped
+	if err := p.Emit(first); err != nil {
 		return err
 	}
-	cursor := since
-	if n := len(logs.Frames); n > 0 {
-		if ts, perr := time.Parse(time.RFC3339, logs.Frames[n-1].TS); perr == nil {
-			cursor = ts
-		}
-	}
+	cursor := newestFrame(frames, since)
 	ticker := time.NewTicker(serverLogsInterval)
 	defer ticker.Stop()
 	for {
@@ -236,27 +261,46 @@ func (a *App) followServerFrames(ctx context.Context, root, server string, since
 			return nil
 		case <-ticker.C:
 		}
-		batch, err := readServerFrames(root, server, cursor, 0)
+		// ScanFramesSince keeps a record that sits exactly ON the cursor, so
+		// the tie is dropped here rather than there: the scan's bound is what
+		// lets it skip whole day partitions, and a strict one would need the
+		// day boundary to know about nanoseconds.
+		batch, _, err := collectServerFrames(root, server, cursor, 0)
 		if err != nil {
 			return err
 		}
-		fresh := ServerLogs{Server: server, Path: root}
-		for _, f := range batch.Frames {
-			ts, perr := time.Parse(time.RFC3339, f.TS)
-			// Strictly after: a record whose second matches the cursor was
-			// already printed, and reprinting it reads as the exchange having
-			// happened twice.
-			if perr != nil || !ts.After(cursor) {
-				continue
-			}
-			fresh.Frames = append(fresh.Frames, f)
-			cursor = ts
-		}
-		if len(fresh.Frames) == 0 {
+		fresh := framesAfter(batch, cursor)
+		if len(fresh) == 0 {
 			continue
 		}
-		if err := p.Emit(fresh); err != nil {
+		cursor = newestFrame(fresh, cursor)
+		if err := p.Emit(serverLogsOf(server, root, fresh)); err != nil {
 			return err
 		}
 	}
+}
+
+// newestFrame is the timestamp of the last frame, or fallback when there is
+// none.
+func newestFrame(frames []calllog.Event, fallback time.Time) time.Time {
+	if len(frames) == 0 {
+		return fallback
+	}
+	return frames[len(frames)-1].TS
+}
+
+// framesAfter keeps the frames strictly newer than ts.
+//
+// Strictly, so a frame sharing an instant with the last printed one is
+// dropped rather than printed twice — and at the records' own resolution that
+// is a genuine tie, not the whole second the rendered stamp rounds to.
+// collectServerFrames returns them sorted, so the first one past the cursor
+// begins the tail.
+func framesAfter(frames []calllog.Event, ts time.Time) []calllog.Event {
+	for i, e := range frames {
+		if e.TS.After(ts) {
+			return frames[i:]
+		}
+	}
+	return nil
 }
