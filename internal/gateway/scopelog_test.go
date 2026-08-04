@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 
@@ -39,12 +40,25 @@ func TestStartupLogsTheEffectiveScopeShape(t *testing.T) {
 	// and the shape a client actually sees arrives with the catalog swap. The
 	// test pins both so the sequence is the documented one rather than an
 	// accident of timing.
-	swapped := findScope(t, sink, "catalog changed")
+	//
+	// Waited for rather than read once, because tools/list going green is not
+	// evidence that the matching log line exists yet: swapCatalog publishes
+	// the catalog under the lock and logs the new shape after releasing it, so
+	// waitForTools above can return in the window between the two. The wait is
+	// on the settled server count for the same reason the lookup takes the
+	// last record — the two downstreams dial independently, and one swap each
+	// is as correct as one swap for both.
+	var swapped map[string]string
+	waitFor(t, "the scope shape for the settled catalog", func() bool {
+		rec, ok := lookupScope(sink, "catalog changed")
+		if !ok {
+			return false
+		}
+		swapped = rec
+		return rec["servers"] == "2"
+	})
 	// Counts, never names: the line must not grow with the catalog, which is
 	// the size at which it would stop being readable.
-	if swapped["servers"] != "2" {
-		t.Errorf("servers = %q, want 2", swapped["servers"])
-	}
 	if swapped["tools"] != "2" {
 		t.Errorf("tools = %q, want 2", swapped["tools"])
 	}
@@ -53,10 +67,20 @@ func TestStartupLogsTheEffectiveScopeShape(t *testing.T) {
 // lookupScope returns the scope-shape record logged for one reason. The
 // reason is what tells the cold startup line apart from the one describing a
 // live catalog, and the two carry different counts on purpose.
+//
+// The LAST match, not the first, and that is the whole of a flake this test
+// carried on Linux CI: "catalog changed" is logged once per catalog swap
+// (downstreams.go), and downstreams connect independently, so two servers
+// produce either one swap carrying both or two swaps carrying one each,
+// depending on how the machine schedules the dials. Reading the first match
+// asserted on whichever intermediate state happened to be recorded — servers
+// = 1 on a loaded runner, 2 on a fast laptop — for a question that is about
+// where the catalog SETTLED. Every caller waits for the settled state first,
+// which is what makes the last record the deterministic one.
 func lookupScope(sink *callLog, reason string) (map[string]string, bool) {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
-	for _, r := range sink.recs {
+	for _, r := range slices.Backward(sink.recs) {
 		if r["msg"] == "effective scope resolved" && r["reason"] == reason {
 			return r, true
 		}
