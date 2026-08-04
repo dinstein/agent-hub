@@ -46,8 +46,18 @@ const (
 	GatewayExt    = ".log"
 )
 
-// Origin names which kind of process produced a record. It is the one piece
-// of provenance the FILE carries and the record does not.
+// Origin names which kind of process produced a record — daemon or gateway.
+// It is provenance the FILE carries: the reader takes it from the name and
+// stamps it on, because no record states it.
+//
+// It is NOT the record's own `origin` field, which is a different fact with
+// the same spelling: internal/gateway logs a scope diagnostic with
+// `origin=clients.json#claude-code`, the configuration a layer came from.
+// `logs` renders this type as the ORIGIN column and that one among the
+// key=value extras, so a scope diagnostic prints both on one line — `gateway`
+// in the column, a file path in the extras. They are not in conflict, but a
+// reader meeting them together deserves to be told they answer different
+// questions.
 type Origin string
 
 const (
