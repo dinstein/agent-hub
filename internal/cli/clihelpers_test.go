@@ -163,3 +163,23 @@ func TestTestConnectErrorClassifiesByStatusNotByMessage(t *testing.T) {
 		t.Error("the cause was not wrapped")
 	}
 }
+
+// TestTestConnectErrorStatesTheCauseOnce pins the split between Message and
+// Err. Error() is Message + ": " + Err, so a Message that also formatted the
+// cause printed the whole chain twice — and these chains are long: a blocked
+// spawn arrives as `downstream "x": dial: transport error (fatal): refusing to
+// spawn …`, which was then repeated verbatim inside a single line. The
+// doubling reads as two separate failures and buries the part naming the fix.
+func TestTestConnectErrorStatesTheCauseOnce(t *testing.T) {
+	cause := errors.New(`refusing to spawn "npx": spawnguard: blocked (env_smuggling): sentinel`)
+	var e *Error
+	if !errors.As(testConnectError("brave-search", cause), &e) {
+		t.Fatal("no typed error")
+	}
+	if n := strings.Count(e.Error(), "sentinel"); n != 1 {
+		t.Fatalf("cause appears %d times in %q, want 1", n, e.Error())
+	}
+	if !strings.Contains(e.Error(), "did not connect: refusing to spawn") {
+		t.Fatalf("context and cause are not joined exactly once: %q", e.Error())
+	}
+}

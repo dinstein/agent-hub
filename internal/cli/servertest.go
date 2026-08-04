@@ -293,7 +293,10 @@ func (a *App) newServerTestCmd() *cobra.Command {
 				if cerr != nil {
 					return &Error{
 						Code: CodeGeneral, ExitCode: ExitGeneral,
-						Message: fmt.Sprintf("server %q: calling %q failed: %v", id, toolName, cerr),
+						// Message states the context only. Error() appends
+						// Err, so formatting the cause in here printed the
+						// whole chain twice.
+						Message: fmt.Sprintf("server %q: calling %q failed", id, toolName),
 						Err:     cerr,
 					}
 				}
@@ -328,14 +331,14 @@ func testConnectError(id string, err error) error {
 	if transport.IsAuthStatus(err) {
 		return &Error{
 			Code: CodeAuthFailed, ExitCode: ExitAuth,
-			Message: fmt.Sprintf("server %q rejected the credentials: %v", id, err),
+			Message: fmt.Sprintf("server %q rejected the credentials", id),
 			Hint:    fmt.Sprintf("run 'agenthub auth login %s'", id),
 			Err:     err,
 		}
 	}
 	return &Error{
 		Code: CodeGeneral, ExitCode: ExitGeneral,
-		Message: fmt.Sprintf("server %q did not connect: %v", id, err),
+		Message: fmt.Sprintf("server %q did not connect", id),
 		Err:     err,
 	}
 }
