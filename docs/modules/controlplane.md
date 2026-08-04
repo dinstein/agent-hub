@@ -245,6 +245,14 @@ self-tests. Rules visible only here:
   `E_SECRET_REQUIRED` plus safe `missingSecrets` key names, so a frontend can offer a login or a
   prefilled write-only form without scraping prose. The probe **runs a docker-runtime entry as a
   container**; it used to refuse such entries fail-closed, back when the dial could not.
+- **The rendered call output is bounded, and the bound is the caller's to raise** (`max_text_bytes`,
+  default 2 KiB, clamped at 1 MiB). The small default belongs to the question this endpoint is asked
+  most often — "does this connect" — which should not carry a tool's whole answer back; a caller
+  rendering that answer for a person needs the opposite and has no other way to say so. **This cut is
+  final**, unlike the data plane's result budget, which retains the remainder under a `fetch_result`
+  cursor — which is the other half of why it must not be tight, and why an over-large ask is *clamped
+  to the ceiling* rather than dropped back to the default. It cuts on a **rune boundary**: a byte cut
+  through a multi-byte rune renders as U+FFFD, which reads as something the tool emitted.
 - `POST /v1/clients/{id}/connect` may **run that client's own configuration CLI** for a format agenthub
   will not rewrite (codex), backing the file up first and verifying by re-reading it, with
   `AGENTHUB_NO_CLIENT_CLI=1` to forbid it. The target resolves `path` > `placement` > the default

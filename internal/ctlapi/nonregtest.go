@@ -30,9 +30,26 @@ import (
 // transport field that a new release starts honoring cannot pass the test
 // here and be dropped in production.
 
-// maxTestTextBytes bounds the rendered call output. A tool that answers with
-// a megabyte of JSON must not become a megabyte of control-plane response.
-const maxTestTextBytes = 2 << 10
+// defaultTestTextBytes bounds the rendered call output when the caller asks
+// for no particular limit. A tool that answers with a megabyte of JSON must
+// not become a megabyte of control-plane response merely because someone
+// asked "does this connect".
+const defaultTestTextBytes = 2 << 10
+
+// maxTestTextBytes is the ceiling a caller may raise the output limit TO.
+//
+// The default above exists so an incidental probe stays cheap, not because
+// 2 KiB is all anyone may see: a frontend rendering the output for a human
+// has the opposite need, and a JSON payload cut at 2 KiB no longer parses,
+// which costs the reader the pretty-printed view of exactly the results big
+// enough to need one. So the limit is the caller's to raise, and this is the
+// bound on how far — comfortably under api's 16 MiB response ceiling, and
+// well past any output a person reads.
+//
+// Note what this is NOT: the data plane's result budget, which pages the
+// remainder under a fetch_result cursor and loses nothing. This endpoint's
+// cut is final, which is the other half of why it should not be tight.
+const maxTestTextBytes = 1 << 20
 
 // maxTestTimeout caps the caller-supplied connect timeout. Cold npx/uvx
 // caches are genuinely slow, so the ceiling is generous; the point is that a
@@ -52,6 +69,9 @@ type ServerTestRequest struct {
 	// because schemas are unbounded: the "does this connect" question is the
 	// one this endpoint is asked most often, and it does not need them.
 	Definitions bool `json:"defs,omitempty"`
+	// MaxTextBytes raises the limit on the rendered call output (0 = the
+	// 2 KiB default, clamped at maxTestTextBytes).
+	MaxTextBytes int `json:"max_text_bytes,omitempty"`
 }
 
 // ServerTestWire is the self-test report.
@@ -222,7 +242,7 @@ func (s *Server) handleServerTest(w http.ResponseWriter, r *http.Request, id str
 		out.Call = &ServerTestCallWire{
 			Tool:    req.Tool,
 			IsError: res.IsError,
-			Text:    truncateText(contentText(res.Content), maxTestTextBytes),
+			Text:    truncateText(contentText(res.Content), testTextLimit(req.MaxTextBytes)),
 			Millis:  time.Since(callStart).Milliseconds(),
 		}
 	}
@@ -252,6 +272,25 @@ func testTimeout(ms int64) time.Duration {
 		return maxTestTimeout
 	}
 	return d
+}
+
+// testTextLimit clamps a caller-supplied output limit into the allowed band.
+//
+// It CLAMPS rather than rejecting, because the alternative is a 400 for a
+// request whose only fault is optimism about a number that is ours and not
+// the caller's — and the caller cannot tell the ceiling has moved between
+// releases. What it must never do is silently apply the DEFAULT to an
+// over-large ask: that would hand back 2 KiB to someone who asked for a
+// megabyte, which reads as the tool having said little.
+func testTextLimit(n int) int {
+	switch {
+	case n <= 0:
+		return defaultTestTextBytes
+	case n > maxTestTextBytes:
+		return maxTestTextBytes
+	default:
+		return n
+	}
 }
 
 // connectHint suggests the next action for a failed self-test. An

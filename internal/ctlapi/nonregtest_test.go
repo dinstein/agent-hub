@@ -468,3 +468,77 @@ func TestTruncateTextCutsOnARuneBoundary(t *testing.T) {
 		t.Errorf("invalid input = %q", got)
 	}
 }
+
+func TestTestTextLimit(t *testing.T) {
+	if got := testTextLimit(0); got != defaultTestTextBytes {
+		t.Errorf("unset = %d", got)
+	}
+	if got := testTextLimit(-1); got != defaultTestTextBytes {
+		t.Errorf("negative = %d", got)
+	}
+	if got := testTextLimit(4096); got != 4096 {
+		t.Errorf("in band = %d", got)
+	}
+	// Over the ceiling clamps DOWN to the ceiling, never back to the
+	// default: returning 2 KiB to a caller who asked for a megabyte would
+	// read as the tool having said very little.
+	if got := testTextLimit(maxTestTextBytes * 4); got != maxTestTextBytes {
+		t.Errorf("over the ceiling = %d", got)
+	}
+}
+
+// TestServerTestOutputLimitIsTheCallersToRaise: the small default is a
+// courtesy to the common "does this connect" probe, not a bound on what a
+// caller rendering the answer for a human may see.
+//
+// The payload is JSON on purpose. Its SHAPE is what the default costs: cut
+// at 2 KiB it no longer parses, so a frontend loses the pretty-printed view
+// of exactly the results large enough to need one. Asserting only on length
+// would pass for a change that kept the bytes and broke that.
+func TestServerTestOutputLimitIsTheCallersToRaise(t *testing.T) {
+	rows := make([]string, 200)
+	for i := range rows {
+		rows[i] = fmt.Sprintf("row-%03d-%s", i, strings.Repeat("x", 20))
+	}
+	payload, err := json.Marshal(rows)
+	if err != nil {
+		t.Fatalf("building the payload: %v", err)
+	}
+	if len(payload) <= defaultTestTextBytes {
+		t.Fatalf("the payload must exceed the default or this proves nothing: %d bytes", len(payload))
+	}
+	content, err := json.Marshal([]map[string]string{{"type": "text", "text": string(payload)}})
+	if err != nil {
+		t.Fatalf("building the content: %v", err)
+	}
+	conn := nrTestConn()
+	conn.result = &mcp.CallResult{Content: content}
+	c := &nrConnector{conn: conn}
+	env := nrStart(t, func(d *NonRegistryDeps) { d.Connect = c.connect })
+	seedServer(t, env.reg, "github", true)
+
+	_, body := nrDo(t, env.sock, http.MethodPost, "/v1/servers/github/test",
+		ServerTestRequest{Tool: "search"})
+	var capped ServerTestWire
+	nrData(t, body, &capped)
+	if capped.Call == nil || !strings.Contains(capped.Call.Text, "truncated") {
+		t.Fatalf("the default limit did not apply: %+v", capped.Call)
+	}
+	if json.Valid([]byte(strings.TrimSpace(capped.Call.Text))) {
+		t.Errorf("a cut payload is not supposed to still parse — the premise moved")
+	}
+
+	status, body := nrDo(t, env.sock, http.MethodPost, "/v1/servers/github/test",
+		ServerTestRequest{Tool: "search", MaxTextBytes: len(payload) + 64})
+	if status != http.StatusOK {
+		t.Fatalf("status = %d: %s", status, body)
+	}
+	var full ServerTestWire
+	nrData(t, body, &full)
+	if full.Call == nil || strings.Contains(full.Call.Text, "truncated") {
+		t.Fatalf("the raised limit still cut the answer")
+	}
+	if !json.Valid([]byte(strings.TrimSpace(full.Call.Text))) {
+		t.Errorf("the whole answer must parse: %d bytes", len(full.Call.Text))
+	}
+}

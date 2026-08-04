@@ -211,6 +211,18 @@ type ServerTestRequest struct {
 	// asked most often. The definitions cost nothing extra to produce — the
 	// handshake already returned them — only to transmit.
 	Definitions bool `json:"defs,omitempty"`
+	// MaxTextBytes raises the limit on ServerTestCall.Text, in bytes.
+	//
+	// Zero selects the daemon's default, which is small on purpose: the
+	// question this endpoint is usually asked is "does this connect", and an
+	// incidental probe should not carry a tool's whole answer back. A caller
+	// RENDERING that answer for a human wants the opposite, and has no other
+	// way to say so — unlike the gateway's result budget, this endpoint's cut
+	// is final and keeps no cursor to fetch the remainder from.
+	//
+	// A value over the daemon's ceiling is clamped, not refused: the ceiling
+	// belongs to the daemon and may move between releases.
+	MaxTextBytes int `json:"max_text_bytes,omitempty"`
 }
 
 // ServerTestTool is one tool of the live handshake, present when the request
