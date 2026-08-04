@@ -112,10 +112,30 @@ func startFake(t *testing.T) (*Supervised, string) {
 		PollInterval: 25 * time.Millisecond,
 	})
 	if err != nil {
-		t.Fatalf("StartSupervised: %v", err)
+		// The child's raw stderr is the only account of why it never came up,
+		// and without it a failure here says "deadline exceeded" and nothing
+		// about the process that missed it. This fixture starts a real
+		// subprocess under a real deadline, so it CAN lose to a loaded
+		// machine — and a flake that reports nothing is one nobody can tell
+		// from a regression.
+		t.Fatalf("StartSupervised: %v\n--- child stderr ---\n%s", err, fakeChildStderr(dir))
 	}
 	t.Cleanup(func() { _ = s.Stop(context.Background()) })
 	return s, dir
+}
+
+// fakeChildStderr reads back whatever the supervised child wrote before it
+// gave up. A missing file is itself the answer — the process never got far
+// enough to open one.
+func fakeChildStderr(dir string) string {
+	b, err := os.ReadFile(filepath.Join(dir, daemonStderrName))
+	if err != nil {
+		return "(no stderr file: " + err.Error() + ")"
+	}
+	if len(b) == 0 {
+		return "(empty)"
+	}
+	return string(b)
 }
 
 func TestStartSupervisedRunsAndStopsTheHub(t *testing.T) {
