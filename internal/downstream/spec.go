@@ -446,6 +446,33 @@ func (d Deps) dialStdio(ctx context.Context, spec Spec) (transport.Transport, er
 		docker.ServerID = spec.ID
 		cfg.Docker = &docker
 	}
+	// What is being spawned, before it is spawned. This path had no log call
+	// at all, so a stdio entry that hung — the documented normal for an
+	// npx/uvx cold start, minutes of honest "connecting" — left nothing
+	// saying what had been launched, and the answer had to be reconstructed
+	// from the registry instead of read off the run that stalled.
+	//
+	// `runtime` is the load-bearing field. AGENTS.md requires that isolation
+	// a config claims is delivered or refused rather than silently degraded
+	// to the host, and this is the only place recording which of the two a
+	// connection actually got.
+	//
+	// The env is deliberately NOT here, at any level. It is the one input
+	// carrying expanded secrets (AGENTHUB_SECRET_<KEY>, secretref.go), and
+	// never writing them is a stronger guarantee than redacting them. Command
+	// and args go in as ONE string so ScrubString runs over them — slog would
+	// pass a []string through as an opaque value and no pattern would ever
+	// see it — and on the host path they are public anyway, appearing in
+	// ps(1); the docker path routes env through the CLI's own environment for
+	// precisely that reason.
+	runtime := "host"
+	if spec.Docker != nil {
+		runtime = "docker"
+	}
+	boundServerLog(d.Log, spec).Info("spawning a stdio downstream",
+		"runtime", runtime, "command", spec.Command,
+		"args", strings.Join(spec.Args, " "), "cwd", spec.Cwd)
+
 	tr, err := transport.SpawnStdio(cfg)
 	if err != nil {
 		return nil, explainBlockedEnv(err, env)

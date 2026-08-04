@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -13,6 +14,12 @@ import (
 	"github.com/dinstein/agent-hub/internal/testutil/fakemcp"
 )
 
+// errNoSpawnInTest is what the scripted spawn screen refuses with, so a test
+// can reach the log line without launching anything.
+var errNoSpawnInTest = errors.New("spawn refused by the test")
+
+// findLine returns the one serialized record carrying msg.
+//
 // Serialized, never decoded: the duplicate-key bug this file guards against
 // is invisible after a decode, because the decode is what discards the
 // duplicate (foundation.md, the client / client_name entry).
@@ -93,5 +100,50 @@ func TestCapabilityNamesListsKeysAndSurvivesJunk(t *testing.T) {
 		if got := capabilityNames(json.RawMessage(raw)); got != "" {
 			t.Errorf("capabilityNames(%q) = %q, want empty", raw, got)
 		}
+	}
+}
+
+// The stdio path had no log call at all, so an entry that hung — the
+// documented normal for an npx/uvx cold start — left nothing saying what had
+// been launched. `runtime` is the load-bearing field: AGENTS.md requires that
+// isolation a config claims is delivered or refused, and this is the only
+// place recording which of the two a connection actually got.
+func TestSpawningAStdioDownstreamIsRecorded(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	deps := Deps{
+		Log: slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		// Refuse the spawn: the record is written before it, which is the
+		// whole point — a command that never comes up is the case with
+		// nothing else to read.
+		Spawn: func(string, []string, []string) error { return errNoSpawnInTest },
+	}
+	spec := Spec{
+		ID: "docs", Command: "npx", Args: []string{"-y", "@scope/server@latest"},
+		Cwd: "/tmp/work",
+		Env: map[string]string{"API_TOKEN": "sk-must-never-be-logged"},
+	}
+
+	_, err := deps.dialStdio(context.Background(), spec)
+	if err == nil {
+		t.Fatal("the scripted spawn refusal did not surface")
+	}
+
+	line := findLine(t, buf.String(), "spawning a stdio downstream")
+	for _, want := range []string{
+		`"level":"INFO"`,
+		`"runtime":"host"`,
+		`"command":"npx"`,
+		`"args":"-y @scope/server@latest"`,
+		`"cwd":"/tmp/work"`,
+	} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("spawn record missing %s: %s", want, line)
+		}
+	}
+	// The env is the one input carrying expanded secrets, and never writing
+	// it is a stronger guarantee than redacting it.
+	if strings.Contains(line, "API_TOKEN") || strings.Contains(line, "sk-must-never-be-logged") {
+		t.Fatalf("the child environment reached the log: %s", line)
 	}
 }
