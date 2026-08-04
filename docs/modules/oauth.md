@@ -49,6 +49,35 @@ Every row is a provider behavior that exists in the wild, not a hypothetical per
 | PRM lists multiple `authorization_servers` | ⚠️ | **Only the first is used.** Deliberate: trying them one by one would widen the set of hosts a malicious RS can make us contact |
 | The `issuer` declared in AS metadata disagrees with where we fetched it from | ⚠️ | Not validated on **either** path. The resource-origin hop records `DiscoveryResourceOrigin`; the canonical `fetchMetadata` path carries no marker and no check — see the security boundaries below |
 
+#### What the chain records about itself
+
+Every candidate is kept as an `Attempt` — the URL **plus what it answered** — on
+`DiscoveryResult.Attempted` and, when the chain fails, on `FlowError.Attempted`. The URL alone
+diagnosed nothing: four candidates and a failure read identically whether
+
+- every one **404'd** (`no document` — the provider publishes nothing, so either the issuer is wrong or
+  the synthesized fallback is what is wanted),
+- one answered with a document that cannot drive a flow (`unusable document` — the provider is broken,
+  and this is the URL to show them), or
+- the first was **refused by the SSRF screen** (`refused`), in which case every later candidate was
+  never tried and the list is evidence of a search that did not happen.
+
+**A failed discovery is the case that needs the trace most**, which is why it rides the error too. The
+candidate list did reach the message string of some branches, but a sentence cannot be rendered,
+filtered or counted, and a reader wanting the third candidate's outcome had to parse English.
+
+**This package writes no logs, and that is the arrangement, not an omission.** Its dependency budget
+excludes any logging package, so it reports what happened as data and whoever holds a logger renders
+it — `oauthlogin.Manager.logDiscovery` does, at Debug: one line for the status, one per candidate. Same
+division of labour as `scope.Converge`. It covers **both** outcomes, not only failures: a login that
+succeeded through `DiscoveryDefaults` is one candidate away from one that failed, and it is the case
+that goes wrong later — a 403 from a synthesized `/register` means something entirely different from a
+403 from an advertised `registration_endpoint`. A failure that never reached discovery logs nothing
+rather than an empty chain, which would read as "every candidate was fine".
+
+URLs only. Metadata endpoints are the class `FlowError.Error()` already interpolates, and no token,
+code or client secret passes through a `DiscoveryResult`.
+
 ### Client identity
 
 In the 2025-11-25 priority order (pre-registration → CIMD → DCR → manual entry):
