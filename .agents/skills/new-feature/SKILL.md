@@ -194,8 +194,9 @@ then reports `tee`'s status, and `${PIPESTATUS[0]}` evaluates to empty under zsh
 `$pipestatus` and indexes from 1. A green run ends with `landing check: nothing came from cache,
 every package ran`.
 
-**That force-push is what closes the PR.** The rebase rewrote every commit; without it GitHub holds
-commits that will never reach `main`.
+**When the rebase rewrote your commits, that force-push is what closes the PR** — without it GitHub
+holds commits that will never reach `main`. After a rebase that moved nothing it is a no-op, and the
+head already matches; run it anyway rather than deciding which case you are in.
 
 Then, in the main work tree:
 
@@ -234,7 +235,7 @@ grow a merge commit. The PR follows the branch — same number, same body, check
 | Symptom | Meaning | Do |
 |---|---|---|
 | A depguard failure naming a path in *another* worktree | The lint cache is shared across checkouts | `echo $GOLANGCI_LINT_CACHE` — the Makefile defaults it per checkout, an exported value overrides that. `make clean-cache` |
-| `make ci` green locally, PR checks red | Almost always the environment, not the code | `gh run view --log-failed`, then re-run `make ci-full` and `make e2e-ci`; compare the runner's env before reading the diff |
+| `make ci` green locally, PR checks red | Almost always the environment, not the code | `gh run view --log-failed`, then re-run `make ci-full` — `e2e-ci` is one of its prerequisites, and reproducing the runner's environment is what it is for. Compare that env before reading the diff |
 | `gh pr create`: "No commits between main and `<topic>`" | Opened before the first commit exists | Commit, push, then create — step 3, in that order |
 | The PR reads `OPEN` after `main` was pushed | Its head is not what landed — usually an amend after the last force-push | `gh pr close <topic> --comment "landed on main as <sha>"` |
 | `git push --force-with-lease` refuses | Someone else pushed to your branch | Do not force it. A shared branch is not rebased at all |
