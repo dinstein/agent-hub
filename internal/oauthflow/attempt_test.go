@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -109,5 +110,50 @@ func TestAttemptURLsRendersTheChainForMessages(t *testing.T) {
 	}
 	if attemptURLs(nil) == nil {
 		t.Fatal("attemptURLs(nil) must return an empty slice, never nil: it is joined into a message")
+	}
+}
+
+// A protected-resource document that lists no authorization_servers ends the
+// chain, and the walk that reached it is what says where it came from: the URL
+// the 401 advertised, or one of the forms guessed after it. Every other
+// discovery failure carries the trace; this branch was the one that did not,
+// so the status arrived with nothing under it.
+func TestANoAuthorizationServersErrorCarriesTheChain(t *testing.T) {
+	// The path-scoped candidate 404s and the origin-root one answers, so a
+	// trace that survives has more than one entry — a single-element list
+	// would pass while still losing the walk.
+	const served = "/.well-known/oauth-protected-resource"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != served {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"resource":"https://rs.example/mcp"}`)
+	}))
+	defer srv.Close()
+	d := NewDiscoverer(NewClient(Config{AllowLoopback: true, Timeout: 5 * time.Second}))
+
+	_, err := d.DiscoverFromResource(context.Background(), srv.URL+"/mcp", "")
+	if err == nil {
+		t.Fatal("a protected-resource document with no authorization_servers was accepted")
+	}
+	var fe *FlowError
+	if !errors.As(err, &fe) {
+		t.Fatalf("error is not a FlowError: %v", err)
+	}
+	if fe.Discovery != DiscoveryProtected {
+		t.Fatalf("discovery status = %q, want %q", fe.Discovery, DiscoveryProtected)
+	}
+	if len(fe.Attempted) < 2 {
+		t.Fatalf("the error carries %d attempts, so the walk that found the document was lost: %+v",
+			len(fe.Attempted), fe.Attempted)
+	}
+	last := fe.Attempted[len(fe.Attempted)-1]
+	if last.Outcome != AttemptOK {
+		t.Errorf("the candidate that answered is recorded as %q, want %q", last.Outcome, AttemptOK)
+	}
+	if !strings.HasSuffix(last.URL, served) {
+		t.Errorf("the answering candidate is %q, want the one that served the document", last.URL)
 	}
 }

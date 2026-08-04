@@ -391,6 +391,11 @@ func (d *Discoverer) DiscoverFromResource(ctx context.Context, resourceURL, reso
 		e := newFlowError(ErrorTypeDiscovery,
 			fmt.Errorf("%w: %s lists no authorization_servers", ErrDiscovery, prm.SourceURL))
 		e.Discovery = DiscoveryProtected
+		// The walk that reached this document is what says whether SourceURL
+		// was the URL the 401 advertised or one of the forms guessed after it
+		// — the difference between a provider publishing a broken document
+		// and our having found a stale one it never pointed at.
+		e.Attempted = res.Attempted
 		return nil, e
 	}
 	// First advertised AS wins. Trying them all would multiply the number
