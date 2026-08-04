@@ -102,6 +102,33 @@ func tarball(t *testing.T, binary []byte) []byte {
 	return buf.Bytes()
 }
 
+// symlinkTarball is the same archive with its one entry replaced by a symlink
+// to somewhere else on the machine. Nothing this project builds produces one;
+// it is what an archive would carry if the manifest and the artifact it pins
+// came from the same hostile place.
+func symlinkTarball(t *testing.T, target string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(zw)
+	hdr := &tar.Header{
+		Name:     "agenthub",
+		Typeflag: tar.TypeSymlink,
+		Linkname: target,
+		Mode:     0o777,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatalf("tar header: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("closing tar: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("closing gzip: %v", err)
+	}
+	return buf.Bytes()
+}
+
 // release is a served Release: a manifest at /manifest.json and one tarball
 // per platform, all the same bytes.
 type release struct {
@@ -298,6 +325,40 @@ func TestRefusesAnAssetNameThatIsAPath(t *testing.T) {
 	}
 	if _, err := os.Stat(binPath(home)); err == nil {
 		t.Error("a binary was installed despite the malformed asset name")
+	}
+}
+
+// TestRefusesASymlinkedBinary covers what the checksum cannot say anything
+// about: the archive's bytes are exactly the ones the manifest pinned, and
+// what they describe is a link to a file already on this machine.
+//
+// `[ -f ]` follows a symlink, so the emptiest possible archive passes the
+// "does it contain an agenthub" test. What follows then acts on the TARGET —
+// chmod 0755 rewrites its mode, and the copy installs its contents under the
+// name agenthub. Neither step ever names the target, and neither is what the
+// archive appears to contain.
+func TestRefusesASymlinkedBinary(t *testing.T) {
+	victim := filepath.Join(t.TempDir(), "private")
+	if err := os.WriteFile(victim, []byte("not a binary\n"), 0o600); err != nil {
+		t.Fatalf("seeding the target: %v", err)
+	}
+	tgz := symlinkTarball(t, victim)
+	rel := serve(t, tgz, tgz)
+	home := t.TempDir()
+
+	out, err := run(t, home, rel)
+	if err == nil {
+		t.Fatalf("installed an archive whose agenthub is a symlink:\n%s", out)
+	}
+	info, statErr := os.Stat(victim)
+	if statErr != nil {
+		t.Fatalf("the target of the symlink: %v", statErr)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("the run changed the mode of a file it never named: %v, want 0600", got)
+	}
+	if _, err := os.Stat(binPath(home)); err == nil {
+		t.Error("something was installed from an archive that contains no binary")
 	}
 }
 

@@ -335,6 +335,12 @@ nothing was installed"
 fi
 
 tar -xzf "$tmp/$asset" -C "$tmp" || die "cannot unpack $asset"
+# -L first, and it is not redundant: [ -f ] FOLLOWS a symlink, so an archive
+# holding nothing but a link named agenthub passes that test. Everything after
+# it then acts on the link's target instead — chmod rewrites the mode of a file
+# this script never named, and the copy installs that file's contents under the
+# name agenthub. A checksum cannot see any of it: those are the pinned bytes.
+[ ! -L "$tmp/agenthub" ] || die "$asset holds a symlink named agenthub, not a binary"
 [ -f "$tmp/agenthub" ] || die "$asset does not contain an agenthub binary"
 chmod 0755 "$tmp/agenthub"
 
