@@ -153,3 +153,72 @@ func TestSSEDialLogsUnderTheServerBinding(t *testing.T) {
 		t.Fatalf("record is not bound to the server: %s", line)
 	}
 }
+
+// How a dial was assembled decides how the connection behaves, and none of it
+// was recoverable afterwards: an HTTP downstream either worked or produced an
+// error naming neither the wire protocol it spoke nor where its Authorization
+// came from. The event log says a connect happened; only this says how it was
+// set up.
+func TestHTTPDialRecordsHowItWasAssembled(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+
+	var buf bytes.Buffer
+	deps := Deps{Log: slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))}
+	spec := Spec{
+		ID: "remote-mcp", Kind: transport.StreamableHTTP, URL: srv.URL + "/mcp",
+		Provenance: ProvenanceLocal, // httptest is loopback
+		Headers:    map[string]string{"Authorization": "Basic dXNlcjpwYXNz"},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tr, err := deps.dialHTTP(ctx, spec)
+	if err != nil {
+		t.Fatalf("dialHTTP: %v", err)
+	}
+	defer func() { _ = tr.Close() }()
+
+	line := buf.String()
+	for _, want := range []string{
+		`"level":"INFO"`,
+		`"msg":"dialing an http downstream"`,
+		`"transport":"` + string(transport.StreamableHTTP) + `"`,
+		// An operator-set Authorization always beats the vault credential, and
+		// which of the two won is the whole of a 401 investigation.
+		`"auth":"explicit header"`,
+		`"` + logx.FieldServer + `":"remote-mcp"`,
+	} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("dial record missing %s: %s", want, line)
+		}
+	}
+	// The host, so a wrong port or an http:// that should have been https://
+	// is visible — but never the path or query, which is where tokens get put.
+	if !strings.Contains(line, `"host":"`+srv.URL+`"`) {
+		t.Fatalf("dial record does not carry the endpoint host: %s", line)
+	}
+	if strings.Contains(line, "/mcp") {
+		t.Fatalf("dial record carries the url path, which may hold a secret: %s", line)
+	}
+	if strings.Contains(line, "dXNlcjpwYXNz") {
+		t.Fatalf("the credential itself leaked into the dial record: %s", line)
+	}
+}
+
+// endpointHost must never echo something it could not parse: a URL this
+// package cannot read is not one it should quote back into a log.
+func TestEndpointHostDropsWhatItCannotParse(t *testing.T) {
+	for _, raw := range []string{"://nope", "not a url at all", ""} {
+		if got := endpointHost(raw); got != "" {
+			t.Errorf("endpointHost(%q) = %q, want empty", raw, got)
+		}
+	}
+	// Userinfo is a credential and lives outside Host, so reducing to
+	// scheme://host drops it by construction rather than by a filter.
+	if got := endpointHost("https://user:pass@example.com/mcp?token=abc"); got != "https://example.com" {
+		t.Errorf("endpointHost kept more than scheme://host: %q", got)
+	}
+}

@@ -57,7 +57,32 @@ func (d Deps) dialHTTP(ctx context.Context, spec Spec) (transport.Transport, err
 	if dial == nil {
 		dial = dialContextFor(spec)
 	}
+	// What this dial was assembled from, before it is attempted. The three
+	// facts below are the ones that decide how an HTTP downstream behaves and
+	// none of them was recoverable afterwards: a connection either worked or
+	// produced an error naming neither the transport it spoke nor where its
+	// credential came from. "It returns 401" and "it hangs on connect" are
+	// both answered here — by which of two Authorization sources won, and by
+	// which of two wire protocols was chosen.
+	//
+	// The HOST, never spec.URL: a query string is a place tokens are put, and
+	// while logx scrubbing would catch the shapes it recognises, a log line
+	// that does not carry the secret at all is not relying on that.
+	//
+	// The event log records that a connect happened; this records how it was
+	// set up, which is the part no state transition can express.
 	auth := d.authFor(spec)
+	authSource := "none"
+	switch {
+	case explicitAuth:
+		authSource = "explicit header"
+	case auth != nil:
+		authSource = "vault"
+	}
+	boundServerLog(d.Log, spec).Info("dialing an http downstream",
+		"transport", string(spec.Kind), "host", endpointHost(spec.URL),
+		"auth", authSource, "provenance", string(spec.Provenance))
+
 	if auth != nil && !explicitAuth {
 		// Client and DialContext are mutually exclusive in HTTPConfig (a
 		// caller-supplied client owns its own screening), so the screened
@@ -109,6 +134,19 @@ func (d Deps) buildHeader(ctx context.Context, spec Spec) (http.Header, bool, er
 		hdr.Set(k, v)
 	}
 	return hdr, explicitAuth, nil
+}
+
+// endpointHost reduces a downstream URL to scheme://host for logging: enough
+// to tell two endpoints apart and to see a wrong port or an http:// that
+// should have been https://, without the path or query where a token gets
+// put. Unparsable input yields "" rather than the raw string — a URL this
+// package could not read is not one it should quote back into a log.
+func endpointHost(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // screenEndpoint refuses a URL before any connection is attempted.
