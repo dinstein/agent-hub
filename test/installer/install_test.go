@@ -198,15 +198,22 @@ func run(t *testing.T, home string, rel *release, args ...string) (string, error
 // look at what the script wrote OUTSIDE the directory it made for itself.
 func runIn(t *testing.T, home, tmpdir string, rel *release, args ...string) (string, error) {
 	t.Helper()
-	cmd := exec.Command("sh", append([]string{filepath.Join(repoRoot(t), "scripts", "install.sh")}, args...)...)
-	cmd.Env = []string{
+	return runEnv(t, []string{
 		"PATH=/usr/bin:/bin:/usr/sbin:/sbin",
 		"HOME=" + home,
 		"AGENTHUB_INSTALL_PREFIX=" + filepath.Join(home, ".local"),
 		"AGENTHUB_INSTALL_MANIFEST_URL=" + rel.url,
 		"AGENTHUB_DATA_DIR=" + filepath.Join(home, "data"),
 		"TMPDIR=" + tmpdir,
-	}
+	}, args...)
+}
+
+// runEnv is the invocation itself, for the tests whose subject IS the
+// environment the script is handed.
+func runEnv(t *testing.T, env []string, args ...string) (string, error) {
+	t.Helper()
+	cmd := exec.Command("sh", append([]string{filepath.Join(repoRoot(t), "scripts", "install.sh")}, args...)...)
+	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -508,5 +515,52 @@ func TestUninstallLeavesTheDataAlone(t *testing.T) {
 	}
 	if _, err := os.Stat(data); err == nil {
 		t.Error("--purge left the data directory behind")
+	}
+}
+
+// TestPurgeRefusesADirectoryAgenthubDidNotCreate covers the only `rm -rf` in
+// the script, whose argument is AGENTHUB_DATA_DIR.
+//
+// The variable is the user's own and the directory it names is not
+// second-guessed — internal/platform lets it point anywhere, and so does this.
+// But `/` or a bare $HOME in it is a typo, and it is not one the exit status
+// can be traded back for afterwards. The receipt is deliberately left in place
+// too: a purge that refused must not have half-uninstalled on the way.
+func TestPurgeRefusesADirectoryAgenthubDidNotCreate(t *testing.T) {
+	tgz := tarball(t, buildAgenthub(t, true))
+	rel := serve(t, tgz, tgz)
+
+	for _, dir := range []string{"$HOME", "/", "relative/data"} {
+		t.Run(dir, func(t *testing.T) {
+			home := t.TempDir()
+			if out, err := run(t, home, rel); err != nil {
+				t.Fatalf("installing: %v\n%s", err, out)
+			}
+			keep := filepath.Join(home, "keep-me")
+			if err := os.WriteFile(keep, []byte("x"), 0o600); err != nil {
+				t.Fatalf("seeding $HOME: %v", err)
+			}
+			target := dir
+			if target == "$HOME" {
+				target = home
+			}
+			out, err := runEnv(t, []string{
+				"PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+				"HOME=" + home,
+				"AGENTHUB_INSTALL_PREFIX=" + filepath.Join(home, ".local"),
+				"AGENTHUB_INSTALL_MANIFEST_URL=" + rel.url,
+				"AGENTHUB_DATA_DIR=" + target,
+				"TMPDIR=" + t.TempDir(),
+			}, "--uninstall", "--purge")
+			if err == nil {
+				t.Fatalf("--purge accepted %s as the data directory:\n%s", dir, out)
+			}
+			if !strings.Contains(out, "refusing to delete") {
+				t.Errorf("the refusal does not say what it refused:\n%s", out)
+			}
+			if _, err := os.Stat(keep); err != nil {
+				t.Errorf("--purge deleted from $HOME: %v", err)
+			}
+		})
 	}
 }

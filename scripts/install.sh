@@ -116,11 +116,26 @@ receipt="$prefix/share/agenthub/install.json"
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # fetch <url> <dest> — curl if present, wget otherwise. Both fail the script on
-# an HTTP error rather than writing the error page to disk, which is what -f
-# and --content-on-error=off buy.
+# an HTTP error rather than writing the error page to disk: curl needs -f for
+# that, wget does it by default (--content-on-error, off unless asked for).
+#
+# A URL that arrived as https stays https through every redirect. The manifest
+# is the one download nothing verifies afterwards — everything else is checked
+# against it — so a redirect that leaves TLS is a manifest written by whoever
+# is on the path. The pin FOLLOWS THE SCHEME rather than being unconditional:
+# AGENTHUB_INSTALL_MANIFEST_URL may legitimately name a plain-http mirror, and
+# that is a decision made off this machine, about a network this script cannot
+# see.
+#
+# curl only, deliberately. `wget` on Alpine is busybox's, which accepts almost
+# none of GNU wget's long options — --https-only there is not a stricter
+# install, it is no install at all.
 fetch() {
 	if have curl; then
-		curl -fsSL "$1" -o "$2"
+		case "$1" in
+		https://*) curl -fsSL --proto '=https' --proto-redir '=https' "$1" -o "$2" ;;
+		*) curl -fsSL "$1" -o "$2" ;;
+		esac
 	elif have wget; then
 		wget -q -O "$2" "$1"
 	else
@@ -246,6 +261,19 @@ if [ "$mode" = "uninstall" ]; then
 
 	if [ "$purge" = "1" ]; then
 		dir="$(data_dir)"
+		# This is the only `rm -rf` in the file, and AGENTHUB_DATA_DIR reaches
+		# it as the argument. It is the user's own variable, so the directory
+		# it names is not second-guessed — but a relative path, `/`, or a bare
+		# $HOME is a typo rather than an intention, and it is not one the exit
+		# status can be traded back for.
+		case "$dir" in
+		"" | "/" | "$HOME" | "$HOME/")
+			die "refusing to delete $dir; AGENTHUB_DATA_DIR names a directory agenthub created, not this"
+			;;
+		[!/]*)
+			die "refusing to delete a relative path ($dir); AGENTHUB_DATA_DIR must be absolute"
+			;;
+		esac
 		if [ -d "$dir" ]; then
 			rm -rf "$dir"
 			note "removed $dir"
@@ -273,6 +301,13 @@ if [ -z "$manifest_url" ]; then
 		manifest_url="https://github.com/$repo/releases/latest/download/manifest.json"
 	fi
 fi
+# Everything below is checked against the manifest, and nothing checks the
+# manifest. Said out loud where it can still change someone's mind, rather
+# than refused: the only way to get here is to have set the variable.
+case "$manifest_url" in
+https://*) ;;
+*) note "warning: the manifest is not being fetched over https; nothing vouches for what it says" ;;
+esac
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/agenthub-install.XXXXXX")"
 cleanup() { rm -rf "$tmp"; }
