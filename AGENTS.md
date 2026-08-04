@@ -144,9 +144,9 @@ failures look like, and what the correct behavior is.
 
 ## Collaboration conventions
 
-These are the rules. The commands that carry them out live in the
-[new-feature skill](.agents/skills/new-feature/SKILL.md), in one copy — follow it rather than
-reconstructing the sequence from the bullets below.
+These are the rules, and only the rules. The commands live in the
+[new-feature skill](.agents/skills/new-feature/SKILL.md), in one copy — an order of operations
+reconstructed from the reasons below is how a step ends up in the wrong place.
 
 ### Commit messages
 
@@ -191,28 +191,25 @@ release: 0.18.0
 Run `git config commit.template .gitmessage` once per clone to show the same rules in the editor;
 the template is a prompt, while CI is the authority.
 
-- **Do every feature in its own worktree; never edit code directly in the main work tree**:
-  `git worktree add ../agent-hub-<topic> -b <topic>`. The main work tree only lands and pushes.
-- Inside the worktree, **one commit per subtask** — every commit compiles and passes tests.
-- Follow the commit-message convention above.
-- **Every branch has a PR, opened as a draft on its first commit and updated per subtask** — body =
-  the subtask list, finished ones ticked. It is the only view of the branch from outside your
-  worktree, and where CI's own machines grade it (`pull_request` runs the jobs `main` gets).
-- **The landing closes the PR, not a merge button.** Force-push after the final rebase so its head is
-  exactly what lands; `main` then holds that commit and GitHub marks it merged. If they differ, close
-  it by hand naming the landed commit — an open PR claims work is still in flight.
-- **`main` is linear: rebase, never merge.** Several worktrees are normally in flight, and a merge
-  commit per branch makes "what landed, when, on top of what" unreadable from `git log`.
-- **`make ci-landing` runs after the rebase, not before — and only when the rebase moved the branch.**
-  Its whole reason is commits replayed onto code they were never tested against, and a rebase that
-  changes no sha produces none: what is about to land is then what the PR's checks just graded, at the
-  same head. It also drops the test cache and then fails on any `(cached)` in its own log:
-  `test/e2e` builds its binary inside `TestMain`, which the Go cache key does not cover, so the suite
-  will otherwise report `ok (cached)` for a tree it never ran.
-- **`--ff-only` is the enforcement, not a formality.** If it refuses, the rebase did not happen or
-  `origin/main` moved — rebase again. Never reach for a plain `git merge` to get past it.
-- Pull with `git pull --rebase` so an out-of-date `main` does not grow a merge commit.
-- Rebase only branches that are yours alone. Once pushed, a branch is history other people hold.
+### The branch flow
+
+Eight rules, each with what it buys. The **sequence** that carries them out — every command, in the
+order it is run, including the several that are easy to type plausibly and wrongly — is the
+[new-feature skill](.agents/skills/new-feature/SKILL.md). Follow that file; a change that compiles
+nothing takes the short lane at the top of it.
+
+| Rule | Why it is one |
+|---|---|
+| A worktree per feature, branched from `origin/main`; **never edit code in the main work tree** | Several branches are normally in flight, and one must be able to land while another is mid-edit |
+| One commit per subtask, each compiling and passing tests on its own | Nothing is squashed on the way in, so a branch's commits are exactly what `main` gets, and a bisect lands on one of them |
+| A PR per branch, draft from the first commit, body = the subtask list kept ticked | The only view of the branch from outside your worktree, and where CI's own machines grade it (`pull_request` runs the jobs `main` gets) |
+| The PR's checks are the full run; a local `make ci-full` is for when you expect to be the one who broke it | Two runners, two operating systems, and neither of them is this laptop |
+| `make ci-landing` after a rebase that moved the branch, and only then | Its reason is commits replayed onto a base they were never tested against; a rebase that changes no sha produces none |
+| The landing closes the PR, not a merge button: force-push after the final rebase so its head is exactly what lands | `main` then holds that commit and GitHub marks it merged; if they differ, an open PR claims work still in flight |
+| `main` is linear — rebase, never merge, and pull with `git pull --rebase` | A merge commit per branch makes "what landed, when, on top of what" unreadable from `git log` |
+| `--ff-only` is the enforcement, not a formality | If it refuses, the rebase did not happen or `origin/main` moved. Never reach for a plain `git merge` to get past it |
+
+Rebase only branches that are yours alone: once pushed, a branch is history other people hold.
 
 ## Toolchain
 
