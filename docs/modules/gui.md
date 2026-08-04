@@ -157,7 +157,13 @@ though the collected entry correctly accepted only one.
 
 **Playground** omits a blank optional field rather than encoding it as an empty value, and keeps the
 raw daemon result in a separate disclosure because tool content and transport metadata answer
-different questions.
+different questions. It asks the self-test for **256 KiB** of output (`max_text_bytes`) against a
+daemon default of 2 KiB sized for "does this connect": this page exists to show what the tool said,
+that cut is final — nothing retains a remainder, unlike the same call through the gateway — and a
+JSON answer cut mid-object stops parsing, which silently withdraws the Pretty view from exactly the
+results large enough to want one. Whether a cut happened is read from the `truncated` FIELD, never
+from the trailer in the text, and it is said **only when it happened**: the standing caveat this
+replaced was on screen for every result, which is how a warning gets skipped.
 
 **Calls** is one page with three views (Calls, Insights, Ledger). Its filters are applied **on the
 daemon before paging**, so they never describe only the visible slice, and the Tool dropdown narrows

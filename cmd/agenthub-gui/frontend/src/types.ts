@@ -141,6 +141,11 @@ export interface ServerTestRequest {
    *  alongside the bare name list. Opt-in because schemas are unbounded and
    *  the usual question ("does this connect") does not need them. */
   defs?: boolean;
+  /** Raises the byte limit on `call.text`. 0 selects the daemon's default,
+   *  which is small on purpose — it is sized for "does this connect", not
+   *  for rendering a tool's answer to a person. There is no cursor to fetch
+   *  a remainder from, so anything over this limit is lost for good. */
+  max_text_bytes?: number;
 }
 
 /** One tool of the live handshake, present when the request set `defs`. */
@@ -162,6 +167,11 @@ export interface ServerTestCall {
   tool: string;
   is_error: boolean;
   text?: string;
+  /** `text` is not the whole answer. A FIELD rather than the `… (truncated)`
+   *  trailer inside the text, which is prose a tool could have written
+   *  itself — and this is what decides whether a failed JSON parse means
+   *  "not JSON" or "cut before it could be". */
+  truncated?: boolean;
   millis: number;
 }
 

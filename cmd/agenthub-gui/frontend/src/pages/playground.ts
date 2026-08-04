@@ -54,6 +54,23 @@ import type {
  *  produces a failure report about the wrong subject. */
 const CALL_TIMEOUT_MS = 120_000;
 
+/** How much of a tool's answer to ask the daemon for, in bytes.
+ *
+ *  The daemon's default is 2 KiB, sized for the question that endpoint is
+ *  usually asked ("does this connect"). This page asks the opposite one — it
+ *  exists to show the operator what the tool actually said — and the cut is
+ *  FINAL: unlike the gateway's result budget, nothing retains a remainder to
+ *  page through, so whatever the limit drops is gone.
+ *
+ *  It also decides whether the JSON view exists at all. A JSON answer cut
+ *  mid-object no longer parses, so a tight limit silently withdraws
+ *  pretty-printing from exactly the results large enough to want it.
+ *
+ *  256 KiB rather than the daemon's 1 MiB ceiling: past some size this stops
+ *  being something a person reads and starts being something that makes one
+ *  `<pre>` miserable to scroll. What it still cuts is REPORTED, not hidden. */
+const CALL_OUTPUT_BYTES = 256 * 1024;
+
 // ---------------------------------------------------------------------------
 // JSON Schema -> form
 // ---------------------------------------------------------------------------
@@ -719,6 +736,7 @@ export function playgroundPage(): Page {
       tool: asked.tool,
       args: got.args,
       timeout_ms: CALL_TIMEOUT_MS,
+      max_text_bytes: CALL_OUTPUT_BYTES,
     });
     inFlight = promise;
     // A result that arrives after the user moved to another server or tool is
@@ -783,6 +801,10 @@ export function playgroundPage(): Page {
           el("span", { text: `  ${call.tool} returned in ${call.millis} ms.` }),
         ]);
     const text = call.text ?? "";
+    // The daemon says whether it cut the answer. Reading that off the
+    // "… (truncated)" trailer instead would be matching prose a tool could
+    // have written itself — and this decides what a failed parse MEANS.
+    const cut = call.truncated === true;
     let parsed: unknown;
     let isJSON = false;
     if (text) {
@@ -790,8 +812,11 @@ export function playgroundPage(): Page {
         parsed = JSON.parse(text) as unknown;
         isJSON = true;
       } catch {
-        // Tool text is allowed to be anything. A failed parse simply means
-        // there is no meaningful Pretty mode to offer.
+        // Tool text is allowed to be anything, so a failed parse normally
+        // just means there is no Pretty mode to offer. When the answer was
+        // CUT it means something else — a JSON document sliced mid-object
+        // stops parsing — and the notice below tells those two apart, since
+        // the screen would otherwise show the same nothing for both.
       }
     }
     const resultContent = el("div", {});
@@ -823,12 +848,19 @@ export function playgroundPage(): Page {
       } else {
         renderText(false);
       }
+      // Built through el(), which drops a null child — the DOM's own
+      // append() would render one as the text "null".
       resultContent.append(
-        el("div", { class: "playground-result-toolbar" }, [
-          isJSON ? el("span", { class: "id-chip", text: "JSON" }) : el("span", { class: "meta", text: "Text output" }),
-          controls(...resultActions, copyButton(() => shown, "Copy output", "btn btn-secondary")),
+        el("div", {}, [
+          el("div", { class: "playground-result-toolbar" }, [
+            isJSON
+              ? el("span", { class: "id-chip", text: "JSON" })
+              : el("span", { class: "meta", text: "Text output" }),
+            controls(...resultActions, copyButton(() => shown, "Copy output", "btn btn-secondary")),
+          ]),
+          cut ? cutNotice(isJSON) : null,
+          output,
         ]),
-        output,
       );
     }
     resultBox.append(
@@ -837,12 +869,31 @@ export function playgroundPage(): Page {
         header,
         text ? resultContent : el("p", { class: "hint", text: "The tool returned no text content." }),
         rawDetails(raw, "Show the raw result JSON"),
-        el("p", {
-          class: "hint",
-          text: "Output is truncated by the daemon at 2 KiB — a tool that answers with a megabyte is not rendered whole.",
-        }),
       ]),
     );
+  }
+
+  /** Says that the output was cut — shown only when it was.
+   *
+   *  This replaced a standing caveat naming the old 2 KiB limit. A warning
+   *  that is on screen for every result teaches the reader to skip it, and
+   *  at the limit this page now asks for it would be wrong nearly every
+   *  time; a warning that appears only when something was actually dropped
+   *  is read. */
+  function cutNotice(isJSON: boolean): HTMLElement {
+    return el("div", { class: "notice notice-warn" }, [
+      el("div", { text: `Cut at ${CALL_OUTPUT_BYTES / 1024} KiB — this is not the whole answer.` }),
+      el("span", {
+        class: "hint",
+        text: isJSON
+          ? "What arrived still parses, so the Pretty view is of a partial document, not the tool's " +
+            "full one. There is no remainder to fetch: this probe keeps no cursor, unlike the same " +
+            "call made through the gateway."
+          : "If the answer was JSON, this is why there is no Pretty view — a document cut mid-object " +
+            "no longer parses. There is no remainder to fetch: this probe keeps no cursor, unlike the " +
+            "same call made through the gateway.",
+      }),
+    ]);
   }
 
   function showFailure(err: unknown): void {
