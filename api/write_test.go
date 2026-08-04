@@ -126,7 +126,7 @@ func TestNonStaleConflictsAreNotConflictErrors(t *testing.T) {
 		{"duplicate_server_name", "E_SERVER_EXISTS"},
 		{"duplicate_profile_name", "E_PROFILE_EXISTS"},
 		{"skill_target_drifted", ErrCodeConflict},
-		{"approval_already_decided", ErrCodeAlreadyDecided},
+		{"duplicate_token_name", "E_TOKEN_EXISTS"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

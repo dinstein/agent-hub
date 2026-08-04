@@ -560,11 +560,11 @@ func TestMarshalErrorCarriesMachineReadableCodes(t *testing.T) {
 	}
 
 	apiErr := &api.Error{
-		ErrorBody: api.ErrorBody{Code: api.ErrCodeAlreadyDecided, Message: "decided by cli", Hint: "refresh"},
+		ErrorBody: api.ErrorBody{Code: api.ErrCodeConflict, Message: "decided by cli", Hint: "refresh"},
 		Status:    http.StatusConflict,
 	}
 	m := decode(t, fmt.Errorf("wrapped: %w", apiErr))
-	if m["code"] != api.ErrCodeAlreadyDecided || m["hint"] != "refresh" {
+	if m["code"] != api.ErrCodeConflict || m["hint"] != "refresh" {
 		t.Errorf("api error marshalled as %v", m)
 	}
 

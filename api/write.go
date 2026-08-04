@@ -114,9 +114,8 @@ func AsConflict(err error) (*ConflictError, bool) {
 //
 // The test is deliberately narrow: 409 alone is NOT enough, and neither is
 // "some conflict code". The daemon also answers 409 for a name already taken
-// (E_SERVER_EXISTS, E_PROFILE_EXISTS), for an approval another frontend
-// decided first (E_ALREADY_DECIDED) and for a skills target that drifted
-// (E_CONFLICT). Re-reading and retrying fixes none of those, and telling a
+// (E_SERVER_EXISTS, E_PROFILE_EXISTS, E_TOKEN_EXISTS) and for a skills target
+// that drifted (E_CONFLICT). Re-reading and retrying fixes none of those, and telling a
 // frontend "your view was stale" for a duplicate name would send it into a
 // retry loop that can never succeed.
 func asConflict(err error) error {

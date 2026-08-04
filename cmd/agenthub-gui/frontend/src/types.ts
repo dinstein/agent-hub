@@ -1051,9 +1051,6 @@ export const ErrCode = {
   NotFound: "E_NOT_FOUND",
   BadRequest: "E_BAD_REQUEST",
   Forbidden: "E_FORBIDDEN",
-  AlreadyDecided: "E_ALREADY_DECIDED",
-  Expired: "E_EXPIRED",
-  Stale: "E_STALE",
   /** A write carried an expectedGeneration the registry has moved past.
    *  NOTHING was written: re-read, re-apply the intent, retry. */
   StalePrecondition: "E_STALE_PRECONDITION",

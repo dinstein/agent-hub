@@ -28,13 +28,6 @@ const (
 	// reports the current generation in ErrorBody.Generation; the client
 	// surfaces both as *ConflictError (see IsConflict).
 	ErrCodeStalePrecondition = "E_STALE_PRECONDITION"
-	// ErrCodeAlreadyDecided: another frontend decided first. Idempotent by
-	// design, not a failure (docs/modules/controlplane.md).
-	ErrCodeAlreadyDecided = "E_ALREADY_DECIDED"
-	// ErrCodeExpired: the approval deadline passed; the request auto-denied.
-	ErrCodeExpired = "E_EXPIRED"
-	// ErrCodeStale: the arguments changed since the request was raised.
-	ErrCodeStale = "E_STALE"
 	// ErrCodeInternal: the daemon failed to serve the request.
 	ErrCodeInternal = "E_INTERNAL"
 	// ErrCodeAuthRequired: a live downstream self-test was rejected with
