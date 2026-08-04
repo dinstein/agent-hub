@@ -217,8 +217,15 @@ legacy handshake, the exposure side's default answer, the HTTP header sent befor
 
 ### Upstream deprecation tracking
 
-No removal is earlier than 2027-07-28 and every seam is in place. Each use site carries a
+No removal is scheduled earlier than 2027-07-28 and every seam is in place. Each use site carries a
 `// DEPRECATED-UPSTREAM(<feature>, earliest-removal: <date>)` comment, so one grep finds them all.
+
+**`earliest-removal` is a removal date or the literal `none`, and never the date a feature was
+deprecated.** The two are different facts and the `Deprecated in` column below carries the other one.
+HTTP+SSE is the case that needs the word: it is deprecated with no removal planned, because ruling
+#29 keeps it on the read side for servers that expose nothing else. Its three markers once read
+`earliest-removal: deprecated 2025-03-26`, which puts a date already past in the field a sweep looks
+at to decide what may be deleted — and it was the one entry that must not be acted on.
 
 | Feature | Deprecated in | Dependency point | Migration seam |
 |---|---|---|---|

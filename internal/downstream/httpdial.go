@@ -104,9 +104,9 @@ func (d Deps) dialHTTP(ctx context.Context, spec Spec) (transport.Transport, err
 	case transport.StreamableHTTP:
 		return transport.DialStreamableHTTP(cfg)
 	case transport.SSE:
-		// DEPRECATED-UPSTREAM(http+sse, earliest-removal: deprecated
-		// 2025-03-26) — read side only, kept so agenthub can attach to
-		// servers that expose nothing else.
+		// DEPRECATED-UPSTREAM(http+sse, earliest-removal: none) —
+		// deprecated 2025-03-26, read side only, kept so agenthub can
+		// attach to servers that expose nothing else.
 		return transport.DialHTTPSSE(ctx, cfg)
 	default:
 		return nil, fmt.Errorf("downstream %q: %q is not an http transport", spec.ID, spec.Kind)

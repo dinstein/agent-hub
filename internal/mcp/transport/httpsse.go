@@ -18,11 +18,15 @@ import (
 // and client→server messages are POSTed to an address the server hands out
 // in its first event.
 //
-// DEPRECATED-UPSTREAM(http+sse, earliest-removal: deprecated 2025-03-26,
-// superseded by Streamable HTTP). Kept on the READ side only, deliberately:
-// a proxy's value is being able to attach to old servers that expose
-// nothing else (canonical.md §5b, ruling #29). It is never offered on the
-// exposure side.
+// DEPRECATED-UPSTREAM(http+sse, earliest-removal: none)
+//
+// Deprecated upstream on 2025-03-26 and superseded by Streamable HTTP, but
+// kept on the READ side indefinitely and deliberately: a proxy's value is
+// being able to attach to old servers that expose nothing else
+// (canonical.md §5b, ruling #29). It is never offered on the exposure side.
+// 2025-03-26 is the date it was deprecated, NOT a date it may be removed —
+// the two were once in one field here, and the marker exists so a sweep can
+// read the removal date without reading the prose.
 //
 // Failure model: unlike streamable-http there IS a single long-lived byte
 // stream, so this transport behaves like stdio — any stream error is
@@ -61,7 +65,8 @@ type httpSSE struct {
 // server's endpoint event names the POST address (or ctx expires). ctx
 // bounds the handshake only; the stream itself lives until Close.
 //
-// DEPRECATED-UPSTREAM(http+sse, earliest-removal: deprecated 2025-03-26)
+// DEPRECATED-UPSTREAM(http+sse, earliest-removal: none) — see the file
+// comment: deprecated 2025-03-26, kept on the read side indefinitely.
 func DialHTTPSSE(ctx context.Context, cfg HTTPConfig) (Transport, error) {
 	base, err := newHTTPBase(cfg)
 	if err != nil {
