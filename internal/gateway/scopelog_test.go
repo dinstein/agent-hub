@@ -40,12 +40,18 @@ func TestStartupLogsTheEffectiveScopeShape(t *testing.T) {
 	// and the shape a client actually sees arrives with the catalog swap. The
 	// test pins both so the sequence is the documented one rather than an
 	// accident of timing.
+	//
+	// The two servers connect independently, so each swap logs its own line and
+	// the FIRST of them legitimately reports one server. waitForTools proves
+	// both tools are routable, not that the swap describing both has been
+	// written, so the settled shape has to be waited for rather than read once.
+	waitFor(t, "the scope shape for the full catalog", func() bool {
+		rec, ok := lookupScope(sink, "catalog changed")
+		return ok && rec["servers"] == "2"
+	})
 	swapped := findScope(t, sink, "catalog changed")
 	// Counts, never names: the line must not grow with the catalog, which is
 	// the size at which it would stop being readable.
-	if swapped["servers"] != "2" {
-		t.Errorf("servers = %q, want 2", swapped["servers"])
-	}
 	if swapped["tools"] != "2" {
 		t.Errorf("tools = %q, want 2", swapped["tools"])
 	}
@@ -126,14 +132,19 @@ func TestScopeConvergenceIsSkippedBelowDebug(t *testing.T) {
 	}
 }
 
-// lookupScope returns the scope-shape record logged for one reason. The
-// reason is what tells the cold startup line apart from the one describing a
-// live catalog, and the two carry different counts on purpose.
+// lookupScope returns the MOST RECENT scope-shape record logged for one
+// reason. The reason tells the cold startup line apart from the ones
+// describing a live catalog, and the two carry different counts on purpose.
+//
+// Most recent, not first: every server connecting swaps the catalog and logs
+// its own line, so the earliest "catalog changed" describes a catalog that was
+// still filling up. A lookup taking the first match reads a shape that was
+// true for a moment and asserts it as the settled one.
 func lookupScope(sink *callLog, reason string) (map[string]string, bool) {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
-	for _, r := range sink.recs {
-		if r["msg"] == "effective scope resolved" && r["reason"] == reason {
+	for i := len(sink.recs) - 1; i >= 0; i-- {
+		if r := sink.recs[i]; r["msg"] == "effective scope resolved" && r["reason"] == reason {
 			return r, true
 		}
 	}
