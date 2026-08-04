@@ -347,9 +347,15 @@ read as a label, "Disable" marked the servers that were on. It now leads the row
   confirmations without reading them.
 
 **The disclosure and the write surface are separate targets.** The row summary is one
-keyboard-focusable disclosure that reveals the latest cached self-test and **never performs I/O**;
-editing is an always-visible Edit button, so a click whose affordance says "show me more" cannot open
-a write surface. The enable switch and the Test / Edit controls never bubble into the disclosure.
+keyboard-focusable disclosure that reveals the latest cached self-test and **never touches the
+downstream**: the self-test it shows is the last one that settled, and only Refresh and Test start a
+handshake. Its own reads are control-plane reads of things the dashboard payload does not carry — the
+stored definition behind its first line, and the timeline under the badge — each once per server, per
+expansion. Editing is an always-visible Edit button, so a click whose affordance says "show me more"
+cannot open a write surface. The panel leads with the **endpoint**: the URL for `http`/`sse`, the
+whole spawn command for `stdio`, because the id says what a server was named rather than what it
+reaches, and reading that used to mean opening the editor — a write surface — to answer a question
+about a running row. The enable switch and the Test / Edit controls never bubble into the disclosure.
 Manage secrets, Remove and OAuth Log out sit in the overflow menu so they stay available without
 painting every healthy row as a warning.
 

@@ -186,6 +186,27 @@ const SERVER_EVENT_LIMIT = 10;
  *  history. */
 const eventCache = new Map<string, EventRecord[]>();
 
+/** Per-server stored definition, keyed by id and fetched AT MOST ONCE per id.
+ *  The dashboard payload carries neither the endpoint nor the spawn command,
+ *  and two places need one: the first line of the detail panel, and the
+ *  "Installing…" label. Caching the promise rather than its value is what
+ *  makes a second reader join the first request instead of starting another
+ *  one. Dropped with the cached self-test, and on any write to the
+ *  definition. */
+const entryCache = new Map<string, Promise<ServerEntry | null>>();
+
+/** The stored definition, or null when it cannot be read. A failure resolves
+ *  rather than rejecting: every caller here degrades to saying less, and none
+ *  of them is a reason to raise a page-level failure. */
+function storedEntry(id: string): Promise<ServerEntry | null> {
+  let pending = entryCache.get(id);
+  if (!pending) {
+    pending = hub.getServer(id).then((d) => d.entry).catch(() => null);
+    entryCache.set(id, pending);
+  }
+  return pending;
+}
+
 /**
  * Replaces gateway-observed runtime state with this page's own short-lived
  * handshake. The daemon list remains authoritative for configuration and
@@ -777,11 +798,17 @@ const PASTE_PLACEHOLDER = [
  *  own). Adding a class would mean editing style.css from here. */
 const PASTE_BODY_STYLE = "padding:12px";
 
+/** The spawn invocation on one line, command and every argument. Truncating
+ *  it would hide exactly the argument worth reading. */
+function commandLine(entry: Partial<ServerEntry>): string {
+  return [entry.command ?? "", ...(entry.args ?? [])].filter(Boolean).join(" ");
+}
+
 /** The whole invocation on one line: the thing a user recognises a pasted
- *  server by. Truncating it would hide exactly the argument worth reading. */
+ *  server by, whichever transport it turned out to be. */
 function parsedCommandLine(entry: Partial<ServerEntry>): string {
   if (entry.url) return entry.url;
-  return [entry.command ?? "", ...(entry.args ?? [])].filter(Boolean).join(" ");
+  return commandLine(entry);
 }
 
 /**
@@ -851,9 +878,10 @@ export function serversPage(): Page {
   /** When each currently-connecting server was first seen connecting. Reset
    *  whenever it leaves that state, so a reconnect starts the clock again. */
   const connectingSince = new Map<string, number>();
-  /** id -> spawn command, fetched lazily and ONLY for connecting stdio
-   *  servers. The dashboard payload does not carry the command and there is
-   *  no reason to pull every definition to label one wait. */
+  /** id -> spawn command, resolved from the stored definition and read
+   *  SYNCHRONOUSLY by the label ticker. It is filled lazily and ONLY for
+   *  connecting servers: there is no reason to pull every definition to label
+   *  one wait. */
   const commands = new Map<string, string>();
 
   /**
@@ -881,13 +909,10 @@ export function serversPage(): Page {
       live.add(s.id);
       if (!connectingSince.has(s.id)) connectingSince.set(s.id, now);
       if (!commands.has(s.id)) {
-        commands.set(s.id, ""); // claim the slot so one fetch runs per id
-        hub
-          .getServer(s.id)
-          .then((d) => commands.set(s.id, d.entry.command ?? ""))
-          .catch(() => {
-            // Not knowing the command only costs the "Installing…" label.
-          });
+        commands.set(s.id, ""); // claim the slot so one paint queues one read
+        // Not knowing the command only costs the "Installing…" label, which
+        // is why an unreadable definition needs no handling of its own.
+        void storedEntry(s.id).then((entry) => commands.set(s.id, entry?.command ?? ""));
       }
     }
     for (const id of Array.from(connectingSince.keys())) {
@@ -1038,6 +1063,8 @@ export function serversPage(): Page {
         probes.delete(id);
         probeCache.delete(id);
         eventCache.delete(id);
+        entryCache.delete(id);
+        commands.delete(id);
         probeVersions.delete(id);
         if (!present.has(id)) expandedServers.delete(id);
       }
@@ -1434,6 +1461,7 @@ export function serversPage(): Page {
       ? `Cached result · checked ${new Date(observation.checkedAt).toLocaleTimeString()}`
       : "No cached result";
     return el("div", { class: "server-probe-detail", id: detailID }, [
+      endpointLine(s),
       el("div", { class: "server-probe-detail-head" }, [
         el("strong", { text: "Latest self-test" }),
         el("span", { class: "meta", text: checked }),
@@ -1442,6 +1470,40 @@ export function serversPage(): Page {
       authDetails(s),
       recentEvents(s),
     ]);
+  }
+
+  /** What this server IS, ahead of everything about how it is doing: the
+   *  endpoint for http/sse, the whole spawn command for stdio.
+   *
+   *  It leads the panel because the id says what a server was NAMED, never
+   *  what it reaches, and "which endpoint is this actually" is the first
+   *  question asked of a row that answers wrongly — until now it could only
+   *  be answered by opening the editor, which is a write surface.
+   *
+   *  Read per server and only once expanded, like the timeline below it: the
+   *  dashboard payload carries no definition, and pulling every one to fill a
+   *  line nobody has opened would cost far more than it shows. */
+  function endpointLine(s: Server): Node {
+    const remote = s.transport === Transport.HTTP || s.transport === Transport.SSE;
+    const label = remote ? "URL" : "Command";
+    const host = el("div", { class: "server-probe-detail-head" }, [
+      el("strong", { text: "Endpoint" }),
+    ]);
+    const body = el("div", { class: "server-health-detail-body" }, [
+      el("div", { class: "kvs" }, [kv(label, "loading…")]),
+    ]);
+    const show = (value: string): void => {
+      clear(body);
+      body.append(el("div", { class: "kvs" }, [kv(label, value)]));
+    };
+    void storedEntry(s.id).then((entry) => {
+      // A definition that cannot be read says so. Rendering an empty value
+      // would claim this server is configured to reach nothing, which is a
+      // different fault and one the operator would go looking for.
+      if (!entry) return show("unavailable");
+      show((remote ? entry.url : commandLine(entry)) || "—");
+    });
+    return el("div", {}, [host, body]);
   }
 
   /** The health badge above is a VALUE — what this server is right now. This
@@ -1907,6 +1969,10 @@ export function serversPage(): Page {
             : hub.updateServer(spec, detail.generation),
       ).then(async (ok) => {
         if (!ok) return;
+        // This write is the one that can change the endpoint, so the cached
+        // definition behind the detail panel's first line goes with it.
+        entryCache.delete(name);
+        commands.delete(name);
         form.hide();
         if (collected.entry.enabled) {
           await probeAfterWrite(name, creating ? "created" : "updated");
@@ -1961,6 +2027,8 @@ export function serversPage(): Page {
     probes.delete(s.id);
     probeCache.delete(s.id);
     eventCache.delete(s.id);
+    entryCache.delete(s.id);
+    commands.delete(s.id);
     probeVersions.delete(s.id);
     await draw();
     slot.say(`${s.id} removed.`);
@@ -2010,6 +2078,10 @@ export function serversPage(): Page {
     // The switch already shows the stored answer. A second success notice
     // only repeats the state while pushing the fleet down the page.
     slot.clear();
+    // The stored definition just moved. Anything cached from the previous
+    // read of it describes the entry before this write.
+    entryCache.delete(s.id);
+    commands.delete(s.id);
     await draw();
     if (next) {
       await probeAfterWrite(s.id, "enabled", false);
