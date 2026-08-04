@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -248,5 +249,84 @@ func TestBothReleasePathsPublishTheManifest(t *testing.T) {
 	if !strings.Contains(create, m[1]) {
 		t.Errorf("release-local.sh renders the manifest to %s but does not pass it to "+
 			"`gh release create`:\n%s", m[1], create)
+	}
+}
+
+// TestInstallerAgreesWithTheManifestItReads holds the two halves of the
+// Homebrew-less install path together.
+//
+// scripts/release-manifest.sh writes the file and scripts/install.sh is its
+// only reader, and they agree on two things by hand: the repository the
+// artifacts live in, and the schema number. Both disagreements are silent
+// where they are made. A repo default that drifts sends every install to a
+// Release nobody published; a schema bumped in the renderer alone makes every
+// installer already on a disk refuse the next release — and that installer is
+// fetched from a branch, so "already on a disk" means everyone.
+func TestInstallerAgreesWithTheManifestItReads(t *testing.T) {
+	root := repoRoot(t)
+
+	data, err := os.ReadFile(filepath.Join(root, "scripts", "install.sh"))
+	if err != nil {
+		t.Fatalf("scripts/install.sh: %v", err)
+	}
+	install := string(data)
+
+	local, err := os.ReadFile(filepath.Join(root, "scripts", "release-local.sh"))
+	if err != nil {
+		t.Fatalf("scripts/release-local.sh: %v", err)
+	}
+	upload := sourceRepoDefault.FindSubmatch(local)
+	if upload == nil {
+		t.Fatal("scripts/release-local.sh no longer defaults HOMEBREW_SOURCE_REPO")
+	}
+	// A different variable name on purpose — an installer that avoids
+	// Homebrew should not be configured through a variable named for it — but
+	// necessarily the same value.
+	m := regexp.MustCompile(`AGENTHUB_INSTALL_REPO:-([^}"]+)`).FindStringSubmatch(install)
+	if m == nil {
+		t.Fatal("scripts/install.sh no longer defaults AGENTHUB_INSTALL_REPO; without it " +
+			"the installer has no idea where to look for a manifest")
+	}
+	if m[1] != string(upload[1]) {
+		t.Errorf("release-local.sh uploads to %q while install.sh downloads from %q.\n"+
+			"Both paths are green; `curl … | sh` 404s on the first machine that is not this one.",
+			upload[1], m[1])
+	}
+
+	// The schema the installer accepts, against the one the renderer writes.
+	accepted := regexp.MustCompile(`\$schema"\s*=\s*"(\d+)"`).FindStringSubmatch(install)
+	if accepted == nil {
+		t.Fatal("scripts/install.sh no longer checks the manifest schema; it would read a " +
+			"future layout as though it understood it")
+	}
+	out, err := runManifest(t, manifestSums, manifestTag)
+	if err != nil {
+		t.Fatalf("rendering the manifest: %v\n%s", err, out)
+	}
+	var rendered releaseManifest
+	if err := json.Unmarshal([]byte(out), &rendered); err != nil {
+		t.Fatalf("the manifest is not valid JSON: %v", err)
+	}
+	if got := strconv.Itoa(rendered.Schema); got != accepted[1] {
+		t.Errorf("release-manifest.sh writes schema %s but install.sh accepts only %s.\n"+
+			"Every installer in the wild refuses the next release, and says so in terms "+
+			"of a schema number nobody has heard of.", got, accepted[1])
+	}
+}
+
+// TestInstallerIsPOSIXAndExecutable — it runs on whatever /bin/sh the machine
+// has, which is dash on most Linuxes, and it is piped straight into `sh`.
+func TestInstallerIsPOSIXAndExecutable(t *testing.T) {
+	path := filepath.Join(repoRoot(t), "scripts", "install.sh")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("scripts/install.sh: %v", err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Error("scripts/install.sh is not executable; a user who downloads it before " +
+			"running it has to notice and fix that themselves")
+	}
+	if out, err := exec.Command("sh", "-n", path).CombinedOutput(); err != nil {
+		t.Errorf("scripts/install.sh does not parse as sh: %v\n%s", err, out)
 	}
 }
