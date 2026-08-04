@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
+	"github.com/dinstein/agent-hub/internal/oauthflow"
 )
 
 // TestClassifySecretsErrorSeparatesAWrongKeyFromEverythingElse: a vault that
@@ -181,5 +182,25 @@ func TestTestConnectErrorStatesTheCauseOnce(t *testing.T) {
 	}
 	if !strings.Contains(e.Error(), "did not connect: refusing to spawn") {
 		t.Fatalf("context and cause are not joined exactly once: %q", e.Error())
+	}
+}
+
+// TestAuthErrorStatesTheCauseOnce is the same pin on the other constructor
+// that had the same shape. authError set Message to err.Error() while also
+// carrying err, so an OAuth failure — discovery URL, status, provider body —
+// was printed twice inside one line. These two are the constructors that
+// build an *Error from an error they did not create; a third would need this
+// test too.
+func TestAuthErrorStatesTheCauseOnce(t *testing.T) {
+	cause := &oauthflow.FlowError{
+		Type: oauthflow.ErrorTypeAuthorization,
+		Err:  errors.New("token endpoint returned 400: sentinel"),
+	}
+	var e *Error
+	if !errors.As(authError(cause), &e) {
+		t.Fatalf("no typed error from %v", cause)
+	}
+	if n := strings.Count(e.Error(), "sentinel"); n != 1 {
+		t.Fatalf("cause appears %d times in %q, want 1", n, e.Error())
 	}
 }

@@ -580,7 +580,10 @@ func authError(err error) error {
 	if hint == "" && fe.Discovery == oauthflow.DiscoveryFailed {
 		hint = "pass --issuer if the server publishes no protected-resource metadata"
 	}
-	return &Error{Code: code, ExitCode: exit, Message: err.Error(), Hint: hint, Err: err}
+	// Message names what failed; Err carries the chain. Error() joins them
+	// with ": ", so putting err.Error() in BOTH printed an OAuth failure —
+	// discovery URL, status, provider body — twice inside one line.
+	return &Error{Code: code, ExitCode: exit, Message: "authorization failed", Hint: hint, Err: err}
 }
 
 // secondsUntil returns the seconds left until a Unix expiry, clamped at 0.
