@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -366,11 +367,25 @@ func contentText(raw json.RawMessage) string {
 	return b.String()
 }
 
+// truncate bounds s to max BYTES, cutting on a rune boundary.
+//
+// `s[:max]` alone splits whatever multi-byte rune straddles the cut, and the
+// invalid fragment left behind renders as U+FFFD — in `--json` mode through
+// encoding/json, in text mode through the terminal — so a tool answering in
+// Chinese ends its output in a replacement character that reads as the TOOL's.
+//
+// internal/ctlapi/nonregtest.go holds the daemon's copy of this, for the
+// same rendering done on the other side of the socket. The two must be fixed
+// together.
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
-	return s[:max] + "… (truncated)"
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "… (truncated)"
 }
 
 // compile-time check that the result type renders in both modes.

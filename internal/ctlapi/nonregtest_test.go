@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/mcp"
@@ -434,5 +435,36 @@ func TestTruncateText(t *testing.T) {
 	got := truncateText(strings.Repeat("x", 20), 4)
 	if !strings.HasPrefix(got, "xxxx") || !strings.Contains(got, "truncated") {
 		t.Errorf("long = %q", got)
+	}
+}
+
+// TestTruncateTextCutsOnARuneBoundary: the byte limit must not split a rune.
+//
+// The whole point is what the operator SEES. A cut through a multi-byte rune
+// leaves bytes that are not UTF-8, and every renderer downstream — the JSON
+// encoder on this side, the terminal on the other — turns them into U+FFFD,
+// which reads as a character the tool emitted rather than damage this
+// function did. The all-ASCII case above cannot catch it.
+func TestTruncateTextCutsOnARuneBoundary(t *testing.T) {
+	// Three bytes per rune, so a limit of 10 lands one byte inside the
+	// fourth and must give back the first three.
+	got := truncateText(strings.Repeat("中", 10), 10)
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncation produced invalid UTF-8: %q", got)
+	}
+	if !strings.HasPrefix(got, "中中中") || strings.HasPrefix(got, "中中中中") {
+		t.Errorf("kept the wrong number of runes: %q", got)
+	}
+	if !strings.Contains(got, "truncated") {
+		t.Errorf("no trailer: %q", got)
+	}
+	// A limit landing exactly on a boundary keeps everything up to it.
+	if got := truncateText(strings.Repeat("中", 10), 9); got != "中中中"+"… (truncated)" {
+		t.Errorf("aligned limit = %q", got)
+	}
+	// Input that was never valid UTF-8 has no boundary to find. Yielding the
+	// trailer alone is correct: showing any of it would mean inventing bytes.
+	if got := truncateText(strings.Repeat("\x80", 10), 4); got != "… (truncated)" {
+		t.Errorf("invalid input = %q", got)
 	}
 }

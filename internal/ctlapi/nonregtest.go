@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dinstein/agent-hub/api"
 	"github.com/dinstein/agent-hub/internal/discovery/toolsig"
@@ -289,11 +290,31 @@ func contentText(raw json.RawMessage) string {
 	return b.String()
 }
 
+// truncateText bounds s to max BYTES, cutting on a rune boundary.
+//
+// The limit is in bytes because what it protects is the size of the response,
+// but `s[:max]` alone splits whatever multi-byte rune straddles the cut. The
+// fragment left behind is not valid UTF-8, and encoding/json substitutes
+// U+FFFD for it — so a tool answering in Chinese, or with an emoji, ends its
+// output in a replacement character that reads as something the TOOL emitted.
+// Backing up to the last rune start costs at most three bytes of output.
+//
+// Input that was ALREADY invalid UTF-8 walks back to 0 in the worst case and
+// yields the trailer alone. That is the honest answer: none of it could be
+// shown without inventing bytes.
+//
+// internal/cli/servertest.go holds a second copy — that command dials the
+// downstream directly rather than through the daemon, so it renders its own
+// result. The two must be fixed together.
 func truncateText(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
-	return s[:max] + "… (truncated)"
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "… (truncated)"
 }
 
 // compile-time proof that the production connector matches the injected one.

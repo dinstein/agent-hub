@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/dinstein/agent-hub/internal/mcp"
 )
@@ -173,5 +174,32 @@ func TestServerTestHumanRendersSignaturesAndSchema(t *testing.T) {
 	// stay readable as a list.
 	if !strings.Contains(out, "Search the knowledge base. Second line") {
 		t.Errorf("description was not folded onto one line:\n%s", out)
+	}
+}
+
+// TestTruncateCutsOnARuneBoundary: the byte limit must not split a rune.
+//
+// The daemon's copy in internal/ctlapi has the same test for the same
+// reason — this command renders its own result because it dials the
+// downstream directly — and the two are expected to answer identically.
+func TestTruncateCutsOnARuneBoundary(t *testing.T) {
+	if got := truncate("abc", 10); got != "abc" {
+		t.Errorf("short = %q", got)
+	}
+	// Three bytes per rune, so a limit of 10 lands one byte inside the
+	// fourth. Cutting there would leave bytes that are not UTF-8, and both
+	// --json and the terminal would render them as U+FFFD — damage that
+	// reads as a character the tool emitted.
+	got := truncate(strings.Repeat("中", 10), 10)
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncation produced invalid UTF-8: %q", got)
+	}
+	if got != "中中中"+"… (truncated)" {
+		t.Errorf("kept the wrong prefix: %q", got)
+	}
+	// Input that was never valid UTF-8 has no boundary to find; the trailer
+	// alone is correct, because showing any of it would invent bytes.
+	if got := truncate(strings.Repeat("\x80", 10), 4); got != "… (truncated)" {
+		t.Errorf("invalid input = %q", got)
 	}
 }
