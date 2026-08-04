@@ -13,6 +13,38 @@ The branch and PR go public at step 3 and both stay undoable. The one irreversib
 
 ---
 
+## The short lane: a change that compiles nothing
+
+Ask the tree, not yourself — the answer is a command, because "it's only a doc change" is a judgement
+and this must not be one:
+
+```bash
+git diff --name-only origin/main... | grep -vE '^(docs/|\.agents/|[A-Z]+\.md$)'
+```
+
+Empty output means the branch changes no file any build reads: prose under `docs/`, a skill, or a
+capitalised root document such as this repository's `AGENTS.md`. `Makefile`, `.github/`, `.gitmessage`
+and anything under `test/` are code by this rule and print, as they should — they decide what the
+checks do.
+
+The lane keeps the worktree, the commit convention, the PR and `--ff-only`. It cuts the checks, which
+is where the minutes are:
+
+```bash
+go test ./test/buildrules/ -count=1      # the only suite that reads prose
+```
+
+That is the whole local verdict, before the push **and** after the rebase in step 5. `test/buildrules`
+is what fails when a document cites a `canonical.md` section that no longer exists, a path that has
+moved, or a fuzz target nothing declares; every other package compiles from Go sources this branch did
+not touch. Rebasing prose onto new code cannot break the code — but it can invalidate a citation
+somebody else moved out from under you, which is the same suite.
+
+The PR still gets the full run on both runners. If the `grep` prints anything at all, you are not in
+this lane: go to step 0.
+
+---
+
 ## 0. Read before writing
 
 Stop as soon as the question is answered:
