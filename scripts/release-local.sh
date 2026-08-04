@@ -89,11 +89,21 @@ echo "==> rendering the formula"
 scripts/homebrew-formula.sh "$tag" dist/checksums-cli.txt > dist/agenthub.rb
 ruby -c dist/agenthub.rb >/dev/null && echo "formula syntax OK"
 
+echo
+echo "==> rendering the install manifest"
+# The other install path's half of the same step. This one goes UP with the
+# release rather than into the tap: scripts/install.sh reads it to learn what
+# to download on a machine that has no Homebrew — which is most machines
+# without Xcode Command Line Tools, since brew needs those itself. Rendered
+# before the irreversible step for the reason above: a Release published
+# without it can be installed by brew and by nothing else.
+scripts/release-manifest.sh "$tag" dist/checksums-cli.txt > dist/manifest.json
+
 if [ "$push" != "--push" ]; then
 	echo
 	echo "==> dry run: nothing was published"
 	echo "would create release ${tag} on ${repo} with:"
-	find dist -maxdepth 1 \( -name '*.tar.gz' -o -name 'checksums-cli.txt' \) -exec echo '  {}' \;
+	find dist -maxdepth 1 \( -name '*.tar.gz' -o -name 'checksums-cli.txt' -o -name 'manifest.json' \) -exec echo '  {}' \;
 	if [ -n "$tap" ]; then
 		echo "would push Formula/agenthub.rb and skills/agenthub/SKILL.md to ${tap}"
 		# Said before the irreversible step rather than discovered after it.
@@ -117,7 +127,7 @@ gh release create "$tag" \
 	--repo "$repo" \
 	--title "agenthub ${version}" \
 	--generate-notes \
-	dist/*.tar.gz dist/checksums-cli.txt
+	dist/*.tar.gz dist/checksums-cli.txt dist/manifest.json
 
 if [ -z "$tap" ]; then
 	echo

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -191,5 +193,60 @@ func TestReleaseManifestScriptIsExecutable(t *testing.T) {
 	}
 	if info.Mode()&0o111 == 0 {
 		t.Error("scripts/release-manifest.sh is not executable; both release paths run it directly")
+	}
+}
+
+// TestBothReleasePathsPublishTheManifest keeps the manifest from being
+// rendered into a file that never leaves the machine that made it.
+//
+// Rendering it and attaching it to the Release are two separate steps in both
+// paths, and neither goes red when only the first happens: the workflow's
+// upload takes a glob, release-local.sh's takes a list, and a Release missing
+// this one file publishes, tags and updates the tap exactly as usual. What
+// breaks is every install that is not Homebrew — `install.sh` fetches the
+// manifest first and has nothing to fall back on, so the whole non-brew path
+// is dead for that version and no CI job can see it.
+func TestBothReleasePathsPublishTheManifest(t *testing.T) {
+	rendered := regexp.MustCompile(`release-manifest\.sh[^\n>]*> (\S+)`)
+
+	wf := string(releaseWorkflow(t))
+	m := rendered.FindStringSubmatch(wf)
+	if m == nil {
+		t.Fatal("the release workflow does not run scripts/release-manifest.sh; every " +
+			"Release from now on can be installed by brew and by nothing else")
+	}
+	// `files: release/*` is the upload, so the manifest has to be rendered
+	// into that directory rather than beside it.
+	if dir := path.Dir(m[1]); !strings.Contains(wf, "files: "+dir+"/*") {
+		t.Errorf("the workflow renders the manifest to %s but does not upload %s/*.\n"+
+			"Every job stays green and the Release simply lacks the file.", m[1], dir)
+	}
+	// The rendered manifest describes the artifacts of THIS release, and the
+	// checksums it reads them from are produced by another job. Rendering
+	// before the collect step would read a file that is not there yet.
+	if strings.Index(wf, "name: Collect") > strings.Index(wf, "release-manifest.sh") {
+		t.Error("the workflow renders the manifest before collecting the artifacts; the " +
+			"checksums file it reads does not exist yet")
+	}
+
+	data, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts", "release-local.sh"))
+	if err != nil {
+		t.Fatalf("reading scripts/release-local.sh: %v", err)
+	}
+	local := string(data)
+	m = rendered.FindStringSubmatch(local)
+	if m == nil {
+		t.Fatal("scripts/release-local.sh does not run scripts/release-manifest.sh; a " +
+			"release cut from a laptop would ship without one, and the two paths are " +
+			"meant to produce the same Release")
+	}
+	// This path names its uploads one by one, so the file has to appear in
+	// that list as well as be written.
+	// Anchored at a line start: the script mentions the command in prose too,
+	// and matching that comment would grade a sentence instead of the upload.
+	create := regexp.MustCompile(`(?ms)^gh release create.*?\n\n`).FindString(local)
+	if !strings.Contains(create, m[1]) {
+		t.Errorf("release-local.sh renders the manifest to %s but does not pass it to "+
+			"`gh release create`:\n%s", m[1], create)
 	}
 }

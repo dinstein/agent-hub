@@ -89,16 +89,22 @@ func TestReleaseWorkflowUploadsWhereTheFormulaPoints(t *testing.T) {
 			"Release goes to whichever repository the workflow lives in, while the formula " +
 			"is rendered for HOMEBREW_SOURCE_REPO — the pair this check exists to keep together")
 	}
-	render := formulaTarget.FindSubmatch(data)
-	if render == nil {
+	// Every occurrence, not the first: more than one job renders URLs for the
+	// artifact repository now — the formula and the cask in one, the install
+	// manifest in another — and a check that reads only the first grades
+	// whichever happens to appear earliest in the file.
+	renders := formulaTarget.FindAllSubmatch(data, -1)
+	if renders == nil {
 		t.Fatal("the release workflow no longer sets HOMEBREW_SOURCE_REPO when rendering the " +
 			"formula; it falls back to the script's own default, which is then free to " +
 			"disagree with where the workflow actually uploaded")
 	}
-	if a, b := string(upload[1]), string(render[1]); a != b {
-		t.Errorf("the Release is uploaded to %s but the formula's URLs are rendered for %s.\n"+
-			"Both jobs would pass and `brew install` would 404 on the first machine that is "+
-			"not this one.", a, b)
+	for _, render := range renders {
+		if a, b := string(upload[1]), string(render[1]); a != b {
+			t.Errorf("the Release is uploaded to %s but URLs are rendered for %s.\n"+
+				"Both jobs would pass and the install would 404 on the first machine that "+
+				"is not this one.", a, b)
+		}
 	}
 }
 

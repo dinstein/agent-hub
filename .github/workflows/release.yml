@@ -179,6 +179,12 @@ jobs:
     if: needs.verify.outputs.tagged == 'true'
     runs-on: ubuntu-latest
     steps:
+      # This job downloaded artifacts and nothing else until the manifest step
+      # below, which is rendered by a script that lives in the tree. The
+      # checkout has to come FIRST: actions/checkout cleans the workspace, so
+      # placed after the download it would delete the artifacts it exists to
+      # sit beside.
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v5
         with:
           path: artifacts
@@ -188,6 +194,19 @@ jobs:
           find artifacts -type f \( -name '*.tar.gz' -o -name '*.dmg' -o -name '*.zip' -o -name 'checksums-*.txt' \) \
             -exec mv {} release/ \;
           ls -la release
+      # What every install that is NOT Homebrew reads. brew requires Xcode
+      # Command Line Tools, so a machine without them has no tap to install
+      # from, and scripts/install.sh downloads what this file names instead.
+      # Rendered here rather than in the `cli` job because it must describe the
+      # bytes this Release serves, and this is where they are all in one place.
+      - name: Render the install manifest
+        env:
+          # The same value as the upload's `repository:` below, spelled out for
+          # the same reason the homebrew job spells it out: the script has its
+          # own default, and a default disagreeing with where this workflow
+          # uploaded writes a base URL nothing was ever published to.
+          HOMEBREW_SOURCE_REPO: ${{ github.repository }}
+        run: scripts/release-manifest.sh "${GITHUB_REF_NAME}" release/checksums-cli.txt > release/manifest.json
       # Uploaded HERE, and the homebrew job renders the formula's download URLs
       # for the same repository. Both are spelled out rather than left to a
       # default, because the two used to be decided separately — the upload fell
