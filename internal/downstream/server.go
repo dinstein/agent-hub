@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -761,6 +764,28 @@ func (s *Server) dialAndInit(ctx context.Context) (transport.Transport, *mcp.Ini
 		ServerInfo:      hres.ServerInfo,
 		Instructions:    hres.Instructions,
 	}
+	// The terms the connection was established on. The `connected` event says
+	// a connection exists and how many tools came with it; what the two ends
+	// agreed to was recorded nowhere, and it is not cosmetic — the negotiated
+	// version decides whether requests carry _meta, whether the session is
+	// stateless, and which way resultType is normalized on the way back out
+	// (docs/mcp-2026-07-28.md §7.5). A downstream that quietly settled on an
+	// older generation behaves differently in all three, and finding out meant
+	// turning on frame tracing and reconnecting.
+	//
+	// This runs on every reconnect and respawn, not only the first dial, which
+	// is the point: a server that comes back agreeing to something else is
+	// exactly the case worth catching.
+	//
+	// `server_name`, not `server`. The bound identity is the registry id, and
+	// slog's JSON handler does not deduplicate — re-using the key would put
+	// the field on the line twice, and a reader taking the last (encoding/json
+	// included) would get the peer's self-report in place of the id every
+	// other stream joins on. Same split as `client` / `client_name`.
+	s.log.Info("downstream handshake complete",
+		"protocol", hres.Version,
+		"server_name", hres.ServerInfo.Name, "server_version", hres.ServerInfo.Version,
+		"capabilities", capabilityNames(hres.Capabilities))
 	// The handshake's own tools/list. Its cause is `list` like every other
 	// catalog read: the frame is the same one, and which code path asked for
 	// it is not a distinction a reader of the conversation cares about.
@@ -776,6 +801,27 @@ func (s *Server) dialAndInit(ctx context.Context) (transport.Transport, *mcp.Ini
 		return nil, nil, nil, fmt.Errorf("downstream %q: decode tools/list: %w", s.spec.ID, uerr)
 	}
 	return tr, initRes, lr.Tools, nil
+}
+
+// capabilityNames renders a server's declared capabilities as their sorted
+// top-level keys, joined by spaces.
+//
+// Keys rather than the document: mcp.InitializeResult keeps Capabilities as
+// raw JSON precisely because this facade does not interpret them, and a log
+// line is not the place to start — nor to carry an unbounded object a server
+// controls. Which capabilities were declared is the question ("did it offer
+// tools/list_changed?"); what each one contains is a frame trace's job.
+//
+// Failure direction: anything that is not a JSON object yields the empty
+// string. A malformed capabilities document is the server's business and
+// must not turn a handshake into a failure at the logging step.
+func capabilityNames(raw json.RawMessage) string {
+	var obj map[string]json.RawMessage
+	if len(raw) == 0 || json.Unmarshal(raw, &obj) != nil {
+		return ""
+	}
+	names := slices.Sorted(maps.Keys(obj))
+	return strings.Join(names, " ")
 }
 
 // attach swaps in a connected transport and re-registers the notification
