@@ -17,6 +17,13 @@
 # POSIX sh, not bash: /bin/sh is dash on most Linuxes, and this runs on
 # whatever the machine already has.
 #
+# EVERYTHING IS A FUNCTION, and the last line calls one. The invocation at the
+# top of this comment pipes this file into a shell, which executes what has
+# ARRIVED — a connection that drops halfway through leaves a shell running the
+# first half of an installer. With every action inside a function, the prefix
+# of this file defines things and does nothing, and the one line that acts is
+# also the last line to arrive.
+#
 # WHAT IT TRUSTS. The manifest is fetched over HTTPS from the project's own
 # GitHub Release and pins a sha256 per artifact, which is verified before
 # anything is unpacked or moved. That is the SAME chain of trust the Homebrew
@@ -25,6 +32,12 @@
 # is what would change that, and there is none yet — do not read the checksum
 # below as more than what it is.
 #
+# What that trust does NOT extend to is the manifest's strings. Nothing checks
+# the manifest itself, AGENTHUB_INSTALL_MANIFEST_URL exists so that a mirror
+# can serve it, and the names inside it become a local path, a file name and
+# the syntax of the receipt. Each is constrained where it enters, at the
+# comment that says why.
+#
 # WHAT IT DOES NOT DO. It does not edit your shell configuration, it never
 # calls sudo for you, and the installed binary never phones home: there is no
 # update check anywhere in agenthub (canonical.md §7 decision 6), which is
@@ -32,6 +45,8 @@
 
 set -eu
 
+# Defaults, and the only statements outside a function: assignments, whose
+# effect is confined to a shell that is about to exit if this file is cut off.
 repo="${AGENTHUB_INSTALL_REPO:-dinstein/agent-hub}"
 prefix="${AGENTHUB_INSTALL_PREFIX:-$HOME/.local}"
 # Test injection, and the escape hatch for a mirror. Whatever it names must
@@ -68,48 +83,45 @@ die() {
 
 note() { echo "$*" >&2; }
 
-while [ $# -gt 0 ]; do
-	case "$1" in
-	--version)
-		[ $# -ge 2 ] || die "--version needs a release tag, e.g. --version v0.27.2"
-		pin="$2"
-		shift 2
-		;;
-	--prefix)
-		[ $# -ge 2 ] || die "--prefix needs a directory"
-		prefix="$2"
-		shift 2
-		;;
-	--uninstall)
-		mode="uninstall"
-		shift
-		;;
-	--purge)
-		purge=1
-		shift
-		;;
-	--force)
-		force=1
-		shift
-		;;
-	--help | -h)
-		usage
-		exit 0
-		;;
-	*)
-		usage >&2
-		die "unknown option: $1"
-		;;
-	esac
-done
-
-bindir="$prefix/bin"
-# The receipt follows the INSTALL, not the data directory. The data directory
-# belongs to the user's servers and credentials and outlives any particular
-# copy of the binary; a receipt kept there would be deleted by a purge that was
-# meant to keep the install, and would describe an install for a channel it
-# knows nothing about.
-receipt="$prefix/share/agenthub/install.json"
+# parse_args <args…> — the only thing the command line may change. A variable
+# assigned in a POSIX shell function is global, which is what lets the parse be
+# a function at all.
+parse_args() {
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--version)
+			[ $# -ge 2 ] || die "--version needs a release tag, e.g. --version v0.27.2"
+			pin="$2"
+			shift 2
+			;;
+		--prefix)
+			[ $# -ge 2 ] || die "--prefix needs a directory"
+			prefix="$2"
+			shift 2
+			;;
+		--uninstall)
+			mode="uninstall"
+			shift
+			;;
+		--purge)
+			purge=1
+			shift
+			;;
+		--force)
+			force=1
+			shift
+			;;
+		--help | -h)
+			usage
+			exit 0
+			;;
+		*)
+			usage >&2
+			die "unknown option: $1"
+			;;
+		esac
+	done
+}
 
 # ---------------------------------------------------------------- environment
 
@@ -227,7 +239,7 @@ cli_field() {
 
 # ------------------------------------------------------------------ uninstall
 
-if [ "$mode" = "uninstall" ]; then
+do_uninstall() {
 	# The receipt names what THIS script installed. Without one, the default
 	# prefix is a guess, and removing a binary on a guess is how an installer
 	# deletes a copy somebody else's package manager owns.
@@ -282,164 +294,169 @@ if [ "$mode" = "uninstall" ]; then
 	else
 		note "kept $(data_dir) — pass --purge to delete it too"
 	fi
-	exit 0
-fi
+}
 
 # -------------------------------------------------------------------- install
 
-detect_platform
+do_install() {
+	detect_platform
 
-if [ -z "$manifest_url" ]; then
-	if [ -n "$pin" ]; then
-		manifest_url="https://github.com/$repo/releases/download/$pin/manifest.json"
-	else
-		# `latest/download/<name>` resolves only for a name known in advance,
-		# which is the entire reason the manifest exists: the artifacts it
-		# describes carry a version and a build id in their names.
-		#
-		# It also skips pre-releases, so an -rc has to be asked for by tag.
-		manifest_url="https://github.com/$repo/releases/latest/download/manifest.json"
+	if [ -z "$manifest_url" ]; then
+		if [ -n "$pin" ]; then
+			manifest_url="https://github.com/$repo/releases/download/$pin/manifest.json"
+		else
+			# `latest/download/<name>` resolves only for a name known in
+			# advance, which is the entire reason the manifest exists: the
+			# artifacts it describes carry a version and a build id in their
+			# names.
+			#
+			# It also skips pre-releases, so an -rc has to be asked for by tag.
+			manifest_url="https://github.com/$repo/releases/latest/download/manifest.json"
+		fi
 	fi
-fi
-# Everything below is checked against the manifest, and nothing checks the
-# manifest. Said out loud where it can still change someone's mind, rather
-# than refused: the only way to get here is to have set the variable.
-case "$manifest_url" in
-https://*) ;;
-*) note "warning: the manifest is not being fetched over https; nothing vouches for what it says" ;;
-esac
+	# Everything below is checked against the manifest, and nothing checks the
+	# manifest. Said out loud where it can still change someone's mind, rather
+	# than refused: the only way to get here is to have set the variable.
+	case "$manifest_url" in
+	https://*) ;;
+	*) note "warning: the manifest is not being fetched over https; nothing vouches for what it says" ;;
+	esac
 
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/agenthub-install.XXXXXX")"
-cleanup() { rm -rf "$tmp"; }
-trap cleanup EXIT INT TERM
+	tmp="$(mktemp -d "${TMPDIR:-/tmp}/agenthub-install.XXXXXX")"
+	cleanup() { rm -rf "$tmp"; }
+	trap cleanup EXIT INT TERM
 
-note "==> fetching $manifest_url"
-fetch "$manifest_url" "$tmp/manifest.json" ||
-	die "cannot fetch the release manifest. If this release predates it, install with Homebrew or download a tarball from https://github.com/$repo/releases"
+	note "==> fetching $manifest_url"
+	fetch "$manifest_url" "$tmp/manifest.json" ||
+		die "cannot fetch the release manifest. If this release predates it, install with Homebrew or download a tarball from https://github.com/$repo/releases"
 
-schema="$(sed -n 's/.*"schema"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$tmp/manifest.json" | head -1)"
-[ "$schema" = "1" ] || die "this release's manifest is schema ${schema:-unknown}, which this installer does not understand; fetch a newer install.sh"
+	schema="$(sed -n 's/.*"schema"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$tmp/manifest.json" | head -1)"
+	[ "$schema" = "1" ] || die "this release's manifest is schema ${schema:-unknown}, which this installer does not understand; fetch a newer install.sh"
 
-version="$(top_field "$tmp/manifest.json" version)"
-commit="$(top_field "$tmp/manifest.json" commit)"
-channel="$(top_field "$tmp/manifest.json" channel)"
-base_url="$(top_field "$tmp/manifest.json" base_url)"
-[ -n "$version" ] && [ -n "$commit" ] && [ -n "$base_url" ] ||
-	die "the manifest is missing version, commit or base_url"
-# Both are pasted into the hand-written JSON receipt at the end of this file,
-# and there is no encoder here to escape them on the way. top_field captures
-# [^"]*, so a quote cannot reach it — but a trailing BACKSLASH can, and it
-# escapes the quote that was meant to close the string. The receipt is then
-# unparseable, and it is the only record of what was installed and where.
-# Constrained where the strings enter rather than where they are written:
-# version and commit are read in four other places in between.
-case "$version$commit" in
-*[!A-Za-z0-9.+_-]*)
-	die "the manifest's version or commit carries something that is not part of one"
-	;;
-esac
-# A build whose channel is not `release` resolves the DEVELOPMENT data
-# directory, and the symptom is every server appearing to vanish. It is a
-# link-time flag, so nothing downstream of here could correct it.
-[ "$channel" = "release" ] || die "the manifest describes a ${channel:-unknown} build, not a release"
-
-asset="$(cli_field "$tmp/manifest.json" "$os" "$arch" asset)"
-want_sha="$(cli_field "$tmp/manifest.json" "$os" "$arch" sha256)"
-[ -n "$asset" ] && [ -n "$want_sha" ] ||
-	die "release $version has no $os/$arch build"
-# The asset is the one manifest string that becomes a LOCAL PATH, and it does
-# so at the download below — which happens BEFORE the checksum, because it is
-# what the checksum is computed over. A `../` in it therefore writes bytes
-# nothing has verified yet to a path the user never named, and the refusal
-# that follows still prints "nothing was installed". The manifest arrives over
-# HTTPS from the project's own Release, but AGENTHUB_INSTALL_MANIFEST_URL
-# exists precisely so it does not have to.
-#
-# An allow list of characters, not a search for `..`: this must also hold for
-# whatever a manifest names next year, and the two answer that arrival in
-# opposite directions.
-case "$asset" in
-*[!A-Za-z0-9._-]* | .*)
-	die "the manifest names \"$asset\" for $os/$arch, which is not a plain file name"
-	;;
-esac
-
-# Refuse to fight another package manager for one path. Two owners of
-# $bindir/agenthub is a state neither can detect afterwards, and `brew upgrade`
-# silently reinstating an older binary over this one is the good outcome.
-existing="$(command -v agenthub 2>/dev/null || true)"
-if [ -n "$existing" ] && [ "$existing" != "$bindir/agenthub" ] && [ "$force" != "1" ]; then
-	# One hop: a Homebrew shim in bin/ is a symlink into the Cellar, and
-	# `readlink -f` is not portable (macOS's readlink has no -f).
-	resolved="$existing"
-	[ -L "$existing" ] && resolved="$(readlink "$existing")"
-	case "$resolved" in
-	*/Cellar/agenthub/* | */Homebrew/*)
-		die "$existing is installed by Homebrew. Run \`brew uninstall agenthub\` first, or pass --force to install alongside it (both will then claim the name)"
+	version="$(top_field "$tmp/manifest.json" version)"
+	commit="$(top_field "$tmp/manifest.json" commit)"
+	channel="$(top_field "$tmp/manifest.json" channel)"
+	base_url="$(top_field "$tmp/manifest.json" base_url)"
+	[ -n "$version" ] && [ -n "$commit" ] && [ -n "$base_url" ] ||
+		die "the manifest is missing version, commit or base_url"
+	# Both are pasted into the hand-written JSON receipt at the end of this
+	# file, and there is no encoder here to escape them on the way. top_field
+	# captures [^"]*, so a quote cannot reach it — but a trailing BACKSLASH
+	# can, and it escapes the quote that was meant to close the string. The
+	# receipt is then unparseable, and it is the only record of what was
+	# installed and where. Constrained where the strings enter rather than
+	# where they are written: version and commit are read in four other places
+	# in between.
+	case "$version$commit" in
+	*[!A-Za-z0-9.+_-]*)
+		die "the manifest's version or commit carries something that is not part of one"
 		;;
 	esac
-fi
+	# A build whose channel is not `release` resolves the DEVELOPMENT data
+	# directory, and the symptom is every server appearing to vanish. It is a
+	# link-time flag, so nothing downstream of here could correct it.
+	[ "$channel" = "release" ] || die "the manifest describes a ${channel:-unknown} build, not a release"
 
-note "==> agenthub $version ($commit) for $os/$arch"
-fetch "$base_url/$asset" "$tmp/$asset" || die "cannot download $base_url/$asset"
+	asset="$(cli_field "$tmp/manifest.json" "$os" "$arch" asset)"
+	want_sha="$(cli_field "$tmp/manifest.json" "$os" "$arch" sha256)"
+	[ -n "$asset" ] && [ -n "$want_sha" ] ||
+		die "release $version has no $os/$arch build"
+	# The asset is the one manifest string that becomes a LOCAL PATH, and it
+	# does so at the download below — which happens BEFORE the checksum,
+	# because it is what the checksum is computed over. A `../` in it therefore
+	# writes bytes nothing has verified yet to a path the user never named, and
+	# the refusal that follows still prints "nothing was installed". The
+	# manifest arrives over HTTPS from the project's own Release, but
+	# AGENTHUB_INSTALL_MANIFEST_URL exists precisely so it does not have to.
+	#
+	# An allow list of characters, not a search for `..`: this must also hold
+	# for whatever a manifest names next year, and the two answer that arrival
+	# in opposite directions.
+	case "$asset" in
+	*[!A-Za-z0-9._-]* | .*)
+		die "the manifest names \"$asset\" for $os/$arch, which is not a plain file name"
+		;;
+	esac
 
-got_sha="$(sha256_of "$tmp/$asset")"
-[ -n "$got_sha" ] || die "no shasum, sha256sum or openssl on this machine; refusing to install an unverified download"
-if [ "$got_sha" != "$want_sha" ]; then
-	die "checksum mismatch for $asset
+	# Refuse to fight another package manager for one path. Two owners of
+	# $bindir/agenthub is a state neither can detect afterwards, and
+	# `brew upgrade` silently reinstating an older binary over this one is the
+	# good outcome.
+	existing="$(command -v agenthub 2>/dev/null || true)"
+	if [ -n "$existing" ] && [ "$existing" != "$bindir/agenthub" ] && [ "$force" != "1" ]; then
+		# One hop: a Homebrew shim in bin/ is a symlink into the Cellar, and
+		# `readlink -f` is not portable (macOS's readlink has no -f).
+		resolved="$existing"
+		[ -L "$existing" ] && resolved="$(readlink "$existing")"
+		case "$resolved" in
+		*/Cellar/agenthub/* | */Homebrew/*)
+			die "$existing is installed by Homebrew. Run \`brew uninstall agenthub\` first, or pass --force to install alongside it (both will then claim the name)"
+			;;
+		esac
+	fi
+
+	note "==> agenthub $version ($commit) for $os/$arch"
+	fetch "$base_url/$asset" "$tmp/$asset" || die "cannot download $base_url/$asset"
+
+	got_sha="$(sha256_of "$tmp/$asset")"
+	[ -n "$got_sha" ] || die "no shasum, sha256sum or openssl on this machine; refusing to install an unverified download"
+	if [ "$got_sha" != "$want_sha" ]; then
+		die "checksum mismatch for $asset
   expected $want_sha
   got      $got_sha
 nothing was installed"
-fi
+	fi
 
-tar -xzf "$tmp/$asset" -C "$tmp" || die "cannot unpack $asset"
-# -L first, and it is not redundant: [ -f ] FOLLOWS a symlink, so an archive
-# holding nothing but a link named agenthub passes that test. Everything after
-# it then acts on the link's target instead — chmod rewrites the mode of a file
-# this script never named, and the copy installs that file's contents under the
-# name agenthub. A checksum cannot see any of it: those are the pinned bytes.
-[ ! -L "$tmp/agenthub" ] || die "$asset holds a symlink named agenthub, not a binary"
-[ -f "$tmp/agenthub" ] || die "$asset does not contain an agenthub binary"
-chmod 0755 "$tmp/agenthub"
+	tar -xzf "$tmp/$asset" -C "$tmp" || die "cannot unpack $asset"
+	# -L first, and it is not redundant: [ -f ] FOLLOWS a symlink, so an
+	# archive holding nothing but a link named agenthub passes that test.
+	# Everything after it then acts on the link's target instead — chmod
+	# rewrites the mode of a file this script never named, and the copy
+	# installs that file's contents under the name agenthub. A checksum cannot
+	# see any of it: those are the pinned bytes.
+	[ ! -L "$tmp/agenthub" ] || die "$asset holds a symlink named agenthub, not a binary"
+	[ -f "$tmp/agenthub" ] || die "$asset does not contain an agenthub binary"
+	chmod 0755 "$tmp/agenthub"
 
-# What the artifact CLAIMS is what the manifest said; this is the artifact
-# answering for itself. It catches the two failures a checksum cannot: an
-# archive built for another platform (which fails to exec here rather than on
-# first use), and a binary linked without -X main.channel=release, whose only
-# other symptom is a user's data appearing to disappear.
-got_version="$("$tmp/agenthub" --version 2>/dev/null || true)"
-case "$got_version" in
-*"$version-$commit"*) ;;
-*) die "the downloaded binary reports \"${got_version:-nothing}\", not $version-$commit" ;;
-esac
-case "$got_version" in
-*"(dev)"*) die "the downloaded binary is a dev build; it would use the development data directory" ;;
-esac
+	# What the artifact CLAIMS is what the manifest said; this is the artifact
+	# answering for itself. It catches the two failures a checksum cannot: an
+	# archive built for another platform (which fails to exec here rather than
+	# on first use), and a binary linked without -X main.channel=release, whose
+	# only other symptom is a user's data appearing to disappear.
+	got_version="$("$tmp/agenthub" --version 2>/dev/null || true)"
+	case "$got_version" in
+	*"$version-$commit"*) ;;
+	*) die "the downloaded binary reports \"${got_version:-nothing}\", not $version-$commit" ;;
+	esac
+	case "$got_version" in
+	*"(dev)"*) die "the downloaded binary is a dev build; it would use the development data directory" ;;
+	esac
 
-mkdir -p "$bindir" || die "cannot create $bindir"
-[ -w "$bindir" ] || die "$bindir is not writable. Choose another --prefix, or re-run under a shell that can write it (this script never calls sudo for you)."
+	mkdir -p "$bindir" || die "cannot create $bindir"
+	[ -w "$bindir" ] || die "$bindir is not writable. Choose another --prefix, or re-run under a shell that can write it (this script never calls sudo for you)."
 
-# A daemon holds the old binary open and outlives the file; stopping it first
-# means the replacement takes effect on the next call rather than whenever the
-# user next reboots. Nothing restarts it: api.DialOrStart starts one on demand.
-if [ -x "$bindir/agenthub" ]; then
-	"$bindir/agenthub" daemon stop >/dev/null 2>&1 || true
-fi
+	# A daemon holds the old binary open and outlives the file; stopping it
+	# first means the replacement takes effect on the next call rather than
+	# whenever the user next reboots. Nothing restarts it: api.DialOrStart
+	# starts one on demand.
+	if [ -x "$bindir/agenthub" ]; then
+		"$bindir/agenthub" daemon stop >/dev/null 2>&1 || true
+	fi
 
-# Staged inside the target directory, not in $tmp: a rename is only atomic
-# within one filesystem, and /tmp is frequently not the same one. Copying
-# straight over the destination is the thing to avoid — it truncates a binary
-# another process may be executing.
-staged="$bindir/.agenthub.install.$$"
-cp "$tmp/agenthub" "$staged" || die "cannot write to $bindir"
-chmod 0755 "$staged"
-mv -f "$staged" "$bindir/agenthub" || {
-	rm -f "$staged"
-	die "cannot replace $bindir/agenthub"
-}
+	# Staged inside the target directory, not in $tmp: a rename is only atomic
+	# within one filesystem, and /tmp is frequently not the same one. Copying
+	# straight over the destination is the thing to avoid — it truncates a
+	# binary another process may be executing.
+	staged="$bindir/.agenthub.install.$$"
+	cp "$tmp/agenthub" "$staged" || die "cannot write to $bindir"
+	chmod 0755 "$staged"
+	mv -f "$staged" "$bindir/agenthub" || {
+		rm -f "$staged"
+		die "cannot replace $bindir/agenthub"
+	}
 
-mkdir -p "$(dirname "$receipt")"
-cat >"$receipt" <<EOF
+	mkdir -p "$(dirname "$receipt")"
+	cat >"$receipt" <<EOF
 {
   "method": "script",
   "version": "$version",
@@ -452,25 +469,50 @@ cat >"$receipt" <<EOF
 }
 EOF
 
-note "installed $bindir/agenthub"
+	note "installed $bindir/agenthub"
 
-# PATH is reported, never edited. Rewriting someone's shell configuration is
-# the one step here that cannot be undone by re-running with --uninstall.
-case ":$PATH:" in
-*":$bindir:"*)
-	found="$(command -v agenthub 2>/dev/null || true)"
-	if [ -n "$found" ] && [ "$found" != "$bindir/agenthub" ]; then
+	# PATH is reported, never edited. Rewriting someone's shell configuration
+	# is the one step here that cannot be undone by re-running with
+	# --uninstall.
+	case ":$PATH:" in
+	*":$bindir:"*)
+		found="$(command -v agenthub 2>/dev/null || true)"
+		if [ -n "$found" ] && [ "$found" != "$bindir/agenthub" ]; then
+			note ""
+			note "note: \`agenthub\` still resolves to $found, which comes earlier in \$PATH"
+		fi
+		;;
+	*)
 		note ""
-		note "note: \`agenthub\` still resolves to $found, which comes earlier in \$PATH"
-	fi
-	;;
-*)
-	note ""
-	note "$bindir is not on your PATH. Add it:"
-	note "    echo 'export PATH=\"$bindir:\$PATH\"' >> ~/.zshrc   # or ~/.bashrc"
-	;;
-esac
+		note "$bindir is not on your PATH. Add it:"
+		note "    echo 'export PATH=\"$bindir:\$PATH\"' >> ~/.zshrc   # or ~/.bashrc"
+		;;
+	esac
 
-note ""
-note "next: agenthub server add <id> --url <url>, then agenthub client connect claude-code"
-note "update: re-run this script. uninstall: re-run it with --uninstall"
+	note ""
+	note "next: agenthub server add <id> --url <url>, then agenthub client connect claude-code"
+	note "update: re-run this script. uninstall: re-run it with --uninstall"
+}
+
+main() {
+	parse_args "$@"
+
+	bindir="$prefix/bin"
+	# The receipt follows the INSTALL, not the data directory. The data
+	# directory belongs to the user's servers and credentials and outlives any
+	# particular copy of the binary; a receipt kept there would be deleted by a
+	# purge that was meant to keep the install, and would describe an install
+	# for a channel it knows nothing about.
+	receipt="$prefix/share/agenthub/install.json"
+
+	if [ "$mode" = "uninstall" ]; then
+		do_uninstall
+		return
+	fi
+	do_install
+}
+
+# The only line in this file that does anything, and the last one to arrive
+# down a pipe. See the note at the top: a truncated `curl … | sh` must define
+# an installer and run none of it, rather than run the half it received.
+main "$@"

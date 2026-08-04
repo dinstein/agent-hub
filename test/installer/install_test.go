@@ -564,3 +564,78 @@ func TestPurgeRefusesADirectoryAgenthubDidNotCreate(t *testing.T) {
 		})
 	}
 }
+
+// TestATruncatedScriptDoesNothing is the property the README's invocation
+// depends on and nothing else in this repository states.
+//
+// `curl … | sh` hands the shell whatever has arrived so far, so a connection
+// that drops mid-transfer leaves it running the first half of an installer.
+// For this file that was not hypothetical: with the steps at the top level,
+// 191 of its 476 line-boundary prefixes ran --uninstall --purge far enough to
+// delete the user's servers and the binary, and not one of them could reach
+// the half that puts something back. The defence is structural rather than
+// defensive — every action lives in a function, and the only line that calls
+// one is the last line of the file.
+//
+// The seeded state is what an installed machine looks like, because deleting
+// is the damage a prefix can do; the count on top covers the other direction.
+// The complete file is excluded on purpose: it is the one prefix that is
+// SUPPOSED to act.
+func TestATruncatedScriptDoesNothing(t *testing.T) {
+	full, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts", "install.sh"))
+	if err != nil {
+		t.Fatalf("scripts/install.sh: %v", err)
+	}
+	// TrimSuffix first: splitting a newline-terminated file after "\n" leaves
+	// an empty final element, and a cut there is the complete file — the one
+	// input that is supposed to install something.
+	lines := strings.SplitAfter(strings.TrimSuffix(string(full), "\n"), "\n")
+
+	for cut := 1; cut < len(lines); cut++ {
+		home := t.TempDir()
+		installed := filepath.Join(home, ".local", "bin", "agenthub")
+		seeded := map[string]string{
+			installed: "#!/bin/sh\n",
+			filepath.Join(home, "data", "servers.json"): "{}\n",
+			filepath.Join(home, ".local", "share", "agenthub", "install.json"): fmt.Sprintf(
+				"{\n  \"bin\": %q\n}\n", installed),
+		}
+		for path, body := range seeded {
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("seeding %s: %v", path, err)
+			}
+			if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+				t.Fatalf("seeding %s: %v", path, err)
+			}
+		}
+
+		cmd := exec.Command("sh", "-s", "--", "--uninstall", "--purge")
+		cmd.Stdin = strings.NewReader(strings.Join(lines[:cut], ""))
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+			"HOME=" + home,
+			"AGENTHUB_INSTALL_PREFIX=" + filepath.Join(home, ".local"),
+			"AGENTHUB_DATA_DIR=" + filepath.Join(home, "data"),
+			"TMPDIR=" + t.TempDir(),
+		}
+		// The exit status is not the subject. A prefix ending inside a
+		// function body is a syntax error, which is both the desired outcome
+		// and a non-zero exit. What must hold is that nothing happened.
+		out, _ := cmd.CombinedOutput()
+
+		for path := range seeded {
+			if _, err := os.Stat(path); err != nil {
+				t.Fatalf("cut at line %d of %d: the prefix removed %s\n%s",
+					cut, len(lines), filepath.Base(path), out)
+			}
+		}
+		left, readErr := os.ReadDir(filepath.Dir(installed))
+		if readErr != nil {
+			t.Fatalf("cut at line %d: reading the bin directory: %v", cut, readErr)
+		}
+		if len(left) != 1 {
+			t.Fatalf("cut at line %d of %d: the prefix left %d entries in bin, want 1\n%s",
+				cut, len(lines), len(left), out)
+		}
+	}
+}
