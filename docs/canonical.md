@@ -436,6 +436,21 @@ silently reopened, and the numbering is cited from code.
     manifest's version and **not** as `(dev)` — the one failure a checksum cannot catch, whose only
     other symptom is a user's servers appearing to vanish.
 
+    **The manifest's bytes are verified; its strings are not trusted.** Nothing checks the manifest
+    itself — it is the root — and `AGENTHUB_INSTALL_MANIFEST_URL` exists so a mirror may serve it.
+    Its strings then become a local path, a file name, and the syntax of the install receipt, so each
+    is constrained where it enters: the asset must be a plain file name (its download destination is
+    written **before** the checksum, which is what the checksum is computed over); `version` and
+    `commit` must not carry what would leave the hand-written receipt unparseable; the unpacked
+    `agenthub` must not be a symlink, which `[ -f ]` follows and `chmod` then acts on. Allow lists in
+    every case, per §6's rule for selectors — these must also hold for whatever a manifest names next
+    year.
+
+    **Every action lives in a function, and the last line calls `main`.** The documented invocation
+    pipes the file into a shell, which runs what has arrived; a truncated download must define an
+    installer and run none of it rather than run the half it received. `test/installer` asserts that
+    over every line-boundary prefix.
+
     **What it does not buy.** The manifest ships from the release it describes, so it cannot vouch
     for those bytes independently. This is the cask's chain of trust, not a stronger one; signing the
     artifacts is what would change that, and there is none.
