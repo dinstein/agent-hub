@@ -21,12 +21,49 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 )
 
 // EnvDebug enables debug-level verbosity when set to "1". It is a frozen
 // AGENTHUB_* identifier. It affects only the level filter — scrubbing is
 // applied regardless.
 const EnvDebug = "AGENTHUB_DEBUG"
+
+// EnvLevel and EnvFileLevel name the level of each sink from outside the
+// process: EnvLevel sets both, EnvFileLevel then overrides the JSON file
+// alone. Together they spell the case EnvDebug cannot — file at debug while
+// stderr stays quiet — which is what a stdio gateway needs, its stderr being
+// read by the MCP client rather than by us.
+//
+// They accept what slog.Level.UnmarshalText accepts, case-insensitively:
+// debug, info, warn, error, and offsets such as debug-2. Both are AGENTHUB_*
+// and therefore stripped before a downstream server is spawned, so raising
+// our own verbosity never reaches into someone else's process.
+const (
+	EnvLevel     = "AGENTHUB_LOG_LEVEL"
+	EnvFileLevel = "AGENTHUB_LOG_FILE_LEVEL"
+)
+
+// envLevel reads one level-valued variable. Unset or empty returns nil, the
+// "say nothing" value the resolution treats as absence.
+//
+// Failure direction: a value that does not parse is REPORTED AND IGNORED,
+// never fatal. Logging is not the operation the process exists to perform,
+// so a typo in a diagnostic knob must not stop a gateway from serving — but
+// it must not pass silently either, because a level that did not apply and
+// one that did look identical from inside, and the operator concludes the
+// logs prove something they never recorded.
+func envLevel(name string) (slog.Leveler, string) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return nil, ""
+	}
+	var lvl slog.Level
+	if err := lvl.UnmarshalText([]byte(strings.ToUpper(raw))); err != nil {
+		return nil, name + "=" + raw
+	}
+	return lvl, ""
+}
 
 // Config controls Setup. The zero value produces a logger that discards
 // everything (both sinks disabled).
@@ -70,11 +107,23 @@ type Config struct {
 }
 
 // levels resolves the minimum level of each sink, applying the documented
-// precedence: Debug (or AGENTHUB_DEBUG) over the per-sink override, over
-// Level, over the info default.
-func (c Config) levels() (text, jsonSink slog.Leveler) {
+// precedence, widest last:
+//
+//	the info default
+//	  < Config.Level < Config.TextLevel / Config.JSONLevel
+//	  < AGENTHUB_LOG_LEVEL < AGENTHUB_LOG_FILE_LEVEL
+//	  < Debug / AGENTHUB_DEBUG=1
+//
+// The environment sits above Config on purpose: Config is the assembly's
+// standing choice, made when the binary was written, while the variables are
+// the operator's, made in front of a problem. The one diagnosing has the
+// later word.
+//
+// The returned strings name variables whose values did not parse, for the
+// caller to report once the logger exists.
+func (c Config) levels() (text, jsonSink slog.Leveler, bad []string) {
 	if c.Debug || os.Getenv(EnvDebug) == "1" {
-		return slog.LevelDebug, slog.LevelDebug
+		return slog.LevelDebug, slog.LevelDebug, nil
 	}
 	base := slog.Leveler(slog.LevelInfo)
 	if c.Level != nil {
@@ -87,7 +136,17 @@ func (c Config) levels() (text, jsonSink slog.Leveler) {
 	if c.JSONLevel != nil {
 		jsonSink = c.JSONLevel
 	}
-	return text, jsonSink
+	if lvl, complaint := envLevel(EnvLevel); lvl != nil {
+		text, jsonSink = lvl, lvl
+	} else if complaint != "" {
+		bad = append(bad, complaint)
+	}
+	if lvl, complaint := envLevel(EnvFileLevel); lvl != nil {
+		jsonSink = lvl
+	} else if complaint != "" {
+		bad = append(bad, complaint)
+	}
+	return text, jsonSink, bad
 }
 
 // Setup builds the logger described by cfg. Every record passes through the
@@ -96,7 +155,7 @@ func (c Config) levels() (text, jsonSink slog.Leveler) {
 // It returns no closer, because it holds nothing to close: both sinks are
 // writers the caller supplied.
 func Setup(cfg Config) *slog.Logger {
-	textLevel, jsonLevel := cfg.levels()
+	textLevel, jsonLevel, badEnv := cfg.levels()
 
 	// One HandlerOptions per sink, never one shared: a single value is what
 	// tied the two levels together in the first place, and sharing it again
@@ -125,7 +184,17 @@ func Setup(cfg Config) *slog.Logger {
 	}
 	// Scrubbing wraps the outermost handler so that a single pass covers
 	// every sink and every WithAttrs-bound attribute.
-	return slog.New(NewScrubHandler(h))
+	logger := slog.New(NewScrubHandler(h))
+	// An unparseable level is reported through the logger it failed to
+	// configure, that being the only sink there is. Warn, so it clears the
+	// info default rather than landing below it — a complaint filtered out
+	// by the fallback would be no complaint at all. An assembly that pinned
+	// its sinks to error keeps its silence; it did not ask a question.
+	for _, bad := range badEnv {
+		logger.Warn("ignoring an unreadable log level; using the default",
+			"setting", bad, "expected", "debug, info, warn or error")
+	}
+	return logger
 }
 
 // multiHandler fans one record out to several handlers. Handle errors are

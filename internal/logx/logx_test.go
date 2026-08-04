@@ -135,6 +135,101 @@ func TestDebugOverridesSinkLevels(t *testing.T) {
 	}
 }
 
+// TestEnvLevelMovesBothSinks: the coarse variable is the one an operator
+// reaches for first, and it must behave like Level did.
+func TestEnvLevelMovesBothSinks(t *testing.T) {
+	t.Setenv(logx.EnvLevel, "debug")
+
+	var text, jsonBuf bytes.Buffer
+	logger := logx.Setup(logx.Config{TextEnabled: true, TextWriter: &text, JSON: &jsonBuf})
+
+	logger.Debug("detail")
+
+	if !strings.Contains(text.String(), "detail") || !strings.Contains(jsonBuf.String(), "detail") {
+		t.Fatalf("%s did not reach both sinks: text=%q json=%s", logx.EnvLevel, text.String(), jsonBuf.String())
+	}
+}
+
+// TestEnvFileLevelLeavesStderrAlone is the case the whole change exists for:
+// debug on the file this project owns, stderr untouched because in stdio
+// mode it is the MCP client's log, not ours.
+func TestEnvFileLevelLeavesStderrAlone(t *testing.T) {
+	t.Setenv(logx.EnvLevel, "warn")
+	t.Setenv(logx.EnvFileLevel, "debug")
+
+	var text, jsonBuf bytes.Buffer
+	logger := logx.Setup(logx.Config{TextEnabled: true, TextWriter: &text, JSON: &jsonBuf})
+
+	logger.Debug("detail")
+	logger.Warn("trouble")
+
+	if strings.Contains(text.String(), "detail") {
+		t.Fatalf("stderr took the file's debug record: %q", text.String())
+	}
+	if !strings.Contains(text.String(), "trouble") {
+		t.Fatalf("stderr dropped a record at its own level: %q", text.String())
+	}
+	if !strings.Contains(jsonBuf.String(), "detail") {
+		t.Fatalf("file missing the debug record: %s", jsonBuf.String())
+	}
+}
+
+// TestEnvLevelOverridesConfig pins the precedence: the operator standing in
+// front of a problem outranks the assembly's standing choice.
+func TestEnvLevelOverridesConfig(t *testing.T) {
+	t.Setenv(logx.EnvLevel, "debug")
+
+	var buf bytes.Buffer
+	logger := logx.Setup(logx.Config{
+		TextEnabled: true, TextWriter: &buf,
+		Level: slog.LevelError, TextLevel: slog.LevelError,
+	})
+
+	logger.Debug("detail")
+
+	if !strings.Contains(buf.String(), "detail") {
+		t.Fatalf("%s did not override the Config levels: %q", logx.EnvLevel, buf.String())
+	}
+}
+
+// TestDebugEnvOutranksTheLevelVariables: AGENTHUB_DEBUG stays the blunt
+// switch. Someone who sets both is asking for everything.
+func TestDebugEnvOutranksTheLevelVariables(t *testing.T) {
+	t.Setenv(logx.EnvDebug, "1")
+	t.Setenv(logx.EnvLevel, "error")
+	t.Setenv(logx.EnvFileLevel, "error")
+
+	var text, jsonBuf bytes.Buffer
+	logger := logx.Setup(logx.Config{TextEnabled: true, TextWriter: &text, JSON: &jsonBuf})
+
+	logger.Debug("detail")
+
+	if !strings.Contains(text.String(), "detail") || !strings.Contains(jsonBuf.String(), "detail") {
+		t.Fatalf("%s was held back: text=%q json=%s", logx.EnvDebug, text.String(), jsonBuf.String())
+	}
+}
+
+// TestUnreadableEnvLevelIsReportedNotObeyed is the failure direction: an
+// unparseable level falls back to the default AND says so, because a setting
+// that did not apply and one that did are otherwise indistinguishable from
+// inside — and the operator then trusts logs that were never recorded.
+func TestUnreadableEnvLevelIsReportedNotObeyed(t *testing.T) {
+	t.Setenv(logx.EnvLevel, "verbose")
+
+	var buf bytes.Buffer
+	logger := logx.Setup(logx.Config{TextEnabled: true, TextWriter: &buf})
+
+	logger.Debug("detail")
+
+	out := buf.String()
+	if strings.Contains(out, "detail") {
+		t.Fatalf("an unreadable level should leave the info default in place: %q", out)
+	}
+	if !strings.Contains(out, logx.EnvLevel) || !strings.Contains(out, "verbose") {
+		t.Fatalf("the rejected setting was not reported: %q", out)
+	}
+}
+
 // TestDebugEnvDoesNotBypassScrubbing is the acceptance test for the
 // "AGENTHUB_DEBUG must not unlock secrets" invariant: with AGENTHUB_DEBUG=1
 // debug-level records do flow (verbosity is raised), but their secrets are
