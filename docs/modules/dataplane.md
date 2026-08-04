@@ -494,6 +494,22 @@ not ready, `tools/list` is answered from cache (same exposed name rules) and `to
 the cached tools of currently enabled servers; broken → serve **all** cached tools, because in that state
 there is no way to know who is enabled.
 
+**Owed: that degraded start leaves no event, only a log line.** All three failures in `loadRegistry`
+(the registry dir unresolved, `registry.Open` returning no store, a store whose documents were
+quarantined) write a `Warn` and return `regOK=false`, and `gateway_started` is then emitted exactly as
+it would be for a healthy start — same kind, same `Detail`. So `agenthub events` shows a gateway that
+came up normally, and `--class disruption` shows nothing at all, while what actually happened is the
+state two other entries here already describe as consequential: **all** cached tools served rather than
+the enabled ones, and — per the ScopeLayers gap in "Open gaps" below — no scope authority merged, so
+`scopeGate` takes its allow-because-there-is-none branch. The prose half is there in the log; the value
+half a timeline, a `--json` consumer or an alert can switch on is not.
+
+The fix is a vocabulary decision rather than a tidy: `registry_reload_failed` is the wrong kind (it
+means "keeps serving the PREVIOUS generation", and here there has never been one), so this needs a new
+gateway-scope kind, which is a published `--kind` selector the day it ships. That is four edits plus the
+pair's row in `TestEveryKindIsClassifiedDeliberately` — see
+[foundation.md](foundation.md#the-closed-vocabulary) — and a name nobody should mint in passing.
+
 **Not writing to disk after shutdown is achieved by sealing the resource, not by joining goroutines.**
 `connectAll` starts one goroutine per downstream and nothing joins them, so a connect that won the race
 against cancellation would still reach `persistTools` — and after a shutdown *triggered by a configuration
