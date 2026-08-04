@@ -94,9 +94,11 @@ landing rather than on every push:
 
 1. **A skipped depguard proof is not a proof** (CANONICAL §6). Without golangci-lint,
    `internal/depguardtest` calls `t.Skip` and `make test` counts it as success; CI greps for
-   `--- SKIP` and fails. `ci-full` and `ci-landing` grade themselves through `tee`, so both arm
-   `set -o pipefail` in the recipe — GNU Make 3.81, the `/usr/bin/make` on macOS, ignores
-   `.SHELLFLAGS` silently.
+   `--- SKIP` and fails. `make ci-depguard-proof` is the local equivalent, and it greps a log it
+   piped through `tee`; `ci-landing` does the same over the whole of `ci-full`. Those two are the
+   repository's only `tee`d recipes, and each arms `set -o pipefail` **itself** because GNU Make
+   3.81, the `/usr/bin/make` on macOS, ignores `.SHELLFLAGS` silently. `ci-full` needs neither: it
+   is a list of prerequisites with no recipe body of its own.
 2. **The `gui` job**, deliberately left out of `make ci` so "the GUI is optional" does not become a
    prerequisite of the default build.
 3. **`make gui` is not that check.** It runs `npm install`, which repairs a `package-lock.json` that
