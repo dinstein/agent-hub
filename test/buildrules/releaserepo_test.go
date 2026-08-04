@@ -14,10 +14,11 @@ import (
 //
 // scripts/release-local.sh uploads the tarballs to $HOMEBREW_SOURCE_REPO;
 // scripts/homebrew-formula.sh writes that repo's download URLs into the
-// formula, and scripts/homebrew-cask.sh writes them into the cask. Each reads
-// the variable and each supplies its own default, so a change to one default
-// alone produces a formula or a cask whose URLs point at a repository nothing
-// was ever uploaded to.
+// formula, scripts/homebrew-cask.sh writes them into the cask, and
+// scripts/release-manifest.sh writes the base URL every Homebrew-less install
+// downloads from. Each reads the variable and each supplies its own default,
+// so a change to one default alone produces a formula, a cask or a manifest
+// whose URLs point at a repository nothing was ever uploaded to.
 //
 // The failure is invisible from here: every script succeeds, the release
 // publishes, the tap commit lands, and both files are syntactically valid. It
@@ -25,7 +26,7 @@ import (
 // place this project cannot see.
 func TestReleaseScriptsAgreeOnTheArtifactRepo(t *testing.T) {
 	root := repoRoot(t)
-	scripts := []string{"release-local.sh", "homebrew-formula.sh", "homebrew-cask.sh"}
+	scripts := []string{"release-local.sh", "homebrew-formula.sh", "homebrew-cask.sh", "release-manifest.sh"}
 	defaults := map[string]string{}
 	for _, name := range scripts {
 		path := filepath.Join(root, "scripts", name)
