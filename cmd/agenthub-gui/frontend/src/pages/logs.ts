@@ -43,20 +43,31 @@ function fieldsText(record: ProcLogRecord): string {
     .join(" ");
 }
 
+/** The columns logRows fills, in order. The message goes last because it is
+ *  the only one with no fixed shape: everything ahead of it lines up down the
+ *  page, and prose given a middle column pushes whatever follows it out of
+ *  alignment on every row. */
+const LOG_COLUMNS = ["Time", "PID", "Level", "Process", "Client", "Server", "Message"];
+
+/** One value per column.
+ *
+ *  `r.client || r.server` is what this replaces, and it lost data rather than
+ *  merely crowding it: a gateway line names both — the client it serves and
+ *  the downstream it was dialling — and only the client survived. Nothing in
+ *  the row said which of the two the surviving name was, either, and the
+ *  process kind sat underneath it as though it were a third reading of the
+ *  same field. */
 function logRows(records: ProcLogRecord[]): (Node | string)[][] {
   return records.map((r) => [
-    el("div", {}, [
-      el("div", { text: relTime(r.time) }),
-      el("div", { class: "muted", text: r.pid ? `pid ${r.pid}` : "" }),
-    ]),
+    el("div", { text: relTime(r.time) }),
+    el("div", { class: "muted mono", text: r.pid ? String(r.pid) : "—" }),
     el("span", { class: `badge ${TONES[r.level] ?? "neutral"}`, text: r.level || "—" }),
+    el("div", { class: "muted", text: r.origin || "—" }),
+    el("div", { text: r.client || "—" }),
+    el("div", { text: r.server || "—" }),
     el("div", {}, [
       el("div", { text: r.msg || "—" }),
       el("div", { class: "muted", text: fieldsText(r) }),
-    ]),
-    el("div", {}, [
-      el("div", { text: r.client || r.server || "—" }),
-      el("div", { class: "muted", text: r.origin }),
     ]),
   ]);
 }
@@ -177,7 +188,7 @@ export function logsPage(): Page {
             "The daemon writes one when it first runs, and every connected client writes its own.",
           );
     }
-    return table(["When", "Level", "Message", "Where"], logRows(records));
+    return table(LOG_COLUMNS, logRows(records), "observe-table");
   }
 
   function draw(): void {
