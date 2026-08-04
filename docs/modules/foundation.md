@@ -809,6 +809,25 @@ downgrade keeps the header. A caller-supplied `HTTPConfig.Client` is left alone 
 its redirect policy — which is why `internal/downstream` sets the same policy on the client it
 builds. A stream answering with a non-SSE content type is likewise given up on permanently.
 
+**The endpoint event is recorded, because nothing else in the system sees it.** The legacy binding's
+POST address is chosen by the downstream: it is in no configuration file, survives no restart, and
+otherwise appears only in a frame trace, which nobody has switched on before the failure that needs
+it. `setPostURL` therefore logs it once per connection — `warn` when it resolves to the stream URL
+itself, `debug` otherwise — through `HTTPConfig.Logger`, which `internal/downstream` fills with the
+same `boundServerLog` the rest of the connection uses. **The logger is injected for the same reason
+the dialer is**: this package may import only the standard library, so it cannot reach `logx`, and a
+logger built here would carry no server binding — an unbound record in a merged gateway stream is
+close to no record at all. `nil` becomes a discarding logger, so call sites stay unguarded. The
+record drops the query rather than redacting it: this binding routinely carries the session id
+there, and `logx`'s scrubber matches key names it knows, so `sessionId` would pass straight through
+it. The write happens **before** `ready` is closed, because closing `ready` releases the dial: the
+other order let a caller hold a connected transport whose negotiation had not been recorded yet.
+
+The same address explains a status code that otherwise reads as a client bug. A downstream naming
+its own GET-only stream produces `POST <stream url>: http 405`, so `postError` appends what the
+status cannot say — and only for that exact shape (scheme, host, path and query all equal), so a 405
+from any other path keeps the plain message.
+
 **The SSRF screen is injected, and if it is not injected it is not there.** `HTTPConfig.DialContext`
 and `HTTPConfig.Client` are **mutually exclusive** (both is rejected as `ClassFatal`), so a
 protective dialer cannot be silently dropped. Supplying neither means **no address screening at
