@@ -226,7 +226,9 @@ and the OS keyring, every entry addressed by `(ServerID, Scope) + Key` with `Sco
 
 ### Invariants and failure directions
 
-**Four levels, first hit wins; an empty or whitespace-only value counts as "unset" at every level.**
+**Four levels, first hit wins. An empty or whitespace-only value counts as "unset" at the two
+environment levels** — `envValue` trims before accepting, so an exported-but-empty variable falls
+through rather than shadowing the vault.
 
 | Level | Source | Activation |
 |---|---|---|
@@ -234,6 +236,17 @@ and the OS keyring, every entry addressed by `(ServerID, Scope) + Key` with `Sco
 | 2 | bare environment variable `<KEY>` | explicit opt-in `AGENTHUB_ALLOW_BARE_SECRET_ENV=1` |
 | 3 | `secrets.enc` (XChaCha20-Poly1305) | `AGENTHUB_SECRET_KEY` set, or the dev-fallback pair of files already exists |
 | 4 | OS keyring (zalando/go-keyring) | availability probe passes |
+
+**Owed: levels 3 and 4 do not apply that trim, and the difference is not only cosmetic.** `Get` returns
+whatever the enc file or the keyring holds, and `Set` accepts any value — `Ref.Validate` covers the
+server id and the key, never the value — so a stored empty string is reported as **present** and shadows
+the keyring level beneath it. The consequence that matters is caught one layer up rather than here:
+`downstream.expandSecrets` treats `!ok || val == ""` as unresolved, which is what stops a header
+expanding to nothing and turning an authenticated endpoint anonymous. That guard is **narrower than the
+rule above** — it tests `== ""`, not a trim — so a whitespace-only vault entry is refused at levels 1–2
+and delivered at levels 3–4. Owed rather than fixed here because tightening `Get` changes what `secret
+get`, `server inspect` and the control plane answer for an already-stored value: a behaviour change with
+a blast radius, not a tidy.
 
 **Level 2 being off by default is fail-closed:** no arbitrary environment variable is a credential unless
 the user asks. Even when on, `envValue` **never** resolves a variable starting with `AGENTHUB_` through the
