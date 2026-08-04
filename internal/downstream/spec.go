@@ -446,7 +446,39 @@ func (d Deps) dialStdio(ctx context.Context, spec Spec) (transport.Transport, er
 		docker.ServerID = spec.ID
 		cfg.Docker = &docker
 	}
-	return transport.SpawnStdio(cfg)
+	tr, err := transport.SpawnStdio(cfg)
+	if err != nil {
+		return nil, explainBlockedEnv(err, env)
+	}
+	return tr, nil
+}
+
+// explainBlockedEnv finishes a diagnosis spawnguard can only half-answer. The
+// guard is handed one flat environment and reports which variable it refused;
+// it cannot see that childEnv is the agenthub process's own environment with
+// the entry's env block laid over it, so it cannot say which of the two the
+// variable came from. stated is that env block, after secret expansion.
+//
+// The distinction is the whole answer. A declared variable is edited out of
+// the registry entry; an inherited one is not in any AgentHub file at all, and
+// is fixed in whatever started the process — which, for a gateway, is the
+// client, and means restarting it. Without this, the operator greps the
+// registry, finds nothing, and concludes the message is wrong.
+//
+// Everything that is not an env_smuggling block, and every such block that
+// names no variable (env -S is a shape, not a variable), passes through
+// untouched: a wrong provenance claim is worse than none.
+func explainBlockedEnv(err error, stated map[string]string) error {
+	var b *spawnguard.Blocked
+	if !errors.As(err, &b) || b.EnvVar == "" {
+		return err
+	}
+	if _, ok := stated[b.EnvVar]; ok {
+		return fmt.Errorf("%w: this server's own env block sets %s — remove it from the entry", err, b.EnvVar)
+	}
+	return fmt.Errorf("%w: %s is not in this server's env block, so it was inherited from the environment "+
+		"agenthub itself was started in — unset it there (a running gateway keeps the environment its client "+
+		"gave it, so restart that client afterwards)", err, b.EnvVar)
 }
 
 // spawnScreen resolves the screen handed to the transport.

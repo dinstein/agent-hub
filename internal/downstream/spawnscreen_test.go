@@ -3,6 +3,7 @@ package downstream_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/dinstein/agent-hub/internal/downstream"
@@ -50,6 +51,51 @@ func TestSpawnIsScreenedByDefault(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBlockedEnvSaysWhereTheVariableCameFrom covers the half of the diagnosis
+// spawnguard cannot make. The guard sees one flat environment; only this layer
+// knows whether the refused variable was declared by the entry or inherited
+// from the process agenthub was started in, and the two have opposite fixes.
+//
+// The inherited case is the one that costs real time: the operator greps the
+// registry for the variable, finds nothing, and stops believing the message.
+func TestBlockedEnvSaysWhereTheVariableCameFrom(t *testing.T) {
+	t.Run("declared by the entry", func(t *testing.T) {
+		t.Parallel()
+		_, err := downstream.Connect(context.Background(),
+			downstream.Spec{
+				ID: "s", Kind: transport.Stdio, Command: "/bin/echo",
+				Env: map[string]string{"LD_PRELOAD": "/tmp/evil.so"},
+			}, downstream.Deps{})
+		if !errors.Is(err, guard.ErrBlocked) {
+			t.Fatalf("error %v does not unwrap to guard.ErrBlocked", err)
+		}
+		if got := err.Error(); !strings.Contains(got, "own env block") {
+			t.Fatalf("error %q does not say the entry declared LD_PRELOAD", got)
+		}
+	})
+
+	t.Run("inherited from the process environment", func(t *testing.T) {
+		// Setenv makes this the real path rather than a simulated one: the
+		// variable reaches the child through buildEnv's os.Environ() copy,
+		// which is how it arrives in production. Setenv also forbids
+		// t.Parallel() here, so this subtest deliberately runs serially.
+		t.Setenv("LD_PRELOAD", "/tmp/evil.so")
+		_, err := downstream.Connect(context.Background(),
+			downstream.Spec{ID: "s", Kind: transport.Stdio, Command: "/bin/echo"},
+			downstream.Deps{})
+		if !errors.Is(err, guard.ErrBlocked) {
+			t.Fatalf("error %v does not unwrap to guard.ErrBlocked", err)
+		}
+		got := err.Error()
+		if !strings.Contains(got, "inherited") {
+			t.Fatalf("error %q does not say the variable was inherited", got)
+		}
+		if strings.Contains(got, "own env block sets") {
+			t.Fatalf("error %q blames the entry for a variable it never declared", got)
+		}
+	})
 }
 
 // TestSpawnScreenIsInjectableAndDefeatable pins both explicit forms, so that
