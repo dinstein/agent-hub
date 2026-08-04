@@ -400,11 +400,59 @@ func (m *Manager) run(ctx context.Context, cancel context.CancelFunc, id string,
 	}
 	m.mu.Unlock()
 
+	m.logDiscovery(snap, res, err)
 	if err != nil {
 		m.emit(snap, eventlog.KindOAuthLoginFailed, "interactive login failed", err.Error())
 		return
 	}
 	m.emit(snap, eventlog.KindOAuthLoginCompleted, "interactive login completed", snap.Mode)
+}
+
+// logDiscovery writes how the metadata chain went, at Debug.
+//
+// oauthflow is a leaf with no logging dependency: it reports what happened as
+// data (DiscoveryResult.Attempted, FlowError.Attempted) and leaves rendering
+// to whoever holds a logger. This is that end of the arrangement, and until
+// it existed the data was collected and thrown away — the chain deciding
+// which endpoints an entire login talks to left no trace, on the path where
+// "this provider will not connect" is most often reported.
+//
+// BOTH outcomes, not only the failure. A login that succeeded through the
+// synthesized-endpoints fallback is one candidate away from one that failed,
+// and it is the case that goes wrong later: a 403 from a guessed /register
+// means something entirely different from a 403 from an advertised
+// registration_endpoint, which is the distinction DiscoveryDefaults exists
+// to record.
+//
+// URLs only. These are metadata endpoints — the class the flow's own error
+// strings already interpolate — and no token, code or client secret ever
+// passes through a DiscoveryResult.
+func (m *Manager) logDiscovery(snap Session, res *oauthflow.LoginResult, loginErr error) {
+	if m.log == nil {
+		return
+	}
+	var (
+		status   oauthflow.DiscoveryStatus
+		attempts []oauthflow.Attempt
+		fe       *oauthflow.FlowError
+	)
+	switch {
+	case loginErr != nil && errors.As(loginErr, &fe):
+		status, attempts = fe.Discovery, fe.Attempted
+	case res != nil && res.Discovery != nil:
+		status, attempts = res.Discovery.Status, res.Discovery.Attempted
+	default:
+		// A failure that never reached discovery, or a result carrying none.
+		// There is nothing to describe, and an empty chain would read as
+		// "every candidate was fine".
+		return
+	}
+	m.log.Debug("oauth discovery finished", logx.Server(snap.Server), logx.Session(snap.ID),
+		"status", string(status), "candidates", len(attempts))
+	for _, a := range attempts {
+		m.log.Debug("oauth discovery candidate", logx.Server(snap.Server), logx.Session(snap.ID),
+			"url", a.URL, "outcome", a.Outcome)
+	}
 }
 
 // emit writes one login phase to both streams. The session id travels in the
