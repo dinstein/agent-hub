@@ -816,15 +816,19 @@ client owns and restarting it. The binding lives in `clients.json`, so `client b
 running sessions. `setsid_unix.go` detaches the gateway from the caller's process group to prevent
 SIGTTIN/SIGTTOU.
 
-**The help page is grouped by task phase** — Setup, Wire up, Daemon, Manage, Diagnose, Observe, plus the
-machine entry point `connect` — and `Options.ReducedHelp` (release builds only) withholds **Daemon and
-Manage**, narrowing what the binary *teaches* while every withheld command stays registered and runnable.
-Two rules decide membership: **the withheld half is split on one testable question, does this command
-need a running daemon** (which is why `events` left Daemon when it stopped subscribing to SSE, and why
-the fallback group is named for being the remainder rather than given a theme its members break); and **a
-command a shipped page recommends must be a command that page teaches**, learned three times over from
-`secret`, `doctor` and the three record readers, each once withheld from a page that recommended or
-presupposed it.
+**The help page is grouped by task phase** — Setup, Wire up, Configure, Daemon, Manage, Diagnose,
+Observe, plus the machine entry point `connect` — and `Options.ReducedHelp` (release builds only)
+withholds **Daemon and Manage**, narrowing what the binary *teaches* while every withheld command stays
+registered and runnable. Two rules decide membership: **the withheld half is split on one testable
+question, does this command need a running daemon** (which is why `events` left Daemon when it stopped
+subscribing to SSE, and why the fallback group is named for being the remainder rather than given a theme
+its members break); and **a command a shipped page recommends must be a command that page teaches**,
+learned four times over from `secret`, `doctor`, the three record readers and `config`, each once withheld
+from a page that recommended or presupposed it — `config` because it is the only setter for the discovery
+mode `profile discovery` names as its origin and for the retention and capture policy of the visible
+`calls` ledger. Its own group, at the global altitude, rather than a line in Wire up: those are
+per-server and per-client steps, and a fourth entry beside them would read as a fourth step of a path
+that has three. Manage is what is left after it, one command, and its title dropped "governance" with it.
 
 **`logs`'s filters are the mandatory `logx` field names (`--client`, `--server`) rather than free text**,
 which is what makes a merged stream joinable at all, and they are **fail-closed** like

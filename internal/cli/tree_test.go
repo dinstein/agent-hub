@@ -54,9 +54,15 @@ var withheldGroups = []*cobra.Group{groupDaemon, groupManage}
 // Observe group: a build that records every call and every state change, then
 // hides all three readers of that record, ships a ledger nothing on its help
 // page can open.
+// `config` is likewise NOT withheld, and has its own group: it is the only
+// setter for the global defaults the visible path inherits — the discovery
+// mode `profile discovery` names as its origin, and the whole retention and
+// capture policy of the visible `calls` ledger. What a release build narrows
+// there is one key family inside the listing, not the command; see
+// TestReleaseConfigLsWithholdsTheHTTPFace.
 var withheldCommands = []string{
 	"daemon", "session", "token",
-	"config", "skill",
+	"skill",
 	// `tool` is NOT here any more: it hangs off `server`, which is visible,
 	// so the group ships. That was the point of moving it — a global allow
 	// list with no advertised way to read or write it.
@@ -276,11 +282,15 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		// you already hold.
 		{"setup", []string{"server", "auth", "secret", "catalog"}},
 		{"wire", []string{"profile", "client"}},
+		// One member, and visible even in a shipped build: the keys are global,
+		// so they are what the per-server and per-client steps above land on,
+		// which is also why it follows Wire up rather than opening the page.
+		{"configure", []string{"config"}},
 		// Split on one testable question — does this need a running daemon?
 		// `token` mints credentials for the daemon's HTTP data plane, so it
 		// sits with the daemon rather than with the other governance verbs.
 		{"daemon", []string{"daemon", "session", "token"}},
-		{"manage", []string{"config", "skill"}},
+		{"manage", []string{"skill"}},
 		// One member, and visible even in a shipped build: Setup and Wire up
 		// are steps to take, and this is what to run when a step did not take.
 		{"diagnose", []string{"doctor"}},
@@ -451,14 +461,16 @@ func TestReleaseHidesExactlyTheWithheldCommands(t *testing.T) {
 	}
 	// The rest of the page must be untouched — this is a help-page edit, not
 	// a reshuffle of everything else.
-	for _, g := range []*cobra.Group{groupSetup, groupWire, groupDiagnose, groupObserve, groupEntry} {
+	for _, g := range []*cobra.Group{
+		groupSetup, groupWire, groupConfigure, groupDiagnose, groupObserve, groupEntry,
+	} {
 		if !strings.Contains(out, g.Title) {
 			t.Errorf("release --help dropped the %q heading, which stays visible:\n%s", g.ID, out)
 		}
 	}
 	for _, other := range []string{
 		"catalog", "server", "auth", "secret", "profile", "client", "connect", "doctor",
-		"calls", "events", "logs",
+		"calls", "events", "logs", "config",
 	} {
 		if !strings.Contains(out, "  "+other+" ") {
 			t.Errorf("release --help dropped %q, which is not withheld:\n%s", other, out)
@@ -488,7 +500,7 @@ func TestHiddenCommandsStillRun(t *testing.T) {
 	root := newReleaseTestRoot(t)
 	for _, path := range [][]string{
 		{"token", "ls"}, {"token"},
-		{"config", "ls"}, {"calls", "status"},
+		{"skill", "ls"}, {"calls", "status"},
 		{"daemon", "status"}, {"session", "ls"}, {"events"}, {"doctor"},
 	} {
 		cmd, _, err := root.Find(path)
@@ -499,7 +511,7 @@ func TestHiddenCommandsStillRun(t *testing.T) {
 	// And they still EXECUTE end to end. One offline-capable listing per
 	// withheld group: a real exit 0 with real output proves the RunE was
 	// reached, not merely that a command object exists.
-	for _, args := range [][]string{{"profile", "ls"}, {"config", "ls"}, {"doctor"}} {
+	for _, args := range [][]string{{"profile", "ls"}, {"skill", "ls"}, {"doctor"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			setDataDir(t)
 			code, out, stderr := runCLIReleaseHelp(t, "", args...)

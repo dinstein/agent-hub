@@ -48,19 +48,23 @@ type Options struct {
 	Resolver *platform.Resolver
 	// LockTimeout overrides the registry lock timeout (0 = registry default).
 	LockTimeout time.Duration
-	// ReducedHelp drops the Daemon and Manage groups from the help pages,
-	// leaving a shipped build's page at Setup -> Wire up -> connect. Set for
-	// release builds only (main.channel); every one of those commands stays
-	// registered and stays runnable — this narrows what the help page
-	// TEACHES, never what the binary can do.
+	// ReducedHelp drops the Daemon and Manage groups from the help pages, and
+	// the `http.` key family from `config ls` (config.go's withheldKeyPrefix,
+	// the one place a listing rather than a group is narrowed). Set for
+	// release builds only (main.channel); every one of those commands, and
+	// every one of those keys, stays registered and stays runnable — this
+	// narrows what the help page TEACHES, never what the binary can do.
 	//
-	// What survives is the whole everyday path, plus the one command that says
-	// which step of it broke: register a server and authorize it, build a
-	// profile, bind a client to it, and `doctor` when one of those does not
+	// What survives is the whole everyday path, the global defaults it runs
+	// on, and the one command that says which step of it broke: register a
+	// server and authorize it, build a profile, bind a client to it, `config`
+	// for what all of that inherits, and `doctor` when one of those does not
 	// work. Withholding the profile commands (as the Scope group once did) left
 	// a shipped build able to connect a client while giving it no vocabulary
 	// for what that client would then see; withholding `doctor` (as Manage
-	// once did) left it able to describe the path but not to diagnose it.
+	// once did) left it able to describe the path but not to diagnose it; and
+	// withholding `config` (as Manage also did) left every global default
+	// unsayable while two visible groups pointed at it.
 	//
 	// One field rather than one per group: there is a single reason to
 	// withhold any of them (this is a shipped build) and no caller that wants
@@ -204,8 +208,27 @@ func (a *App) newRoot() *cobra.Command {
 	// page is a recommendation of the everyday path — a third entry beside
 	// `profile` and `client` reads as a third required step.
 	addGrouped(root, groupWire, a.newProfileCmd(), a.newClientCmd())
+	// `config` is VISIBLE, in a shipped build too, and it is alone.
+	//
+	// It was withheld in Manage, which left every global default unsayable on
+	// a shipped page: the discovery mode a profile inherits, the result
+	// budgets, and whether the call ledger records anything at all. Those are
+	// not diagnostics — they are the settings the everyday path runs ON, and
+	// two visible groups already lead here: `profile discovery` prints
+	// "governance.json, from 'agenthub config set discovery'" as the origin of
+	// an inherited mode, and `calls` ships with retention, capture and the
+	// size ceilings having no other setter in the tree. That is the `secret`
+	// fault again: a page recommending a command it withheld.
+	//
+	// A group of its own rather than a line in Wire up, because the altitude
+	// differs. Setup and Wire up are per-server and per-client steps; these
+	// keys are global and every surface inherits them, so filing them beside
+	// `profile` would read as a fourth step of a path that has three. It sits
+	// directly after Wire up for the same reason: the defaults are what the
+	// wiring lands on.
+	addGrouped(root, groupConfigure, a.newConfigCmd())
 	// Hidden takes these two groups off the help page only: cobra still
-	// resolves and runs them, so `agenthub config ls` or `agenthub calls tail`
+	// resolves and runs them, so `agenthub skill ls` or `agenthub token ls`
 	// behaves identically in a release build. Routing them through the same
 	// call as every other group is what keeps a newly added member of one of
 	// them from being left visible.
@@ -223,7 +246,6 @@ func (a *App) newRoot() *cobra.Command {
 	// membership does not honor. These run against local state with nothing
 	// started.
 	addGroupedHidden(root, a.reducedHelp, groupManage,
-		a.newConfigCmd(),
 		a.newSkillCmd())
 	// `doctor` is VISIBLE, in a shipped build too, and it is alone.
 	//
@@ -280,9 +302,10 @@ func (a *App) newRoot() *cobra.Command {
 }
 
 // Help groups, in the order the onboarding path actually runs: bring a server
-// in -> choose a surface and hand it to an AI client -> start the daemon and
-// watch what it serves -> everything else -> what to run when one of those did
-// not work -> what actually happened afterwards. `connect` is held apart
+// in -> choose a surface and hand it to an AI client -> set the global
+// defaults all of that inherits -> start the daemon and watch what it serves
+// -> everything else -> what to run when one of those did not work -> what
+// actually happened afterwards. `connect` is held apart
 // because it is the machine entry point a client's MCP config invokes; a human
 // who types it gets a terminal that just hangs on stdio.
 //
@@ -300,20 +323,24 @@ func (a *App) newRoot() *cobra.Command {
 // the remainder — rather than given a theme to break.
 //
 // Manage is now that remainder and nothing else: the three record readers it
-// used to hold answer one question between them and have their own group, so
-// what is left is a config editor and a skill materializer. That is a
-// remainder worth keeping withheld, and no longer one big enough to be
-// mistaken for a section.
+// used to hold answer one question between them and have their own group, the
+// config editor is visible above, and what is left is the skill materializer.
+// That is a remainder worth keeping withheld, and no longer one big enough to
+// be mistaken for a section.
 //
 // `secret` was the other member cited there, and it has since moved to Setup,
 // where that sentence said it belonged all along. Manage's title drops
-// "credentials" with it: naming a theme no member carries is the same fault
-// read from the other end.
+// "credentials" with it, and dropped "governance" when `config` left: naming a
+// theme no member carries is the same fault read from the other end, and one
+// member is the altitude at which a stale title is easiest to leave standing.
 var (
-	groupSetup  = &cobra.Group{ID: "setup", Title: "Setup — bring a downstream server in:"}
-	groupWire   = &cobra.Group{ID: "wire", Title: "Wire up — choose a surface, hand it to an AI client:"}
-	groupDaemon = &cobra.Group{ID: "daemon", Title: "Daemon — the coordination plane and what rides on it:"}
-	groupManage = &cobra.Group{ID: "manage", Title: "Manage — governance and local state:"}
+	groupSetup = &cobra.Group{ID: "setup", Title: "Setup — bring a downstream server in:"}
+	groupWire  = &cobra.Group{ID: "wire", Title: "Wire up — choose a surface, hand it to an AI client:"}
+	// Configure follows Wire up, visible in every build: the keys are global,
+	// so they are what the per-server and per-client steps above land on.
+	groupConfigure = &cobra.Group{ID: "configure", Title: "Configure — the global defaults every surface inherits:"}
+	groupDaemon    = &cobra.Group{ID: "daemon", Title: "Daemon — the coordination plane and what rides on it:"}
+	groupManage    = &cobra.Group{ID: "manage", Title: "Manage — local state:"}
 	// Diagnose sits after Manage and before the machine entry point, so on a
 	// shipped page it lands directly under Wire up: the path, then what to run
 	// when the path does not work.

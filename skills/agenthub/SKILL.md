@@ -7,7 +7,7 @@ description: Drive the agenthub CLI to give an AI client MCP tools - add a serve
 
 One gateway between every AI client and every MCP server. Wire a client up **once**; add, authorize, and narrow servers here afterwards without touching the client again.
 
-**Never guess a flag** — `agenthub <group> --help` decides. The page is grouped by task phase, and four groups show in every build: Setup (`server`, `auth`, `secret`, `catalog`), Wire up (`profile`, `client`), Diagnose (`doctor`) and Observe (`calls`, `events`, `logs` — §8, §9). A release build withholds two, Daemon (`daemon`, `session`, `token`) and Manage (`config`, `skill`), **from the page only**: they resolve and run identically there, and their own `--help` still prints.
+**Never guess a flag** — `agenthub <group> --help` decides. The page is grouped by task phase, and five groups show in every build: Setup (`server`, `auth`, `secret`, `catalog`), Wire up (`profile`, `client`), Configure (`config`), Diagnose (`doctor`) and Observe (`calls`, `events`, `logs` — §8, §9). A release build withholds two, Daemon (`daemon`, `session`, `token`) and Manage (`skill`), **from the page only**: they resolve and run identically there, and their own `--help` still prints. The same reduction drops the `http.*` keys from `config ls` — a listing, not a refusal: `config get`/`config set` still name them.
 
 The path is always: **add → (credential) → enable → test → connect → narrow**.
 
