@@ -88,7 +88,9 @@ make ci-landing  # ci-full with the caches dropped (after the rebase, before lan
 make gui         # build the GUI separately (excluded from build/lint by default)
 ```
 
-**`make ci` is not CI.** Three ways a local green run still goes red, all covered by `make ci-full`:
+**`make ci` is not CI.** Three ways a local green run still goes red — all covered by `make ci-full`,
+and all covered by the branch's own PR checks, which is why the skill spends the local run on the
+landing rather than on every push:
 
 1. **A skipped depguard proof is not a proof** (CANONICAL §6). Without golangci-lint,
    `internal/depguardtest` calls `t.Skip` and `make test` counts it as success; CI greps for

@@ -99,31 +99,29 @@ every other worktree's branch along with yours.
 Draft until step 4, because until then the branch cannot be landed. It cannot be opened before the
 first commit — GitHub refuses a head that does not differ from its base.
 
-## 4. Before marking it ready: the full run
-
-```bash
-make ci-full                            # everything the CI workflow runs
-```
-
-**`make ci` is not CI** — it misses a skipped depguard proof, the `gui` job, and a stale
-`package-lock.json`, all three covered by `ci-full`. AGENTS.md's *Testing and verification* section
-has the reasons.
-
-Then e2e **both ways** — one is the regression test for the other:
-
-```bash
-make e2e-ci                             # with XDG_RUNTIME_DIR set, as CI's Linux runner has it
-make e2e                                # this machine's environment
-```
-
-`XDG_RUNTIME_DIR` must **not** move the run directory — only `AGENTHUB_DATA_DIR` does — and this
-suite exists to catch the day that stops being true.
+## 4. Mark it ready, and let the PR's checks be the full run
 
 ```bash
 git push origin HEAD
 gh pr ready
-gh pr checks --watch                    # the same jobs main gets
+gh pr checks --watch                    # ubuntu + macOS, the same jobs main gets
 ```
+
+**`make ci` is not CI** — it misses a skipped depguard proof, the `gui` job, and a stale
+`package-lock.json`. `make ci-full` covers all three, and so does the PR, on two runners this machine
+is not: what `ci-full` adds over `ci` is precisely the part that is about the environment rather than
+the code, and the environment that decides is the runner's. Running it here first buys minutes of
+warning at the cost of a second full build every time. Let the checks report.
+
+Run `make ci-full` locally anyway when you expect it to be the thing that breaks, and want the answer
+in one minute rather than ten:
+
+| The branch touched | Because |
+|---|---|
+| The GUI frontend, or anything `-tags wails` | The whole `gui` job is outside `make ci`, and wails v3 is an alpha |
+| The depguard rules, or an import that crosses `internal/*` | A skipped proof is no proof, and `make test` reports the skip as success |
+| The Makefile, `.github/workflows/`, or `test/buildrules` | You are changing the check itself; a red PR then tells you nothing about the code |
+| Nothing — but `gh pr checks` cannot run | Actions is down or the fork has no runners. Then `ci-full` is the whole verdict, and say so in the PR |
 
 ## 5. Land it
 
