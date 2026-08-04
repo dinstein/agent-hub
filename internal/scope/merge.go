@@ -80,7 +80,11 @@ func Converge(layers []ScopeLayer, cat router.Catalog) ([]Step, error) {
 // (docs/architecture.md §7). It is a PURE function: deterministic, no side
 // effects, inputs are never mutated and never aliased by the output.
 //
-// Merge rules (the whole table of 4.1):
+// Merge rules — the complete set, not an excerpt of one kept elsewhere.
+// docs/architecture.md §7 states them in prose and says why each field falls
+// the way it does; docs/modules/config.md's internal/scope section carries
+// the invariants around them. There is no table and no fuller list to go
+// looking for; this is it.
 //
 //   - server visibility: per-layer INTERSECTION, seeded from the catalog's
 //     server set (nil = no intervention, [] = block-all) — can only narrow.
