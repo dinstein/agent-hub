@@ -105,6 +105,21 @@ switches between the three inside a minute. So the shared parts are shared in co
 (`pages/observe.ts`): the time range and its options, the filter bar's position and sizing, rows
 **newest first**, and one pager.
 
+**Owed: two of the three share that code.** `pages/events.ts` and `pages/logs.ts` import from
+`observe.ts`; the Calls page (`pages/activity.ts`) imports none of it and carries its own range list,
+its own filter fields, its own toolbar and its own cursor walk. The duplication has already produced
+the divergence this section exists to prevent, in the one place a reader is told it cannot happen:
+
+- **The option sets differ.** `observe.RANGES` ends in **Everything** (no lower bound);
+  `activity.ts`'s list ends in **30 days**, and its `sinceMillis` has no unbounded branch — so a call
+  older than thirty days cannot be reached from the page at all, while an event of any age can.
+- **The same range is labelled twice.** "Last hour" / "Last 24 hours" / "Last 7 days" against
+  "1 hour" / "24 hours" / "7 days": two vocabularies for one idea, in front of the person switching
+  between them inside that minute.
+
+Moving Calls onto `observe.ts` changes what the page renders, so it carries a visual decision — which
+list wins, and whether Calls gains **Everything** — rather than being a tidy.
+
 **Every selector goes to the DAEMON, never to the rendered rows.** A page is one read deep, so
 filtering in the browser searches only that page and answers "nothing matches" for something that is
 merely older than it — and the two are indistinguishable to whoever is reading. This is why the
