@@ -42,19 +42,12 @@ func (r CallsKeyRotation) Human(w io.Writer) error {
 	return err
 }
 
-// pressureDrop is what `calls status` reports under `pressure`. It is a
-// constant because there is nothing to choose: c08fa41 made both ledger
-// tiers fail open, so crossing maxBytes or minFreeBytes costs the record and
-// never the call. It read "block" until then, which was the truth while the
-// evidence tier could refuse a tools/call.
-const pressureDrop = "drop"
-
 func auditStatusOf(p registry.ResolvedCallsPolicy) CallsStatus {
 	return CallsStatus{
 		Enabled: p.Enabled, Arguments: "full", Results: p.ResultMode,
 		ResultBytes: p.ResultBytes, Durability: p.Durability,
 		RetentionDays: p.RetentionDays, MaxBytes: p.MaxBytes,
-		MinFreeBytes: p.MinFreeBytes, Pressure: pressureDrop, KeyID: p.KeyID,
+		MinFreeBytes: p.MinFreeBytes, Pressure: calllog.PressurePolicy, KeyID: p.KeyID,
 	}
 }
 

@@ -32,7 +32,7 @@ func (s *Server) auditStatus() (api.CallsStatus, error) {
 		Generation: snap.Generation, Enabled: p.Enabled, Arguments: "full",
 		Results: p.ResultMode, ResultBytes: p.ResultBytes, Durability: p.Durability,
 		RetentionDays: p.RetentionDays, MaxBytes: p.MaxBytes,
-		MinFreeBytes: p.MinFreeBytes, Pressure: "block", KeyID: p.KeyID,
+		MinFreeBytes: p.MinFreeBytes, Pressure: calllog.PressurePolicy, KeyID: p.KeyID,
 		Storage: api.CallsUsage{Bytes: u.Bytes, Days: u.Days, EventFiles: u.EventFiles, PackFiles: u.PackFiles},
 	}, nil
 }

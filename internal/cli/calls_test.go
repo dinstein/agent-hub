@@ -31,7 +31,7 @@ func TestAuditDefaultsAreBoundedAndFailOpen(t *testing.T) {
 	if got.Enabled || got.Arguments != "full" || got.Results != "truncated" || got.ResultBytes <= 0 {
 		t.Fatalf("default calls policy = %+v", got)
 	}
-	if got.Durability != "sync" || got.RetentionDays <= 0 || got.MaxBytes <= 0 || got.MinFreeBytes <= 0 || got.Pressure != pressureDrop {
+	if got.Durability != "sync" || got.RetentionDays <= 0 || got.MaxBytes <= 0 || got.MinFreeBytes <= 0 || got.Pressure != calllog.PressurePolicy {
 		t.Fatalf("default bounds = %+v", got)
 	}
 }

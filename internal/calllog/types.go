@@ -16,6 +16,17 @@ const (
 	LegacyDirectoryName = "audit"
 	// EventFileName is the shared bounded metadata stream inside one UTC day.
 	EventFileName = "calls.jsonl"
+	// PressurePolicy is what a status view reports for storage pressure, and
+	// it is a constant because there is nothing to choose: c08fa41 made both
+	// tiers fail open, so crossing maxBytes or minFreeBytes costs the record
+	// and never the call.
+	//
+	// It lives here rather than beside either reader because there are two —
+	// the CLI's `calls status` and the control plane's endpoint — and they
+	// each held their own copy of the word. That is exactly how they came to
+	// disagree: one was corrected when the behaviour changed and the other
+	// was not.
+	PressurePolicy = "drop"
 	// FramePrefix names the per-process frame stream inside one UTC day:
 	// frames-<bootid>-p<pid>.jsonl.
 	//
