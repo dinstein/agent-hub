@@ -26,8 +26,10 @@ container redirection, named pipes, SDDL) into the same seam.
 `Resolver` makes the OS, environment, home directory and three Windows hooks (`PackageIdentity`,
 `ProbePath`, `UserSID`) injectable, so a test can resolve a complete Windows path on macOS; its zero
 value equals `Default()`, and code that needs testability should hold its own. `DataDir` is the only
-function that branches on platform, everything else is a subdirectory of it, and only `RegistryDir`
-and `CtlSocketPath` have an environment escape hatch of their own.
+function that decides a platform-specific **root** — every path below is a subdirectory of it — and
+only `RegistryDir` and `CtlSocketPath` have an environment escape hatch of their own. It is not the
+only function that branches on the platform: `RunDir` and `CtlSocketPath` each do, visibly in the
+table below, and so does `EnsureDir`.
 
 | Function | Resolution order |
 |---|---|
@@ -38,7 +40,13 @@ and `CtlSocketPath` have an environment escape hatch of their own.
 | `CtlSocketPath` | `AGENTHUB_SOCKET` → the Windows named pipe `\\.\pipe\agenthub-ctl-<sha8(SID)>` → `<run>/ctl.sock` |
 
 `EnsureDir` / `EnsureDirs` create with `MkdirAll(0700)` and actively `chmod` an existing leaf back
-down to 0700 — the run and state directories hold sockets and credentials.
+down to 0700 — the run and state directories hold sockets and credentials. **On Windows they do
+neither**, and returning early is the honest answer rather than a bug: Go's permission bits do not
+map onto ACLs there (`os.Chmod` toggles the read-only attribute and nothing else), so a chmod would
+report success while restricting nothing. What protects those directories on Windows is `%APPDATA%`
+being per-user and, for the control endpoint, the pipe SDDL — not a directory mode.
+[windows.md](../windows.md) owns that gap and tracks setting an explicit owner-only ACL as an open
+item.
 
 `ProcessAlive(pid)` answers with **two** booleans, `alive` and `known`, and the second is why it
 lives here: the question has three answers — yes, no, and *this call may not look* — and folding the
