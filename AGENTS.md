@@ -83,8 +83,8 @@ configured but not in effect is worse than no rule.
 make             # the target list, one line each
 make fmt         # apply gofmt + goimports (they are CI failures, see above)
 make ci          # build + test + lint
-make ci-full     # everything the CI workflow runs (before pushing)
-make ci-landing  # ci-full with caches dropped and CI's environment (before landing)
+make ci-full     # everything the CI workflow runs, plus the CI-shaped e2e run
+make ci-landing  # ci-full with the caches dropped (after the rebase, before landing)
 make gui         # build the GUI separately (excluded from build/lint by default)
 ```
 
@@ -100,9 +100,13 @@ make gui         # build the GUI separately (excluded from build/lint by default
 3. **`make gui` is not that check.** It runs `npm install`, which repairs a `package-lock.json` that
    disagrees with `package.json`; CI runs `npm ci`, which rejects. Only `gui-frontend-ci` reproduces it.
 
-- **Run e2e both ways**: `make e2e-ci` (sets `XDG_RUNTIME_DIR`, as CI's Linux runner does) and
-  `make e2e`. Both must pass. That variable must **not** move the run directory — only
-  `AGENTHUB_DATA_DIR` does, along with everything else — and this suite is the regression test for it.
+- **e2e runs both ways, and `make ci-full` now runs both for you**: `make test` reaches the suite with
+  this machine's environment, and `e2e-ci` (a prerequisite of `ci-full`) reaches it with
+  `XDG_RUNTIME_DIR` set, as CI's Linux runner has it. That variable must **not** move the run
+  directory — only `AGENTHUB_DATA_DIR` does, along with everything else — and this suite is the
+  regression test for it. `make e2e` and `make e2e-ci` run one shape alone; `e2e` clears
+  `XDG_RUNTIME_DIR` rather than inheriting it, so on a Linux box — where `make test` already produces
+  the CI shape — it is the one that covers the other.
 - Preconditions inside tests (the process was killed, the file exists) must **fail hard**, never
   silently `return`: a silent skip disguises an environment difference as some other component failing.
 - For hangs, add evidence before changing code: an e2e timeout SIGQUITs the process under test and

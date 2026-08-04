@@ -217,8 +217,14 @@ cross-windows-gui: ## GOOS=windows build of the wails-tagged GUI
 	GOOS=windows $(GO) build -tags wails -o /dev/null ./$(GUI_DIR)
 
 .PHONY: e2e e2e-ci
-e2e: ## The end-to-end suite alone, in this machine's environment
-	$(GO) test ./test/e2e/ -count=1
+# XDG_RUNTIME_DIR is cleared rather than inherited, so this target means the
+# same thing wherever it is invoked from. The suite passes the variable through
+# to the daemons it starts on purpose (test/e2e/main_test.go's testEnv), so an
+# ambient value — a Linux shell, or an outer target that exported one — silently
+# turns this run into a second copy of e2e-ci, and the shape it exists to cover
+# is then the one nothing ran.
+e2e: ## The end-to-end suite alone, with XDG_RUNTIME_DIR unset
+	XDG_RUNTIME_DIR= $(GO) test ./test/e2e/ -count=1
 
 # A second target rather than an environment folded into `test`: the suite must
 # pass both with and without XDG_RUNTIME_DIR, and running only the CI shape
@@ -249,7 +255,16 @@ ci: build test lint ## Build + test + lint: the pure check, no GUI, no artifacts
 # the correspondence stays checkable by eye. cross-windows sits with the `ci`
 # job's targets and cross-windows-gui with the gui job's, for the reason its
 # comment gives: one needs the frontend bundle and the other does not.
-ci-full: ci ci-depguard-proof cross-windows gui-frontend-ci gui-go gui-vet cross-windows-gui ## Everything the CI workflow runs; use before pushing
+#
+# e2e-ci is the one prerequisite the workflow does not name, and it is here
+# because a single developer machine cannot produce what the MATRIX does: CI's
+# Linux runner sets XDG_RUNTIME_DIR and its macOS runner does not, so `make
+# test` covers one e2e shape per leg and both shapes across the two. On one
+# macOS checkout `make test` reaches only the unset shape, and this target is
+# what supplies the other. (`make ci-full` may do more than the workflow; only
+# the reverse costs a green local run and a red push, and buildrules'
+# TestCIWorkflowRunsNothingCIFullSkips is the check on that direction.)
+ci-full: ci e2e-ci ci-depguard-proof cross-windows gui-frontend-ci gui-go gui-vet cross-windows-gui ## Everything the CI workflow runs, plus the CI-shaped e2e run
 
 # Landing a branch, as one command. `make ci-full` is necessary and not
 # sufficient, for two reasons AGENTS.md spells out and that are easy to perform
@@ -266,10 +281,16 @@ ci-full: ci ci-depguard-proof cross-windows gui-frontend-ci gui-go gui-vet cross
 #   is then checked for the "(cached)" that must no longer be there — the
 #   assertion is the point, because a human scrolling a long log does not
 #   notice a word that is absent.
-ci-landing: | $(LOGDIR) ## ci-full with the cache dropped and CI's env; run it after the rebase
+#
+# It does NOT export XDG_RUNTIME_DIR over the whole run any more, and that was
+# not a simplification: e2e is the only suite the variable reaches, so wrapping
+# ci-full in it made `make test`'s e2e run a second copy of e2e-ci. The gate
+# that AGENTS.md describes as covering both shapes covered one of them twice,
+# and it was the last gate before an irreversible push. ci-full now names
+# e2e-ci as a prerequisite, which pins that shape without touching the other.
+ci-landing: | $(LOGDIR) ## ci-full with the test cache dropped; run it after the rebase
 	$(GO) clean -testcache
-	@mkdir -p $(E2E_XDG)
-	@set -o pipefail; XDG_RUNTIME_DIR=$(E2E_XDG) $(MAKE) --no-print-directory ci-full 2>&1 | tee $(LOGDIR)/ci.log
+	@set -o pipefail; $(MAKE) --no-print-directory ci-full 2>&1 | tee $(LOGDIR)/ci.log
 	@cached="$$(grep -c '(cached)' $(LOGDIR)/ci.log || true)"; \
 	if [ "$$cached" != 0 ]; then \
 		echo "landing check: $$cached cached result(s) in $(LOGDIR)/ci.log — the tree about to land was not actually tested" >&2; \
