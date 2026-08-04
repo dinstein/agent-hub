@@ -252,7 +252,10 @@ self-tests. Rules visible only here:
   final**, unlike the data plane's result budget, which retains the remainder under a `fetch_result`
   cursor — which is the other half of why it must not be tight, and why an over-large ask is *clamped
   to the ceiling* rather than dropped back to the default. It cuts on a **rune boundary**: a byte cut
-  through a multi-byte rune renders as U+FFFD, which reads as something the tool emitted.
+  through a multi-byte rune renders as U+FFFD, which reads as something the tool emitted. That a cut
+  happened is the `truncated` **field**, never the trailer in the text — a frontend explaining why a
+  JSON result will not pretty-print must not be deciding that by matching prose a tool could have
+  written itself.
 - `POST /v1/clients/{id}/connect` may **run that client's own configuration CLI** for a format agenthub
   will not rewrite (codex), backing the file up first and verifying by re-reading it, with
   `AGENTHUB_NO_CLIENT_CLI=1` to forbid it. The target resolves `path` > `placement` > the default

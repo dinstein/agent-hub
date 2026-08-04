@@ -374,9 +374,11 @@ func contentText(raw json.RawMessage) string {
 // encoding/json, in text mode through the terminal — so a tool answering in
 // Chinese ends its output in a replacement character that reads as the TOOL's.
 //
-// internal/ctlapi/nonregtest.go holds the daemon's copy of this, for the
-// same rendering done on the other side of the socket. The two must be fixed
-// together.
+// internal/ctlapi/nonregtest.go holds the daemon's copy of the same cutting
+// rule, for the same rendering done on the other side of the socket, and the
+// rune-boundary behaviour must stay identical. That copy also REPORTS the
+// cut on the wire, which this one has no need to: nothing reads `server
+// test` output and has to explain the cut back to a person.
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s

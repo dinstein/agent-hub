@@ -255,8 +255,13 @@ type ServerTestCall struct {
 	IsError bool `json:"is_error"`
 	// Text is the concatenated text content, truncated. It is tool output,
 	// never a credential: agenthub sends secrets, it does not render them.
-	Text   string `json:"text,omitempty"`
-	Millis int64  `json:"millis"`
+	Text string `json:"text,omitempty"`
+	// Truncated reports that Text is not the whole answer — a fact on the
+	// wire rather than one a caller infers by matching the trailer, which
+	// a tool could legitimately have written itself. Raise MaxTextBytes to
+	// ask for more; there is no cursor to fetch the remainder from.
+	Truncated bool  `json:"truncated,omitempty"`
+	Millis    int64 `json:"millis"`
 }
 
 // ServerTestResult is the "does this definition actually work" answer.

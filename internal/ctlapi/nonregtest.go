@@ -119,8 +119,17 @@ type ServerTestCallWire struct {
 	IsError bool `json:"is_error"`
 	// Text is the concatenated text content, truncated. It is tool output,
 	// never a credential: agenthub sends secrets, it does not render them.
-	Text   string `json:"text,omitempty"`
-	Millis int64  `json:"millis"`
+	Text string `json:"text,omitempty"`
+	// Truncated reports that Text is not the whole answer.
+	//
+	// It is a FIELD rather than something a reader infers from the trailer,
+	// for the reason stated everywhere else on this path: a frontend must
+	// not decide anything by matching prose. The trailer is for a human
+	// reading the text; this is for the code that has to explain why a JSON
+	// result cannot be pretty-printed, and a tool whose output genuinely
+	// ends in those words must not make it claim otherwise.
+	Truncated bool  `json:"truncated,omitempty"`
+	Millis    int64 `json:"millis"`
 }
 
 // handleServerTest implements POST /v1/servers/{id}/test.
@@ -239,11 +248,13 @@ func (s *Server) handleServerTest(w http.ResponseWriter, r *http.Request, id str
 				fmt.Sprintf("server %q: calling %q failed: %v", id, req.Tool, cerr), "", reqID)
 			return
 		}
+		text, cut := truncateText(contentText(res.Content), testTextLimit(req.MaxTextBytes))
 		out.Call = &ServerTestCallWire{
-			Tool:    req.Tool,
-			IsError: res.IsError,
-			Text:    truncateText(contentText(res.Content), testTextLimit(req.MaxTextBytes)),
-			Millis:  time.Since(callStart).Milliseconds(),
+			Tool:      req.Tool,
+			IsError:   res.IsError,
+			Text:      text,
+			Truncated: cut,
+			Millis:    time.Since(callStart).Milliseconds(),
 		}
 	}
 	writeOK(w, http.StatusOK, out)
@@ -342,18 +353,23 @@ func contentText(raw json.RawMessage) string {
 // yields the trailer alone. That is the honest answer: none of it could be
 // shown without inventing bytes.
 //
-// internal/cli/servertest.go holds a second copy — that command dials the
-// downstream directly rather than through the daemon, so it renders its own
-// result. The two must be fixed together.
-func truncateText(s string, max int) string {
+// The second return reports whether anything was dropped, so the wire can
+// carry that as a fact instead of leaving a reader to match the trailer.
+//
+// internal/cli/servertest.go holds a second copy of the cutting rule — that
+// command dials the downstream directly rather than through the daemon, so it
+// renders its own result. The rune-boundary behaviour must stay identical;
+// only this side needs to report the cut, because only this side has a
+// frontend that must explain it.
+func truncateText(s string, max int) (string, bool) {
 	if len(s) <= max {
-		return s
+		return s, false
 	}
 	cut := max
 	for cut > 0 && !utf8.RuneStart(s[cut]) {
 		cut--
 	}
-	return s[:cut] + "… (truncated)"
+	return s[:cut] + "… (truncated)", true
 }
 
 // compile-time proof that the production connector matches the injected one.

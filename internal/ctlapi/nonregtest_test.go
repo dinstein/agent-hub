@@ -429,12 +429,12 @@ func TestServerTestPassesTimeoutAndDeps(t *testing.T) {
 }
 
 func TestTruncateText(t *testing.T) {
-	if got := truncateText("abc", 10); got != "abc" {
-		t.Errorf("short = %q", got)
+	if got, cut := truncateText("abc", 10); got != "abc" || cut {
+		t.Errorf("short = %q cut=%v", got, cut)
 	}
-	got := truncateText(strings.Repeat("x", 20), 4)
-	if !strings.HasPrefix(got, "xxxx") || !strings.Contains(got, "truncated") {
-		t.Errorf("long = %q", got)
+	got, cut := truncateText(strings.Repeat("x", 20), 4)
+	if !strings.HasPrefix(got, "xxxx") || !strings.Contains(got, "truncated") || !cut {
+		t.Errorf("long = %q cut=%v", got, cut)
 	}
 }
 
@@ -448,7 +448,7 @@ func TestTruncateText(t *testing.T) {
 func TestTruncateTextCutsOnARuneBoundary(t *testing.T) {
 	// Three bytes per rune, so a limit of 10 lands one byte inside the
 	// fourth and must give back the first three.
-	got := truncateText(strings.Repeat("中", 10), 10)
+	got, _ := truncateText(strings.Repeat("中", 10), 10)
 	if !utf8.ValidString(got) {
 		t.Fatalf("truncation produced invalid UTF-8: %q", got)
 	}
@@ -459,12 +459,12 @@ func TestTruncateTextCutsOnARuneBoundary(t *testing.T) {
 		t.Errorf("no trailer: %q", got)
 	}
 	// A limit landing exactly on a boundary keeps everything up to it.
-	if got := truncateText(strings.Repeat("中", 10), 9); got != "中中中"+"… (truncated)" {
+	if got, _ := truncateText(strings.Repeat("中", 10), 9); got != "中中中"+"… (truncated)" {
 		t.Errorf("aligned limit = %q", got)
 	}
 	// Input that was never valid UTF-8 has no boundary to find. Yielding the
 	// trailer alone is correct: showing any of it would mean inventing bytes.
-	if got := truncateText(strings.Repeat("\x80", 10), 4); got != "… (truncated)" {
+	if got, _ := truncateText(strings.Repeat("\x80", 10), 4); got != "… (truncated)" {
 		t.Errorf("invalid input = %q", got)
 	}
 }
@@ -521,8 +521,14 @@ func TestServerTestOutputLimitIsTheCallersToRaise(t *testing.T) {
 		ServerTestRequest{Tool: "search"})
 	var capped ServerTestWire
 	nrData(t, body, &capped)
-	if capped.Call == nil || !strings.Contains(capped.Call.Text, "truncated") {
+	if capped.Call == nil || !capped.Call.Truncated {
 		t.Fatalf("the default limit did not apply: %+v", capped.Call)
+	}
+	// The trailer is for the human reading the text; `truncated` is what a
+	// frontend is meant to branch on. Both are expected, and neither is
+	// derived from the other.
+	if !strings.Contains(capped.Call.Text, "truncated") {
+		t.Errorf("no trailer for the reader: %q", capped.Call.Text)
 	}
 	if json.Valid([]byte(strings.TrimSpace(capped.Call.Text))) {
 		t.Errorf("a cut payload is not supposed to still parse — the premise moved")
@@ -535,7 +541,7 @@ func TestServerTestOutputLimitIsTheCallersToRaise(t *testing.T) {
 	}
 	var full ServerTestWire
 	nrData(t, body, &full)
-	if full.Call == nil || strings.Contains(full.Call.Text, "truncated") {
+	if full.Call == nil || full.Call.Truncated {
 		t.Fatalf("the raised limit still cut the answer")
 	}
 	if !json.Valid([]byte(strings.TrimSpace(full.Call.Text))) {
