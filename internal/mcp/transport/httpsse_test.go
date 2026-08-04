@@ -1,10 +1,12 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -335,6 +337,52 @@ func TestHTTPSSEPostStatusClassification(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestHTTPSSEEndpointIsLogged pins the one record this package writes. The
+// POST address exists nowhere else — not in the registry, not in the dial,
+// only in a wire trace nobody has switched on before the failure — so a
+// downstream that hands out a bad one is otherwise undiagnosable after the
+// fact.
+//
+// It also pins what must NOT be in the record: the query, which carries the
+// session id in this binding and would sail past logx's key-name scrubber.
+func TestHTTPSSEEndpointIsLogged(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		endpoint  string
+		wantLevel slog.Level
+	}{
+		{name: "ordinary endpoint is debug", endpoint: "/messages?sessionId=s3cr3t", wantLevel: slog.LevelDebug},
+		{name: "endpoint naming the stream is a warning", endpoint: "/sse", wantLevel: slog.LevelWarn},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+			ls := newLegacyServer(t, tc.endpoint)
+			dialLegacy(t, ls, func(cfg *HTTPConfig) { cfg.Logger = logger })
+
+			line := buf.String()
+			if line == "" {
+				t.Fatal("the endpoint negotiation wrote no record at all")
+			}
+			if !strings.Contains(line, `"level":"`+tc.wantLevel.String()+`"`) {
+				t.Fatalf("record is not %s: %s", tc.wantLevel, line)
+			}
+			if !strings.Contains(line, "/sse") && !strings.Contains(line, "/messages") {
+				t.Fatalf("record does not name the post path: %s", line)
+			}
+			if strings.Contains(line, "s3cr3t") {
+				t.Fatalf("the session id reached the log: %s", line)
+			}
+		})
+	}
+
+	t.Run("a nil logger stays silent", func(t *testing.T) {
+		ls := newLegacyServer(t, "/messages")
+		dialLegacy(t, ls, nil) // no Logger: must not panic
+	})
 }
 
 // TestHTTPSSEPostToStreamURLExplainsThe405 covers the failure a status code

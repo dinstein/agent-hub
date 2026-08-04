@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net"
 	"net/http"
@@ -126,6 +127,22 @@ type HTTPConfig struct {
 	// POST stream that died before delivering its response.
 	DisableResume bool
 
+	// Logger receives the few protocol events whose diagnosis is impossible
+	// from outside this package — today, the legacy SSE endpoint
+	// negotiation, where the POST address is chosen by the downstream and
+	// nothing else in the system ever sees it. nil is silent, which is what
+	// tests and the GUI get; the gateway passes its per-server logger.
+	//
+	// It is injected rather than built here for the same reason Screen and
+	// DialContext are: this package may import nothing but the standard
+	// library (canonical.md §2 rule 2), so it cannot reach logx, and a
+	// logger of its own could not carry the server binding that makes the
+	// record joinable with the rest of the stream. Records written through
+	// it must NOT set the caller's bound keys (server, client, pid, …):
+	// slog does not deduplicate, so a repeated key is emitted twice on one
+	// line and the reader takes the second.
+	Logger *slog.Logger
+
 	// retryBase is the first backoff step of the notification-stream
 	// reconnect loop; tests shorten it. Zero means defaultRetryBase.
 	retryBase time.Duration
@@ -143,6 +160,9 @@ type httpBase struct {
 	client   *http.Client
 	header   http.Header
 	maxFrame int
+	// log is never nil after newHTTPBase: an unset HTTPConfig.Logger
+	// becomes a discarding logger, so call sites stay unguarded.
+	log *slog.Logger
 }
 
 // newHTTPBase validates cfg and builds the shared state. Configuration
@@ -175,6 +195,10 @@ func newHTTPBase(cfg HTTPConfig) (httpBase, error) {
 	b.client = cfg.Client
 	if b.client == nil {
 		b.client = newHTTPClient(cfg.DialContext, b.endpoint)
+	}
+	b.log = cfg.Logger
+	if b.log == nil {
+		b.log = slog.New(slog.DiscardHandler)
 	}
 	return b, nil
 }

@@ -219,8 +219,42 @@ func (t *httpSSE) setPostURL(raw string) *Error {
 	t.mu.Lock()
 	t.postURL = abs
 	t.mu.Unlock()
+	// The POST address is the one piece of this binding nobody outside the
+	// transport ever sees: it is not in the registry, not in the dial, and
+	// otherwise appears only in a wire trace nobody had switched on before
+	// the failure. Recording it once per connection is what makes a later
+	// 405 or 404 answerable without asking for a reproduction.
+	//
+	// Written BEFORE ready is closed, which is what makes it deterministic:
+	// closing ready releases the dial, and a caller that returns first would
+	// see a connected transport whose negotiation had not been recorded yet.
+	if sameURL(abs, t.endpoint) {
+		t.log.Warn("sse endpoint event names the stream url as the post address",
+			"post_url", logURL(abs), "post_query", abs.RawQuery != "")
+	} else {
+		t.log.Debug("sse endpoint event resolved",
+			"post_url", logURL(abs), "post_query", abs.RawQuery != "")
+	}
+
 	t.readyOnce.Do(func() { close(t.ready) })
 	return nil
+}
+
+// logURL renders a URL for a log record: scheme, host and path only.
+//
+// The query is dropped rather than redacted because this binding routinely
+// carries the session id there (`?sessionId=…`), which is a capability — and
+// logx's scrubber matches on key NAMES it knows, so `sessionId` would pass
+// straight through it. What the record is for is which PATH the downstream
+// handed out; post_query reports that a query existed without reproducing it.
+func logURL(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	trimmed := *u
+	trimmed.RawQuery = ""
+	trimmed.Fragment = ""
+	return trimmed.Redacted()
 }
 
 // Call implements Transport. The POST only acknowledges receipt (202); the
