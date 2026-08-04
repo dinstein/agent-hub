@@ -385,6 +385,12 @@ every scope and the selector naming them is refused as a kind that does not exis
 one the first two checks could not see — both match the `KindX Kind = "wire"` declaration lines, and
 `allKinds` holds bare identifiers.
 
+**Giving an existing kind a second scope is a different edit list**, and a shorter one that is easy
+to cut short: `allKinds`, a row here, the emit site — and the classification table in
+`eventlog`'s own `TestEveryKindIsClassifiedDeliberately`, which is keyed by the pair and is what
+fails until the new one is stated on purpose. `test/buildrules` cannot help, because the kind's
+spelling was already declared, already documented and already written by the scope that had it first.
+
 Kinds are checked as a **(scope, kind) pair**, never a bare kind: a gateway and the daemon both
 `started`, and that spelling is meaningless at server scope.
 
@@ -397,6 +403,7 @@ Kinds are checked as a **(scope, kind) pair**, never a bare kind: a gateway and 
 | `gateway` | `started`, `stopped`, `client_attached`, `session_opened`, `session_closed` | routine |
 | `gateway` | `registry_reload_failed` | disruption |
 | `daemon` | `started`, `stopping`, `listener_bound`, `config_reloaded` | routine |
+| `daemon` | `registry_reload_failed` | disruption |
 
 ### Class: routine or disruption
 

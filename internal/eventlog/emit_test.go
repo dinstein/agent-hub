@@ -139,6 +139,7 @@ func TestEveryKindIsClassifiedDeliberately(t *testing.T) {
 		"gateway/session_opened": ClassRoutine, "gateway/session_closed": ClassRoutine,
 		"daemon/started": ClassRoutine, "daemon/stopping": ClassRoutine,
 		"daemon/listener_bound": ClassRoutine, "daemon/config_reloaded": ClassRoutine,
+		"daemon/registry_reload_failed": ClassDisruption,
 	}
 	for scope, kinds := range allKinds {
 		for _, k := range kinds {

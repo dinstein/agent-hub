@@ -340,3 +340,27 @@ func TestScopeOrderCoversTheVocabulary(t *testing.T) {
 		}
 	}
 }
+
+// TestRegistryReloadFailedIsValidAtBothScopes pins the one kind two scopes
+// share for the same reason rather than by coincidence.
+//
+// A daemon and a gateway each hold their own registry snapshot and each can
+// fail to adopt a new one, leaving a process serving a configuration the file
+// on disk no longer describes. The daemon half emits it too; without the pair
+// registered here KnownKind refuses it, and `agenthub events --kind
+// registry_reload_failed --scope daemon` answers "unknown kind" for records
+// that are on disk.
+func TestRegistryReloadFailedIsValidAtBothScopes(t *testing.T) {
+	for _, scope := range []Scope{ScopeGateway, ScopeDaemon} {
+		if !KnownKind(scope, KindRegistryReloadFailed) {
+			t.Errorf("registry_reload_failed is not a known kind at %s scope, "+
+				"so the selector for it is refused while its records accumulate", scope)
+		}
+	}
+	// Class is derived from the kind alone, so both scopes inherit it. A
+	// reload that did not land is not the hub running as intended.
+	if got := ClassOf(KindRegistryReloadFailed); got != ClassDisruption {
+		t.Errorf("registry_reload_failed classifies as %q, want %q: a daemon serving a "+
+			"configuration the file no longer describes is not routine", got, ClassDisruption)
+	}
+}

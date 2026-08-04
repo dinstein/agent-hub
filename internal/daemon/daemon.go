@@ -566,7 +566,22 @@ func startWatch(ctx context.Context, store *registry.Store, opts registry.WatchO
 			}
 			snap, rerr := store.Reload(ctx)
 			if snap == nil {
-				log.Warn("registry reload failed; keeping previous snapshot",
+				// The counterpart of config_reloaded below, and the reason
+				// the stream needs both: with only the success, a timeline
+				// shows every reload that worked and none that stopped
+				// working, so the last one that landed reads as the
+				// configuration in force. It is not — this daemon keeps
+				// serving the previous snapshot while every reader of the
+				// file on disk sees the new one. Same kind and same reason
+				// as a gateway's; see internal/gateway/hotreload.go.
+				// rerr is non-nil here: every path in Reload that returns a
+				// nil snapshot returns a joined error with it. Dereferenced
+				// rather than guarded because a guard for a branch that
+				// cannot be taken reads as one that can.
+				events.Emit(log, eventlog.Record{
+					Scope: eventlog.ScopeDaemon, Kind: eventlog.KindRegistryReloadFailed,
+					Detail: rerr.Error(),
+				}, "registry reload failed; keeping previous snapshot",
 					"kind", string(ch.Kind), "error", rerr)
 				continue
 			}

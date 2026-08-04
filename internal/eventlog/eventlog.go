@@ -105,6 +105,12 @@ const (
 	KindClientAttached Kind = "client_attached"
 	// KindRegistryReloadFailed: a configuration change could not be adopted,
 	// so the process keeps serving the previous generation.
+	//
+	// Emitted at BOTH gateway and daemon scope — declared here because a
+	// gateway was the first to reach it, not because it is a gateway's alone.
+	// The failure is the same one from either subject and leaves no other
+	// trace: the file on disk says one thing, every reader of it agrees, and
+	// the running process quietly disagrees until something restarts it.
 	KindRegistryReloadFailed Kind = "registry_reload_failed"
 	// KindSessionOpened / KindSessionClosed bracket one MCP session on the
 	// HTTP face, where a single process serves many of them at once.
@@ -166,6 +172,7 @@ var allKinds = map[Scope][]Kind{
 	ScopeDaemon: {
 		KindDaemonStarted, KindDaemonStopping,
 		KindListenerBound, KindConfigReloaded,
+		KindRegistryReloadFailed,
 	},
 }
 
