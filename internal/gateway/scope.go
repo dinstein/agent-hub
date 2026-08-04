@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/router"
 	"github.com/dinstein/agent-hub/internal/scope"
 )
@@ -55,6 +56,47 @@ func (g *gateway) currentScope() *scope.EffectiveScope {
 	return es
 }
 
+// logScopeShape records what this session may currently reach, and why it is
+// being said now.
+//
+// The scope chain is the whole thesis of the hub — what a client may reach is
+// decided in advance, by configuration — and it was the one decision that
+// left no trace. Three layers intersect, none can widen, and the result was
+// visible only by asking `agenthub session`, from outside, after the fact. So
+// the commonest question there is, "why can't my client see this tool", had
+// nothing in the log to answer it, and the two readings it splits into —
+// narrowed on purpose, or narrowed by a mistake — looked identical.
+//
+// Counts, not names: a hub fronting a dozen servers lists hundreds of tools,
+// and a line that grew with the catalog would be unreadable exactly where it
+// is needed. The names live in `agenthub session`, which is interactive and
+// can afford them; what a log is for is noticing that the number moved.
+//
+// Called only where the resolved scope is BASELINED — startup, a content
+// change, a catalog swap — never per resolution: currentScope runs on the
+// tools/list and execute paths, and a line there would be per call.
+func (g *gateway) logScopeShape(reason string, es *scope.EffectiveScope) {
+	if es == nil {
+		return // no registry store, hence no scope authority to describe
+	}
+	tools := 0
+	for _, view := range es.Servers {
+		tools += len(view.Tools)
+	}
+	g.log.Info("effective scope resolved", "reason", reason, logx.Rev(es.Generation),
+		"servers", len(es.Servers), "tools", tools, "discovery", string(es.Discovery))
+	// Diagnostics are part of the value and documented as never silent
+	// (docs/architecture.md §7), but nothing in the gateway had ever read
+	// them — `agenthub session` was the only consumer. A dangling profile
+	// reference fails CLOSED to an empty scope, so the failure mode they
+	// describe is a client that can suddenly see nothing, reported by the one
+	// process that noticed and then kept it to itself.
+	for _, d := range es.Diags {
+		g.log.Warn("scope diagnostic", "layer", d.Layer.String(),
+			"origin", d.Origin, "detail", d.Message)
+	}
+}
+
 // catalogSnapshot is the scope.Sources.Catalog input: the raw-name tool
 // directory of whatever router currently serves (cache-built before ready,
 // live after), so scope intersection and tools/list can never disagree
@@ -100,6 +142,10 @@ func (g *gateway) refreshScopeAndNotify() {
 	if !changed {
 		return
 	}
+	// Only the changes are reported. currentScope above runs whether or not
+	// anything moved, and a line per resolution would say the same thing
+	// every time the registry was touched.
+	g.logScopeShape("recomputed", es)
 	// A content change may have moved the discovery MODE as well, so the
 	// surface the client sees is a different one. The cached surface needs no
 	// explicit invalidation (its key carries the scope hash), but the search

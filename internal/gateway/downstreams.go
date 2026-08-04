@@ -201,6 +201,12 @@ func (g *gateway) swapCatalog(rt *router.Router, live bool) {
 		g.mu.Lock()
 		g.lastScope = es
 		g.mu.Unlock()
+		// A catalog swap is the other way the visible surface moves, and it
+		// bypasses refreshScopeAndNotify's hash diff entirely — the notify
+		// below is unconditional — so without this the tools a server
+		// brought or took away would change the scope with nothing recording
+		// the new shape.
+		g.logScopeShape("catalog changed", es)
 	}
 	if initialized {
 		g.notifyToolsChanged()

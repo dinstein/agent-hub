@@ -508,6 +508,17 @@ func newGateway(cfg Config) (*gateway, error) {
 		// push a spurious tools/list_changed when nothing visible actually
 		// changed.
 		g.lastScope = g.currentScope()
+		// The starting shape, which no later line reports: from here on only
+		// CHANGES are logged, and a scope that never moves would otherwise
+		// never be described at all.
+		//
+		// The counts here are the COLD catalog's — whatever the tool cache
+		// held — so a first-ever run legitimately reports zero servers and
+		// the real shape arrives with the first "catalog changed". That is
+		// the honest reading of this moment rather than a defect: it is also
+		// where a scope's DIAGNOSTICS first surface, and a dangling profile
+		// reference is worth saying before any downstream has answered.
+		g.logScopeShape("startup", g.lastScope)
 	}
 	return g, nil
 }
