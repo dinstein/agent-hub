@@ -41,6 +41,13 @@ type Blocked struct {
 	Code string
 	// Reason is the human-readable explanation naming the offending token.
 	Reason string
+	// EnvVar names the variable that triggered a CodeEnvSmuggling block, and
+	// is empty for every other code. It is a separate field rather than
+	// something to parse back out of Reason because the caller is the only
+	// one who can finish the diagnosis: this package receives one flat
+	// []string and cannot tell an inherited variable from one the server
+	// entry declared, which is exactly the question the operator has.
+	EnvVar string
 }
 
 // Error implements error.
@@ -181,14 +188,26 @@ func (g *Guard) checkEnvEntry(kv string) error {
 		return nil
 	}
 	if g.envDeny[name] {
-		return blockedf(CodeEnvSmuggling, "dangerous env var %s", name)
+		return blockedEnv(name)
 	}
 	for _, p := range g.envDenyPrefix {
 		if strings.HasPrefix(name, p) {
-			return blockedf(CodeEnvSmuggling, "dangerous env var %s", name)
+			return blockedEnv(name)
 		}
 	}
 	return nil
+}
+
+// blockedEnv builds the CodeEnvSmuggling rejection. The reason says what the
+// variable does rather than only that it is "dangerous": the operator who
+// meets this message usually set the variable for an unrelated reason years
+// ago and needs to know why a loader path is a code-execution question at all.
+func blockedEnv(name string) *Blocked {
+	return &Blocked{
+		Code:   CodeEnvSmuggling,
+		Reason: fmt.Sprintf("env var %s redirects what the spawned process loads or runs", name),
+		EnvVar: name,
+	}
 }
 
 // basename extracts the lowercase command basename, tolerating both path

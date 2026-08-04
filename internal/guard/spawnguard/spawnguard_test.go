@@ -2,6 +2,7 @@ package spawnguard
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/dinstein/agent-hub/internal/guard"
@@ -117,6 +118,46 @@ func TestCheckBlocksEnvSmuggling(t *testing.T) {
 		{name: "env -S split string", cmd: "env", args: []string{"-S", "sh -c id"}, wantCode: CodeEnvSmuggling},
 		{name: "env -S attached", cmd: "env", args: []string{"-Ssh -c id"}, wantCode: CodeEnvSmuggling},
 	})
+}
+
+// TestEnvSmugglingNamesTheVariable pins the field a caller reads to finish the
+// diagnosis. Parsing the name back out of Reason would tie every consumer to
+// that sentence; the codes are the stable contract, and this is part of it.
+func TestEnvSmugglingNamesTheVariable(t *testing.T) {
+	t.Parallel()
+	g := New(Config{})
+	for _, tc := range []struct {
+		name    string
+		cmd     string
+		args    []string
+		env     []string
+		wantVar string
+	}{
+		{name: "exact name", cmd: "node", args: []string{"s.js"}, env: []string{"LD_PRELOAD=/tmp/x.so"}, wantVar: "LD_PRELOAD"},
+		{name: "prefix match", cmd: "node", args: []string{"s.js"}, env: []string{"DYLD_LIBRARY_PATH=/opt/lib"}, wantVar: "DYLD_LIBRARY_PATH"},
+		{name: "through the env wrapper", cmd: "env", args: []string{"BASH_ENV=/tmp/x", "node", "s.js"}, wantVar: "BASH_ENV"},
+		// Not every env_smuggling block is about one variable: -S is a shape,
+		// so EnvVar stays empty and the caller must not assume otherwise.
+		{name: "split-string names none", cmd: "env", args: []string{"-S", "sh -c id"}, wantVar: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := g.Check(tc.cmd, tc.args, tc.env)
+			var b *Blocked
+			if !errors.As(err, &b) {
+				t.Fatalf("Check() = %v, want *Blocked", err)
+			}
+			if b.Code != CodeEnvSmuggling {
+				t.Fatalf("Code = %q, want %q", b.Code, CodeEnvSmuggling)
+			}
+			if b.EnvVar != tc.wantVar {
+				t.Fatalf("EnvVar = %q, want %q", b.EnvVar, tc.wantVar)
+			}
+			if tc.wantVar != "" && !strings.Contains(b.Reason, tc.wantVar) {
+				t.Fatalf("Reason %q does not name %q", b.Reason, tc.wantVar)
+			}
+		})
+	}
 }
 
 func TestCheckBlocksContainerEscape(t *testing.T) {
