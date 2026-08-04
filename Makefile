@@ -193,10 +193,15 @@ generate: ## Regenerate the api → TypeScript health constants
 # not compile for GOOS=windows and would prove nothing there if it did. Windows
 # behavior is covered by unit tests through injected seams (a fake SID, a fake
 # package identity, a forced goos) and by nothing else.
+#
+# test/installer is excluded for the opposite reason — it says so itself. Its
+# one file carries //go:build !windows because scripts/install.sh is POSIX sh,
+# so under GOOS=windows the package has no files at all and `go vet` reports
+# that as an error rather than as the deliberate absence it is.
 .PHONY: cross-windows cross-windows-gui
-cross-windows: ## GOOS=windows build + vet of everything but the unix-only e2e suite
+cross-windows: ## GOOS=windows build + vet of everything but the unix-only suites
 	GOOS=windows $(GO) build ./...
-	GOOS=windows $(GO) vet $$($(GO) list ./... | grep -v '/test/e2e')
+	GOOS=windows $(GO) vet $$($(GO) list ./... | grep -v -e '/test/e2e' -e '/test/installer')
 
 # Separate from cross-windows because it needs the frontend bundle: gui_main.go
 # embeds frontend/dist, so this cannot even LOAD the package until gui-frontend

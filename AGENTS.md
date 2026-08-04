@@ -108,7 +108,7 @@ make gui         # build the GUI separately (excluded from build/lint by default
 - For hangs, add evidence before changing code: an e2e timeout SIGQUITs the process under test and
   folds the goroutine stacks into the failure message.
 - Windows has only the cross-compilation gates `make cross-windows` (build + vet, minus the Unix-only
-  e2e suite) and `make cross-windows-gui`, with no real-machine verification.
+  e2e and installer suites) and `make cross-windows-gui`, with no real-machine verification.
 - **When touching a parser that reads untrusted input, run a round of fuzzing**:
 
   ```bash

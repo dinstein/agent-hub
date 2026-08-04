@@ -158,7 +158,7 @@ These are the checks that would graduate Windows from "experimental" to "support
 ## 4. How to check for yourself
 
 ```bash
-make cross-windows                                # GOOS=windows build + vet, minus the Unix-only e2e suite
+make cross-windows                                # GOOS=windows build + vet, minus the Unix-only e2e and installer suites
 make gui-frontend && make cross-windows-gui       # the OTHER gate — see the note below about the first half
 go test ./internal/platform/ ./api/ ./internal/ctlapi/  # injection-based Windows unit tests, run on macOS/Linux
 make release-windows                              # build the portable zip (cross-compiles on any host)
