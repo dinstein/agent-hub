@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -146,6 +147,11 @@ func TestRedialClimbsExactlyOneRungPerAttempt(t *testing.T) {
 		connErr:     map[string]connectFailure{},
 		servers:     map[string]*downstream.Server{},
 		specs:       []downstream.Spec{{ID: "s"}},
+		// noteConnectResult now reports the rung it armed, so this fixture
+		// needs the logger every gateway newGateway builds has. A hand-built
+		// struct missing one is the fixture's gap, not a mode the production
+		// type supports.
+		log: slog.New(slog.DiscardHandler),
 	}
 	for attempt := 1; attempt <= 4; attempt++ {
 		// The dial that just ran failed: THIS is what arms the next rung.

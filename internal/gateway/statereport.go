@@ -11,6 +11,7 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/downstream"
+	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
 )
 
@@ -150,6 +151,9 @@ type connectFailure struct {
 }
 
 func (g *gateway) noteConnectResult(id string, failure error) {
+	var rung int
+	var delay time.Duration
+
 	g.mu.Lock()
 	if failure == nil {
 		delete(g.connErr, id)
@@ -162,9 +166,21 @@ func (g *gateway) noteConnectResult(id string, failure error) {
 			detail:    failure.Error(),
 			needsAuth: transport.IsAuthStatus(failure),
 		}
-		g.armLocked(id, time.Now())
+		rung, delay = g.armLocked(id, time.Now())
 	}
 	g.mu.Unlock()
+
+	if rung > 0 {
+		// Debug: the ladder's own arithmetic, wanted only by someone asking
+		// why a server has not been retried yet. Until now the log showed the
+		// dials — one Info per attempt, carrying the attempt count — and
+		// nothing about the gaps between them, so by the rungs where it
+		// matters (45s, 135s, then five minutes forever) "it has given up"
+		// and "it is waiting out a backoff it earned" read identically.
+		//
+		// Written outside g.mu, deliberately: see armLocked.
+		g.log.Debug("re-dial armed", logx.Server(id), "rung", rung, "in_ms", delay.Milliseconds())
+	}
 }
 
 // reportServers posts one runtime snapshot on the control link. It is a

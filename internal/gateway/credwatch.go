@@ -88,10 +88,21 @@ func (g *gateway) onCredentialChanged(serverID string) {
 
 	g.mu.Lock()
 	_, live := g.servers[serverID]
+	woke := false
 	if !live {
-		g.wakeLocked(serverID)
+		woke = g.wakeLocked(serverID)
 	}
 	g.mu.Unlock()
 
 	g.log.Info("credential changed downstream", logx.Server(serverID), "connected", live)
+	if !live && !woke {
+		// Debug, and this is the case it exists for: an announcement for a
+		// server with no RECORDED FAILURE wakes nothing — it was never dialed,
+		// or a dial is in flight — so the announcement is followed by no
+		// re-dial at all. Without the line that sequence reads as an
+		// announcement gone missing, which sends the reader looking for a
+		// broken watcher instead of at a server that was never broken.
+		g.log.Debug("credential announcement woke no re-dial: no recorded failure to recover from",
+			logx.Server(serverID))
+	}
 }

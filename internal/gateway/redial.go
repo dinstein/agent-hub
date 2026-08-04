@@ -136,10 +136,16 @@ func (g *gateway) claimDue(now time.Time) []downstream.Spec {
 	return due
 }
 
-// armLocked advances one server to its next rung. Callers hold g.mu.
-func (g *gateway) armLocked(id string, now time.Time) {
+// armLocked advances one server to its next rung and returns the rung it has
+// climbed onto together with the wait that rung earned. Callers hold g.mu.
+//
+// The two values are RETURNED rather than logged here because this runs under
+// g.mu, on which the whole re-dial plane serializes. noteConnectResult writes
+// them once the lock is released: a diagnostic must not be able to hold up
+// every dial in the process.
+func (g *gateway) armLocked(id string, now time.Time) (rung int, delay time.Duration) {
 	tries := g.redialTries[id]
-	delay := g.redial.base
+	delay = g.redial.base
 	for i := 0; i < tries && delay < g.redial.cap; i++ {
 		delay *= redialFactor
 	}
@@ -148,6 +154,7 @@ func (g *gateway) armLocked(id string, now time.Time) {
 	}
 	g.redialTries[id] = tries + 1
 	g.redialAt[id] = now.Add(delay)
+	return tries + 1, delay
 }
 
 // resetLadderLocked forgets a server's backoff so its next failure starts at
@@ -169,12 +176,18 @@ func (g *gateway) resetLadderLocked(id string) {
 // stored credential just changed, so the reason for the last rejection may
 // be gone, and waiting out a backoff earned before the fix would be exactly
 // the "why is it still broken" the ladder is meant to end.
-func (g *gateway) wakeLocked(id string) {
+// It reports whether it actually woke anything. The false case is the one
+// worth having: "I stored the credential and nothing retried" is answered by
+// this server not being in a failed state at all — connected already, or
+// never dialed — and without the answer the announcement and the silence that
+// follows it look like a announcement that was dropped.
+func (g *gateway) wakeLocked(id string) bool {
 	if _, failed := g.connErr[id]; !failed {
-		return // connected, or never dialed: nothing to wake
+		return false // connected, or never dialed: nothing to wake
 	}
 	g.redialTries[id] = 0
 	g.redialAt[id] = time.Time{} // zero is always in the past: due next tick
+	return true
 }
 
 // attempts reports how many rungs a server has climbed (for logging).
