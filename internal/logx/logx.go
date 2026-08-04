@@ -10,9 +10,15 @@
 //
 // Invariants (canonical.md §2 rule 4, docs/modules/foundation.md):
 //   - Zero business dependencies: standard library only (depguard-enforced).
-//   - Scrubbing is unconditional. AGENTHUB_DEBUG=1 raises verbosity but
-//     never bypasses redaction — secrets, tokens and credentials must not
-//     reach any sink at any log level.
+//   - Scrubbing is unconditional. NOTHING that raises verbosity lowers
+//     redaction: not AGENTHUB_DEBUG, not AGENTHUB_LOG_LEVEL, not
+//     AGENTHUB_LOG_FILE_LEVEL, not Config.Debug or either Level field.
+//     Secrets, tokens and credentials must not reach any sink at any level.
+//     This holds structurally rather than by discipline — every one of those
+//     inputs only decides a level, and NewScrubHandler wraps the outermost
+//     handler after they are all resolved, so a new way in cannot get past
+//     it by forgetting to. Naming them individually is how the list falls
+//     behind the next one; the rule is the sentence, not the names.
 package logx
 
 import (
