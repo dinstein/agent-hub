@@ -39,11 +39,17 @@ fi
 tag="$1"
 sums="$2"
 # The repo whose Releases hold the artifacts. The same variable and the same
-# default as release-local.sh, homebrew-formula.sh and homebrew-cask.sh — and
-# as scripts/install.sh, which resolves the manifest's own URL from it. Five
-# readers, one string: releaserepo_test.go fails the moment two of them
-# disagree, because the disagreement is otherwise only ever discovered by
-# someone installing.
+# default as release-local.sh, homebrew-formula.sh and homebrew-cask.sh:
+# releaserepo_test.go fails the moment two of those four disagree, because the
+# disagreement is otherwise only ever discovered by someone installing.
+#
+# scripts/install.sh carries a fifth copy of the string under a DIFFERENT name,
+# AGENTHUB_INSTALL_REPO — an installer whose whole point is avoiding Homebrew
+# should not be configured through a variable named for it. Same value,
+# deliberately not the same name, so neither the variable nor the check above
+# reaches it: TestInstallerAgreesWithTheManifestItReads in test/buildrules is
+# what compares those two defaults, and exporting HOMEBREW_SOURCE_REPO on a
+# machine that is installing does nothing at all.
 repo="${HOMEBREW_SOURCE_REPO:-dinstein/agent-hub}"
 
 if [ ! -r "$sums" ]; then
