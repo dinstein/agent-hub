@@ -826,7 +826,13 @@ its members break); and **a command a shipped page recommends must be a command 
 learned four times over from `secret`, `doctor`, the three record readers and `config`, each once withheld
 from a page that recommended or presupposed it — `config` because it is the only setter for the discovery
 mode `profile discovery` names as its origin and for the retention and capture policy of the visible
-`calls` ledger. Its own group, at the global altitude, rather than a line in Wire up: those are
+`calls` ledger. **That second rule is now a check rather than an argument**
+(`TestAShippedPageNeverRecommendsWhatItWithholds`): it walks the release page's visible commands and
+fails on a help text quoting `agenthub <withheld>`. None of the four was a mistake in the withheld
+list — each was a `Short`, a `Long` or an `Example` written elsewhere by someone not thinking about
+the release page at all, which is precisely what an argument in a comment cannot catch. Runtime error
+hints stay out of scope: "run `agenthub session ls`" inside a `session` error is read by someone who
+already found `session`. Its own group, at the global altitude, rather than a line in Wire up: those are
 per-server and per-client steps, and a fourth entry beside them would read as a fourth step of a path
 that has three. Manage is what is left after it, one command, and its title dropped "governance" with it.
 
