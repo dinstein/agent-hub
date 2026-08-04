@@ -13,7 +13,7 @@ static decomposition see [architecture.md](architecture.md); for the three data 
 | 4 | [Config hot reload](#4-config-hot-reload-two-things-to-get-right) | Events are only notifications; the generation criterion is `≥` |
 | 5 | [Headless OAuth and refresh](#5-headless-oauth-and-refresh) | Three callback modes; write state before token |
 | 6 | [Derived downstream instances](#6-derived-downstream-instances) | Touches only the connection plane, never visibility |
-| 7 | [Access audit lifecycle](#7-access-audit-lifecycle) | Persist before execution, finish every outcome, stay inside hard storage bounds |
+| 7 | [Call ledger lifecycle](#7-call-ledger-lifecycle) | Record before execution, finish every outcome, stay inside hard storage bounds — a lost record never costs the call |
 
 ---
 
@@ -308,37 +308,29 @@ isolation beats a denial of service.
 
 ---
 
-## 7. Access audit lifecycle
+## 7. Call ledger lifecycle
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant C as AI client
-    participant G as gateway audit wrapper
-    participant L as local access ledger
+    participant G as gateway ledger wrapper
+    participant L as local call ledger
     participant P as pipeline
     participant D as downstream
 
     C->>G: tools/call (raw params)
     G->>L: encrypted request payload → received event
     Note over L: root lock: prune expired days → check max/free reserve → write
-    alt first durable write fails
-        G-->>C: access-ledger error; pipeline never runs
-    else recorded
-        G->>G: parse + RouteOf / resolve call_tool
-        G->>L: encrypted effective args → routed event
-        alt routed write fails
-            G->>L: finished(storage_error)
-            G-->>C: access-ledger error; pipeline never runs
-        else routed
-            G->>P: Execute (scope → token tier)
-            P->>D: tools/call when allowed
-            D-->>P: result / tool error
-            P-->>G: delivered post-shaping result
-            G->>L: optional encrypted result → finished event
-            G-->>C: result / denial / protocol error / busy error
-        end
-    end
+    Note over G,L: A write that fails costs the RECORD, never the call:<br/>logged once at Error, and the flow continues on this line
+    G->>G: parse + RouteOf / resolve call_tool
+    G->>L: encrypted effective args → routed event
+    G->>P: Execute (scope → token tier)
+    P->>D: tools/call when allowed
+    D-->>P: result / tool error
+    P-->>G: delivered post-shaping result
+    G->>L: optional encrypted result → finished event
+    G-->>C: result / denial / protocol error / busy error
 ```
 
 The wrapper records an attempt before it knows whether the parameters are valid, so protocol errors and
