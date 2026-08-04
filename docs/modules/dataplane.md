@@ -48,6 +48,33 @@ transport cannot land in one caller and be silently dropped in another. `Connect
 first `tools/list`) is bounded by `DefaultConnectTimeout` = 120s, generous because a cold-cache npx/uvx
 start can take minutes.
 
+**A connection now says how it was made and what it agreed to**, at Info, in three places that were
+silent:
+
+| Where | Records | Because |
+|---|---|---|
+| `dialStdio` | runtime, command, args, cwd | Minutes of honest "connecting" said nothing about what had been launched |
+| `dialHTTP` | transport, auth source, endpoint host | 401 and hang are the two reports, and this is which of two credentials and which of two protocols |
+| `dialAndInit` | protocol version, peer name/version, capability keys | The terms the connection runs under, on every reconnect |
+
+**`runtime` is the load-bearing one.** AGENTS.md requires that isolation a config claims is delivered or
+refused, never silently degraded to a host spawn, and this is the only place recording which of the two a
+connection actually got.
+
+**The child ENVIRONMENT is never logged, at any level**, because it is the one input holding expanded
+secrets — never writing them beats redacting them. Command and args go in as one string so `ScrubString`
+runs over them: `slog` passes a `[]string` through as an opaque value that no pattern ever sees. On the
+host path they are public anyway (`ps(1)`), which is exactly why the docker path routes env through the
+CLI's own environment instead of argv.
+
+**The handshake line spells the peer's name `server_name`, not `server`.** The bound key is the registry
+id, `slog`'s JSON handler does not deduplicate, and a reader taking the last of two identical keys —
+`encoding/json` included — would join on the peer's self-report. Same split as `client` / `client_name`
+(foundation.md); the test asserts on the **serialized** line, because a decode is what hides it.
+Capabilities are reported as sorted top-level **keys**: `InitializeResult` keeps them raw precisely
+because this facade does not interpret them, and a log line is neither where that starts nor where an
+unbounded server-controlled object belongs.
+
 ### Invariants and failure directions
 
 **The owner goroutine plus the `calls` channel is the entire concurrency model.** One owner goroutine per
@@ -256,6 +283,19 @@ The line carries the **host**, never `spec.URL`. A query string is a place token
 that. `endpointHost` reduces to `scheme://host` — enough to see a wrong port, or an `http://` that should
 have been `https://` — drops userinfo by construction (it lives outside `URL.Host`), and returns empty
 for anything it cannot parse, because a URL this package could not read is not one to quote back.
+
+**Every rung of the refresh ladder says which one it stopped on**, at Debug. It used to end each of them
+in a silent `return resp, nil`, so a 401 could not be told apart from "we never tried", "the refresh
+broke" and "the fresh credential was refused too" — three fixes behind one symptom. The refusal branch is
+one condition in code and **three** answers to a reader (the renewal broke / there was nothing to renew /
+the renewal returned what the server had already rejected), so it is reported as three. The replay line
+carries **both** statuses, because a replay that comes back 401 again sends people to the vault when the
+problem is scope or audience.
+
+`serverEvents.logger()` is what those lines go through. **A nil log is a supported state** — `Emit` guards
+it and the zero value is what several tests construct — so a caller wanting the logger for something other
+than an event guards it identically. Reaching for `e.log` directly is how a zero value becomes a panic on
+whichever path happens to be exercised next.
 
 **The token cache is per connection and must never outlive the vault's version of the truth.** The
 credential is read once and held for the round tripper's life, because the alternative is a keychain round
