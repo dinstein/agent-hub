@@ -130,7 +130,14 @@ func eventLogQuery(f EventLogFilter) url.Values {
 	return q
 }
 
-// Log reads the control-plane event log, newest last.
+// Log reads the control-plane event log, NEWEST FIRST.
+//
+// The order is the daemon's: a page is a prefix of the newest records and
+// Cursor names the last row of one, so a record written between two reads
+// can only appear on page one and can never shift a row from page two onto
+// page three. A caller wanting a tail therefore takes the HEAD of the
+// answer; one that reverses it presents the oldest record of the window as
+// the most recent thing that happened.
 func (s *EventsService) Log(ctx context.Context, f EventLogFilter) (EventLog, error) {
 	var out EventLog
 	err := s.c.do(ctx, http.MethodGet, "/events/log", eventLogQuery(f), nil, &out)

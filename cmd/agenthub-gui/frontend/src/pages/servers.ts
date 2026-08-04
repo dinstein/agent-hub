@@ -175,8 +175,11 @@ const probeCache = new Map<string, SettledProbeObservation>();
 
 /** SERVER_EVENT_LIMIT bounds the per-server history in the detail panel. It
  *  is a recent-past window, not a log viewer: the whole timeline is the
- *  Events page, and this is the tail that explains the badge above it. */
-const SERVER_EVENT_LIMIT = 20;
+ *  Events page, and this is the tail that explains the badge above it. Ten
+ *  rows are what fits under a badge without turning the panel into that page;
+ *  it bounds the READ as well as the render, because a row nobody can see is
+ *  not worth carrying over the link. */
+const SERVER_EVENT_LIMIT = 10;
 
 /** Per-server event cache, keyed by id. Cleared with probeCache so a manual
  *  refresh re-reads both rather than showing a fresh badge over stale
@@ -1491,9 +1494,11 @@ export function serversPage(): Page {
       );
       return;
     }
-    // Newest first: the reason this section is open is that something just
-    // happened.
-    body.append(table(["When", "What", "Subject", "Detail"], eventRows([...events].reverse())));
+    // Newest first, which is the order the endpoint already answers in and
+    // the order the Events page renders it in: the reason this section is
+    // open is that something just happened. Reversing here put the oldest
+    // record of the window under the badge it was supposed to explain.
+    body.append(table(["When", "What", "Subject", "Detail"], eventRows(events)));
   }
 
   function authExpiry(status: AuthStatus): string {

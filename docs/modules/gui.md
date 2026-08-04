@@ -185,7 +185,9 @@ ahead of the daemon would reject the whole request instead of returning fewer ro
 The same rows appear inside a server's detail panel from the same renderer: the health badge is a
 value, the timeline under it is the sequence that produced it. It loads per server and only once
 expanded, and is dropped alongside the cached self-test so a refresh never pairs a fresh badge with
-stale history.
+stale history. It keeps that shared order — **newest first, like every other list here** — and shows
+ten rows, which is what explains a badge without becoming the Events page; the same number bounds the
+read, so the panel never carries records it will not draw.
 
 ### 1.5 The window is not the application
 
