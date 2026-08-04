@@ -240,12 +240,19 @@ what to grep, script or alert on:
 ```bash
 agenthub events --server linear             # one downstream's whole history
 agenthub events --kind circuit_open --since 24h
+agenthub events --class disruption          # only what went wrong, and how it ended
 agenthub events -f                          # tail; survives a daemon restart
 ```
 
-- Scopes are `server`, `gateway` and `daemon`, all in one time-ordered file.
+- Scopes are `server`, `gateway` and `daemon`, all in one time-ordered file. Server scope also covers
+  the interactive OAuth login — started, **waiting on the human**, completed, failed — and gateway
+  scope the HTTP face's sessions, which is where "it has been pending for ten minutes" becomes visible.
+- **`--class disruption` is the shortcut for "what is unusual here".** It keeps the RECOVERY that ended
+  an outage, so a filtered view never shows a server going down and never coming back — which is
+  exactly what `logs --level warn` does show, because a level cannot express that `health_up` belongs
+  to the same story as `health_down`.
 - Works offline. Default ON; `agenthub config set events.enabled false` turns it off.
-- An unknown `--scope`/`--kind` is an ERROR listing the valid names, never an empty result.
+- An unknown `--scope`/`--kind`/`--class` is an ERROR listing the valid names, never an empty result.
 
 **Process logs** — the same processes' prose, for when the vocabulary is not enough:
 
@@ -258,7 +265,11 @@ agenthub logs --client claude-code -f  # follow one gateway
 - Merges `daemon.log` with every `gateway-<client>.log`. The **gateways** are the half that matters:
   the daemon never dials a downstream, so connect failures, circuit transitions, health flips and
   respawns are recorded only by the gateway serving a client.
-- Works offline, and must — a stdio gateway writes its log with no daemon running at all.
+- Works offline, and must — a stdio gateway writes its log with no daemon running at all. The files
+  rotate and keep three segments; both readers walk them, so `--since 24h` does not stop at the newest.
+- **The four record readers share their flags**: `--since` takes a duration, an RFC3339 time or `all`;
+  `--limit 0` is all of them; `-f` follows. What works on `logs` works on `events`, `calls tail` and
+  `server logs`.
 - Filters are fail-closed: `--server x` drops records carrying no server field, daemon lines included.
 - `--source daemon|gateway` narrows the merge to one half when the other is noise; `--level`, `--since`
   and `--limit` (default 200, `0` for all) do the rest.

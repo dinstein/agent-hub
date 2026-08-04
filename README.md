@@ -129,7 +129,7 @@ The process makes only three kinds of outbound connection, all determined by you
 the downstream MCP servers in `servers.json`, those servers' OAuth authorization servers (only
 after you run `agenthub auth login`), and endpoints you specify explicitly (`server add --url`).
 
-The access ledger and per-server wire traces are **written to local disk only**. Version updates are left to your package manager.
+The call ledger — lifecycle records, the frames of a traced server, and the encrypted payloads of both — is **written to local disk only**. Version updates are left to your package manager.
 See the decision record in [canonical.md](docs/canonical.md) §7, item 6.
 
 ## Development

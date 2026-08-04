@@ -269,7 +269,7 @@ flowchart LR
         GW --> A7["logs/events.jsonl<br/>state changes, closed vocabulary, default on"]
         GW --> A6["calls/YYYY-MM-DD/<br/>metadata always, frames per server,<br/>encrypted payloads with a key"]
         A4 -.->|"agenthub server logs"| F["CLI / GUI"]
-        A5 -.->|"agenthub logs (offline, merged)<br/>agenthub daemon logs (daemon.log only)"| F
+        A5 -.->|"agenthub logs (offline, merged)<br/>agenthub daemon logs (daemon.log only)<br/>GUI Logs"| F
         A7 -.->|"agenthub events (offline)<br/>GUI Events"| F
         A6 -.->|"agenthub calls (offline)<br/>GUI Calls (selected-call detail)"| F
     end

@@ -224,11 +224,17 @@ PROFILE 是它**可以看见什么**——它自己的 profile，或者你从没
 
 写好的配置文件说明的只是意图。真正的确认是客户端自己：重启它，让它用一次某个 tool。
 
-## 保留 tools/call 访问历史
+## 保留调用历史
 
-访问账本默认关闭。启用之后，每一次 tools/call **尝试**都会把请求参数与实际下游参数写进本地加密
-pack，返回结果留一份截断副本——记录发生在门禁之前，所以被拒绝的调用同样在历史里。它是严格记录：
-密钥或有界存储不可用时，调用会被**拒绝**，而不是先执行、再在历史里留下一个空洞。
+**元数据是常开的**，没有任何开关：客户端向 agenthub 发起的每一次请求——`tools/call`，也包括
+`initialize`、`tools/list`、`ping`——都会留下「问的是什么、落到哪台 server 的哪个工具、怎么
+结束的、花了多久」。这一半不需要密钥，也永远不会拒绝一次调用；所以它不该是你必须先做的决定：
+「这个客户端到底连上没有、做了什么」这个问题不应该以一次配置为前提。
+
+**要开的是内容那一半。** `agenthub calls enable` 建立密钥，把请求参数、实际下游参数、结果，
+以及（对开了 trace 的 server）帧内容，封进本地加密 pack。记录发生在门禁之前，所以被拒绝的调用
+同样在历史里。这一半是严格的：密钥或有界存储不可用时，`tools/call` 会被**拒绝**，而不是先执行、
+再在历史里留下一个空洞。其余方法一律 fail-open——账本出问题不该弄坏一次会话的握手。
 
 ```bash
 agenthub calls enable
@@ -264,6 +270,10 @@ agenthub logs --server linear            # 各进程「怎么描述它」，散�
 agenthub calls tail --server linear      # 客户端「调了它什么」
 ```
 
+三者共用同一套 `--since`（时长、RFC3339 时间，或 `all`）、同一套 `--limit`（`0` 表示全部）
+和同一个 `-f`，所以在一个上能用的写法在另外两个上也能用。`agenthub server logs <id>` 是第四个，
+看某条下游连接的帧。
+
 先开 `events`。下游服务器、gateway、daemon 的每一次状态变化都会写进
 `<data>/logs/events.jsonl`，带一个来自固定集合的 `kind`——`connected`、`circuit_open`、
 `respawned`、`secrets_missing` 等等。固定正是要点：这些值可以拿来过滤和告警，
@@ -278,8 +288,19 @@ agenthub events -f                           # 跟随；daemon 重启也不会�
 ```
 
 没有 daemon 也能用，而且这不是降级路径：stdio gateway 自己就会写这个文件，所以「没有 daemon」
-在这里是常态。它**默认开启**——唯一的开关是 `agenthub config set events.enabled false`——
-而 `calls` 是你不开就没有的，因为那一头记的是调用参数和结果，这一头只记「有东西变了」。
+在这里是常态。它**默认开启**——唯一的开关是 `agenthub config set events.enabled false`。
+
+最值得知道的过滤器是 `--class`：它把「hub 按预期在跑」和「hub 正在应对出问题的东西」分开，而且
+一次故障的**恢复事件也归在 disruption 里**——所以一次中断不会读起来像还没结束：
+
+```bash
+agenthub events --class disruption           # 只看出问题的，以及它是怎么结束的
+agenthub events --class routine              # 连接、attach、配置生效
+```
+
+它不是日志级别。级别是一维的，所以 `health_down` 是 warning 而 `health_up` 不是，于是
+`logs --level warn` 会显示服务器掉下去再也没起来。class 问的是一条记录属于哪个**故事**，
+而一个故事包含它的结局。
 
 `logs` 是与之并排的散文视图，跨进程归并 —— `daemon.log` 加上每个已连接客户端的
 `gateway-<client>.log` —— 输出成一条按时间排序的流。归并就是它存在的理由：daemon

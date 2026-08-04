@@ -259,15 +259,22 @@ never bound it. When a row says something other than yes or no — `denied`,
 A written config file only shows intent. The confirmation is the client
 itself: restart it and ask it to use a tool.
 
-## Keeping a tools/call history
+## Keeping a call history
 
-The access ledger is off until you enable it. Once enabled, every tools/call
-attempt records its request parameters and effective arguments into encrypted
-local packs, with a truncated copy of the result — the recording starts before
-the gates run, so a denied call is in the history too. Recording is strict: if
-the key or
-the bounded storage is unavailable, the call is **refused** rather than executed
-with a hole in the history.
+**Metadata is always recorded**, and there is nothing to switch on: every request
+a client makes of agenthub — `tools/call`, but also `initialize`, `tools/list`
+and `ping` — leaves what was asked, which server and tool it reached, how it
+ended and how long it took. That half costs no key and can never refuse a call,
+which is why it is not a decision you have to make first: the question "did this
+client reach us at all, and what did it do" should not need one.
+
+**The bodies are the part you enable.** `agenthub calls enable` sets up the key
+that seals request parameters, effective arguments, results and — for a traced
+server — the frames, into encrypted local packs. Recording starts before the
+gates run, so a denied call is in the history too. This half is strict: if the
+key or the bounded storage is unavailable, a `tools/call` is **refused** rather
+than executed with a hole in the history. Every other method fails open, because
+a ledger problem must not break a session's handshake.
 
 ```bash
 agenthub calls enable
@@ -308,6 +315,11 @@ agenthub logs --server linear            # what the processes SAID about it, as 
 agenthub calls tail --server linear      # what a client CALLED on it
 ```
 
+All three take the same `--since` (a duration, an RFC3339 time, or `all`), the
+same `--limit` (`0` for all of them) and the same `-f`, so a flag that works on
+one works on the others. `agenthub server logs <id>` is the fourth, for the
+frames of one downstream conversation.
+
 `events` is the one to open first. Every state change of a downstream server,
 a gateway or the daemon lands in `<data>/logs/events.jsonl` with a `kind` from
 a fixed set — `connected`, `circuit_open`, `respawned`, `secrets_missing` and
@@ -325,9 +337,21 @@ agenthub events -f                           # tail it; survives a daemon restar
 It works with no daemon running, and that is not a fallback: a stdio gateway
 writes this file on its own, so the installation with no daemon is the ordinary
 case here. It is **on by default** — the one switch is `agenthub config set
-events.enabled false` — where `calls` is off until you ask for it, because that
-one records call arguments and results while this records only that something
-changed.
+events.enabled false`.
+
+`--class` is the filter worth knowing. It splits the hub running as intended
+from the hub reacting to something that went wrong, and a disruption keeps the
+recovery that ended it — so an outage never reads as still open:
+
+```bash
+agenthub events --class disruption           # only what went wrong, and how it ended
+agenthub events --class routine              # connects, attaches, config reloads
+```
+
+It is not the log level. A level is one-dimensional, so `health_down` is a
+warning and `health_up` is not, which is why `logs --level warn` shows a server
+going down and never coming back. A class asks which STORY a record belongs to,
+and a story includes its ending.
 
 `logs` is the prose alongside it, merged across every process — `daemon.log`
 plus one `gateway-<client>.log` per connected client — in one time-ordered

@@ -11,8 +11,8 @@ changed**. The Go-side service body and wiring live in
 
 ## 1. Information architecture
 
-Eight destinations in three groups: **Core** (Servers, Catalog, Playground), **Access** (Profiles,
-Clients), **System** (Calls, Events, Settings). The sidebar began as a one-to-one mapping of the CLI
+Nine destinations in three groups: **Core** (Servers, Catalog, Playground), **Access** (Profiles,
+Clients), **System** (Calls, Events, Logs, Settings). The sidebar began as a one-to-one mapping of the CLI
 command tree — fourteen resource tables laid out along the domain model — and the reduction is the
 point: a resource can still have a hash route without taking permanent navigation space. Catalog
 follows Servers because the two are the configured and discoverable halves of one task. Credentials
@@ -20,12 +20,19 @@ are configured from the server that needs them, not from a global vault page; th
 **no global Secrets destination**. Tokens, Scope, Sessions and Skills keep routes but stay out of the
 navigation until they own a task not already expressed by server, profile and client configuration.
 
-**Calls and Events are two destinations, not one.** They answer different questions — Calls reads the
-encrypted access ledger (what a client INVOKED), Events reads the control-plane stream (what HAPPENED
-to a server, gateway or daemon). Merging them would put a payload-bearing, opt-in, encrypted record
-beside a default-on state change in one list, and a reader would have no way to tell which guarantees
-applied to which row. Calls was called "Activity" while it was the only one of the two; the name went
-because "activity" described either. The route is still `#/activity`.
+**Calls, Events and Logs are three destinations, not one.** They answer different questions — Calls
+reads the ledger (what a client ASKED agenthub for and where it went), Events reads the control-plane
+stream (what HAPPENED to a server, gateway or daemon), Logs reads the processes' own prose. Merging
+them would put a payload-bearing record whose bodies are opt-in and encrypted beside a default-on
+state change and a line of free text in one list, and a reader would have no way to tell which
+guarantees applied to which row. Calls was called "Activity" while it was the only one of them; the
+name went because "activity" described any of the three. The route is still `#/activity`.
+
+Logs arrived last and only after `GET /v1/logs` existed. The files are readable from a terminal, so
+the CLI never needed a route; a window cannot read a file, which meant the destination could not exist
+until the daemon served the stream — and until it did, the half of the record that explains a
+downstream failure was terminal-only, because the daemon never dials a downstream and the gateway that
+does writes to its own file.
 
 Daemon state is pinned at the bottom of the shell, and an offline daemon also raises a global banner.
 A footer hidden below fourteen links failed at its only job: the connection state disappeared

@@ -122,7 +122,7 @@ AgentHub **不收集任何数据**。没有遥测、没有崩溃上报、没有�
 这些 server 的 OAuth 授权服务器（仅在你执行 `agenthub auth login` 后），以及你显式指定的
 endpoint（例如 `server add --url`）。
 
-访问账本与每 server 的报文抓取**只写本地磁盘**。
+调用账本——生命周期记录、开了 trace 的 server 的帧，以及两者的加密内容——**只写本地磁盘**。
 版本更新交给你的包管理器。裁决记录见 [canonical.md](docs/canonical.md) §7 第 6 项。
 
 ## 开发

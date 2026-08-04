@@ -262,7 +262,7 @@ flowchart LR
         GW --> A7["logs/events.jsonl<br/>状态变更，闭集词汇，默认开"]
         GW --> A6["calls/YYYY-MM-DD/<br/>元数据常开、帧按 server 开、<br/>载荷需密钥"]
         A4 -.->|"agenthub server logs"| F["CLI / GUI"]
-        A5 -.->|"agenthub logs（离线，跨进程归并）<br/>agenthub daemon logs（只读 daemon.log）"| F
+        A5 -.->|"agenthub logs（离线，跨进程归并）<br/>agenthub daemon logs（只读 daemon.log）<br/>GUI Logs"| F
         A7 -.->|"agenthub events（离线）<br/>GUI Events"| F
         A6 -.->|"agenthub calls（离线）<br/>GUI Calls（选中调用的详情）"| F
     end
