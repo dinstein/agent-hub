@@ -1,12 +1,20 @@
 package downstream
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/guard"
+	"github.com/dinstein/agent-hub/internal/logx"
+	"github.com/dinstein/agent-hub/internal/mcp/transport"
 )
 
 // dialBlocked reports whether the spec's dialer refuses addr. The dial is
@@ -100,5 +108,48 @@ func TestLocalProvenanceCarveOutIsOnlyLoopback(t *testing.T) {
 	remote := Spec{ID: "s", URL: "http://127.0.0.1:9/mcp"}
 	if err := dialBlocked(t, remote, "127.0.0.1:9"); !errors.Is(err, guard.ErrBlocked) {
 		t.Fatalf("loopback was reachable without local provenance: %v", err)
+	}
+}
+
+// TestSSEDialLogsUnderTheServerBinding pins the seam that makes the
+// transport's records usable: internal/mcp cannot reach logx, so a logger
+// with the server already bound has to be handed down from here. Without it
+// the endpoint address is recorded under no server at all, which in a merged
+// gateway stream is the same as not recording it.
+func TestSSEDialLogsUnderTheServerBinding(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "event: endpoint\ndata: /messages\n\n")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	var buf bytes.Buffer
+	deps := Deps{Log: slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))}
+	spec := Spec{
+		ID: "elk-mcp", Kind: transport.SSE, URL: srv.URL + "/sse",
+		Provenance: ProvenanceLocal, // httptest is loopback
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tr, err := deps.dialHTTP(ctx, spec)
+	if err != nil {
+		t.Fatalf("dialHTTP: %v", err)
+	}
+	defer func() { _ = tr.Close() }()
+
+	line := buf.String()
+	if !strings.Contains(line, "sse endpoint") {
+		t.Fatalf("the endpoint negotiation was not recorded: %q", line)
+	}
+	if !strings.Contains(line, `"`+logx.FieldServer+`":"elk-mcp"`) {
+		t.Fatalf("record is not bound to the server: %s", line)
 	}
 }

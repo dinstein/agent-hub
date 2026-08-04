@@ -45,6 +45,13 @@ func (d Deps) dialHTTP(ctx context.Context, spec Spec) (transport.Transport, err
 		URL:                spec.URL,
 		Header:             hdr,
 		NotificationStream: d.NotificationStream,
+		// The transport cannot build this itself — internal/mcp is
+		// standard-library only, so it cannot reach logx, and a logger of
+		// its own would carry no server binding. boundServerLog is the same
+		// one Server uses, so the transport's records land in the same
+		// stream, under the same server (and derive key), as everything
+		// else about this connection.
+		Logger: boundServerLog(d.Log, spec),
 	}
 	dial := d.DialContext
 	if dial == nil {
