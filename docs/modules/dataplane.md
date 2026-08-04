@@ -244,6 +244,19 @@ net/http just stripped, letting a downstream that answers `3xx` choose where its
 delivered. `sameOrigin` is duplicated here rather than imported from `transport` because `internal/mcp` is
 standard-library only (canonical.md §2 rule 2), and these are two gates, not one with a seam through it.
 
+**How a dial was assembled is recorded before it is attempted, at Info.** `httpdial.go` had no log call
+at all, so an HTTP downstream either worked or produced an error naming neither the wire protocol it
+spoke nor where its `Authorization` came from — the two questions behind nearly every report about one.
+"It returns 401" is answered by which of the vault credential and an operator-set header won; "it hangs
+on connect" by which of streamable-HTTP and legacy SSE was chosen. This does **not** duplicate the event
+log: `connected` / `connect_failed` say a connection changed state, never how it was set up.
+
+The line carries the **host**, never `spec.URL`. A query string is a place tokens are put, and while
+`logx` would scrub the shapes it recognises, a record that never carries the secret is not relying on
+that. `endpointHost` reduces to `scheme://host` — enough to see a wrong port, or an `http://` that should
+have been `https://` — drops userinfo by construction (it lives outside `URL.Host`), and returns empty
+for anything it cannot parse, because a URL this package could not read is not one to quote back.
+
 **The token cache is per connection and must never outlive the vault's version of the truth.** The
 credential is read once and held for the round tripper's life, because the alternative is a keychain round
 trip per request on macOS — but the vault's writers are *other processes*, and hot reload cannot help,
@@ -421,6 +434,20 @@ no-authority mode); a store that **exists** but fails to resolve returns an **em
 must never widen visibility. `catalogFromRouter` projects the router back into a raw-name catalog through
 `RouteOf`, likewise never splitting exposed names.
 
+**The resolved scope is reported wherever it is BASELINED, and only there** — startup, a content change,
+a catalog swap (`logScopeShape`). Never per resolution: `currentScope()` also runs on the `tools/list`
+and execute paths, so a line there would be one per call. The record is **counts, not names**: a hub
+fronting a dozen servers lists hundreds of tools, and a line growing with the catalog is unreadable
+exactly where it is wanted — `agenthub session` is interactive and can afford the names. The startup
+counts describe the **cold** catalog, so a first-ever run legitimately reports zero servers and the real
+shape arrives with the first catalog swap; that sequence is pinned by test rather than smoothed over.
+
+**A scope's `Diags` reach the log, at Warn.** They are documented as never silent
+([architecture.md §7](../architecture.md)), yet nothing in the gateway had ever read them — `agenthub
+session` was the sole consumer. A dangling profile reference fails **closed** to an empty scope, so a
+diagnostic describes a client that can suddenly see nothing: the loudest symptom the scope chain
+produces, previously with the quietest explanation.
+
 **The surface cache key is `discovery.Key{Generation, ScopeHash}`**, with `catGen` incremented on every
 router swap and the scope hash covering every visibility-relevant field. A stale surface is therefore
 structurally unservable: there is no explicit invalidation logic, and so no possibility of missing an
@@ -477,10 +504,19 @@ goroutine, so without it six concurrent calls interleave into an unreadable sequ
 
 | Outcome | Level | Why |
 |---|---|---|
-| `tools/call served` | Debug | So a call can be followed end to end on request, without an agent making hundreds burying the failures |
+| `tools/call served` | Info | The one thing the hub exists to do — see below for why it is not Debug |
 | `tools/call cancelled` | Info | The one exit that sends no reply |
 | `tools/call failed` | Warn | The class that was silent: downstream error, dead transport, open circuit, exhausted retries |
 | `tools/call denied` | Warn | Carries the gate and the stable rejection code |
+
+**The success line is at Info because otherwise a call that WORKED is recorded nowhere.** It sat at
+Debug to stop an agent's hundreds of calls burying the failures — but the failures are at Warn, their
+own level, which `logs --level warn` isolates, so that separation comes from the filter and hiding the
+successes only cost the record. Neither of the other two streams covered it: the **call ledger is
+disabled** until an operator enables it (`CallsPolicy.Enabled` zero-values to false) and the **event log
+records server lifecycle, not calls**. So on a default installation "did the agent ever call this tool",
+"which tool is slow" and "was this server used at all" had nothing to read. One line per call is
+affordable — `callFields` carries no arguments and `internal/jsonl` rotates at 32 MiB.
 
 **A denial is not a failure, and the split is the point**: nothing broke, the call was refused by
 configuration written before the client connected. The scope gate was the one whose silence made a scope
