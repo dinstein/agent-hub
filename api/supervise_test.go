@@ -61,8 +61,6 @@ func TestFakeSupervisedDaemonProcess(t *testing.T) {
 			},
 		})
 	})
-	go http.Serve(ln, mux) //nolint:errcheck // the parent stops this process
-
 	h := handshake{OwnerPID: *fakeOwnerPID, LifelineFD: *fakeLifelineFD}
 	if h.LifelineFD > 0 {
 		// A pipe with a live writer at the other end: reading returns EAGAIN
@@ -83,6 +81,18 @@ func TestFakeSupervisedDaemonProcess(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(runDir, "daemon.json"), info, 0o600); err != nil {
 		t.Fatalf("fake daemon: writing daemon.json: %v", err)
 	}
+
+	// SERVED LAST, and that ordering is the whole point. StartSupervised
+	// returns as soon as /v1/ping answers — awaitReady reads daemon.json only
+	// to learn the endpoint, and falls back to the socket path when it is not
+	// there yet — so anything this process is supposed to have recorded by the
+	// time the parent is unblocked has to be on disk before the first response
+	// goes out. Serving first left the parent free to read a handshake.json
+	// that os.WriteFile had created and not yet filled, which fails as
+	// "unexpected end of JSON input" on a loaded machine and passes two
+	// hundred times in a row on an idle one.
+	go http.Serve(ln, mux) //nolint:errcheck // the parent stops this process
+
 	select {} // until the parent stops us
 }
 
