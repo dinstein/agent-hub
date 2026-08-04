@@ -24,6 +24,13 @@ import (
 // never the call. This asserted "block" until then, and the assertion
 // outlived the behaviour because the value it checks is a constant that
 // changed on the same side.
+//
+// `arguments` and `pressure` are spelled out here rather than read from
+// calllog. They travel in `--json` and through the control plane to the GUI,
+// so their spelling is a contract with a parser we do not compile against.
+// Naming the constant would make this test agree with any future value by
+// construction — including one that quietly breaks that parser. Written out,
+// changing the constant fails here first and the change becomes a decision.
 func TestAuditDefaultsAreBoundedAndFailOpen(t *testing.T) {
 	setDataDir(t)
 	var got CallsStatus
@@ -31,7 +38,7 @@ func TestAuditDefaultsAreBoundedAndFailOpen(t *testing.T) {
 	if got.Enabled || got.Arguments != "full" || got.Results != "truncated" || got.ResultBytes <= 0 {
 		t.Fatalf("default calls policy = %+v", got)
 	}
-	if got.Durability != "sync" || got.RetentionDays <= 0 || got.MaxBytes <= 0 || got.MinFreeBytes <= 0 || got.Pressure != calllog.PressurePolicy {
+	if got.Durability != "sync" || got.RetentionDays <= 0 || got.MaxBytes <= 0 || got.MinFreeBytes <= 0 || got.Pressure != "drop" {
 		t.Fatalf("default bounds = %+v", got)
 	}
 }

@@ -27,6 +27,13 @@ const (
 	// disagree: one was corrected when the behaviour changed and the other
 	// was not.
 	PressurePolicy = "drop"
+	// ArgumentPolicy is what a status view reports for argument capture. Like
+	// PressurePolicy it is a constant rather than a policy field, and for a
+	// reason worth keeping: arguments are always captured whole, so
+	// ResolvedCallsPolicy has no field for them — only result capture is
+	// tunable. The two status builders each spelled this "full" themselves,
+	// the same arrangement that let the pressure word drift.
+	ArgumentPolicy = "full"
 	// FramePrefix names the per-process frame stream inside one UTC day:
 	// frames-<bootid>-p<pid>.jsonl.
 	//

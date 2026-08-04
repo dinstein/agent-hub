@@ -29,7 +29,7 @@ func (s *Server) auditStatus() (api.CallsStatus, error) {
 		return api.CallsStatus{}, err
 	}
 	return api.CallsStatus{
-		Generation: snap.Generation, Enabled: p.Enabled, Arguments: "full",
+		Generation: snap.Generation, Enabled: p.Enabled, Arguments: calllog.ArgumentPolicy,
 		Results: p.ResultMode, ResultBytes: p.ResultBytes, Durability: p.Durability,
 		RetentionDays: p.RetentionDays, MaxBytes: p.MaxBytes,
 		MinFreeBytes: p.MinFreeBytes, Pressure: calllog.PressurePolicy, KeyID: p.KeyID,

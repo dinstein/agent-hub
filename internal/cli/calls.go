@@ -44,7 +44,7 @@ func (r CallsKeyRotation) Human(w io.Writer) error {
 
 func auditStatusOf(p registry.ResolvedCallsPolicy) CallsStatus {
 	return CallsStatus{
-		Enabled: p.Enabled, Arguments: "full", Results: p.ResultMode,
+		Enabled: p.Enabled, Arguments: calllog.ArgumentPolicy, Results: p.ResultMode,
 		ResultBytes: p.ResultBytes, Durability: p.Durability,
 		RetentionDays: p.RetentionDays, MaxBytes: p.MaxBytes,
 		MinFreeBytes: p.MinFreeBytes, Pressure: calllog.PressurePolicy, KeyID: p.KeyID,
