@@ -30,6 +30,20 @@ gateway and the daemon call this one implementation, which is where "both modes 
 lands in code. `MergeWithDiagnostics` folds diagnostics in **before hashing**, so they participate in
 content addressing.
 
+**`Converge` is that purity being spent.** A finished `EffectiveScope` cannot say WHICH layer narrowed
+it, and since the chain is an intersection that no layer may widen, a client seeing nothing has exactly
+one layer to blame. `Converge` re-folds the prefixes and reports the shape after each — safe to run
+entirely off the resolution path precisely because `Merge` has no side effects, and reported as counts
+rather than names for the same reason the gateway reports a finished scope that way. An empty chain
+yields **no** steps, not one describing the bare catalog: a fold with nothing folded in is not a
+narrowing, and a step for it would sit in front of every trace claiming a layer acted.
+
+**The layer composition has one source.** `CachedResolver.layersFor` builds the list — persisted layers,
+then `Sources.Extra` — and both `Resolve` and `Explain` go through it. A second copy of that order is how
+a diagnostic starts describing a resolution that no longer runs, which is the same reason `pickDiscovery`
+is a function rather than eight inline lines. `Explain` fails closed like `Resolve`: no registry snapshot
+is an error, never an empty explanation that would read as "nothing narrowed anything".
+
 **The two classes of merge semantics must not be confused.** Security fields tighten monotonically:
 server visibility intersects across layers (seeded from the catalog's server set), and a tool's `Allow`
 intersects. There is no deny list anywhere and no boolean switch left to fold — a deny would answer a

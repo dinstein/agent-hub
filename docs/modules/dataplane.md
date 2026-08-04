@@ -448,6 +448,14 @@ session` was the sole consumer. A dangling profile reference fails **closed** to
 diagnostic describes a client that can suddenly see nothing: the loudest symptom the scope chain
 produces, previously with the quietest explanation.
 
+**At Debug the same points also report the convergence** — the shape each layer leaves behind, through
+`scope.Converge` (see [config.md](config.md)). The Info shape says what a session ended up with; only
+this says which layer took the rest away, and that was otherwise guesswork across three config files.
+It is **gated on the level**, which is not a micro-optimisation: `Explain` re-folds the layer list once
+per layer, so the work is real and must not happen when nobody will read it. Off, it costs one `Enabled`
+call. A failure is swallowed to Debug — this is the explanation of a scope, not the scope, and a
+diagnostic able to disturb a resolution would be the worse trade.
+
 **The surface cache key is `discovery.Key{Generation, ScopeHash}`**, with `catGen` incremented on every
 router swap and the scope hash covering every visibility-relevant field. A stale surface is therefore
 structurally unservable: there is no explicit invalidation logic, and so no possibility of missing an
@@ -578,6 +586,20 @@ knobs would let a caller set a base above its own cap. Three properties are load
 
 Discovery mode rules out the cheaper design: in lazy mode a failed server's tools are absent from the
 catalog, so no call can arrive to trigger a dial on demand. Recovery has to come off a timer, not traffic.
+
+**The rungs are reported at Debug, because the dials alone do not explain the gaps between them.** Each
+attempt is logged at Info with its attempt count and nothing said how long the wait before it was, so by
+the rungs where the question gets asked — 45s, 135s, then five minutes forever — "it has given up" and
+"it is waiting out a backoff it earned" read identically. `armLocked` therefore **returns** the rung and
+its delay rather than writing them: it runs under `g.mu`, on which the whole re-dial plane serializes, and
+a sink that blocked would hold up every dial in the process. `noteConnectResult` writes them once the lock
+is released. A success clears the ladder instead of arming it and so writes nothing — a rung reported
+beside a working server would describe a recovery that is not pending.
+
+`wakeLocked` reports whether it woke anything, and the **false** case is why it reports at all: an
+announcement for a server with no recorded failure wakes nothing, so storing a credential is followed by
+no re-dial. Unexplained, that reads as a lost announcement and sends the reader after a broken watcher
+instead of at a server that was never broken.
 
 ### Current wiring status
 
