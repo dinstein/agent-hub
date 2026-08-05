@@ -15,6 +15,30 @@ for a human decision. All of it was removed: what a client may reach is decided 
 configuration, and a stage that reads a result in order to relabel or withhold it is the opposite of
 that model. Worth knowing when reading old commits; nothing in the tree does it today.
 
+## The stdio-proxy escalation path, and why it does not close here
+
+`security_best_practices.mdx` names an attack this architecture is the exact shape of: a local proxy
+that spawns MCP servers as child processes and authenticates its clients with a token. The chain is
+XSS in the client → steal the proxy token → call the proxy → **proxy spawns an arbitrary command** →
+RCE.
+
+It breaks at the fourth step, and structurally rather than by a check. **Nothing a client presents
+can choose a command.** The set of servers is decided in advance by configuration, and the only
+surface that can add one — `internal/ctlapi` — is not on the HTTP listener at all: the daemon's
+`httpserve.go` mounts `httpbridge` with the MCP data plane as its only dispatcher, while the control
+API listens on a Unix domain socket (0700 directory, 0600 socket, `SO_PEERCRED`/`LOCAL_PEERCRED`
+same-uid verification) or a Windows named pipe whose SDDL admits the current user and nobody else.
+It issues no tokens, because OS-level identity is the credential. A stolen bearer therefore buys
+tool calls scoped by that token's profile and allowlist, and no way to name a new process.
+
+**Do not mount a control route on the HTTP listener.** That single change would reconnect the chain,
+and nothing else in this layer would notice: `spawnguard` grades a command's shape, not who asked
+for it, and it is designed that way on purpose.
+
+The tutorial's own mitigations are weaker than this and are also present where they apply:
+`runtime: docker` sandboxes a spawned server, `spawnguard` refuses command shapes regardless of
+caller, and the event log records server lifecycle.
+
 `internal/guard/*` is the zero-business-dependency base (canonical.md §2 rule 4: standard library
 plus `internal/guard` itself, enforced by depguard). These packages know nothing about servers,
 sessions, or the pipeline; they make purely functional determinations and hand the result up for
