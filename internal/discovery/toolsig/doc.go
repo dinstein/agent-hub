@@ -39,10 +39,13 @@
 //	    parameter renders as obj{key,key} (direct key names, sorted, capped at
 //	    MaxObjectKeys) and anything deeper renders as plain obj. An array of
 //	    objects is arr<obj>. Both fold cases set "~".
-//	  - "$ref" is NOT resolved. internal/router inlines refs before a
-//	    definition reaches this package; a ref that survives anyway renders as
-//	    any~ rather than being chased, because chasing it would mean holding a
-//	    schema store here.
+//	  - "$ref" is NOT resolved, by this package or by anything upstream of
+//	    it — schemas reach here byte-identical to what the downstream sent.
+//	    So a ref is not a rare survivor: every one renders as any~, and every
+//	    signature carrying one is marked lossy. Chasing a ref would mean
+//	    holding a schema store, and an absolute-URI ref would mean fetching
+//	    it, which MCP 2026-07-28 says implementations must not do by default.
+//	    describe_tool still returns the schema itself.
 //	  - A schema that does not parse, or is not an object schema, renders as
 //	    name(~) -> type. One shape, no guessing.
 //

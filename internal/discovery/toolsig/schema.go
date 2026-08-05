@@ -122,8 +122,12 @@ func renderType(raw json.RawMessage, depth int) (string, bool) {
 
 func renderNode(n *node, depth int) (string, bool) {
 	if n.Ref != "" {
-		// Refs are inlined by internal/router before a definition gets
-		// here; one that survived is a schema this package will not chase.
+		// Nothing in this tree resolves a $ref, so EVERY ref lands here —
+		// this is the normal outcome, not a leftover. Chasing one would mean
+		// holding a schema store, and an absolute-URI ref would mean
+		// fetching it, which MCP 2026-07-28 says implementations must not do
+		// by default. any~ is the honest rendering: describe_tool still
+		// hands the caller the schema itself.
 		return TypeAny, true
 	}
 	if len(n.Enum) > 0 {
