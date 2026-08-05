@@ -1,6 +1,7 @@
 package downstream_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -510,5 +511,31 @@ func TestConnectPaginatesToolsList(t *testing.T) {
 	}
 	if got := echoText(t, res); got != `{"x":1}` {
 		t.Fatalf("echo = %q", got)
+	}
+}
+
+// TestToolIconsAndMetaSurviveTheProxy: an aggregating proxy that drops a
+// member a downstream sent has degraded that server's tool rather than
+// relayed it. icons and _meta are optional in the schema and interpreted by
+// nothing here, which is exactly why they must travel raw — the client they
+// were addressed to is downstream of this hop, not this hop.
+func TestToolIconsAndMetaSurviveTheProxy(t *testing.T) {
+	t.Parallel()
+	icons := json.RawMessage(`[{"src":"data:image/png;base64,AA==","sizes":["16x16"]}]`)
+	meta := json.RawMessage(`{"com.example.tools/kind":"search"}`)
+	script := fakemcp.Minimal()
+	script.Tools[0].Def.Icons = icons
+	script.Tools[0].Def.Meta = meta
+	s := startServer(t, downstream.Deps{}, script)
+
+	tools := s.Tools()
+	if len(tools) != 1 {
+		t.Fatalf("Tools() = %+v", tools)
+	}
+	if !bytes.Equal(tools[0].Icons, icons) {
+		t.Fatalf("icons = %s, want %s", tools[0].Icons, icons)
+	}
+	if !bytes.Equal(tools[0].Meta, meta) {
+		t.Fatalf("_meta = %s, want %s", tools[0].Meta, meta)
 	}
 }

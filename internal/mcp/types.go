@@ -129,8 +129,10 @@ type InitializeResult struct {
 }
 
 // ToolDef is one entry of a tools/list result. InputSchema (and the
-// optional OutputSchema / Annotations) are passed through verbatim — this
-// facade never re-encodes downstream JSON Schema.
+// optional OutputSchema / Annotations / Icons / Meta) are passed through
+// verbatim — this facade never re-encodes downstream JSON Schema, and an
+// aggregating proxy that drops a member a downstream sent has degraded that
+// server's tool rather than relayed it.
 type ToolDef struct {
 	Name         string          `json:"name"`
 	Title        string          `json:"title,omitempty"`
@@ -138,6 +140,12 @@ type ToolDef struct {
 	InputSchema  json.RawMessage `json:"inputSchema"`
 	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
 	Annotations  json.RawMessage `json:"annotations,omitempty"`
+	// Icons is the tool's optional icon set. Raw, like the schemas: nothing
+	// here interprets an icon, and re-encoding one could only lose detail.
+	Icons json.RawMessage `json:"icons,omitempty"`
+	// Meta is the tool's own _meta. It may carry extension data addressed to
+	// a client this hub only forwards for, so it travels untouched.
+	Meta json.RawMessage `json:"_meta,omitempty"`
 }
 
 // Cursor is an opaque pagination position. It is a POINTER wherever it
