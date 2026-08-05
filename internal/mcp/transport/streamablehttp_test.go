@@ -298,6 +298,8 @@ func TestStreamableHTTPPeerWithoutHandler(t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 		case *mcp.Request:
 			s := startSSE(t, w)
+			// DEPRECATED-UPSTREAM(sampling, earliest-removal: 2027-07-28):
+			// scripts the reverse RPC a ≤ 2025-11-25 server may send.
 			s.message("r1", mcp.NewRequest(mcp.NewStringID("srv-1"), "sampling/createMessage", nil))
 			select {
 			case resp := <-answered:

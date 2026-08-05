@@ -112,6 +112,9 @@ func TestCallRejectsSamplingInput(t *testing.T) {
 	})
 	s.OnPeerRequest(rootsPeer(t, "file:///unused"))
 	_, err := s.Call(testCtx(t), "echo", nil)
+	// DEPRECATED-UPSTREAM(sampling, earliest-removal: 2027-07-28): asserts
+	// the REFUSAL, so it outlives the feature only as long as the refusal
+	// does.
 	if err == nil || !strings.Contains(err.Error(), "sampling/createMessage") {
 		t.Fatalf("err = %v, want the sampling refusal", err)
 	}

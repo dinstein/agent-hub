@@ -20,8 +20,16 @@ type Handler func(ctx context.Context, method string, params json.RawMessage) (j
 // ErrSamplingUnsupported rejects sampling/createMessage input requests.
 // AgentHub does not proxy LLM calls (docs/mcp-2026-07-28.md §6.2), and the
 // clientCapabilities it declares never include sampling — a server asking
-// anyway gets this, which callers surface as
-// CodeMissingRequiredClientCapability (-32021) semantics.
+// anyway gets this, and the tools/call it was part of fails.
+//
+// It does NOT surface as -32021. That code is a server naming the capability
+// its client failed to declare, and on this seam the roles are reversed: the
+// downstream is the server and the missing capability is AgentHub's own. The
+// round aborts and the call surfaces upstream as an internal error; §6.2
+// records why inventing an emit site for -32021 here would be wrong.
+//
+// DEPRECATED-UPSTREAM(sampling, earliest-removal: 2027-07-28): this is a
+// refusal, not a use — but it names the method, so the grep must find it.
 var ErrSamplingUnsupported = errors.New(
 	"sampling/createMessage is not supported: AgentHub does not proxy LLM calls")
 

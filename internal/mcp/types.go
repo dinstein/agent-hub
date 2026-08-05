@@ -16,6 +16,10 @@ const (
 	// MethodSamplingCreate and MethodElicitationCreate name server-initiated
 	// requests: reverse RPCs on ≤ 2025-11-25, InputRequest methods inside an
 	// InputRequiredResult on 2026-07-28 (MRTR).
+	//
+	// DEPRECATED-UPSTREAM(sampling, earliest-removal: 2027-07-28): the
+	// constant stays because it is what mrtr matches on to REFUSE the
+	// method; nothing here offers sampling. Elicitation is not deprecated.
 	MethodSamplingCreate    = "sampling/createMessage"
 	MethodElicitationCreate = "elicitation/create"
 

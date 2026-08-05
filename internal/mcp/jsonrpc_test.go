@@ -83,6 +83,9 @@ func TestParseMessage(t *testing.T) {
 		},
 		{
 			name: "request with string id",
+			// DEPRECATED-UPSTREAM(roots, earliest-removal: 2027-07-28): a
+			// frame fixture; any method name would do, and this one moves
+			// with the feature.
 			in:   `{"jsonrpc":"2.0","id":"a1","method":"roots/list"}`,
 			want: &Request{},
 		},

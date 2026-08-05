@@ -123,3 +123,101 @@ func findDeprecationMarkers(t *testing.T, root string) []deprecationSite {
 	}
 	return out
 }
+
+// deprecatedWireNames maps a feature in the upstream Deprecated registry to
+// the literal that constitutes naming it in Go source. Add a row when
+// upstream deprecates something this tree touches; the row is what makes the
+// marker convention enforceable instead of merely conventional.
+//
+// The literal is the WIRE name, quoted. Every other use site reaches the
+// feature through the constant declared beside that literal, and those sites
+// carry their own markers because a reader arrives at them from the grep —
+// but the declaration is the one place the feature is named from nothing,
+// and it is the one a new use site is copied from.
+var deprecatedWireNames = []struct{ Feature, Literal string }{
+	{"roots", `"roots/list"`},
+	{"sampling", `"sampling/createMessage"`},
+	{"logging", `"logging/setLevel"`},
+	{"logging", `"notifications/message"`},
+}
+
+// TestEveryDeprecatedFeatureNamedCarriesItsMarker closes the gap the format
+// check above leaves open: it proves the markers that exist are well-formed,
+// not that the ones that should exist do.
+//
+// docs/mcp-2026-07-28.md §1.3 promises "each use site in this tree carries a
+// DEPRECATED-UPSTREAM comment, so one grep finds them all". That promise had
+// been false for `sampling` since the feature was deprecated: mcp.
+// MethodSamplingCreate declared it and internal/mrtr matched on it to refuse
+// it, and neither carried a marker — so the grep that is supposed to
+// enumerate what has to move before 2027-07-28 skipped both.
+//
+// A feature with no use sites at all is not a failure. `logging` is that
+// case today, and it stays in the table so that adding the first use site
+// fails here rather than passing quietly.
+func TestEveryDeprecatedFeatureNamedCarriesItsMarker(t *testing.T) {
+	root := repoRoot(t)
+	for _, want := range deprecatedWireNames {
+		files := goFilesContaining(t, root, want.Literal)
+		for _, f := range files {
+			// This file names every literal in the table by definition.
+			if strings.HasPrefix(f.file, filepath.Join("test", "buildrules")) {
+				continue
+			}
+			if strings.Contains(f.body, markerTag+want.Feature) {
+				continue
+			}
+			// The tag is not spelled literally here: the format check above
+			// scans every Go file, this one included, and would read the
+			// message as a malformed marker.
+			t.Errorf("%s names the deprecated %s wire method %s but carries no "+
+				"%s marker naming %q.\n"+
+				"docs/mcp-2026-07-28.md §1.3 promises one grep finds every use site; "+
+				"a site the grep misses is one nobody will migrate.",
+				f.file, want.Feature, want.Literal, markerTag, want.Feature)
+		}
+	}
+}
+
+// markerTag is the convention's opening tag, assembled rather than written,
+// for the reason given at its only use site.
+const markerTag = "DEPRECATED-" + "UPSTREAM("
+
+type goFile struct {
+	file string
+	body string
+}
+
+// goFilesContaining returns every Go file whose text contains literal.
+func goFilesContaining(t *testing.T, root, literal string) []goFile {
+	t.Helper()
+	var out []goFile
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if name := d.Name(); name == ".git" || name == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		data, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		if !strings.Contains(string(data), literal) {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		out = append(out, goFile{file: rel, body: string(data)})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}

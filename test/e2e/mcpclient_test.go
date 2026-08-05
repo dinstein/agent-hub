@@ -205,6 +205,8 @@ func (c *gatewayClient) call(method string, params any, timeout time.Duration) (
 // answering defensively keeps the read loop deadlock-free either way.
 func (c *gatewayClient) answerReverse(m *rpcMsg) {
 	c.t.Helper()
+	// DEPRECATED-UPSTREAM(roots, earliest-removal: 2027-07-28): the e2e
+	// client answers the reverse RPC a ≤ 2025-11-25 server may still send.
 	if m.Method == "roots/list" {
 		c.writeFrame(map[string]any{
 			"jsonrpc": "2.0", "id": json.RawMessage(m.ID),
