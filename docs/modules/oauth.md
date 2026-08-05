@@ -47,7 +47,7 @@ Every row is a provider behavior that exists in the wild, not a hypothetical per
 | Issuer has a path, metadata at the append position (older providers that implement only OIDC) | ✅ | Candidate 3 |
 | No metadata of any kind, but `/authorize` `/token` `/register` really do live under the issuer | ✅ | Synthesized fallback via `DefaultEndpoints`, recorded as `DiscoveryDefaults` |
 | PRM lists multiple `authorization_servers` | ⚠️ | **Only the first is used.** Deliberate: trying them one by one would widen the set of hosts a malicious RS can make us contact |
-| The `issuer` declared in AS metadata disagrees with where we fetched it from | ⚠️ | Not validated on **either** path. The resource-origin hop records `DiscoveryResourceOrigin`; the canonical `fetchMetadata` path carries no marker and no check — see the security boundaries below |
+| The `issuer` declared in AS metadata disagrees with where we fetched it from | ✅ / ⚠️ | **Refused** on the canonical `fetchMetadata` path (`validateIssuerMatch`, RFC 8414 §3.3). Still unvalidated on the resource-origin hop, which is why that one records `DiscoveryResourceOrigin` and never `DiscoveryOK` — see the security boundaries below |
 
 #### What the chain records about itself
 
@@ -303,6 +303,18 @@ recorded nowhere at all.
 - The `--authorization-endpoint` pin is **fail-closed**: if a pin is set but the URL is invalid or
   blocked by the SSRF screen, the login aborts rather than falling back to the discovered value.
   Silently authorizing against a different endpoint is the worse surprise.
+- **A callback is state-checked before anything else, error responses included.** RFC 6749 §4.1.2.1
+  obliges an AS to echo `state` on an error response exactly as on a success, so a callback failing
+  that check is not this flow's outcome whichever member it carries. Checking the error branch first
+  — which both handlers used to do — meant nothing had to be guessed: anything reaching the loopback
+  port during the flow could end a pending login and choose the text explaining why, since
+  `TokenError.Error()` puts `error_description` in the terminal and the event log.
+- **RFC 9207 applies to a failed callback too.** On an issuer mismatch a client MUST NOT act on or
+  display `error` / `error_description` / `error_uri`, so both handlers carry the `iss` out with the
+  failure and `issThenCallback` validates it before the AS's error is surfaced. It fires only for a
+  failure carrying an actual AS error response (`*TokenError` in the chain): a login that died with
+  no browser, a refused endpoint or a deadline never received an `iss`, and validating one anyway
+  replaces the real cause with a fabricated issuer mismatch.
 - **Every URL obtained from the network goes through `checkURL`**, including the
   `resource_metadata` pointer in a 401 (it comes from an unauthenticated response, so it's an
   attacker-influenceable hint, not an instruction).
@@ -314,21 +326,27 @@ recorded nowhere at all.
   call `DefaultEndpoints`. Guessing `/authorize` on the RS's own origin would send the user's
   browser to a URL no provider ever declared. This one is nailed down by a mutation test
   (`TestDiscoverFromResourceOriginDoesNotSynthesize`).
-- **Open: the canonical path has the same unvalidated `issuer`, and no status marker to say so.**
-  `validateMetadata` (`discovery.go:450`) requires the endpoints to be present but never compares
-  `md.Issuer` against the issuer the candidate URLs were built from, which RFC 8414 §3.3 requires; the
-  callback then checks the returned `iss` against that same unvalidated value (`iss.go:41`). The
-  tolerance was a deliberate position for the resource-origin hop and is documented as such above —
-  but it was never argued for the canonical hop, where it silently applies too. The attack it leaves
-  open is narrow and real: a hostile resource server whose `authorization_servers[0]` names a host
-  that then declares itself a trusted issuer.
+- **Closed on the canonical path: `validateIssuerMatch` refuses metadata that names another
+  issuer.** RFC 8414 §3.3 requires the declared `issuer` to match the identifier the well-known URL
+  was built from, and until it did, the check the callback performs afterwards meant nothing:
+  `validateIss` compares the response's `iss` against `md.Issuer`, so a host serving both the
+  document and the redirect was comparing itself to itself. The attack that closes is the narrow
+  real one — a hostile resource server whose `authorization_servers[0]` names a host that then
+  declares itself a trusted issuer. A mismatch is fatal rather than "try the next candidate": the
+  remaining candidates are on the same host.
 
-  **Not closed with an exact-equality check, because that breaks working providers**: a trailing
-  slash, a host alias, or `http` vs `https` in a declared `issuer` is common real-world sloppiness,
-  and exact equality turns each into a login that stops working. The shape that closes the attack
-  without that cost is a **normalised** comparison — case-fold the host, drop a single trailing slash,
-  then require scheme, host and path to match. Changing the resource-origin half is a separate
-  decision from changing this one.
+  The comparison is **normalised, as this file argued before the check existed**: host lower-cased
+  (DNS is case-insensitive, so it hands an attacker nothing), one trailing slash dropped, then
+  scheme, host and path compared exactly. Exact equality would have turned ordinary provider
+  sloppiness into logins that stop working. Scheme is deliberately not normalised — `http` where
+  `https` was expected is a downgrade, not sloppiness — and neither is the path, which names the
+  tenant.
+
+- **Open: the resource-origin hop still has an unvalidated `issuer`.** Applying the same check there
+  would defeat the purpose of the hop, which exists precisely for deployments publishing an AS's
+  metadata on the resource server's own origin. It stays marked instead: `DiscoveryResourceOrigin`,
+  never `DiscoveryOK`, and RFC 9207 offers no mix-up protection on that path. Changing that half is
+  a separate decision from the one above.
 
 ## Troubleshooting: start with `DiscoveryStatus`
 
