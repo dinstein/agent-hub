@@ -195,8 +195,10 @@ newest first — `2026-07-28`, `2025-11-25`, `2025-06-18`, `2025-03-26` — and 
 either direction reads what it accepts.
 
 - The **read side** (connecting to downstreams) probes with `server/discover`, and falls back to the
-  `initialize` handshake only on proof the server answered. An older downstream negotiates downward
-  from the same list
+  `initialize` handshake only on proof the server answered *and is old*. An error code the
+  specification reserves for itself (-32020 to -32099) is proof of the opposite: only a modern server
+  produces one, so it propagates rather than triggering a fallback that would send `initialize` to a
+  server that does not implement it. An older downstream negotiates downward from the same list
 - The **exposure side** answers `server/discover` with that same list, and a request carrying the
   per-request `_meta` puts the session in stateless mode. `initialize` negotiates the **stateful
   family only**: a client declaring `2026-07-28` *there* gets the default instead, because echoing it
@@ -211,8 +213,11 @@ either direction reads what it accepts.
 
 **`mcp.ProtocolVersion` does not name the version this tree targets, and flipping it to 2026 is
 wrong.** It stays at `2025-11-25` because every context that reads it is definitionally pre-2026: the
-legacy handshake, the exposure side's default answer, the HTTP header sent before negotiation. The
-2026-07-28 declaration travels per-request in `_meta`, built from `Version2026` directly.
+legacy handshake, the exposure side's default answer, and the HTTP header on a request whose body
+declared no version of its own. The 2026-07-28 declaration travels per-request in `_meta`, built
+from `Version2026` directly — and `MCP-Protocol-Version` is read back out of that `_meta` rather
+than from this constant, because the header and the body MUST agree and `server/discover` declares
+2026 before anything is negotiated.
 [mcp-2026-07-28.md](mcp-2026-07-28.md) §6.1 records why "flip the constant" was dropped.
 
 ### Upstream deprecation tracking

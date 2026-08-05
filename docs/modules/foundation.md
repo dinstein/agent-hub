@@ -741,11 +741,21 @@ legacy `initialize` + `notifications/initialized` path, because those versions n
 handshake however the version was learned.
 
 `discoverFallback` decides which failures mean "alive but pre-2026", and it is deliberately narrow:
-only a JSON-RPC error reply (a real 2026 server MUST implement discover, so an error object proves
-an old one) or a `ClassFatal` HTTP 4xx (a 2025-11-25 streamable-http server rejects an unknown
-pre-session POST with 400 rather than a JSON-RPC frame). **Everything else — connection loss, 5xx,
-oversized frame, cancellation — propagates unchanged**; falling back there would hide a real failure
-from the circuit breaker behind a second handshake attempt.
+only a JSON-RPC error reply, or a `ClassFatal` HTTP 4xx (a 2025-11-25 streamable-http server rejects
+an unknown pre-session POST with 400 rather than a JSON-RPC frame). **Everything else — connection
+loss, 5xx, oversized frame, cancellation — propagates unchanged**; falling back there would hide a
+real failure from the circuit breaker behind a second handshake attempt.
+
+**An answered error is not by itself proof of an old server**, and reading it as one is worse than
+not probing at all. The codes 2026-07-28 reserves for itself (`mcp.IsSpecErrorCode`, -32020 to
+-32099) are answers only a modern server knows how to give, so `discoverFallback` returns false for
+them and the caller sees the server's own error — which normally says exactly what to correct.
+Falling back instead sends `initialize`, the one method a 2026-only server does not implement, and
+turns a correctable request into a dead connection. Over HTTP the code has to come out of the body:
+one 400 carries both a legacy server's opaque rejection and a modern server's `HeaderMismatch`, so
+`httpError` parses the drained body and records the code on `Error.RPCCode`. A body that parses to
+nothing yields 0 and leaves the caller on its status-only path. The grandfathered -32000 to -32019
+band still falls back: an SDK's private code says nothing about the generation.
 
 **A transport that cannot carry the per-request `_meta` is refused, not degraded.** Once 2026-07-28
 is negotiated, `Handshake` requires the transport to implement `negotiatedSetter`; without it,
@@ -909,8 +919,22 @@ each call site sets `Accept`/`Content-Type`/`Mcp-Session-Id`/`MCP-Protocol-Versi
 that `net/http` canonicalizes header names, so what goes out is `Mcp-Protocol-Version`; header names
 are case-insensitive per RFC 9110 §5.1 and the golden files pin the canonical form.
 
-**Body snippets in error messages are bounded and flattened to one line.** `drainSnippet` reads 1
-KiB, turns `\n\r\t` into spaces and strips other control characters — error strings end up in JSON
+**`MCP-Protocol-Version` comes from the body, not from transport state.** 2026-07-28 requires the
+header to equal the `_meta` protocol version of the very same POST, and a server that sees them
+disagree MUST answer 400 with -32020. `versionForHeader` reads it back out of the encoded params so
+the two cannot drift; transport state fills in only when the body declared nothing (pre-2026 traffic,
+the GET stream, a resume). `server/discover` is the case that makes this load-bearing: it declares
+2026-07-28 before any version is negotiated, when transport state still holds the pre-2026 default.
+
+**`Mcp-Name` is sourced from `params.name` or `params.uri`, and encoded before it is sent.** A value
+outside the header-safe ASCII set — non-ASCII, a control byte, edge whitespace, or text shaped like
+the sentinel itself — travels as `=?base64?…?=` (`mcp.EncodeHeaderValue`), because `net/http` sends
+a non-ASCII value as raw UTF-8, trims a padded one silently, and refuses outright to send one
+containing a newline. Receivers decode before comparing (`mcp.DecodeHeaderValue`); a sentinel-shaped
+value that does not decode is refused rather than compared as a literal.
+
+**Body snippets in error messages are bounded and flattened to one line.** `drainBody` reads 1 KiB
+and `bodySnippet` turns `\n\r\t` into spaces and strips other control characters — error strings end up in JSON
 log lines and trace frames, where an embedded newline amounts to permitting a forged record.
 
 **Concurrent reverse RPC has backpressure rather than unbounded fan-out.** The `maxPeerWorkers = 8`
