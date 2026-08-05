@@ -51,8 +51,9 @@ func TestDownstreamSpeaks2026(t *testing.T) {
 	}
 
 	tools := srv.Tools()
-	if len(tools) != 2 || tools[0].Name != "echo" || tools[1].Name != "confirm" {
-		t.Fatalf("tools = %+v, want echo and confirm", tools)
+	if len(tools) != 3 || tools[0].Name != "echo" || tools[1].Name != "confirm" ||
+		tools[2].Name != "shed" {
+		t.Fatalf("tools = %+v, want echo, confirm and shed", tools)
 	}
 
 	res, err := srv.Call(testCtx(t), "echo", json.RawMessage(`{"s":"hi"}`))
@@ -100,5 +101,52 @@ func TestDownstreamSpeaks2026(t *testing.T) {
 	}
 	if got := stub.Calls(mcp.MethodToolsCall) - callsBefore; got != 2 {
 		t.Fatalf("confirm took %d tools/call round trips, want 2 (original + retry)", got)
+	}
+}
+
+// TestDownstreamSurvivesALoadSheddingRound is the wire-level half of the
+// load-shedding fix. The unit tests that cover it drive a fake transport;
+// this drives the real client against a server that answers with a
+// requestState and no inputRequests — the shape the specification names, and
+// the one this tree refused as unanswerable until recently.
+//
+// The stub holds the retry to every rule it holds `confirm` to (token echoed
+// verbatim and once, a new JSON-RPC id, the original arguments) plus one
+// more: a round that asked for nothing must come back with no
+// inputResponses. So a green run says the client resumed the request rather
+// than rebuilding it.
+func TestDownstreamSurvivesALoadSheddingRound(t *testing.T) {
+	stub := mcpstub.New()
+	defer stub.Close()
+
+	srv, err := downstream.Connect(testCtx(t), downstream.Spec{
+		ID:         "stub2026",
+		Kind:       transport.StreamableHTTP,
+		URL:        stub.URL(),
+		Provenance: downstream.ProvenanceLocal,
+	}, downstream.Deps{Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer srv.Close()
+
+	res, err := srv.Call(testCtx(t), "shed", json.RawMessage(`{"n":1}`))
+	if err != nil {
+		t.Fatalf("call shed: %v", err)
+	}
+	var items []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(res.Content, &items); err != nil || len(items) == 0 {
+		t.Fatalf("content %s (err %v)", res.Content, err)
+	}
+	if items[0].Text != "shed then served" {
+		t.Fatalf("text = %q, want the answer that follows the shed round", items[0].Text)
+	}
+	// Two tools/call frames: the shed and the retry. One would mean the
+	// client never retried; three would mean it looped.
+	if n := stub.Calls(mcp.MethodToolsCall); n != 2 {
+		t.Fatalf("tools/call frames = %d, want 2 (the shed round and its retry)", n)
 	}
 }

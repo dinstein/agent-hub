@@ -179,6 +179,10 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, req *mcp.Request
 				Name:        "confirm",
 				Description: "requires one MRTR round (roots/list) before answering",
 				InputSchema: json.RawMessage(`{"type":"object"}`),
+			}, {
+				Name:        "shed",
+				Description: "sheds load once: a requestState-only round, then the answer",
+				InputSchema: json.RawMessage(`{"type":"object"}`),
 			}},
 			CacheableResult: mcp.CacheableResult{TtlMs: &ttl, CacheScope: "private"},
 		})
@@ -203,6 +207,8 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, req *mcp.Request
 			s.ok(w, req, mcp.CallResult{ResultType: mcp.ResultTypeComplete, Content: content})
 		case "confirm":
 			s.answerConfirm(w, req, p)
+		case "shed":
+			s.answerShed(w, req, p)
 		default:
 			s.reject(w, req, http.StatusOK, mcp.CodeInvalidParams, fmt.Sprintf("unknown tool %q", p.Name))
 		}
@@ -212,6 +218,81 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, req *mcp.Request
 		s.reject(w, req, http.StatusOK, mcp.CodeMethodNotFound,
 			fmt.Sprintf("mcpstub (2026-07-28) does not implement %q", req.Method))
 	}
+}
+
+// answerShed drives the OTHER MRTR shape: an input_required carrying only
+// requestState, with no inputRequests at all. The specification names it —
+// "InputRequiredResult with request state only (load shedding)" — and it
+// means "I am not asking you for anything, come back with this token".
+//
+// It exists here because a client that refuses the shape is unusable
+// against a server that uses it, and this tree refused it until recently.
+// The unit tests that cover the fix drive a fake transport; this is the only
+// place the retry is observed as real bytes, which is the standard §4.1 sets
+// for the rest of the stub.
+//
+// The retry is held to every rule answerConfirm holds its own to — token
+// echoed verbatim and once, a new JSON-RPC id, the original arguments — and
+// to one more: a round that asked for nothing must come back with NO
+// inputResponses, because there was nothing to respond to.
+func (s *Server) answerShed(w http.ResponseWriter, req *mcp.Request, p mcp.CallToolParams) {
+	if p.RequestState == nil {
+		s.mu.Lock()
+		s.stateSeq++
+		state := fmt.Sprintf("mcpstub-shed-%d", s.stateSeq)
+		s.issued[state] = &round{
+			outstanding: true,
+			requestID:   req.ID.Key(),
+			arguments:   string(p.Arguments),
+		}
+		s.mu.Unlock()
+		result, _ := json.Marshal(mcp.InputRequiredResult{
+			ResultType:   mcp.ResultTypeInputRequired,
+			RequestState: &state,
+		})
+		writeMessage(w, http.StatusOK, mcp.NewResponse(req.ID, result))
+		return
+	}
+	rd, ok := s.redeem(*p.RequestState, req, p)
+	if !ok {
+		s.reject(w, req, http.StatusOK, mcp.CodeInvalidParams, rd)
+		return
+	}
+	if len(p.InputResponses) > 0 {
+		s.reject(w, req, http.StatusOK, mcp.CodeInvalidParams,
+			"the shed round requested no inputs; the retry must carry no inputResponses")
+		return
+	}
+	content, _ := json.Marshal([]map[string]string{{"type": "text", "text": "shed then served"}})
+	s.ok(w, req, mcp.CallResult{ResultType: mcp.ResultTypeComplete, Content: content})
+}
+
+// redeem consumes an outstanding requestState and enforces the three rules
+// every MRTR retry owes, whichever shape issued it. It returns a rejection
+// message and false when any of them fails.
+func (s *Server) redeem(state string, req *mcp.Request, p mcp.CallToolParams) (string, bool) {
+	s.mu.Lock()
+	rd := s.issued[state]
+	if rd != nil && rd.outstanding {
+		rd.outstanding = false
+	} else {
+		rd = nil
+	}
+	s.mu.Unlock()
+	switch {
+	case rd == nil:
+		return fmt.Sprintf(
+			"requestState %q was never issued (or already redeemed): the client must echo it verbatim", state), false
+	case req.ID.Key() == rd.requestID:
+		return fmt.Sprintf(
+			"retry reused JSON-RPC id %s; the retry is an independent request and must use a new one",
+			rd.requestID), false
+	case string(p.Arguments) != rd.arguments:
+		return fmt.Sprintf(
+			"retry arguments %s differ from the original %s; the retry must re-issue the original request",
+			p.Arguments, rd.arguments), false
+	}
+	return "", true
 }
 
 // answerConfirm drives one MRTR round: the first call gets input_required
