@@ -38,3 +38,27 @@ func TestMetadataIssuerMustMatchWhereItWasFetched(t *testing.T) {
 		})
 	}
 }
+
+// TestCanonicalResourceLowercasesTheHost: the canonical form MCP prescribes
+// for an RFC 8707 resource indicator uses a lowercase scheme AND host.
+// url.Parse folds the scheme for free and leaves the host alone, so a server
+// configured with any uppercase in its hostname sent a non-canonical value
+// to an authorization server that compares it literally. The path is
+// case-sensitive and stays untouched.
+func TestCanonicalResourceLowercasesTheHost(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"https://mcp.example.com/mcp", "https://mcp.example.com/mcp"},
+		{"HTTPS://MCP.Example.com/mcp", "https://mcp.example.com/mcp"},
+		{"https://MCP.Example.com:8443/MixedCasePath", "https://mcp.example.com:8443/MixedCasePath"},
+		{"https://mcp.example.com/", "https://mcp.example.com"},
+	}
+	for _, tt := range tests {
+		u, err := parseAbsoluteURL(tt.in)
+		if err != nil {
+			t.Fatalf("%s: %v", tt.in, err)
+		}
+		if got := canonicalResource(u); got != tt.want {
+			t.Errorf("canonicalResource(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}

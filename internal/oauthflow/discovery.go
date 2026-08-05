@@ -626,8 +626,15 @@ func parseAbsoluteURL(raw string) (*url.URL, error) {
 // canonicalResource renders the RFC 8707 resource indicator for a URL:
 // scheme://host[:port]/path with no query and no fragment, trailing slash
 // removed. RFC 8707 requires an absolute URI without a fragment.
+//
+// Host is lower-cased because the canonical form MCP prescribes uses
+// lowercase scheme and host, and url.Parse folds only the scheme — a server
+// configured as https://MCP.Example.com would otherwise put a non-canonical
+// value in front of an authorization server that compares it literally. The
+// PATH is left alone: it is case-sensitive, and folding it would name a
+// different resource.
 func canonicalResource(u *url.URL) string {
-	c := &url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}
+	c := &url.URL{Scheme: u.Scheme, Host: strings.ToLower(u.Host), Path: u.Path}
 	s := c.String()
 	if len(s) > 1 && strings.HasSuffix(s, "/") {
 		s = strings.TrimSuffix(s, "/")
