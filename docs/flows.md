@@ -56,7 +56,8 @@ processes will interfere with a TUI client's raw mode.
 serve the handshake and `tools/list`: a hub temporarily running on an old catalog beats one that won't
 connect. The same cache covers slow startup, with `tools/list_changed` pushed once the real tools land.
 
-**A `tools/call` before the downstream is connected returns a retryable busy error (`-32000`), not
+**A `tools/call` before the downstream is connected returns a retryable busy error
+(`mcp.CodeBusy`), not
 "tool not found."** Falsely claiming it doesn't exist makes the agent give up and route around it when
 all it needed was to wait a second.
 

@@ -504,7 +504,7 @@ migration seam frozen by canonical.md A.5 #30.
 dialed, and downstreams connect concurrently in the background ([flows.md](../flows.md) §1). **A registry
 load failure does not abort**: start with empty config, warn, answer from cache. While the live router is
 not ready, `tools/list` is answered from cache (same exposed name rules) and `tools/call` answers a
-**retryable** busy error (`-32000`). The cache trade-off branches on registry health: healthy → serve only
+**retryable** busy error (`mcp.CodeBusy`). The cache trade-off branches on registry health: healthy → serve only
 the cached tools of currently enabled servers; broken → serve **all** cached tools, because in that state
 there is no way to know who is enabled.
 
@@ -1013,7 +1013,11 @@ a token.
 **`ExceededError` unwraps into two errors at once** (Go 1.20 multiple unwrap): `*pipeline.BlockedError`, so
 `errors.Is(err, pipeline.ErrBlocked)` still holds for any caller classifying gate rejections, and
 `*mcp.Error`, so the gateway's existing `errors.As` path answers a JSON-RPC error with `data.retryAfterMs`
-without a line of gateway change. `JSONRPCCode` is `-32001` (`-32000` is already the gateway's busy).
+without a line of gateway change. `JSONRPCCode` is `mcp.CodeRateLimited`, and both it and the
+gateway's `mcp.CodeBusy` are **positive**: MCP 2026-07-28 reserves all of -32768..-32000, so an
+implementation's own codes go outside it. They were -32001 and -32000 until the rule was read, and
+-32001 was the pre-2026 number for `HeaderMismatch` — a collision a ≤2025-11-25 client could
+actually make, since the gateway still serves that generation.
 
 **Multi-process correctness is the entire reason this package exists.** N gateway processes plus the
 daemon share `<data>/state/ratelimits.json`. The reference implementation (toolport's `rate_limits.rs`)
