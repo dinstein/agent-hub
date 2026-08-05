@@ -128,3 +128,55 @@ func TestMcpNameHeaderMismatch(t *testing.T) {
 		t.Fatalf("error = %+v, want CodeHeaderMismatch naming the header value", e)
 	}
 }
+
+// TestProtocolVersionHeaderMismatch: the header must equal the version the
+// body's _meta declares, and a disagreement is -32020 with HTTP 400. The
+// specification's rationale is the one this face already applies to
+// Mcp-Method — an intermediary routing on the header while the server
+// executes on the body — and agenthub's non-loopback token-authed bind is
+// what makes that reachable rather than hypothetical.
+//
+// This is the rule test/mcpstub enforces on the server role it plays, with
+// the comment that a stub which skips it certifies nothing. The shipped
+// server skipped it until this test existed.
+func TestProtocolVersionHeaderMismatch(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, &httpbridge.Authenticator{InsecureLoopback: true, Tokens: newStore(t)}, httpbridge.Options{})
+	res := h.post(t, "", "", discoverFrame,
+		httpbridge.MethodHeader, "server/discover",
+		httpbridge.ProtocolVersionHeader, "2025-11-25")
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", res.StatusCode)
+	}
+	e := rpcError(t, res)
+	if e == nil || e.Code != mcp.CodeHeaderMismatch || !strings.Contains(e.Message, "2025-11-25") {
+		t.Fatalf("error = %+v, want CodeHeaderMismatch naming the header value", e)
+	}
+}
+
+// TestProtocolVersionHeaderAgreementAndAbsence: the matching header passes,
+// and an ABSENT one is allowed. The absence carve-out is real — this server
+// also serves clients from before 2025-06-18 defined the header, and the
+// specification lets such a server read absence as 2025-03-26. Only a
+// disagreement is refused.
+func TestProtocolVersionHeaderAgreementAndAbsence(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, &httpbridge.Authenticator{InsecureLoopback: true, Tokens: newStore(t)}, httpbridge.Options{})
+
+	if res := h.post(t, "", "", discoverFrame,
+		httpbridge.MethodHeader, "server/discover",
+		httpbridge.ProtocolVersionHeader, "2026-07-28"); res.StatusCode != http.StatusOK {
+		t.Fatalf("agreeing header: status = %d, want 200", res.StatusCode)
+	}
+	if res := h.post(t, "", "", discoverFrame,
+		httpbridge.MethodHeader, "server/discover"); res.StatusCode != http.StatusOK {
+		t.Fatalf("absent header: status = %d, want 200", res.StatusCode)
+	}
+	// A body with no _meta has nothing to disagree with, so even a header
+	// naming another version passes — there is no claim to contradict.
+	sid := h.initSession(t, "")
+	if res := h.post(t, "", sid, `{"jsonrpc":"2.0","id":9,"method":"tools/list"}`,
+		httpbridge.ProtocolVersionHeader, "2025-03-26"); res.StatusCode != http.StatusOK {
+		t.Fatalf("legacy body with a header: status = %d, want 200", res.StatusCode)
+	}
+}

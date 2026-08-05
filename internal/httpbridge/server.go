@@ -27,6 +27,10 @@ const SessionHeader = "Mcp-Session-Id"
 const (
 	MethodHeader = "Mcp-Method"
 	NameHeader   = "Mcp-Name"
+	// ProtocolVersionHeader must equal the version the body's _meta
+	// declares. It is a separate rule from the two above and has its own
+	// carve-out; see checkMcpHeaders.
+	ProtocolVersionHeader = "MCP-Protocol-Version"
 )
 
 // Dispatcher is the seam between this transport face and the MCP logic
@@ -356,16 +360,26 @@ func stateless2026Request(req *mcp.Request) bool {
 // dispatcher that actually needs the params, with an error about the params
 // rather than about a header it was never obliged to send.
 func carries2026Meta(params json.RawMessage) bool {
+	return metaProtocolVersion(params) != ""
+}
+
+// metaProtocolVersion returns the protocol version the params' _meta
+// declares, or "" when there is none. It is the one decode of that value on
+// this face: carries2026Meta asks whether there is one, checkMcpHeaders
+// compares it to the header, and neither judges the value itself — the
+// gateway behind the dispatcher owns that rejection (-32022), and a second
+// copy of the check would be a second place for it to be wrong.
+func metaProtocolVersion(params json.RawMessage) string {
 	if len(params) == 0 {
-		return false
+		return ""
 	}
 	var probe struct {
 		Meta *mcp.RequestMeta `json:"_meta"`
 	}
 	if err := json.Unmarshal(params, &probe); err != nil || probe.Meta == nil {
-		return false
+		return ""
 	}
-	return probe.Meta.ProtocolVersion != ""
+	return probe.Meta.ProtocolVersion
 }
 
 // checkMcpHeaders enforces the 2026-07-28 Mcp-Method / Mcp-Name headers
@@ -379,6 +393,19 @@ func carries2026Meta(params json.RawMessage) bool {
 //     -32020. Requests without _meta (stateful sessions) owe no headers.
 //   - An Mcp-Name whose value, decoded, differs from the params' name (or
 //     uri) is -32020. Params carrying neither owe no Mcp-Name.
+//   - An MCP-Protocol-Version header that differs from the version the
+//     body's _meta declares is -32020. Only a MISMATCH is refused: an
+//     ABSENT header is allowed, because this server also serves clients
+//     from before 2025-06-18 defined the header at all, and the
+//     specification lets such a server read absence as 2025-03-26. There is
+//     no carve-out for a header that disagrees.
+//
+// The version rule is the same one this project's own client was getting
+// wrong until recently, and the same one test/mcpstub enforces with the
+// comment that a stub which skips it certifies nothing. The threat is the
+// one already argued for Mcp-Method: an intermediary routing on the header
+// while the server executes on the body, which agenthub's non-loopback
+// token-authed bind makes reachable.
 //
 // The decode is not a convenience. A name outside the header-safe set
 // travels under the base64 sentinel, so comparing the raw header text would
@@ -396,6 +423,13 @@ func checkMcpHeaders(r *http.Request, method string, params json.RawMessage) *mc
 	if hdrMethod == "" && carries2026Meta(params) {
 		return &mcp.Error{Code: mcp.CodeHeaderMismatch, Message: fmt.Sprintf(
 			"2026-07-28 requires the %s header on every request", MethodHeader)}
+	}
+	if hdrVersion := r.Header.Get(ProtocolVersionHeader); hdrVersion != "" {
+		if declared := metaProtocolVersion(params); declared != "" && hdrVersion != declared {
+			return &mcp.Error{Code: mcp.CodeHeaderMismatch, Message: fmt.Sprintf(
+				"%s header %q disagrees with the protocol version the body's _meta declares (%q)",
+				ProtocolVersionHeader, hdrVersion, declared)}
+		}
 	}
 	var probe struct {
 		Name string `json:"name"`
