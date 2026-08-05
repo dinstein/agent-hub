@@ -506,6 +506,18 @@ func (d *Discoverer) fetchMetadata(ctx context.Context, issuer *url.URL) (*AuthS
 				e.Attempted = attempted
 				return nil, attempted, e
 			}
+			if err := validateIssuerMatch(&md, issuer); err != nil {
+				// Same fatality as an unusable document, and for a stronger
+				// reason: the next candidate is on the same host, so trying
+				// it would only ask the same liar again.
+				record(c, AttemptUnusable)
+				e := newFlowError(ErrorTypeDiscovery, err)
+				e.Issuer = issuer.String()
+				e.Discovery = DiscoveryFailed
+				e.Attempted = attempted
+				e.Suggestion = "the authorization server's metadata claims an issuer other than the one it was fetched from; nothing was sent to it"
+				return nil, attempted, e
+			}
 			record(c, AttemptOK)
 			return &md, attempted, nil
 		}
@@ -521,6 +533,41 @@ func (d *Discoverer) fetchMetadata(ctx context.Context, issuer *url.URL) (*AuthS
 		return DefaultEndpoints(issuer), attempted, nil
 	}
 	return nil, attempted, nil
+}
+
+// validateIssuerMatch enforces RFC 8414 §3.3 / OIDC Discovery §4.3: the
+// `issuer` a metadata document declares MUST be identical to the issuer
+// identifier the well-known URL was built from, and a document that fails
+// it MUST NOT be used.
+//
+// This is the check the whole mix-up defence rests on, and its absence is
+// invisible because everything downstream still looks like it is working.
+// RFC 9207 has the client compare the authorization response's `iss` against
+// the discovered issuer — but if the discovered issuer is whatever the
+// fetched document said, then a host that serves both the document and the
+// response satisfies that comparison against itself. The spec says as much:
+// recording the issuer "provides no protection if the expected issuer was
+// obtained from an unvalidated source". Validating here is what makes the
+// later comparison mean anything.
+//
+// Comparison is exact but for one trailing slash on either side. That is the
+// same latitude MetadataCandidates already takes — "https://x/" and
+// "https://x" name one deployment everywhere we have to interoperate — and
+// it cannot be used to impersonate a different host, which is what the rule
+// is defending. Nothing else is normalized: no case folding, no default-port
+// elision, no percent-encoding cleanup.
+func validateIssuerMatch(md *AuthServerMetadata, issuer *url.URL) error {
+	want := strings.TrimSuffix(issuer.String(), "/")
+	got := strings.TrimSuffix(md.Issuer, "/")
+	if got == want {
+		return nil
+	}
+	if got == "" {
+		return fmt.Errorf("oauthflow: %s declares no issuer; RFC 8414 requires it to match %s",
+			md.SourceURL, want)
+	}
+	return fmt.Errorf("oauthflow: %s declares issuer %q but was fetched as %q; refusing to use it",
+		md.SourceURL, md.Issuer, want)
 }
 
 // validateMetadata enforces the two members without which no flow can run.
