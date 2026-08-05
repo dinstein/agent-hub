@@ -26,7 +26,7 @@ func inputRequired(state string, reqs map[string]string) json.RawMessage {
 	ir := mcp.InputRequiredResult{
 		ResultType:    mcp.ResultTypeInputRequired,
 		InputRequests: mcp.InputRequests{},
-		RequestState:  state,
+		RequestState:  &state,
 	}
 	for key, method := range reqs {
 		ir.InputRequests[key] = mcp.InputRequest{Method: method}
@@ -80,8 +80,8 @@ func TestCallResolvesOneInputRound(t *testing.T) {
 	if err := json.Unmarshal(tr.paramsOf(mcp.MethodToolsCall, 2), &retry); err != nil {
 		t.Fatalf("decode retry params: %v", err)
 	}
-	if retry.RequestState != "opaque-state-1" {
-		t.Fatalf("requestState %q, want the server's blob echoed verbatim", retry.RequestState)
+	if retry.RequestState == nil || *retry.RequestState != "opaque-state-1" {
+		t.Fatalf("requestState %v, want the server's blob echoed verbatim", retry.RequestState)
 	}
 	if retry.Name != "echo" || string(retry.Arguments) != `{"s":"hi"}` {
 		t.Fatalf("retry mutated the original call: %+v", retry)
@@ -99,7 +99,9 @@ func TestCallResolvesOneInputRound(t *testing.T) {
 	if err := json.Unmarshal(tr.paramsOf(mcp.MethodToolsCall, 1), &first); err != nil {
 		t.Fatal(err)
 	}
-	if first.RequestState != "" || first.InputResponses != nil {
+	// Absent, not empty: the spec says a client MUST NOT include a
+	// requestState it was never given.
+	if first.RequestState != nil || first.InputResponses != nil {
 		t.Fatalf("first call carried retry fields: %+v", first)
 	}
 }

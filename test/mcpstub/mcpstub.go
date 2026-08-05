@@ -191,7 +191,7 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, req *mcp.Request
 // asking for roots/list; the retry must echo the issued requestState
 // verbatim and answer every input key, or it is rejected.
 func (s *Server) answerConfirm(w http.ResponseWriter, req *mcp.Request, p mcp.CallToolParams) {
-	if p.RequestState == "" {
+	if p.RequestState == nil {
 		s.mu.Lock()
 		s.stateSeq++
 		state := fmt.Sprintf("mcpstub-opaque-%d", s.stateSeq)
@@ -202,20 +202,20 @@ func (s *Server) answerConfirm(w http.ResponseWriter, req *mcp.Request, p mcp.Ca
 			InputRequests: mcp.InputRequests{
 				"roots": {Method: mcp.MethodRootsList},
 			},
-			RequestState: state,
+			RequestState: &state,
 		})
 		writeMessage(w, http.StatusOK, mcp.NewResponse(req.ID, result))
 		return
 	}
 	s.mu.Lock()
-	outstanding := s.issued[p.RequestState]
+	outstanding := s.issued[*p.RequestState]
 	if outstanding {
-		s.issued[p.RequestState] = false
+		s.issued[*p.RequestState] = false
 	}
 	s.mu.Unlock()
 	if !outstanding {
 		s.reject(w, req, http.StatusOK, mcp.CodeInvalidParams,
-			fmt.Sprintf("requestState %q was never issued (or already redeemed): the client must echo it verbatim", p.RequestState))
+			fmt.Sprintf("requestState %q was never issued (or already redeemed): the client must echo it verbatim", *p.RequestState))
 		return
 	}
 	rootsRaw, ok := p.InputResponses["roots"]

@@ -91,3 +91,46 @@ func jsonEqual(t *testing.T, a, b []byte) bool {
 	}
 	return bytes.Equal(ca.Bytes(), cb.Bytes())
 }
+
+// TestRequestStateIsThreeState pins the shape the MRTR client rules need:
+// present-and-echoed, present-but-empty, and absent are three different
+// answers, and a plain string collapses the last two. The spec makes the
+// distinction load-bearing — "echo back the exact value" when there is one,
+// "MUST NOT include one" when there is not — so absent has to survive a
+// round trip as absent.
+func TestRequestStateIsThreeState(t *testing.T) {
+	empty := ""
+	blob := "AEAD-protected"
+	tests := []struct {
+		name  string
+		state *RequestState
+		wire  string
+	}{
+		{name: "absent", state: nil, wire: `{"name":"t"}`},
+		{name: "present but empty", state: &empty, wire: `{"name":"t","requestState":""}`},
+		{name: "present", state: &blob, wire: `{"name":"t","requestState":"AEAD-protected"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := json.Marshal(CallToolParams{Name: "t", RequestState: tt.state})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(raw) != tt.wire {
+				t.Fatalf("encoded %s, want %s", raw, tt.wire)
+			}
+			var back CallToolParams
+			if err := json.Unmarshal(raw, &back); err != nil {
+				t.Fatal(err)
+			}
+			switch {
+			case tt.state == nil && back.RequestState != nil:
+				t.Fatalf("absent decoded as %q", *back.RequestState)
+			case tt.state != nil && back.RequestState == nil:
+				t.Fatalf("%q decoded as absent", *tt.state)
+			case tt.state != nil && *back.RequestState != *tt.state:
+				t.Fatalf("round trip changed %q to %q", *tt.state, *back.RequestState)
+			}
+		})
+	}
+}

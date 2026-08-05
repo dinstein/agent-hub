@@ -200,7 +200,7 @@ type ListToolsResult struct {
 type CallToolParams struct {
 	Name           string          `json:"name"`
 	Arguments      json.RawMessage `json:"arguments,omitempty"`
-	RequestState   string          `json:"requestState,omitempty"`
+	RequestState   *RequestState   `json:"requestState,omitzero"`
 	InputResponses InputResponses  `json:"inputResponses,omitempty"`
 }
 
@@ -230,8 +230,16 @@ type CallResult struct {
 type InputRequiredResult struct {
 	ResultType    string        `json:"resultType"` // always ResultTypeInputRequired
 	InputRequests InputRequests `json:"inputRequests,omitempty"`
-	RequestState  string        `json:"requestState,omitempty"`
+	RequestState  *RequestState `json:"requestState,omitzero"`
 }
+
+// RequestState is the opaque blob a server hands a client to echo back on
+// the MRTR retry. It is a POINTER wherever it appears, because the rule is
+// three-state: present means echo this exact value, ABSENT means send no
+// requestState at all, and a plain string cannot tell absent from empty.
+// Clients must not inspect, parse, modify or assume anything about it —
+// which is also why nothing here gives it any structure.
+type RequestState = string
 
 // InputRequests is a map of server-assigned string keys to input request
 // objects. Keys are unique within the scope of one InputRequiredResult.
