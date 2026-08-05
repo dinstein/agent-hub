@@ -211,3 +211,38 @@ func TestErrorResponseRoundTrip(t *testing.T) {
 		t.Fatal("Error() empty")
 	}
 }
+
+// TestAppErrorCodesAreOutsideTheReservedRange pins where this project may
+// allocate. JSON-RPC reserves -32768..-32000; MCP 2026-07-28 subdivides the
+// tail of that into a legacy band nothing new may be allocated in and a band
+// belonging to the specification. Anything agenthub names for itself has to
+// be outside the whole reserved range.
+//
+// Both of the codes below were in the legacy band until this test existed,
+// and one of them collided: -32001 is what HeaderMismatch was called before
+// 2026-07-28, and the gateway still serves clients of that generation.
+func TestAppErrorCodesAreOutsideTheReservedRange(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		code int
+	}{
+		{"CodeBusy", CodeBusy},
+		{"CodeRateLimited", CodeRateLimited},
+	} {
+		if !IsAppErrorCode(c.code) {
+			t.Errorf("%s = %d is inside the JSON-RPC reserved range (%d..%d); "+
+				"agenthub's own codes belong outside it",
+				c.name, c.code, rpcReservedMin, rpcReservedMax)
+		}
+		if IsSpecErrorCode(c.code) {
+			t.Errorf("%s = %d is in the band the specification allocates from", c.name, c.code)
+		}
+	}
+	// The spec's own codes must NOT be mistaken for ours.
+	for _, code := range []int{CodeHeaderMismatch, CodeMissingRequiredClientCapability,
+		CodeUnsupportedProtocolVersion, CodeInvalidParams, CodeInternalError} {
+		if IsAppErrorCode(code) {
+			t.Errorf("%d is a protocol code and must not read as an application code", code)
+		}
+	}
+}

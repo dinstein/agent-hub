@@ -18,10 +18,14 @@ const (
 	StageName = "rate_limit"
 	// CodeRateLimited is the stable rejection code.
 	CodeRateLimited = "E_RATE_LIMITED"
-	// JSONRPCCode is the server-defined JSON-RPC error code for a quota
-	// rejection (the -32000..-32099 range is reserved for server errors;
-	// -32000 is already the gateway's "retry, busy").
-	JSONRPCCode = -32001
+	// JSONRPCCode is the JSON-RPC error code for a quota rejection.
+	//
+	// It is mcp.CodeRateLimited, outside the JSON-RPC reserved range. It used
+	// to be -32001, which was worse than merely being in the legacy band:
+	// -32001 is what HeaderMismatch was called before 2026-07-28, and the
+	// gateway still serves sessions of that generation — so a client old
+	// enough to know the number read a quota rejection as a malformed header.
+	JSONRPCCode = mcp.CodeRateLimited
 )
 
 // ExceededError is a quota rejection.

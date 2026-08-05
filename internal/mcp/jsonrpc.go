@@ -48,6 +48,46 @@ const (
 	specErrorCodeMin = -32099
 )
 
+// Bounds of the range JSON-RPC 2.0 reserves for the protocol and its
+// bindings. Everything outside it is the application's to allocate, and
+// MCP 2026-07-28 says that is where an implementation's own codes belong.
+const (
+	rpcReservedMax = -32000
+	rpcReservedMin = -32768
+)
+
+// AgentHub's OWN error codes, for conditions the specification does not
+// name. They are positive on purpose: the whole of -32768..-32000 is
+// reserved, MCP subdivides the tail of it into "legacy, do not allocate
+// here" and "the specification's", and a positive code cannot be mistaken
+// for either.
+//
+// Both of these used to live in the legacy band, and one of them collided.
+// -32001 is what HeaderMismatch was called before 2026-07-28, and this
+// gateway still serves sessions of that generation — so a client old enough
+// to know the number read a quota rejection as a malformed header. That is
+// the failure the range rule exists to prevent, and it was not theoretical
+// here.
+//
+// IsAppErrorCode is the check; keep every code below inside it.
+const (
+	// CodeBusy is "the downstream is still connecting; retry shortly".
+	// Transient by construction, so a client should retry rather than treat
+	// the tool as absent.
+	CodeBusy = 1001
+	// CodeRateLimited is a quota rejection. The error's data carries
+	// retryAfterMs.
+	CodeRateLimited = 1002
+)
+
+// IsAppErrorCode reports whether code is one this project may allocate:
+// outside the JSON-RPC reserved range entirely. It exists so the property
+// is testable rather than remembered — the two codes above were both in the
+// wrong band for a year before anyone read the rule.
+func IsAppErrorCode(code int) bool {
+	return code > rpcReservedMax || code < rpcReservedMin
+}
+
 // UnsupportedVersionData is the data payload a CodeUnsupportedProtocolVersion
 // error carries. The specification declares it required, and the reason is
 // operational rather than formal: the backward-compatibility flow tells a

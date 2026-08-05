@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/dinstein/agent-hub/internal/mcp"
 )
 
 // gatewayClient is a hand-written MCP stdio client: it spawns the real
@@ -49,9 +51,14 @@ type rpcError struct {
 
 func (e *rpcError) Error() string { return fmt.Sprintf("jsonrpc error %d: %s", e.Code, e.Message) }
 
-// codeRetryBusy mirrors the gateway's transient "downstreams still
-// connecting" error code.
-const codeRetryBusy = -32000
+// codeRetryBusy is the gateway's transient "downstreams still connecting"
+// code, taken from the facade rather than mirrored as a literal.
+//
+// A copied number is only ever read when the race it guards actually
+// happens, so a stale one does not fail — it turns a retry loop into a hard
+// failure on whichever run is slow enough to hit it. This constant was
+// -32000 and went stale the moment the gateway moved off the legacy band.
+const codeRetryBusy = mcp.CodeBusy
 
 // startGateway spawns the gateway child and starts the frame reader.
 func startGateway(t *testing.T, dataDir, clientID string) *gatewayClient {

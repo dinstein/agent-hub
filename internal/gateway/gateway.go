@@ -73,10 +73,14 @@ import (
 const serverName = "agenthub"
 
 // codeRetryBusy is the JSON-RPC error code for "downstream servers are
-// still connecting; retry shortly" (implementation-defined server error
-// range). The condition is transient by construction, so clients should
-// treat it as retryable.
-const codeRetryBusy = -32000
+// still connecting; retry shortly". The condition is transient by
+// construction, so clients should treat it as retryable.
+//
+// It is mcp.CodeBusy, outside the JSON-RPC reserved range, because that is
+// where MCP 2026-07-28 says an implementation's own codes belong. It used to
+// be -32000, inside the legacy band the specification says nothing new may
+// be allocated in.
+const codeRetryBusy = mcp.CodeBusy
 
 // rootsTimeout bounds one roots/list reverse RPC to the upstream client.
 const rootsTimeout = 10 * time.Second
