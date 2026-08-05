@@ -8,15 +8,31 @@
 //     A structured block is never split: it is deferred whole. Page 1 keeps
 //     the original block structure; pages 2+ are plain text slices of the
 //     retained payload.
+//
 //   - The recovery trailer is appended as the LAST content block and is
 //     exempt from the budget — it is never truncated and never wrapped.
 //     Same rule as pipeline's injection trailer (internal/pipeline/shape.go):
 //     a recovery hint the agent cannot read is not a recovery hint.
+//
 //   - fetch_result cursor ids are a plain sequence and are GUESSABLE BY
 //     DESIGN. Owner (session) verification is the only isolation, and an
 //     unknown id, an expired id and another session's id all return the ONE
 //     message in notFoundText — a distinguishable answer would turn a
 //     guessable id into a probe oracle.
+//
+//     MCP's security tutorial asks for both halves of this: bind the handle
+//     to the authenticated principal, AND mint it with a CSPRNG rather than
+//     a counter. Only the first is done here, and it is the one the tutorial
+//     says "ensures that even if an attacker guesses a handle, they cannot
+//     impersonate another user" — Owner is set at creation, compared in
+//     constant time, checked in the store and again in Fetch, and is never
+//     client-suppliable (the wire args carry only cursor and offset). The
+//     second half is defence in depth this does not have. It is cheap to
+//     add — canonical.md rules the storage medium, not the id shape, and
+//     nothing outside this package parses the format — and it is left
+//     undone because the risk it covers is currently nil: MemStore is one
+//     per client process, so no second owner's cursors share a store to
+//     guess into, and FileStore has no production callers at all.
 //
 // Budgeting is an economy mechanism, not a security boundary. Every
 // unexpected input (unparsable content array, missing cursor id, absent
