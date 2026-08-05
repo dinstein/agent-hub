@@ -74,6 +74,22 @@ type rawMeta struct {
 	ClientInfo         json.RawMessage `json:"io.modelcontextprotocol/clientInfo"`
 }
 
+// validClientInfo reports whether a present clientInfo is well formed.
+// Absent is fine and returns true: the field is optional, and a stub that
+// demanded it would fail a client the specification permits — the very
+// mistake a strict stub is most likely to make, since strictness reads as
+// virtue until it grades conformant behaviour as broken.
+func validClientInfo(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return true
+	}
+	var info mcp.Implementation
+	if err := json.Unmarshal(raw, &info); err != nil {
+		return false
+	}
+	return info.Name != "" && info.Version != ""
+}
+
 // round is one outstanding MRTR exchange: the id the input_required went out
 // on, and the arguments of the request that produced it.
 type round struct {
@@ -128,6 +144,14 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, req *mcp.Request
 		// to say "no optional capabilities" — omitting the key is not.
 		s.reject(w, req, http.StatusBadRequest, mcp.CodeInvalidParams,
 			"_meta carries no io.modelcontextprotocol/clientCapabilities; it is required on every request")
+		return
+	case !validClientInfo(mp.Meta.ClientInfo):
+		// clientInfo is OPTIONAL — a SHOULD the specification explicitly
+		// lets a client be "configured not to" honour — so its ABSENCE is
+		// never refused here. What is refused is a present one missing
+		// name or version, which Implementation requires.
+		s.reject(w, req, http.StatusBadRequest, mcp.CodeInvalidParams,
+			"_meta carries an io.modelcontextprotocol/clientInfo without both name and version")
 		return
 	case mp.Meta.ProtocolVersion != mcp.Version2026:
 		// -32022 carries its supported/requested payload: a client is told

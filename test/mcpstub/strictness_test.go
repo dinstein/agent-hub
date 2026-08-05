@@ -140,3 +140,36 @@ func quote(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
 }
+
+// clientInfo is OPTIONAL — the specification says clients SHOULD send it
+// "unless specifically configured not to do so", which contemplates a
+// conformant client that omits it. A stub refusing the absence would grade
+// that client as broken, so absence passes and only a malformed present one
+// is refused. Strictness that outruns the spec is not strictness.
+func TestStubAcceptsAbsentButNotMalformedClientInfo(t *testing.T) {
+	stub := mcpstub.New()
+	defer stub.Close()
+
+	base := `"io.modelcontextprotocol/protocolVersion":"2026-07-28",` +
+		`"io.modelcontextprotocol/clientCapabilities":{}`
+	frame := func(id int, extra string) string {
+		return `{"jsonrpc":"2.0","id":` + itoa(id) + `,"method":"tools/list","params":{"_meta":{` +
+			base + extra + `}}}`
+	}
+
+	// Absent: accepted.
+	if e := postFull(t, stub.URL(), frame(1, ""), stubHeaders("tools/list")).Error; e != nil {
+		t.Fatalf("absent clientInfo refused: %+v", e)
+	}
+	// Present and complete: accepted.
+	ok := `,"io.modelcontextprotocol/clientInfo":{"name":"agenthub","version":"test"}`
+	if e := postFull(t, stub.URL(), frame(2, ok), stubHeaders("tools/list")).Error; e != nil {
+		t.Fatalf("well-formed clientInfo refused: %+v", e)
+	}
+	// Present without version: refused. Implementation requires both.
+	bad := `,"io.modelcontextprotocol/clientInfo":{"name":"agenthub"}`
+	e := postFull(t, stub.URL(), frame(3, bad), stubHeaders("tools/list")).Error
+	if e == nil || !strings.Contains(e.Message, "clientInfo") {
+		t.Fatalf("error = %+v, want the incomplete clientInfo refused", e)
+	}
+}
