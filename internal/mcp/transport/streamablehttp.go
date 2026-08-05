@@ -292,7 +292,7 @@ func (t *streamableHTTP) post(ctx context.Context, body []byte, method, name, de
 	t.captureSession(resp)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		terr := httpError(resp)
-		t.noteTerminalStatus(resp.StatusCode)
+		t.noteTerminalStatus(resp.StatusCode, terr.RPCCode)
 		return nil, terr
 	}
 	return resp, nil
@@ -301,13 +301,22 @@ func (t *streamableHTTP) post(ctx context.Context, body []byte, method, name, de
 // noteTerminalStatus records the two statuses that change transport state:
 // 410 poisons the endpoint permanently, 404 invalidates the session id so
 // a caller-driven re-initialize can mint a new one.
-func (t *streamableHTTP) noteTerminalStatus(code int) {
+//
+// rpcCode is the JSON-RPC code the rejected body carried, or 0. A 404 that
+// carries one is an unimplemented METHOD, not a dropped session, and
+// throwing away a live session id over it would turn "I do not serve that"
+// into a reconnect. Callers that have no body to classify pass 0 and get the
+// status-only behaviour.
+func (t *streamableHTTP) noteTerminalStatus(code, rpcCode int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	switch code {
 	case http.StatusGone:
 		t.moved = true
 	case http.StatusNotFound:
+		if rpcCode != 0 {
+			return
+		}
 		t.sessionID = ""
 	}
 }
@@ -471,7 +480,7 @@ func (t *streamableHTTP) resumeStream(ctx context.Context, lastID string) (*http
 	t.captureSession(resp)
 	if resp.StatusCode != http.StatusOK {
 		terr := httpError(resp)
-		t.noteTerminalStatus(resp.StatusCode)
+		t.noteTerminalStatus(resp.StatusCode, terr.RPCCode)
 		return nil, terr
 	}
 	if responseMediaType(resp) != mediaSSE {
@@ -534,6 +543,13 @@ func (t *streamableHTTP) streamLoop(open func() (*http.Response, bool, error)) {
 		resp, permanent, err := open()
 		if err != nil {
 			if permanent {
+				// Say so once. This is the only place that learns "this
+				// server offers no notification stream", and it used to
+				// drop the error on the floor — leaving an operator asking
+				// why a tools/list_changed never arrives with nothing at
+				// all to read, since the goroutine then exits silently.
+				t.log.Info("no server-initiated notification stream; "+
+					"list changes will not be pushed on this connection", "reason", err)
 				return
 			}
 			if !t.sleep(backoffFor(t.retryBase, attempt)) {
@@ -594,7 +610,7 @@ func (t *streamableHTTP) openListenStream() (resp *http.Response, permanent bool
 	if resp.StatusCode != http.StatusOK {
 		code := resp.StatusCode
 		terr := httpError(resp)
-		t.noteTerminalStatus(code)
+		t.noteTerminalStatus(code, terr.RPCCode)
 		switch code {
 		case http.StatusMethodNotAllowed, http.StatusNotImplemented,
 			http.StatusGone, http.StatusNotFound,
@@ -640,7 +656,7 @@ func (t *streamableHTTP) openNotificationStream() (resp *http.Response, permanen
 	if resp.StatusCode != http.StatusOK {
 		code := resp.StatusCode
 		terr := httpError(resp)
-		t.noteTerminalStatus(code)
+		t.noteTerminalStatus(code, terr.RPCCode)
 		switch code {
 		case http.StatusMethodNotAllowed, http.StatusNotImplemented,
 			http.StatusGone, http.StatusNotFound,

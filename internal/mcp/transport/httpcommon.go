@@ -63,11 +63,25 @@ var (
 	// It is NEVER retried and never resumed.
 	ErrEndpointMoved = errors.New("mcp endpoint gone (HTTP 410): the server URL must be updated")
 
-	// ErrSessionExpired reports HTTP 404 on a request that carried an
-	// Mcp-Session-Id: the server dropped the session. The transport clears
-	// its session id; recovering means a fresh initialize, which is the
-	// caller's (internal/downstream) decision, not this package's.
+	// ErrSessionExpired reports HTTP 404 with no JSON-RPC error in the body:
+	// the server dropped the session. The transport clears its session id;
+	// recovering means a fresh initialize, which is the caller's
+	// (internal/downstream) decision, not this package's.
+	//
+	// The body is what distinguishes it, not the status. MCP 2026-07-28
+	// answers an unimplemented METHOD with 404 as well, carrying -32601 —
+	// and on a 2026 connection there is no session to have expired, so
+	// reading every 404 that way (which this did) named a cause that could
+	// not be true. See ErrMethodNotFound.
 	ErrSessionExpired = errors.New("mcp session expired (HTTP 404)")
+
+	// ErrMethodNotFound reports HTTP 404 whose body carries a JSON-RPC
+	// error: the server does not implement the method. The specification
+	// makes that status a MUST for an unimplemented method, and the
+	// JSON-RPC body is what tells it apart from a legacy server's "no MCP
+	// endpoint here" — which is the distinction this sentinel exists to
+	// preserve for callers.
+	ErrMethodNotFound = errors.New("mcp method not implemented (HTTP 404)")
 
 	// ErrHTTPProtocol reports a server that answered with something the
 	// MCP HTTP binding does not allow (wrong content type, missing
@@ -295,6 +309,13 @@ func httpError(resp *http.Response) *Error {
 	case resp.StatusCode == http.StatusGone:
 		return &Error{Class: ClassUnavailable, StatusCode: resp.StatusCode, RPCCode: rpcCode,
 			Err: fmt.Errorf("%w: %s%s", ErrEndpointMoved, where, snippet)}
+	case resp.StatusCode == http.StatusNotFound && rpcCode != 0:
+		// An unimplemented method, not a dead session. ClassFatal because
+		// retrying cannot make the server implement it, and because a
+		// session expiry is ClassUnavailable precisely so the caller
+		// re-initializes — which would be the wrong move here.
+		return &Error{Class: ClassFatal, StatusCode: resp.StatusCode, RPCCode: rpcCode,
+			Err: fmt.Errorf("%w: %s%s", ErrMethodNotFound, where, snippet)}
 	case resp.StatusCode == http.StatusNotFound:
 		return &Error{Class: ClassUnavailable, StatusCode: resp.StatusCode, RPCCode: rpcCode,
 			Err: fmt.Errorf("%w: %s%s", ErrSessionExpired, where, snippet)}

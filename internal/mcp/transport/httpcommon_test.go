@@ -462,3 +462,68 @@ func fakeResponse(t *testing.T, code int, body string) *http.Response {
 		Header:     http.Header{},
 	}
 }
+
+// TestNotFoundWithARPCBodyIsNotASessionExpiry: MCP 2026-07-28 makes 404 the
+// required answer for an unimplemented METHOD, so the status alone stopped
+// being enough to mean "your session is gone" — and on a 2026 connection
+// there is no session to have expired, so that reading named a cause that
+// could not be true. The JSON-RPC body is what tells them apart, and
+// httpError already had the code parsed and unused.
+func TestNotFoundWithARPCBodyIsNotASessionExpiry(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		body      string
+		wantErr   error
+		wantClass Class
+	}{
+		{
+			name:    "method not found",
+			body:    `{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"no such method"}}`,
+			wantErr: ErrMethodNotFound,
+			// Fatal: retrying cannot make the server implement it, and
+			// ClassUnavailable exists to make the caller re-initialize.
+			wantClass: ClassFatal,
+		},
+		{
+			// A legacy server dropping a session answers a bare 404.
+			name: "no body", body: "",
+			wantErr: ErrSessionExpired, wantClass: ClassUnavailable,
+		},
+		{
+			name: "body that is not JSON-RPC", body: "gone",
+			wantErr: ErrSessionExpired, wantClass: ClassUnavailable,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = io.WriteString(w, tc.body)
+			})
+			tr := dialStreamable(t, HTTPConfig{URL: fs.URL})
+			tr.sessionID = "sess-1"
+
+			_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tc.wantErr)
+			}
+			var te *Error
+			if !errors.As(err, &te) || te.Class != tc.wantClass {
+				t.Fatalf("class = %v, want %v", te, tc.wantClass)
+			}
+			// A 404 that named a method must not throw away a live session:
+			// "I do not serve that" is not "reconnect".
+			tr.mu.Lock()
+			sid := tr.sessionID
+			tr.mu.Unlock()
+			if tc.wantErr == ErrMethodNotFound && sid == "" {
+				t.Fatal("a method-not-found 404 cleared the session id")
+			}
+			if tc.wantErr == ErrSessionExpired && sid != "" {
+				t.Fatalf("a session-expiry 404 left the session id %q", sid)
+			}
+		})
+	}
+}
