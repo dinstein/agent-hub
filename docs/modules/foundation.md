@@ -746,6 +746,14 @@ an unknown pre-session POST with 400 rather than a JSON-RPC frame). **Everything
 loss, 5xx, oversized frame, cancellation — propagates unchanged**; falling back there would hide a
 real failure from the circuit breaker behind a second handshake attempt.
 
+**A 404 is two different answers, and the body decides which.** 2026-07-28 makes it the required
+status for an unimplemented method, so it stopped meaning "your session is gone" — and on a 2026
+connection there is no session to have expired. `httpError` splits them on the JSON-RPC code the
+body carries: one present means `ErrMethodNotFound` and `ClassFatal` (retrying cannot make the
+server implement it, and `ClassUnavailable` is what makes a caller re-initialize), absent keeps
+`ErrSessionExpired`. `noteTerminalStatus` takes the code too, so a 404 that named a method does not
+discard a live session id.
+
 **An answered error is not by itself proof of an old server**, and reading it as one is worse than
 not probing at all. The codes 2026-07-28 reserves for itself (`mcp.IsSpecErrorCode`, -32020 to
 -32099) are answers only a modern server knows how to give, so `discoverFallback` returns false for
