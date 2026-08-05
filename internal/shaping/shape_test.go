@@ -63,6 +63,9 @@ func TestShapeGolden(t *testing.T) {
 	}
 	// structuredContent sits after every content block in the linearized
 	// payload, so a truncated result never carries it: it is deferred whole.
+	// This is the behaviour docs/mcp-2026-07-28.md §7.14 records as a
+	// conformance cost — a page whose tool declared an outputSchema does not
+	// satisfy it — so a change here is a decision, not a fix.
 	if out.StructuredContent != nil {
 		t.Errorf("structuredContent must be deferred when the result is truncated, got %s", out.StructuredContent)
 	}

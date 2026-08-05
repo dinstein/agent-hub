@@ -888,7 +888,11 @@ where cursors must survive a restart within the session TTL).
 **Three design rulings fix the shape of the feature:**
 
 1. Truncation cuts at a rune offset inside a **text** content block. Structured blocks are **never split**
-   and are deferred whole. Page 1 preserves the original block structure; page 2 onward is a plain-text
+   and are deferred whole — which means a truncated page carries no `structuredContent`, and if the
+   tool declared an `outputSchema` that page does not satisfy it. Nothing is lost (the payload is in
+   the remainder), but it is a conformance cost with two possible fixes and a product decision in
+   front of both: see docs/mcp-2026-07-28.md §7.14 before changing this. Page 1 preserves the
+   original block structure; page 2 onward is a plain-text
    slice of the retained payload.
 2. The recovery trailer is the **last** content block and is **exempt from the budget** — neither
    truncated nor wrapped, because a recovery hint the agent cannot read is not a recovery hint. A page may
