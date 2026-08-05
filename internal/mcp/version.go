@@ -28,9 +28,20 @@ const (
 // "flip this constant" plan.
 const ProtocolVersion = Version2025
 
-// SupportedVersions lists every protocol version this facade accepts from a
-// downstream server, newest first. NegotiateVersion and Handshake accept any
-// version in this list; anything else fails the handshake.
+// SupportedVersions lists every protocol version this tree speaks, newest
+// first. It answers that question in BOTH directions, which the comment here
+// used to say only half of:
+//
+//   - read side: NegotiateVersion and Handshake accept any entry from a
+//     downstream server, and anything else fails the handshake;
+//   - exposure side: the gateway advertises the whole list in its
+//     server/discover answer, and echoes an entry back to a client that
+//     asked for it in initialize.
+//
+// So adding or removing an entry is a promise made to downstreams and to
+// clients at once. The stateless face is narrower on purpose and says so
+// where it narrows (gateway.acceptRequestMeta): initialize negotiates the
+// stateful family only, and a -32022 there advertises Version2026 alone.
 var SupportedVersions = []string{
 	Version2026,
 	Version2025,

@@ -137,6 +137,16 @@ type InitializeResult struct {
 // verbatim — this facade never re-encodes downstream JSON Schema, and an
 // aggregating proxy that drops a member a downstream sent has degraded that
 // server's tool rather than relayed it.
+//
+// There is deliberately NO gate on the session's negotiated version, even
+// though OutputSchema and Title postdate 2025-03-26 and the gateway will
+// negotiate that revision with a client that asks for it. Neither older
+// schema sets additionalProperties: false and neither says a receiver must
+// reject an unrecognized member, so forwarding a later revision's optional
+// fields is the additive behaviour both revisions permit — while stripping
+// them would be the degradation the paragraph above rules out. ResultType
+// and the freshness hints ARE gated, and the difference is real: those
+// change how a result must be READ, these only add to it.
 type ToolDef struct {
 	Name         string          `json:"name"`
 	Title        string          `json:"title,omitempty"`
