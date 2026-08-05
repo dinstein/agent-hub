@@ -1,6 +1,7 @@
 package oauthflow
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -48,4 +49,32 @@ func validateIss(md *AuthServerMetadata, iss string, requireAdvertised bool) err
 	default:
 		return nil
 	}
+}
+
+// issThenCallback applies RFC 9207 to a callback that FAILED, and returns
+// whichever error the caller may act on.
+//
+// The specification extends iss validation to error responses in as many
+// words: "on mismatch the client MUST NOT act on or display `error`,
+// `error_description`, or `error_uri`". Those members are attacker-supplied
+// text that reaches an operator's terminal and the event log, so a response
+// whose issuer does not check out must not be the thing that explains why
+// the login failed. The issuer error replaces it.
+//
+// It applies ONLY to a failure that carries an AS error response — a
+// *TokenError in the chain. Every other way a login fails (the browser
+// would not open, the endpoint was refused, nothing arrived before the
+// deadline) produced no response at all, and validating an iss that was
+// never sent would replace the real cause with a fabricated issuer
+// mismatch. That is not a hypothetical: it is what the first version of
+// this function did, and three tests said so.
+func issThenCallback(md *AuthServerMetadata, iss string, requireAdvertised bool, callbackErr error) error {
+	var te *TokenError
+	if !errors.As(callbackErr, &te) {
+		return callbackErr
+	}
+	if err := validateIss(md, iss, requireAdvertised); err != nil {
+		return err
+	}
+	return callbackErr
 }

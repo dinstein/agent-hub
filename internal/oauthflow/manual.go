@@ -78,8 +78,9 @@ const ManualRedirectURI = "http://127.0.0.1:8642" + DefaultCallbackPath
 //     is useless without the verifier held in this process.
 //
 // Failure direction: an `error` parameter in the pasted URL is surfaced as
-// the AS's own denial, and anything yielding no code is
-// ErrMalformedCallback — never an empty code handed onward.
+// the AS's own denial — with its `iss`, so the caller can apply RFC 9207
+// before acting on it — and anything yielding no code is
+// ErrMalformedCallback, never an empty code handed onward.
 func ParseManualCallback(input, wantState string) (code, iss string, err error) {
 	s := cleanPastedInput(input)
 	if s == "" {
@@ -98,26 +99,34 @@ func ParseManualCallback(input, wantState string) (code, iss string, err error) 
 		}
 		return s, "", nil
 	}
-	if e := q.Get("error"); e != "" {
-		te := &TokenError{Code: e, Description: q.Get("error_description"), URI: q.Get("error_uri")}
-		fe := newFlowError(ErrorTypeAuthorization, te)
-		if e == errAccessDenied {
-			fe.Err = fmt.Errorf("%w: %v", ErrAuthorizationDenied, te)
-		}
-		return "", "", fe
-	}
-	code = q.Get("code")
-	if code == "" {
+	// A query carrying neither member is not a callback at all, and saying
+	// "state mismatch" about it would send the reader looking for the wrong
+	// thing.
+	if q.Get("code") == "" && q.Get("error") == "" {
 		return "", "", newFlowError(ErrorTypeAuthorization,
 			fmt.Errorf("%w: pasted URL has no code parameter", ErrMalformedCallback))
 	}
+	// State next, and for the error case too: RFC 6749 §4.1.2.1 obliges the
+	// AS to echo state on an error response exactly as on a success, so a
+	// URL that fails this is not this flow's callback whichever member it
+	// carries.
 	if got := q.Get("state"); got != wantState {
 		e := newFlowError(ErrorTypeAuthorization,
 			fmt.Errorf("%w: pasted callback belongs to a different authorization request", ErrStateMismatch))
 		e.Suggestion = "paste the URL from the browser tab this login opened, not from an earlier attempt"
 		return "", "", e
 	}
-	return code, q.Get("iss"), nil
+	if e := q.Get("error"); e != "" {
+		te := &TokenError{Code: e, Description: q.Get("error_description"), URI: q.Get("error_uri")}
+		fe := newFlowError(ErrorTypeAuthorization, te)
+		if e == errAccessDenied {
+			fe.Err = fmt.Errorf("%w: %w", ErrAuthorizationDenied, te)
+		}
+		// iss travels with the failure so the caller can apply RFC 9207
+		// before it acts on or displays the AS's error members.
+		return "", q.Get("iss"), fe
+	}
+	return q.Get("code"), q.Get("iss"), nil
 }
 
 // cleanPastedInput strips the decorations terminals, mail clients and chat

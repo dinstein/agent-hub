@@ -363,11 +363,13 @@ func (f *Flow) loginLoopback(ctx context.Context, req LoginRequest, disc *Discov
 			Extra:       req.ExtraAuthParams,
 		})
 	})
-	if err != nil {
-		return nil, withServer(err, req.ServerID)
-	}
 	// RFC 9207: the callback arrived intact from the browser, so an AS that
 	// advertises the iss parameter must have delivered it (fail closed).
+	// A FAILED callback is validated too, before its error is surfaced —
+	// see issThenCallback.
+	if err != nil {
+		return nil, withServer(issThenCallback(disc.Metadata, issOf(res), true, err), req.ServerID)
+	}
 	if err := validateIss(disc.Metadata, res.Iss, true); err != nil {
 		return nil, withServer(err, req.ServerID)
 	}
@@ -436,12 +438,13 @@ func (f *Flow) loginManual(ctx context.Context, req LoginRequest, disc *Discover
 	if err != nil {
 		return nil, withServer(newFlowError(ErrorTypeAuthorization, err), req.ServerID)
 	}
+	// RFC 9207, manual leniency: a paste may have been hand-trimmed to a
+	// bare code, so only a PRESENT iss is checked (see validateIss). A
+	// FAILED paste is validated too, before its error is surfaced.
 	code, iss, err := ParseManualCallback(pasted, state)
 	if err != nil {
-		return nil, withServer(err, req.ServerID)
+		return nil, withServer(issThenCallback(disc.Metadata, iss, false, err), req.ServerID)
 	}
-	// RFC 9207, manual leniency: a paste may have been hand-trimmed to a
-	// bare code, so only a PRESENT iss is checked (see validateIss).
 	if err := validateIss(disc.Metadata, iss, false); err != nil {
 		return nil, withServer(err, req.ServerID)
 	}

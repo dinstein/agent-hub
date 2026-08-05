@@ -206,18 +206,22 @@ func (l *LoopbackListener) Serve(state string) error {
 //
 // Acceptance rules, in order:
 //
+//   - A request carrying neither `code` nor `error` — a favicon fetch, a
+//     browser probe, a bare GET / — is ignored: answered 204 and not
+//     treated as the callback.
+//   - Any other request with a MISSING or WRONG `state` fails the flow with
+//     ErrStateMismatch, whether it carries a code or an error. This is
+//     deliberately loud rather than ignored: with a random port per flow
+//     there is no benign explanation for it, so it means either a
+//     cross-flow mix-up or someone on the machine feeding us a callback,
+//     and silently continuing to wait would hide both. It applies to error
+//     responses because RFC 6749 §4.1.2.1 obliges the AS to echo state
+//     there as well — a stranger's error is not this flow's outcome.
 //   - A request carrying `error` fails the flow with the AS's own error
-//     code (the user pressed Deny, or the AS refused the request).
-//   - A request carrying `code` AND a matching `state` succeeds.
-//   - A request carrying `code` with a MISSING or WRONG `state` fails the
-//     flow with ErrStateMismatch. This is deliberately loud rather than
-//     ignored: with a random port per flow there is no benign explanation
-//     for it, so it means either a cross-flow mix-up or someone on the
-//     machine feeding us a code, and silently continuing to wait would hide
-//     both.
-//   - Anything else — a favicon fetch, a browser probe, a bare GET / — is
-//     ignored: answered 204 and not treated as the callback. Stray requests
-//     to a loopback port are routine and must not end the flow.
+//     code (the user pressed Deny, or the AS refused the request), and
+//     returns the `iss` alongside it so the caller can apply RFC 9207
+//     before acting on the error.
+//   - A request carrying `code` succeeds.
 func (l *LoopbackListener) Wait(ctx context.Context, state string, timeout time.Duration) (code, iss string, err error) {
 	if timeout <= 0 {
 		timeout = LoopbackTimeout
@@ -277,25 +281,35 @@ func (l *LoopbackListener) handle(w http.ResponseWriter, r *http.Request, wantSt
 	asErr := q.Get("error")
 
 	switch {
-	case asErr != "":
-		te := &TokenError{Code: asErr, Description: q.Get("error_description"), URI: q.Get("error_uri"), HTTPStatus: 0}
-		writeCallbackPage(w, http.StatusOK, "Authorization failed", "You can close this tab and return to the terminal.")
-		fe := newFlowError(ErrorTypeAuthorization, te)
-		if te.Code == errAccessDenied {
-			fe.Err = fmt.Errorf("%w: %v", ErrAuthorizationDenied, te)
-		}
-		deliver(callbackResult{err: fe})
-	case code == "":
+	case code == "" && asErr == "":
 		// Stray request (favicon, probe, manual GET). Ignore it: it is not
 		// the callback and must not end the flow.
 		w.WriteHeader(http.StatusNoContent)
 	case q.Get("state") != wantState:
+		// Checked BEFORE the error branch, and for the error branch too.
+		// RFC 6749 §4.1.2.1 obliges an AS to echo state on an error response
+		// exactly as on a success, so a mismatch here is never the genuine
+		// AS. Without this, anything that reaches the loopback port during
+		// the flow could end it — no state to guess — and put its own
+		// error_description into what the operator reads.
 		writeCallbackPage(w, http.StatusBadRequest, "Unexpected callback",
 			"This callback did not match the pending authorization request. Nothing was saved.")
 		e := newFlowError(ErrorTypeAuthorization,
 			fmt.Errorf("%w: callback state does not match this authorization request", ErrStateMismatch))
 		e.Suggestion = "re-run the login; do not paste a callback URL from a different session"
 		deliver(callbackResult{err: e})
+	case asErr != "":
+		te := &TokenError{Code: asErr, Description: q.Get("error_description"), URI: q.Get("error_uri"), HTTPStatus: 0}
+		writeCallbackPage(w, http.StatusOK, "Authorization failed", "You can close this tab and return to the terminal.")
+		fe := newFlowError(ErrorTypeAuthorization, te)
+		if te.Code == errAccessDenied {
+			fe.Err = fmt.Errorf("%w: %w", ErrAuthorizationDenied, te)
+		}
+		// iss travels with the failure: RFC 9207 validation applies to an
+		// error response too, and on mismatch the caller MUST NOT act on or
+		// display the AS's error members. The caller cannot check what it
+		// was never handed.
+		deliver(callbackResult{iss: q.Get("iss"), err: fe})
 	default:
 		writeCallbackPage(w, http.StatusOK, "Authorized",
 			"agenthub received the authorization code. You can close this tab and return to the terminal.")
@@ -361,7 +375,9 @@ type LoopbackResult struct {
 	RedirectURI string
 	Port        int
 	// Iss is the RFC 9207 iss authorization-response parameter, "" when the
-	// AS sent none. The login flow validates it before redeeming Code.
+	// AS sent none. The login flow validates it before redeeming Code — and
+	// before acting on a failure, which is why Run returns a result
+	// carrying only this field when the callback was an error response.
 	Iss string
 }
 
@@ -405,9 +421,22 @@ func (f *LoopbackFlow) Run(ctx context.Context, state string, build func(redirec
 	}
 	code, iss, err := ln.Wait(ctx, state, f.Timeout)
 	if err != nil {
-		return nil, err
+		// A non-nil result WITH a non-nil error, and only in this branch:
+		// RFC 9207 applies to an error response too, and the caller cannot
+		// validate an iss it was never handed. Code is empty, so nothing
+		// here can be mistaken for success — read it through issOf.
+		return &LoopbackResult{RedirectURI: redirect, Port: ln.port, Iss: iss}, err
 	}
 	return &LoopbackResult{Code: code, RedirectURI: redirect, Port: ln.port, Iss: iss}, nil
+}
+
+// issOf reads the iss out of a LoopbackResult that may be nil, which it is
+// for every Run failure before the callback arrived.
+func issOf(res *LoopbackResult) string {
+	if res == nil {
+		return ""
+	}
+	return res.Iss
 }
 
 // ParseLoopbackRedirectURI splits a pinned redirect URI into the host, port
