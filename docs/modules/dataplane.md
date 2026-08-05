@@ -143,6 +143,15 @@ trip with waiters inheriting the leader's result — correct for a refresh, wron
 A waiter inheriting **the leader's own context error** while its own context is alive promotes itself to
 leader and retries once, only once.
 
+**`tools/list` is a walk, not a request.** MCP lets a server page its tool list, and `listAllTools`
+follows `nextCursor` until it is *absent* — nil, never the empty string, which the specification calls
+a valid position that MUST NOT be read as the end of results (`mcp.Cursor` is a pointer for exactly
+that reason). Every failure direction stops the walk rather than shortening it: a page that fails
+aborts, a cursor identical to the one just sent is refused as unable to advance, and `maxToolPages`
+bounds how long a downstream can make a connect take. **None of them truncates.** A partial catalog
+returned as a complete one is the failure the walk exists to prevent — before it, a paging server's
+later tools were simply missing, with nothing anywhere to say so.
+
 **Secret resolution is fail-closed, at dial time**, so a rotated key takes effect on the next reconnect
 and resolved credentials never linger in config values. An unresolved placeholder is an **error**, never
 passed through: the literal `${SECRET_GITHUB_TOKEN}` produces a 401 indistinguishable from "token
@@ -410,6 +419,11 @@ its result is used **only for logging**.
 with `_`. Collisions take `_2` / `_3` … ordered by ascending raw tool name with server id as secondary
 key, and if a suffixed name is itself taken the scan continues upward; base names iterate in sorted order.
 Same servers/tools/policy, same names and same `List` order — locked by golden tests.
+
+**A tool crosses this hub whole.** `mcp.ToolDef` carries every member the specification gives a
+`Tool`, and `inputSchema` / `outputSchema` / `annotations` / `icons` / `_meta` all travel as raw JSON.
+Nothing here interprets them and the party they are addressed to is on the far side of this hop, so a
+member this facade failed to name would be a member the downstream published and the client never saw.
 
 **Aggregation applies no policy.** The catalog is the full surface every configured server offers;
 narrowing happens once, above it, in `internal/scope`. There used to be a `Policy` here carrying two deny
