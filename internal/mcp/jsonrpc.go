@@ -39,6 +39,28 @@ const (
 	CodeUnsupportedProtocolVersion = -32022
 )
 
+// Bounds of the sub-range MCP 2026-07-28 reserves for codes the
+// specification itself allocates. -32000 to -32019 stays implementation
+// defined and is deliberately excluded: an SDK's own code in that band says
+// nothing about which protocol generation the peer speaks.
+const (
+	specErrorCodeMax = -32020
+	specErrorCodeMin = -32099
+)
+
+// IsSpecErrorCode reports whether code falls in that reserved sub-range.
+//
+// It answers one question for its callers: could only a peer that knows the
+// 2026-07-28 specification have produced this? True is proof the peer is
+// modern, which is why the backward-compatibility probe must not read such a
+// reply as "old server" and fall back to initialize (see the transport
+// package's discoverFallback). Codes the specification has not allocated yet
+// are included on purpose — a future one is still an answer no pre-2026 peer
+// would know how to give.
+func IsSpecErrorCode(code int) bool {
+	return code <= specErrorCodeMax && code >= specErrorCodeMin
+}
+
 // ErrMalformedFrame is the decidable sentinel for a frame that is not a
 // valid JSON-RPC 2.0 message (bad JSON, wrong "jsonrpc" version, invalid id
 // type, or none of request/response/notification). Errors returned by

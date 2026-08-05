@@ -175,7 +175,13 @@ type Error struct {
 	// as "your credentials were rejected" — sending the operator to re-run
 	// `auth login` for a problem no credential can fix.
 	StatusCode int
-	Err        error
+	// RPCCode is the JSON-RPC error code the rejected HTTP body carried, or
+	// 0 when it carried none. On MCP 2026-07-28 a 400 alone is ambiguous —
+	// HeaderMismatch, UnsupportedProtocolVersion and
+	// MissingRequiredClientCapability all use it — so the code is what tells
+	// a caller whether the peer answered as a modern MCP server at all.
+	RPCCode int
+	Err     error
 }
 
 // StatusOf returns the HTTP status behind err, or 0 if it did not come from

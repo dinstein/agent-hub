@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -862,5 +863,69 @@ func TestStreamableHTTPJSONRPCErrorIsFatal(t *testing.T) {
 	var rpcErr *mcp.Error
 	if !errors.As(err, &rpcErr) || rpcErr.Code != mcp.CodeInvalidParams {
 		t.Fatalf("err = %v, want the peer's JSON-RPC error", err)
+	}
+}
+
+// TestStreamableHTTPSpecErrorIsNotALegacyServer covers the HTTP half of the
+// backward-compatibility rule. A 2026-07-28 server rejects a malformed probe
+// with 400 and one of the codes the specification allocates for itself —
+// exactly the status a pre-2026 server uses for an unknown pre-session POST.
+// The status alone therefore cannot decide, and reading it as "legacy" sends
+// initialize to the one server that does not implement it. The body's code
+// is what tells them apart, so the transport carries it on Error.RPCCode and
+// the probe surfaces the server's own error instead of falling back.
+func TestStreamableHTTPSpecErrorIsNotALegacyServer(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		body         string
+		wantFallback bool
+	}{
+		{
+			name: "spec error keeps the modern server",
+			body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32020,` +
+				`"message":"MCP-Protocol-Version header does not match _meta"}}`,
+		},
+		{
+			// A legacy streamable-http server rejects an unknown pre-session
+			// POST with a bare 400 and no JSON-RPC body at all.
+			name: "opaque 400 still falls back", body: "no session", wantFallback: true,
+		},
+		{
+			// An SDK's own -32000..-32019 code is grandfathered and says
+			// nothing about the generation; it must not block the fallback.
+			name: "legacy sdk code still falls back", wantFallback: true,
+			body: `{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"sdk failure"}}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sawInitialize := make(chan struct{}, 1)
+			fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+				m := readRequestRPC(t, r)
+				if m.Method == mcp.MethodInitialize {
+					select {
+					case sawInitialize <- struct{}{}:
+					default:
+					}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = io.WriteString(w, tc.body)
+			})
+			tr := dialStreamable(t, HTTPConfig{URL: fs.URL})
+
+			_, err := Handshake(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"})
+			if err == nil {
+				t.Fatal("handshake succeeded against a server that rejected everything")
+			}
+			var fellBack bool
+			select {
+			case <-sawInitialize:
+				fellBack = true
+			default:
+			}
+			if fellBack != tc.wantFallback {
+				t.Fatalf("fell back to initialize = %v, want %v (err: %v)", fellBack, tc.wantFallback, err)
+			}
+		})
 	}
 }

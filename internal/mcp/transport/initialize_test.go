@@ -3,6 +3,7 @@ package transport
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/dinstein/agent-hub/internal/mcp"
@@ -165,11 +166,19 @@ func TestHandshakeFallbackToInitialize(t *testing.T) {
 			}))
 		}},
 		// Some pre-2026 servers reject any request before initialize with a
-		// generic error instead of method-not-found; any JSON-RPC error
-		// reply proves the server is alive and old.
+		// generic error instead of method-not-found; a JSON-RPC error reply
+		// outside the specification's own range proves the server is alive
+		// and old.
 		{name: "pre-initialize rejection", reply: func(p *fakePeer, req *mcp.Request) {
 			p.writeFrame(mcp.NewErrorResponse(req.ID, &mcp.Error{
 				Code: mcp.CodeInvalidRequest, Message: "received request before initialization was complete",
+			}))
+		}},
+		// An SDK's own code in the grandfathered -32000..-32019 band says
+		// nothing about the protocol generation, so it still falls back.
+		{name: "legacy sdk allocation", reply: func(p *fakePeer, req *mcp.Request) {
+			p.writeFrame(mcp.NewErrorResponse(req.ID, &mcp.Error{
+				Code: -32001, Message: "sdk-specific failure",
 			}))
 		}},
 	}
@@ -294,5 +303,62 @@ func TestInitializeMalformedResult(t *testing.T) {
 	var te *Error
 	if !errors.As(err, &te) || te.Class != ClassFatal {
 		t.Fatalf("err = %v, want ClassFatal decode failure", err)
+	}
+}
+
+// TestHandshakeKeepsModernServerOnSpecError pins the other direction of the
+// same rule: an error code the 2026-07-28 specification allocates for itself
+// is an answer only a modern server knows how to give, so the probe must
+// surface it rather than retry with the one method such a server does not
+// implement. Falling back here is how a reachable server becomes an
+// unreachable one.
+func TestHandshakeKeepsModernServerOnSpecError(t *testing.T) {
+	for _, code := range []int{
+		mcp.CodeHeaderMismatch,
+		mcp.CodeMissingRequiredClientCapability,
+		mcp.CodeUnsupportedProtocolVersion,
+	} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			c, p := newPipeConn(t, mcp.MaxFrameSize)
+			methods := make(chan string, 4)
+			go func() {
+				defer close(methods)
+				for {
+					line, err := p.fr.Next()
+					if err != nil {
+						return // the client closed: nothing more was sent
+					}
+					msg, perr := mcp.ParseMessage(line)
+					if perr != nil {
+						return
+					}
+					req, ok := msg.(*mcp.Request)
+					if !ok {
+						continue
+					}
+					methods <- req.Method
+					p.writeFrame(mcp.NewErrorResponse(req.ID, &mcp.Error{
+						Code: code, Message: "modern server rejects the probe",
+					}))
+				}
+			}()
+
+			_, err := Handshake(testCtx(t), c, mcp.Implementation{Name: "agenthub", Version: "test"})
+			if err == nil {
+				t.Fatal("handshake succeeded against a server that rejected the probe")
+			}
+			var me *mcp.Error
+			if !errors.As(err, &me) || me.Code != code {
+				t.Fatalf("error %v, want the server's own %d", err, code)
+			}
+			_ = c.Close()
+			var sent []string
+			for m := range methods {
+				sent = append(sent, m)
+			}
+			if len(sent) != 1 || sent[0] != mcp.MethodDiscover {
+				t.Fatalf("sent %v, want server/discover alone — a spec error must not trigger the initialize fallback", sent)
+			}
+		})
 	}
 }

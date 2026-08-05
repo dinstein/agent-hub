@@ -166,11 +166,18 @@ func handshakeLegacy(ctx context.Context, t Transport, clientInfo mcp.Implementa
 // discoverFallback reports whether a server/discover failure means "alive
 // but pre-2026", i.e. the legacy initialize handshake should run. True only
 // when the server provably answered the request: a JSON-RPC error reply
-// (method-not-found from a well-behaved old server, but any error object
-// counts — a real 2026-07-28 server MUST implement discover, so an error
-// reply is proof of an old one), or a ClassFatal HTTP 4xx (a 2025-11-25
-// streamable-http server rejects an unknown pre-session POST with 400
-// rather than a JSON-RPC error frame).
+// (method-not-found from a well-behaved old server), or a ClassFatal HTTP
+// 4xx (a 2025-11-25 streamable-http server rejects an unknown pre-session
+// POST with 400 rather than a JSON-RPC error frame).
+//
+// An answered error is not by itself proof of an old server. The codes the
+// 2026-07-28 specification allocates for itself are answers only a modern
+// server knows how to give, and both transport bindings say so in as many
+// words: "If the body contains a recognized modern JSON-RPC error, the
+// server speaks a modern version of MCP — retry ... rather than falling
+// back." Falling back on one of those turns a correctable request into a
+// dead connection, because the initialize that follows is the one method
+// such a server does not implement.
 //
 // Failure direction: everything else — connection loss, 5xx, oversized
 // frame, context cancellation — propagates unchanged. Falling back there
@@ -179,12 +186,16 @@ func handshakeLegacy(ctx context.Context, t Transport, clientInfo mcp.Implementa
 func discoverFallback(err error) bool {
 	var me *mcp.Error
 	if errors.As(err, &me) {
-		return true
+		return !mcp.IsSpecErrorCode(me.Code)
 	}
 	var te *Error
 	if errors.As(err, &te) && te.Class == ClassFatal &&
 		te.StatusCode >= 400 && te.StatusCode < 500 {
-		return true
+		// One 400 carries both a legacy server's opaque rejection and a
+		// modern server's HeaderMismatch or UnsupportedProtocolVersion, so
+		// the status cannot decide alone; the body's code can, when it has
+		// one. No code parsed means no evidence, and the status stands.
+		return !mcp.IsSpecErrorCode(te.RPCCode)
 	}
 	return false
 }

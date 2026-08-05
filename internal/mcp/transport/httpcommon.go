@@ -284,30 +284,33 @@ func (b *httpBase) newRequest(ctx context.Context, method string, u *url.URL, bo
 //	other 4xx → ClassFatal: our request was rejected on its merits, which
 //	      says nothing about server health, so it must not trip the breaker
 func httpError(resp *http.Response) *Error {
-	snippet := drainSnippet(resp)
+	body := drainBody(resp)
+	snippet := bodySnippet(body)
+	rpcCode := rpcErrorCode(body)
 	where := resp.Request.Method + " " + resp.Request.URL.Redacted()
 	// Every branch carries StatusCode: callers classify by status (see
 	// StatusOf / IsAuthStatus) rather than by grepping the message, which
 	// also contains the response-body snippet.
 	switch {
 	case resp.StatusCode == http.StatusGone:
-		return &Error{Class: ClassUnavailable, StatusCode: resp.StatusCode,
+		return &Error{Class: ClassUnavailable, StatusCode: resp.StatusCode, RPCCode: rpcCode,
 			Err: fmt.Errorf("%w: %s%s", ErrEndpointMoved, where, snippet)}
 	case resp.StatusCode == http.StatusNotFound:
-		return &Error{Class: ClassUnavailable, StatusCode: resp.StatusCode,
+		return &Error{Class: ClassUnavailable, StatusCode: resp.StatusCode, RPCCode: rpcCode,
 			Err: fmt.Errorf("%w: %s%s", ErrSessionExpired, where, snippet)}
 	case resp.StatusCode == http.StatusTooManyRequests:
 		return &Error{
 			Class:      ClassRetry,
 			StatusCode: resp.StatusCode,
+			RPCCode:    rpcCode,
 			RetryAfter: parseRetryAfter(resp.Header.Get(headerRetryAfter)),
 			Err:        fmt.Errorf("%s: http 429 too many requests%s", where, snippet),
 		}
 	case resp.StatusCode >= 500:
-		return &Error{Class: ClassUnavailable, StatusCode: resp.StatusCode,
+		return &Error{Class: ClassUnavailable, StatusCode: resp.StatusCode, RPCCode: rpcCode,
 			Err: fmt.Errorf("%s: http %d%s", where, resp.StatusCode, snippet)}
 	default:
-		return &Error{Class: ClassFatal, StatusCode: resp.StatusCode,
+		return &Error{Class: ClassFatal, StatusCode: resp.StatusCode, RPCCode: rpcCode,
 			Err: fmt.Errorf("%s: http %d%s", where, resp.StatusCode, snippet)}
 	}
 }
@@ -334,16 +337,48 @@ func parseRetryAfter(v string) time.Duration {
 	return 0
 }
 
-// drainSnippet reads a bounded prefix of the body for the error message and
-// closes it. The snippet is flattened to one line: error strings end up in
-// audit records and logs, where an embedded newline forges a record.
-func drainSnippet(resp *http.Response) string {
+// drainBody reads a bounded prefix of a rejected body and closes it, so the
+// connection can be reused. The bound is what stops a hostile server turning
+// an error path into a memory amplifier; it is also why a caller must read
+// an unparsable body as "no information" rather than as evidence.
+func drainBody(resp *http.Response) []byte {
 	if resp.Body == nil {
-		return ""
+		return nil
 	}
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBodySnippet))
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxErrBodySnippet))
 	_ = resp.Body.Close()
+	return data
+}
+
+// rpcErrorCode returns the JSON-RPC error code a rejected body carries, or 0
+// when the body is not a JSON-RPC error response.
+//
+// MCP 2026-07-28 makes the body load-bearing on a 400: the same status
+// carries HeaderMismatch, UnsupportedProtocolVersion and
+// MissingRequiredClientCapability, and a client is told to read the code
+// before deciding the peer is a legacy server. The status alone cannot tell
+// those apart from a proxy's opaque rejection, so the code travels on Error
+// beside StatusCode. A body truncated at maxErrBodySnippet simply fails to
+// parse and yields 0 — the same answer as no JSON-RPC error at all, which
+// leaves every caller on its status-only path (fail closed).
+func rpcErrorCode(body []byte) int {
+	if len(body) == 0 {
+		return 0
+	}
+	var probe struct {
+		Error *mcp.Error `json:"error"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil || probe.Error == nil {
+		return 0
+	}
+	return probe.Error.Code
+}
+
+// bodySnippet renders a rejected body as one printable line for an error
+// message. Control characters are dropped rather than escaped: this text
+// lands in logs a human reads.
+func bodySnippet(data []byte) string {
 	s := strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\r' || r == '\t' {
 			return ' '
