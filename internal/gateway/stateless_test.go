@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -182,6 +183,15 @@ func TestStatelessRejectsWrongMetaVersion(t *testing.T) {
 	})
 	if resp.Error == nil || resp.Error.Code != mcp.CodeUnsupportedProtocolVersion {
 		t.Fatalf("resp = %+v, want CodeUnsupportedProtocolVersion", resp)
+	}
+	// The payload is required, and it is the only part a client can act on:
+	// "retry with one of these" is unusable without the list.
+	var data mcp.UnsupportedVersionData
+	if err := json.Unmarshal(resp.Error.Data, &data); err != nil {
+		t.Fatalf("decode -32022 data %s: %v", resp.Error.Data, err)
+	}
+	if !slices.Contains(data.Supported, mcp.Version2026) || data.Requested != mcp.Version2025 {
+		t.Fatalf("-32022 data = %+v", data)
 	}
 	if !strings.Contains(resp.Error.Message, "initialize") {
 		t.Fatalf("error %q should point the client at the initialize handshake", resp.Error.Message)

@@ -103,8 +103,13 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, req *mcp.Request
 			"missing required _meta (io.modelcontextprotocol/protocolVersion, /clientCapabilities)")
 		return
 	case mp.Meta.ProtocolVersion != mcp.Version2026:
-		s.reject(w, req, http.StatusBadRequest, mcp.CodeUnsupportedProtocolVersion,
-			fmt.Sprintf("protocol version %q, this server speaks %q only", mp.Meta.ProtocolVersion, mcp.Version2026))
+		// -32022 carries its supported/requested payload: a client is told
+		// to retry with a version from the list, so a stub that omitted it
+		// would let a client that cannot read one still pass.
+		writeMessage(w, http.StatusBadRequest, mcp.NewErrorResponse(req.ID,
+			mcp.NewUnsupportedVersionError(mp.Meta.ProtocolVersion, []string{mcp.Version2026},
+				fmt.Sprintf("protocol version %q, this server speaks %q only",
+					mp.Meta.ProtocolVersion, mcp.Version2026))))
 		return
 	}
 	// Required headers: MCP-Protocol-Version, which MUST equal what the

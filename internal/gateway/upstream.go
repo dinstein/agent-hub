@@ -257,12 +257,16 @@ func (g *gateway) acceptRequestMeta(req *mcp.Request) bool {
 		return true // no protocol _meta; params may not even be an object
 	}
 	if probe.Meta.ProtocolVersion != mcp.Version2026 {
-		g.reply(mcp.NewErrorResponse(req.ID, &mcp.Error{
-			Code: mcp.CodeUnsupportedProtocolVersion,
-			Message: fmt.Sprintf(
+		// The payload is what makes the refusal actionable: the client is
+		// told to retry with a version from the list, so the list has to be
+		// in the answer. Only Version2026 is offered here, not
+		// SupportedVersions — this is the stateless face, and the older
+		// members of that list are reachable through initialize instead.
+		g.reply(mcp.NewErrorResponse(req.ID, mcp.NewUnsupportedVersionError(
+			probe.Meta.ProtocolVersion, []string{mcp.Version2026},
+			fmt.Sprintf(
 				"per-request _meta declares protocol %q; this gateway serves %q statelessly — earlier versions use the initialize handshake",
-				probe.Meta.ProtocolVersion, mcp.Version2026),
-		}))
+				probe.Meta.ProtocolVersion, mcp.Version2026))))
 		return false
 	}
 	g.mu.Lock()

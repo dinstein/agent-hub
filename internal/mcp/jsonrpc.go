@@ -48,6 +48,31 @@ const (
 	specErrorCodeMin = -32099
 )
 
+// UnsupportedVersionData is the data payload a CodeUnsupportedProtocolVersion
+// error carries. The specification declares it required, and the reason is
+// operational rather than formal: the backward-compatibility flow tells a
+// client that meets this error to retry with a version from Supported, which
+// it cannot do if the list never arrives.
+type UnsupportedVersionData struct {
+	// Supported lists the versions this peer can serve, for the client to
+	// choose from.
+	Supported []string `json:"supported"`
+	// Requested echoes the version that was refused.
+	Requested string `json:"requested"`
+}
+
+// NewUnsupportedVersionError builds the complete -32022 error, payload
+// included. Use it rather than assembling an Error by hand: a bare -32022
+// tells a client it must change something without telling it to what.
+func NewUnsupportedVersionError(requested string, supported []string, message string) *Error {
+	data, err := json.Marshal(UnsupportedVersionData{Supported: supported, Requested: requested})
+	if err != nil {
+		// Marshaling a []string and a string cannot fail.
+		panic(err)
+	}
+	return &Error{Code: CodeUnsupportedProtocolVersion, Message: message, Data: data}
+}
+
 // IsSpecErrorCode reports whether code falls in that reserved sub-range.
 //
 // It answers one question for its callers: could only a peer that knows the
