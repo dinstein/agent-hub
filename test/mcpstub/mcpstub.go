@@ -13,8 +13,8 @@ import (
 
 // Server is an in-process MCP 2026-07-28 streamable-HTTP server. It is
 // deliberately strict: every request missing the required per-request _meta
-// keys, or whose Mcp-Method header disagrees with the body, is rejected with
-// the spec's error code. A client test that passes against this stub has
+// keys, or whose MCP-Protocol-Version / Mcp-Method / Mcp-Name header disagrees
+// with the body, is rejected with the spec's error code. A client test that passes against this stub has
 // therefore proven wire-level conformance, not just happy-path agreement.
 type Server struct {
 	hs *httptest.Server
@@ -107,7 +107,16 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, req *mcp.Request
 			fmt.Sprintf("protocol version %q, this server speaks %q only", mp.Meta.ProtocolVersion, mcp.Version2026))
 		return
 	}
-	// Required headers: Mcp-Method always, Mcp-Name when params carry one.
+	// Required headers: MCP-Protocol-Version, which MUST equal what the
+	// body's _meta declared; Mcp-Method always; Mcp-Name when params carry
+	// one. The version check is the one a client can only fail before it has
+	// negotiated anything, so a stub that skips it certifies nothing.
+	if got := r.Header.Get("MCP-Protocol-Version"); got != mp.Meta.ProtocolVersion {
+		s.reject(w, req, http.StatusBadRequest, mcp.CodeHeaderMismatch,
+			fmt.Sprintf("MCP-Protocol-Version header %q, body _meta declares %q",
+				got, mp.Meta.ProtocolVersion))
+		return
+	}
 	if got := r.Header.Get("Mcp-Method"); got != req.Method {
 		s.reject(w, req, http.StatusBadRequest, mcp.CodeHeaderMismatch,
 			fmt.Sprintf("Mcp-Method header %q, body method %q", got, req.Method))
@@ -116,11 +125,15 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, req *mcp.Request
 
 	switch req.Method {
 	case mcp.MethodDiscover:
+		dttl := int64(3_600_000)
 		s.ok(w, req, mcp.DiscoverResult{
-			ResultType:       mcp.ResultTypeComplete,
-			ProtocolVersions: []string{mcp.Version2026},
-			Capabilities:     json.RawMessage(`{"tools":{}}`),
-			ServerInfo:       mcp.Implementation{Name: "mcpstub", Version: "1"},
+			ResultType:        mcp.ResultTypeComplete,
+			SupportedVersions: []string{mcp.Version2026},
+			Capabilities:      json.RawMessage(`{"tools":{}}`),
+			Meta: &mcp.ResultMeta{
+				ServerInfo: &mcp.Implementation{Name: "mcpstub", Version: "1"},
+			},
+			CacheableResult: mcp.CacheableResult{TtlMs: &dttl, CacheScope: "public"},
 		})
 	case mcp.MethodToolsList:
 		ttl := int64(60_000)

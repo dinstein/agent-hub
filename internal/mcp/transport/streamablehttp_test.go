@@ -132,10 +132,16 @@ func TestStreamableHTTP2026Handshake(t *testing.T) {
 			t.Error("2026 handshake must not send initialize")
 			w.WriteHeader(http.StatusBadRequest)
 		case mcp.MethodDiscover:
+			// The probe declares 2026-07-28 in its _meta before anything is
+			// negotiated; the header MUST say the same or a conformant server
+			// answers 400 -32020 and the connection never happens.
+			if got := r.Header.Get(headerProtocolVersion); got != mcp.Version2026 {
+				t.Errorf("discover %s = %q, want %q", headerProtocolVersion, got, mcp.Version2026)
+			}
 			result, _ := json.Marshal(mcp.DiscoverResult{
-				ResultType:       mcp.ResultTypeComplete,
-				ProtocolVersions: []string{"2026-07-28"},
-				ServerInfo:       mcp.Implementation{Name: "stub2026", Version: "1"},
+				ResultType:        mcp.ResultTypeComplete,
+				SupportedVersions: []string{"2026-07-28"},
+				Meta:              &mcp.ResultMeta{ServerInfo: &mcp.Implementation{Name: "stub2026", Version: "1"}},
 			})
 			writeJSONRPC(t, w, mcp.NewResponse(m.ID, result))
 		case mcp.MethodToolsCall:
@@ -607,8 +613,8 @@ func TestStreamableHTTP2026SubscriptionsListen(t *testing.T) {
 		switch m.Method {
 		case mcp.MethodDiscover:
 			result, _ := json.Marshal(mcp.DiscoverResult{
-				ProtocolVersions: []string{mcp.Version2026},
-				ServerInfo:       mcp.Implementation{Name: "stub2026", Version: "1"},
+				SupportedVersions: []string{mcp.Version2026},
+				Meta:              &mcp.ResultMeta{ServerInfo: &mcp.Implementation{Name: "stub2026", Version: "1"}},
 			})
 			writeJSONRPC(t, w, mcp.NewResponse(m.ID, result))
 		case mcp.MethodSubscriptionsListen:

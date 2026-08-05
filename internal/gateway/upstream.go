@@ -210,11 +210,20 @@ func (g *gateway) serverVersion() string {
 // exactly as agenthub's own downstream client does.
 func (g *gateway) handleDiscover(req *mcp.Request) {
 	res := mcp.DiscoverResult{
-		ResultType:       mcp.ResultTypeComplete,
-		ProtocolVersions: mcp.SupportedVersions,
-		Capabilities:     json.RawMessage(`{"tools":{"listChanged":true}}`),
-		ServerInfo:       mcp.Implementation{Name: serverName, Version: g.serverVersion()},
+		ResultType:        mcp.ResultTypeComplete,
+		SupportedVersions: mcp.SupportedVersions,
+		Capabilities:      json.RawMessage(`{"tools":{"listChanged":true}}`),
+		Meta: &mcp.ResultMeta{
+			ServerInfo: &mcp.Implementation{Name: serverName, Version: g.serverVersion()},
+		},
 	}
+	// DiscoverResult is a CacheableResult: ttlMs and cacheScope are required
+	// members of the shape, not optional hints. cacheScope is private for the
+	// same reason tools/list's is — what this gateway answers is decided by
+	// the calling client's profile, so no cache may be shared across
+	// authorization contexts.
+	ttl := listTTLMs
+	res.CacheableResult = mcp.CacheableResult{TtlMs: &ttl, CacheScope: "private"}
 	raw, err := json.Marshal(res)
 	if err != nil {
 		g.reply(mcp.NewErrorResponse(req.ID, &mcp.Error{Code: mcp.CodeInternalError, Message: err.Error()}))

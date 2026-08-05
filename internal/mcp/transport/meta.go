@@ -47,6 +47,31 @@ func injectMeta(raw json.RawMessage, meta *mcp.RequestMeta) (json.RawMessage, er
 	return out, nil
 }
 
+// versionForHeader extracts the protocol version the params' _meta declares.
+// The MCP-Protocol-Version header MUST equal it on a streamable-HTTP POST
+// (MCP 2026-07-28, basic/transports/streamable-http "Protocol Version
+// Header"): a server that sees the two disagree MUST answer 400 with -32020
+// HeaderMismatch.
+//
+// Reading it back out of the encoded params rather than from transport state
+// is what makes header and body one fact rather than two. server/discover is
+// why that matters: it declares Version2026 in its own _meta before any
+// version is negotiated, while transport state still holds the pre-2026
+// default. Params without protocol _meta yield "", leaving the header to the
+// transport's own negotiated (or declared) version.
+func versionForHeader(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var p struct {
+		Meta *mcp.RequestMeta `json:"_meta"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil || p.Meta == nil {
+		return ""
+	}
+	return p.Meta.ProtocolVersion
+}
+
 // nameForHeader extracts the top-level "name" member of params for the
 // Mcp-Name header (MCP 2026-07-28 requires it on the requests that carry a
 // tool / resource / prompt name). Params without one — or params that are

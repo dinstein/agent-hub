@@ -61,12 +61,17 @@ func TestStatelessSessionEndToEnd(t *testing.T) {
 	if err := json.Unmarshal(resp.Result, &dres); err != nil {
 		t.Fatal(err)
 	}
-	if dres.ResultType != mcp.ResultTypeComplete || len(dres.ProtocolVersions) == 0 ||
-		dres.ProtocolVersions[0] != mcp.Version2026 {
+	if dres.ResultType != mcp.ResultTypeComplete || len(dres.SupportedVersions) == 0 ||
+		dres.SupportedVersions[0] != mcp.Version2026 {
 		t.Fatalf("discover result %+v", dres)
 	}
-	if dres.ServerInfo.Name != serverName {
-		t.Fatalf("serverInfo %+v", dres.ServerInfo)
+	// The identity travels in _meta, not as a top-level member: a client
+	// reading the 2026 shape looks nowhere else.
+	if dres.ServerInfo().Name != serverName {
+		t.Fatalf("serverInfo %+v", dres.ServerInfo())
+	}
+	if dres.TtlMs == nil || dres.CacheScope == "" {
+		t.Fatalf("discover is a CacheableResult, got ttlMs=%v cacheScope=%q", dres.TtlMs, dres.CacheScope)
 	}
 
 	// 2. The first _meta request marks the session initialized: the deferred

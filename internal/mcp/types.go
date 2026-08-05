@@ -252,15 +252,40 @@ type DiscoverParams struct {
 	Meta *RequestMeta `json:"_meta,omitempty"`
 }
 
+// ResultMeta carries the per-result protocol metadata MCP 2026-07-28 defines
+// under the io.modelcontextprotocol/* _meta key namespace. Servers SHOULD
+// echo ServerInfo on every result; it is where a server's identity travels
+// now that no initialize handshake carries it.
+type ResultMeta struct {
+	ServerInfo *Implementation `json:"io.modelcontextprotocol/serverInfo,omitempty"`
+}
+
 // DiscoverResult is the "server/discover" response payload. It advertises
-// the server's supported protocol versions (newest first), capabilities, and
-// identity. Clients pick the highest mutually supported version from
-// ProtocolVersions before sending their first real request.
+// the server's supported protocol versions, capabilities, and identity.
+// Clients pick the highest mutually supported version from SupportedVersions
+// before sending their first real request.
+//
+// The result is a CacheableResult: ttlMs and cacheScope are required members
+// of the specification's shape, and the server's identity lives in _meta
+// rather than in a top-level member (see ServerInfo).
 type DiscoverResult struct {
-	ResultType       string          `json:"resultType,omitempty"`
-	ProtocolVersions []string        `json:"protocolVersions"`
-	Capabilities     json.RawMessage `json:"capabilities,omitempty"`
-	ServerInfo       Implementation  `json:"serverInfo"`
+	ResultType        string          `json:"resultType,omitempty"`
+	SupportedVersions []string        `json:"supportedVersions"`
+	Capabilities      json.RawMessage `json:"capabilities,omitempty"`
+	Instructions      string          `json:"instructions,omitempty"`
+	Meta              *ResultMeta     `json:"_meta,omitempty"`
+	CacheableResult
+}
+
+// ServerInfo returns the identity the result carries in
+// _meta.io.modelcontextprotocol/serverInfo, or the zero Implementation when
+// the server omitted it — echoing it is a SHOULD, not a MUST, so absence is
+// normal and never an error.
+func (r *DiscoverResult) ServerInfo() Implementation {
+	if r == nil || r.Meta == nil || r.Meta.ServerInfo == nil {
+		return Implementation{}
+	}
+	return *r.Meta.ServerInfo
 }
 
 // CancelledParams is the "notifications/cancelled" payload. RequestID names

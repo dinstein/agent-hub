@@ -94,9 +94,15 @@ type HandshakeResult struct {
 	Version string
 	// Capabilities is the server's capability object, passed through raw.
 	Capabilities json.RawMessage
-	ServerInfo   mcp.Implementation
-	// Instructions is only set by the legacy initialize path; the discover
-	// result has no equivalent field.
+	// ServerInfo is the server's self-reported identity: the top-level
+	// serverInfo of a legacy initialize result, or the
+	// io.modelcontextprotocol/serverInfo key of a discover result's _meta.
+	// Both are self-reported and neither is verified; nothing may key a
+	// security decision on it.
+	ServerInfo mcp.Implementation
+	// Instructions is the server's natural-language guidance. Both handshake
+	// generations carry it — initialize as a top-level member, discover as
+	// the DiscoverResult member of the same name.
 	Instructions string
 }
 
@@ -118,7 +124,7 @@ func Handshake(ctx context.Context, t Transport, clientInfo mcp.Implementation) 
 		}
 		return nil, err
 	}
-	v, err := mcp.NegotiateHighest(dres.ProtocolVersions)
+	v, err := mcp.NegotiateHighest(dres.SupportedVersions)
 	if err != nil {
 		return nil, &Error{Class: ClassFatal, Err: err}
 	}
@@ -138,7 +144,8 @@ func Handshake(ctx context.Context, t Transport, clientInfo mcp.Implementation) 
 	return &HandshakeResult{
 		Version:      v,
 		Capabilities: dres.Capabilities,
-		ServerInfo:   dres.ServerInfo,
+		ServerInfo:   dres.ServerInfo(),
+		Instructions: dres.Instructions,
 	}, nil
 }
 

@@ -100,10 +100,11 @@ func TestHandshakeDiscover2026(t *testing.T) {
 		}
 		paramsSeen <- dp
 		result, _ := json.Marshal(mcp.DiscoverResult{
-			ResultType:       mcp.ResultTypeComplete,
-			ProtocolVersions: []string{"2026-07-28", "2025-11-25"},
-			Capabilities:     json.RawMessage(`{"tools":{"listChanged":true}}`),
-			ServerInfo:       mcp.Implementation{Name: "stub2026", Version: "1"},
+			ResultType:        mcp.ResultTypeComplete,
+			SupportedVersions: []string{"2026-07-28", "2025-11-25"},
+			Capabilities:      json.RawMessage(`{"tools":{"listChanged":true}}`),
+			Instructions:      "the stub speaks 2026",
+			Meta:              &mcp.ResultMeta{ServerInfo: &mcp.Implementation{Name: "stub2026", Version: "1"}},
 		})
 		p.writeFrame(mcp.NewResponse(req.ID, result))
 		// The stateless path must not send notifications/initialized: the
@@ -218,8 +219,8 @@ func TestHandshakeDiscoverNegotiatesLegacy(t *testing.T) {
 	go func() {
 		req := p.nextRequest()
 		result, _ := json.Marshal(mcp.DiscoverResult{
-			ProtocolVersions: []string{"2025-11-25", "2025-06-18"},
-			ServerInfo:       mcp.Implementation{Name: "mixed", Version: "1"},
+			SupportedVersions: []string{"2025-11-25", "2025-06-18"},
+			Meta:              &mcp.ResultMeta{ServerInfo: &mcp.Implementation{Name: "mixed", Version: "1"}},
 		})
 		p.writeFrame(mcp.NewResponse(req.ID, result))
 		req = p.nextRequest()
@@ -253,8 +254,8 @@ func TestHandshakeDiscoverNoMutualVersion(t *testing.T) {
 	go func() {
 		req := p.nextRequest()
 		result, _ := json.Marshal(mcp.DiscoverResult{
-			ProtocolVersions: []string{"2099-01-01"},
-			ServerInfo:       mcp.Implementation{Name: "future", Version: "9"},
+			SupportedVersions: []string{"2099-01-01"},
+			Meta:              &mcp.ResultMeta{ServerInfo: &mcp.Implementation{Name: "future", Version: "9"}},
 		})
 		p.writeFrame(mcp.NewResponse(req.ID, result))
 	}()

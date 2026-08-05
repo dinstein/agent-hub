@@ -140,7 +140,7 @@ func (t *streamableHTTP) Call(ctx context.Context, method string, params any) (j
 		return nil, err
 	}
 
-	resp, terr := t.post(ctx, body, method, nameForHeader(raw))
+	resp, terr := t.post(ctx, body, method, nameForHeader(raw), versionForHeader(raw))
 	if terr != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			t.sendCancelled(id, ctxErr)
@@ -192,7 +192,7 @@ func (t *streamableHTTP) Notify(ctx context.Context, method string, params any) 
 	if err != nil {
 		return err
 	}
-	resp, terr := t.post(ctx, body, method, "")
+	resp, terr := t.post(ctx, body, method, "", versionForHeader(raw))
 	if terr != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
@@ -262,7 +262,9 @@ func (t *streamableHTTP) stateErr() *Error {
 // method and name feed the Mcp-Method / Mcp-Name headers MCP 2026-07-28
 // requires on every POST; both are ignored in pre-2026 mode, and an empty
 // method (a JSON-RPC response being POSTed back) suppresses them.
-func (t *streamableHTTP) post(ctx context.Context, body []byte, method, name string) (*http.Response, *Error) {
+// declared is the protocol version the body's _meta carries, and wins over
+// transport state for the MCP-Protocol-Version header: the two MUST agree.
+func (t *streamableHTTP) post(ctx context.Context, body []byte, method, name, declared string) (*http.Response, *Error) {
 	req, err := t.newRequest(ctx, http.MethodPost, t.endpoint, body)
 	if err != nil {
 		return nil, &Error{Class: ClassFatal, Err: fmt.Errorf("build request: %w", err)}
@@ -279,7 +281,7 @@ func (t *streamableHTTP) post(ctx context.Context, body []byte, method, name str
 			req.Header.Set(headerMcpName, name)
 		}
 	}
-	t.applyProtocolHeaders(req)
+	t.applyProtocolHeaders(req, declared)
 
 	resp, err := t.client.Do(req)
 	if err != nil {
@@ -311,14 +313,22 @@ func (t *streamableHTTP) noteTerminalStatus(code int) {
 // applyProtocolHeaders sets the session and protocol-version headers.
 // Before initialize completes the declared version is used; afterwards the
 // negotiated one, as the 2025-06-18+ binding requires.
-func (t *streamableHTTP) applyProtocolHeaders(req *http.Request) {
+//
+// declared overrides both when the body being sent carries its own protocol
+// _meta: MCP 2026-07-28 requires the header to equal that value exactly, and
+// a POST whose header and body disagree MUST be rejected with -32020. Empty
+// means the body declared nothing, which leaves transport state in charge.
+func (t *streamableHTTP) applyProtocolHeaders(req *http.Request, declared string) {
 	t.mu.Lock()
 	sid, pv := t.sessionID, t.protoVersion
 	t.mu.Unlock()
 	if sid != "" {
 		req.Header.Set(headerSessionID, sid)
 	}
-	if pv == "" {
+	switch {
+	case declared != "":
+		pv = declared
+	case pv == "":
 		pv = mcp.ProtocolVersion
 	}
 	req.Header.Set(headerProtocolVersion, pv)
@@ -448,7 +458,9 @@ func (t *streamableHTTP) resumeStream(ctx context.Context, lastID string) (*http
 	}
 	req.Header.Set(headerAccept, mediaSSE)
 	req.Header.Set(headerLastEventID, lastID)
-	t.applyProtocolHeaders(req)
+	// Resume is a ≤ 2025-11-25 mechanism and carries no body to declare a
+	// version; transport state is the only source.
+	t.applyProtocolHeaders(req, "")
 
 	resp, err := t.client.Do(req)
 	if err != nil {
@@ -566,7 +578,7 @@ func (t *streamableHTTP) openListenStream() (resp *http.Response, permanent bool
 	req.Header.Set(headerContentType, mediaJSON)
 	req.Header.Set(headerAccept, mediaSSE)
 	req.Header.Set(headerMcpMethod, mcp.MethodSubscriptionsListen)
-	t.applyProtocolHeaders(req)
+	t.applyProtocolHeaders(req, versionForHeader(raw))
 
 	resp, err = t.client.Do(req)
 	if err != nil {
@@ -609,7 +621,9 @@ func (t *streamableHTTP) openNotificationStream() (resp *http.Response, permanen
 	if lastID != "" {
 		req.Header.Set(headerLastEventID, lastID)
 	}
-	t.applyProtocolHeaders(req)
+	// The GET stream is the ≤ 2025-11-25 shape; it has no body and so
+	// declares no version of its own.
+	t.applyProtocolHeaders(req, "")
 
 	resp, err = t.client.Do(req)
 	if err != nil {
@@ -740,7 +754,9 @@ func (t *streamableHTTP) answerPeer(h PeerHandler, req *mcp.Request) {
 			return
 		}
 	}
-	httpResp, terr := t.post(ctx, body, "", "")
+	// A JSON-RPC response POSTed back carries no params and so declares no
+	// version of its own; it is also a ≤ 2025-11-25 reverse-RPC mechanism.
+	httpResp, terr := t.post(ctx, body, "", "", "")
 	if terr != nil {
 		return // best effort: the next call will surface the real state
 	}
@@ -771,7 +787,7 @@ func (t *streamableHTTP) sendCancelled(id mcp.ID, cause error) {
 	}
 	ctx, cancel := context.WithTimeout(t.ctx, cancelForwardTimeout)
 	defer cancel()
-	resp, terr := t.post(ctx, body, mcp.NotificationCancelled, "")
+	resp, terr := t.post(ctx, body, mcp.NotificationCancelled, "", versionForHeader(raw))
 	if terr == nil {
 		drainClose(resp)
 	}
