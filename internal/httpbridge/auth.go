@@ -36,7 +36,11 @@ const (
 type Caller struct {
 	Kind CallerKind
 	// Token is the agent token's NAME (never its value); empty for admin
-	// and loopback callers.
+	// and loopback callers. Keeping the value off this struct is what keeps
+	// agenthub out of the token-passthrough anti-pattern: everything
+	// downstream of authentication can read a Caller, including the code
+	// that builds requests to third-party servers. Pinned by
+	// TestAuthenticateDoesNotRetainTheCredential.
 	Token string
 	Tier  tier.Tier
 	// Servers is the allowlist; nil = every server.
