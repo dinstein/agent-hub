@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -554,12 +556,17 @@ func (t *streamableHTTP) streamLoop(open func() (*http.Response, bool, error)) {
 // stream's did; the per-event subscriptionId in _meta is correlation data
 // this client does not need until it subscribes to individual resources.
 // permanent=true means "never retry this endpoint".
+//
+// The filter is an allow list the server MUST honour exactly, so it names
+// the three list-changed types and nothing else. ResourceSubscriptions stays
+// nil rather than empty: this client subscribes to no individual resource,
+// and asking for none is not the same as asking for an empty set.
 func (t *streamableHTTP) openListenStream() (resp *http.Response, permanent bool, err error) {
 	params := mcp.SubscriptionsListenParams{
-		Events: []string{
-			mcp.SubscriptionEventToolsListChanged,
-			mcp.SubscriptionEventPromptsListChanged,
-			mcp.SubscriptionEventResourcesListChanged,
+		Notifications: mcp.SubscriptionFilter{
+			ToolsListChanged:     true,
+			PromptsListChanged:   true,
+			ResourcesListChanged: true,
 		},
 		Meta: t.currentMeta(),
 	}
@@ -696,6 +703,10 @@ func (t *streamableHTTP) sleep(d time.Duration) bool {
 }
 
 func (t *streamableHTTP) dispatchNotification(n *mcp.Notification) {
+	if n.Method == mcp.NotificationSubscriptionsAcknowledged {
+		t.noteAcknowledged(n)
+		return
+	}
 	mask, ok := changeMaskFor(n.Method)
 	if !ok {
 		return // unknown notifications are ignored, never fatal
@@ -706,6 +717,41 @@ func (t *streamableHTTP) dispatchNotification(n *mcp.Notification) {
 	if fn != nil {
 		fn(mask)
 	}
+}
+
+// noteAcknowledged reads the first message of a subscriptions/listen stream
+// (MCP 2026-07-28), which reports the subset of the requested filter the
+// server will honour. Types it declined are omitted rather than refused, so
+// a stream that will never deliver a tools/list_changed looks exactly like a
+// server whose tools never change — this log line is the only difference an
+// operator can see, and it is why the notification is worth reading at all.
+//
+// Never fatal: the subscription is already open and useful for whatever the
+// server did acknowledge. A malformed payload is dropped like any other
+// unparsable notification.
+func (t *streamableHTTP) noteAcknowledged(n *mcp.Notification) {
+	var p mcp.SubscriptionsAcknowledgedParams
+	if len(n.Params) == 0 || json.Unmarshal(n.Params, &p) != nil {
+		return
+	}
+	// openListenStream asks for exactly these three, so anything false here
+	// was declined.
+	var declined []string
+	for name, honoured := range map[string]bool{
+		"toolsListChanged":     p.Notifications.ToolsListChanged,
+		"promptsListChanged":   p.Notifications.PromptsListChanged,
+		"resourcesListChanged": p.Notifications.ResourcesListChanged,
+	} {
+		if !honoured {
+			declined = append(declined, name)
+		}
+	}
+	if len(declined) == 0 {
+		return
+	}
+	slices.Sort(declined) // map order is not a diagnostic
+	t.log.Info("server declined subscription types; those changes will never be announced",
+		"declined", strings.Join(declined, ","))
 }
 
 // dispatchPeer answers a server-initiated request on its own goroutine and

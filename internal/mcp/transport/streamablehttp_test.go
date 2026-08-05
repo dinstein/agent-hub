@@ -626,8 +626,27 @@ func TestStreamableHTTP2026SubscriptionsListen(t *testing.T) {
 			if err := json.Unmarshal(m.Params, &p); err != nil {
 				t.Errorf("decode listen params: %v", err)
 			}
+			// Decode the wire shape too, not only our own struct: a
+			// round-trip through the type under test agrees with itself no
+			// matter what member name it picked.
+			var wire struct {
+				Notifications map[string]any `json:"notifications"`
+			}
+			if err := json.Unmarshal(m.Params, &wire); err != nil {
+				t.Errorf("decode listen params as the spec shape: %v", err)
+			} else if wire.Notifications["toolsListChanged"] != true {
+				t.Errorf("params.notifications = %v, want an object opting into toolsListChanged", wire.Notifications)
+			}
 			listens <- p
 			s := startSSE(t, w)
+			// The acknowledgment is the first message a conformant server
+			// sends, and it declines promptsListChanged here: the client must
+			// carry on with what it did get.
+			ack, _ := json.Marshal(mcp.SubscriptionsAcknowledgedParams{
+				Notifications: mcp.SubscriptionFilter{ToolsListChanged: true, ResourcesListChanged: true},
+				Meta:          &mcp.NotificationMeta{SubscriptionID: m.ID},
+			})
+			s.message("", mcp.NewNotification(mcp.NotificationSubscriptionsAcknowledged, ack))
 			s.message("", mcp.NewNotification(mcp.NotificationToolsListChanged, nil))
 			// stream ends; the client must re-POST
 		default:
@@ -652,14 +671,13 @@ func TestStreamableHTTP2026SubscriptionsListen(t *testing.T) {
 	if p.Meta == nil || p.Meta.ProtocolVersion != mcp.Version2026 {
 		t.Fatalf("listen _meta = %+v", p.Meta)
 	}
-	found := false
-	for _, ev := range p.Events {
-		if ev == mcp.SubscriptionEventToolsListChanged {
-			found = true
-		}
+	if !p.Notifications.ToolsListChanged || !p.Notifications.PromptsListChanged ||
+		!p.Notifications.ResourcesListChanged {
+		t.Fatalf("listen filter %+v does not opt into all three list-changed types", p.Notifications)
 	}
-	if !found {
-		t.Fatalf("listen events %v do not opt into toolsListChanged", p.Events)
+	if p.Notifications.ResourceSubscriptions != nil {
+		t.Fatalf("listen filter subscribed to resources %v; this client subscribes to none",
+			p.Notifications.ResourceSubscriptions)
 	}
 
 	select {

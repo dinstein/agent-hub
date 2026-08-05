@@ -40,6 +40,11 @@ const (
 	// NotificationRootsListChanged is sent by a client whose roots changed.
 	// DEPRECATED-UPSTREAM(roots, earliest-removal: 2027-07-28)
 	NotificationRootsListChanged = "notifications/roots/list_changed"
+
+	// NotificationSubscriptionsAcknowledged is the first message a server
+	// sends on a subscriptions/listen stream (MCP 2026-07-28), reporting the
+	// subset of the requested filter it will honour.
+	NotificationSubscriptionsAcknowledged = "notifications/subscriptions/acknowledged"
 )
 
 // ResultType values for the required resultType field introduced in MCP
@@ -224,24 +229,49 @@ type InputRequest struct {
 // original request.
 type InputResponses map[string]json.RawMessage
 
-// Subscription event types a subscriptions/listen request may opt into
-// (MCP 2026-07-28). The stream then carries the matching notifications;
-// each event's _meta holds io.modelcontextprotocol/subscriptionId for
-// correlation.
-const (
-	SubscriptionEventToolsListChanged      = "toolsListChanged"
-	SubscriptionEventPromptsListChanged    = "promptsListChanged"
-	SubscriptionEventResourcesListChanged  = "resourcesListChanged"
-	SubscriptionEventResourceSubscriptions = "resourceSubscriptions"
-)
+// SubscriptionFilter names the notifications a subscriptions/listen stream
+// may carry (MCP 2026-07-28). It is an allow list and the server MUST NOT
+// send a type absent from it: every field left false or nil is "do not
+// send", never "send anything".
+//
+// ResourceSubscriptions is the replacement for the resources/subscribe RPC,
+// so nil and [] differ as they do for every selector in this tree — nil is
+// "no resource subscriptions", [] is an explicit empty set — which is why it
+// carries omitzero rather than omitempty.
+type SubscriptionFilter struct {
+	ToolsListChanged      bool     `json:"toolsListChanged,omitempty"`
+	PromptsListChanged    bool     `json:"promptsListChanged,omitempty"`
+	ResourcesListChanged  bool     `json:"resourcesListChanged,omitempty"`
+	ResourceSubscriptions []string `json:"resourceSubscriptions,omitzero"`
+}
 
 // SubscriptionsListenParams is the "subscriptions/listen" request payload
 // (MCP 2026-07-28): the long-lived POST-response SSE stream that replaces
-// both the HTTP GET notification stream and resources/subscribe. Events
-// lists the event types the client opts into.
+// both the HTTP GET notification stream and resources/subscribe.
+// Notifications is the required opt-in filter.
 type SubscriptionsListenParams struct {
-	Events []string     `json:"events"`
-	Meta   *RequestMeta `json:"_meta,omitempty"`
+	Notifications SubscriptionFilter `json:"notifications"`
+	Meta          *RequestMeta       `json:"_meta,omitempty"`
+}
+
+// SubscriptionsAcknowledgedParams is the
+// "notifications/subscriptions/acknowledged" payload: the subset of the
+// requested filter the server agreed to honour. A type the server does not
+// support is simply omitted, so this is the only place a client learns that
+// something it asked for will never arrive — silence on the stream looks
+// identical to a quiet server.
+type SubscriptionsAcknowledgedParams struct {
+	Notifications SubscriptionFilter `json:"notifications"`
+	Meta          *NotificationMeta  `json:"_meta,omitempty"`
+}
+
+// NotificationMeta carries the per-notification protocol metadata MCP
+// 2026-07-28 defines. SubscriptionID identifies the subscriptions/listen
+// request whose stream delivered the notification, and equals that
+// request's JSON-RPC id; it is absent on notifications that did not arrive
+// on such a stream.
+type NotificationMeta struct {
+	SubscriptionID ID `json:"io.modelcontextprotocol/subscriptionId,omitzero"`
 }
 
 // DiscoverParams is the "server/discover" request payload (MCP 2026-07-28).
