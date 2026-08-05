@@ -323,8 +323,46 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request, c *Caller
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(statusForResponse(res, req))
 	_, _ = w.Write(raw)
+}
+
+// statusForResponse maps a JSON-RPC answer onto the HTTP status the
+// streamable-HTTP binding requires for it. A JSON-RPC error is still a
+// successful HTTP exchange unless the binding says otherwise, so anything
+// the specification does not assign a status to stays 200.
+//
+// Two it does assign:
+//
+//   - -32601 method-not-found is 404. The JSON-RPC body is what tells that
+//     404 apart from a legacy HTTP+SSE server's "no endpoint here".
+//   - -32022 is 400. This one has teeth: the backward-compatibility flow
+//     has a client inspect the body only ON a 400, so answering 200 means a
+//     client following it never reads the supported-version list it was
+//     told to retry with.
+//
+// The 404 is gated on the request's generation, and that is not caution for
+// its own sake. The rule lives in the 2026-07-28 binding; a ≤ 2025-11-25
+// client never agreed to it, and agenthub's own downstream client reads an
+// HTTP 404 as a dropped session and re-initializes — so answering a legacy
+// caller's unknown method with 404 would turn "no such method" into a
+// reconnect loop. -32022 needs no such gate: it can only arise from a
+// request that declared 2026 in its _meta.
+func statusForResponse(res *mcp.Response, req *mcp.Request) int {
+	if res == nil || res.Error == nil {
+		return http.StatusOK
+	}
+	switch res.Error.Code {
+	case mcp.CodeUnsupportedProtocolVersion,
+		mcp.CodeMissingRequiredClientCapability,
+		mcp.CodeHeaderMismatch:
+		return http.StatusBadRequest
+	case mcp.CodeMethodNotFound:
+		if stateless2026Request(req) {
+			return http.StatusNotFound
+		}
+	}
+	return http.StatusOK
 }
 
 // handleDelete terminates a session.

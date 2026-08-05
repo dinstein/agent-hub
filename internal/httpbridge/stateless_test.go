@@ -1,6 +1,7 @@
 package httpbridge_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -178,5 +179,80 @@ func TestProtocolVersionHeaderAgreementAndAbsence(t *testing.T) {
 	if res := h.post(t, "", sid, `{"jsonrpc":"2.0","id":9,"method":"tools/list"}`,
 		httpbridge.ProtocolVersionHeader, "2025-03-26"); res.StatusCode != http.StatusOK {
 		t.Fatalf("legacy body with a header: status = %d, want 200", res.StatusCode)
+	}
+}
+
+// TestStatusFollowsTheErrorCode covers this face's mapping from a JSON-RPC
+// error onto the HTTP status the binding requires. The dispatcher is stubbed
+// to return the codes the gateway produces — that the gateway produces them
+// is internal/gateway's own tests; what is under test here is the status.
+//
+// Answering 200 for these is not harmless. The backward-compatibility flow
+// has a client inspect the body only ON a 400, so a 200 carrying -32022
+// means a client following it never reads the supported-version list it was
+// told to retry with.
+func TestStatusFollowsTheErrorCode(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		code       int
+		frame      string
+		method     string
+		wantStatus int
+	}{
+		{
+			name: "unsupported version is 400", code: mcp.CodeUnsupportedProtocolVersion,
+			frame: metaListFrame, method: "tools/list", wantStatus: http.StatusBadRequest,
+		},
+		{
+			name: "unknown method on a 2026 request is 404", code: mcp.CodeMethodNotFound,
+			frame: metaListFrame, method: "tools/list", wantStatus: http.StatusNotFound,
+		},
+		{
+			// Nothing the binding assigns a status to: a JSON-RPC error is
+			// still a successful HTTP exchange.
+			name: "an internal error stays 200", code: mcp.CodeInternalError,
+			frame: metaListFrame, method: "tools/list", wantStatus: http.StatusOK,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			disp := &recordingDispatcher{}
+			disp.exec = func(_ context.Context, _ *httpbridge.Caller, req *mcp.Request) *mcp.Response {
+				return mcp.NewErrorResponse(req.ID, &mcp.Error{Code: tc.code, Message: "stub"})
+			}
+			h := newHarness(t, &httpbridge.Authenticator{InsecureLoopback: true, Tokens: newStore(t)},
+				httpbridge.Options{Dispatcher: disp})
+			res := h.post(t, "", "", tc.frame, httpbridge.MethodHeader, tc.method)
+			if res.StatusCode != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", res.StatusCode, tc.wantStatus)
+			}
+			if e := rpcError(t, res); e == nil || e.Code != tc.code {
+				t.Fatalf("error = %+v, want code %d in the body", e, tc.code)
+			}
+		})
+	}
+}
+
+// TestLegacyUnknownMethodStaysTwoHundred: the 404 rule belongs to the
+// 2026-07-28 binding, and a ≤ 2025-11-25 session never agreed to it.
+// agenthub's own downstream client reads an HTTP 404 as a dropped session
+// and re-initializes, so answering a legacy caller's unknown method with one
+// would turn "no such method" into a reconnect loop.
+func TestLegacyUnknownMethodStaysTwoHundred(t *testing.T) {
+	t.Parallel()
+	disp := &recordingDispatcher{}
+	disp.exec = func(_ context.Context, _ *httpbridge.Caller, req *mcp.Request) *mcp.Response {
+		return mcp.NewErrorResponse(req.ID, &mcp.Error{Code: mcp.CodeMethodNotFound, Message: "stub"})
+	}
+	h := newHarness(t, &httpbridge.Authenticator{InsecureLoopback: true, Tokens: newStore(t)},
+		httpbridge.Options{Dispatcher: disp})
+	sid := h.initSession(t, "")
+	res := h.post(t, "", sid, `{"jsonrpc":"2.0","id":7,"method":"resources/list"}`)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("legacy unknown method: status = %d, want 200", res.StatusCode)
+	}
+	if e := rpcError(t, res); e == nil || e.Code != mcp.CodeMethodNotFound {
+		t.Fatalf("error = %+v, want CodeMethodNotFound in the body", e)
 	}
 }
