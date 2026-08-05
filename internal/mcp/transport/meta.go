@@ -72,19 +72,27 @@ func versionForHeader(raw json.RawMessage) string {
 	return p.Meta.ProtocolVersion
 }
 
-// nameForHeader extracts the top-level "name" member of params for the
-// Mcp-Name header (MCP 2026-07-28 requires it on the requests that carry a
-// tool / resource / prompt name). Params without one — or params that are
-// not an object — yield "", which suppresses the header.
+// nameForHeader renders the Mcp-Name header for params, already encoded.
+//
+// MCP 2026-07-28 sources it from `params.name` or `params.uri` — the first
+// for tools/call and prompts/get, the second for resources/read — and
+// requires the value to be carried under the base64 sentinel when it is not
+// safely representable as ASCII. Params carrying neither, or params that are
+// not an object, yield "", which suppresses the header.
 func nameForHeader(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
 	}
 	var p struct {
 		Name string `json:"name"`
+		URI  string `json:"uri"`
 	}
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return ""
 	}
-	return p.Name
+	name := p.Name
+	if name == "" {
+		name = p.URI
+	}
+	return mcp.EncodeHeaderValue(name)
 }

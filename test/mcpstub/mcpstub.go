@@ -161,9 +161,13 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, req *mcp.Request
 			s.reject(w, req, http.StatusBadRequest, mcp.CodeInvalidParams, "tools/call params: "+err.Error())
 			return
 		}
-		if got := r.Header.Get("Mcp-Name"); got != p.Name {
+		// Decode before comparing: a name outside the header-safe set
+		// travels under the base64 sentinel, and a stub that compared the
+		// raw text would fail the clients that got it right.
+		got, ok := mcp.DecodeHeaderValue(r.Header.Get("Mcp-Name"))
+		if !ok || got != p.Name {
 			s.reject(w, req, http.StatusBadRequest, mcp.CodeHeaderMismatch,
-				fmt.Sprintf("Mcp-Name header %q, params name %q", got, p.Name))
+				fmt.Sprintf("Mcp-Name header %q, params name %q", r.Header.Get("Mcp-Name"), p.Name))
 			return
 		}
 		switch p.Name {

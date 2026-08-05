@@ -121,19 +121,21 @@ landing rather than on every push:
 
   ```bash
   make fuzz FUZZ=FuzzParseMessage   # one target; FUZZTIME=60s by default
-  make fuzz                          # all seven, back to back
+  make fuzz                          # all eight, back to back
   ```
 
-  Seven targets, one per path by which external bytes arrive: `FuzzParseMessage` (downstream JSON-RPC
+  Eight targets, one per path by which external bytes arrive: `FuzzParseMessage` (downstream JSON-RPC
   frames), `FuzzSSEScanner` (remote SSE streams, a hand-written line scanner — the least trustworthy),
   `FuzzScanAuthParam` (remote `WWW-Authenticate`, hand-written index scanning), `FuzzEncodeJSON`
   (downstream tool results), `FuzzScanTOMLServers` (another application's config file, hand-written),
   `FuzzBlankJSONC` and `FuzzSpliceEntryKeepsEverythingElse` (the JSONC comment-blanking pass, and the
-  splice that edits a settings.json in place without re-encoding it). They do not all live in
-  `internal/mcp`; `FUZZ_TARGETS` carries each one's package, so the target name alone runs it.
+  splice that edits a settings.json in place without re-encoding it), and `FuzzDecodeHeaderValue`
+  (the `Mcp-Name` base64 sentinel a caller's header carries, decoded before validation compares it
+  to the body). They do not all live in `internal/mcp`; `FUZZ_TARGETS` carries each one's package,
+  so the target name alone runs it.
   `make ci` runs only the seed corpora — keep `-fuzz` out of CI.
 
-  **Adding an eighth means editing three places** — the target, its `FUZZ_TARGETS` entry, and the list
+  **Adding a ninth means editing three places** — the target, its `FUZZ_TARGETS` entry, and the list
   above — and `test/buildrules` fails until all three agree. The omission is otherwise invisible:
   `make ci` still runs the seed corpus, so it looks covered while `make fuzz` never reaches it.
 

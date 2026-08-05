@@ -377,8 +377,14 @@ func carries2026Meta(params json.RawMessage) bool {
 //   - A request that carries the 2026 per-request _meta MUST carry
 //     Mcp-Method (the spec requires it on every POST); its absence is
 //     -32020. Requests without _meta (stateful sessions) owe no headers.
-//   - A present Mcp-Name that differs from the params' top-level name is
-//     -32020. Params without a name owe no Mcp-Name.
+//   - An Mcp-Name whose value, decoded, differs from the params' name (or
+//     uri) is -32020. Params carrying neither owe no Mcp-Name.
+//
+// The decode is not a convenience. A name outside the header-safe set
+// travels under the base64 sentinel, so comparing the raw header text would
+// reject exactly the conformant clients that had to encode; and a
+// sentinel-shaped value that does not decode is malformed rather than
+// literal, so it is refused instead of compared (fail closed).
 //
 // nil means the headers are acceptable.
 func checkMcpHeaders(r *http.Request, method string, params json.RawMessage) *mcp.Error {
@@ -393,13 +399,27 @@ func checkMcpHeaders(r *http.Request, method string, params json.RawMessage) *mc
 	}
 	var probe struct {
 		Name string `json:"name"`
+		URI  string `json:"uri"`
 	}
 	if len(params) > 0 {
 		_ = json.Unmarshal(params, &probe) // non-object params carry no name
 	}
-	if hdrName := r.Header.Get(NameHeader); hdrName != "" && probe.Name != "" && hdrName != probe.Name {
+	bodyName := probe.Name
+	if bodyName == "" {
+		bodyName = probe.URI
+	}
+	hdrName := r.Header.Get(NameHeader)
+	if hdrName == "" || bodyName == "" {
+		return nil
+	}
+	decoded, ok := mcp.DecodeHeaderValue(hdrName)
+	if !ok {
 		return &mcp.Error{Code: mcp.CodeHeaderMismatch, Message: fmt.Sprintf(
-			"%s header %q disagrees with the params name %q", NameHeader, hdrName, probe.Name)}
+			"%s header %q claims the base64 sentinel encoding but does not decode", NameHeader, hdrName)}
+	}
+	if decoded != bodyName {
+		return &mcp.Error{Code: mcp.CodeHeaderMismatch, Message: fmt.Sprintf(
+			"%s header %q disagrees with the params name %q", NameHeader, decoded, bodyName)}
 	}
 	return nil
 }

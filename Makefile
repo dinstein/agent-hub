@@ -131,7 +131,8 @@ FUZZ_TARGETS := \
 	./internal/shaping/toonenc:FuzzEncodeJSON \
 	./internal/clients:FuzzScanTOMLServers \
 	./internal/clients:FuzzBlankJSONC \
-	./internal/clients:FuzzSpliceEntryKeepsEverythingElse
+	./internal/clients:FuzzSpliceEntryKeepsEverythingElse \
+	./internal/mcp:FuzzDecodeHeaderValue
 FUZZ ?=
 
 ##@ Meta
