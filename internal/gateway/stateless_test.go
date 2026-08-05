@@ -260,3 +260,45 @@ func TestCallClientRefusesAStatelessSession(t *testing.T) {
 		}
 	}
 }
+
+// TestResultWithNoContentIsAnEmptyArray: `content` is a required array on a
+// CallToolResult, and a nil RawMessage marshals as null. A downstream that
+// omits the member entirely used to become an invalid result with agenthub's
+// name on it — the hub manufacturing the violation rather than relaying one.
+func TestResultWithNoContentIsAnEmptyArray(t *testing.T) {
+	resolver := testResolver(t.TempDir())
+	seedRegistry(t, resolver, "fake")
+	script := fakemcp.Minimal("echo")
+	// A result with resultType and nothing else: no content member at all.
+	script.Tools[0].Result = &mcp.CallResult{}
+	_, c, _ := startGateway(t, Config{
+		ClientID: "test-client",
+		Resolver: resolver,
+		Dial:     scriptedDial(map[string]*fakemcp.Script{"fake": script}),
+	})
+	// The first _meta request initializes the session; the catalog lands
+	// with the list_changed that follows it.
+	if resp := c.call(mcp.MethodToolsList, map[string]any{
+		"_meta": meta2026(mcp.ClientCapabilities{}),
+	}); resp.Error != nil {
+		t.Fatalf("tools/list: %v", resp.Error)
+	}
+	c.waitNotification(mcp.NotificationToolsListChanged)
+
+	resp := c.call(mcp.MethodToolsCall, map[string]any{
+		"_meta": meta2026(mcp.ClientCapabilities{}),
+		"name":  "fake__echo",
+	})
+	if resp.Error != nil {
+		t.Fatalf("call: %v", resp.Error)
+	}
+	var wire struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(resp.Result, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if string(wire.Content) != `[]` {
+		t.Fatalf("content = %s, want [] — a required array must not go out as null", wire.Content)
+	}
+}

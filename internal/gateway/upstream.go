@@ -697,6 +697,21 @@ func (g *gateway) replyResult(id mcp.ID, res *mcp.CallResult) {
 	} else {
 		res.ResultType = ""
 	}
+	// content is a REQUIRED array on a CallToolResult, and this gateway must
+	// not put its name on a result that has something else there. Two ways
+	// it could: a downstream that omitted the member leaves Content nil,
+	// which marshals as null, and a downstream that sent null explicitly
+	// arrives as the four bytes `null`. Both become the empty array, which
+	// is the valid rendering of "the call produced no content".
+	//
+	// This is not "editing what a downstream returned" — the rule that
+	// forbids that is about preserving structure, and there is no structure
+	// here to preserve. It is the same normalization resultType gets one
+	// statement up, for the same reason: one enforcement point for the shape
+	// of every result-shaped answer.
+	if len(res.Content) == 0 || string(res.Content) == "null" {
+		res.Content = json.RawMessage(`[]`)
+	}
 	raw, err := json.Marshal(res)
 	if err != nil {
 		g.reply(mcp.NewErrorResponse(id, &mcp.Error{Code: mcp.CodeInternalError, Message: err.Error()}))
