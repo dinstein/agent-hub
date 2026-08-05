@@ -550,24 +550,41 @@ func (d *Discoverer) fetchMetadata(ctx context.Context, issuer *url.URL) (*AuthS
 // obtained from an unvalidated source". Validating here is what makes the
 // later comparison mean anything.
 //
-// Comparison is exact but for one trailing slash on either side. That is the
-// same latitude MetadataCandidates already takes — "https://x/" and
-// "https://x" name one deployment everywhere we have to interoperate — and
-// it cannot be used to impersonate a different host, which is what the rule
-// is defending. Nothing else is normalized: no case folding, no default-port
-// elision, no percent-encoding cleanup.
+// Comparison is NORMALISED, not exact, and that is a decision this file
+// inherits rather than makes: docs/modules/oauth.md argued it out before the
+// check existed. RFC 8414 says "identical", but a declared issuer differing
+// only by a trailing slash or by host case is ordinary real-world sloppiness,
+// and exact equality turns each instance into a provider that stops working.
+// So: lower-case the host (DNS is case-insensitive, so this hands an attacker
+// nothing), drop a single trailing slash, then require scheme, host and path
+// to match exactly. Scheme is NOT normalised — http where https was expected
+// is a downgrade, not sloppiness — and neither is the path, which is
+// case-sensitive and names the tenant.
+//
+// A value that will not parse as an absolute URL is refused outright: it
+// cannot be normalised, and comparing it as raw text is how a lax fallback
+// becomes the hole the check was for.
 func validateIssuerMatch(md *AuthServerMetadata, issuer *url.URL) error {
-	want := strings.TrimSuffix(issuer.String(), "/")
-	got := strings.TrimSuffix(md.Issuer, "/")
-	if got == want {
+	if strings.TrimSpace(md.Issuer) == "" {
+		return fmt.Errorf("oauthflow: %s declares no issuer; RFC 8414 requires it to match %s",
+			md.SourceURL, issuer.String())
+	}
+	declared, err := parseAbsoluteURL(md.Issuer)
+	if err != nil {
+		return fmt.Errorf("oauthflow: %s declares issuer %q, which is not an absolute URL",
+			md.SourceURL, md.Issuer)
+	}
+	if issuerKey(declared) == issuerKey(issuer) {
 		return nil
 	}
-	if got == "" {
-		return fmt.Errorf("oauthflow: %s declares no issuer; RFC 8414 requires it to match %s",
-			md.SourceURL, want)
-	}
 	return fmt.Errorf("oauthflow: %s declares issuer %q but was fetched as %q; refusing to use it",
-		md.SourceURL, md.Issuer, want)
+		md.SourceURL, md.Issuer, issuer.String())
+}
+
+// issuerKey renders an issuer identifier for comparison: scheme and path as
+// written, host lower-cased, one trailing slash removed.
+func issuerKey(u *url.URL) string {
+	return u.Scheme + "://" + strings.ToLower(u.Host) + strings.TrimSuffix(u.EscapedPath(), "/")
 }
 
 // validateMetadata enforces the two members without which no flow can run.

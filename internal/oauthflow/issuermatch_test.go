@@ -19,10 +19,16 @@ func TestMetadataIssuerMustMatchWhereItWasFetched(t *testing.T) {
 		{name: "the spec's example", declared: "https://honest.example", fetchedFrom: "https://attacker.example", wantErr: true},
 		{name: "different tenant", declared: "https://as.example.com/tenant2", fetchedFrom: "https://as.example.com/tenant1", wantErr: true},
 		{name: "declares nothing", declared: "", fetchedFrom: "https://as.example.com", wantErr: true},
-		// Nothing but a single trailing slash is normalized: case folding
-		// and default-port elision stay differences, as the spec requires.
-		{name: "host case differs", declared: "https://AS.example.com", fetchedFrom: "https://as.example.com", wantErr: true},
+		// Host case is folded: DNS is case-insensitive, so it hands an
+		// attacker nothing, and providers really do declare it either way.
+		{name: "host case differs", declared: "https://AS.example.com", fetchedFrom: "https://as.example.com"},
+		// Everything else stays a difference. A downgrade is not sloppiness,
+		// a spelled-out default port names a different authority string, and
+		// the path is case-sensitive because it names the tenant.
+		{name: "scheme downgraded", declared: "http://as.example.com", fetchedFrom: "https://as.example.com", wantErr: true},
 		{name: "default port spelled out", declared: "https://as.example.com:443", fetchedFrom: "https://as.example.com", wantErr: true},
+		{name: "path case differs", declared: "https://as.example.com/Tenant1", fetchedFrom: "https://as.example.com/tenant1", wantErr: true},
+		{name: "not a URL at all", declared: "honest.example", fetchedFrom: "https://as.example.com", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
