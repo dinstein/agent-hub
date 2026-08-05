@@ -21,17 +21,19 @@ type Server struct {
 
 	mu    sync.Mutex
 	calls map[string]int
-	// issued maps every requestState this stub has handed out to whether it
-	// is still outstanding. A retry must echo one verbatim; anything else is
+	// issued maps every requestState this stub has handed out to the round
+	// it belongs to. A retry must echo the blob verbatim, use a DIFFERENT
+	// JSON-RPC id, and repeat the original arguments; anything else is
 	// rejected, which is what makes the integration test a proof that the
-	// client treats the blob as opaque and echoes it faithfully.
-	issued   map[string]bool
+	// client treats the blob as opaque and re-issues the original request
+	// rather than a new one.
+	issued   map[string]*round
 	stateSeq int
 }
 
 // New starts the stub. Callers own Close.
 func New() *Server {
-	s := &Server{calls: map[string]int{}, issued: map[string]bool{}}
+	s := &Server{calls: map[string]int{}, issued: map[string]*round{}}
 	s.hs = httptest.NewServer(http.HandlerFunc(s.handle))
 	return s
 }
@@ -58,7 +60,26 @@ func (s *Server) record(method string) {
 
 // metaParams is the _meta envelope every 2026-07-28 request must carry.
 type metaParams struct {
-	Meta *mcp.RequestMeta `json:"_meta"`
+	Meta *rawMeta `json:"_meta"`
+}
+
+// rawMeta keeps each key as raw JSON so ABSENT is distinguishable from an
+// empty object. mcp.RequestMeta cannot do that: ClientCapabilities is a
+// non-pointer struct, so a client that omitted the key entirely decodes
+// identically to one that sent {} — and this stub used to name that key in a
+// rejection message for a check it could not perform.
+type rawMeta struct {
+	ProtocolVersion    string          `json:"io.modelcontextprotocol/protocolVersion"`
+	ClientCapabilities json.RawMessage `json:"io.modelcontextprotocol/clientCapabilities"`
+	ClientInfo         json.RawMessage `json:"io.modelcontextprotocol/clientInfo"`
+}
+
+// round is one outstanding MRTR exchange: the id the input_required went out
+// on, and the arguments of the request that produced it.
+type round struct {
+	outstanding bool
+	requestID   string
+	arguments   string
 }
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +122,12 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, req *mcp.Request
 	case mp.Meta == nil:
 		s.reject(w, req, http.StatusBadRequest, mcp.CodeInvalidParams,
 			"missing required _meta (io.modelcontextprotocol/protocolVersion, /clientCapabilities)")
+		return
+	case mp.Meta.ClientCapabilities == nil:
+		// Required on EVERY request, and an empty object is the correct way
+		// to say "no optional capabilities" — omitting the key is not.
+		s.reject(w, req, http.StatusBadRequest, mcp.CodeInvalidParams,
+			"_meta carries no io.modelcontextprotocol/clientCapabilities; it is required on every request")
 		return
 	case mp.Meta.ProtocolVersion != mcp.Version2026:
 		// -32022 carries its supported/requested payload: a client is told
@@ -195,7 +222,11 @@ func (s *Server) answerConfirm(w http.ResponseWriter, req *mcp.Request, p mcp.Ca
 		s.mu.Lock()
 		s.stateSeq++
 		state := fmt.Sprintf("mcpstub-opaque-%d", s.stateSeq)
-		s.issued[state] = true
+		s.issued[state] = &round{
+			outstanding: true,
+			requestID:   req.ID.Key(),
+			arguments:   string(p.Arguments),
+		}
 		s.mu.Unlock()
 		result, _ := json.Marshal(mcp.InputRequiredResult{
 			ResultType: mcp.ResultTypeInputRequired,
@@ -208,14 +239,35 @@ func (s *Server) answerConfirm(w http.ResponseWriter, req *mcp.Request, p mcp.Ca
 		return
 	}
 	s.mu.Lock()
-	outstanding := s.issued[*p.RequestState]
-	if outstanding {
-		s.issued[*p.RequestState] = false
+	rd := s.issued[*p.RequestState]
+	if rd != nil && rd.outstanding {
+		rd.outstanding = false
+	} else {
+		rd = nil
 	}
 	s.mu.Unlock()
-	if !outstanding {
+	if rd == nil {
 		s.reject(w, req, http.StatusOK, mcp.CodeInvalidParams,
 			fmt.Sprintf("requestState %q was never issued (or already redeemed): the client must echo it verbatim", *p.RequestState))
+		return
+	}
+	// "The JSON-RPC id MUST be different between the initial request and the
+	// retry, as they are independent requests." This stub is the only place
+	// in the tree that sees both ids on the wire, so it is the only place
+	// that rule can be observed rather than assumed.
+	if req.ID.Key() == rd.requestID {
+		s.reject(w, req, http.StatusOK, mcp.CodeInvalidParams,
+			fmt.Sprintf("retry reused JSON-RPC id %s; the retry is an independent request and must use a new one",
+				rd.requestID))
+		return
+	}
+	// The retry re-issues the ORIGINAL request. Arguments that changed
+	// between the rounds mean the client rebuilt the call instead of
+	// resuming it, which the server's own state was computed against.
+	if got := string(p.Arguments); got != rd.arguments {
+		s.reject(w, req, http.StatusOK, mcp.CodeInvalidParams,
+			fmt.Sprintf("retry arguments %s differ from the original %s; the retry must re-issue the original request",
+				got, rd.arguments))
 		return
 	}
 	rootsRaw, ok := p.InputResponses["roots"]
