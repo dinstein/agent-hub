@@ -308,10 +308,27 @@ func (s *Server) CallFor(ctx context.Context, o Origin, tool string, args json.R
 			return nil, fmt.Errorf("downstream %q: tools/call %q still input_required after %d rounds",
 				s.spec.ID, tool, maxInputRounds)
 		}
-		responses, err := s.resolveInputs(ctx, ir.InputRequests)
-		if err != nil {
+		// A result carrying only requestState asks for nothing — it is the
+		// load-shedding shape the specification names, meaning "come back
+		// with this token". Retrying immediately is what a client MAY do,
+		// and refusing made a conformant server unusable through this hub.
+		// The retry is not the identical request the old comment feared: it
+		// carries the token, and maxInputRounds bounds the loop either way.
+		var responses mcp.InputResponses
+		switch {
+		case len(ir.InputRequests) > 0:
+			var rerr error
+			responses, rerr = s.resolveInputs(ctx, ir.InputRequests)
+			if rerr != nil {
+				return nil, fmt.Errorf("downstream %q: tools/call %q input round %d: %w",
+					s.spec.ID, tool, round+1, rerr)
+			}
+		case ir.RequestState == nil:
+			// Neither member: the one InputRequiredResult a server MUST NOT
+			// send. There is nothing to answer and nothing to echo, so a
+			// retry would be byte-identical and could only loop.
 			return nil, fmt.Errorf("downstream %q: tools/call %q input round %d: %w",
-				s.spec.ID, tool, round+1, err)
+				s.spec.ID, tool, round+1, mrtr.ErrNoInputRequests)
 		}
 		// The retry re-issues the ORIGINAL params plus the collected
 		// responses and the requestState echoed verbatim; the transport

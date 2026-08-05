@@ -33,10 +33,17 @@ type Handler func(ctx context.Context, method string, params json.RawMessage) (j
 var ErrSamplingUnsupported = errors.New(
 	"sampling/createMessage is not supported: AgentHub does not proxy LLM calls")
 
-// ErrNoInputRequests rejects an InputRequiredResult that carries no input
-// requests: answering nothing and retrying the identical request could only
-// loop, so the round fails instead (fail closed).
-var ErrNoInputRequests = errors.New("input_required result carried no inputRequests")
+// ErrNoInputRequests rejects an InputRequiredResult that carries NEITHER
+// inputRequests nor requestState — the one shape the specification says a
+// server must not send. There is nothing to answer and nothing to echo, so
+// the retry would be byte-identical and could only loop.
+//
+// It is emphatically NOT the answer to "no inputRequests". A result carrying
+// only requestState is the load-shedding shape the specification names, and
+// the caller retries it immediately with the token echoed; Resolve is simply
+// not called for it. Resolve keeps the check as its own precondition,
+// because being handed an empty map is a caller bug.
+var ErrNoInputRequests = errors.New("input_required result carried neither inputRequests nor requestState")
 
 // Resolve answers every input request of one MRTR round and returns the
 // inputResponses map for the retry. Requests are answered sequentially in

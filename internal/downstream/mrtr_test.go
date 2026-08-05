@@ -152,15 +152,73 @@ func TestCallInputWithoutPeerHandler(t *testing.T) {
 	}
 }
 
-// input_required with no inputRequests can never converge; it fails closed.
-func TestCallEmptyInputRequests(t *testing.T) {
+// TestCallLoadSheddingRoundRetries: an input_required carrying only
+// requestState asks for nothing — it is the load-shedding shape the
+// specification names, meaning "come back with this token". The client MAY
+// retry immediately, and refusing made such a server unusable through this
+// hub. The retry must echo the token and carry NO inputResponses, because
+// nothing was requested.
+func TestCallLoadSheddingRoundRetries(t *testing.T) {
+	t.Parallel()
+	s, tr := scriptedServer(t, downstream.Deps{}, func(method string, n int) (json.RawMessage, error) {
+		if method == mcp.MethodToolsCall && n == 1 {
+			return inputRequired("shed-1", nil), nil
+		}
+		return json.RawMessage(`{"content":[{"type":"text","text":"done"}]}`), nil
+	})
+	s.OnPeerRequest(rootsPeer(t, "file:///w"))
+	res, err := s.Call(testCtx(t), "echo", json.RawMessage(`{"s":"hi"}`))
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if res == nil {
+		t.Fatal("no result after the shed round")
+	}
+	var retry mcp.CallToolParams
+	if err := json.Unmarshal(tr.paramsOf(mcp.MethodToolsCall, 2), &retry); err != nil {
+		t.Fatalf("decode retry params: %v", err)
+	}
+	if retry.RequestState == nil || *retry.RequestState != "shed-1" {
+		t.Fatalf("requestState %v, want the token echoed verbatim", retry.RequestState)
+	}
+	if retry.InputResponses != nil {
+		t.Fatalf("retry carried inputResponses for a round that requested none: %+v", retry.InputResponses)
+	}
+	if retry.Name != "echo" || string(retry.Arguments) != `{"s":"hi"}` {
+		t.Fatalf("retry mutated the original call: %+v", retry)
+	}
+}
+
+// A server that only ever sheds is not converging, and the ROUND CAP is what
+// stops it — not a refusal to retry. That distinction is the whole fix: the
+// loop is bounded either way, so bounding it by refusing the first shed cost
+// interop and bought nothing.
+func TestCallLoadSheddingForeverHitsTheRoundCap(t *testing.T) {
 	t.Parallel()
 	s, _ := scriptedServer(t, downstream.Deps{}, func(method string, n int) (json.RawMessage, error) {
-		return inputRequired("s", nil), nil
+		return inputRequired("shed", nil), nil
+	})
+	s.OnPeerRequest(rootsPeer(t, "file:///w"))
+	_, err := s.Call(testCtx(t), "echo", nil)
+	if err == nil || !strings.Contains(err.Error(), "still input_required after") {
+		t.Fatalf("err = %v, want the round cap to stop it", err)
+	}
+}
+
+// Neither inputRequests nor requestState is the one InputRequiredResult a
+// server MUST NOT send: nothing to answer, nothing to echo, so the retry
+// would be byte-identical. That still fails closed, on the first round.
+func TestCallInputRequiredWithNeitherMemberFailsClosed(t *testing.T) {
+	t.Parallel()
+	s, tr := scriptedServer(t, downstream.Deps{}, func(method string, n int) (json.RawMessage, error) {
+		return json.RawMessage(`{"resultType":"input_required"}`), nil
 	})
 	s.OnPeerRequest(rootsPeer(t, "file:///w"))
 	_, err := s.Call(testCtx(t), "echo", nil)
 	if !errors.Is(err, mrtr.ErrNoInputRequests) {
 		t.Fatalf("err = %v, want ErrNoInputRequests", err)
+	}
+	if got := tr.count(mcp.MethodToolsCall); got != 1 {
+		t.Fatalf("made %d tools/call attempts, want 1 — there was nothing to retry with", got)
 	}
 }
