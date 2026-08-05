@@ -481,3 +481,34 @@ func TestConcurrentCallsAreSerializedSafely(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestConnectPaginatesToolsList drives the walk through the real connect
+// path against a server that pages. Its first boundary hands out an empty
+// cursor on purpose (see fakemcp.Script.PageSize): reading that as the end
+// of the results is the failure this test exists for, and it is silent —
+// the catalog just comes back short, with no error anywhere.
+func TestConnectPaginatesToolsList(t *testing.T) {
+	t.Parallel()
+	script := fakemcp.Minimal("a", "b", "c", "d", "e")
+	script.PageSize = 2
+	s := startServer(t, downstream.Deps{}, script)
+
+	tools := s.Tools()
+	if len(tools) != 5 {
+		t.Fatalf("Tools() returned %d of 5 tools: %+v", len(tools), tools)
+	}
+	for i, want := range []string{"a", "b", "c", "d", "e"} {
+		if tools[i].Name != want {
+			t.Fatalf("tool %d = %q, want %q (page order must be preserved)", i, tools[i].Name, want)
+		}
+	}
+	// The catalog is usable, not merely long: a tool from the last page
+	// resolves like any other.
+	res, err := s.Call(context.Background(), "e", json.RawMessage(`{"x":1}`))
+	if err != nil {
+		t.Fatalf("Call on a tool from the final page: %v", err)
+	}
+	if got := echoText(t, res); got != `{"x":1}` {
+		t.Fatalf("echo = %q", got)
+	}
+}

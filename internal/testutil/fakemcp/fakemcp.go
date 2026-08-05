@@ -62,6 +62,16 @@ type Script struct {
 	Instructions string `json:"instructions,omitempty"`
 	// Tools is served by tools/list; tools/call resolves against it.
 	Tools []Tool `json:"tools,omitempty"`
+	// PageSize, when positive, makes tools/list paginate at that many tools
+	// per page. Zero serves every tool in one answer, which is what almost
+	// every test wants.
+	//
+	// The cursor for the FIRST page boundary is deliberately the empty
+	// string. The specification says an empty cursor is a valid position and
+	// MUST NOT be read as the end of results, and a stub that never hands
+	// one out cannot catch a client that reads it that way — which is
+	// exactly the shape of the bug this knob was added for.
+	PageSize int `json:"pageSize,omitempty"`
 	// Rules override default handling. First matching rule wins; a message
 	// matching no rule gets default handling.
 	Rules []Rule `json:"rules,omitempty"`

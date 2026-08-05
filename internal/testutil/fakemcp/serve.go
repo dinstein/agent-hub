@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/mcp"
@@ -335,11 +336,7 @@ func (s *server) defaultResponse(req *mcp.Request) *mcp.Response {
 	case mcp.MethodPing:
 		return mcp.NewResponse(req.ID, json.RawMessage(`{}`))
 	case mcp.MethodToolsList:
-		defs := make([]mcp.ToolDef, 0, len(s.sc.Tools))
-		for _, t := range s.sc.Tools {
-			defs = append(defs, t.Def)
-		}
-		return okResponse(req.ID, mcp.ListToolsResult{Tools: defs})
+		return s.listTools(req)
 	case mcp.MethodToolsCall:
 		var p mcp.CallToolParams
 		if err := json.Unmarshal(req.Params, &p); err != nil {
@@ -431,4 +428,53 @@ func sleepCtx(ctx context.Context, d Duration) error {
 	case <-t.C:
 		return nil
 	}
+}
+
+// listTools answers tools/list, paginating when Script.PageSize is positive.
+//
+// The cursor is the index of the next tool, decimal — except at the first
+// boundary, where it is the empty string. That is not an accident: the
+// specification calls an empty cursor a valid position that MUST NOT be read
+// as the end of the results, and a stub that only ever emits non-empty
+// cursors would pass a client that stops on one.
+func (s *server) listTools(req *mcp.Request) *mcp.Response {
+	defs := make([]mcp.ToolDef, 0, len(s.sc.Tools))
+	for _, t := range s.sc.Tools {
+		defs = append(defs, t.Def)
+	}
+	size := s.sc.PageSize
+	if size <= 0 {
+		return okResponse(req.ID, mcp.ListToolsResult{Tools: defs})
+	}
+	var p mcp.ListToolsParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return mcp.NewErrorResponse(req.ID, &mcp.Error{
+				Code: mcp.CodeInvalidParams, Message: "invalid tools/list params: " + err.Error()})
+		}
+	}
+	start := 0
+	if p.Cursor != nil {
+		if *p.Cursor == "" {
+			start = size // the empty cursor names the second page
+		} else {
+			n, err := strconv.Atoi(*p.Cursor)
+			if err != nil || n < 0 || n > len(defs) {
+				// The spec's own answer for a cursor the server cannot place.
+				return mcp.NewErrorResponse(req.ID, &mcp.Error{
+					Code: mcp.CodeInvalidParams, Message: "unknown cursor " + *p.Cursor})
+			}
+			start = n
+		}
+	}
+	end := min(start+size, len(defs))
+	res := mcp.ListToolsResult{Tools: defs[start:end]}
+	if end < len(defs) {
+		next := strconv.Itoa(end)
+		if end == size {
+			next = "" // the first boundary, deliberately empty
+		}
+		res.NextCursor = &next
+	}
+	return okResponse(req.ID, res)
 }

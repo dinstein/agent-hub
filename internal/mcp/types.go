@@ -140,9 +140,17 @@ type ToolDef struct {
 	Annotations  json.RawMessage `json:"annotations,omitempty"`
 }
 
+// Cursor is an opaque pagination position. It is a POINTER wherever it
+// appears, because absent and empty are different answers: the
+// specification says an empty string is a valid cursor and MUST NOT be read
+// as the end of results, and a plain string cannot tell the two apart.
+// Clients must not parse, modify, or decide anything from the value beyond
+// whether one was provided.
+type Cursor = string
+
 // ListToolsParams is the "tools/list" request payload.
 type ListToolsParams struct {
-	Cursor string `json:"cursor,omitempty"`
+	Cursor *Cursor `json:"cursor,omitzero"`
 }
 
 // CacheableResult carries the freshness hint fields that MCP 2026-07-28
@@ -157,8 +165,11 @@ type CacheableResult struct {
 
 // ListToolsResult is the "tools/list" response payload.
 type ListToolsResult struct {
-	Tools      []ToolDef `json:"tools"`
-	NextCursor string    `json:"nextCursor,omitempty"`
+	Tools []ToolDef `json:"tools"`
+	// NextCursor is nil when the server said nothing, and non-nil — possibly
+	// pointing at "" — when it handed out a cursor. Only nil means the end
+	// of the results; see Cursor.
+	NextCursor *Cursor `json:"nextCursor,omitzero"`
 	// ResultType is "complete" for a normal result (MCP 2026-07-28+).
 	// An absent field from older servers is treated as "complete".
 	ResultType string `json:"resultType,omitempty"`

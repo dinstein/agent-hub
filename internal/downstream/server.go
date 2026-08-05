@@ -789,18 +789,17 @@ func (s *Server) dialAndInit(ctx context.Context) (transport.Transport, *mcp.Ini
 	// The handshake's own tools/list. Its cause is `list` like every other
 	// catalog read: the frame is the same one, and which code path asked for
 	// it is not a distinction a reader of the conversation cares about.
-	raw, err := s.callTransport(ctx, tr, Origin{Cause: calllog.CauseList}, 1, mcp.MethodToolsList, nil)
+	seq := 0
+	tools, err := listAllTools(func(params json.RawMessage) (json.RawMessage, error) {
+		seq++
+		return s.callTransport(ctx, tr, Origin{Cause: calllog.CauseList}, seq, mcp.MethodToolsList, params)
+	})
 	if err != nil {
 		err = fmt.Errorf("downstream %q: initial tools/list: %w", s.spec.ID, withStderr(err, tr))
 		_ = tr.Close()
 		return nil, nil, nil, err
 	}
-	var lr mcp.ListToolsResult
-	if uerr := json.Unmarshal(raw, &lr); uerr != nil {
-		_ = tr.Close()
-		return nil, nil, nil, fmt.Errorf("downstream %q: decode tools/list: %w", s.spec.ID, uerr)
-	}
-	return tr, initRes, lr.Tools, nil
+	return tr, initRes, tools, nil
 }
 
 // capabilityNames renders a server's declared capabilities as their sorted
@@ -887,16 +886,14 @@ func (s *Server) autoRefresh() {
 // refreshOnce re-queries tools/list on the current connection and replaces
 // the cache. Owner goroutine only. Never respawns.
 func (s *Server) refreshOnce(ctx context.Context) error {
-	raw, err := s.roundTrip(ctx, Origin{Cause: calllog.CauseList}, mcp.MethodToolsList, nil)
+	tools, err := listAllTools(func(params json.RawMessage) (json.RawMessage, error) {
+		return s.roundTrip(ctx, Origin{Cause: calllog.CauseList}, mcp.MethodToolsList, params)
+	})
 	if err != nil {
 		return fmt.Errorf("downstream %q: refresh tools: %w", s.spec.ID, err)
 	}
-	var lr mcp.ListToolsResult
-	if err := json.Unmarshal(raw, &lr); err != nil {
-		return fmt.Errorf("downstream %q: decode tools/list: %w", s.spec.ID, err)
-	}
 	s.mu.Lock()
-	s.tools = lr.Tools
+	s.tools = tools
 	s.mu.Unlock()
 	return nil
 }
