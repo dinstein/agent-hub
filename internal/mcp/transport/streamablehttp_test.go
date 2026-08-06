@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1191,4 +1193,83 @@ func TestSessionLossAfter400StaysRecoverable(t *testing.T) {
 			t.Fatalf("class = %s, want fatal for a 400 that is not about a session", te.Class)
 		}
 	})
+}
+
+// TestStreamGiveUpNamesTheRightCause: the give-up line is the only thing an
+// operator gets for "why does tools/list_changed never arrive", and there
+// are two answers to that question. A server that does not offer the stream
+// is a fact about the server. A session this client lost is a fact about
+// this client — the same server would serve the stream again to a connection
+// that had one. Naming the wrong one sends the reader to the wrong system.
+func TestStreamGiveUpNamesTheRightCause(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		lost       bool
+		getStatus  int
+		wantPhrase string
+	}{
+		{"server offers no stream", false, http.StatusMethodNotAllowed,
+			"no server-initiated notification stream"},
+		{"our session went away", true, http.StatusNotFound,
+			"ended with the session"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf syncBuffer
+			done := make(chan struct{})
+			var once sync.Once
+			fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet {
+					w.WriteHeader(tc.getStatus)
+					once.Do(func() { close(done) })
+					return
+				}
+				if r.Method == http.MethodDelete {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				req := readRequestRPC(t, r)
+				w.Header().Set(headerSessionID, "sid-1")
+				writeJSONRPC(t, w, mcp.NewResponse(req.ID, initResult(t, mcp.ProtocolVersion)))
+			})
+			tr := dialStreamable(t, HTTPConfig{
+				URL:                fs.URL + "/mcp",
+				NotificationStream: true,
+				retryBase:          time.Millisecond,
+				Logger:             slog.New(slog.NewTextHandler(&buf, nil)),
+			})
+			if tc.lost {
+				// The peer already dropped a session this transport held.
+				tr.noteTerminalStatus(http.StatusNotFound, 0)
+			}
+			if _, err := tr.Call(testCtx(t), mcp.MethodInitialize, mcp.InitializeParams{}); err != nil {
+				t.Fatalf("initialize: %v", err)
+			}
+			<-done
+			deadline := time.Now().Add(3 * time.Second)
+			for !strings.Contains(buf.String(), tc.wantPhrase) {
+				if time.Now().After(deadline) {
+					t.Fatalf("give-up line never named %q; log was:\n%s", tc.wantPhrase, buf.String())
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+		})
+	}
+}
+
+// syncBuffer is a concurrency-safe io.Writer for a slog handler under test.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }

@@ -63,7 +63,7 @@ type streamableHTTP struct {
 	// sessionLost records that a session id this transport HELD was
 	// invalidated by the server. Sticky, and not derivable from sessionID
 	// being empty: a transport that never had one looks the same.
-	// reclassifySessionLoss is the only reader.
+	// lostSession is the accessor; reclassifySessionLoss and streamLoop read it.
 	sessionLost  bool
 	protoVersion string
 	// reqMeta, when non-nil, switches the transport into 2026-07-28
@@ -334,14 +334,21 @@ func (t *streamableHTTP) post(ctx context.Context, body []byte, method, name, de
 // FAIL-CLOSED direction: when in doubt the error keeps its original class.
 // Being wrong here costs a respawn that was not needed; leaving the case out
 // costs a connection that never comes back.
+// lostSession reports whether a session id this transport HELD was
+// invalidated by the peer. It is the same fact reclassifySessionLoss reads,
+// and streamLoop needs it for a different purpose: to say which of the two
+// reasons a stream ended.
+func (t *streamableHTTP) lostSession() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.sessionLost
+}
+
 func (t *streamableHTTP) reclassifySessionLoss(req *http.Request, code int, terr *Error) *Error {
 	if code != http.StatusBadRequest || req.Header.Get(headerSessionID) != "" {
 		return terr
 	}
-	t.mu.Lock()
-	lost := t.sessionLost
-	t.mu.Unlock()
-	if !lost {
+	if !t.lostSession() {
 		return terr
 	}
 	return &Error{
@@ -622,9 +629,28 @@ func (t *streamableHTTP) startBackgroundStream(open func() (*http.Response, bool
 // with bounded backoff (and, on the legacy GET stream, carrying
 // Last-Event-ID across breaks).
 //
-// It gives up permanently when the opener says so — the statuses that mean
-// "this server does not offer the stream" (405/501) or "stop asking"
-// (410, 404, 401, 403); everything else is treated as transient.
+// It gives up permanently when the opener says so, which is the whole 4xx
+// class minus 408/429, plus 501 and 410 — streamRefusedPermanently says why
+// the class and not a list. This comment used to name the six statuses that
+// predicate replaced, and so contradicted the code twenty lines below it.
+//
+// KNOWN GAP — this loop has no session-recovery path. If the peer expires
+// the session, the reopen carries a stale id (404) or, once a POST has
+// cleared it, none at all (400), and both are permanent refusals. The stream
+// then stays down for the life of the transport although the server does
+// offer it. Nothing polls it back up: the gateway sets no PingInterval,
+// deliberately. Recovery waits for the next real tools/call, whose own
+// rejection reclassifySessionLoss upgrades to ClassUnavailable and which
+// respawns the connection — and for an idle hosted downstream that can be a
+// long time, which is the very case opening this stream exists to fix.
+//
+// Not fixed here because the obvious fix is a policy decision rather than a
+// patch: retrying a session-loss refusal reintroduces exactly the unbounded
+// five-second heartbeat streamRefusedPermanently was written to remove,
+// unless something bounds it — a retry budget, or a signal from the POST
+// path that a session exists again. What IS fixed here is the half that
+// costs nothing: the give-up line no longer blames the server for a session
+// this client lost.
 func (t *streamableHTTP) streamLoop(open func() (*http.Response, bool, error)) {
 	attempt := 0
 	for {
@@ -634,11 +660,24 @@ func (t *streamableHTTP) streamLoop(open func() (*http.Response, bool, error)) {
 		resp, permanent, err := open()
 		if err != nil {
 			if permanent {
-				// Say so once. This is the only place that learns "this
-				// server offers no notification stream", and it used to
-				// drop the error on the floor — leaving an operator asking
-				// why a tools/list_changed never arrives with nothing at
-				// all to read, since the goroutine then exits silently.
+				// Say so once. This is the only place that learns the
+				// stream is over, and it used to drop the error on the
+				// floor — leaving an operator asking why a
+				// tools/list_changed never arrives with nothing at all to
+				// read, since the goroutine then exits silently.
+				//
+				// Two causes, and naming the wrong one sends that operator
+				// to the wrong system. A server that does not offer the
+				// stream is a fact about the server; a session this client
+				// lost is a fact about this client, and the same server
+				// would serve the stream again to a connection that had
+				// one. See the KNOWN GAP above for why it does not get one.
+				if t.lostSession() {
+					t.log.Info("server-initiated notification stream ended with the session; "+
+						"list changes will not be pushed again until this connection is rebuilt",
+						"reason", err)
+					return
+				}
 				t.log.Info("no server-initiated notification stream; "+
 					"list changes will not be pushed on this connection", "reason", err)
 				return
