@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/eventlog"
@@ -27,9 +28,9 @@ const SessionHeader = "Mcp-Session-Id"
 const (
 	MethodHeader = "Mcp-Method"
 	NameHeader   = "Mcp-Name"
-	// ProtocolVersionHeader must equal the version the body's _meta
-	// declares. It is a separate rule from the two above and has its own
-	// carve-out; see checkMcpHeaders.
+	// ProtocolVersionHeader must name a version this server speaks
+	// (checkProtocolVersion) and, when the body's _meta declares one, must
+	// equal it (checkMcpHeaders). Two rules, two carve-outs, both there.
 	ProtocolVersionHeader = "MCP-Protocol-Version"
 )
 
@@ -365,8 +366,15 @@ func statusForResponse(res *mcp.Response, req *mcp.Request) int {
 	return http.StatusOK
 }
 
-// handleDelete terminates a session.
+// handleDelete terminates a session. The version rule binds "all subsequent
+// requests", and this verb is one — it just has no body, so it checks the
+// header on its own rather than through checkMcpHeaders, and reports the
+// refusal at the HTTP level because there is no JSON-RPC id to bind one to.
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, c *Caller) {
+	if e := checkProtocolVersion(r); e != nil {
+		s.fail(w, r, &httpError{http.StatusBadRequest, CodeBadRequest, e.Message})
+		return
+	}
 	id := r.Header.Get(SessionHeader)
 	if id == "" || !s.sessions.drop(id, c) {
 		s.fail(w, r, errNotFound)
@@ -420,6 +428,46 @@ func metaProtocolVersion(params json.RawMessage) string {
 	return probe.Meta.ProtocolVersion
 }
 
+// checkProtocolVersion refuses an MCP-Protocol-Version header naming a
+// version this server does not speak. Every revision that defines the header
+// requires this, and each one words it as a MUST:
+//
+//   - 2025-06-18 and 2025-11-25, basic/transports.mdx §"Protocol Version
+//     Header": "If the server receives a request with an invalid or
+//     unsupported MCP-Protocol-Version, it MUST respond with 400 Bad
+//     Request."
+//   - 2026-07-28 keeps the status and adds a body: the refusal MUST carry
+//     UnsupportedProtocolVersionError listing what the server does support.
+//
+// So the answer is one shape for all three — -32022 with the supported list,
+// which the binding renders as 400 — rather than a bare 400 for the older
+// callers. A pre-2026 client was promised nothing about the body and reads
+// an unknown code, which costs it nothing; a 2026 client gets exactly what
+// its revision asks for. Two shapes would be two places to keep the list
+// right.
+//
+// ABSENCE is not refused, and that is a separate rule from this one: the
+// header postdates 2025-03-26, and the specification tells a server to read
+// its absence as that version. What this function closes is the case the
+// _meta comparison in checkMcpHeaders could not see — a header carrying a
+// version no body declares, which is every ≤ 2025-11-25 request, since only
+// 2026 sends the per-request _meta that comparison needs.
+//
+// The list is mcp.SupportedVersions, the same promise server/discover
+// advertises and initialize echoes. A version this server would negotiate
+// must not be refused in a header, and one it would not negotiate must not
+// be accepted in a header; reading the answer from one place is how those
+// two stay the same answer.
+func checkProtocolVersion(r *http.Request) *mcp.Error {
+	v := r.Header.Get(ProtocolVersionHeader)
+	if v == "" || slices.Contains(mcp.SupportedVersions, v) {
+		return nil
+	}
+	return mcp.NewUnsupportedVersionError(v, mcp.SupportedVersions, fmt.Sprintf(
+		"%s header %q names a protocol version this server does not speak",
+		ProtocolVersionHeader, v))
+}
+
 // checkMcpHeaders enforces the 2026-07-28 Mcp-Method / Mcp-Name headers
 // against the message body. Rules, in the order they can fail:
 //
@@ -432,11 +480,14 @@ func metaProtocolVersion(params json.RawMessage) string {
 //   - An Mcp-Name whose value, decoded, differs from the params' name (or
 //     uri) is -32020. Params carrying neither owe no Mcp-Name.
 //   - An MCP-Protocol-Version header that differs from the version the
-//     body's _meta declares is -32020. Only a MISMATCH is refused: an
+//     body's _meta declares is -32020. Only a MISMATCH is refused there: an
 //     ABSENT header is allowed, because this server also serves clients
 //     from before 2025-06-18 defined the header at all, and the
-//     specification lets such a server read absence as 2025-03-26. There is
-//     no carve-out for a header that disagrees.
+//     specification lets such a server read absence as 2025-03-26.
+//
+// A header naming a version this server does not speak is refused too, but
+// by checkProtocolVersion below rather than here — that rule binds DELETE as
+// well, which carries no body for these checks to read.
 //
 // The version rule is the same one this project's own client was getting
 // wrong until recently, and the same one test/mcpstub enforces with the
@@ -453,6 +504,9 @@ func metaProtocolVersion(params json.RawMessage) string {
 //
 // nil means the headers are acceptable.
 func checkMcpHeaders(r *http.Request, method string, params json.RawMessage) *mcp.Error {
+	if e := checkProtocolVersion(r); e != nil {
+		return e
+	}
 	hdrMethod := r.Header.Get(MethodHeader)
 	if hdrMethod != "" && hdrMethod != method {
 		return &mcp.Error{Code: mcp.CodeHeaderMismatch, Message: fmt.Sprintf(

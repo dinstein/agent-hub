@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -173,12 +174,110 @@ func TestProtocolVersionHeaderAgreementAndAbsence(t *testing.T) {
 		httpbridge.MethodHeader, "server/discover"); res.StatusCode != http.StatusOK {
 		t.Fatalf("absent header: status = %d, want 200", res.StatusCode)
 	}
-	// A body with no _meta has nothing to disagree with, so even a header
-	// naming another version passes — there is no claim to contradict.
+	// A body with no _meta has nothing to disagree with, so a header naming
+	// another SUPPORTED version passes — there is no claim to contradict.
+	// One this server does not speak is a different rule and is refused; see
+	// TestProtocolVersionHeaderRefusesAnUnsupportedValue.
 	sid := h.initSession(t, "")
 	if res := h.post(t, "", sid, `{"jsonrpc":"2.0","id":9,"method":"tools/list"}`,
 		httpbridge.ProtocolVersionHeader, "2025-03-26"); res.StatusCode != http.StatusOK {
 		t.Fatalf("legacy body with a header: status = %d, want 200", res.StatusCode)
+	}
+}
+
+// TestProtocolVersionHeaderRefusesAnUnsupportedValue: a header naming a
+// version this server does not speak is 400, on every verb that can carry
+// one.
+//
+// Every revision defining the header requires this and each words it as a
+// MUST — 2025-06-18 and 2025-11-25 as a bare 400, 2026-07-28 as 400 plus the
+// supported list. Until this test existed the value was never judged at all:
+// the only check compared it against the version the body's _meta declares,
+// and a ≤ 2025-11-25 request has no _meta, so the comparison was skipped for
+// exactly the generations whose specification demands the refusal. The most
+// pointed case is the first one below — a garbage version did not merely get
+// answered, it got a session minted.
+func TestProtocolVersionHeaderRefusesAnUnsupportedValue(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, &httpbridge.Authenticator{InsecureLoopback: true, Tokens: newStore(t)}, httpbridge.Options{})
+
+	t.Run("initialize mints no session", func(t *testing.T) {
+		res := h.post(t, "", "", initFrame, httpbridge.ProtocolVersionHeader, "banana")
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", res.StatusCode)
+		}
+		if sid := res.Header.Get(httpbridge.SessionHeader); sid != "" {
+			t.Fatalf("a refused request minted session %q", sid)
+		}
+		e := rpcError(t, res)
+		if e == nil || e.Code != mcp.CodeUnsupportedProtocolVersion {
+			t.Fatalf("error = %+v, want CodeUnsupportedProtocolVersion", e)
+		}
+		// The payload is the whole point of answering -32022 rather than a
+		// bare 400: a client told to change something must be told to what.
+		var data mcp.UnsupportedVersionData
+		if err := json.Unmarshal(e.Data, &data); err != nil {
+			t.Fatalf("decode error data %s: %v", e.Data, err)
+		}
+		if data.Requested != "banana" || !slices.Equal(data.Supported, mcp.SupportedVersions) {
+			t.Fatalf("data = %+v, want the refused version and the full supported list", data)
+		}
+	})
+
+	t.Run("a real but unsupported revision", func(t *testing.T) {
+		// 2024-11-05 is not a typo — it is the HTTP+SSE generation, which
+		// this tree does not speak. "Invalid or unsupported" covers both.
+		res := h.post(t, "", "", initFrame, httpbridge.ProtocolVersionHeader, "2024-11-05")
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", res.StatusCode)
+		}
+	})
+
+	t.Run("notification", func(t *testing.T) {
+		res := h.post(t, "", "", `{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+			httpbridge.ProtocolVersionHeader, "banana")
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (not the 202 a notification usually earns)", res.StatusCode)
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		// DELETE carries no body, so it checks the header on its own path.
+		// "All subsequent requests" includes this verb, and a session id
+		// that would otherwise resolve must not rescue a bad version.
+		sid := h.initSession(t, "")
+		req, err := http.NewRequest(http.MethodDelete, h.srv.URL+httpbridge.DefaultPath, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set(httpbridge.SessionHeader, sid)
+		req.Header.Set(httpbridge.ProtocolVersionHeader, "banana")
+		res, err := h.srv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = res.Body.Close() }()
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", res.StatusCode)
+		}
+	})
+}
+
+// TestProtocolVersionHeaderAcceptsEverySupportedVersion drives the list
+// itself rather than a copy of it: the refusal above and the negotiation
+// everywhere else must answer "do we speak this" the same way, and a version
+// added to mcp.SupportedVersions without this face learning it would be
+// advertised in server/discover and then refused in a header.
+func TestProtocolVersionHeaderAcceptsEverySupportedVersion(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, &httpbridge.Authenticator{InsecureLoopback: true, Tokens: newStore(t)}, httpbridge.Options{})
+	sid := h.initSession(t, "")
+	for _, v := range mcp.SupportedVersions {
+		res := h.post(t, "", sid, `{"jsonrpc":"2.0","id":9,"method":"tools/list"}`,
+			httpbridge.ProtocolVersionHeader, v)
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", v, res.StatusCode)
+		}
 	}
 }
 
