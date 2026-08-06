@@ -185,26 +185,25 @@ It was written once, at the initial public release, into two places at once — 
 entry — and thereafter each read as corroboration of the other. It named no provider, shipped no
 fixture, and linked no issue.
 
-Measured: 25 authorization servers reached through the full RFC 9728 → RFC 8414 chain, 15
-independent vendors (GitHub, Stripe, Linear, Notion, Sentry, Asana, PayPal, Square, Cloudflare,
-Canva, Webflow, Wix, Vercel, HubSpot, Zapier) plus four private deployments across three AS
-implementations. **Zero omitted the field.** Failing closed locks out nobody it was said to protect.
+Measured: every OAuth provider in this repository's own seed catalog, reached through the full
+RFC 9728 → RFC 8414 chain to the authorization server's metadata document. **Zero omitted the
+field.** Failing closed locks out nobody it was said to protect, and the check is reproducible from
+the catalog alone.
 
 Absent is now a refusal. Synthesized metadata is not: when no document exists, `DefaultEndpoints`
 invents one and marks it `DiscoveryDefaults`, and nothing there omitted anything — proceeding
 against a provider that publishes no metadata is the `AllowDefaultEndpoints` decision, taken
 earlier.
 
-**The same measurement found the risk that is real**, and it is not this one: nine of those servers
-list `plain` *before* `S256`, so a client selecting element zero selects `plain`. This package has
-always used membership rather than an index, and `AuthorizeURL` refuses to build a URL for any
-method but S256 — three layers, and `TestSupportsS256` now pins the middle one.
+**The same measurement found the risk that is real**, and it is not this one: several providers list
+`plain` *before* `S256`, so a client selecting element zero selects `plain`. This package has always
+used membership rather than an index, and `AuthorizeURL` refuses to build a URL for any method but
+S256 — three layers, and `TestSupportsS256` now pins the middle one.
 
-It also found a gap worth its own investigation: **20 services published no `resource_metadata` in
-their challenge and no PRM at the default locations** (Atlassian, Intercom, and 18 internal
-deployments). A conformant client's discovery breaks there long before PKCE is reached. Whether
-`fetchResourceOriginMetadata` rescues them is untested — that hop probes the RS origin for *AS*
-metadata, which the measurement did not check.
+It also found a gap worth its own investigation: **some providers publish no `resource_metadata` in
+their challenge and no PRM at the default locations at all.** A conformant client's discovery breaks
+there long before PKCE is reached. Whether `fetchResourceOriginMetadata` rescues them is untested —
+that hop probes the RS origin for *AS* metadata, which the measurement did not cover.
 
 ### 4. Only the first of multiple `authorization_servers` is used
 
