@@ -311,6 +311,7 @@ func TestStreamableHTTPPeerWithoutHandler(t *testing.T) {
 			}
 		}
 	})
+	fs.enforceStreamableHTTP(t)
 
 	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
 	raw, err := tr.Call(testCtx(t), mcp.MethodToolsCall, nil)
@@ -569,6 +570,7 @@ func TestStreamableHTTPNotificationStream(t *testing.T) {
 		w.Header().Set(headerSessionID, "s9")
 		writeJSONRPC(t, w, mcp.NewResponse(req.ID, initResult(t, mcp.ProtocolVersion)))
 	})
+	fs.enforceStreamableHTTP(t)
 
 	tr := dialStreamable(t, HTTPConfig{
 		URL:                fs.URL + "/mcp",
@@ -754,6 +756,7 @@ func TestStreamableHTTPResume(t *testing.T) {
 		s.message("ev-1", mcp.NewNotification(mcp.NotificationPromptsListChanged, nil))
 		// Handler returns: the stream dies before the response.
 	})
+	fs.enforceStreamableHTTP(t)
 
 	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
 	raw, err := tr.Call(testCtx(t), mcp.MethodToolsCall, nil)
@@ -793,6 +796,7 @@ func TestStreamableHTTPResumeRespectsRetryHint(t *testing.T) {
 		broke = time.Now()
 		// Handler returns: the connection dies, the stream did not end.
 	})
+	fs.enforceStreamableHTTP(t)
 
 	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
 	raw, err := tr.Call(testCtx(t), mcp.MethodToolsCall, nil)
@@ -885,6 +889,7 @@ func TestStreamableHTTPCloseDeletesSession(t *testing.T) {
 		w.Header().Set(headerSessionID, "sid-7")
 		writeJSONRPC(t, w, mcp.NewResponse(req.ID, initResult(t, mcp.ProtocolVersion)))
 	})
+	fs.enforceStreamableHTTP(t)
 	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
 	if _, err := tr.Call(testCtx(t), mcp.MethodInitialize, mcp.InitializeParams{}); err != nil {
 		t.Fatalf("initialize: %v", err)

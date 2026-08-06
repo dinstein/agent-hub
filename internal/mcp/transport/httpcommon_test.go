@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -71,6 +72,69 @@ func newFakeServer(t *testing.T, h func(w http.ResponseWriter, r *http.Request))
 	}))
 	t.Cleanup(fs.Close)
 	return fs
+}
+
+// enforceStreamableHTTP holds every request this test caused to the header
+// rules the ≤ 2025-11-25 Streamable HTTP binding puts on a CLIENT, checked
+// when the test ends.
+//
+// It exists because the byte-level evidence for this client — the golden
+// session in testdata/streamablehttp_wire.json — records exactly four
+// requests: three plain POSTs and a DELETE. Every other request SHAPE this
+// transport can emit (the GET notification stream, the resume GET, the
+// reverse-RPC response POST, the notifications/cancelled POST) is exercised
+// for behaviour and never for headers, and each sets its own Accept on its
+// own literal line. Removing `text/event-stream` from the GET stream's
+// Accept passed the entire suite; a server that content-negotiates strictly
+// then answers 406, which streamRefusedPermanently treats as "never ask
+// again" — so list changes would stop arriving, permanently and silently,
+// which is the failure the whole stream exists to prevent.
+//
+// OPT-IN, not a Cleanup inside newFakeServer, for two reasons that are not
+// tidiness: httpsse_test.go builds the same fake for the 2024-11-05 binding,
+// whose Accept rules differ, and a handful of streamable-HTTP tests drive
+// deliberately non-conformant sequences (hand-seeded session ids, status
+// classification) whose whole point is to be malformed.
+func (fs *fakeServer) enforceStreamableHTTP(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() {
+		t.Helper()
+		for i, r := range fs.recorded() {
+			accept := r.Header["Accept"]
+			switch r.Method {
+			case http.MethodGet:
+				// "The client MUST include an Accept header, listing
+				// text/event-stream as a supported content type."
+				if !strings.Contains(accept, mediaSSE) {
+					t.Errorf("request %d (%s %s): Accept = %q, must list %s — a server that "+
+						"content-negotiates answers 406, which is a permanent give-up",
+						i, r.Method, r.Path, accept, mediaSSE)
+				}
+			case http.MethodPost:
+				// "The client MUST include an Accept header, listing both
+				// application/json and text/event-stream."
+				if !strings.Contains(accept, mediaJSON) || !strings.Contains(accept, mediaSSE) {
+					t.Errorf("request %d (%s %s): Accept = %q, must list both %s and %s",
+						i, r.Method, r.Path, accept, mediaJSON, mediaSSE)
+				}
+				// Batching was removed in 2025-06-18, and a single message
+				// is the rule in every revision this transport speaks. The
+				// suite notices an array today only as a 27-test cascade
+				// with nothing naming the cause.
+				if len(r.Body) > 0 && !bytes.HasPrefix(bytes.TrimSpace(r.Body), []byte("{")) {
+					t.Errorf("request %d (%s %s): body is not a single JSON-RPC message: %s",
+						i, r.Method, r.Path, r.Body)
+				}
+			}
+			// "the client MUST include the MCP-Protocol-Version header on
+			// all subsequent requests" — every verb, every shape. The
+			// initialize that opens the session is the one exception, and
+			// this transport sends it there too, which is permitted.
+			if r.Header["Mcp-Protocol-Version"] == "" {
+				t.Errorf("request %d (%s %s): no MCP-Protocol-Version header", i, r.Method, r.Path)
+			}
+		}
+	})
 }
 
 func (fs *fakeServer) recorded() []recordedRequest {
