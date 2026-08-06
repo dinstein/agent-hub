@@ -738,6 +738,20 @@ re-derives visibility. A tool not on the Surface cannot be listed, found or reco
 `describe_tool` goes through the same `byExposed` map, so it is **structurally** incapable of revealing a
 tool that search hid — a property of the code, not a rule anyone has to remember.
 
+**Tasks are unimplemented, and a `taskSupport: "required"` tool is uncallable through this hub — by
+construction, and loudly.** MCP 2025-11-25 added tasks (experimental): a tool may declare
+`execution.taskSupport`, and where it is `"required"` a server MUST answer `-32601` to a client that
+does not invoke it as a task. AgentHub sends no `task` param and declares no `tasks` capability, so
+every call to such a tool earns that `-32601` — relayed upstream verbatim with its code, and logged
+by `logCallFailure` at WARN. That is the specification's own prescribed failure rather than a silent
+one, which is why **the tool is still listed**: filtering it out would reproduce the worst failure
+this layer knows — a tool absent from the catalog with nothing in the log, the case
+`downstream/paginate.go` argues at length — and this gateway does not scan what a downstream
+returned. What the catalog does carry is `execution` itself, forwarded raw, because it is the only
+thing that explains the refusal to whoever reads it. The member exists in **2025-11-25 alone**:
+2026-07-28 moved tasks out of the core schema into a capability extension and dropped it from
+`Tool`, which is why its absence reads as a missing feature and is not one.
+
 **Determinism is a contract.** Exposure set, ordering, summary truncation and every user-visible string
 are frozen by golden tests. Ties break on ascending exposed name and never rely on map iteration order;
 scores are integers precisely so a tie is exactly decidable.

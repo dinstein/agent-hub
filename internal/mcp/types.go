@@ -133,10 +133,10 @@ type InitializeResult struct {
 }
 
 // ToolDef is one entry of a tools/list result. InputSchema (and the
-// optional OutputSchema / Annotations / Icons / Meta) are passed through
-// verbatim — this facade never re-encodes downstream JSON Schema, and an
-// aggregating proxy that drops a member a downstream sent has degraded that
-// server's tool rather than relayed it.
+// optional OutputSchema / Annotations / Icons / Execution / Meta) are passed
+// through verbatim — this facade never re-encodes downstream JSON Schema,
+// and an aggregating proxy that drops a member a downstream sent has
+// degraded that server's tool rather than relayed it.
 //
 // There is deliberately NO gate on the session's negotiated version, even
 // though OutputSchema and Title postdate 2025-03-26 and the gateway will
@@ -147,6 +147,12 @@ type InitializeResult struct {
 // them would be the degradation the paragraph above rules out. ResultType
 // and the freshness hints ARE gated, and the difference is real: those
 // change how a result must be READ, these only add to it.
+//
+// THE MEMBER LIST IS PER REVISION, and a count taken from one of them is not
+// a check. 2026-07-28's Tool has eight members; 2025-11-25's has nine, the
+// extra one being Execution. This struct was audited against the eight once
+// already and came away complete, because the ninth belongs to a revision
+// the audit was not reading — and mcp.SupportedVersions promises both.
 type ToolDef struct {
 	Name         string          `json:"name"`
 	Title        string          `json:"title,omitempty"`
@@ -157,6 +163,23 @@ type ToolDef struct {
 	// Icons is the tool's optional icon set. Raw, like the schemas: nothing
 	// here interprets an icon, and re-encoding one could only lose detail.
 	Icons json.RawMessage `json:"icons,omitempty"`
+	// Execution is the 2025-11-25 `execution` object, whose one member is
+	// `taskSupport`: "forbidden" (the default), "optional" or "required".
+	// It says whether the tool may — or must — be invoked as a task.
+	//
+	// AgentHub implements no part of tasks and declares no `tasks`
+	// capability, so a conformant client MUST NOT augment a call through
+	// this hub whatever this field says: the capability gate decides, and
+	// this is a refinement inside an already-enabled capability. Forwarding
+	// it is therefore inert today and correct anyway — it describes the
+	// downstream's TOOL, not this hop, and for a "required" tool it is the
+	// only thing that explains the -32601 every call to it earns.
+	//
+	// Raw, and ungated, for the reason the paragraph above gives: it exists
+	// in 2025-11-25 alone. 2026-07-28 moved tasks out of the core schema
+	// into a capability extension and dropped the member from Tool, which
+	// is why this reads as a missing feature and is not one.
+	Execution json.RawMessage `json:"execution,omitempty"`
 	// Meta is the tool's own _meta. It may carry extension data addressed to
 	// a client this hub only forwards for, so it travels untouched.
 	Meta json.RawMessage `json:"_meta,omitempty"`

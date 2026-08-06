@@ -514,18 +514,31 @@ func TestConnectPaginatesToolsList(t *testing.T) {
 	}
 }
 
-// TestToolIconsAndMetaSurviveTheProxy: an aggregating proxy that drops a
+// TestToolOptionalMembersSurviveTheProxy: an aggregating proxy that drops a
 // member a downstream sent has degraded that server's tool rather than
-// relayed it. icons and _meta are optional in the schema and interpreted by
+// relayed it. These members are optional in the schema and interpreted by
 // nothing here, which is exactly why they must travel raw — the client they
 // were addressed to is downstream of this hop, not this hop.
-func TestToolIconsAndMetaSurviveTheProxy(t *testing.T) {
+//
+// The members are named per REVISION, not once: `icons` and `_meta` come
+// from the eight a 2026-07-28 Tool has, and `execution` is the ninth that
+// only 2025-11-25 has, because 2026 moved tasks out of the core schema into
+// a capability extension. mcp.SupportedVersions promises both revisions, and
+// an audit that counted members against one of them reported this struct
+// complete while `execution` was still being dropped.
+func TestToolOptionalMembersSurviveTheProxy(t *testing.T) {
 	t.Parallel()
 	icons := json.RawMessage(`[{"src":"data:image/png;base64,AA==","sizes":["16x16"]}]`)
 	meta := json.RawMessage(`{"com.example.tools/kind":"search"}`)
+	// "required" is the value with consequences: a client that does not
+	// invoke such a tool as a task MUST be answered -32601. AgentHub cannot
+	// invoke one, so relaying this field is the only thing that explains the
+	// refusal to whoever reads the catalog.
+	execution := json.RawMessage(`{"taskSupport":"required"}`)
 	script := fakemcp.Minimal()
 	script.Tools[0].Def.Icons = icons
 	script.Tools[0].Def.Meta = meta
+	script.Tools[0].Def.Execution = execution
 	s := startServer(t, downstream.Deps{}, script)
 
 	tools := s.Tools()
@@ -537,5 +550,21 @@ func TestToolIconsAndMetaSurviveTheProxy(t *testing.T) {
 	}
 	if !bytes.Equal(tools[0].Meta, meta) {
 		t.Fatalf("_meta = %s, want %s", tools[0].Meta, meta)
+	}
+	if !bytes.Equal(tools[0].Execution, execution) {
+		t.Fatalf("execution = %s, want %s", tools[0].Execution, execution)
+	}
+
+	// Surviving the decode is half the hop. The gateway answers an upstream
+	// tools/list by re-marshalling this same struct, so a member the struct
+	// holds but the encoding drops would fail in the same silent way.
+	out, err := json.Marshal(tools[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"icons"`, `"_meta"`, `"execution"`, `"taskSupport":"required"`} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("re-encoded tool lost %s: %s", want, out)
+		}
 	}
 }
