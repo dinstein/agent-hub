@@ -78,18 +78,62 @@ func TestShortReadIsNotAcceptedSilently(t *testing.T) {
 	}
 }
 
+// TestSupportsS256 pins the line between "this document says no PKCE" and
+// "there is no document". Both MCP revisions make an absent
+// code_challenge_methods_supported mean the server does not support PKCE and
+// the client MUST refuse; a synthesized document has nothing to have omitted.
 func TestSupportsS256(t *testing.T) {
-	if !SupportsS256(nil) {
-		t.Fatal("nil metadata: assume S256 (RFC 7636 requires it)")
+	issuer, err := parseAbsoluteURL("https://as.example.com")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !SupportsS256(&AuthServerMetadata{}) {
-		t.Fatal("omitted code_challenge_methods_supported: assume S256")
+	tests := []struct {
+		name string
+		md   *AuthServerMetadata
+		want bool
+	}{
+		{
+			// No document was fetched at all, so nothing omitted anything.
+			// Whether to proceed against a provider that publishes no
+			// metadata is the AllowDefaultEndpoints decision, taken before
+			// this is reached.
+			name: "no metadata at all", md: nil, want: true,
+		},
+		{
+			name: "synthesized endpoints", md: DefaultEndpoints(issuer), want: true,
+		},
+		{
+			// The change: this used to pass on the recorded grounds that
+			// omission "is common". Across 25 authorization servers reached
+			// through the full discovery chain, not one omitted it.
+			name: "fetched document, field absent", want: false,
+			md: &AuthServerMetadata{Issuer: "https://as.example.com", SourceURL: "https://as.example.com/.well-known/oauth-authorization-server"},
+		},
+		{
+			name: "advertises S256", want: true,
+			md: &AuthServerMetadata{SourceURL: "https://x/.well-known/oauth-authorization-server",
+				CodeChallengeMethodsSupported: []string{"plain", "S256"}},
+		},
+		{
+			// plain FIRST: nine of the measured servers order it this way,
+			// so a client picking element zero would pick plain. Membership,
+			// never an index.
+			name: "advertises S256 after plain", want: true,
+			md: &AuthServerMetadata{SourceURL: "https://x/.well-known/oauth-authorization-server",
+				CodeChallengeMethodsSupported: []string{"S256", "plain"}},
+		},
+		{
+			name: "plain only", want: false,
+			md: &AuthServerMetadata{SourceURL: "https://x/.well-known/oauth-authorization-server",
+				CodeChallengeMethodsSupported: []string{"plain"}},
+		},
 	}
-	if !SupportsS256(&AuthServerMetadata{CodeChallengeMethodsSupported: []string{"plain", "S256"}}) {
-		t.Fatal("advertised S256 must be accepted")
-	}
-	if SupportsS256(&AuthServerMetadata{CodeChallengeMethodsSupported: []string{"plain"}}) {
-		t.Fatal("plain-only must be refused, not accommodated")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := SupportsS256(tt.md); got != tt.want {
+				t.Fatalf("SupportsS256 = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

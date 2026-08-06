@@ -177,7 +177,9 @@ func (f *Flow) Login(ctx context.Context, req LoginRequest) (*LoginResult, error
 	if !SupportsS256(md) {
 		e := newFlowError(ErrorTypeAuthorization,
 			fmt.Errorf("oauthflow: %s advertises no S256 code challenge support", md.Issuer))
-		e.Suggestion = "agenthub requires PKCE S256 and will not fall back to the plain method"
+		e.Suggestion = "agenthub requires PKCE S256 and will not fall back to the plain method; " +
+			"an authorization server that advertises no code_challenge_methods_supported at all " +
+			"is treated as not supporting PKCE, which is what both MCP revisions require"
 		return nil, withServer(e, req.ServerID)
 	}
 
