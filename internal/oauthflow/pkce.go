@@ -54,13 +54,29 @@ func challengeS256(verifier string) string {
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-// SupportsS256 reports whether metadata advertises S256. An AS that
-// advertises only "plain" is refused rather than accommodated; an AS that
-// advertises nothing is accepted, because omitting
-// code_challenge_methods_supported is common and RFC 7636 servers are
-// required to support S256.
+// SupportsS256 reports whether metadata advertises S256.
+//
+// Both MCP revisions this tree serves say the same thing: "If
+// `code_challenge_methods_supported` is absent, the authorization server does
+// not support PKCE and MCP clients MUST refuse to proceed." A document that
+// advertises only "plain" is refused for the same reason, and always was.
+//
+// This used to accept an absent field, on the recorded grounds that omitting
+// it "is common" and that refusing would lock out existing providers. Neither
+// half survived measurement: every OAuth provider in this repository's own
+// seed catalog advertises the field, reached through the full RFC 9728 →
+// RFC 8414 chain. The claim had no fixture, named no provider, and turned
+// out to protect nobody.
+//
+// SYNTHESIZED metadata is the exception, and it is not a loophole. When no
+// document exists at all, DefaultEndpoints invents one from the issuer and
+// marks it (SourceURL == defaultEndpointsSource, surfaced as
+// DiscoveryDefaults). There is no document there to have omitted anything, so
+// the specification's premise does not apply; whether to attempt a login
+// against a provider that publishes no metadata is the AllowDefaultEndpoints
+// decision, made before this is ever reached. A nil md is the same case.
 func SupportsS256(md *AuthServerMetadata) bool {
-	if md == nil || len(md.CodeChallengeMethodsSupported) == 0 {
+	if md == nil || md.SourceURL == defaultEndpointsSource {
 		return true
 	}
 	return slices.Contains(md.CodeChallengeMethodsSupported, ChallengeMethodS256)

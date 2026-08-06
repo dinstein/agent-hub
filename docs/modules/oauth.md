@@ -172,18 +172,39 @@ See above. We first need to decide where agenthub's client metadata document is 
 `error="insufficient_scope"` + `scope=...` and then re-authorizing with the larger scope set.
 Refreshing with the same scopes is guaranteed to fail again against `insufficient_scope`.
 
-### 3. PKCE fails open when metadata is missing, contrary to 2025-11-25
+### 3. ~~PKCE fails open when metadata is missing~~ — closed, and how
 
-`SupportsS256` ([pkce.go:62](../../internal/oauthflow/pkce.go#L62)) returns `true` when
-`code_challenge_methods_supported` is absent. The comment spells out the reasoning (omission is very
-common, and RFC 7636 requires servers to support S256). But 2025-11-25 says the exact opposite:
+`SupportsS256` accepted an absent `code_challenge_methods_supported`, against both revisions:
 
 > If `code_challenge_methods_supported` is absent, the authorization server does not
 > support PKCE and MCP clients **MUST** refuse to proceed.
 
-This is a **deliberately retained deviation**, but it has to be recorded here rather than only in a
-code comment: switching to fail-closed would lock out a set of existing providers, which makes it a
-compatibility decision that needs its own evaluation.
+It was recorded here as a *deliberately retained deviation*, because failing closed "would lock out a
+set of existing providers". **That claim was never true, and it is worth knowing how it survived.**
+It was written once, at the initial public release, into two places at once — a code comment and this
+entry — and thereafter each read as corroboration of the other. It named no provider, shipped no
+fixture, and linked no issue.
+
+Measured: 25 authorization servers reached through the full RFC 9728 → RFC 8414 chain, 15
+independent vendors (GitHub, Stripe, Linear, Notion, Sentry, Asana, PayPal, Square, Cloudflare,
+Canva, Webflow, Wix, Vercel, HubSpot, Zapier) plus four private deployments across three AS
+implementations. **Zero omitted the field.** Failing closed locks out nobody it was said to protect.
+
+Absent is now a refusal. Synthesized metadata is not: when no document exists, `DefaultEndpoints`
+invents one and marks it `DiscoveryDefaults`, and nothing there omitted anything — proceeding
+against a provider that publishes no metadata is the `AllowDefaultEndpoints` decision, taken
+earlier.
+
+**The same measurement found the risk that is real**, and it is not this one: nine of those servers
+list `plain` *before* `S256`, so a client selecting element zero selects `plain`. This package has
+always used membership rather than an index, and `AuthorizeURL` refuses to build a URL for any
+method but S256 — three layers, and `TestSupportsS256` now pins the middle one.
+
+It also found a gap worth its own investigation: **20 services published no `resource_metadata` in
+their challenge and no PRM at the default locations** (Atlassian, Intercom, and 18 internal
+deployments). A conformant client's discovery breaks there long before PKCE is reached. Whether
+`fetchResourceOriginMetadata` rescues them is untested — that hop probes the RS origin for *AS*
+metadata, which the measurement did not check.
 
 ### 4. Only the first of multiple `authorization_servers` is used
 
