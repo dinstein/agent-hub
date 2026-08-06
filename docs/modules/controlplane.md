@@ -594,6 +594,16 @@ return the same false and the same frozen 404 (anti-probing), and **a session ow
 deliberately not deleted**: a prober must not be able to destroy other people's sessions by guessing ids.
 When the table is full, **creation fails rather than evicting**.
 
+**That unification covers ids that were presented, and only those.** A request bringing NO
+`Mcp-Session-Id` at all is answered **400**, on POST and DELETE alike — it names no session, so it
+cannot be an enumeration probe, and every ≤ 2025-11-25 revision asks for that status by name. The
+split is load-bearing rather than pedantic, because the client rule attached to 404 is *start a new
+session*: a caller that omitted the header re-initialized, omitted it again, and looped. With
+`DefaultMaxSessions` at 256 and creation failing rather than evicting, that loop filled the table in
+256 rounds, after which `initialize` answered `503 overloaded` to **every** caller until the TTL
+swept it — one broken client denying the HTTP face to all of them, under a message naming the wrong
+cause.
+
 **Dual-stack loopback in Listen.** "localhost" may resolve to 127.0.0.1 or ::1, and binding one family
 produces the worst failure shape — works on the developer's machine, connection refused on the user's —
 so it **binds both**, reading back the first listener's port when the port is 0. A second family that

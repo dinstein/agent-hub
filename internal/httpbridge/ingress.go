@@ -65,6 +65,16 @@ var (
 	errBodyTooLarge = &httpError{http.StatusRequestEntityTooLarge, CodePayloadTooBig, "request body exceeds the ingress limit"}
 	errNoStream     = &httpError{http.StatusMethodNotAllowed, CodeMethodNotAllow, "this endpoint does not offer a server-initiated stream"}
 	errMethod       = &httpError{http.StatusMethodNotAllowed, CodeMethodNotAllow, "method not allowed"}
+	// Outside the frozen set above, and deliberately: that rule unifies
+	// every answer about an id that was PRESENTED, so the endpoint cannot
+	// be probed for which sessions exist. This one answers a request that
+	// presented none, names no session, and reveals nothing. The
+	// specification asks for 400 here (≤ 2025-11-25 transports, "Session
+	// Management") because the client rule attached to 404 is "start a new
+	// session" — which for a caller that simply omitted the header is a
+	// loop, not a recovery.
+	errSessionRequired = &httpError{http.StatusBadRequest, CodeBadRequest,
+		"this request requires an Mcp-Session-Id header"}
 )
 
 // semaphore is the in-flight limiter.

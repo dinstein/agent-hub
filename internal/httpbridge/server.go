@@ -376,7 +376,13 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, c *Caller)
 		return
 	}
 	id := r.Header.Get(SessionHeader)
-	if id == "" || !s.sessions.drop(id, c) {
+	if id == "" {
+		// Same split as resolveSession, for the same reason: no header is
+		// a malformed request, an id that does not resolve is a miss.
+		s.fail(w, r, errSessionRequired)
+		return
+	}
+	if !s.sessions.drop(id, c) {
 		s.fail(w, r, errNotFound)
 		return
 	}
@@ -569,11 +575,29 @@ func (s *Server) replyRPCError(w http.ResponseWriter, status int, id mcp.ID, e *
 // any session was bound is simply unbound), but a header naming a session
 // that does not resolve is ALWAYS a 404 — presenting an id we reject is a
 // different thing from presenting none.
+//
+// THE TWO MISSES GET DIFFERENT STATUSES, and the specification is explicit
+// about which: a server that requires a session id SHOULD answer 400 to a
+// request that brings no header, and MUST answer 404 to one naming a session
+// it terminated. Both rules are verbatim in 2025-03-26, 2025-06-18 and
+// 2025-11-25. Collapsing them into 404 was not cosmetic, because the client
+// rule attached to 404 is "start a new session": a client that omits the
+// header re-initialized, omitted it again, and looped — filling the session
+// table in 256 rounds, after which initialize answered 503 to EVERY caller
+// until the TTL swept it. One broken client took the HTTP face down for all
+// of them, under a message naming the wrong cause.
+//
+// The frozen 404 body is not weakened by the split. Its rule is about ids
+// that were PRESENTED — unknown, expired, foreign, all one sentence so the
+// endpoint cannot be probed for which sessions exist — and a request that
+// carries no id probes nothing. The unknown-path 404 in serveHTTP is
+// likewise untouched: answering "no such path" differently from "no such
+// session" is the map this endpoint must not draw.
 func (s *Server) resolveSession(w http.ResponseWriter, r *http.Request, c *Caller, required bool) (*Session, bool) {
 	id := r.Header.Get(SessionHeader)
 	if id == "" {
 		if required {
-			s.fail(w, r, errNotFound)
+			s.fail(w, r, errSessionRequired)
 			return nil, false
 		}
 		return nil, true

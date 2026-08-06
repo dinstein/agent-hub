@@ -35,8 +35,9 @@ func rpcError(t *testing.T, res *http.Response) *mcp.Error {
 
 // 2026-07-28 removed the session header from the wire: the stateless shapes
 // pass with no session and no session is minted for them, while a legacy
-// request without a session keeps its 404 (a stateful client skipping
-// initialize is still an error).
+// request without a session is still refused (a stateful client skipping
+// initialize is still an error) — with 400; see
+// TestSessionMissStatusesStayDistinct.
 func TestStatelessShapesNeedNoSession(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, &httpbridge.Authenticator{InsecureLoopback: true, Tokens: newStore(t)}, httpbridge.Options{})
@@ -71,14 +72,71 @@ func methodOf(frame string) string {
 	return m.Method
 }
 
-// A legacy request without a session stays a 404: sessionless entry is a
-// property of the 2026 shapes, not a general bypass.
+// A legacy request without a session is still refused — sessionless entry is
+// a property of the 2026 shapes, not a general bypass — but with 400, not
+// 404. The specification asks for that split in all three ≤ 2025-11-25
+// revisions, and the reason is the client rule attached to 404: "start a new
+// session". A caller that omits the header therefore re-initialized and
+// omitted it again, filling the session table in 256 rounds and taking the
+// whole HTTP face to 503.
 func TestLegacyRequestStillNeedsSession(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, &httpbridge.Authenticator{InsecureLoopback: true, Tokens: newStore(t)}, httpbridge.Options{})
 	res := h.post(t, "", "", `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
-	if res.StatusCode != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404 for a sessionless legacy request", res.StatusCode)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for a legacy request that brought no session header", res.StatusCode)
+	}
+}
+
+// TestSessionMissStatusesStayDistinct: the two misses the specification
+// separates must not collapse back together, and the third 404 on this
+// endpoint — an unknown PATH — must not move either.
+//
+// Presenting an id we reject is a different thing from presenting none. The
+// frozen 404 body unifies every answer about an id that WAS presented, so
+// the endpoint cannot be probed for which sessions exist; a request carrying
+// no id probes nothing, which is why splitting it out costs that rule
+// nothing.
+func TestSessionMissStatusesStayDistinct(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, &httpbridge.Authenticator{InsecureLoopback: true, Tokens: newStore(t)}, httpbridge.Options{})
+	legacy := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
+
+	if res := h.post(t, "", "", legacy); res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("no header: status = %d, want 400", res.StatusCode)
+	}
+	if res := h.post(t, "", "deadbeefdeadbeefdeadbeefdeadbeef", legacy); res.StatusCode != http.StatusNotFound {
+		t.Fatalf("unresolvable id: status = %d, want 404", res.StatusCode)
+	}
+	// An id that resolves still works, so the split did not break the path
+	// it runs on.
+	sid := h.initSession(t, "")
+	if res := h.post(t, "", sid, legacy); res.StatusCode != http.StatusOK {
+		t.Fatalf("live session: status = %d, want 200", res.StatusCode)
+	}
+	// DELETE takes the same split.
+	for _, tc := range []struct {
+		name, id string
+		want     int
+	}{
+		{"no header", "", http.StatusBadRequest},
+		{"unresolvable id", "deadbeefdeadbeefdeadbeefdeadbeef", http.StatusNotFound},
+	} {
+		req, err := http.NewRequest(http.MethodDelete, h.srv.URL+httpbridge.DefaultPath, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tc.id != "" {
+			req.Header.Set(httpbridge.SessionHeader, tc.id)
+		}
+		res, err := h.srv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		if res.StatusCode != tc.want {
+			t.Fatalf("DELETE %s: status = %d, want %d", tc.name, res.StatusCode, tc.want)
+		}
 	}
 }
 

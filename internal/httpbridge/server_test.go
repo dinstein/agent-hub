@@ -356,9 +356,12 @@ func TestSessionBindingAndOwnership(t *testing.T) {
 	if res := h.post(t, a, session, callFrame); res.StatusCode != http.StatusOK {
 		t.Fatalf("owner request after a foreign probe = %d, want 200", res.StatusCode)
 	}
-	// A non-initialize request without a session id is a miss too.
-	if res := h.post(t, a, "", callFrame); res.StatusCode != http.StatusNotFound {
-		t.Fatalf("sessionless call status = %d, want 404", res.StatusCode)
+	// A non-initialize request without a session id is refused too — but
+	// as a malformed request rather than a miss, because it names no
+	// session and so cannot be an enumeration probe. See
+	// TestSessionMissStatusesStayDistinct.
+	if res := h.post(t, a, "", callFrame); res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("sessionless call status = %d, want 400", res.StatusCode)
 	}
 }
 
