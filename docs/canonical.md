@@ -210,6 +210,16 @@ either direction reads what it accepts.
   `subscriptions/listen` lands in the dispatch default, so a conforming client reads it as "this
   server offers no stream" — the stance already frozen for the GET stream it replaces. The stdio face
   pushes notifications inline, as it always has
+- **That bullet is the exposure side alone, and the read side is the opposite.** AgentHub *asks*
+  every streamable-http downstream for the server→client stream — the GET on ≤ 2025-11-25, the
+  `subscriptions/listen` POST on 2026-07-28 — because it is the only channel by which such a
+  downstream can report a tool-set change, and catalog refresh has no other trigger: no poll, no TTL,
+  no re-list except on a reconnect a healthy server never performs. The directions differ because
+  the reasons do — declining to *serve* a stream costs a client nothing it cannot ask for again,
+  while declining to *open* one leaves this hub's catalog wrong with nothing saying so. The
+  distinction is written down because the bullet above read as though it covered both, and for the
+  whole of the project's life it effectively did: `Deps.NotificationStream` was set by no production
+  caller, so both stream implementations were dead code in the shipped binary
 
 **`mcp.ProtocolVersion` does not name the version this tree targets, and flipping it to 2026 is
 wrong.** It stays at `2025-11-25` because every context that reads it is definitionally pre-2026: the
