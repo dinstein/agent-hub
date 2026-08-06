@@ -58,8 +58,13 @@ type streamableHTTP struct {
 
 	nextID atomic.Int64
 
-	mu           sync.Mutex
-	sessionID    string
+	mu        sync.Mutex
+	sessionID string
+	// sessionLost records that a session id this transport HELD was
+	// invalidated by the server. Sticky, and not derivable from sessionID
+	// being empty: a transport that never had one looks the same.
+	// reclassifySessionLoss is the only reader.
+	sessionLost  bool
 	protoVersion string
 	// reqMeta, when non-nil, switches the transport into 2026-07-28
 	// stateless mode: every outgoing message carries it as _meta, and every
@@ -293,9 +298,57 @@ func (t *streamableHTTP) post(ctx context.Context, body []byte, method, name, de
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		terr := httpError(resp)
 		t.noteTerminalStatus(resp.StatusCode, terr.RPCCode)
-		return nil, terr
+		return nil, t.reclassifySessionLoss(req, resp.StatusCode, terr)
 	}
 	return resp, nil
+}
+
+// reclassifySessionLoss rescues the one error that would otherwise strand a
+// transport whose session the server has already dropped.
+//
+// The sequence is the specification's own, and every step of it is right: the
+// server drops a session, answers 404, this transport clears its id
+// (noteTerminalStatus), and the NEXT legacy request therefore goes out with
+// no Mcp-Session-Id at all. What comes back for that one is a server telling
+// us we need a session — and a conformant ≤ 2025-11-25 server says so with
+// 400 Bad Request, which the status table classifies ClassFatal: "our request
+// was rejected on its merits". True in general, and exactly wrong here.
+// ClassFatal neither trips the breaker nor triggers a respawn, so the
+// connection sits with no session and nothing that will ever mint one, while
+// the very thing it needs — a fresh initialize — is what a respawn does.
+//
+// Recovery works today only because agenthub's own exposure face answers 404
+// where the specification says 400, and 404 is ClassUnavailable. That is the
+// server-side defect this commit's sibling fixes, and fixing it without this
+// would turn hub-to-hub session expiry from slow self-heal into a dead
+// connection.
+//
+// The predicate is narrow on purpose, and each clause carries its weight:
+//
+//   - we sent NO session header, so this cannot be the server rejecting an
+//     id it does not like (that answer is 404 and already recoverable);
+//   - we HELD one and lost it, so a server that never issued a session and
+//     simply dislikes this request keeps its honest ClassFatal;
+//   - the status is 400, the one a conformant server uses for it.
+//
+// FAIL-CLOSED direction: when in doubt the error keeps its original class.
+// Being wrong here costs a respawn that was not needed; leaving the case out
+// costs a connection that never comes back.
+func (t *streamableHTTP) reclassifySessionLoss(req *http.Request, code int, terr *Error) *Error {
+	if code != http.StatusBadRequest || req.Header.Get(headerSessionID) != "" {
+		return terr
+	}
+	t.mu.Lock()
+	lost := t.sessionLost
+	t.mu.Unlock()
+	if !lost {
+		return terr
+	}
+	return &Error{
+		Class: ClassUnavailable, StatusCode: code, RPCCode: terr.RPCCode,
+		Err: fmt.Errorf("%w: sent without a session id after the server dropped one: %w",
+			ErrSessionExpired, terr.Err),
+	}
 }
 
 // noteTerminalStatus records the two statuses that change transport state:
@@ -316,6 +369,12 @@ func (t *streamableHTTP) noteTerminalStatus(code, rpcCode int) {
 	case http.StatusNotFound:
 		if rpcCode != 0 {
 			return
+		}
+		// sessionLost is sticky and separate from the id being empty: a
+		// transport that never had a session looks identical otherwise, and
+		// reclassifySessionLoss must tell the two apart.
+		if t.sessionID != "" {
+			t.sessionLost = true
 		}
 		t.sessionID = ""
 	}

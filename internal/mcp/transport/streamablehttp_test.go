@@ -1107,3 +1107,83 @@ func TestNotificationStreamGivesUpOnBadRequest(t *testing.T) {
 		t.Fatalf("GET attempted %d times after a 400, want exactly 1", gets)
 	}
 }
+
+// TestSessionLossAfter400StaysRecoverable: the sequence a conformant
+// ≤ 2025-11-25 server produces when it drops a session.
+//
+// The server answers 404 (the specification's MUST for a request naming a
+// session it terminated), this transport clears its id, and the next request
+// therefore carries none — which a conformant server refuses with 400, the
+// status the specification prescribes for exactly that. 400 is ClassFatal in
+// the status table, and ClassFatal neither trips the breaker nor triggers a
+// respawn, so the connection would sit with no session and nothing that could
+// ever mint one.
+//
+// The property is not the class of a 400 in general — a 400 that has nothing
+// to do with sessions must stay fatal, which the second subtest pins.
+func TestSessionLossAfter400StaysRecoverable(t *testing.T) {
+	t.Run("after the server dropped a held session", func(t *testing.T) {
+		var dropped atomic.Bool
+		fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			req := readRequestRPC(t, r)
+			switch {
+			case req.Method == mcp.MethodInitialize:
+				w.Header().Set(headerSessionID, "sid-1")
+				writeJSONRPC(t, w, mcp.NewResponse(req.ID, initResult(t, mcp.ProtocolVersion)))
+			case !dropped.Load():
+				// The session is gone: 404, as the specification requires
+				// for a request naming a terminated session.
+				dropped.Store(true)
+				w.WriteHeader(http.StatusNotFound)
+			default:
+				// The retry carries no session id, because the transport
+				// just cleared it. A conformant server answers 400.
+				if got := r.Header.Get(headerSessionID); got != "" {
+					t.Errorf("second attempt still carried session id %q", got)
+				}
+				w.WriteHeader(http.StatusBadRequest)
+			}
+		})
+		tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+		if _, err := tr.Call(testCtx(t), mcp.MethodInitialize, mcp.InitializeParams{}); err != nil {
+			t.Fatalf("initialize: %v", err)
+		}
+		if _, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil); err == nil {
+			t.Fatal("the 404 call should have failed")
+		}
+		_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+		te := transportError(t, err)
+		if te.Class != ClassUnavailable {
+			t.Fatalf("class = %s, want unavailable — ClassFatal strands the connection "+
+				"with no session and nothing that will mint one", te.Class)
+		}
+		if !errors.Is(err, ErrSessionExpired) {
+			t.Fatalf("err = %v, want it to name the lost session", err)
+		}
+	})
+
+	t.Run("an ordinary 400 stays fatal", func(t *testing.T) {
+		fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+			req := readRequestRPC(t, r)
+			if req.Method == mcp.MethodInitialize {
+				writeJSONRPC(t, w, mcp.NewResponse(req.ID, initResult(t, mcp.ProtocolVersion)))
+				return
+			}
+			w.WriteHeader(http.StatusBadRequest)
+		})
+		tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+		if _, err := tr.Call(testCtx(t), mcp.MethodInitialize, mcp.InitializeParams{}); err != nil {
+			t.Fatalf("initialize: %v", err)
+		}
+		// This server issued no session at all, so nothing was lost and the
+		// rejection is what it says it is.
+		_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+		if te := transportError(t, err); te.Class != ClassFatal {
+			t.Fatalf("class = %s, want fatal for a 400 that is not about a session", te.Class)
+		}
+	})
+}
