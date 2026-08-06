@@ -1034,3 +1034,76 @@ func TestStreamableHTTPSpecErrorIsNotALegacyServer(t *testing.T) {
 		})
 	}
 }
+
+// TestStreamRefusedPermanently: which statuses end the out-of-call stream
+// loop. The whole 4xx class does, because the request never changes — the
+// loop resends the identical GET (or subscriptions/listen POST) every time,
+// so a server that refused it once refuses it forever and the retry cannot
+// terminate. Before this the list was six named statuses and 400 was not
+// among them, which is the status a server that does not understand the GET
+// is most likely to answer: one request every five seconds, per downstream,
+// for the life of the connection.
+func TestStreamRefusedPermanently(t *testing.T) {
+	for _, tc := range []struct {
+		code int
+		want bool
+	}{
+		{http.StatusBadRequest, true}, // the one the named list missed
+		{http.StatusUnauthorized, true},
+		{http.StatusForbidden, true},
+		{http.StatusNotFound, true},
+		{http.StatusMethodNotAllowed, true},
+		{http.StatusGone, true},
+		{http.StatusUnsupportedMediaType, true},
+		{http.StatusNotImplemented, true}, // about the endpoint, not its health
+		// "Later", which is what a retry is for.
+		{http.StatusRequestTimeout, false},
+		{http.StatusTooManyRequests, false},
+		// Health, not the request.
+		{http.StatusInternalServerError, false},
+		{http.StatusBadGateway, false},
+		{http.StatusServiceUnavailable, false},
+		{http.StatusGatewayTimeout, false},
+	} {
+		if got := streamRefusedPermanently(tc.code); got != tc.want {
+			t.Errorf("streamRefusedPermanently(%d) = %v, want %v", tc.code, got, tc.want)
+		}
+	}
+}
+
+// A 400 must end the loop rather than become a five-second heartbeat. This
+// drives the real loop rather than the predicate, because the predicate
+// being right is not the same as the loop reading it.
+func TestNotificationStreamGivesUpOnBadRequest(t *testing.T) {
+	var gets int
+	done := make(chan struct{})
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodGet {
+			gets++
+			if gets == 1 {
+				close(done)
+			}
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		req := readRequestRPC(t, r)
+		writeJSONRPC(t, w, mcp.NewResponse(req.ID, initResult(t, mcp.ProtocolVersion)))
+	})
+	tr := dialStreamable(t, HTTPConfig{
+		URL:                fs.URL + "/mcp",
+		NotificationStream: true,
+		retryBase:          time.Millisecond,
+	})
+	if _, err := tr.Call(testCtx(t), mcp.MethodInitialize, mcp.InitializeParams{}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	<-done
+	time.Sleep(80 * time.Millisecond)
+	if gets != 1 {
+		t.Fatalf("GET attempted %d times after a 400, want exactly 1", gets)
+	}
+}

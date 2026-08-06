@@ -647,10 +647,7 @@ func (t *streamableHTTP) openListenStream() (resp *http.Response, permanent bool
 		code := resp.StatusCode
 		terr := httpError(resp)
 		t.noteTerminalStatus(code, terr.RPCCode)
-		switch code {
-		case http.StatusMethodNotAllowed, http.StatusNotImplemented,
-			http.StatusGone, http.StatusNotFound,
-			http.StatusUnauthorized, http.StatusForbidden:
+		if streamRefusedPermanently(code) {
 			return nil, true, terr
 		}
 		return nil, false, terr
@@ -693,10 +690,7 @@ func (t *streamableHTTP) openNotificationStream() (resp *http.Response, permanen
 		code := resp.StatusCode
 		terr := httpError(resp)
 		t.noteTerminalStatus(code, terr.RPCCode)
-		switch code {
-		case http.StatusMethodNotAllowed, http.StatusNotImplemented,
-			http.StatusGone, http.StatusNotFound,
-			http.StatusUnauthorized, http.StatusForbidden:
+		if streamRefusedPermanently(code) {
 			return nil, true, terr
 		}
 		return nil, false, terr
@@ -706,6 +700,42 @@ func (t *streamableHTTP) openNotificationStream() (resp *http.Response, permanen
 		return nil, true, fmt.Errorf("%w: GET stream content-type %q", ErrHTTPProtocol, responseMediaType(resp))
 	}
 	return resp, false, nil
+}
+
+// streamRefusedPermanently reports whether a status answering an attempt to
+// open the out-of-call stream means "never ask again" rather than "not right
+// now".
+//
+// The rule is the whole 4xx class, minus the two that are explicitly about
+// timing. A 4xx says the request itself is wrong, and this request never
+// changes: it is the same GET (or the same subscriptions/listen POST) on
+// every attempt, so a server that refused it once refuses it forever, and
+// retrying is a loop that cannot terminate. That is not hypothetical — the
+// backoff caps at maxRetryBackoff, so an unlisted 4xx becomes one request
+// every five seconds for the life of the connection, per downstream. The
+// named list this replaced covered 405/501/410/404/401/403 and let 400
+// through, which is the status a server that simply does not understand the
+// GET is most likely to pick.
+//
+//	408 Request Timeout and 429 Too Many Requests are the exceptions,
+//	because both are the server saying "later", which is what a retry is
+//	for.
+//
+// 501 Not Implemented is the one 5xx here: it is a statement about the
+// endpoint rather than about its current health.
+//
+// FAIL-OPEN by design, and cheaply: a status not on this list keeps
+// retrying, which costs one request per backoff step and never loses data.
+// Being wrong the other way — giving up on a transient failure — silently
+// ends list-change delivery for the life of the connection.
+func streamRefusedPermanently(code int) bool {
+	switch code {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+		return false
+	case http.StatusNotImplemented:
+		return true
+	}
+	return code >= 400 && code < 500
 }
 
 // consumeStream drains a server→client stream, dispatching notifications
