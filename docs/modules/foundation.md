@@ -812,7 +812,7 @@ Only stdio and docker share a code base (`conn`).
 | Reverse RPC | **Answered inline on the read loop**, so a handler must not call back into the same transport and must return promptly | On a separate goroutine, reply POSTed back; a handler **may** call back in | Separate goroutine + POST, same `maxPeerWorkers`(8) cap |
 | Session | None | `Mcp-Session-Id` on ≤ 2025-11-25 (echoed after initialization, DELETEd on `Close`); none under 2026-07-28, which sends `Mcp-Method`/`Mcp-Name` headers instead | None |
 | Out-of-call stream | N/A | optional GET (≤ 2025-11-25) or `subscriptions/listen` (2026-07-28), same reconnect loop | the one GET stream |
-| Resumption | N/A | `Last-Event-ID` best-effort resume once (off with `DisableResume`; never after a 410) | **None**: the legacy binding never defined it, and silently replaying non-idempotent calls is worse than letting `internal/downstream` reconnect cleanly |
+| Resumption | N/A | `Last-Event-ID` best-effort resume once, never sooner than a `retry` hint asked for (off with `DisableResume`; never after a 410) | **None**: the legacy binding never defined it, and silently replaying non-idempotent calls is worse than letting `internal/downstream` reconnect cleanly |
 | `Stderr()` | The child's last 4 KiB of stderr (docker also appends diagnostic lines) | `""` | `""` |
 
 ### Invariants and failure directions
@@ -845,6 +845,26 @@ outside, the way the dialer already does. The gap is owned by
 [dataplane.md](dataplane.md#open-gaps-raised-by-the-2026-07-31-sweep), where the other transport that
 sets it lives — recorded here too because a reader working in this file has no other way to learn
 that this line is half of something.
+
+**This client never reconnects to an SSE stream sooner than the server asked.** MCP 2025-11-25 makes
+waiting out a `retry` field a MUST — the only SSE field a client is not free to read as advice — and
+it is the one revision that does: 2025-06-18 and earlier draw no connection-versus-stream
+distinction, and 2026-07-28 removed resumable streams outright. `sseScanner.retryHint` keeps the
+value (ASCII digits only; an unparseable one leaves the previous hint standing rather than clearing
+it, which would be a reconnect storm dressed as conformance), and the two reconnect sites spend it
+differently because only one has a caller waiting:
+
+- the **per-call resume** runs under the caller's context, so `waitBeforeResume` takes the wait only
+  when it fits the remaining deadline and otherwise **abandons the resume**, letting the call report
+  the stream break it already had. Sleeping out a 30-second hint on a call with ten seconds left
+  would turn an answer into a deadline; coming back early is the one option the MUST rules out, so
+  the fallback is not reconnecting rather than reconnecting sooner.
+- the **out-of-call stream loop** has no deadline to trade against and honours the full hint,
+  `max`-ed with its own backoff, interruptible by `Close` like any other wait.
+
+Both were violating it: the loop's own backoff ignored the hint, and the per-call resume — the only
+one the shipped product reaches — came back in about 100µs however long the server asked for, under
+a scanner comment claiming a "bounded backoff" that belonged to the other path.
 
 **The one place `sseScanner` deviates from the dispatch rules is an empty data buffer**, which the
 spec drops and this scanner dispatches — so a bare `id:` line and a blank line, the way a resumable

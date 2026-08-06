@@ -423,8 +423,10 @@ func (t *streamableHTTP) awaitStreamResponse(ctx context.Context, resp *http.Res
 				return nil, ctx.Err()
 			}
 			if errors.Is(err, io.EOF) && allowResume && !t.disableResume && sc.lastEventID() != "" {
-				if resumed, rerr := t.resumeStream(ctx, sc.lastEventID()); rerr == nil {
-					return t.awaitStreamResponse(ctx, resumed, id, false)
+				if waitBeforeResume(ctx, sc.retryHint()) {
+					if resumed, rerr := t.resumeStream(ctx, sc.lastEventID()); rerr == nil {
+						return t.awaitStreamResponse(ctx, resumed, id, false)
+					}
 				}
 			}
 			return nil, &Error{Class: ClassUnavailable, Err: fmt.Errorf(
@@ -454,6 +456,36 @@ func (t *streamableHTTP) awaitStreamResponse(ctx context.Context, resp *http.Res
 		case *mcp.Notification:
 			t.dispatchNotification(m)
 		}
+	}
+}
+
+// waitBeforeResume holds off a per-call resumption for as long as the server
+// asked, and reports whether resuming is still allowed.
+//
+// MCP 2025-11-25 makes waiting out a `retry` hint a MUST (see
+// sseScanner.retryHint). This client cannot always obey it: the resume runs
+// under the caller's context, so sleeping out a 30-second hint on a call with
+// ten seconds left would turn an answer into a deadline. The rule it keeps
+// instead is the one the MUST exists to protect — NEVER RECONNECT SOONER THAN
+// ASKED — and it keeps it in the only other direction available: when the
+// wait does not fit, the resume is abandoned and the caller reports the
+// stream break it already had. Coming back early is the one option ruled out.
+//
+// No hint means no obligation, and resumption proceeds immediately as before.
+func waitBeforeResume(ctx context.Context, hint time.Duration) bool {
+	if hint <= 0 {
+		return true
+	}
+	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) <= hint {
+		return false
+	}
+	timer := time.NewTimer(hint)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -559,8 +591,12 @@ func (t *streamableHTTP) streamLoop(open func() (*http.Response, bool, error)) {
 			continue
 		}
 		attempt = 0
-		t.consumeStream(resp)
-		if !t.sleep(backoffFor(t.retryBase, 0)) {
+		// The server's own pacing wins when it asked for more than our
+		// backoff would have taken: 2025-11-25 makes waiting out a `retry`
+		// hint a MUST, and this loop has no caller deadline to trade it
+		// against, so the full hint is honoured however long it is. It
+		// interrupts on Close like any other wait.
+		if !t.sleep(max(backoffFor(t.retryBase, 0), t.consumeStream(resp))) {
 			return
 		}
 	}
@@ -675,14 +711,21 @@ func (t *streamableHTTP) openNotificationStream() (resp *http.Response, permanen
 // consumeStream drains a server→client stream, dispatching notifications
 // and reverse RPCs. Responses on this stream match no in-flight POST and
 // are dropped. It returns when the stream ends or the transport closes.
-func (t *streamableHTTP) consumeStream(resp *http.Response) {
+//
+// The returned duration is the `retry` hint the server left behind, 0 for
+// none. streamLoop owes it a wait at least that long before reopening; see
+// sseScanner.retryHint for the rule and waitBeforeResume for the per-call
+// half of it. A stream this client abandons over a framing error returns no
+// hint: the peer is not keeping its side of the protocol, so its pacing
+// request is not the thing to honour.
+func (t *streamableHTTP) consumeStream(resp *http.Response) time.Duration {
 	defer drainClose(resp)
 	sc := newSSEScanner(resp.Body, t.maxFrame)
 	for {
 		ev, err := sc.Next()
 		if err != nil {
 			t.rememberEventID(sc.lastEventID())
-			return
+			return sc.retryHint()
 		}
 		if ev.id != "" {
 			t.rememberEventID(ev.id)
@@ -692,7 +735,7 @@ func (t *streamableHTTP) consumeStream(resp *http.Response) {
 		}
 		msg, perr := mcp.ParseMessage(ev.data)
 		if perr != nil {
-			return // a peer that emits garbage cannot keep framing intact
+			return 0 // a peer that emits garbage cannot keep framing intact
 		}
 		switch m := msg.(type) {
 		case *mcp.Request:

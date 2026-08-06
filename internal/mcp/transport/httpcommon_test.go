@@ -179,6 +179,13 @@ func (s *sseWriter) idOnly(id string) {
 	s.f.Flush()
 }
 
+// retry writes a bare `retry:` field — what a 2025-11-25 server SHOULD send
+// before closing a connection it does not mean to end the stream on.
+func (s *sseWriter) retry(ms int) {
+	_, _ = fmt.Fprintf(s.w, "retry: %d\n\n", ms)
+	s.f.Flush()
+}
+
 func (s *sseWriter) comment(text string) {
 	_, _ = fmt.Fprintf(s.w, ": %s\n\n", text)
 	s.f.Flush()

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -761,6 +762,90 @@ func TestStreamableHTTPResume(t *testing.T) {
 	}
 	if string(raw) != `{"resumed":true}` {
 		t.Fatalf("result = %s", raw)
+	}
+}
+
+// TestStreamableHTTPResumeRespectsRetryHint: over real wire bytes, the
+// resume waits out the `retry` the server asked for.
+//
+// MCP 2025-11-25 words this as a MUST, and this is the path it binds: the
+// per-POST stream is the only one the shipped product reconnects, and it
+// used to come back in under a millisecond however long the server asked for
+// — while the scanner's comment claimed a bounded backoff that belongs to a
+// different loop. The gap between the two GETs is the whole assertion.
+func TestStreamableHTTPResumeRespectsRetryHint(t *testing.T) {
+	const hint = 250 * time.Millisecond
+	var pendingID mcp.ID
+	var broke time.Time
+	resumed := make(chan time.Duration, 1)
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			resumed <- time.Since(broke)
+			s := startSSE(t, w)
+			s.message("ev-2", mcp.NewResponse(pendingID, json.RawMessage(`{"resumed":true}`)))
+			return
+		}
+		req := readRequestRPC(t, r)
+		pendingID = req.ID
+		s := startSSE(t, w)
+		s.message("ev-1", mcp.NewNotification(mcp.NotificationPromptsListChanged, nil))
+		s.retry(int(hint.Milliseconds()))
+		broke = time.Now()
+		// Handler returns: the connection dies, the stream did not end.
+	})
+
+	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+	raw, err := tr.Call(testCtx(t), mcp.MethodToolsCall, nil)
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if string(raw) != `{"resumed":true}` {
+		t.Fatalf("result = %s", raw)
+	}
+	gap := <-resumed
+	// A margin below the ask, not above: the timer's own granularity is the
+	// only thing being tolerated, and the failure this guards is a resume
+	// that took microseconds.
+	if gap < hint-20*time.Millisecond {
+		t.Fatalf("resumed after %v, sooner than the %v the server asked for", gap, hint)
+	}
+}
+
+// TestStreamableHTTPResumeSkippedWhenTheHintOutlastsTheCall: the other
+// direction of the same rule. A wait that does not fit the caller's deadline
+// cannot be taken, and the answer is to abandon the resume — not to come
+// back early, which is the one thing the MUST forbids. The call then reports
+// the stream break it already had.
+func TestStreamableHTTPResumeSkippedWhenTheHintOutlastsTheCall(t *testing.T) {
+	var gets atomic.Int32
+	fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			gets.Add(1)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_ = readRequestRPC(t, r)
+		s := startSSE(t, w)
+		s.message("ev-1", mcp.NewNotification(mcp.NotificationPromptsListChanged, nil))
+		s.retry(600_000) // ten minutes, far past any call deadline
+	})
+
+	tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err := tr.Call(ctx, mcp.MethodToolsCall, nil)
+	if err == nil {
+		t.Fatal("call succeeded although the stream broke and the resume was not allowed")
+	}
+	if !strings.Contains(err.Error(), "stream ended before the response") {
+		t.Fatalf("err = %v, want the stream-break failure", err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("took %v — it slept into the deadline instead of declining at once", d)
+	}
+	if n := gets.Load(); n != 0 {
+		t.Fatalf("made %d resume attempts, want none", n)
 	}
 }
 

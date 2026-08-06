@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dinstein/agent-hub/internal/mcp"
 )
@@ -54,6 +57,7 @@ type sseScanner struct {
 	err        error
 	pendingEOF bool
 	lastID     string
+	retry      time.Duration
 }
 
 func newSSEScanner(r io.Reader, max int) *sseScanner {
@@ -63,6 +67,25 @@ func newSSEScanner(r io.Reader, max int) *sseScanner {
 // lastEventID returns the most recent id field seen, for Last-Event-ID
 // resumption.
 func (s *sseScanner) lastEventID() string { return s.lastID }
+
+// retryHint returns the reconnection delay the server last asked for, or 0
+// when it asked for none.
+//
+// MCP 2025-11-25 (basic/transports.mdx, "Sending Messages to the Server"
+// item 6) makes this the one SSE field a client is not free to read as
+// advice: a server closing the connection without terminating the stream
+// SHOULD send `retry`, and "the client MUST respect the retry field, waiting
+// the given number of milliseconds before attempting to reconnect". No other
+// revision carries the rule — 2025-06-18 and earlier draw no
+// connection-versus-stream distinction, and 2026-07-28 removed resumable
+// streams outright — but 2025-11-25 is the revision mcp.ProtocolVersion
+// names, so it is not a dead letter.
+//
+// The value is taken only when it is what the SSE standard calls valid:
+// ASCII digits and nothing else. Anything else, an overflow included, leaves
+// the previous hint standing, which is that standard's own rule for a retry
+// it cannot parse.
+func (s *sseScanner) retryHint() time.Duration { return s.retry }
 
 // Next returns the next dispatched event, io.EOF at end of stream, or the
 // underlying read error. Errors are sticky.
@@ -117,13 +140,40 @@ func (s *sseScanner) Next() (*sseEvent, error) {
 				id, s.lastID, seen = value, value, true
 			}
 		case "retry":
-			// Server-suggested reconnect delay: this package uses its own
-			// bounded backoff, so the hint is deliberately ignored.
+			// The one field this scanner keeps for the caller rather than
+			// the stream: see retryHint. Digits only, per the SSE standard,
+			// and an unparseable value leaves the last hint standing rather
+			// than clearing it.
+			if d, ok := parseRetryMS(value); ok {
+				s.retry = d
+			}
 			seen = true
 		default:
 			// Unknown field: ignored per spec.
 		}
 	}
+}
+
+// parseRetryMS reads an SSE retry value: ASCII digits only, so a sign, a
+// unit suffix or any whitespace makes it invalid rather than tolerated
+// (strconv would accept a leading "+"). An empty value, and one whose
+// milliseconds do not fit a time.Duration, are invalid too — the standard
+// says an unparseable retry is ignored, and "ignored" must not become an
+// overflowed negative delay.
+func parseRetryMS(value string) (time.Duration, bool) {
+	if value == "" {
+		return 0, false
+	}
+	for _, c := range value {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+	}
+	ms, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || ms > math.MaxInt64/int64(time.Millisecond) {
+		return 0, false
+	}
+	return time.Duration(ms) * time.Millisecond, true
 }
 
 // readLine returns one line with the terminator stripped. It enforces the

@@ -1,10 +1,12 @@
 package transport
 
 import (
+	"context"
 	"errors"
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dinstein/agent-hub/internal/mcp"
 )
@@ -117,6 +119,109 @@ func TestSSEScannerBound(t *testing.T) {
 		}
 		if len(ev.data) != 40 {
 			t.Fatalf("len(data) = %d", len(ev.data))
+		}
+	})
+}
+
+// TestSSEScannerRetryHint: the one SSE field a client MUST act on rather
+// than merely tolerate (MCP 2025-11-25, transports §"Sending Messages to the
+// Server" item 6). The scanner parsed it and dropped it on the floor until
+// this test existed, and the comment that justified dropping it claimed a
+// bounded backoff the live reconnect path did not have.
+func TestSSEScannerRetryHint(t *testing.T) {
+	t.Run("kept across events", func(t *testing.T) {
+		sc := newSSEScanner(strings.NewReader("retry: 30000\ndata: x\n\ndata: y\n\n"), mcp.MaxFrameSize)
+		if _, err := sc.Next(); err != nil {
+			t.Fatal(err)
+		}
+		if got := sc.retryHint(); got != 30*time.Second {
+			t.Fatalf("retryHint = %v, want 30s", got)
+		}
+		// It is stream state, not event state: an event carrying no retry
+		// does not clear the last one.
+		if _, err := sc.Next(); err != nil {
+			t.Fatal(err)
+		}
+		if got := sc.retryHint(); got != 30*time.Second {
+			t.Fatalf("retryHint after a retry-less event = %v, want 30s", got)
+		}
+	})
+	t.Run("none asked for", func(t *testing.T) {
+		sc := newSSEScanner(strings.NewReader("data: x\n\n"), mcp.MaxFrameSize)
+		if _, err := sc.Next(); err != nil {
+			t.Fatal(err)
+		}
+		if got := sc.retryHint(); got != 0 {
+			t.Fatalf("retryHint = %v, want 0", got)
+		}
+	})
+	t.Run("invalid values leave the last hint standing", func(t *testing.T) {
+		// The SSE standard says a retry that is not ASCII digits is ignored
+		// — ignored, not treated as zero, which would be a reconnect storm
+		// dressed up as conformance.
+		for _, bad := range []string{"", "+5", "-5", " 500", "500ms", "1e3", "99999999999999999999"} {
+			sc := newSSEScanner(strings.NewReader("retry: 700\nretry: "+bad+"\ndata: x\n\n"), mcp.MaxFrameSize)
+			if _, err := sc.Next(); err != nil {
+				t.Fatal(err)
+			}
+			if got := sc.retryHint(); got != 700*time.Millisecond {
+				t.Fatalf("retry %q: hint = %v, want the previous 700ms to stand", bad, got)
+			}
+		}
+	})
+	t.Run("zero is a valid ask", func(t *testing.T) {
+		sc := newSSEScanner(strings.NewReader("retry: 900\nretry: 0\ndata: x\n\n"), mcp.MaxFrameSize)
+		if _, err := sc.Next(); err != nil {
+			t.Fatal(err)
+		}
+		if got := sc.retryHint(); got != 0 {
+			t.Fatalf("retryHint = %v, want an explicit 0 to replace the 900ms", got)
+		}
+	})
+}
+
+// TestWaitBeforeResume: the client's half of the retry MUST. It cannot always
+// wait — the per-call resume runs under the caller's deadline — so the rule
+// it keeps is the narrower one the MUST protects: never come back sooner
+// than asked. Not resuming at all is the fallback; resuming early is not.
+func TestWaitBeforeResume(t *testing.T) {
+	t.Run("no hint resumes at once", func(t *testing.T) {
+		start := time.Now()
+		if !waitBeforeResume(context.Background(), 0) {
+			t.Fatal("no hint must not block a resume")
+		}
+		if d := time.Since(start); d > 50*time.Millisecond {
+			t.Fatalf("waited %v with no hint", d)
+		}
+	})
+	t.Run("a hint that fits is waited out", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		start := time.Now()
+		if !waitBeforeResume(ctx, 120*time.Millisecond) {
+			t.Fatal("a hint inside the deadline must still allow the resume")
+		}
+		if d := time.Since(start); d < 120*time.Millisecond {
+			t.Fatalf("came back after %v, sooner than the 120ms asked for", d)
+		}
+	})
+	t.Run("a hint longer than the deadline abandons the resume", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		start := time.Now()
+		if waitBeforeResume(ctx, time.Hour) {
+			t.Fatal("resumed despite being unable to wait as long as asked")
+		}
+		// And it refuses immediately rather than burning the deadline first.
+		if d := time.Since(start); d > 50*time.Millisecond {
+			t.Fatalf("took %v to decide it could not wait", d)
+		}
+	})
+	t.Run("cancellation ends the wait without resuming", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() { time.Sleep(20 * time.Millisecond); cancel() }()
+		if waitBeforeResume(ctx, time.Minute) {
+			t.Fatal("a cancelled wait must not resume")
 		}
 	})
 }
