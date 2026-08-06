@@ -246,9 +246,22 @@ type Deps struct {
 	// exists for tests that must reach an httptest server.
 	DialContext transport.DialContextFunc
 
-	// NotificationStream opens the optional server→client GET SSE stream of
-	// the streamable-http transport after initialize. Servers that do not
-	// offer it answer 405 and are left alone.
+	// NotificationStream opens the optional server→client stream of the
+	// streamable-http transport: the GET SSE stream on ≤ 2025-11-25, and
+	// the subscriptions/listen POST that replaced it on 2026-07-28. It is
+	// the ONLY channel by which a streamable-http downstream's
+	// tools/list_changed can reach this process, so the catalog of a server
+	// dialled with it off is fixed until the connection is rebuilt.
+	//
+	// The gateway sets it; gateway.downstreamDeps says why. One-shot CLI
+	// paths — doctor, server inspect, server test — leave it off
+	// deliberately: each dials, reads once and exits, so a long-lived
+	// stream would only be a goroutine to tear down.
+	//
+	// A server that does not offer the stream refuses the first attempt and
+	// is left alone from then on (transport.streamRefusedPermanently names
+	// the statuses). That refusal is what makes turning this on cost one
+	// request rather than a retry loop.
 	NotificationStream bool
 
 	// Dial overrides transport creation (tests, in-process fakes). nil

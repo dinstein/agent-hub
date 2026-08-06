@@ -137,6 +137,24 @@ func (g *gateway) downstreamDeps() downstream.Deps {
 		Log:            g.log,
 		Dial:           g.cfg.Dial,
 		ConnectTimeout: g.cfg.ConnectTimeout,
+		// A streamable-http downstream has no other way to tell this
+		// process its tool set changed. Catalog refresh is driven entirely
+		// by tools/list_changed — there is no poll, no TTL, and no re-list
+		// on anything but a reconnect — so with this off a remote server's
+		// catalog was fixed from connect until the connection was rebuilt,
+		// and nothing said so. The servers that suffer it are the ones the
+		// seed catalog reaches over HTTP: hosted endpoints whose tool set
+		// moves on a vendor's deploy schedule, not the local binaries that
+		// only change when someone reinstalls them.
+		//
+		// This is also the switch the whole 2026-07-28 subscriptions/listen
+		// path hangs from, so it was dead code in the shipped binary too.
+		//
+		// The cost against a server that offers no stream is one refused
+		// request per connection and one log line saying list changes will
+		// not be pushed — see transport.streamRefusedPermanently, which had
+		// to learn about 400 before this line was safe to write.
+		NotificationStream: true,
 		// Per server rather than one log on the shared Deps: a ServerLog
 		// carries the id it was opened with, so a single shared one would
 		// file every server's frames under whichever server opened it.

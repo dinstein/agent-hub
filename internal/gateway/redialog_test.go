@@ -119,3 +119,25 @@ func lastRec(t *testing.T, sink *callLog, msg string) map[string]string {
 	t.Fatalf("no %q record; logged: %v", msg, sink.seen)
 	return nil
 }
+
+// TestDownstreamDepsOpensTheNotificationStream: the gateway asks for the
+// server→client stream on every downstream it dials.
+//
+// This is one field, and it was off for the whole of this project's life.
+// Catalog refresh has no trigger but tools/list_changed — no poll, no TTL,
+// no re-list except on a reconnect a healthy server never performs — and on
+// streamable-http that notification has no other channel to arrive by. So a
+// hosted downstream's catalog was fixed at connect, invisibly. The same
+// field gates the 2026-07-28 subscriptions/listen path, which made that dead
+// code in the shipped binary too.
+//
+// The assertion is deliberately on downstreamDeps rather than on a dialled
+// connection: this is the single description of how the gateway and its
+// derived pool dial, and the defect was that it said nothing here.
+func TestDownstreamDepsOpensTheNotificationStream(t *testing.T) {
+	g := &gateway{log: slog.New(slog.DiscardHandler)}
+	if !g.downstreamDeps().NotificationStream {
+		t.Fatal("the gateway dials without a server→client stream; " +
+			"a streamable-http downstream then has no way to report a tool-set change")
+	}
+}
