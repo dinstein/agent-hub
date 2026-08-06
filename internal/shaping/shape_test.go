@@ -273,6 +273,25 @@ func TestShapePreservesIsError(t *testing.T) {
 	}
 }
 
+// The result's own _meta travels with the shaped page, for the reason
+// IsError does: a page is still the downstream's result.
+//
+// This is the path a field added to mcp.CallResult could most easily be lost
+// on anyway, and the hardest to notice: `shape` returns the original
+// untouched when nothing is cut, so small results would have carried the
+// member and only large ones dropped it.
+func TestShapePreservesMeta(t *testing.T) {
+	res := goldenResult()
+	res.Meta = json.RawMessage(`{"com.example.tools/traceId":"abc123"}`)
+	out, _, ok := Shape(res, Budget{Bytes: 256}, goldenOpts())
+	if !ok {
+		t.Fatal("this result was expected to be truncated")
+	}
+	if string(out.Meta) != string(res.Meta) {
+		t.Fatalf("_meta = %s, want %s", out.Meta, res.Meta)
+	}
+}
+
 // escapedRuneLen must agree with encoding/json byte for byte; the split
 // point is computed from it, so a divergence would silently push pages over
 // the budget.

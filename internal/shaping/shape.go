@@ -156,7 +156,11 @@ func shape(res *mcp.CallResult, budget Budget, opts Options) (*mcp.CallResult, C
 		return res, Cursor{}, false
 	}
 
-	out := &mcp.CallResult{Content: content, IsError: res.IsError}
+	// Meta rides along. A page is still the downstream's result, and a
+	// literal that rebuilds this struct is exactly how a member with a
+	// field of its own still goes missing — on the truncation path alone,
+	// which is the hardest shape of that bug to notice.
+	out := &mcp.CallResult{Content: content, IsError: res.IsError, Meta: res.Meta}
 	if keepStructured {
 		out.StructuredContent = res.StructuredContent
 	}

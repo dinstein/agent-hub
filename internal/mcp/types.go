@@ -1,6 +1,9 @@
 package mcp
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // MCP method and notification names. The facade owns these strings; no other
 // package spells protocol method names.
@@ -247,6 +250,16 @@ type CallResult struct {
 	Content           json.RawMessage `json:"content"`
 	StructuredContent json.RawMessage `json:"structuredContent,omitempty"`
 	IsError           bool            `json:"isError,omitempty"`
+	// Meta is the result's own _meta, which every revision's base Result
+	// carries. It is here for the reason ToolDef.Meta is: a downstream may
+	// address extension data to a client this hub only forwards for, and
+	// the raw bytes are dropped at decode, so a member with no field can
+	// never reappear.
+	//
+	// It does NOT reach the upstream client verbatim. gateway.replyResult
+	// removes the io.modelcontextprotocol/ namespace first — see
+	// StripReservedMetaKeys, which explains why this hop owns it.
+	Meta json.RawMessage `json:"_meta,omitempty"`
 }
 
 // InputRequiredResult is the "tools/call" (and "prompts/get",
@@ -352,6 +365,60 @@ type DiscoverParams struct {
 // now that no initialize handshake carries it.
 type ResultMeta struct {
 	ServerInfo *Implementation `json:"io.modelcontextprotocol/serverInfo,omitempty"`
+}
+
+// ReservedMetaPrefix is the _meta key namespace the specification reserves
+// for itself. Keys under it have defined meanings; every other key belongs
+// to whoever wrote it.
+const ReservedMetaPrefix = "io.modelcontextprotocol/"
+
+// StripReservedMetaKeys removes the specification's own key namespace from a
+// _meta object a downstream sent, leaving every other key untouched. It
+// returns nil when nothing survives, so an object emptied by the strip is
+// omitted rather than emitted as `{}`.
+//
+// THE HOP OWNS ITS OWN NAMESPACE, and that is the whole rule. A reserved key
+// describes the exchange it travels on, so relaying one across a hop
+// restates it about a different exchange. On a tools/call result exactly one
+// reserved key can legitimately appear — io.modelcontextprotocol/serverInfo
+// — and forwarding it would tell the upstream client that the server which
+// produced the response was the downstream. On this hop that server is
+// agenthub, and after internal/shaping truncates or reformats, the bytes
+// being attributed were never the downstream's at all. The namespace is
+// stripped rather than that one key, because the reservation is what makes
+// the answer wrong and a later reserved key would be wrong the same way.
+//
+// Everything outside the namespace is forwarded verbatim: it is the
+// extension data the downstream addressed to a client this hub only
+// forwards for, and nothing here is entitled to read it.
+//
+// FAIL-CLOSED on malformed input: a _meta that is not a JSON object is not
+// something this hub can vouch for, and it is dropped rather than passed on.
+// The schema requires an object, so nothing conformant is lost.
+func StripReservedMetaKeys(meta json.RawMessage) json.RawMessage {
+	if len(meta) == 0 {
+		return nil
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(meta, &obj); err != nil {
+		return nil
+	}
+	kept := false
+	for k := range obj {
+		if strings.HasPrefix(k, ReservedMetaPrefix) {
+			delete(obj, k)
+			continue
+		}
+		kept = true
+	}
+	if !kept {
+		return nil
+	}
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return nil
+	}
+	return out
 }
 
 // DiscoverResult is the "server/discover" response payload. It advertises

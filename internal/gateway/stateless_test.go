@@ -302,3 +302,61 @@ func TestResultWithNoContentIsAnEmptyArray(t *testing.T) {
 		t.Fatalf("content = %s, want [] — a required array must not go out as null", wire.Content)
 	}
 }
+
+// TestResultMetaTravelsMinusTheReservedNamespace: a downstream's result-level
+// _meta reaches the upstream client, except for the specification's own key
+// namespace, which belongs to whichever hop is speaking.
+//
+// Both halves are load-bearing. Dropping the whole member degraded the
+// downstream's result — the same defect the tree already ruled out for tool
+// members — and it was invisible because mcp.CallResult had no field at all,
+// so the raw bytes went at decode and nothing downstream of that could have
+// put them back. Forwarding it whole would have been the opposite mistake:
+// io.modelcontextprotocol/serverInfo is the one reserved key that can
+// legitimately appear here, and relaying it names the downstream as the
+// server that produced a response THIS gateway produced.
+func TestResultMetaTravelsMinusTheReservedNamespace(t *testing.T) {
+	resolver := testResolver(t.TempDir())
+	seedRegistry(t, resolver, "fake")
+	script := fakemcp.Minimal("echo")
+	// A raw result, because a *mcp.CallResult literal could only carry what
+	// the struct already models — which is the thing under test.
+	script.Rules = append(script.Rules, fakemcp.Rule{
+		Method: mcp.MethodToolsCall,
+		Actions: []fakemcp.Action{{Kind: fakemcp.ActResult, Result: json.RawMessage(
+			`{"content":[{"type":"text","text":"hi"}],"_meta":{` +
+				`"com.example.tools/traceId":"abc123",` +
+				`"io.modelcontextprotocol/serverInfo":{"name":"downstream-x","version":"9"}}}`)}},
+	})
+	_, c, _ := startGateway(t, Config{
+		ClientID: "test-client",
+		Resolver: resolver,
+		Dial:     scriptedDial(map[string]*fakemcp.Script{"fake": script}),
+	})
+	if resp := c.call(mcp.MethodToolsList, map[string]any{
+		"_meta": meta2026(mcp.ClientCapabilities{}),
+	}); resp.Error != nil {
+		t.Fatalf("tools/list: %v", resp.Error)
+	}
+	c.waitNotification(mcp.NotificationToolsListChanged)
+
+	resp := c.call(mcp.MethodToolsCall, map[string]any{
+		"_meta": meta2026(mcp.ClientCapabilities{}),
+		"name":  "fake__echo",
+	})
+	if resp.Error != nil {
+		t.Fatalf("call: %v", resp.Error)
+	}
+	var wire struct {
+		Meta map[string]json.RawMessage `json:"_meta"`
+	}
+	if err := json.Unmarshal(resp.Result, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(wire.Meta["com.example.tools/traceId"]); got != `"abc123"` {
+		t.Fatalf("the downstream's own _meta key did not survive: %s", resp.Result)
+	}
+	if _, ok := wire.Meta["io.modelcontextprotocol/serverInfo"]; ok {
+		t.Fatalf("a reserved key was relayed across the hop: %s", resp.Result)
+	}
+}

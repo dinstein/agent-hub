@@ -712,6 +712,15 @@ func (g *gateway) replyResult(id mcp.ID, res *mcp.CallResult) {
 	if len(res.Content) == 0 || string(res.Content) == "null" {
 		res.Content = json.RawMessage(`[]`)
 	}
+	// The downstream's _meta travels on, minus the specification's own key
+	// namespace, which belongs to whichever hop is speaking. Only one
+	// reserved key can legitimately reach here on a tools/call result —
+	// io.modelcontextprotocol/serverInfo — and relaying it would name the
+	// downstream as the server that produced a response this gateway
+	// produced, which internal/shaping may have truncated or reformatted
+	// besides. The third normalization at this one point, for the reason
+	// the other two are here.
+	res.Meta = mcp.StripReservedMetaKeys(res.Meta)
 	raw, err := json.Marshal(res)
 	if err != nil {
 		g.reply(mcp.NewErrorResponse(id, &mcp.Error{Code: mcp.CodeInternalError, Message: err.Error()}))

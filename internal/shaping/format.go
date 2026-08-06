@@ -124,6 +124,7 @@ func Reformat(res *mcp.CallResult, f Format) (*mcp.CallResult, bool) {
 		Content:           content,
 		StructuredContent: res.StructuredContent,
 		IsError:           res.IsError,
+		Meta:              res.Meta,
 	}
 	if resultBytes(next) >= baseline {
 		// Never-larger, enforced a second time at result granularity: the

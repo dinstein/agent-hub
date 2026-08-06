@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"testing"
 )
 
@@ -130,6 +131,70 @@ func TestRequestStateIsThreeState(t *testing.T) {
 				t.Fatalf("%q decoded as absent", *tt.state)
 			case tt.state != nil && *back.RequestState != *tt.state:
 				t.Fatalf("round trip changed %q to %q", *tt.state, *back.RequestState)
+			}
+		})
+	}
+}
+
+// StripReservedMetaKeys removes the specification's namespace and nothing
+// else. The rule is that a hop owns its own protocol namespace: a reserved
+// key describes the exchange it travels on, so relaying one across a hop
+// restates it about a different exchange.
+func TestStripReservedMetaKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"nothing to strip", `{"com.example/x":1}`, `{"com.example/x":1}`},
+		{
+			// The one reserved key that can legitimately reach a
+			// tools/call result, and the reason this function exists.
+			"serverInfo alone leaves nothing",
+			`{"io.modelcontextprotocol/serverInfo":{"name":"down","version":"9"}}`, "",
+		},
+		{
+			"reserved removed, the rest kept",
+			`{"io.modelcontextprotocol/serverInfo":{"name":"d"},"com.example/x":1}`,
+			`{"com.example/x":1}`,
+		},
+		{
+			// The namespace is stripped, not a list of known keys: a
+			// reserved key allocated later is wrong in the same way.
+			"a reserved key this tree has never heard of",
+			`{"io.modelcontextprotocol/somethingNew":true,"a":1}`, `{"a":1}`,
+		},
+		{
+			// W3C trace keys are reserved by the specification but carry
+			// no io.modelcontextprotocol prefix, and are not this hop's to
+			// claim. See docs/mcp-2026-07-28.md §7.13.
+			"trace keys are not in this namespace", `{"traceparent":"00-x-y-01"}`, `{"traceparent":"00-x-y-01"}`,
+		},
+		{"absent", "", ""},
+		{"empty object", `{}`, ""},
+		// Fail closed: the schema requires an object, so anything else is
+		// not something this hub can vouch for.
+		{"not an object", `[1,2]`, ""},
+		{"malformed", `{`, ""},
+		{"json null", `null`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := StripReservedMetaKeys(json.RawMessage(tc.in))
+			if tc.want == "" {
+				if got != nil {
+					t.Fatalf("got %s, want nil so the member is omitted entirely", got)
+				}
+				return
+			}
+			var gotObj, wantObj map[string]any
+			if err := json.Unmarshal(got, &gotObj); err != nil {
+				t.Fatalf("result %s is not an object: %v", got, err)
+			}
+			if err := json.Unmarshal([]byte(tc.want), &wantObj); err != nil {
+				t.Fatal(err)
+			}
+			if fmt.Sprint(gotObj) != fmt.Sprint(wantObj) {
+				t.Fatalf("got %s, want %s", got, tc.want)
 			}
 		})
 	}
