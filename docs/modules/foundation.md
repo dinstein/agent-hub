@@ -517,6 +517,14 @@ through. The surface is not derivable from the exposed name afterwards, because 
 different things under different discovery modes, and a `meta` record carrying a real `server`/`tool`
 under one call id is the whole story of "the client asked the hub, which called the server".
 
+**Those fields are the evidence; `TargetServer` and `TargetTool` are the one reading of it.** A face
+that needs "where did this go" as a single groupable value takes it from there rather than deriving
+its own: the routed pair where routing happened, the `(agenthub)` sentinel where the hub answered the
+call itself — a meta-tool, a grouped listing, any method that is not a `tools/call` — and empty only
+for a `tools/call` that resolved to no server. One function, because a label computed twice becomes a
+filter option that selects rows rendered under a different name, which is what the Calls page did
+before it existed.
+
 ### Two tiers, and what each costs
 
 | | **metadata** | **evidence** |

@@ -214,6 +214,16 @@ and **never exposes payload references**; the detail drawer loads decrypted prev
 no second "decrypt" ritual, says that this is a local decrypted preview, and drops those strings when
 it closes. Pausing capture from Ledger never deletes history or keys.
 
+**A row is labelled with the value its filters use, and the page derives neither.** `targetServer`
+and `targetTool` come from the daemon, which counted the same two into the statistics the dropdowns
+are built from; the page only substitutes "Unrouted" when both are empty. This is the rule because
+the alternative was already on screen: the label lived here in two copies that disagreed about a
+grouped listing, and the daemon — which knew only the ROUTED server and tool — could not offer either
+as an option. Calls agenthub answers itself route nowhere, so the hub's own tools, the grouped
+listings and every method that is not a `tools/call` had rows in the list and nothing in the Server
+dropdown that selects them. They now group under **`(agenthub)`**, parenthesised like `(default)`
+because a bare `agenthub` is a server id somebody can add.
+
 **Events** reads `GET /v1/events/log` — which exists because `cmd/agenthub-gui` may not import
 `internal/*`, so where the CLI reads `events.jsonl` directly and works offline, the GUI goes through
 the daemon like every other page. Rows are coloured from `kind` rather than from any text, legitimate

@@ -293,6 +293,14 @@ routes uniformly unavailable rather than guessing a directory or key source. `PU
 and `POST /v1/calls/rotate-key` are ordinary registry writes with the same generation precondition; key
 bytes are persisted before the registry points at their public id and never cross the wire.
 
+**What a call REACHED is derived once, in `calllog.TargetServer` / `TargetTool`, and this face is the
+only one that publishes it.** `/v1/calls/stats` counts those two, `/v1/calls` filters on them and
+every row carries them beside the routed `server` / `tool`, so an option a dropdown offers always
+selects the rows a reader sees under that name. Counting the routed fields alone is what this
+replaced, and it made every call agenthub answers itself — a meta-tool, a grouped listing, any method
+that is not a `tools/call` — visible in the list and unselectable by any filter. Those group under
+the `(agenthub)` sentinel; empty stays reserved for a `tools/call` that resolved to no server.
+
 ---
 
 ## internal/confops
