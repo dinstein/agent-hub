@@ -449,7 +449,6 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 			route:       route,
 			inputSchema: def.InputSchema,
 			annotations: def.Annotations,
-			description: def.Description,
 			provider:    "host",
 			call: func(ctx context.Context) (*mcp.CallResult, error) {
 				return prov.Call(ctx, route.RawTool, args)
@@ -487,10 +486,9 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 	// instance serves the same catalog by construction, and the base list is
 	// the one the router aggregated.
 	var inputSchema, annotations json.RawMessage
-	var description string
 	for _, def := range srv.Tools() {
 		if def.Name == route.RawTool {
-			inputSchema, annotations, description = def.InputSchema, def.Annotations, def.Description
+			inputSchema, annotations = def.InputSchema, def.Annotations
 			break
 		}
 	}
@@ -500,7 +498,6 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 		route:       route,
 		inputSchema: inputSchema,
 		annotations: annotations,
-		description: description,
 		// Derived instances (docs/modules/dataplane.md): which PROCESS runs
 		// this call is a connection-plane decision made per call. It is made
 		// INSIDE the call closure, so it happens after both gates and after
@@ -537,7 +534,6 @@ type callTarget struct {
 	route       router.Route
 	inputSchema json.RawMessage
 	annotations json.RawMessage
-	description string
 	provider    string
 	call        pipeline.CallFunc
 }
