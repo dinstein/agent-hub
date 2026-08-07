@@ -21,7 +21,7 @@ agenthub client ls           # wired clients, their profiles
 agenthub client detect       # all known clients, config paths, writability
 ```
 
-Pass `--json` globally. Envelope: `{"ok":true,"data":…}` or `{"ok":false,"error":{"code":"E_…","message":"…","hint":"…"}}`. Four commands stream progress and emit NDJSON — `auth login`, `server test`, `server enable` (unless `--no-probe`) and `doctor`: progress events first, **envelope last**, so take the LAST line, never the whole stream as one object. Three of the four are on the everyday path below. **Branch on exit code:**
+Pass `--json` globally. Envelope: `{"ok":true,"data":…}` or `{"ok":false,"error":{"code":"E_…","message":"…","hint":"…"}}`. Five commands stream progress and emit NDJSON — `auth login`, `auth refresh`, `server test`, `server enable` (unless `--no-probe`) and `doctor`: progress events first, **envelope last**, so take the LAST line, never the whole stream as one object. Three of the five are on the everyday path below. **Branch on exit code:**
 
 | code | meaning |
 |---|---|
