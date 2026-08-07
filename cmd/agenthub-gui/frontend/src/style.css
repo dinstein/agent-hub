@@ -2460,19 +2460,12 @@ tbody tr:hover {
   box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-/* Approve and deny are tonal, not filled: they sit side by side and filling
- * both would make the pair shout equally, while filling only one would put
- * a thumb on the scale of a security decision. */
-.btn-approve {
-  border-color: color-mix(in srgb, var(--success) 50%, transparent);
-  color: var(--success);
-}
-
-.btn-approve:hover {
-  background: color-mix(in srgb, var(--success) 12%, var(--panel-2));
-  border-color: var(--success);
-}
-
+/* Tonal, not filled. It began as the deny half of an approve/deny pair, where
+ * filling either would have put a thumb on the scale of a security decision.
+ * That pair went with the approval surface (45a668b); this is now the ordinary
+ * destructive action — delete, revoke, disconnect, log out — and tonal still
+ * suits it, because the weight belongs on a panel's primary action rather than
+ * on the one that undoes something. */
 .btn-deny {
   border-color: color-mix(in srgb, var(--danger) 50%, transparent);
   color: var(--danger);
@@ -3041,132 +3034,6 @@ pre.raw-text {
   align-items: baseline;
   gap: 10px;
   margin-bottom: 6px;
-}
-
-/* A decided card is greyed and inert until the DAEMON says it is gone. No
- * optimistic removal: a card that vanishes and comes back reads as a bug and
- * teaches the operator to distrust the queue (docs/modules/gui.md). */
-.card.deciding {
-  opacity: 0.55;
-  pointer-events: none;
-}
-
-.countdown {
-  font-family: var(--font-mono);
-  color: var(--warning);
-  font-variant-numeric: tabular-nums;
-}
-
-.countdown.urgent,
-.countdown.expired {
-  color: var(--danger);
-}
-
-/* Second channel for the countdown: the bar shortens as the number falls, so
- * "running out" is visible without reading. */
-.countdown-bar {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--line);
-  overflow: hidden;
-  margin: 8px 0 0;
-}
-
-.countdown-bar > i {
-  display: block;
-  height: 100%;
-  width: 100%;
-  background: var(--warning);
-  transition: width 0.5s linear;
-}
-
-.countdown-bar.urgent > i {
-  background: var(--danger);
-}
-
-.card-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-  align-items: center;
-}
-
-.decision-group {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  align-items: center;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 6px;
-}
-
-.decision-group > .glabel {
-  color: var(--muted);
-  font-size: 12px;
-  padding-left: 4px;
-}
-
-pre.args {
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px;
-  margin: 10px 0 0;
-  max-height: 240px;
-  overflow: auto;
-  font-size: 12px;
-}
-
-/* --- the HITL banner (docs/modules/gui.md) ------------------------------- */
-
-/* role="alertdialog" with aria-modal="false": it announces itself and takes
- * focus order, but it does NOT trap focus or block the rest of the window.
- * A gate that holds a call must be impossible to miss and must still let the
- * operator go and look at what the tool would touch. */
-.hitl {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent);
-  background: color-mix(in srgb, var(--warning) 12%, var(--panel));
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  margin-bottom: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* A class selector beats the UA's `[hidden] { display: none }`, so the
- * banner needs its own hidden rule or `banner.hidden = true` does nothing. */
-.hitl[hidden] {
-  display: none;
-}
-
-.hitl > .hitl-title {
-  font-weight: 700;
-}
-
-.hitl > .hitl-sub {
-  color: var(--fg);
-  font-size: 13px;
-}
-
-.hitl > .hitl-keys {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-kbd {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  border: 1px solid var(--line);
-  border-bottom-width: 2px;
-  border-radius: 5px;
-  padding: 0 5px;
-  background: var(--panel-2);
 }
 
 .installs {

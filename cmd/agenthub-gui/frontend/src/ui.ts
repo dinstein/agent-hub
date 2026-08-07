@@ -583,41 +583,6 @@ export function confirmAction(opts: ConfirmOptions): Promise<boolean> {
   });
 }
 
-/**
- * Above this many affected items, a bulk action asks first.
- *
- * The threshold exists because a confirmation on every two-item action is how
- * users learn to dismiss confirmations without reading them — and once that
- * habit forms, the dialog in front of the twenty-item action does not work
- * either. Three is small enough that the operator can still see every row
- * they are about to change.
- */
-export const BULK_CONFIRM_THRESHOLD = 3;
-
-/** Confirms a bulk action, but only once it is big enough to be worth a
- *  dialog. Below the threshold it resolves true without asking. */
-export function confirmBulk(count: number, opts: ConfirmOptions): Promise<boolean> {
-  if (count <= BULK_CONFIRM_THRESHOLD) {
-    // No dialog, so there is nowhere to render a failure: the rejection is
-    // handed to the caller, which has a notice slot. Swallowing it here
-    // would make a failed bulk action look like a completed one.
-    if (!opts.perform) return Promise.resolve(true);
-    return opts.perform().then(() => true);
-  }
-  return confirmAction(opts);
-}
-
-/**
- * Why a global action is switched off while a filter is on.
- *
- * A button labelled "Dismiss all" next to a filtered list is a lie in one of
- * two directions: either it acts on rows the operator cannot see, or it acts
- * on the filtered subset while saying "all". Neither is fixable with better
- * wording, so the button is disabled and says why.
- */
-export const FILTER_BLOCKS_GLOBAL =
-  "Clear the filter first: a global action while a filter is on would either " +
-  "touch rows you cannot see or quietly mean something narrower than “all”.";
 
 // ---------------------------------------------------------------------------
 // Small renderers

@@ -375,9 +375,3 @@ export function relTime(iso: string | undefined): string {
   if (Math.abs(secs) < 86400) return `${Math.round(secs / 3600)}h ago`;
   return new Date(t).toLocaleString();
 }
-
-export function clockTime(iso: string | undefined): string {
-  if (!iso) return "—";
-  const t = Date.parse(iso);
-  return Number.isNaN(t) ? iso : new Date(t).toLocaleTimeString();
-}
