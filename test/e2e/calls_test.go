@@ -55,30 +55,37 @@ func callsTail(t *testing.T, dataDir string) ([]callRow, string) {
 	return tail.Events, out
 }
 
-// waitFinishedCall polls until a finished tools/call for tool shows up and
-// returns its call id. The finish is written after the downstream has
-// answered, and the ledger writer is not on the call's critical path, so a
-// read taken the instant callTool returns can legitimately miss it.
-func waitFinishedCall(t *testing.T, dataDir, tool string, budget time.Duration) string {
+// waitFinishedCall polls until a finished tools/call for tool shows up whose
+// id is not already in seen, and returns it. The finish is written after the
+// downstream has answered, and the ledger writer is not on the call's critical
+// path, so a read taken the instant callTool returns can legitimately miss it.
+//
+// Excluding what was already there is what makes a second recording safe: a
+// test that records twice — either side of a key rotation — would otherwise be
+// handed the earlier call the moment it asked, and would then make every
+// assertion about the wrong one.
+func waitFinishedCall(t *testing.T, dataDir, tool string, seen map[string]bool, budget time.Duration) string {
 	t.Helper()
 	deadline := time.Now().Add(budget)
 	for {
 		rows, _ := callsTail(t, dataDir)
 		for _, r := range rows {
-			if r.Event == "finished" && r.Method == "tools/call" && r.Tool == tool {
+			if r.Event == "finished" && r.Method == "tools/call" && r.Tool == tool && !seen[r.CallID] {
+				seen[r.CallID] = true
 				return r.CallID
 			}
 		}
 		if !time.Now().Before(deadline) {
-			t.Fatalf("no finished tools/call for %q in the ledger within %s: %+v", tool, budget, rows)
+			t.Fatalf("no new finished tools/call for %q in the ledger within %s: %+v", tool, budget, rows)
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 }
 
-// recordOneCall is the shared stage: an enabled ledger, a live gateway and one
-// call whose arguments carry marker.
-func recordOneCall(t *testing.T, dataDir, marker string) string {
+// recordOneCall is the shared stage: a live gateway and one call whose
+// arguments carry marker. seen accumulates the call ids already accounted for,
+// so repeated use in one test always returns the newest.
+func recordOneCall(t *testing.T, dataDir, marker string, seen map[string]bool) string {
 	t.Helper()
 	c := startGateway(t, dataDir, "ledgerclient")
 	c.initialize()
@@ -87,7 +94,7 @@ func recordOneCall(t *testing.T, dataDir, marker string) string {
 		t.Fatalf("the fixture call did not echo its marker: %q", got)
 	}
 	c.close()
-	return waitFinishedCall(t, dataDir, "echo", 30*time.Second)
+	return waitFinishedCall(t, dataDir, "echo", seen, 30*time.Second)
 }
 
 // TestCallsLedgerReadsWithoutDecryptingUntilAsked walks the ledger's read
@@ -105,7 +112,7 @@ func TestCallsLedgerReadsWithoutDecryptingUntilAsked(t *testing.T) {
 	enableServer(t, dataDir, "alpha")
 	runAgenthub(t, dataDir, "", "calls", "enable", "--json")
 
-	callID := recordOneCall(t, dataDir, marker)
+	callID := recordOneCall(t, dataDir, marker, map[string]bool{})
 
 	// `status` is the operator's answer to "is anything being recorded, and
 	// under which key". Without the key id a rotation cannot be observed at
@@ -182,11 +189,12 @@ func TestCallsLedgerReadsWithoutDecryptingUntilAsked(t *testing.T) {
 
 // callsVerifyResult is the slice of cli.CallsVerify these tests read.
 type callsVerifyResult struct {
-	OK       bool     `json:"ok"`
-	Events   int      `json:"events"`
-	Payloads int      `json:"payloads"`
-	Failures int      `json:"failures"`
-	Issues   []string `json:"issues"`
+	OK              bool     `json:"ok"`
+	Events          int      `json:"events"`
+	Payloads        int      `json:"payloads"`
+	Unauthenticated int      `json:"unauthenticated"`
+	Failures        int      `json:"failures"`
+	Issues          []string `json:"issues"`
 }
 
 func callsVerify(t *testing.T, dataDir string) callsVerifyResult {
@@ -215,7 +223,7 @@ func TestCallsExportIsPrivateAndRefusesToOverwrite(t *testing.T) {
 	runAgenthub(t, dataDir, "", "server", "add", "alpha", "--cmd", fakemcpBin, "--json")
 	enableServer(t, dataDir, "alpha")
 	runAgenthub(t, dataDir, "", "calls", "enable", "--json")
-	recordOneCall(t, dataDir, marker)
+	recordOneCall(t, dataDir, marker, map[string]bool{})
 
 	outDir := t.TempDir()
 	plain := filepath.Join(outDir, "metadata.jsonl")

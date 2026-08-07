@@ -509,6 +509,17 @@ func (s *Server) handleCallsVerify(w http.ResponseWriter, r *http.Request) {
 	var err error
 	out.Skipped, err = calllog.ScanEvents(s.opts.NonRegistry.CallsRoot, func(e calllog.Event) error {
 		out.Events++
+		if calllog.Unauthenticated(e) {
+			// Same classification as `agenthub calls verify`: a record written
+			// with no key carries nothing to authenticate and is not a
+			// failure. A payload reference on one means the two halves
+			// disagree, which is.
+			out.Unauthenticated++
+			if e.Request != nil || e.EffectiveArgs != nil || e.Result != nil {
+				add(fmt.Sprintf("event %s/%s: unkeyed event references a payload", e.CallID, e.Kind))
+			}
+			return nil
+		}
 		key, eerr := keys.get(e.KeyID)
 		if eerr != nil {
 			add(fmt.Sprintf("event %s/%s: %v", e.CallID, e.Kind, eerr))

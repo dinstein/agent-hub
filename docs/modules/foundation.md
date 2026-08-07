@@ -596,8 +596,18 @@ need.
   prerequisite for execution, but that wrapper does not enter or reorder the frozen pipeline gates
   and it never inspects or modifies the arguments.
 - **An unkeyed record carries no MAC, and says so.** Both `mac` and `keyId` are empty rather than
-  filled with something unverifiable, so `calls verify` can report "unauthenticated" — a different
-  answer from "authentication failed", and one that must never be confused with it.
+  filled with something unverifiable, so `calls verify` reports "unauthenticated" — a different
+  answer from "authentication failed", and one that must never be confused with it. `Unauthenticated`
+  is the predicate, and it requires **both** fields empty: the writer sets them together, so one
+  without the other is corruption or a keyed record stripped to look unkeyed, and both stay on the
+  failure side. This claim was stated here and in `store.go` for a while before either verifier
+  implemented it — until then an unkeyed event failed key lookup and was counted as a verification
+  FAILURE, so `calls verify` on a stock installation (metadata tier only, which is the default)
+  reported `FAILED` with one failure per record and exited non-zero. The e2e case in
+  `test/e2e/callskeys_test.go` is what keeps the two verifiers honest about it now.
+- **`ok` is not a clean bill of health on its own.** With `Unauthenticated` non-zero it means
+  "nothing was checkable", not "everything checked out", so both the CLI renderer and any frontend
+  reading `api.CallsVerify` must show the count beside it.
 - **Integrity has a stated boundary.** Each metadata event carries HMAC-SHA256 and each payload
   entry is bound by AEAD to its call id, kind, sizes and codec, so `calls verify` detects edits,
   corruption and reference substitution. Independent records cannot prove an attacker deleted a

@@ -143,12 +143,19 @@ type CallsStats struct {
 }
 
 type CallsVerify struct {
-	OK       bool     `json:"ok"`
-	Events   int      `json:"events"`
-	Payloads int      `json:"payloads"`
-	Skipped  int      `json:"skippedMalformed"`
-	Failures int      `json:"failures"`
-	Issues   []string `json:"issues,omitempty"`
+	OK       bool `json:"ok"`
+	Events   int  `json:"events"`
+	Payloads int  `json:"payloads"`
+	// Unauthenticated counts events recorded with no key, which carry nothing
+	// to authenticate. They are the normal shape while the ledger runs its
+	// metadata tier alone — the default — so they are NOT failures. A frontend
+	// must still not render `OK` as a clean bill of health while this is
+	// non-zero: it then means "nothing was checkable", not "everything checked
+	// out".
+	Unauthenticated int      `json:"unauthenticated"`
+	Skipped         int      `json:"skippedMalformed"`
+	Failures        int      `json:"failures"`
+	Issues          []string `json:"issues,omitempty"`
 }
 
 type CallsPrune struct {

@@ -492,12 +492,17 @@ func (a *App) newCallsStatsCmd() *cobra.Command {
 // CallsVerify is the integrity report. Independent event MACs detect edits;
 // payload AEAD and bindings detect corruption or reference substitution.
 type CallsVerify struct {
-	OK       bool     `json:"ok"`
-	Events   int      `json:"events"`
-	Payloads int      `json:"payloads"`
-	Skipped  int      `json:"skippedMalformed"`
-	Failures int      `json:"failures"`
-	Issues   []string `json:"issues,omitempty"`
+	OK       bool `json:"ok"`
+	Events   int  `json:"events"`
+	Payloads int  `json:"payloads"`
+	// Unauthenticated counts events written with no key, which carry nothing
+	// to authenticate. It is never omitted: it is the number that decides
+	// whether `ok` means "everything checked out" or "nothing was checkable",
+	// and a reader that could not see it would have to guess.
+	Unauthenticated int      `json:"unauthenticated"`
+	Skipped         int      `json:"skippedMalformed"`
+	Failures        int      `json:"failures"`
+	Issues          []string `json:"issues,omitempty"`
 }
 
 func (v CallsVerify) Human(w io.Writer) error {
@@ -505,8 +510,16 @@ func (v CallsVerify) Human(w io.Writer) error {
 	if !v.OK {
 		status = "FAILED"
 	}
-	_, _ = fmt.Fprintf(w, "%s: %d event(s), %d payload(s), %d failure(s), %d malformed line(s)\n",
-		status, v.Events, v.Payloads, v.Failures, v.Skipped)
+	_, _ = fmt.Fprintf(w, "%s: %d event(s), %d payload(s), %d unauthenticated, %d failure(s), %d malformed line(s)\n",
+		status, v.Events, v.Payloads, v.Unauthenticated, v.Failures, v.Skipped)
+	// "ok" over a history nothing signed would otherwise read as a clean bill
+	// of health. Say what it actually means, and how to change it.
+	if v.OK && v.Unauthenticated > 0 {
+		_, _ = fmt.Fprintf(w,
+			"  %d event(s) were recorded without a key, so there was nothing to authenticate.\n"+
+				"  Metadata is always recorded; signing and payload capture start at `agenthub calls enable`.\n",
+			v.Unauthenticated)
+	}
 	for _, issue := range v.Issues {
 		_, _ = fmt.Fprintf(w, "  - %s\n", issue)
 	}
@@ -528,6 +541,16 @@ func (a *App) newCallsVerifyCmd() *cobra.Command {
 			out := CallsVerify{OK: true}
 			out.Skipped, err = calllog.ScanEvents(root, func(e calllog.Event) error {
 				out.Events++
+				if calllog.Unauthenticated(e) {
+					// Nothing was signed and, because an unkeyed store refuses
+					// PutPayload, nothing was sealed either. A reference here
+					// would mean the two disagree, which IS a finding.
+					out.Unauthenticated++
+					if e.Request != nil || e.EffectiveArgs != nil || e.Result != nil {
+						out.addIssue(fmt.Sprintf("event %s/%s: unkeyed event references a payload", e.CallID, e.Kind))
+					}
+					return nil
+				}
 				key, keyErr := keys.get(e.KeyID)
 				if keyErr != nil {
 					out.addIssue(fmt.Sprintf("event %s/%s: %v", e.CallID, e.Kind, keyErr))

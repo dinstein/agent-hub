@@ -360,6 +360,23 @@ func eventMAC(e Event, key []byte) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// Unauthenticated reports whether e was written by a store that held no key,
+// and so carries nothing to authenticate. Such a record is the NORMAL shape on
+// an installation running the metadata tier alone — which is the default — and
+// a verifier that counted it as a failure would tell every stock installation
+// that its history had failed authentication.
+//
+// The condition is BOTH fields empty, never either. Store.append sets `keyId`
+// and `mac` together, so one without the other cannot come from this package:
+// it is corruption, or a keyed record whose key id was stripped to make it
+// look unkeyed. Both belong on the failure side, which is where leaving them
+// out of this predicate puts them.
+//
+// Failure direction: a record this returns true for is REPORTED, never
+// silently passed. What it must not be is merged with a MAC that did not check
+// out — those are different findings and they lead to different actions.
+func Unauthenticated(e Event) bool { return e.KeyID == "" && e.MAC == "" }
+
 // VerifyEvent authenticates one metadata event with its payload key.
 func VerifyEvent(e Event, key []byte) error {
 	if e.MAC == "" || e.KeyID == "" {
