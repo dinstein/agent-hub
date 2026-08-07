@@ -65,6 +65,10 @@ const (
 	CodeNotFound       = "not_found"
 	CodeOverloaded     = "overloaded"
 	CodeMethodNotAllow = "method_not_allowed"
+	// CodeInternal is this server failing, not the request being wrong. It
+	// was already the spelling asHTTPError falls back to; naming it made it
+	// usable by the one path that has a specific internal failure to report.
+	CodeInternal = "internal"
 )
 
 // Frozen rejection bodies. "not found" in particular is ONE sentence for
@@ -83,10 +87,17 @@ var (
 	// itself exists (stream.go); what this rejects is a GET with an Accept
 	// header that rules out text/event-stream, which the specification
 	// answers with exactly this status.
-	errNoStream    = &httpError{http.StatusMethodNotAllowed, CodeMethodNotAllow, "this endpoint offers only a text/event-stream response to GET"}
-	errNoStreams   = &httpError{http.StatusServiceUnavailable, CodeOverloaded, "too many notification streams are open"}
-	errStreamSetup = &httpError{http.StatusServiceUnavailable, CodeOverloaded, "the notification stream could not be opened"}
-	errMethod      = &httpError{http.StatusMethodNotAllowed, CodeMethodNotAllow, "method not allowed"}
+	errNoStream  = &httpError{http.StatusMethodNotAllowed, CodeMethodNotAllow, "this endpoint offers only a text/event-stream response to GET"}
+	errNoStreams = &httpError{http.StatusServiceUnavailable, CodeOverloaded, "too many notification streams are open"}
+	// Distinct from errNoStreams, and it was not at first. A quota shed and a
+	// gateway that would not assemble are different operator problems — wait
+	// and retry, versus go and read the logs — and the ordering invariant
+	// this package documents requires every rejection to be distinguishable.
+	// Reporting both as 503 `overloaded` made a broken assembly read as load,
+	// which is the one reading that sends nobody to look at it.
+	errStreamSetup = &httpError{http.StatusInternalServerError, CodeInternal,
+		"the notification stream could not be opened"}
+	errMethod = &httpError{http.StatusMethodNotAllowed, CodeMethodNotAllow, "method not allowed"}
 	// Outside the frozen set above, and deliberately: that rule unifies
 	// every answer about an id that was PRESENTED, so the endpoint cannot
 	// be probed for which sessions exist. This one answers a request that

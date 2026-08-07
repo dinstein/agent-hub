@@ -297,10 +297,11 @@ func TestStreamClosesWhenTheSubscriptionEnds(t *testing.T) {
 	}
 }
 
-// TestStreamSetupFailureIsShed: a Subscribe that fails must answer, not hang.
-// The detail stays in the log — the message crosses an authenticated but
-// untrusted boundary.
-func TestStreamSetupFailureIsShed(t *testing.T) {
+// TestStreamSetupFailureAnswersWithoutLeaking: a Subscribe that fails must
+// answer, not hang, and the detail stays in the log — the message crosses an
+// authenticated but untrusted boundary. Which STATUS it answers with is
+// TestStreamSetupFailureIsNotReportedAsLoad's subject.
+func TestStreamSetupFailureAnswersWithoutLeaking(t *testing.T) {
 	t.Parallel()
 	store := newStore(t)
 	_, value := mustCreate(t, store, httpbridge.CreateSpec{Name: "broken", Tier: tier.Write})
@@ -322,8 +323,8 @@ func TestStreamSetupFailureIsShed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = res.Body.Close() }()
-	if res.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", res.StatusCode)
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", res.StatusCode)
 	}
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
@@ -493,6 +494,75 @@ func TestListenNeedsToAcceptTheStream(t *testing.T) {
 	}
 	if n := h.disp.subscribeCount(); n != 0 {
 		t.Fatalf("Subscribe reached the seam %d times for a client that cannot read the stream; want 0", n)
+	}
+}
+
+// TestGetStreamRefusesAnUnsupportedProtocolVersion: the version rule binds
+// every subsequent request, and this verb is one. It carries no body, so
+// nothing on the POST path runs the check for it — the same hole handleDelete
+// was written to avoid, and the GET stream had it for as long as it existed.
+func TestGetStreamRefusesAnUnsupportedProtocolVersion(t *testing.T) {
+	t.Parallel()
+	store := newStore(t)
+	_, value := mustCreate(t, store, httpbridge.CreateSpec{Name: "oldproto", Tier: tier.Write})
+	h := newHarness(t, &httpbridge.Authenticator{Tokens: store}, httpbridge.Options{})
+
+	initRes := h.post(t, value, "", initFrame)
+	session := initRes.Header.Get(httpbridge.SessionHeader)
+
+	req, _ := http.NewRequest(http.MethodGet, h.srv.URL+httpbridge.DefaultPath, nil)
+	req.Header.Set("Authorization", "Bearer "+value)
+	req.Header.Set(httpbridge.SessionHeader, session)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set(httpbridge.ProtocolVersionHeader, "1999-01-01")
+	res, err := h.srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for a version this server does not speak", res.StatusCode)
+	}
+	if n := h.disp.subscribeCount(); n != 0 {
+		t.Fatalf("Subscribe reached the seam %d times for a refused version; want 0", n)
+	}
+}
+
+// TestStreamSetupFailureIsNotReportedAsLoad: a gateway that would not
+// assemble and an exhausted stream quota are different operator problems —
+// go and read the logs, versus wait and retry — and this face's ordering
+// invariant requires every rejection to be distinguishable. Both used to
+// answer 503 `overloaded`.
+func TestStreamSetupFailureIsNotReportedAsLoad(t *testing.T) {
+	t.Parallel()
+	store := newStore(t)
+	_, value := mustCreate(t, store, httpbridge.CreateSpec{Name: "distinct", Tier: tier.Write})
+	disp := &recordingDispatcher{
+		subscribe: func(func(string) bool) (httpbridge.Subscription, error) {
+			return nil, context.DeadlineExceeded
+		},
+	}
+	h := newHarness(t, &httpbridge.Authenticator{Tokens: store}, httpbridge.Options{Dispatcher: disp})
+
+	initRes := h.post(t, value, "", initFrame)
+	session := initRes.Header.Get(httpbridge.SessionHeader)
+	req, _ := http.NewRequest(http.MethodGet, h.srv.URL+httpbridge.DefaultPath, nil)
+	req.Header.Set("Authorization", "Bearer "+value)
+	req.Header.Set(httpbridge.SessionHeader, session)
+	req.Header.Set("Accept", "text/event-stream")
+	res, err := h.srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 — a broken assembly is this server failing, not load", res.StatusCode)
+	}
+	if code := errorCode(t, res); code != httpbridge.CodeInternal {
+		t.Fatalf("code = %q, want %q; %q sends an operator to wait instead of to the logs",
+			code, httpbridge.CodeInternal, httpbridge.CodeOverloaded)
 	}
 }
 

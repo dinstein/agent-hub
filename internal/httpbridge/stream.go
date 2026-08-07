@@ -59,6 +59,15 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, c *Caller, he
 		s.fail(w, r, errNoStream)
 		return
 	}
+	// The version rule binds "all subsequent requests", and this verb is one.
+	// It calls checkProtocolVersion directly for the same reason handleDelete
+	// does: there is no body here, so checkMcpHeaders — which runs this check
+	// on the way past everywhere else — has nothing to read. Reported at the
+	// HTTP level because there is no JSON-RPC id to bind a refusal to.
+	if e := checkProtocolVersion(r); e != nil {
+		s.fail(w, r, &httpError{http.StatusBadRequest, CodeBadRequest, e.Message})
+		return
+	}
 	sess, ok := s.resolveSession(w, r, c, true)
 	if !ok {
 		return

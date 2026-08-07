@@ -558,7 +558,7 @@ browser-facing gate — set by the browser, unforgeable by page scripts, absent 
 because no browser client needs enabling and the only effect would be to let a page read tool results.
 
 **The per-request ordering invariant: ingress limits → authentication → session binding → dispatch.**
-Every level is fail-closed and every rejection distinguishable (413/401/403/404/503), so an operator
+Every level is fail-closed and every rejection distinguishable (413/401/403/404/503/500), so an operator
 reading access logs can tell "body too large" from "token revoked" from "someone else's session".
 **Rate limiting happens before authentication**, because the point of an in-flight cap is to limit the
 work an unauthenticated caller can induce, and over the limit is a 503 shed rather than queuing — queuing
@@ -567,13 +567,19 @@ behind a saturated downstream pool turns a slow server into an unbounded memory 
 **A notification stream holds a SECOND quota, and giving it one did not loosen the first.** `MaxInFlight`
 bounds *work an unauthenticated caller can induce*, and every request it covers is short by construction.
 An open stream is the opposite on both counts: it is reachable only *after* authentication, it performs no
-work once open, and it stays open for hours. Counted against `MaxInFlight`, 64 idle streams would shed
-real calls while consuming nothing — the ceiling would be enforcing the wrong thing, loudly. So a stream
-takes `MaxStreams` (64, below `MaxSessions` because an open response costs more than a table entry, and a
-client needs at most one stream per session) and **hands its in-flight slot back** before parking; the
-handback is a `slot` whose release is idempotent, so the handler's `defer` is correct either way. Both
-quotas shed with 503 rather than queue, for the reason above. What must never be done is let a stream
-park while holding an in-flight slot: 256 of them would close the data plane to everyone.
+work once open, and it stays open for hours. Counted against `MaxInFlight`, idle streams would eat that
+ceiling while doing nothing with it — 64 would hold a quarter of it and 256 would close the data plane to
+everyone — so it would be enforcing the wrong thing, loudly. A stream therefore takes `MaxStreams` (64,
+below `MaxSessions` because an open response costs more than a table entry, and a client needs at most one
+stream per session) and **hands its in-flight slot back** before parking; the handback is a `slot` whose
+release is idempotent, so the handler's `defer` is correct either way. What must never be done is let a
+stream park while still holding an in-flight slot.
+
+Both quotas shed with 503 rather than queue, for the reason above — but **a stream that could not be
+opened at all is 500 `internal`, not 503.** A gateway that would not assemble and an exhausted quota send
+an operator to different places (the logs, versus back in a minute), and the ordering invariant above
+requires every rejection on this path to be distinguishable; reporting a broken assembly as `overloaded`
+was the one reading that sends nobody to look at it.
 
 **Ingress hard limits** (header size, header read deadline, body size, body read deadline, concurrency)
 are constants in `ingress.go`. The two header limits **cannot be enforced inside the handler**, since by
