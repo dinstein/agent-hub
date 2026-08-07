@@ -336,26 +336,33 @@ func TestInputRequiredActionWireShape(t *testing.T) {
 
 // TestInputRequiredRetryIsGraded is what gives every MRTR test its meaning.
 //
-// A client MUST echo the requestState back verbatim and MUST NOT modify it.
-// If the fake accepted any retry, a client that dropped the blob, mangled it
-// or invented one would still complete the round trip and every test above
-// this layer would stay green — the loop would look like it worked because
-// nothing was checking the one thing the server owns.
+// Two MUSTs govern the retry: echo the requestState back verbatim without
+// inspecting or modifying it, and carry a NEW JSON-RPC id. Both can be
+// broken while the exchange still appears to work from the client's side —
+// the answers arrive either way — so if the fake accepted any retry, a
+// client that dropped the blob or reused the id would leave every test above
+// this layer green with nothing checking the parts the server owns.
 func TestInputRequiredRetryIsGraded(t *testing.T) {
+	const goodState = `"requestState":"fakemcp-request-state"`
+	const answers = `"inputResponses":{"roots":{"roots":[]}}`
 	cases := []struct {
-		name  string
-		retry string // extra params members on the second call
-		ok    bool
+		name    string
+		retryID int
+		retry   string // extra params members on the retry
+		ok      bool
 	}{
-		{"echoed verbatim", `"requestState":"fakemcp-request-state",` +
-			`"inputResponses":{"roots":{"roots":[]}}`, true},
-		{"dropped", `"inputResponses":{"roots":{"roots":[]}}`, false},
-		{"altered", `"requestState":"not-what-was-handed-out",` +
-			`"inputResponses":{"roots":{"roots":[]}}`, false},
+		{"echoed verbatim with a new id", 2, goodState + "," + answers, true},
+		{"requestState dropped", 2, answers, false},
+		{"requestState altered", 2,
+			`"requestState":"not-what-was-handed-out",` + answers, false},
+		// Same id as the call being retried: two distinct exchanges sharing
+		// the id a response uses to find its caller.
+		{"id reused", 1, goodState + "," + answers, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			resps := serveRaw(t, inputRequiredFirst(), callFrame(1, ""), callFrame(2, tc.retry))
+			resps := serveRaw(t, inputRequiredFirst(),
+				callFrame(1, ""), callFrame(tc.retryID, tc.retry))
 			if len(resps) != 2 {
 				t.Fatalf("got %d responses, want 2", len(resps))
 			}

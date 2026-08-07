@@ -11,8 +11,11 @@ import (
 	"github.com/dinstein/agent-hub/test/mcpstub"
 )
 
-// The stub is this project's only conformance evidence (docs/mcp-2026-07-28.md
-// §4.1, §7.7), so a rule it does not enforce is a rule nothing enforces. These
+// The stub is this project's conformance evidence for streamable HTTP
+// (docs/mcp-2026-07-28.md §4.1, §7.7); internal/testutil/fakemcp is the stdio
+// counterpart, and the header rules below have no counterpart there because
+// stdio carries none. So a rule this stub does not enforce is, on its
+// transport, a rule nothing enforces. These
 // tests drive it with a HAND-BUILT non-conformant client, because a check the
 // real client happens to satisfy proves nothing about the check itself — all
 // three below pass against the real client today and exist to catch the

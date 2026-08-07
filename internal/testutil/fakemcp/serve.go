@@ -93,6 +93,9 @@ type server struct {
 	// it correctly. Non-nil means the next tools/call is a retry and is
 	// graded as one (checkMRTRRetry).
 	pendingState *string
+	// pendingID is the JSON-RPC id of the call that round answered, kept so
+	// the retry can be checked for using a NEW one.
+	pendingID string
 }
 
 func (s *server) handle(ctx context.Context, msg any) error {
@@ -529,6 +532,7 @@ func (s *server) inputRequired(a Action, req *mcp.Request) *mcp.Response {
 		}
 	}
 	s.pendingState = &state
+	s.pendingID = req.ID.String()
 	return okResponse(req.ID, mcp.InputRequiredResult{
 		ResultType:    mcp.ResultTypeInputRequired,
 		InputRequests: reqs,
@@ -551,6 +555,17 @@ func (s *server) checkMRTRRetry(req *mcp.Request, p mcp.CallToolParams) *mcp.Res
 	}
 	want := *s.pendingState
 	switch {
+	case req.ID.String() == s.pendingID:
+		// "Retry the original request with a NEW JSON-RPC id" is a MUST, and
+		// it is the one MRTR rule a client can break while everything still
+		// appears to work: the round trip completes, the answers arrive, and
+		// the only casualty is that two distinct exchanges now share an id
+		// on a connection where ids are how a response finds its caller.
+		return mcp.NewErrorResponse(req.ID, &mcp.Error{
+			Code: mcp.CodeInvalidParams,
+			Message: fmt.Sprintf("MRTR retry reuses the id of the call it retries (%s); "+
+				"it must carry a new one", s.pendingID),
+		})
 	case p.RequestState == nil:
 		return mcp.NewErrorResponse(req.ID, &mcp.Error{
 			Code:    mcp.CodeInvalidParams,
@@ -565,7 +580,7 @@ func (s *server) checkMRTRRetry(req *mcp.Request, p mcp.CallToolParams) *mcp.Res
 	}
 	// Cleared before answering, so a THIRD call is an ordinary one rather
 	// than a retry graded against a state nobody handed out again.
-	s.pendingState = nil
+	s.pendingState, s.pendingID = nil, ""
 	return nil
 }
 
