@@ -1,13 +1,25 @@
 // Config page: the GLOBAL governance layer.
 //
-// Every switch here merges tighten-only downward, which has one consequence
-// that shapes this whole page: a lower layer can turn a gate ON but never
-// OFF, so THIS SURFACE IS THE ONLY PLACE A SAFETY GATE CAN BE RELAXED. That
-// makes "denyDestructive true -> false" and "blockOnInjection true -> false"
-// categorically different from every other edit in the application, and they
-// are rendered differently: the row is marked, the button is red, and the
-// confirmation states what stops being enforced and requires an explicit
-// acknowledgement before it will fire (docs/modules/controlplane.md).
+// Values here merge tighten-only downward — a lower layer may narrow but
+// never widen — so this remains the only surface that can loosen a global
+// setting, and internal/ctlapi's adminconfig.go allows that deliberately:
+// refusing would leave an operator unable to undo what they set.
+//
+// NO EDIT ON THIS PAGE IS TREATED AS DANGEROUS, and none is confirmed. This
+// comment used to say that "denyDestructive true -> false" and
+// "blockOnInjection true -> false" were categorically different from every
+// other edit, rendered with a marked row, a red button and a confirmation
+// requiring explicit acknowledgement. No such rendering exists in this file
+// or anywhere in the frontend, and neither key exists at all — both went with
+// the removed runtime-governance surface, along with the scanning they
+// switched. What is left (discovery mode, the calls policy, result budgets,
+// the http face) carries no gate-relaxation semantics, so writes go straight
+// through runWrite like every other edit.
+//
+// Describing a confirmation that is not there is how a reviewer concludes a
+// control is in place when it is not; ctlapi/adminconfig.go carries the same
+// correction for the audit trail it used to promise. If a key of that kind
+// returns, the treatment has to be built, not restored.
 //
 
 import { hub } from "../bridge";
