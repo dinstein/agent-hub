@@ -130,10 +130,10 @@ sequenceDiagram
     participant OPS as confops<br/>(the one semantic-write implementation)
     participant R as registry.Store
 
-    Note over GUI,CLI: two frontends, one rule set
+    Note over GUI,CLI: two frontends, one implementation of the rules
     GUI->>CTL: PATCH /v1/servers/{id}<br/>(carrying the generation it read)
-    CTL->>OPS: SetServer(..., Precondition{Generation})
-    CLI->>OPS: the same function (Precondition{} = no check)
+    CTL->>OPS: UpdateServer(..., Precondition{Generation})
+    CLI->>OPS: its own operations, in-process (Precondition{} = no check)
     OPS->>OPS: validate arguments (stop right here if invalid; nothing was opened)
     OPS->>R: Update: take the cross-process lock → re-read the document
     R->>R: compare Precondition.Generation while holding the lock
@@ -153,6 +153,15 @@ sequenceDiagram
 field setters: `RenameProfile` repoints every client binding that references it, because leaving those
 dangling would fail-close those clients into an empty scope. A parity test asserts both frontends
 produce **byte-for-byte identical** registry documents.
+
+**What the two frontends share is the package, not always the function.** The diagram's
+`UpdateServer` — a whole entry at once — is reached only by the control plane, and the per-field
+`SetServerEnabled` / `SetServerTools` / `SetServerTrace` only by the CLI, because `agenthub server`
+has no whole-entry edit and the HTTP face has no per-field route. The guarantee is that neither
+frontend implements the semantics itself; it is not that a given edit takes the same call from both
+sides. Stated the stronger way — this diagram said "the same function", naming a `SetServer` that
+does not exist — it sends a reader looking for a shared entry point that was never there, and the
+three real `SetServer*` functions are close enough in name to be mistaken for it.
 
 `RemoveServer` is that rule at its widest: the whole footprint — credentials, profile membership and
 selectors, governance rules naming the server, the cached catalog — with logs the deliberate exception,
