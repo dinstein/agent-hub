@@ -129,3 +129,22 @@ func (l *vaultLock) release() {
 	_ = flockUnlock(l.f)
 	_ = l.f.Close()
 }
+
+// withVaultLock runs fn holding the vault lock. Callers hold c.mu already:
+// the in-process mutex is taken OUTSIDE this one, so goroutines of one
+// process queue in memory and only one of them ever competes for the file
+// lock. The reverse order would have each goroutine open its own descriptor
+// and contend through the filesystem — flock is per-open-file-description
+// and LockFileEx is per-handle, so they would not even be spared the wait.
+func (c *Chain) withVaultLock(ctx context.Context, fn func() error) error {
+	dir, err := c.baseDir()
+	if err != nil {
+		return err
+	}
+	lock, err := acquireVaultLock(ctx, dir)
+	if err != nil {
+		return err
+	}
+	defer lock.release()
+	return fn()
+}

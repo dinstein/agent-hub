@@ -104,16 +104,29 @@ func (s *keyringStore) Get(ctx context.Context, ref Ref) (string, bool, error) {
 	}
 }
 
+// The mutating methods below take the cross-process vault lock for the same
+// reason Chain.Set and Chain.Delete do — they are the same whole-file
+// read-modify-write cycles over the same files. If anything they need it
+// more: their one caller is Migrate, which reads from one backend, writes to
+// the other, verifies, and only then deletes the source. A concurrent writer
+// that clobbers the destination between the write and the read-back turns
+// that verified handover into a delete of the last remaining copy.
+//
+// The Get methods stay unlocked, matching Chain.Get: writers publish by
+// rename, so a reader sees one whole version or the other.
+
 func (s *keyringStore) Set(ctx context.Context, ref Ref, val string) error {
 	if err := ref.Validate(); err != nil {
 		return err
 	}
 	s.c.mu.Lock()
 	defer s.c.mu.Unlock()
-	if err := s.c.kr.set(ctx, ref.StorageKey(), val); err != nil {
-		return err
-	}
-	return s.c.registryAdd(ref.StorageKey())
+	return s.c.withVaultLock(ctx, func() error {
+		if err := s.c.kr.set(ctx, ref.StorageKey(), val); err != nil {
+			return err
+		}
+		return s.c.registryAdd(ref.StorageKey())
+	})
 }
 
 func (s *keyringStore) Delete(ctx context.Context, ref Ref) error {
@@ -123,10 +136,12 @@ func (s *keyringStore) Delete(ctx context.Context, ref Ref) error {
 	s.c.mu.Lock()
 	defer s.c.mu.Unlock()
 	sk := ref.StorageKey()
-	if err := s.c.kr.del(ctx, sk); err != nil && !errors.Is(err, ErrKeyringNotFound) {
-		return err
-	}
-	return s.c.registryRemove(sk)
+	return s.c.withVaultLock(ctx, func() error {
+		if err := s.c.kr.del(ctx, sk); err != nil && !errors.Is(err, ErrKeyringNotFound) {
+			return err
+		}
+		return s.c.registryRemove(sk)
+	})
 }
 
 // encStore is secrets.enc as a Store, bound to the key that encForRead
@@ -152,33 +167,37 @@ func (s *encStore) Get(_ context.Context, ref Ref) (string, bool, error) {
 	return v, ok, nil
 }
 
-func (s *encStore) Set(_ context.Context, ref Ref, val string) error {
+func (s *encStore) Set(ctx context.Context, ref Ref, val string) error {
 	if err := ref.Validate(); err != nil {
 		return err
 	}
 	s.c.mu.Lock()
 	defer s.c.mu.Unlock()
-	m, err := s.enc.load()
-	if err != nil {
-		return err
-	}
-	m[ref.StorageKey()] = val
-	return s.enc.save(m)
+	return s.c.withVaultLock(ctx, func() error {
+		m, err := s.enc.load()
+		if err != nil {
+			return err
+		}
+		m[ref.StorageKey()] = val
+		return s.enc.save(m)
+	})
 }
 
-func (s *encStore) Delete(_ context.Context, ref Ref) error {
+func (s *encStore) Delete(ctx context.Context, ref Ref) error {
 	if err := ref.Validate(); err != nil {
 		return err
 	}
 	s.c.mu.Lock()
 	defer s.c.mu.Unlock()
-	m, err := s.enc.load()
-	if err != nil {
-		return err
-	}
-	if _, ok := m[ref.StorageKey()]; !ok {
-		return nil // deleting an absent entry is a no-op, matching Chain.Delete
-	}
-	delete(m, ref.StorageKey())
-	return s.enc.save(m)
+	return s.c.withVaultLock(ctx, func() error {
+		m, err := s.enc.load()
+		if err != nil {
+			return err
+		}
+		if _, ok := m[ref.StorageKey()]; !ok {
+			return nil // deleting an absent entry is a no-op, matching Chain.Delete
+		}
+		delete(m, ref.StorageKey())
+		return s.enc.save(m)
+	})
 }

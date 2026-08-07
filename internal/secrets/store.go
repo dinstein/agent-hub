@@ -161,19 +161,31 @@ func (c *Chain) Get(ctx context.Context, ref Ref) (string, bool, error) {
 // Announcing from the callers instead would mean one of them eventually
 // forgets, and the symptom of forgetting is a client that keeps using a dead
 // token until it is restarted.
+//
+// The write runs under the cross-process vault lock (vaultlock.go) and the
+// announcement deliberately does not: the write is the credential, the
+// announcement is a hint whose worst case is one missed notification that
+// the next write recovers.
 func (c *Chain) Set(ctx context.Context, ref Ref, val string) error {
 	if err := ref.Validate(); err != nil {
 		return err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := c.setLocked(ctx, ref, val); err != nil {
+	if err := c.withVaultLock(ctx, func() error { return c.setLocked(ctx, ref, val) }); err != nil {
 		return err
 	}
 	c.announce(ref.ServerID)
 	return nil
 }
 
+// setLocked runs under both locks. encForWrite is INSIDE the vault lock and
+// must stay there: its dev-fallback branch calls loadOrCreateDevKey, a
+// read-then-create of secrets.enc.key. Two processes reaching that unguarded
+// each generate a key and the second overwrites the first, after which the
+// enc file one of them sealed cannot be opened at all — a corrupted vault
+// rather than a lost entry, which is why the lock covers key selection and
+// not just the map update.
 func (c *Chain) setLocked(ctx context.Context, ref Ref, val string) error {
 	enc, useEnc, err := c.encForWrite(ctx)
 	if err != nil {
@@ -205,7 +217,7 @@ func (c *Chain) Delete(ctx context.Context, ref Ref) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := c.deleteLocked(ctx, ref); err != nil {
+	if err := c.withVaultLock(ctx, func() error { return c.deleteLocked(ctx, ref) }); err != nil {
 		return err
 	}
 	c.announce(ref.ServerID)
