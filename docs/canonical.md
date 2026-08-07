@@ -316,15 +316,29 @@ golangci-lint is absent it calls `t.Skip` and `make test` counts that as success
 the verbose output for `--- SKIP` and fails on it. **A check that can quietly not run is a check you
 do not have.**
 
-**Current assembly status — `guard-zero-dep` has no failing case.** §2 rule 4 is three depguard rules,
-one per foundation directory: `platform-zero-dep`, `logx-zero-dep` and `guard-zero-dep`. The first two
-each have a probe in `internal/depguardtest`; the third has none, so nothing demonstrates that a
-business import planted under `internal/guard/**` is actually rejected. The rule is configured and
-looks identical to the two that are proven, which is the shape this section calls more dangerous than
-no rule at all — the gap is invisible from `.golangci.yml`, and visible only by counting probes against
-rules. Closing it means one more `zz_depguard_probe_*.go` case shaped like the rule-4 pair already
-there. It is recorded rather than fixed because the constraints and their proofs are deliberately out
-of scope for a tidy pass.
+**Current assembly status — two of the seven rules have no failing case, for different reasons.**
+`.golangci.yml` configures seven: `gui-and-api-no-internal` (two probes, one per half),
+`mcp-stdlib-only`, `no-third-party-mcp-libs`, `pipeline-no-ctlapi`, `platform-zero-dep`,
+`logx-zero-dep` and `guard-zero-dep`. Five are proven. The gap is invisible from `.golangci.yml` and
+visible only by counting probes against rules, so both unproven ones are named here rather than left
+for that count to turn up:
+
+- **`guard-zero-dep`.** §2 rule 4 is three rules, one per foundation directory; `platform-zero-dep`
+  and `logx-zero-dep` each have a probe and this one has none, so nothing demonstrates that a business
+  import planted under `internal/guard/**` is actually rejected. It is configured and looks identical
+  to the two that are proven, which is the shape this section calls more dangerous than no rule at
+  all. Closing it means one more `zz_depguard_probe_*.go` case shaped like the rule-4 pair already
+  there — no obstacle beyond someone writing it.
+- **`no-third-party-mcp-libs`.** This one the harness as designed *cannot* prove. The rule denies
+  three named third-party MCP SDKs repo-wide, none of which is in `go.mod`, while every probe must
+  type-check — that is what makes a lint failure attributable to depguard and nothing else. A probe
+  importing one of those packages would fail to build instead, so proving it needs a fake module
+  planted in the disposable tree: a change to the harness, not one more case. `mcp-stdlib-only`'s
+  probe does not cover it, since that probe plants `github.com/spf13/cobra` in `internal/mcp`, which
+  the stdlib-only rule rejects on its own.
+
+Both are recorded rather than fixed because the constraints and their proofs are deliberately out of
+scope for a tidy pass.
 
 ### Test infrastructure
 
