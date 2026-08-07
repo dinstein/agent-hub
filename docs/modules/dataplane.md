@@ -1,12 +1,15 @@
 # Data Plane
 
 Everything on the path from "a `tools/call` arrives from an upstream client" to "a result comes back
-from a downstream MCP server". Nine packages, one layer each, with the boundaries enforced by types and
+from a downstream MCP server". Eight packages, one layer each, with the boundaries enforced by types and
 dependency direction rather than by convention:
 
 - `internal/downstream` owns **connections**: process/HTTP lifecycle, the serialized call queue, the
   circuit breaker, retries, health probing, the derived instance pool. It knows nothing about the name a
   tool is exposed under.
+- `internal/mrtr` owns **one round of input resolution**: it answers a 2026-07-28 server's
+  `InputRequiredResult` and hands back the `inputResponses` map. It never sees `requestState` and never
+  re-issues the call — the retry loop stays in `internal/downstream`.
 - `internal/router` owns **naming**: it aggregates several servers into one namespaced catalog and
   provides the single reverse-provenance lookup `RouteOf`. It knows nothing about who may see what.
 - `internal/pipeline` owns **the execute path**: two gates in frozen order, the call, the shaping post
