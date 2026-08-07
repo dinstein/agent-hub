@@ -65,8 +65,17 @@ var variantDefs = []mcp.ToolDef{
 }
 
 // VariantNames returns the three variant names in frozen order.
+//
+// It reads variantDefs rather than repeating the list: both are declared to
+// be in frozen order, and two orderings that must agree are one edit away from
+// disagreeing — with nothing to notice, since the names would still all be
+// present and only the sequence a reviewer reads an allowlist in would differ.
 func VariantNames() []string {
-	return []string{MetaCallToolRead, MetaCallToolWrite, MetaCallToolDestructive}
+	out := make([]string, len(variantDefs))
+	for i, d := range variantDefs {
+		out[i] = d.Name
+	}
+	return out
 }
 
 // VariantFor names the meta-tool that invokes a tool of tier t. An
