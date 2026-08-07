@@ -65,19 +65,84 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, c *Caller, he
 	}
 	// nil filter: this generation has no way to ask for a subset, so the
 	// client gets whatever the gateway produces for its credential.
-	s.serveStream(w, r, c, sess, nil, mcp.ID{}, held)
+	s.serveStream(w, r, c, streamSpec{sess: sess}, held)
+}
+
+// handleListen answers the 2026-07-28 subscriptions/listen request, whose
+// response IS the stream.
+//
+// No session is required or minted: 2026-07-28 removed Mcp-Session-Id from
+// the wire, and this face keys per-caller state by the authenticated
+// identity. A ≤ 2025-11-25 client that sends this method anyway gets the
+// same stream, which is harmless — it asked for it by name.
+func (s *Server) handleListen(w http.ResponseWriter, r *http.Request, c *Caller, req *mcp.Request, held *slot) {
+	var params mcp.SubscriptionsListenParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			s.replyRPCError(w, http.StatusBadRequest, req.ID, &mcp.Error{
+				Code: mcp.CodeInvalidParams, Message: "subscriptions/listen params could not be read",
+			})
+			return
+		}
+	}
+	if !acceptsSSE(r) {
+		// The answer to this method is a stream and nothing else. Saying so
+		// as a JSON-RPC error beats opening one the client will not read:
+		// agenthub's own read side treats a JSON answer here as "this server
+		// does not offer the stream", which is the accurate reading.
+		s.replyRPCError(w, http.StatusNotAcceptable, req.ID, &mcp.Error{
+			Code:    mcp.CodeInvalidRequest,
+			Message: "subscriptions/listen is answered with text/event-stream, which this request does not accept",
+		})
+		return
+	}
+	// The session is optional here and is only looked up so a ≤ 2025-11-25
+	// client using this method keeps its idle clock ticking.
+	sess, ok := s.resolveSession(w, r, c, false)
+	if !ok {
+		return
+	}
+
+	honoured := honouredFilter(params.Notifications)
+	ack, err := acknowledgement(honoured, req.ID)
+	if err != nil {
+		s.replyRPCError(w, http.StatusInternalServerError, req.ID, &mcp.Error{
+			Code: mcp.CodeInternalError, Message: "the subscription could not be acknowledged",
+		})
+		return
+	}
+	s.serveStream(w, r, c, streamSpec{
+		sess:     sess,
+		accept:   acceptFromFilter(honoured),
+		subID:    req.ID,
+		preamble: ack,
+	}, held)
+}
+
+// streamSpec is what differs between the two generations' streams. Everything
+// else about them — the quota, the head, the keep-alive, the teardown — is
+// identical, which is why there is one serveStream and not two.
+type streamSpec struct {
+	// sess is the session whose idle clock this stream keeps alive. nil on a
+	// 2026-07-28 stream that presented none.
+	sess *Session
+	// accept narrows what the client asked for. nil is everything.
+	accept func(method string) bool
+	// subID is the 2026-07-28 correlation id, echoed in each event's _meta.
+	// The zero ID means "carry no _meta", which is the ≤ 2025-11-25 shape.
+	subID mcp.ID
+	// preamble is written before anything else when set: the 2026-07-28
+	// acknowledgement, which is the only place a client learns that
+	// something it asked for will never arrive.
+	preamble *mcp.Notification
 }
 
 // serveStream opens one notification stream and writes it until the client
 // leaves, the subscription ends, or a write fails.
-//
-// subID is echoed in each event's _meta when set (the 2026-07-28
-// correlation id); the ≤ 2025-11-25 stream passes the zero ID and carries no
-// _meta at all, because that generation defines none here.
 func (s *Server) serveStream(
-	w http.ResponseWriter, r *http.Request, c *Caller, sess *Session,
-	accept func(method string) bool, subID mcp.ID, held *slot,
+	w http.ResponseWriter, r *http.Request, c *Caller, spec streamSpec, held *slot,
 ) {
+	sess, accept, subID := spec.sess, spec.accept, spec.subID
 	// Order matters: take the stream slot BEFORE giving back the in-flight
 	// one. Released first, a burst of stream opens would each be counted
 	// against neither quota for the instant in between.
@@ -128,6 +193,18 @@ func (s *Server) serveStream(
 	}
 	s.log.Debug("notification stream opened", logx.Session(sessionID), "caller", string(c.Kind))
 	defer s.log.Debug("notification stream closed", logx.Session(sessionID))
+
+	// The acknowledgement goes out before anything can be delivered: a
+	// client that learns late which types it will never receive has already
+	// spent that time unable to tell "not supported" from "nothing changed".
+	if spec.preamble != nil {
+		if err := writeSSEMessage(w, spec.preamble, mcp.ID{}); err != nil {
+			return
+		}
+		if err := rc.Flush(); err != nil {
+			return
+		}
+	}
 
 	ticker := time.NewTicker(streamKeepAlive)
 	defer ticker.Stop()
@@ -250,6 +327,73 @@ func injectSubscriptionID(params json.RawMessage, subID mcp.ID) (json.RawMessage
 	// has to change.
 	fields["_meta"] = meta
 	return json.Marshal(fields)
+}
+
+// carriedNotifications is what this face can actually deliver: the set of
+// notification methods the MCP logic behind the seam ever produces upstream.
+//
+// It is exactly one, and that is not an oversight — `internal/gateway` emits
+// `notifications/tools/list_changed` and nothing else (downstreams.go,
+// notifyToolsChanged). The list matters because 2026-07-28's acknowledgement
+// is the ONLY place a client learns that a type it subscribed to will never
+// arrive; acknowledging all three would make "not produced here" and
+// "nothing has changed yet" the same silence.
+//
+// Two places therefore have to agree, and the agreement is checked rather
+// than trusted: test/buildrules TestCarriedNotificationsMatchTheGateway fails
+// when the gateway grows a producer this list does not name.
+var carriedNotifications = map[string]bool{
+	mcp.NotificationToolsListChanged: true,
+}
+
+// honouredFilter intersects what the client asked for with what this face can
+// produce. Everything absent from the result is a type the client is told,
+// in the acknowledgement, that it will not receive.
+//
+// ResourceSubscriptions is never honoured and stays nil: it replaces the
+// resources/subscribe RPC, and this hub subscribes to no individual resource
+// on a client's behalf. nil rather than [] because the two differ everywhere
+// a selector appears — and here the honest answer is "no resource
+// subscriptions", not "an empty set of them".
+func honouredFilter(req mcp.SubscriptionFilter) mcp.SubscriptionFilter {
+	return mcp.SubscriptionFilter{
+		ToolsListChanged:     req.ToolsListChanged && carriedNotifications[mcp.NotificationToolsListChanged],
+		PromptsListChanged:   req.PromptsListChanged && carriedNotifications[mcp.NotificationPromptsListChanged],
+		ResourcesListChanged: req.ResourcesListChanged && carriedNotifications[mcp.NotificationResourcesListChanged],
+	}
+}
+
+// acceptFromFilter compiles an honoured filter into the seam's predicate.
+//
+// It is an ALLOW LIST: a method the filter does not name is refused, which is
+// the direction 2026-07-28 requires ("the server MUST NOT send a type absent
+// from it"). A deny list here would answer the arrival of a new notification
+// type by sending it to clients that never asked.
+func acceptFromFilter(f mcp.SubscriptionFilter) func(string) bool {
+	return func(method string) bool {
+		switch method {
+		case mcp.NotificationToolsListChanged:
+			return f.ToolsListChanged
+		case mcp.NotificationPromptsListChanged:
+			return f.PromptsListChanged
+		case mcp.NotificationResourcesListChanged:
+			return f.ResourcesListChanged
+		default:
+			return false
+		}
+	}
+}
+
+// acknowledgement builds the first message of a 2026-07-28 stream.
+func acknowledgement(honoured mcp.SubscriptionFilter, subID mcp.ID) (*mcp.Notification, error) {
+	params, err := json.Marshal(mcp.SubscriptionsAcknowledgedParams{
+		Notifications: honoured,
+		Meta:          &mcp.NotificationMeta{SubscriptionID: subID},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return mcp.NewNotification(mcp.NotificationSubscriptionsAcknowledged, params), nil
 }
 
 // acceptsSSE reports whether the client will take a text/event-stream answer.

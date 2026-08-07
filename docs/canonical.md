@@ -205,21 +205,29 @@ either direction reads what it accepts.
   would promise per-request `_meta` semantics on a session that used the handshake 2026 removed
 - Transport support is asymmetric by direction: the read side speaks `stdio` + `streamable-http` +
   **legacy HTTP+SSE**; the exposure side speaks `streamable-http` only — no new SSE exposure surface
-  (ruling #29)
-- **Neither generation is offered an out-of-band notification stream on the HTTP face.**
-  `subscriptions/listen` lands in the dispatch default, so a conforming client reads it as "this
-  server offers no stream" — the stance already frozen for the GET stream it replaces. The stdio face
-  pushes notifications inline, as it always has
-- **That bullet is the exposure side alone, and the read side is the opposite.** AgentHub *asks*
-  every streamable-http downstream for the server→client stream — the GET on ≤ 2025-11-25, the
-  `subscriptions/listen` POST on 2026-07-28 — because it is the only channel by which such a
-  downstream can report a tool-set change, and catalog refresh has no other trigger: no poll, no TTL,
-  no re-list except on a reconnect a healthy server never performs. The directions differ because
-  the reasons do — declining to *serve* a stream costs a client nothing it cannot ask for again,
-  while declining to *open* one leaves this hub's catalog wrong with nothing saying so. The
-  distinction is written down because the bullet above read as though it covered both, and for the
-  whole of the project's life it effectively did: `Deps.NotificationStream` was set by no production
-  caller, so both stream implementations were dead code in the shipped binary
+  (ruling #29). **That ruling is about the 2024-11-05 binding**, the two-endpoint one whose `endpoint`
+  event names where to POST, and it still holds. It never covered streamable HTTP's own server→client
+  stream, which is part of the transport the exposure side already speaks
+- **Both generations are offered the out-of-band notification stream on the HTTP face.** This
+  **retires** the stance recorded here that neither would be; it carries no ruling number because it
+  was decided in this repository rather than in the design document §8 indexes. `GET` opens it on
+  ≤ 2025-11-25 and
+  `subscriptions/listen` on 2026-07-28, both in `internal/httpbridge/stream.go`; the stdio face pushes
+  notifications inline, as it always has. The retired stance was inherited rather than argued — the GET
+  stream was refused first and `subscriptions/listen` was refused for consistency with it — and what it
+  cost was stated plainly in the same section: `tools/list_changed` is the ONLY trigger for catalog
+  refresh, so a client on this face was served a tool set that could go stale forever while
+  `initialize` handed it `{"tools":{"listChanged":true}}`. The declaration was the giveaway: this face
+  was promising a channel it had decided not to build
+- **The two directions are still not symmetric, and the reasons still differ.** AgentHub *asks* every
+  streamable-http downstream for the server→client stream — the GET on ≤ 2025-11-25, the
+  `subscriptions/listen` POST on 2026-07-28 — because it is the only channel by which such a downstream
+  can report a tool-set change. Declining to *open* one leaves this hub's catalog wrong with nothing
+  saying so; declining to *serve* one leaves a client's catalog wrong the same way, which is why that
+  half is no longer declined. What remains asymmetric is the vocabulary: the read side accepts whatever
+  a downstream sends, while the exposure side acknowledges only what it can actually produce
+  (`carriedNotifications`, one method today), because 2026-07-28's acknowledgement is the only place a
+  client learns that a type it subscribed to will never arrive
 
 **`mcp.ProtocolVersion` does not name the version this tree targets, and flipping it to 2026 is
 wrong.** It stays at `2025-11-25` because every context that reads it is definitionally pre-2026: the

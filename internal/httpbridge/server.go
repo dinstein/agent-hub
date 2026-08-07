@@ -256,7 +256,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodPost:
-		s.handlePost(w, r, caller)
+		s.handlePost(w, r, caller, held)
 	case http.MethodDelete:
 		s.handleDelete(w, r, caller)
 	case http.MethodGet:
@@ -268,12 +268,15 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 // handlePost is the message path: read the bounded body, parse ONE JSON-RPC
 // message, bind or resolve the session, dispatch.
-func (s *Server) handlePost(w http.ResponseWriter, r *http.Request, c *Caller) {
-	if !acceptsJSON(r) {
-		s.fail(w, r, &httpError{http.StatusNotAcceptable, CodeBadRequest,
-			"this endpoint answers application/json"})
-		return
-	}
+//
+// The Accept check runs AFTER the parse, which it did not used to. One method
+// on this path is answered with text/event-stream rather than JSON —
+// subscriptions/listen, whose response IS the stream — so "will this client
+// read my answer?" cannot be settled before knowing which answer is owed.
+// Reading the body first costs nothing that was not already bounded:
+// readBody applies MaxBodyBytes and the read deadline regardless of what the
+// message turns out to be.
+func (s *Server) handlePost(w http.ResponseWriter, r *http.Request, c *Caller, held *slot) {
 	body, err := readBody(w, r)
 	if err != nil {
 		s.fail(w, r, err)
@@ -284,6 +287,25 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request, c *Caller) {
 		// A malformed frame is a JSON-RPC-level failure with no id to bind
 		// an answer to, so it is reported at the HTTP level.
 		s.fail(w, r, &httpError{http.StatusBadRequest, CodeBadRequest, "malformed JSON-RPC message"})
+		return
+	}
+
+	// The one shape whose answer is not JSON, taken before the Accept gate
+	// below. It is answered by this face rather than through Dispatch
+	// because that seam returns ONE response, and this method's response is
+	// a body that stays open — which shape a reply takes is a transport
+	// decision, and a transport is what this package is.
+	if req, ok := msg.(*mcp.Request); ok && req.Method == mcp.MethodSubscriptionsListen {
+		if e := checkMcpHeaders(r, req.Method, req.Params); e != nil {
+			s.replyRPCError(w, http.StatusBadRequest, req.ID, e)
+			return
+		}
+		s.handleListen(w, r, c, req, held)
+		return
+	}
+	if !acceptsJSON(r) {
+		s.fail(w, r, &httpError{http.StatusNotAcceptable, CodeBadRequest,
+			"this endpoint answers application/json"})
 		return
 	}
 

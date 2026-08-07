@@ -334,6 +334,168 @@ func TestStreamSetupFailureIsShed(t *testing.T) {
 	}
 }
 
+// listenFrame is a 2026-07-28 subscriptions/listen asking for all three
+// list-changed types. Only one of them is produced by anything behind this
+// face, which is the point of TestListenAcknowledgesOnlyWhatItCanSend.
+const listenFrame = `{"jsonrpc":"2.0","id":7,"method":"subscriptions/listen",` +
+	`"params":{"notifications":{"toolsListChanged":true,"promptsListChanged":true,"resourcesListChanged":true}}}`
+
+// openListen sends a subscriptions/listen POST and returns the streaming
+// response positioned at its first event.
+func openListen(t *testing.T, h *harness, bearer, frame string) (*http.Response, *bufio.Reader) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, h.srv.URL+httpbridge.DefaultPath, strings.NewReader(frame))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+bearer)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set(httpbridge.MethodHeader, mcp.MethodSubscriptionsListen)
+	res, err := h.srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = res.Body.Close() })
+	return res, bufio.NewReader(res.Body)
+}
+
+// TestListenOpensTheStreamWithNoSession: 2026-07-28 removed Mcp-Session-Id
+// from the wire, so this stream must open without one. Requiring a session
+// here would make the whole generation unable to subscribe.
+func TestListenOpensTheStreamWithNoSession(t *testing.T) {
+	t.Parallel()
+	store := newStore(t)
+	_, value := mustCreate(t, store, httpbridge.CreateSpec{Name: "listener", Tier: tier.Write})
+	h := newHarness(t, &httpbridge.Authenticator{Tokens: store}, httpbridge.Options{})
+
+	res, _ := openListen(t, h, value, listenFrame)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.StatusCode)
+	}
+	if ct := res.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Fatalf("Content-Type = %q, want text/event-stream", ct)
+	}
+}
+
+// TestListenAcknowledgesOnlyWhatItCanSend is the honesty this stream owes its
+// client. The acknowledgement is the ONLY place a client learns a type it
+// asked for will never arrive; acknowledging all three would make "nothing
+// produces this" and "nothing has changed yet" the same silence.
+func TestListenAcknowledgesOnlyWhatItCanSend(t *testing.T) {
+	t.Parallel()
+	store := newStore(t)
+	_, value := mustCreate(t, store, httpbridge.CreateSpec{Name: "ack", Tier: tier.Write})
+	h := newHarness(t, &httpbridge.Authenticator{Tokens: store}, httpbridge.Options{})
+
+	_, br := openListen(t, h, value, listenFrame)
+	var first mcp.Notification
+	if err := json.Unmarshal([]byte(readEvent(t, br)), &first); err != nil {
+		t.Fatalf("first event is not a JSON-RPC message: %v", err)
+	}
+	if first.Method != mcp.NotificationSubscriptionsAcknowledged {
+		t.Fatalf("first event = %q, want the acknowledgement %q",
+			first.Method, mcp.NotificationSubscriptionsAcknowledged)
+	}
+	var ack mcp.SubscriptionsAcknowledgedParams
+	if err := json.Unmarshal(first.Params, &ack); err != nil {
+		t.Fatalf("acknowledgement params: %v", err)
+	}
+	if !ack.Notifications.ToolsListChanged {
+		t.Error("tools/list_changed was not acknowledged, and it is the one type this hub produces")
+	}
+	if ack.Notifications.PromptsListChanged || ack.Notifications.ResourcesListChanged {
+		t.Errorf("acknowledged a type nothing produces: %+v — the client will wait forever for it",
+			ack.Notifications)
+	}
+	if ack.Meta == nil || !ack.Meta.SubscriptionID.IsSet() {
+		t.Error("the acknowledgement carries no subscriptionId, so a client cannot correlate the stream")
+	}
+}
+
+// TestListenFilterIsAnAllowList: a type the client did NOT ask for must not
+// reach it, which is 2026-07-28's rule stated as a MUST NOT.
+func TestListenFilterIsAnAllowList(t *testing.T) {
+	t.Parallel()
+	store := newStore(t)
+	_, value := mustCreate(t, store, httpbridge.CreateSpec{Name: "narrow", Tier: tier.Write})
+	h := newHarness(t, &httpbridge.Authenticator{Tokens: store}, httpbridge.Options{})
+
+	// Asks for prompts only — a type this hub does not produce — so the
+	// honoured set is empty and tools/list_changed must be refused too.
+	frame := `{"jsonrpc":"2.0","id":9,"method":"subscriptions/listen",` +
+		`"params":{"notifications":{"promptsListChanged":true}}}`
+	openListen(t, h, value, frame)
+	waitFor(t, func() bool { return h.disp.subscribeCount() == 1 }, "Subscribe never reached the seam")
+
+	accept := h.disp.lastAccept()
+	if accept == nil {
+		t.Fatal("subscriptions/listen passed a nil filter; nil means EVERYTHING, and this client asked for one type")
+	}
+	if accept(mcp.NotificationToolsListChanged) {
+		t.Error("the filter accepts tools/list_changed, which this client did not ask for")
+	}
+	if accept("some/future/notification") {
+		t.Error("the filter accepts an unknown method; it must be an allow list, not a deny list")
+	}
+}
+
+// TestListenEventsCarryTheSubscriptionID: the correlation id 2026-07-28 puts
+// in every event's _meta, and it must equal the listen request's own id.
+func TestListenEventsCarryTheSubscriptionID(t *testing.T) {
+	t.Parallel()
+	store := newStore(t)
+	_, value := mustCreate(t, store, httpbridge.CreateSpec{Name: "corr", Tier: tier.Write})
+	sub := newTestSub()
+	disp := &recordingDispatcher{
+		subscribe: func(func(string) bool) (httpbridge.Subscription, error) { return sub, nil },
+	}
+	h := newHarness(t, &httpbridge.Authenticator{Tokens: store}, httpbridge.Options{Dispatcher: disp})
+
+	_, br := openListen(t, h, value, listenFrame)
+	readEvent(t, br) // the acknowledgement
+
+	if err := sub.push(mcp.NewNotification(mcp.NotificationToolsListChanged, json.RawMessage(`{}`))); err != nil {
+		t.Fatal(err)
+	}
+	var got mcp.Notification
+	if err := json.Unmarshal([]byte(readEvent(t, br)), &got); err != nil {
+		t.Fatal(err)
+	}
+	var params struct {
+		Meta *mcp.NotificationMeta `json:"_meta"`
+	}
+	if err := json.Unmarshal(got.Params, &params); err != nil {
+		t.Fatalf("delivered params: %v", err)
+	}
+	if params.Meta == nil || !params.Meta.SubscriptionID.IsSet() {
+		t.Fatalf("event carried no subscriptionId: %s", got.Params)
+	}
+	if key := params.Meta.SubscriptionID.Key(); key != mcp.NewIntID(7).Key() {
+		t.Fatalf("subscriptionId = %s, want the listen request's id 7", key)
+	}
+}
+
+// TestListenNeedsToAcceptTheStream: the answer to this method is a stream and
+// nothing else, so a client that will not read one is told as much rather
+// than handed a body it will hang on. agenthub's own read side reads a JSON
+// answer here as "this server does not offer the stream".
+func TestListenNeedsToAcceptTheStream(t *testing.T) {
+	t.Parallel()
+	store := newStore(t)
+	_, value := mustCreate(t, store, httpbridge.CreateSpec{Name: "nosse", Tier: tier.Write})
+	h := newHarness(t, &httpbridge.Authenticator{Tokens: store}, httpbridge.Options{})
+
+	res := h.post(t, value, "", listenFrame,
+		"Accept", "application/json", httpbridge.MethodHeader, mcp.MethodSubscriptionsListen)
+	if res.StatusCode != http.StatusNotAcceptable {
+		t.Fatalf("status = %d, want 406", res.StatusCode)
+	}
+	if n := h.disp.subscribeCount(); n != 0 {
+		t.Fatalf("Subscribe reached the seam %d times for a client that cannot read the stream; want 0", n)
+	}
+}
+
 // waitFor polls until cond holds, failing with msg if it never does.
 func waitFor(t *testing.T, cond func() bool, msg string) {
 	t.Helper()
