@@ -133,31 +133,47 @@ func DialOrStartWith(ctx context.Context, opts StartOptions) (*Client, error) {
 	return c, err
 }
 
-func dialOrStart(ctx context.Context, opts StartOptions) (*Client, bool, error) {
-	socket := opts.SocketPath
+// resolve fills every unset field of a StartOptions and returns the control
+// socket path the rest of the call works from. defaultArgs is what DaemonArgs
+// falls back to, and it is the ONE thing the two entry points disagree
+// about — `daemon start` here, plus `--foreground` for a supervised child.
+//
+// The rest is shared because the field comments on StartOptions state these
+// defaults as the contract ("0 = 10s", "0 = 100ms", "" = dir of SocketPath).
+// Two copies of them meant that documentation could become true of one entry
+// point and false of the other, and the two ways of bringing a daemon up
+// would look for it in different places.
+func (o *StartOptions) resolve(defaultArgs ...string) (socket string, err error) {
+	socket = o.SocketPath
 	if socket == "" {
-		var err error
 		if socket, err = DefaultSocketPath(); err != nil {
-			return nil, false, err
+			return "", err
 		}
 	}
-	if opts.DaemonBinary == "" {
-		opts.DaemonBinary = defaultDaemonBinary()
+	if o.DaemonBinary == "" {
+		o.DaemonBinary = defaultDaemonBinary()
 	}
-	if opts.DaemonArgs == nil {
-		opts.DaemonArgs = []string{"daemon", "start"}
+	if o.DaemonArgs == nil {
+		o.DaemonArgs = defaultArgs
 	}
-	if opts.RunDir == "" {
-		var err error
-		if opts.RunDir, err = runDirFor(socket); err != nil {
-			return nil, false, err
+	if o.RunDir == "" {
+		if o.RunDir, err = runDirFor(socket); err != nil {
+			return "", err
 		}
 	}
-	if opts.Deadline <= 0 {
-		opts.Deadline = 10 * time.Second
+	if o.Deadline <= 0 {
+		o.Deadline = 10 * time.Second
 	}
-	if opts.PollInterval <= 0 {
-		opts.PollInterval = 100 * time.Millisecond
+	if o.PollInterval <= 0 {
+		o.PollInterval = 100 * time.Millisecond
+	}
+	return socket, nil
+}
+
+func dialOrStart(ctx context.Context, opts StartOptions) (*Client, bool, error) {
+	socket, err := opts.resolve("daemon", "start")
+	if err != nil {
+		return nil, false, err
 	}
 	// exitGrace bounds how long the readiness deadline waits for a pending
 	// launcher exit status before giving up on naming the cause.

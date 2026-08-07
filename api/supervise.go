@@ -86,30 +86,9 @@ type Supervised struct {
 // supervised daemon that did not know its owner would be a daemon this
 // process could not legitimately stop.
 func StartSupervised(ctx context.Context, opts StartOptions) (*Supervised, error) {
-	socket := opts.SocketPath
-	if socket == "" {
-		var err error
-		if socket, err = DefaultSocketPath(); err != nil {
-			return nil, err
-		}
-	}
-	if opts.DaemonBinary == "" {
-		opts.DaemonBinary = defaultDaemonBinary()
-	}
-	if opts.DaemonArgs == nil {
-		opts.DaemonArgs = []string{"daemon", "start", "--foreground"}
-	}
-	if opts.RunDir == "" {
-		var err error
-		if opts.RunDir, err = runDirFor(socket); err != nil {
-			return nil, err
-		}
-	}
-	if opts.Deadline <= 0 {
-		opts.Deadline = 10 * time.Second
-	}
-	if opts.PollInterval <= 0 {
-		opts.PollInterval = 100 * time.Millisecond
+	socket, err := opts.resolve("daemon", "start", "--foreground")
+	if err != nil {
+		return nil, err
 	}
 
 	// A daemon that is ALREADY serving is not ours to supervise, and starting
