@@ -664,6 +664,34 @@ store and key**, so one lifecycle never straddles keys.
 body to an in-memory pipe and write requests into the **same frame reader** the stdio face uses.
 `Counters()` is the seam that proves it: gate counts on the in-process path must match stdio exactly.
 
+**`subscribe.go` is the gateway→client direction on that same face, and it is a fan-out because one
+`Conn` has many clients.** A Conn is per-credential and shared by every HTTP session that credential
+opened, so "write it to the client" is not something `inproc.go` can do; each consumer takes a
+`Subscription` instead, and `internal/httpbridge` turns one into an SSE response. Delivery is
+**coalescing, latest-wins per method**, not buffered: every notification this face carries is an edge
+with no payload the client needs (`tools/list_changed` says "re-list"), so collapsing two costs
+nothing — while a fixed buffer that fills has to drop the NEWEST edge, which is precisely how a client
+ends up believing a stale tool set with nothing saying so. `offer` therefore never blocks: the read
+loop it runs on is the only reader of the gateway's output pipe, and one slow consumer must not stall
+a connection every other session shares. **With nobody subscribed a notification is still dropped**,
+deliberately — a client that opened no stream is not owed one, and buffering for a consumer that may
+never arrive is an unbounded queue on a connection that lives as long as the credential does.
+
+**Nothing on that path is a gate.** A notification reaching `fanout` was already produced for that
+credential's scope, on the far side of the pipeline, so a subscription filter is the client's own
+narrowing and never a security decision. That is also why `subscriptions/listen` may be answered by
+the transport instead of the gate chain.
+
+**`subscriptions.go` is the stdio half, where a subscription decides WHETHER rather than HOW.**
+stdio has no body to hold open — notifications have always gone inline — so the filter's only effect
+is to suppress. The rule is *having subscribed*, not the protocol generation: a session that
+subscribed is narrowed to its filter exactly, and a session that never did keeps receiving
+everything. That second half is a **deliberate deviation** from 2026-07-28, which says a server
+sends nothing a client did not subscribe to. Withholding was implemented and reverted: it leaves a
+client that never calls the method holding a tool set that can go stale forever with nothing saying
+so. The symmetry with the HTTP face is only apparent — there, "no subscription, no notification" is
+the absence of a channel, not a policy.
+
 **`statereport.go` is where downstream runtime state comes from.** The gateway is the only process holding
 the connections, so it is the only thing that can answer "how is this server doing right now"; the daemon
 only aggregates what it posts. The last connection failure stays structured long enough to classify a

@@ -21,8 +21,10 @@ func meta2026(caps mcp.ClientCapabilities) *mcp.RequestMeta {
 	}
 }
 
-// TestInitializeClampsStatelessVersion pins the §7.1 rule: initialize can
-// only negotiate the stateful protocol family. A client declaring
+// TestInitializeClampsStatelessVersion pins canonical.md §5b's exposure-side
+// rule: initialize can only negotiate the stateful protocol family. (It cited
+// mcp-2026-07-28.md §7.1 before, which is about the notification stream and
+// never carried this rule.) A client declaring
 // 2026-07-28 through the handshake that 2026 removed is answered with the
 // default, not an echo that would promise per-request _meta semantics the
 // session does not have.
