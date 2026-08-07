@@ -127,22 +127,14 @@ func defaultProbePath(path string) error {
 	return fmt.Errorf("platform: %s is not reachable", path)
 }
 
-// windowsDataDir resolves %APPDATA%\AgentHub, applying the MSIX twin-path
+// windowsDataDirNamed resolves %APPDATA%\<name>, applying the MSIX twin-path
 // escape when this process turns out to be inside someone else's container.
+// Both directory names run this one function, so the escape cannot apply to
+// one build flavour and not the other.
 //
-// Callers reach it through DataDir, which has already honoured
-// AGENTHUB_DATA_DIR — an explicit override is always obeyed verbatim, on
-// every platform, including inside a container.
-func (r *Resolver) windowsDataDir() (string, error) {
-	return r.windowsDataDirNamed(dirName)
-}
-
-// windowsDevDataDir is the development sibling, sharing every branch above so
-// the MSIX escape cannot apply to one flavour and not the other.
-func (r *Resolver) windowsDevDataDir() (string, error) {
-	return r.windowsDataDirNamed(DevDirName)
-}
-
+// Callers reach it through dataDirNamed, below DataDir's AGENTHUB_DATA_DIR
+// check — an explicit override is always obeyed verbatim, on every platform,
+// including inside a container.
 func (r *Resolver) windowsDataDirNamed(name string) (string, error) {
 	appData, ok := r.lookup(windowsAppDataEnv)
 	if !ok || appData == "" {
@@ -325,15 +317,15 @@ func parentWindowsPath(p string) string {
 	return parent
 }
 
+func isDriveLetter(b byte) bool {
+	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
+}
+
 // loopbackUNCPath rewrites C:\Users\alice\... into
 // \\127.0.0.1\C$\Users\alice\..., the administrative-share twin of the same
 // directory. ok=false for anything that is not a drive-letter path (a UNC
 // path is already outside the redirection filter, and a relative path is
 // not a location).
-func isDriveLetter(b byte) bool {
-	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
-}
-
 func loopbackUNCPath(p string) (string, bool) {
 	p = strings.ReplaceAll(p, "/", `\`)
 	if len(p) < 3 || p[1] != ':' || p[2] != '\\' {

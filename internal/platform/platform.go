@@ -120,32 +120,12 @@ func DevResolver(base *Resolver) *Resolver {
 	return r
 }
 
-// devDataDir is the development sibling of DataDir. It reuses the same
-// platform branches so the two directories can never end up in different
-// parents — the dev copy must be findable by anyone who knows where the real
-// one lives.
+// devDataDir is the development sibling of DataDir. It runs the same platform
+// branches under the other directory name, so the two can never end up in
+// different parents — the dev copy must be findable by anyone who knows where
+// the real one lives.
 func devDataDir(r *Resolver) (string, error) {
-	switch r.goos() {
-	case "darwin":
-		home, err := r.home()
-		if err != nil {
-			return "", fmt.Errorf("platform: resolve home: %w", err)
-		}
-		return filepath.Join(home, "Library", "Application Support", DevDirName), nil
-	case "linux":
-		if v, ok := r.lookup("XDG_DATA_HOME"); ok && v != "" && filepath.IsAbs(v) {
-			return filepath.Join(v, DevDirName), nil
-		}
-		home, err := r.home()
-		if err != nil {
-			return "", fmt.Errorf("platform: resolve home: %w", err)
-		}
-		return filepath.Join(home, ".local", "share", DevDirName), nil
-	case "windows":
-		return r.windowsDevDataDir()
-	default:
-		return "", fmt.Errorf("platform: %s: %w", r.goos(), ErrUnsupportedPlatform)
-	}
+	return r.dataDirNamed(DevDirName)
 }
 
 // Resolver resolves agenthub filesystem locations. Fields left nil/empty
@@ -230,24 +210,37 @@ func (r *Resolver) DataDir() (string, error) {
 	if v, ok := r.lookup(EnvDataDir); ok && v != "" {
 		return v, nil
 	}
+	return r.dataDirNamed(dirName)
+}
+
+// dataDirNamed resolves the platform's default data directory under one of the
+// two directory names. Both flavours run these branches — the release name
+// through DataDir, the development one through devDataDir — because a rule
+// applied to one copy and not the other is how the dev and release directories
+// come to sit in different parents. windowsDataDirNamed already shares the
+// Windows branch for the same reason.
+//
+// It does NOT consult AGENTHUB_DATA_DIR: an explicit override is DataDir's to
+// honour, and DevResolver reaches it by answering that same lookup.
+func (r *Resolver) dataDirNamed(name string) (string, error) {
 	switch r.goos() {
 	case "darwin":
 		home, err := r.home()
 		if err != nil {
 			return "", fmt.Errorf("platform: resolve home: %w", err)
 		}
-		return filepath.Join(home, "Library", "Application Support", dirName), nil
+		return filepath.Join(home, "Library", "Application Support", name), nil
 	case "linux":
 		if v, ok := r.lookup("XDG_DATA_HOME"); ok && v != "" && filepath.IsAbs(v) {
-			return filepath.Join(v, dirName), nil
+			return filepath.Join(v, name), nil
 		}
 		home, err := r.home()
 		if err != nil {
 			return "", fmt.Errorf("platform: resolve home: %w", err)
 		}
-		return filepath.Join(home, ".local", "share", dirName), nil
+		return filepath.Join(home, ".local", "share", name), nil
 	case "windows":
-		return r.windowsDataDir()
+		return r.windowsDataDirNamed(name)
 	default:
 		return "", fmt.Errorf("platform: %s: %w", r.goos(), ErrUnsupportedPlatform)
 	}
