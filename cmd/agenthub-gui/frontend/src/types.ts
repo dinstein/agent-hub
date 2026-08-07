@@ -876,6 +876,14 @@ export interface CallSummary {
   exposedTool?: string;
   server?: string;
   tool?: string;
+  /** What the call REACHED, one groupable value each: the routed server and
+   *  tool where routing happened, and agenthub's own "(agenthub)" where the
+   *  hub answered the call itself. The statistics count these and the daemon
+   *  filters on them, so this page must LABEL rows with them too — a label
+   *  derived here instead is a dropdown option that selects rows rendered
+   *  under another name. Both empty means unrouted. */
+  targetServer?: string;
+  targetTool?: string;
   outcome?: string;
   durationMs?: number;
   code?: string;

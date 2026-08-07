@@ -48,16 +48,18 @@ function formatTime(raw: string): string {
 
 /** What this call REACHED, as a title.
  *
+ *  The two halves come from the daemon (`targetServer` / `targetTool`), which
+ *  is also what the statistics counted and what the filters compare. Deriving
+ *  them here again is how a dropdown ends up offering an option that selects
+ *  rows this page renders under a different name.
+ *
  *  "Unrouted" is reserved for the one case it describes: a tools/call whose
  *  name resolved to no server. A tools/list is not unrouted — agenthub
  *  answered it — and labelling it so sent a reader looking for a routing
  *  fault that never happened. */
 function targetOf(call: CallSummary): string {
-  if (call.server || call.tool) return [call.server, call.tool].filter(Boolean).join(" / ");
-  if (call.surface === "meta" && call.exposedTool) return `agenthub / ${call.exposedTool}`;
-  if (call.exposedTool) return call.exposedTool;
-  if (call.method && call.method !== "tools/call") return `agenthub / ${call.method}`;
-  return "Unrouted";
+  const parts = [call.targetServer, call.targetTool].filter(Boolean);
+  return parts.length ? parts.join(" / ") : "Unrouted";
 }
 
 /** methodLabel is what the client ASKED FOR, which is not always a call: a
@@ -76,14 +78,12 @@ function surfaceLabel(call: CallSummary): string {
   return "—";
 }
 
-/** serverLabel says where a call went. "agenthub" rather than "Unrouted" for
- *  the hub's own tools: a search_tools call is not an unrouted attempt, it is
- *  a call the hub answered itself. */
+/** serverLabel says where a call went, in the same words as the Server
+ *  dropdown — both are the daemon's `targetServer`. The hub's own tools are
+ *  named for it rather than called "Unrouted": a search_tools call is not an
+ *  unrouted attempt, it is a call the hub answered itself. */
 function serverLabel(call: CallSummary): string {
-  if (call.server) return call.server;
-  if (call.surface === "meta") return "agenthub";
-  if (call.method && call.method !== "tools/call") return "agenthub";
-  return "Unrouted";
+  return call.targetServer || "Unrouted";
 }
 
 function outcomeTone(call: CallSummary): string {
@@ -579,7 +579,7 @@ export function activityPage(): Page {
             ]),
             el("strong", { class: "activity-call-server", text: serverLabel(call) }),
             el("div", { class: "activity-call-tool" }, [
-              el("strong", { text: call.tool || call.exposedTool || methodLabel(call) }),
+              el("strong", { text: call.targetTool || methodLabel(call) }),
               el("span", { class: "mono", text: methodLabel(call) }),
             ]),
             el("span", { class: `badge ${outcomeTone(call)}`, text: outcomeLabel(call) }),
