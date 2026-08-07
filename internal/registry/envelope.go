@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"maps"
 	"reflect"
+	"strings"
 	"sync"
 )
 
@@ -106,7 +107,7 @@ func collectJSONFields(t reflect.Type, out map[string]struct{}) {
 		if tag == "-" {
 			continue
 		}
-		name, _, _ := cutTag(tag)
+		name, _, _ := strings.Cut(tag, ",")
 		if f.Anonymous && name == "" {
 			// Embedded struct without an explicit tag name: its fields are
 			// promoted to this level by encoding/json.
@@ -127,14 +128,4 @@ func collectJSONFields(t reflect.Type, out map[string]struct{}) {
 		}
 		out[name] = struct{}{}
 	}
-}
-
-// cutTag splits a json struct tag into name and options.
-func cutTag(tag string) (name, opts string, hasOpts bool) {
-	for i := 0; i < len(tag); i++ {
-		if tag[i] == ',' {
-			return tag[:i], tag[i+1:], true
-		}
-	}
-	return tag, "", false
 }
