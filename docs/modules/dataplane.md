@@ -209,8 +209,15 @@ the derivation asked for. This paragraph and that test move together.
 
 **A crash must leave evidence, at startup and mid-life.** The handshake failure error embeds the last
 `StderrRingLines` (20) **lines** of the child's stderr, each capped at 400 bytes — a **projection** of
-`transport`'s 4KiB byte window rather than a second capture, dropping the first line when full because a
-4KiB cut lands mid-line. The same window is read off the dying transport **before** it is closed and
+`transport`'s 4KiB byte window rather than a second capture. **Current assembly status: a full window's
+leading fragment is reported as a whole line.** This paragraph claimed the opposite — that the first line
+is dropped when the window is full, because a 4KiB cut lands mid-line — and nothing implemented it, in
+either layer: `tailBuffer` cuts on a byte boundary, and `tailLines` is handed the window's contents
+without its capacity, so it cannot tell a full window from a short one. The reasoning still stands (half
+a line in a crash report is worse than no line); closing it means plumbing the cap through `stderrTail`,
+which changes the error text and so belongs on a branch of its own.
+`TestTailLinesReportsALeadingFragmentAsAWholeLine` pins today's behaviour and is the test that must
+change when it is fixed. The same window is read off the dying transport **before** it is closed and
 carried onto the `respawned` / `respawn failed` line as `child_stderr`, or the log keeps the transport's
 verdict (`broken pipe`) and loses the panic that produced it. It is attached only when a **failure**
 triggered the respawn, since a manual `Reconnect` replaces a connection whose stderr is ordinary chatter.

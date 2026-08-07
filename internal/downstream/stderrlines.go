@@ -26,9 +26,13 @@ const stderrLineCap = 400
 // the child's output — the only loss is that a line older than 4 KiB of
 // stderr is gone, which is exactly what the byte window promises anyway.
 //
-// The FIRST line of the window is dropped when the window is full, because
-// a 4 KiB cut lands mid-line and half a line in an error report is worse
-// than no line.
+// KNOWN GAP: a full window has been cut at a byte boundary, so its first line
+// is a fragment, and nothing here drops it — the fragment is reported as
+// though it were a whole line. This function cannot see the condition: it is
+// handed the window's contents and not its capacity, so "the window was full"
+// is not a question it can ask. Fixing it means plumbing the cap through, a
+// behaviour change to the error text and therefore not a tidy-night edit;
+// docs/modules/dataplane.md carries the item.
 func stderrTail(tr transport.Transport, n int) []string {
 	if tr == nil {
 		return nil
@@ -36,7 +40,9 @@ func stderrTail(tr transport.Transport, n int) []string {
 	return tailLines(tr.Stderr(), n)
 }
 
-// tailLines is the pure half of stderrTail (unit-tested directly).
+// tailLines is the pure half of stderrTail: it keeps the LAST n non-blank
+// lines, trims trailing whitespace, and caps each at stderrLineCap. It does
+// not drop a leading fragment — see the gap on stderrTail.
 func tailLines(raw string, n int) []string {
 	if raw == "" || n <= 0 {
 		return nil
