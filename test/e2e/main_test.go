@@ -174,8 +174,16 @@ func runAgenthubEnv(t *testing.T, env []string, stdin string, args ...string) (s
 // the exit code and the combined stdout instead of failing the test.
 func runAgenthubExit(t *testing.T, dataDir, stdin string, args ...string) (int, string) {
 	t.Helper()
+	return runAgenthubExitEnv(t, testEnv(dataDir), stdin, args...)
+}
+
+// runAgenthubExitEnv is runAgenthubExit with an explicit child environment.
+// The failure cases that start a daemon need one: sandbox puts the control
+// socket outside the data directory, because t.TempDir can exceed sun_path.
+func runAgenthubExitEnv(t *testing.T, env []string, stdin string, args ...string) (int, string) {
+	t.Helper()
 	cmd := exec.Command(agenthubBin, args...)
-	cmd.Env = testEnv(dataDir)
+	cmd.Env = env
 	cmd.Stdin = strings.NewReader(stdin)
 	var out, errOut bytes.Buffer
 	cmd.Stdout = &out
