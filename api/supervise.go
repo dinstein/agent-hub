@@ -48,6 +48,13 @@ const daemonStderrName = "daemon.stderr.log"
 // the in-flight tool call the drain existed to finish.
 const stopGrace = 8 * time.Second
 
+// stopAskTimeout bounds the control-plane stop REQUEST. It is short because
+// the daemon answers 202 before it drains: this waits for an
+// acknowledgement, never for a shutdown, and a hub that cannot acknowledge
+// within it is one the terminate fallback should reach sooner rather than
+// later.
+const stopAskTimeout = 2 * time.Second
+
 // Supervised is a daemon this process started and is responsible for.
 //
 // It is safe for concurrent use. Stop is idempotent.
@@ -253,6 +260,19 @@ func (s *Supervised) Stop(ctx context.Context) error {
 }
 
 func (s *Supervised) stop(ctx context.Context) error {
+	// Ask over the control plane FIRST, while the client is still open.
+	// This is what makes the stop graceful where there is no signal to send:
+	// terminate() on Windows is a kill, so without this every quit of the
+	// application abandons whatever tool call was in flight. A daemon too old
+	// to serve the route answers 404, asked stays false, and the fallback
+	// below runs — which is what used to happen unconditionally.
+	asked := false
+	if s.Client != nil && s.cmd != nil && s.cmd.Process != nil {
+		actx, cancel := context.WithTimeout(ctx, stopAskTimeout)
+		_, err := s.Client.RequestStop(actx)
+		cancel()
+		asked = err == nil
+	}
 	if s.Client != nil {
 		s.Client.Close()
 	}
@@ -270,8 +290,13 @@ func (s *Supervised) stop(ctx context.Context) error {
 		return nil // already gone; nothing to signal
 	default:
 	}
-	if err := terminate(s.cmd.Process); err != nil {
-		return fmt.Errorf("api: stopping the hub (pid %d): %w", s.Pid(), err)
+	// An accepted request already has the daemon draining; adding the
+	// platform's terminate on top would be the kill this set out to avoid.
+	// What confirms is unchanged either way: the wait below.
+	if !asked {
+		if err := terminate(s.cmd.Process); err != nil {
+			return fmt.Errorf("api: stopping the hub (pid %d): %w", s.Pid(), err)
+		}
 	}
 
 	grace := time.NewTimer(stopGrace)
