@@ -731,7 +731,7 @@ func (g *gateway) shutdown() {
 	}
 	if g.audit != nil {
 		if err := g.audit.close(); err != nil {
-			g.log.Error("audit close failed", "error", err)
+			g.log.Error("call ledger close failed", "error", err)
 		}
 	}
 	if g.pool != nil {

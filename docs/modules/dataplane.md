@@ -723,8 +723,9 @@ In `pipeline.Options` the gateway sets only `Scope` and `ResultShaper` — that 
 output format, intent variants and pin sets remain **unwired** (see the appendix).
 
 Rate limiting is wired, but not through `pipeline.Options`: quotas are an admission wrapper around
-`CallRequest.Call` (`ratelimit.go` + `runCall`). Access recording is wired the same way at a different
-boundary (`audit.go` wraps dispatch and completion). Neither can alter the gate count or the call contents.
+`CallRequest.Call` (`ratelimit.go` + `runCall`). Call recording is wired the same way at a different
+boundary (`calllog.go` wraps dispatch and completion). Neither can alter the gate count or the call
+contents.
 
 ---
 
