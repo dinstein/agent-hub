@@ -115,13 +115,31 @@ func (s *keyringStore) Get(ctx context.Context, ref Ref) (string, bool, error) {
 // The Get methods stay unlocked, matching Chain.Get: writers publish by
 // rename, so a reader sees one whole version or the other.
 
-func (s *keyringStore) Set(ctx context.Context, ref Ref, val string) error {
+// writeLocked is that discipline in one place: refuse a Ref that does not
+// validate — its StorageKey becomes a keyring entry and a map key inside an
+// encrypted file — then take the in-process mutex and the cross-process vault
+// lock, in that order.
+//
+// Four mutators repeated the sequence, and the paragraph above is the reason
+// it is worth naming: a fifth that took only the mutex would reopen exactly
+// the window Migrate's read-write-verify-delete cannot survive, and it would
+// look no different from its neighbours while doing it.
+//
+// Chain.Set and Chain.Delete deliberately do NOT route through this. They
+// announce after the write, and today that announcement happens while c.mu is
+// still held; moving it out from under the mutex is a change to when
+// concurrent writes become visible to a watcher, not a rename.
+func (c *Chain) writeLocked(ctx context.Context, ref Ref, fn func() error) error {
 	if err := ref.Validate(); err != nil {
 		return err
 	}
-	s.c.mu.Lock()
-	defer s.c.mu.Unlock()
-	return s.c.withVaultLock(ctx, func() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.withVaultLock(ctx, fn)
+}
+
+func (s *keyringStore) Set(ctx context.Context, ref Ref, val string) error {
+	return s.c.writeLocked(ctx, ref, func() error {
 		if err := s.c.kr.set(ctx, ref.StorageKey(), val); err != nil {
 			return err
 		}
@@ -130,13 +148,8 @@ func (s *keyringStore) Set(ctx context.Context, ref Ref, val string) error {
 }
 
 func (s *keyringStore) Delete(ctx context.Context, ref Ref) error {
-	if err := ref.Validate(); err != nil {
-		return err
-	}
-	s.c.mu.Lock()
-	defer s.c.mu.Unlock()
-	sk := ref.StorageKey()
-	return s.c.withVaultLock(ctx, func() error {
+	return s.c.writeLocked(ctx, ref, func() error {
+		sk := ref.StorageKey()
 		if err := s.c.kr.del(ctx, sk); err != nil && !errors.Is(err, ErrKeyringNotFound) {
 			return err
 		}
@@ -168,12 +181,7 @@ func (s *encStore) Get(_ context.Context, ref Ref) (string, bool, error) {
 }
 
 func (s *encStore) Set(ctx context.Context, ref Ref, val string) error {
-	if err := ref.Validate(); err != nil {
-		return err
-	}
-	s.c.mu.Lock()
-	defer s.c.mu.Unlock()
-	return s.c.withVaultLock(ctx, func() error {
+	return s.c.writeLocked(ctx, ref, func() error {
 		m, err := s.enc.load()
 		if err != nil {
 			return err
@@ -184,12 +192,7 @@ func (s *encStore) Set(ctx context.Context, ref Ref, val string) error {
 }
 
 func (s *encStore) Delete(ctx context.Context, ref Ref) error {
-	if err := ref.Validate(); err != nil {
-		return err
-	}
-	s.c.mu.Lock()
-	defer s.c.mu.Unlock()
-	return s.c.withVaultLock(ctx, func() error {
+	return s.c.writeLocked(ctx, ref, func() error {
 		m, err := s.enc.load()
 		if err != nil {
 			return err
