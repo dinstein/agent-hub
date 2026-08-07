@@ -429,10 +429,19 @@ priority** (on a duplicate name the project-level definition wins), **not** a wr
 `DefaultPlacement` below. `locSpec.home` is a GOOS-to-path map, and a missing GOOS makes that location
 unavailable on that platform rather than guessed; no build tags are involved.
 
-**Every row's `home` map is still darwin and linux only**, so on Windows `resolve` drops every user
-placement and `client connect` finds nothing to write for any client whose config is user-level.
-Unavailable is the right direction — inventing a `%APPDATA%` path and writing to it unverified is worse than
-finding nothing — but it is a gap, not a design boundary, and [windows.md](../windows.md) tracks it.
+**Every row's `home` map answers for Windows too**, through one of three builders: `sameOnAll` for the
+CLI-shaped clients whose dotfile sits in the profile identically on all three platforms, `perOS` where the
+BASE differs and not just the segments, and `vscodeUserDir` for the extension-hosted ones. Keeping the two
+conventions apart is the point — copying one onto the other is how a write lands somewhere the client never
+reads. Zed is where it bites (`.config/zed` on macOS and Linux, `%APPDATA%\Zed` there), and `%APPDATA%` is
+read from the environment rather than rebuilt under the home directory. Claude Desktop carries the one
+platform-specific branch of its own (`clientSpec.redirect`), because an MSIX install reads a VIRTUALIZED
+`%APPDATA%` and the documented path is one the packaged application never opens — writing there would
+parse, verify, and never be read. `TestWindowsUserPathsAreTheOnesClientsRead` and
+`TestMSIXClaudeDesktopIsPreferredOnlyWhenItExists` pin both halves from a non-Windows host.
+
+**None of it has run on Windows hardware**, which is the status [windows.md](../windows.md) owns — it names
+`client connect` writing a file the client actually reads as an open verification item.
 
 ### Invariants and failure directions
 
