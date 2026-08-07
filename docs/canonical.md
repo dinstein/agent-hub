@@ -537,7 +537,7 @@ ruling are one row, and **a number not listed here may not be cited** —
 | `#32` | `internal/mcp` is standard-library only — one first-party protocol facade | §2 rule 2 |
 | `A.2 #9` | The manual paste loop, for providers that cannot reach a loopback redirect | modules/oauth.md |
 | `A.2 #10` | Refresh is serialized: daemon singleflight online, a file lock offline | modules/oauth.md |
-| `A.3 #1` | Cross-process shared state takes a **file lock** or an atomic rename, proven by an N-process acceptance test. Now governs the rate-limit counters and the registry | §6; modules/foundation.md |
+| `A.3 #1` | Cross-process shared state takes a **file lock** or an atomic rename, proven by an N-process acceptance test. Now governs the rate-limit counters, the registry and the credential vault | §6; modules/foundation.md; modules/config.md |
 | `A.3 #2` | `kill -9` on the daemon: the stdio data plane is untouched and gateways re-register | §6; flows.md |
 | `A.3 #4` | A daemon restart makes the session overlay vanish on **both** sides. Retired by its own logic: a session now carries no scope of its own at all | modules/config.md |
 | `A.3 #5` | skills materialization is **client-granular**, never per-session | §4 |

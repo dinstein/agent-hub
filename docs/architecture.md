@@ -77,8 +77,8 @@ hours: an HTTP-connected agent loses its endpoint when the application quits.
 
 Several processes therefore write one data directory, and that discipline is a correctness dependency
 rather than belt-and-braces — `O_APPEND` line writes, cross-process locks around the rate-limit
-counters and the access ledger's storage limits, atomic rename for every registry write. `modules/`
-carries it per package.
+counters, the access ledger's storage limits and every credential-vault write, atomic rename for every
+registry write. `modules/` carries it per package.
 
 **The HTTP data plane doesn't exist by default.** `internal/httpbridge` is enabled from one of two
 sources and never half of each: the command line when a start types `--http-addr`, otherwise the

@@ -323,21 +323,41 @@ than leaving them — the chain resolves from the old backend right up until it 
 the credentials appear to vanish. The environment levels have **no** `Store` and are not in `BackendKinds()`:
 they are per-process input, not storage, so nothing can migrate into or out of them.
 
-**Concurrency, and the gap in it.** `Chain` serializes its own read-modify-write of the encrypted file and
-of the key registry with an in-process mutex, and that is the only serialization there is: **no
-cross-process lock guards a vault write.** Both write paths are whole-file read-modify-write cycles, so two
-processes writing *different* entries at once lose one of them — the daemon's refresh coordinator rotating a
-token while an operator runs `agenthub secret set` is the shape that reaches it, and the loser is a
-credential, silently. The sibling `<server>.refresh.lock` in `oauthflow` does not close this: it serializes
-**refreshes of one server**, so it neither guards a plain `Set` nor helps when the two writers name
-different servers. What keeps the window small is that vault writes are rare and short, not that anything
-prevents the race.
+**Concurrency: two locks, in one order.** `Chain` serializes its own operations with an in-process mutex,
+and every **write** additionally takes a cross-process lock — a dedicated `vault.lock` in the secrets
+directory, held across the whole read-modify-write cycle (ruling A.3 #1). The in-process mutex is taken
+**outside** the file lock, so goroutines of one process queue in memory and only one ever competes for the
+file; the reverse order would have each open its own descriptor and contend through the filesystem for no
+gain, since `flock` is per-open-file-description and `LockFileEx` per-handle.
 
-Owed rather than fixed, because the fix has a cost: a cross-process lock on every vault write is the kind of
-thing `Announce` deliberately refused for the credentials-rev hint ("a lock here would be a cross-process
-lock taken on the hot path of every token refresh, to protect a hint"). A write is not a hint, so the answer
-is probably different — but it is an argument to have, not a rung to add on a tidy night.
-`internal/secrets/doc.go` carries the same note beside the code.
+**All six write paths take it**, not just the two the API leads with: `Chain.Set`, `Chain.Delete`, and the
+four backend-level methods behind `Chain.Backend`. The backend stores need it most — their caller is
+`Migrate`, which writes the destination, reads it back to verify, and only then deletes the source, so a
+racing writer that clobbers the destination in between turns a verified handover into the deletion of the
+last remaining copy.
+
+**The lock covers key selection, not only the map update.** `encForWrite`'s dev branch calls
+`loadOrCreateDevKey`, a read-then-create of `secrets.enc.key`; two processes reaching it unguarded each
+generate a key and the second overwrites the first, leaving an enc file **neither can open** — the whole
+vault rather than one entry, and a different failure from a lost update.
+
+**A dedicated lock file, never the data files.** `secrets.enc`, `keyring-keys.json` and `secrets.enc.key`
+are all replaced by `rename`, so a lock on one of those inodes guards nothing: the winner renames a new file
+over the path and the two processes end up holding locks on different inodes. `internal/ratelimit` reached
+the same conclusion for the counter file.
+
+**Reads and the announcement stay outside it, deliberately.** Writers publish by rename, so an unlocked
+reader sees one whole version or the next, never a splice — and `Get` sits on the hot path of every
+`${SECRET_X}` expansion, which is exactly where `Announce` refused a cross-process lock for the
+credentials-rev hint. A write is not a hint, so it takes the lock; the hint still does not.
+
+Failure direction: **fail closed**. Every acquisition failure — including a build with no `flock`
+implementation — returns without the lock and the write reports that it could not run, rather than
+proceeding unserialized. A write that says it did not happen is recoverable; a credential that silently
+vanished is not. `internal/secrets/multiproc_test.go` is the N-process acceptance test A.3 #1 requires, and
+both of its cases were run against a build with the lock removed: the first loses entries, the second
+reports `cannot decrypt secrets.enc`. The sibling `<server>.refresh.lock` in `oauthflow` is a different lock
+for a different job — it serializes **refreshes of one server**, upstream of the write that lands here.
 
 **Tests never touch the real keychain.** The keyring sits behind the `Backend` interface with fakes injected
 everywhere; the real-backend smoke test runs only under `AGENTHUB_TEST_REAL_KEYRING=1`.

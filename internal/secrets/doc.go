@@ -35,23 +35,33 @@
 // files has the plaintext. That is acceptable for the dev fallback only;
 // production paths use AGENTHUB_SECRET_KEY or the OS keyring.
 //
-// Concurrency: a Chain serializes its own operations with an in-process
-// mutex, and THAT IS THE ONLY SERIALIZATION THERE IS. No cross-process lock
-// guards a vault write, and both write paths are whole-file
-// read-modify-write cycles — setLocked loads the entire secrets.enc map,
-// mutates one key and saves it back, and registryAdd does the same to
-// keyring-keys.json. Two processes writing different entries at once
-// therefore lose one of them: the daemon's refresher rotating a token while
-// an operator runs `agenthub secret set` is the shape that reaches it.
+// Concurrency: two locks, in this order. A Chain serializes its own
+// operations with an in-process mutex, and every WRITE additionally takes
+// the cross-process vault lock — a dedicated vault.lock in the secrets
+// directory, held across the whole read-modify-write cycle (vaultlock.go,
+// ruling A.3 #1). All six write paths take it: Chain.Set, Chain.Delete, and
+// the four backend-level methods behind Chain.Backend that Migrate drives.
 //
-// The one cross-process lock near the vault is oauthflow's per-server
-// <server>.refresh.lock (docs/modules/oauth.md), and it does not cover this:
-// it serializes REFRESHES of one server, so it neither guards a plain write
-// nor helps when the racing writers name different servers. Recorded, with
-// the trade-off, in docs/modules/config.md under internal/secrets.
+// Why writes need it. Every one of them is a whole-file read-modify-write:
+// setLocked loads the entire secrets.enc map, mutates one key and saves it
+// back; registryAdd does the same to keyring-keys.json; encForWrite's dev
+// branch does a read-then-create of secrets.enc.key. Unguarded, two
+// processes writing different entries lost one of them — the daemon's
+// refresher rotating a token while an operator runs `agenthub secret set` is
+// the shape that reached it — and two processes generating a dev key at once
+// left an enc file neither could open. multiproc_test.go reproduces both
+// against a build with the lock removed.
 //
-// This paragraph used to say the coordination "arrives with the M1 wiring".
-// M1 shipped; nothing arrived.
+// Reads do NOT take it, deliberately: writers publish by rename, so a reader
+// sees one whole version or the next, and Get sits on the hot path of every
+// ${SECRET_X} expansion. Neither does the credentials.rev announcement, for
+// the reason announce.go gives — a hint does not earn a cross-process lock
+// on the token-refresh path, and its worst case is one missed notification
+// that the next write recovers.
+//
+// oauthflow's per-server <server>.refresh.lock (docs/modules/oauth.md) is a
+// different lock for a different job: it serializes REFRESHES of one server,
+// upstream of the write that lands here.
 //
 // Tests never touch the real OS keychain: the keyring sits behind the
 // Backend interface with a fake injected everywhere. Real-backend smoke

@@ -74,8 +74,8 @@ OAuth 单飞）。stdio 网关的 scope 来自注册表文件，杀掉 daemon �
 通过 HTTP 连接的 agent 会在桌面应用退出时失去端点。
 
 于是多个进程共写同一个数据目录，而这份纪律是并发正确性依赖、不是保险：日志每行一次
-`O_APPEND` 写、限流计数器与访问账本的存储上限外面各套一把跨进程锁、registry 的每一次写都走
-原子改名。逐包的细节在 [modules/](../modules/)。
+`O_APPEND` 写、限流计数器与访问账本的存储上限、以及凭据 vault 的每一次写外面各套一把跨进程锁、
+registry 的每一次写都走原子改名。逐包的细节在 [modules/](../modules/)。
 
 **HTTP 数据面默认不存在。** `internal/httpbridge` 从两个来源之一开启，绝不各取一半：会敲 flag
 的那类启动给了 `--http-addr` 就用命令行，否则用落盘的 `http.*`（`agenthub config set http.addr
