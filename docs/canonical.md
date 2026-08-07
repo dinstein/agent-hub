@@ -346,6 +346,13 @@ A programmable **fake downstream MCP server** (`internal/testutil/fakemcp`) inje
 responses, half-written and malformed JSON-RPC frames, oversized payloads (hitting the 16MB bounded
 read), handshake crashes, `tools/list_changed` storms, protocol violations.
 
+Which **protocol generation** it speaks is scripted too, by `Script.SupportedVersions`: empty (the
+default) means no `server/discover`, hence the pre-2026 handshake every script written before that
+field relies on; a list containing `2026-07-28` makes it a stateless server that then *requires* the
+per-request `_meta` on everything after the handshake. Only the subprocess driver reaches 2026 —
+`transport`'s `negotiatedSetter` has an unexported method, so the in-process pipe cannot implement it
+and `Handshake` fails closed rather than sending bare requests a strict server would reject.
+
 Three classes of test have been in CI from day one:
 
 1. **Golden tests** — the signature grammar, search ordering, error copy. **Determinism is the

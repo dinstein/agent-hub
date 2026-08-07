@@ -10,7 +10,10 @@
 //
 // A Script has three layers:
 //
-//   - handshake configuration (ServerInfo / ProtocolVersion / Capabilities),
+//   - handshake configuration (ServerInfo / ProtocolVersion / Capabilities,
+//     and SupportedVersions, which decides whether the fake answers
+//     server/discover at all and therefore which protocol generation it
+//     speaks),
 //   - a tool set served by default tools/list and tools/call handling,
 //   - an ordered list of Rules. Each incoming request or notification is
 //     matched against the rules (first match wins, by method and optionally
@@ -55,6 +58,27 @@ type Script struct {
 	// mcp.ProtocolVersion. Set an unsupported value (e.g. "1999-01-01") to
 	// script a version-negotiation failure.
 	ProtocolVersion string `json:"protocolVersion,omitempty"`
+	// SupportedVersions is what server/discover advertises — the field that
+	// makes this fake a 2026-07-28 server rather than a ≤ 2025-11-25 one.
+	//
+	// EMPTY IS THE DEFAULT AND MEANS "no server/discover", answered with
+	// method-not-found. That is what a pre-2026 server does, it is what makes
+	// transport.Handshake fall back to the initialize handshake, and it is
+	// what every script written before this field existed depends on. The
+	// field is additive for exactly that reason: which generation a fake
+	// speaks becomes scripted rather than assumed, and the assumption it
+	// replaces stays the default.
+	//
+	// The list is advertised VERBATIM, including values this tree does not
+	// support, so the negotiation outcomes are scriptable the same way
+	// ProtocolVersion scripts one for the legacy path:
+	//
+	//	[]string{mcp.Version2026}   a stateless 2026 session
+	//	[]string{mcp.Version2025}   discover answers, but the negotiated
+	//	                            version still requires the stateful
+	//	                            handshake, so initialize runs after it
+	//	[]string{"1999-01-01"}      no mutual version: a fatal handshake
+	SupportedVersions []string `json:"supportedVersions,omitempty"`
 	// Capabilities is the raw capabilities object of the initialize result.
 	// Empty defaults to {"tools":{"listChanged":true}}.
 	Capabilities json.RawMessage `json:"capabilities,omitempty"`

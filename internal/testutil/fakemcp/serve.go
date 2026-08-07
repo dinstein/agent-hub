@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"time"
 
@@ -325,7 +326,24 @@ func (s *server) writeRaw(b []byte) error {
 
 // defaultResponse implements the built-in normal server behavior.
 func (s *server) defaultResponse(req *mcp.Request) *mcp.Response {
+	// The stateless protocol's per-request _meta is checked before the
+	// method is even read, because on 2026-07-28 it is not payload — it is
+	// the handshake, restated on every request. A fake that answered a bare
+	// tools/call would certify a client that never learned to send one.
+	if resp := s.checkRequestMeta(req); resp != nil {
+		return resp
+	}
 	switch req.Method {
+	case mcp.MethodDiscover:
+		if len(s.sc.SupportedVersions) == 0 {
+			// A pre-2026 server does not know the method, and this is the
+			// branch transport.Handshake reads as "alive but old" before
+			// falling back to initialize. It is load-bearing for every
+			// legacy script in the tree, which is why the default is here
+			// rather than in a knob somebody has to remember to unset.
+			return methodNotFound(req)
+		}
+		return s.discover(req)
 	case mcp.MethodInitialize:
 		return okResponse(req.ID, mcp.InitializeResult{
 			ProtocolVersion: s.protocolVersion(),
@@ -357,11 +375,119 @@ func (s *server) defaultResponse(req *mcp.Request) *mcp.Response {
 		}
 		return okResponse(req.ID, echoResult(p.Arguments))
 	default:
-		return mcp.NewErrorResponse(req.ID, &mcp.Error{
-			Code:    mcp.CodeMethodNotFound,
-			Message: fmt.Sprintf("fakemcp does not implement %q", req.Method),
-		})
+		return methodNotFound(req)
 	}
+}
+
+// methodNotFound is the answer to a method this fake does not implement.
+func methodNotFound(req *mcp.Request) *mcp.Response {
+	return mcp.NewErrorResponse(req.ID, &mcp.Error{
+		Code:    mcp.CodeMethodNotFound,
+		Message: fmt.Sprintf("fakemcp does not implement %q", req.Method),
+	})
+}
+
+// discover answers server/discover with the versions the script declared.
+//
+// The result is a CacheableResult and carries the server's identity in
+// _meta rather than in a top-level member, because that is the shape MCP
+// 2026-07-28 defines — and because a client reads the identity from exactly
+// one of those two places. A fake that put it where the legacy handshake
+// puts it would let a client that never learned the new location pass.
+func (s *server) discover(req *mcp.Request) *mcp.Response {
+	info := s.serverInfo()
+	ttl := discoverTTLMs
+	return okResponse(req.ID, mcp.DiscoverResult{
+		ResultType:        mcp.ResultTypeComplete,
+		SupportedVersions: s.sc.SupportedVersions,
+		Capabilities:      s.capabilities(),
+		Instructions:      s.sc.Instructions,
+		Meta:              &mcp.ResultMeta{ServerInfo: &info},
+		CacheableResult:   mcp.CacheableResult{TtlMs: &ttl, CacheScope: "public"},
+	})
+}
+
+// discoverTTLMs is the freshness hint on the discover result — an hour, the
+// same figure test/mcpstub uses. Nothing in this tree reads it; it is here
+// because the member is required and a fake that omitted it would be
+// advertising a result shape no conformant server produces.
+var discoverTTLMs = int64(3_600_000)
+
+// checkRequestMeta enforces the per-request _meta of MCP 2026-07-28, and
+// returns nil when the request is fine or when this script is not a 2026
+// server at all.
+//
+// WHICH REQUESTS ARE EXEMPT is the whole subtlety. server/discover carries
+// its own _meta but arrives before anything is negotiated, and initialize
+// arrives only when the client picked a version from this server's list
+// that still requires the stateful handshake — a legacy request by
+// construction, which carries no _meta and must not be refused for it.
+// Everything else on a 2026 session must carry one.
+//
+// Failure direction: this fake only refuses when it ADVERTISED 2026. A
+// script that never declared SupportedVersions is a pre-2026 server and has
+// no _meta to demand, so the check is inert for every script that predates
+// the field.
+func (s *server) checkRequestMeta(req *mcp.Request) *mcp.Response {
+	if !s.speaks2026() {
+		return nil
+	}
+	switch req.Method {
+	case mcp.MethodDiscover, mcp.MethodInitialize:
+		return nil
+	}
+	var p struct {
+		Meta *json.RawMessage `json:"_meta"`
+	}
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return mcp.NewErrorResponse(req.ID, &mcp.Error{
+				Code: mcp.CodeInvalidParams, Message: "params: " + err.Error()})
+		}
+	}
+	if p.Meta == nil {
+		return mcp.NewErrorResponse(req.ID, &mcp.Error{
+			Code: mcp.CodeInvalidParams,
+			Message: "missing required _meta (io.modelcontextprotocol/protocolVersion, " +
+				"/clientCapabilities)"})
+	}
+	// Decoded separately from the presence check: RequestMeta's fields are
+	// typed, and "the key is absent" and "the key decoded to its zero value"
+	// are different failures that must not be reported as one.
+	var meta struct {
+		ProtocolVersion    string           `json:"io.modelcontextprotocol/protocolVersion"`
+		ClientCapabilities *json.RawMessage `json:"io.modelcontextprotocol/clientCapabilities"`
+	}
+	if err := json.Unmarshal(*p.Meta, &meta); err != nil {
+		return mcp.NewErrorResponse(req.ID, &mcp.Error{
+			Code: mcp.CodeInvalidParams, Message: "_meta: " + err.Error()})
+	}
+	if meta.ClientCapabilities == nil {
+		// Required on EVERY request. An empty object is how a client says it
+		// has no optional capabilities; omitting the key is not the same
+		// statement, and a fake that accepted the omission would let a
+		// client ship the difference.
+		return mcp.NewErrorResponse(req.ID, &mcp.Error{
+			Code: mcp.CodeInvalidParams,
+			Message: "_meta carries no io.modelcontextprotocol/clientCapabilities; " +
+				"it is required on every request"})
+	}
+	if !slices.Contains(s.sc.SupportedVersions, meta.ProtocolVersion) {
+		// -32022 carries its supported/requested payload: the client is
+		// being told to retry with a version from the list, and a fake that
+		// omitted the list would pass a client that cannot read one.
+		return mcp.NewErrorResponse(req.ID, mcp.NewUnsupportedVersionError(
+			meta.ProtocolVersion, s.sc.SupportedVersions,
+			fmt.Sprintf("request declares protocol version %q; this server speaks %v",
+				meta.ProtocolVersion, s.sc.SupportedVersions)))
+	}
+	return nil
+}
+
+// speaks2026 reports whether this script advertises the stateless protocol,
+// which is what turns on every rule checkRequestMeta enforces.
+func (s *server) speaks2026() bool {
+	return slices.Contains(s.sc.SupportedVersions, mcp.Version2026)
 }
 
 func (s *server) serverInfo() mcp.Implementation {
