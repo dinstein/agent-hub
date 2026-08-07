@@ -107,8 +107,7 @@ func (g *gateway) syncAudit() {
 		return
 	}
 	if err := validateCallsPolicy(p); err != nil {
-		g.swapStore(p, nil, fmt.Errorf("invalid audit policy: %w", err))
-		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
+		g.unrecorded(p, fmt.Errorf("invalid audit policy: %w", err))
 		return
 	}
 	// Result capture changes do not require a new file handle or cipher. Reuse
@@ -127,9 +126,7 @@ func (g *gateway) syncAudit() {
 	}
 	g.audit.mu.Unlock()
 	if g.cfg.Secrets == nil {
-		err := errors.New("secret resolver is unavailable")
-		g.swapStore(p, nil, err)
-		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
+		g.unrecorded(p, errors.New("secret resolver is unavailable"))
 		return
 	}
 	encoded, ok, err := g.cfg.Secrets(g.lifeCtx, secrets.CallsEncryptionKeyRef(p.KeyID))
@@ -143,8 +140,7 @@ func (g *gateway) syncAudit() {
 		if err == nil {
 			err = errors.New("audit encryption key is missing")
 		}
-		g.swapStore(p, nil, err)
-		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
+		g.unrecorded(p, err)
 		return
 	}
 	key, err := base64.RawStdEncoding.DecodeString(encoded)
@@ -152,8 +148,7 @@ func (g *gateway) syncAudit() {
 		if err == nil {
 			err = calllog.ErrBadKey
 		}
-		g.swapStore(p, nil, err)
-		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
+		g.unrecorded(p, err)
 		return
 	}
 	keyID, err := calllog.KeyID(key)
@@ -162,15 +157,13 @@ func (g *gateway) syncAudit() {
 	}
 	if err != nil {
 		zeroBytes(key)
-		g.swapStore(p, nil, err)
-		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
+		g.unrecorded(p, err)
 		return
 	}
 	root, err := calllog.DefaultDir(g.resolver)
 	if err != nil {
 		zeroBytes(key)
-		g.swapStore(p, nil, err)
-		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
+		g.unrecorded(p, err)
 		return
 	}
 	store, err := calllog.Open(calllog.Options{
@@ -179,8 +172,7 @@ func (g *gateway) syncAudit() {
 	})
 	zeroBytes(key)
 	if err != nil {
-		g.swapStore(p, nil, err)
-		g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
+		g.unrecorded(p, err)
 		return
 	}
 	g.swapStore(p, store, nil)
@@ -208,6 +200,21 @@ func (g *gateway) openMetadataOnly(p registry.ResolvedCallsPolicy) {
 	}
 	g.swapStore(p, nil, nil)
 	g.log.Warn("call metadata will not be recorded; calls are unaffected", "error", err)
+}
+
+// unrecorded takes the evidence tier out of service for one reason: the
+// store is dropped carrying that error, and the operator is told the same
+// thing. Both halves matter and they are different readers — swapStore's
+// error is what `agenthub calls status` reports, the log line is what
+// someone tailing the daemon sees — so they must not be able to disagree.
+//
+// They already had: the policy-validation branch recorded a wrapped
+// "invalid audit policy: ..." and logged the bare cause, so the status
+// command named the problem and the log did not. Seven copies of a two-line
+// pair is how that happens.
+func (g *gateway) unrecorded(p registry.ResolvedCallsPolicy, err error) {
+	g.swapStore(p, nil, err)
+	g.log.Error("ledger unavailable; calls run unrecorded", "error", err)
 }
 
 func zeroBytes(b []byte) {
