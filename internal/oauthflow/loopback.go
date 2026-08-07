@@ -344,8 +344,17 @@ func writeCallbackPage(w http.ResponseWriter, status int, title, msg string) {
 // this host has none, which is the trigger to fall back to manual mode.
 type BrowserOpener func(url string) error
 
-// NoBrowser is a BrowserOpener that always fails. Wire it for --no-browser
-// so mode selection takes the manual path through the same code.
+// NoBrowser is a BrowserOpener that always fails.
+//
+// It is NOT how --no-browser works, and wiring it there would change the mode
+// that gets chosen: SelectMode reads a non-nil Open as "this host can open a
+// browser", so installing this would select ModeLoopback and reach manual only
+// by the downgrade path — after binding a listener and failing to open. The
+// CLI leaves Open nil instead, which is the signal SelectMode reads to choose
+// manual outright (internal/cli/auth.go).
+//
+// What is left is a BrowserOpener-shaped value for tests and embedders; no
+// production caller sets one.
 func NoBrowser(string) error {
 	return errors.New("oauthflow: browser opening disabled")
 }
