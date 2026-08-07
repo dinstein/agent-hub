@@ -135,9 +135,9 @@ func readCallTail(root string, since time.Time, limit int, sel callSelector) (Ca
 // rendered — NOT parsed back out of the printed stamp. followEvents explains
 // why at length: a rendered RFC3339 stamp is second resolution, so a cursor
 // read back from one advances a whole second and silently drops the rest of
-// that second's records. followServerFrames does exactly that today and is
-// the one follower of the four that still gets this wrong; copy this loop
-// rather than that one.
+// that second's records. followServerFrames read its cursor back out of the
+// printed row until it took the same correction; all three timestamp-cursored
+// followers now keep the cursor on the record side, and a fourth must too.
 //
 // The cursor is the newest record PRINTED, and admission is strictly after
 // it. A record sharing that instant is the one case this loses, and the

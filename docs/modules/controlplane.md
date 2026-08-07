@@ -947,12 +947,15 @@ test: reproducing it needs a write interleaved inside the read, which nothing in
 schedule. `followServerLogs` used to share this defect and no longer exists — `e1fbe29` moved the wire
 trace into the call ledger, and its replacement tracks a timestamp instead.
 
-**Both timestamp followers carry the RECORD's `time.Time`, never the stamp they printed.**
-`followServerFrames` (`internal/cli/serverlogs.go`) reads and cursors on `calllog.Event`, projecting to
+**All three timestamp followers carry the RECORD's `time.Time`, never the stamp they printed** —
+`followEvents` (`events.go`), `followServerFrames` (`serverlogs.go`) and `followCalls`
+(`calls_read.go`); the remaining two, `logs -f` and `daemon logs -f`, track a byte offset instead.
+`followServerFrames` reads and cursors on `calllog.Event`, projecting to
 rows only to emit them; `collectServerFrames` exists for that reason alone. Taking the cursor back out of
 the row is a real defect, not a style point: `serverLogRow` renders `TS` with `time.RFC3339`, so the
 cursor would advance a whole second and `framesAfter` would then discard every frame of that second not
-yet printed. `events -f` lost records that way until `83bb725`, and it costs more here — a traced call
+yet printed. `events -f` lost records that way until `83bb725` and `server logs -f` until `2eca8b4`, and
+it costs more here — a traced call
 records two frames, so a second holding a burst is the ordinary case rather than the unlucky one.
 `ScanFramesSince` is deliberately left inclusive of its bound (that bound is what lets it skip whole day
 partitions), so the tie is dropped by `framesAfter` in the reader, where nanoseconds are in scope.
