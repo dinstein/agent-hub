@@ -104,23 +104,10 @@ func OpenOptions(dir string, opts Options) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{dir: dir, opts: opts}
-
-	lock, err := acquireLock(context.Background(), dir, opts.LockTimeout)
-	if err != nil {
+	if _, quar, err := s.loadSnapshot(context.Background()); err != nil {
 		return nil, err
-	}
-	st, quar, err := loadAll(dir, &s.selfWrites)
-	lock.release()
-	if err != nil {
-		return nil, errors.Join(append(quar, err)...)
-	}
-	snap, err := snapshotFromState(st)
-	if err != nil {
-		return nil, errors.Join(append(quar, err)...)
-	}
-	s.snap = snap
-	if len(quar) > 0 {
-		return s, errors.Join(quar...)
+	} else if quar != nil {
+		return s, quar
 	}
 	return s, nil
 }
@@ -141,26 +128,46 @@ func (s *Store) Snapshot() *Snapshot {
 // a non-nil error alongside a non-nil snapshot means the snapshot is usable
 // with the affected documents reset to defaults.
 func (s *Store) Reload(ctx context.Context) (*Snapshot, error) {
-	lock, err := acquireLock(ctx, s.dir, s.opts.LockTimeout)
+	snap, quar, err := s.loadSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
-	st, quar, err := loadAll(s.dir, &s.selfWrites)
+	return snap, quar
+}
+
+// loadSnapshot is the read half both Open and Reload perform: take the
+// cross-process lock, load every document, release, and adopt the result as
+// this Store's snapshot.
+//
+// The two error returns are not interchangeable, which is the whole reason
+// this is one function rather than two copies. err means nothing was adopted
+// and the snapshot is nil. quar (non-nil only alongside a usable snapshot)
+// means one or more documents were unreadable and have been quarantined and
+// reset to their defaults: the registry is serviceable and the caller decides
+// whether that is fatal for it. Every failure before adoption joins the
+// quarantines it already collected onto the error, so a caller that only looks
+// at err still learns what was lost on the way.
+func (s *Store) loadSnapshot(ctx context.Context) (snap *Snapshot, quar error, err error) {
+	lock, err := acquireLock(ctx, s.dir, s.opts.LockTimeout)
+	if err != nil {
+		return nil, nil, err
+	}
+	st, quarErrs, err := loadAll(s.dir, &s.selfWrites)
 	lock.release()
 	if err != nil {
-		return nil, errors.Join(append(quar, err)...)
+		return nil, nil, errors.Join(append(quarErrs, err)...)
 	}
-	snap, err := snapshotFromState(st)
+	snap, err = snapshotFromState(st)
 	if err != nil {
-		return nil, errors.Join(append(quar, err)...)
+		return nil, nil, errors.Join(append(quarErrs, err)...)
 	}
 	s.mu.Lock()
 	s.snap = snap
 	s.mu.Unlock()
-	if len(quar) > 0 {
-		return snap, errors.Join(quar...)
+	if len(quarErrs) > 0 {
+		return snap, errors.Join(quarErrs...), nil
 	}
-	return snap, nil
+	return snap, nil, nil
 }
 
 // Update runs fn inside the cross-process lock with a lock→load→modify→save
