@@ -331,7 +331,12 @@ type gateway struct {
 	// notifications/initialized. Once set it never clears — a session
 	// cannot downgrade back to the handshake it skipped.
 	stateless bool
-	protocol  string // negotiated upstream protocol, guarded by mu
+	// subscribed is the 2026-07-28 subscription filter this session asked
+	// for, already intersected with what this gateway produces. nil means
+	// "never subscribed", which for a STATELESS session means no
+	// notification may be sent at all (subscriptions.go).
+	subscribed *mcp.SubscriptionFilter
+	protocol   string // negotiated upstream protocol, guarded by mu
 
 	handlers sync.WaitGroup // per-request tools/call handler goroutines
 }

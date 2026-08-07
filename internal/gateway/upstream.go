@@ -61,6 +61,8 @@ func (g *gateway) handleRequest(req *mcp.Request) {
 		g.reply(mcp.NewResponse(req.ID, json.RawMessage(`{}`)))
 	case mcp.MethodToolsList:
 		g.handleToolsList(req)
+	case mcp.MethodSubscriptionsListen:
+		g.handleSubscriptionsListen(req)
 	case mcp.MethodToolsCall:
 		ctx, cancel := context.WithCancel(g.lifeCtx)
 		g.registerInflight(req.ID, cancel)

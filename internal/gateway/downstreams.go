@@ -213,8 +213,14 @@ func (g *gateway) swapCatalog(rt *router.Router, live bool) {
 	}
 }
 
-// notifyToolsChanged pushes notifications/tools/list_changed upstream.
+// notifyToolsChanged pushes notifications/tools/list_changed upstream, when
+// this session is one that may receive it — see subscriptions.go: a
+// 2026-07-28 session gets what it subscribed to and nothing else, an older
+// one gets it as it always has.
 func (g *gateway) notifyToolsChanged() {
+	if !g.mayNotify(mcp.NotificationToolsListChanged) {
+		return
+	}
 	g.reply(mcp.NewNotification(mcp.NotificationToolsListChanged, nil))
 }
 

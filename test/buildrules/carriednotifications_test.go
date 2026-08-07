@@ -30,13 +30,37 @@ import (
 func TestCarriedNotificationsMatchTheGateway(t *testing.T) {
 	root := repoRoot(t)
 
-	declared := parseCarriedNotifications(t, filepath.Join(root, "internal", "httpbridge", "stream.go"))
+	declared := parseNotificationSet(t,
+		filepath.Join(root, "internal", "httpbridge", "stream.go"), "carriedNotifications")
 	if len(declared) == 0 {
 		t.Fatal("no carriedNotifications entries found; this test asserted nothing")
 	}
 	produced := gatewayUpstreamNotifications(t, filepath.Join(root, "internal", "gateway"))
 	if len(produced) == 0 {
 		t.Fatal("no upstream notification producers found in internal/gateway; this test asserted nothing")
+	}
+	// The gateway keeps the same set for the stdio face's own filter, so
+	// there are three things to hold together, not two.
+	gatewaySet := parseNotificationSet(t,
+		filepath.Join(root, "internal", "gateway", "subscriptions.go"), "producedNotifications")
+	if len(gatewaySet) == 0 {
+		t.Fatal("no producedNotifications entries found; this test asserted nothing")
+	}
+	for name := range produced {
+		if !gatewaySet[name] {
+			t.Errorf("internal/gateway sends mcp.%s upstream, and its own producedNotifications "+
+				"does not name it.\n"+
+				"The stdio face's acknowledgement then tells a subscriber the type is unsupported, "+
+				"and honouredFilter drops it — so a client that subscribed correctly stops "+
+				"receiving a notification this gateway does send.", name)
+		}
+	}
+	for name := range gatewaySet {
+		if !produced[name] {
+			t.Errorf("internal/gateway's producedNotifications names mcp.%s, which nothing in the "+
+				"package sends upstream.\n"+
+				"Drop it, or wire the producer.", name)
+		}
 	}
 
 	for name := range produced {
@@ -60,11 +84,12 @@ func TestCarriedNotificationsMatchTheGateway(t *testing.T) {
 	}
 }
 
-// carriedEntry matches a `mcp.NotificationX: true,` line inside the
-// carriedNotifications map literal.
+// carriedEntry matches a `mcp.NotificationX: true,` line inside one of the
+// declared map literals.
 var carriedEntry = regexp.MustCompile(`^\s*mcp\.(Notification\w+):\s*true,`)
 
-func parseCarriedNotifications(t *testing.T, path string) map[string]bool {
+// parseNotificationSet reads one `var <name> = map[string]bool{...}` literal.
+func parseNotificationSet(t *testing.T, path, name string) map[string]bool {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -73,7 +98,7 @@ func parseCarriedNotifications(t *testing.T, path string) map[string]bool {
 	out := map[string]bool{}
 	inMap := false
 	for _, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(line, "var carriedNotifications = map[string]bool{") {
+		if strings.HasPrefix(line, "var "+name+" = map[string]bool{") {
 			inMap = true
 			continue
 		}
@@ -97,6 +122,18 @@ func parseCarriedNotifications(t *testing.T, path string) map[string]bool {
 // is not what this rule is about.
 var gatewayNotify = regexp.MustCompile(`reply\(mcp\.NewNotification\(mcp\.(Notification\w+)`)
 
+// notSubscribable names notifications that are produced upstream but are not
+// SUBSCRIBABLE, so they belong in neither declared set.
+//
+// One member: the subscription's own acknowledgement. It is the subscription
+// mechanism talking about itself — a client cannot subscribe to it, and it
+// must be sent regardless of any filter, since it is what tells the client
+// what the filter ended up being. Putting it in the sets would offer clients
+// a subscription to the message that answers subscriptions.
+var notSubscribable = map[string]bool{
+	"NotificationSubscriptionsAcknowledged": true,
+}
+
 func gatewayUpstreamNotifications(t *testing.T, dir string) map[string]bool {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
@@ -114,6 +151,9 @@ func gatewayUpstreamNotifications(t *testing.T, dir string) map[string]bool {
 			t.Fatal(err)
 		}
 		for _, m := range gatewayNotify.FindAllStringSubmatch(string(data), -1) {
+			if notSubscribable[m[1]] {
+				continue
+			}
 			out[m[1]] = true
 		}
 	}
