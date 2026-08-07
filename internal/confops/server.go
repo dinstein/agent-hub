@@ -574,13 +574,38 @@ func purgeCredentials(ctx context.Context, v CredentialPurger, serverID string) 
 func SetServerEnabled(
 	ctx context.Context, st *registry.Store, id string, enabled bool, pre Precondition,
 ) (ServerResult, error) {
+	return mutateServer(ctx, st, id, pre, func(e *registry.ServerEntry) error {
+		e.Enabled = enabled
+		return nil
+	})
+}
+
+// mutateServer is the write path the per-field server setters share: resolve
+// the id or REFUSE, apply fn to the entry, write it back, and report the
+// resulting spec.
+//
+// The refusal is why this is one function rather than a shape each setter
+// repeats. Every reference to a server id is checked against the registry so
+// a typo becomes an error rather than a ghost entry, and a fourth setter
+// written by copying one of these three is exactly how that check goes
+// missing — silently, because assigning a field of a `doc` that came back
+// zero-valued reads as having worked.
+//
+// fn returns an error so a setter can refuse from inside the transaction with
+// nothing written: apply aborts on anything it gets back.
+func mutateServer(
+	ctx context.Context, st *registry.Store, id string, pre Precondition,
+	fn func(e *registry.ServerEntry) error,
+) (ServerResult, error) {
 	var spec ServerSpec
 	res, err := apply(ctx, st, pre, func(tx *registry.Tx) error {
 		doc, ok := tx.Servers.V.Servers[id]
 		if !ok {
 			return serverNotFound(id)
 		}
-		doc.V.Enabled = enabled
+		if err := fn(&doc.V); err != nil {
+			return err
+		}
 		tx.Servers.V.Servers[id] = doc
 		spec = ServerSpec{ID: id, Entry: doc.V}
 		return nil
@@ -611,25 +636,14 @@ func SetServerTools(
 	if err := sel.validate(); err != nil {
 		return ServerResult{}, err
 	}
-	var spec ServerSpec
-	res, err := apply(ctx, st, pre, func(tx *registry.Tx) error {
-		doc, ok := tx.Servers.V.Servers[id]
-		if !ok {
-			return serverNotFound(id)
-		}
+	return mutateServer(ctx, st, id, pre, func(e *registry.ServerEntry) error {
 		allow, ok := allowList(sel)
 		if !ok {
 			return nil // validate() already refused this; belt and braces
 		}
-		doc.V.Tools = allow
-		tx.Servers.V.Servers[id] = doc
-		spec = ServerSpec{ID: id, Entry: doc.V}
+		e.Tools = allow
 		return nil
 	})
-	if err != nil {
-		return ServerResult{Result: res}, err
-	}
-	return ServerResult{Result: res, Servers: []ServerSpec{spec}}, nil
 }
 
 // SetServerTrace flips a server's frame-trace switch. It is a separate call
@@ -640,21 +654,10 @@ func SetServerTools(
 func SetServerTrace(
 	ctx context.Context, st *registry.Store, id string, on bool, pre Precondition,
 ) (ServerResult, error) {
-	var spec ServerSpec
-	res, err := apply(ctx, st, pre, func(tx *registry.Tx) error {
-		doc, ok := tx.Servers.V.Servers[id]
-		if !ok {
-			return serverNotFound(id)
-		}
-		doc.V.Trace = on
-		tx.Servers.V.Servers[id] = doc
-		spec = ServerSpec{ID: id, Entry: doc.V}
+	return mutateServer(ctx, st, id, pre, func(e *registry.ServerEntry) error {
+		e.Trace = on
 		return nil
 	})
-	if err != nil {
-		return ServerResult{Result: res}, err
-	}
-	return ServerResult{Result: res, Servers: []ServerSpec{spec}}, nil
 }
 
 // serverNotFound is the shared "no such server" refusal. Every reference to
