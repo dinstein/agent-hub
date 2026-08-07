@@ -54,33 +54,64 @@ type locSpec struct {
 	// rel is the path relative to the project base directory
 	// (placement == Project).
 	rel []string
-	// home maps GOOS to a path relative to $HOME (placement == User).
-	// A GOOS absent from the map makes the location unavailable there,
-	// rather than guessed — which is how Windows stays unfilled without a
-	// build tag, and why nothing invents a %APPDATA% path it cannot verify.
-	// See docs/windows.md.
-	home map[string][]string
+	// home maps GOOS to a user-level path (placement == User). A GOOS absent
+	// from the map makes the location unavailable there rather than guessed:
+	// writing the gateway entry into a file the client does not read is
+	// worse than reporting there is nowhere to write.
+	home map[string]locPath
 }
+
+// pathBase names the directory a user-level path hangs off. Windows keeps
+// application configuration under %APPDATA% rather than in dotfiles at the
+// top of the profile, so the base is part of a platform's answer and not a
+// constant of the table.
+type pathBase int
+
+const (
+	// baseHome is $HOME / %USERPROFILE% — the dotfile convention, which the
+	// CLI-shaped clients follow on Windows too.
+	baseHome pathBase = iota
+	// baseRoaming is %APPDATA%. Windows only.
+	baseRoaming
+)
+
+// locPath is one platform's answer: which directory, and the path under it.
+type locPath struct {
+	base pathBase
+	seg  []string
+}
+
+func atHome(seg ...string) locPath    { return locPath{base: baseHome, seg: seg} }
+func atRoaming(seg ...string) locPath { return locPath{base: baseRoaming, seg: seg} }
 
 // mcpServers is the de-facto standard section: {"mcpServers": {...}}.
 var mcpServers = []string{"mcpServers"}
 
-// sameOnAll returns a home path used identically on macOS and Linux.
-func sameOnAll(seg ...string) map[string][]string {
-	return map[string][]string{"darwin": seg, "linux": seg}
+// sameOnAll returns a home-relative path used identically everywhere,
+// Windows included. Right for the dotfile clients — ~/.cursor/mcp.json is
+// %USERPROFILE%\.cursor\mcp.json — and wrong for anything following the
+// platform's application-data convention, which uses perOS instead.
+func sameOnAll(seg ...string) map[string]locPath {
+	return map[string]locPath{
+		"darwin": atHome(seg...), "linux": atHome(seg...), "windows": atHome(seg...),
+	}
 }
 
-// perOS returns per-platform home paths.
-func perOS(darwin, linux []string) map[string][]string {
-	return map[string][]string{"darwin": darwin, "linux": linux}
+// perOS returns per-platform paths. Windows is stated rather than derived,
+// because its BASE usually differs and not just its segments.
+func perOS(darwin, linux, windows locPath) map[string]locPath {
+	return map[string]locPath{"darwin": darwin, "linux": linux, "windows": windows}
 }
 
 // vscodeUserDir is the VS Code user-settings directory, which several
-// extension-hosted clients also nest their settings under.
-func vscodeUserDir(tail ...string) map[string][]string {
-	darwin := append([]string{"Library", "Application Support", "Code", "User"}, tail...)
-	linux := append([]string{".config", "Code", "User"}, tail...)
-	return perOS(darwin, linux)
+// extension-hosted clients nest their own settings under. Only the directory
+// holding "User" moves; the tail is identical on all three.
+func vscodeUserDir(tail ...string) map[string]locPath {
+	return perOS(
+		atHome(append([]string{"Library", "Application Support", "Code", "User"}, tail...)...),
+		atHome(append([]string{".config", "Code", "User"}, tail...)...),
+		atRoaming(append([]string{"Code", "User"}, tail...)...),
+	)
 }
 
 // specs is THE adapter table. Every supported client is one row; the code
@@ -105,9 +136,13 @@ var specs = []clientSpec{
 		id:   "claude-desktop",
 		name: "Claude Desktop",
 		locs: []locSpec{
+			// Windows: the documented %APPDATA%\Claude path. An MSIX install
+			// virtualizes that and reads its package LocalCache instead —
+			// clientSpec.redirect probes for it and prefers it when present.
 			{placement: User, section: mcpServers, home: perOS(
-				[]string{"Library", "Application Support", "Claude", "claude_desktop_config.json"},
-				[]string{".config", "Claude", "claude_desktop_config.json"},
+				atHome("Library", "Application Support", "Claude", "claude_desktop_config.json"),
+				atHome(".config", "Claude", "claude_desktop_config.json"),
+				atRoaming("Claude", "claude_desktop_config.json"),
 			)},
 		},
 	},
@@ -161,7 +196,15 @@ var specs = []clientSpec{
 		locs: []locSpec{
 			// Zed keeps MCP servers under "context_servers" in its own
 			// settings document — same map, different key path.
-			{placement: User, section: []string{"context_servers"}, home: sameOnAll(".config", "zed", "settings.json")},
+			//
+			// Windows is %APPDATA%\Zed, NOT the .config\zed the other two
+			// share: Zed follows the platform convention there, so copying
+			// the Linux row would name a directory Zed never reads.
+			{placement: User, section: []string{"context_servers"}, home: perOS(
+				atHome(".config", "zed", "settings.json"),
+				atHome(".config", "zed", "settings.json"),
+				atRoaming("Zed", "settings.json"),
+			)},
 		},
 	},
 	{
@@ -248,15 +291,18 @@ func (s *clientSpec) resolve(t *Table, baseDir string) []Location {
 		case Project:
 			path = filepath.Join(append([]string{t.baseDir(baseDir)}, l.rel...)...)
 		case User:
-			seg, ok := l.home[t.goos()]
+			lp, ok := l.home[t.goos()]
 			if !ok {
 				continue
 			}
-			home, ok := t.home()
+			base, ok := t.userBase(lp.base)
 			if !ok {
 				continue
 			}
-			path = filepath.Join(append([]string{home}, seg...)...)
+			path = filepath.Join(append([]string{base}, lp.seg...)...)
+			if p, ok := s.redirect(t, path); ok {
+				path = p
+			}
 		default:
 			continue
 		}
@@ -398,4 +444,51 @@ func quoteJoin(args []string) string {
 		parts[i] = fmt.Sprintf("%q", a)
 	}
 	return strings.Join(parts, ", ")
+}
+
+// userBase resolves the directory a locPath hangs off. An unresolvable base
+// makes the location unavailable, the same direction an absent GOOS takes.
+func (t *Table) userBase(b pathBase) (string, bool) {
+	switch b {
+	case baseRoaming:
+		return t.roaming()
+	default:
+		return t.home()
+	}
+}
+
+// msixClaudeDesktopPkg is the package family name of the MSIX-installed
+// Claude Desktop. An MSIX application reads a VIRTUALIZED %APPDATA%: writes
+// its installer's users make land under the package's LocalCache, and the
+// documented %APPDATA%\Claude path is a different file that the packaged app
+// never reads.
+const msixClaudeDesktopPkg = "Claude_pzs8sxrjxfjjc"
+
+// redirect adapts a resolved user path to where the client actually reads,
+// for the one client whose Windows install can virtualize it.
+//
+// It is a PROBE, not a guess, and it only ever redirects toward a file that
+// exists — the same shape internal/platform uses for the loopback-UNC twin
+// (docs/windows.md). The failure direction is the documented path: an MSIX
+// install with no config yet, or a store layout that has moved, leaves the
+// write where the vendor documents it rather than in a directory this
+// program invented.
+//
+// Why it is worth a special case: without it, `client connect claude-desktop`
+// on an MSIX install writes a file that parses, verifies and is never read.
+// That is the silent success this repository refuses everywhere else.
+func (s *clientSpec) redirect(t *Table, path string) (string, bool) {
+	if s.id != "claude-desktop" || t.goos() != "windows" {
+		return "", false
+	}
+	local, ok := t.localAppData()
+	if !ok {
+		return "", false
+	}
+	msix := filepath.Join(local, "Packages", msixClaudeDesktopPkg,
+		"LocalCache", "Roaming", "Claude", "claude_desktop_config.json")
+	if !t.exists(msix) {
+		return "", false
+	}
+	return msix, true
 }

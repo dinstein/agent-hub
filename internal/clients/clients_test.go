@@ -123,10 +123,9 @@ func TestTableCoversTheEcosystem(t *testing.T) {
 	}
 }
 
-// TestLocationsResolvePerPlatform: the same row yields different user
-// paths per OS, project paths come first, and an OS absent from the row's
-// table (Windows, unfilled) drops the user location instead of inventing
-// one.
+// TestLocationsResolvePerPlatform: the same row yields different user paths
+// per OS, project paths come first, and an OS absent from the row's table
+// drops the user location instead of inventing one.
 func TestLocationsResolvePerPlatform(t *testing.T) {
 	for _, tc := range []struct {
 		goos string
@@ -156,16 +155,31 @@ func TestLocationsResolvePerPlatform(t *testing.T) {
 		t.Errorf("DefaultPath = %q, want the user location %q", got, locs[1].Path)
 	}
 
-	// Windows is not in any row's home table yet: user locations vanish,
-	// project ones survive.
-	w := clients.New(clients.Options{GOOS: "windows", Home: e.home, BackupDir: e.backups})
+	// Windows resolves user locations like the other two platforms. It did
+	// not once: every row's home table held darwin and linux only, so
+	// `client connect` found nothing to write for any client whose config is
+	// user-level — the command agenthub exists to run, unavailable on the
+	// whole platform. These two rows are the shapes that differ: a dotfile
+	// in the profile, and an application-data path.
+	roaming := filepath.Join(e.home, "AppData", "Roaming")
+	w := clients.New(clients.Options{
+		GOOS: "windows", Home: e.home, Roaming: roaming, BackupDir: e.backups,
+	})
 	wf, _ := w.Lookup("claude-code")
-	if locs := wf.Locations(e.project); len(locs) != 1 || locs[0].Placement != clients.Project {
-		t.Errorf("windows locations = %+v, want project only", locs)
+	locsW := wf.Locations(e.project)
+	if len(locsW) != 2 || locsW[1].Placement != clients.User {
+		t.Fatalf("windows claude-code locations = %+v, want project then user", locsW)
+	}
+	if want := filepath.Join(e.home, ".claude.json"); locsW[1].Path != want {
+		t.Errorf("windows claude-code user path = %q, want %q", locsW[1].Path, want)
 	}
 	wd, _ := w.Lookup("claude-desktop")
-	if locs := wd.Locations(e.project); len(locs) != 0 {
-		t.Errorf("windows claude-desktop locations = %+v, want none", locs)
+	locsD := wd.Locations(e.project)
+	if len(locsD) != 1 {
+		t.Fatalf("windows claude-desktop locations = %+v, want one", locsD)
+	}
+	if want := filepath.Join(roaming, "Claude", "claude_desktop_config.json"); locsD[0].Path != want {
+		t.Errorf("windows claude-desktop path = %q, want %q", locsD[0].Path, want)
 	}
 }
 
@@ -207,14 +221,18 @@ func TestPathForIsExactOrNothing(t *testing.T) {
 		t.Errorf("claude-desktop project path = %q, want \"\"", got)
 	}
 	// A row with no user location on this platform still has a default: the
-	// fallback keeps Windows (absent from every home table) writable.
-	w := clients.New(clients.Options{GOOS: "windows", Home: e.home, BackupDir: e.backups})
+	// fallback keeps a project-level file writable there. The example is a
+	// GOOS absent from every home table — it was Windows until Windows was
+	// filled in, and the behaviour it demonstrates is the table's answer to
+	// any platform nobody has confirmed paths for, which is what keeps this
+	// worth a test rather than a note.
+	w := clients.New(clients.Options{GOOS: "plan9", Home: e.home, BackupDir: e.backups})
 	wf, _ := w.Lookup("claude-code")
 	if got, want := wf.DefaultPath(e.project), filepath.Join(e.project, ".mcp.json"); got != want {
-		t.Errorf("windows DefaultPath = %q, want the project fallback %q", got, want)
+		t.Errorf("plan9 DefaultPath = %q, want the project fallback %q", got, want)
 	}
 	if got := wf.PathFor(e.project, clients.User); got != "" {
-		t.Errorf("windows user path = %q, want \"\"", got)
+		t.Errorf("plan9 user path = %q, want \"\"", got)
 	}
 }
 
@@ -509,3 +527,108 @@ func TestProbeOnlyShapesRefuseWrites(t *testing.T) {
 }
 
 func contains(haystack, needle string) bool { return strings.Contains(haystack, needle) }
+
+// TestWindowsUserPathsAreTheOnesClientsRead pins every row's Windows
+// user-level path, because a wrong one here is the failure this table is
+// least able to report: `client connect` writes a file that parses, verifies
+// and is never read by anybody.
+//
+// Two conventions, and the table has to keep them apart. The CLI-shaped
+// clients keep a dotfile in the profile and are identical on all three
+// platforms; the application-shaped ones use %APPDATA%, and copying the
+// Linux .config path there names a directory the client never opens. Zed is
+// the row where that distinction bites — it is .config/zed on macOS and
+// Linux and %APPDATA%\Zed on Windows.
+func TestWindowsUserPathsAreTheOnesClientsRead(t *testing.T) {
+	e := newEnv(t, "darwin")
+	roaming := filepath.Join(e.home, "AppData", "Roaming")
+	w := clients.New(clients.Options{
+		GOOS: "windows", Home: e.home, Roaming: roaming, BackupDir: e.backups,
+	})
+
+	code := filepath.Join(roaming, "Code", "User")
+	for _, tc := range []struct{ id, want string }{
+		{"claude-code", filepath.Join(e.home, ".claude.json")},
+		{"claude-desktop", filepath.Join(roaming, "Claude", "claude_desktop_config.json")},
+		{"cursor", filepath.Join(e.home, ".cursor", "mcp.json")},
+		{"windsurf", filepath.Join(e.home, ".codeium", "windsurf", "mcp_config.json")},
+		{"vscode", filepath.Join(code, "settings.json")},
+		{"cline", filepath.Join(code, "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json")},
+		{"roo-code", filepath.Join(code, "globalStorage", "rooveterinaryinc.roo-cline", "settings", "mcp_settings.json")},
+		{"zed", filepath.Join(roaming, "Zed", "settings.json")},
+		{"gemini-cli", filepath.Join(e.home, ".gemini", "settings.json")},
+		{"codex", filepath.Join(e.home, ".codex", "config.toml")},
+		{"continue", filepath.Join(e.home, ".continue", "config.yaml")},
+	} {
+		f, ok := w.Lookup(tc.id)
+		if !ok {
+			t.Errorf("%s: not in the table", tc.id)
+			continue
+		}
+		if got := f.PathFor(e.project, clients.User); got != tc.want {
+			t.Errorf("%s windows user path = %q, want %q", tc.id, got, tc.want)
+		}
+	}
+
+	// open-webui has no local file anywhere, and Windows must not invent one.
+	if f, ok := w.Lookup("open-webui"); ok {
+		if got := f.PathFor(e.project, clients.User); got != "" {
+			t.Errorf("open-webui windows user path = %q, want \"\"", got)
+		}
+	}
+}
+
+// TestMSIXClaudeDesktopIsPreferredOnlyWhenItExists covers the one redirect in
+// the table, in both directions.
+//
+// An MSIX-installed Claude Desktop reads a VIRTUALIZED %APPDATA%: its config
+// lives under the package's LocalCache, and the documented %APPDATA%\Claude
+// file is a different one the packaged app never opens. Writing there would
+// succeed, verify, and change nothing a user can observe — the silent success
+// this repository refuses everywhere else.
+//
+// The probe only ever redirects TOWARD a file that exists, so an ordinary
+// install, or a store layout that has moved, keeps the documented path
+// instead of a directory this program invented.
+func TestMSIXClaudeDesktopIsPreferredOnlyWhenItExists(t *testing.T) {
+	e := newEnv(t, "darwin")
+	roaming := filepath.Join(e.home, "AppData", "Roaming")
+	local := filepath.Join(e.home, "AppData", "Local")
+	msix := filepath.Join(local, "Packages", "Claude_pzs8sxrjxfjjc",
+		"LocalCache", "Roaming", "Claude", "claude_desktop_config.json")
+	documented := filepath.Join(roaming, "Claude", "claude_desktop_config.json")
+
+	// LOCALAPPDATA is read from the environment; point it at the temp tree.
+	t.Setenv("LOCALAPPDATA", local)
+
+	// No package present: the documented path stands.
+	plain := clients.New(clients.Options{
+		GOOS: "windows", Home: e.home, Roaming: roaming, BackupDir: e.backups,
+		Exists: func(string) bool { return false },
+	})
+	pf, _ := plain.Lookup("claude-desktop")
+	if got := pf.PathFor(e.project, clients.User); got != documented {
+		t.Errorf("plain install = %q, want the documented path %q", got, documented)
+	}
+
+	// The package's config is there: that is the file Claude reads.
+	packaged := clients.New(clients.Options{
+		GOOS: "windows", Home: e.home, Roaming: roaming, BackupDir: e.backups,
+		Exists: func(p string) bool { return p == msix },
+	})
+	kf, _ := packaged.Lookup("claude-desktop")
+	if got := kf.PathFor(e.project, clients.User); got != msix {
+		t.Errorf("msix install = %q, want the package LocalCache %q", got, msix)
+	}
+
+	// The redirect is Windows-only: the same probe must not move macOS.
+	mac := clients.New(clients.Options{
+		GOOS: "darwin", Home: e.home, BackupDir: e.backups,
+		Exists: func(string) bool { return true },
+	})
+	mf, _ := mac.Lookup("claude-desktop")
+	want := filepath.Join(e.home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
+	if got := mf.PathFor(e.project, clients.User); got != want {
+		t.Errorf("darwin = %q, want %q", got, want)
+	}
+}

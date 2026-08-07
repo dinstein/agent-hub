@@ -198,6 +198,15 @@ type Options struct {
 	GOOS string
 	// Home overrides the user home directory.
 	Home string
+	// Roaming overrides %APPDATA%, the Windows roaming application-data
+	// directory. Injectable for the reason GOOS and Home are — so a test
+	// resolves a complete Windows path on macOS — and read from the
+	// environment rather than rebuilt under Home, because APPDATA is
+	// redirected on roaming profiles and managed desktops.
+	Roaming string
+	// Exists overrides the file-existence probe. Only the Windows Claude
+	// Desktop row consults it; nil means a real os.Stat.
+	Exists func(path string) bool
 	// BackupDir overrides <data>/backups/clients.
 	BackupDir string
 	// KeepBackups is the per-client backup retention count
@@ -371,3 +380,48 @@ func DisconnectDefault(f Format, baseDir string) (Result, error) {
 // dataDir. Exported so callers (CLI, doctor, tests) can locate backups
 // without duplicating the layout.
 func BackupDir(dataDir string) string { return filepath.Join(dataDir, "backups", "clients") }
+
+// roaming resolves %APPDATA%. Failure is not fatal, exactly like home: it
+// makes the roaming-based locations unavailable and leaves the rest of the
+// table intact.
+//
+// The fallback mirrors internal/platform's: %APPDATA% normally is
+// <home>\AppData\Roaming, and reconstructing it is better than dropping
+// every Windows user location because one variable is unset. It is a
+// fallback and not the primary answer because a redirected APPDATA is
+// exactly the case reconstruction gets wrong.
+func (t *Table) roaming() (string, bool) {
+	if t.opts.Roaming != "" {
+		return t.opts.Roaming, true
+	}
+	if v := os.Getenv("APPDATA"); v != "" {
+		return v, true
+	}
+	h, ok := t.home()
+	if !ok {
+		return "", false
+	}
+	return filepath.Join(h, "AppData", "Roaming"), true
+}
+
+// localAppData resolves %LOCALAPPDATA%, which holds the per-package
+// LocalCache an MSIX-installed application actually reads from.
+func (t *Table) localAppData() (string, bool) {
+	if v := os.Getenv("LOCALAPPDATA"); v != "" {
+		return v, true
+	}
+	h, ok := t.home()
+	if !ok {
+		return "", false
+	}
+	return filepath.Join(h, "AppData", "Local"), true
+}
+
+// exists reports whether path is there, through the injectable probe.
+func (t *Table) exists(path string) bool {
+	if t.opts.Exists != nil {
+		return t.opts.Exists(path)
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
