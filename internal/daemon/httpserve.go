@@ -11,7 +11,6 @@ import (
 
 	"github.com/dinstein/agent-hub/internal/httpbridge"
 	"github.com/dinstein/agent-hub/internal/registry"
-	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
 // This file turns the configured listen address into a running MCP endpoint.
@@ -197,18 +196,6 @@ func startHTTPPlane(ctx context.Context, cfg Config, deps httpPlaneDeps, tokens 
 	log.Info("MCP data plane serving",
 		"addr", addr, "bound", ep.addrs, "reason", decision.Reason, "loopback", decision.Loopback)
 	return ep, nil
-}
-
-// dataPlaneSecrets narrows the daemon's vault to the resolve-one-ref face the
-// data plane's downstream dialer needs. A nil vault stays nil, which is NOT
-// "resolves nothing": the gateway then builds the production chain itself,
-// and a resolver that is absent (rather than empty) makes every unresolved
-// ${SECRET_x} a dial error instead of a silently blank credential.
-func dataPlaneSecrets(vault secrets.Store) secrets.Resolver {
-	if vault == nil {
-		return nil
-	}
-	return vault.Get
 }
 
 // addrsOf renders the concrete addresses a set of listeners bound (port 0

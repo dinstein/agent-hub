@@ -405,22 +405,22 @@ func Run(ctx context.Context, cfg Config) error {
 	// It starts AFTER the control socket is serving because every gateway it
 	// assembles registers over that socket: session listing and overlays
 	// then work for an HTTP caller exactly as they do for an stdio one.
+	// NO CREDENTIAL COLLABORATORS ARE PASSED, and that is the wiring rather
+	// than an omission: a gateway builds its own vault chain exactly when
+	// both Secrets and Auth arrive nil, and only that chain carries the two
+	// optional faces the round tripper needs — the credential epoch, which a
+	// CredWatcher bumps when any process rewrites the vault, and the refresh
+	// deadline, which renews before expiry against a downstream that answers
+	// a dead token with 200 rather than 401. This plane used to hand both in
+	// and got neither back, which made its gateways strictly weaker than the
+	// stdio ones the parity claim above is about.
 	endpoint, herr := startHTTPPlane(bgCtx, cfg, httpPlaneDeps{
 		Resolver: resolver,
 		Log:      log,
 		Events:   events,
 		Version:  cfg.Version,
 		Registry: store,
-		Secrets:  dataPlaneSecrets(cfg.Secrets),
-		// The bearer half, chosen from the SAME vault as Secrets above: a
-		// dial must not resolve its placeholders against one vault and its
-		// bearer against another. Both nil (no vault configured) is the one
-		// case where the gateway builds the pair itself.
-		//
-		// Secrets alone is not enough — it resolves ${SECRET_X} placeholders
-		// written into a spec, while an OAuth server never appears in one.
-		Auth: planeAuth(cfg.Secrets, coordRef.Load),
-		Dial: cfg.Dial,
+		Dial:     cfg.Dial,
 	}, tokens, store.Snapshot(), log)
 	if herr != nil {
 		// Same teardown as every other exit, in the same order: stop serving,

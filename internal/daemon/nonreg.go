@@ -137,52 +137,20 @@ func loginSessions(store *oauthflow.Store, log *slog.Logger, events *eventlog.St
 	return m
 }
 
-// planeAuth builds the OAuth bearer source for the HTTP data plane's
-// per-credential gateways.
+// The HTTP data plane once built its gateways' credentials here, out of the
+// daemon's vault, the way testDeps below still does for the self-test. It no
+// longer does, and the asymmetry is the point rather than an inconsistency.
 //
-// Third occurrence of one omission: the self-test probed with a bare Deps
-// (testDeps below), the stdio gateway dialed with Deps.Auth unset, and this
-// plane passed a non-nil Secrets — which suppresses the gateway's own
-// production default — while supplying no Auth. Each time the vault held a
-// valid token and each time the server answered 401, indistinguishable from
-// an expired login.
+// A self-test is one dial that answers one question and ends; whatever it is
+// handed is the whole of its credential life. A data-plane gateway is a
+// long-lived connection holder, and for it the vault read is only the first
+// of four things a credential needs — the other three are cache invalidation
+// rules, and all three live in the chain the gateway builds for itself
+// (internal/gateway/auth.go, authfresh.go, credwatch.go). Handing that
+// gateway a TokenSource assembled out here suppressed the chain and
+// delivered none of the three, so the plane now hands it nothing at all.
 //
-// coord is late-bound for the same reason it is in testDeps: the refresh
-// coordinator is created after the control plane. It is the daemon's OWN
-// coordinator, not a second one — the daemon is the always-up component that
-// renews proactively, and two coordinators over one vault eventually spend a
-// one-time refresh token twice.
-//
-// A nil coordinator (no data dir, so no proactive refresh either) leaves
-// renewal off; the stored token is still attached, degrading to "works until
-// it expires" rather than to no credential at all.
-func planeAuth(vault secrets.Store, coord func() *oauthflow.Coordinator) func(string, string) downstream.TokenSource {
-	chain, _ := vault.(*secrets.Chain)
-	if chain == nil {
-		return nil
-	}
-	resolve := chain.Resolver()
-	return func(serverID, scopeName string) downstream.TokenSource {
-		var renew downstream.RefreshFunc
-		if coord != nil {
-			renew = func(ctx context.Context) (string, error) {
-				c := coord()
-				if c == nil {
-					return "", downstream.ErrNoRefresher
-				}
-				_, tok, err := c.Refresh(ctx, serverID)
-				// ErrRefreshSuperseded means another writer already stored a
-				// fresh credential; the token it returns IS usable, so it is a
-				// success for the caller, not a failure.
-				if err != nil && !errors.Is(err, oauthflow.ErrRefreshSuperseded) {
-					return "", err
-				}
-				return tok, nil
-			}
-		}
-		return downstream.NewScopedVaultTokenSource(serverID, scopeName, resolve, renew)
-	}
-}
+// TestDataPlaneLeavesCredentialsToTheGateway is what keeps that true.
 
 // testDeps builds the credential collaborators for POST /v1/servers/{id}/test.
 //

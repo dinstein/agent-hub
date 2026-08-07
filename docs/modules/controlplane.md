@@ -640,6 +640,23 @@ narrowed after issuance gets a new gateway rather than the old privileges; recla
 idle. `TestInProcGateCountParity` (`internal/gateway/inproc_test.go`) proves there is no fork: a
 `tools/call` through `Conn` and one through the stdio pipe advance exactly the same gate counts.
 
+**The plane passes its gateways no credential collaborators, and that is wiring rather than an
+omission.** `gateway.newGateway` builds its own vault chain **exactly when both `Config.Secrets` and
+`Config.Auth` arrive nil**, and only that chain wraps the bearer in the two optional faces
+`internal/downstream`'s round tripper looks for: the **credential epoch**, which a `CredWatcher` bumps
+whenever any process rewrites the vault — the path by which the daemon's own proactive refresher
+reaches a connection that is already up — and the **refresh deadline**, the one of the round tripper's
+four invalidation rules that fires against a downstream answering an expired token with `200` and an
+error result rather than `401`. The plane used to assemble both faces out of the daemon's vault and
+hand them in; each gateway then held a bare vault read that carried neither, recoverable only by being
+rejected, which made the HTTP face **strictly weaker than the stdio gateway it is otherwise identical
+to** while looking correct from every angle — the bearer was attached and the vault was read.
+`TestDataPlaneLeavesCredentialsToTheGateway` pins the daemon half (a negative, so nothing in the
+production code points at it) and `TestUninjectedAssemblyCarriesBothCredentialFaces` the gateway half.
+The daemon's refresher and this chain hold **two coordinators over one vault**, which is safe for the
+reason daemon-plus-stdio-gateway already is: both take `oauthflow`'s offline path, serialising on the
+`<server>.refresh.lock` sibling file, with `ErrRefreshSuperseded` as the loser's success.
+
 ---
 
 ## internal/cli

@@ -17,7 +17,6 @@ import (
 	"github.com/dinstein/agent-hub/internal/platform"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/scope"
-	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
 // This file assembles the daemon's DATA plane: the httpbridge.Dispatcher that
@@ -63,21 +62,19 @@ type httpPlaneDeps struct {
 	// token's profile pin. nil = no pin can be resolved, which fails closed
 	// (see scopeLayers).
 	Registry *registry.Store
-	// Secrets resolves ${SECRET_x} placeholders at dial time. nil lets the
-	// gateway build the production chain.
-	Secrets secrets.Resolver
-	// Auth builds the OAuth bearer of one HTTP downstream.
+	// THERE ARE DELIBERATELY NO CREDENTIAL FIELDS HERE, and the pair that
+	// used to be — a ${SECRET_x} resolver and an OAuth bearer factory, both
+	// built from the daemon's vault — must not come back. gateway.newGateway
+	// builds its own vault chain exactly when both arrive nil, and only that
+	// chain wraps the bearer in the two optional faces the round tripper
+	// reads: the credential epoch (a CredWatcher bumps it when any process
+	// rewrites the vault) and the refresh deadline (renew before expiry,
+	// which is the only rule that fires against a downstream answering a
+	// dead token with 200 instead of 401). Supplying either field suppressed
+	// that chain and replaced it with a bare vault read, leaving these
+	// gateways recoverable only by a 401 — strictly weaker than the stdio
+	// ones they are supposed to be identical to.
 	//
-	// It must be supplied explicitly here: passing a non-nil Secrets tells
-	// the gateway this is an assembled caller and suppresses its own
-	// production default, so an unset Auth means every OAuth downstream is
-	// dialed with no credential and answers 401 — the stdio bug this plane
-	// would otherwise have reproduced from the other direction.
-	//
-	// The daemon passes its own refresh coordinator rather than a second
-	// one: it is the always-up component that renews tokens proactively, and
-	// a one-time refresh token spent twice is unrecoverable.
-	Auth func(serverID, scopeName string) downstream.TokenSource
 	// Dial overrides downstream transport creation (tests).
 	Dial downstream.DialFunc
 	// Now overrides the clock (tests).
@@ -213,13 +210,16 @@ func (p *httpPlane) connFor(ctx context.Context, c *httpbridge.Caller) (*gateway
 }
 
 // gatewayConfig maps one credential onto a gateway assembly.
+//
+// Secrets and Auth are left UNSET, which is what makes the gateway build the
+// production credential chain for itself (see httpPlaneDeps). Setting either
+// is the one edit here that changes nothing visible and silently costs three
+// of the round tripper's four cache-invalidation rules.
 func (p *httpPlane) gatewayConfig(c *httpbridge.Caller) gateway.Config {
 	return gateway.Config{
 		ClientID:    clientIDOf(c),
 		Face:        "http",
 		Resolver:    p.deps.Resolver,
-		Secrets:     p.deps.Secrets,
-		Auth:        p.deps.Auth,
 		Log:         p.deps.Log.With("caller", string(c.Kind), "token", c.Token),
 		Version:     p.deps.Version,
 		Dial:        p.deps.Dial,
