@@ -8,34 +8,17 @@ import (
 	"github.com/dinstein/agent-hub/internal/tier"
 )
 
-// The HTTP data plane assembles a gateway per credential, and it must hand
-// that gateway NO credential collaborators at all.
+// The HTTP data plane must hand its gateways NO credential collaborators —
+// what that buys is argued on httpPlaneDeps, beside the fields it is about.
 //
-// This reverses an earlier decision, so the reason is worth stating rather
-// than assuming. The plane used to build both faces out of the daemon's own
-// vault — a ${SECRET_x} resolver and an OAuth bearer factory — on the theory
-// that one vault should back both halves of a dial. It does; the mistake was
-// where. gateway.newGateway builds its production credential chain exactly
-// when both Config.Secrets and Config.Auth arrive nil, and that chain is the
-// only thing that wraps the bearer in the two OPTIONAL faces the round
-// tripper in internal/downstream looks for:
-//
-//   - credentialEpoch, bumped by a CredWatcher when any process rewrites the
-//     vault — which is how the daemon's own proactive refresher reaches a
-//     connection that is already up;
-//   - credentialDeadline, which renews before expiry and is the only one of
-//     the four invalidation rules that fires against a downstream answering
-//     an expired token with 200 and an error result instead of 401.
-//
-// A source assembled outside the gateway carries neither, so those gateways
-// could recover from a stale credential only by being rejected — strictly
-// weaker than the stdio gateways they are otherwise identical to, and
-// invisible, because the bearer was still attached and the vault still read.
-//
-// The parity is proved on the gateway side (TestUninjectedAssemblyCarriesBoth
-// CredentialFaces in internal/gateway); what this file pins is the daemon
-// side of the same fact, which is a negative and therefore has nothing in the
-// production code to point at.
+// The rule is pinned rather than left to the comment because it is a NEGATIVE:
+// the correct wiring is two fields that are not set, so there is nothing in
+// the production code for a reader to notice, and the incorrect wiring is an
+// addition that looks like tightening (the plane holds the daemon's vault
+// already; passing it on reads as making the dial more explicit). Both halves
+// of the parity are pinned for the same reason — this one, and
+// TestUninjectedAssemblyCarriesBothCredentialFaces in internal/gateway, which
+// says what the unset fields are FOR.
 func TestDataPlaneLeavesCredentialsToTheGateway(t *testing.T) {
 	p := &httpPlane{deps: httpPlaneDeps{Log: slog.New(slog.DiscardHandler)}}
 	cfg := p.gatewayConfig(&httpbridge.Caller{

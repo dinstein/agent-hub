@@ -137,20 +137,13 @@ func loginSessions(store *oauthflow.Store, log *slog.Logger, events *eventlog.St
 	return m
 }
 
-// The HTTP data plane once built its gateways' credentials here, out of the
-// daemon's vault, the way testDeps below still does for the self-test. It no
-// longer does, and the asymmetry is the point rather than an inconsistency.
-//
-// A self-test is one dial that answers one question and ends; whatever it is
-// handed is the whole of its credential life. A data-plane gateway is a
-// long-lived connection holder, and for it the vault read is only the first
-// of four things a credential needs — the other three are cache invalidation
-// rules, and all three live in the chain the gateway builds for itself
-// (internal/gateway/auth.go, authfresh.go, credwatch.go). Handing that
-// gateway a TokenSource assembled out here suppressed the chain and
-// delivered none of the three, so the plane now hands it nothing at all.
-//
-// TestDataPlaneLeavesCredentialsToTheGateway is what keeps that true.
+// The HTTP data plane once built its gateways' credentials here too, the way
+// testDeps below still does for the self-test. It no longer does, and the
+// asymmetry is deliberate: a self-test is one dial that answers one question
+// and ends, so whatever it is handed is the whole of its credential life,
+// while a gateway holds connections and needs the invalidation rules that
+// only its own chain carries. The argument lives on httpPlaneDeps
+// (httpdata.go), beside the fields it is about.
 
 // testDeps builds the credential collaborators for POST /v1/servers/{id}/test.
 //

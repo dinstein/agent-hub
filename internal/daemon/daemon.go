@@ -405,15 +405,10 @@ func Run(ctx context.Context, cfg Config) error {
 	// It starts AFTER the control socket is serving because every gateway it
 	// assembles registers over that socket: session listing and overlays
 	// then work for an HTTP caller exactly as they do for an stdio one.
-	// NO CREDENTIAL COLLABORATORS ARE PASSED, and that is the wiring rather
-	// than an omission: a gateway builds its own vault chain exactly when
-	// both Secrets and Auth arrive nil, and only that chain carries the two
-	// optional faces the round tripper needs — the credential epoch, which a
-	// CredWatcher bumps when any process rewrites the vault, and the refresh
-	// deadline, which renews before expiry against a downstream that answers
-	// a dead token with 200 rather than 401. This plane used to hand both in
-	// and got neither back, which made its gateways strictly weaker than the
-	// stdio ones the parity claim above is about.
+	// The credential collaborators are deliberately absent from this literal:
+	// a gateway builds its own vault chain exactly when it is handed neither,
+	// and httpPlaneDeps carries the argument for what that chain does and what
+	// injecting either field silently costs.
 	endpoint, herr := startHTTPPlane(bgCtx, cfg, httpPlaneDeps{
 		Resolver: resolver,
 		Log:      log,

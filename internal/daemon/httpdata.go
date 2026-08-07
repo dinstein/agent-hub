@@ -64,17 +64,24 @@ type httpPlaneDeps struct {
 	Registry *registry.Store
 	// THERE ARE DELIBERATELY NO CREDENTIAL FIELDS HERE, and the pair that
 	// used to be — a ${SECRET_x} resolver and an OAuth bearer factory, both
-	// built from the daemon's vault — must not come back. gateway.newGateway
-	// builds its own vault chain exactly when both arrive nil, and only that
-	// chain wraps the bearer in the two optional faces the round tripper
-	// reads: the credential epoch (a CredWatcher bumps it when any process
-	// rewrites the vault) and the refresh deadline (renew before expiry,
-	// which is the only rule that fires against a downstream answering a
-	// dead token with 200 instead of 401). Supplying either field suppressed
-	// that chain and replaced it with a bare vault read, leaving these
-	// gateways recoverable only by a 401 — strictly weaker than the stdio
-	// ones they are supposed to be identical to.
+	// built from the daemon's vault — must not come back.
 	//
+	// gateway.newGateway builds its own vault chain exactly when it is handed
+	// neither, and only that chain wraps the bearer in the two optional faces
+	// internal/downstream's round tripper reads: the credential epoch (a
+	// CredWatcher bumps it whenever any process rewrites the vault, which is
+	// how the daemon's own refresher reaches a connection already up) and the
+	// refresh deadline (renew before expiry — the only one of the round
+	// tripper's four invalidation rules that fires against a downstream
+	// answering a dead token with 200 instead of 401). Supplying either field
+	// suppressed that chain and left a bare vault read in its place, so these
+	// gateways could recover only by being rejected: strictly weaker than the
+	// stdio ones they are meant to be identical to, and invisible, since the
+	// bearer was still attached and the vault still read.
+	//
+	// TestDataPlaneLeavesCredentialsToTheGateway keeps it that way; the long
+	// form is in docs/modules/controlplane.md under internal/httpbridge.
+
 	// Dial overrides downstream transport creation (tests).
 	Dial downstream.DialFunc
 	// Now overrides the clock (tests).
