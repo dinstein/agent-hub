@@ -37,27 +37,52 @@ import (
 // plus manual snippet — never into a rewrite.
 var errJSONCUnsupported = errors.New("clients: this document's shape is not spliceable")
 
+// jsonStringScan tracks whether the byte being read lies inside a JSON string
+// literal. Three passes over these documents need that answer and must give
+// the same one: blankJSONC decides whether a `/` opens a comment,
+// blankTrailingCommas whether a `,` is trailing, and looksLikeJSONC whether to
+// offer the JSONC hint. They each carried their own copy of the two-bool
+// machine below.
+//
+// One copy, because the two that matter run over the SAME buffer and their
+// disagreement is not a wrong answer but a corrupted settings file: a `//`
+// inside a string is somebody's prose, and blanking it writes spaces over it
+// while the splice's comment-identity check — which compares what this pass
+// left behind — has no way to notice.
+type jsonStringScan struct{ inString, escaped bool }
+
+// step consumes c and reports whether it belonged to a string literal (its
+// opening quote included), meaning the caller must not interpret it.
+func (s *jsonStringScan) step(c byte) bool {
+	if s.inString {
+		switch {
+		case s.escaped:
+			s.escaped = false
+		case c == '\\':
+			s.escaped = true
+		case c == '"':
+			s.inString = false
+		}
+		return true
+	}
+	if c == '"' {
+		s.inString = true
+		return true
+	}
+	return false
+}
+
 // blankJSONC returns a copy with comments and trailing commas replaced by
 // spaces, preserving length, offsets and newlines.
 func blankJSONC(data []byte) []byte {
 	out := bytes.Clone(data)
-	inString, escaped := false, false
+	var str jsonStringScan
 	for i := 0; i < len(out); i++ {
 		c := out[i]
-		if inString {
-			switch {
-			case escaped:
-				escaped = false
-			case c == '\\':
-				escaped = true
-			case c == '"':
-				inString = false
-			}
+		if str.step(c) {
 			continue
 		}
 		switch {
-		case c == '"':
-			inString = true
 		case c == '/' && i+1 < len(out) && out[i+1] == '/':
 			for ; i < len(out) && out[i] != '\n'; i++ {
 				out[i] = ' '
@@ -85,22 +110,10 @@ func blankJSONC(data []byte) []byte {
 // JSONC allows it and encoding/json does not, and the point of the blanking
 // pass is that what comes out of it is plain JSON.
 func blankTrailingCommas(b []byte) {
-	inString, escaped := false, false
+	var str jsonStringScan
 	for i := 0; i < len(b); i++ {
 		c := b[i]
-		if inString {
-			switch {
-			case escaped:
-				escaped = false
-			case c == '\\':
-				escaped = true
-			case c == '"':
-				inString = false
-			}
-			continue
-		}
-		if c == '"' {
-			inString = true
+		if str.step(c) {
 			continue
 		}
 		if c != ',' {

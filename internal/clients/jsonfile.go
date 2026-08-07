@@ -370,22 +370,10 @@ func readLimited(path string) ([]byte, error) {
 // negative only costs a less specific hint, and a false positive is
 // impossible for well-formed JSON (which never contains a bare '/').
 func looksLikeJSONC(data []byte) bool {
-	inString, escaped := false, false
+	var str jsonStringScan
 	for i := 0; i < len(data); i++ {
 		ch := data[i]
-		if inString {
-			switch {
-			case escaped:
-				escaped = false
-			case ch == '\\':
-				escaped = true
-			case ch == '"':
-				inString = false
-			}
-			continue
-		}
-		if ch == '"' {
-			inString = true
+		if str.step(ch) {
 			continue
 		}
 		if ch == '/' && i+1 < len(data) && (data[i+1] == '/' || data[i+1] == '*') {
