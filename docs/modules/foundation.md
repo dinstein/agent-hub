@@ -614,10 +614,11 @@ need.
 The vocabulary of the three operation tiers `read | write | destructive` — the one ladder in the
 repo. Standard library only.
 
-It is a leaf on purpose — five packages need these three words (`pipeline` gates on them,
+It is a leaf on purpose — seven packages need these three words (`pipeline` gates on them,
 `httpbridge` stores one on an agent token, `ctlapi` mints those tokens, `discovery` names intent
-variants after them, `cli` parses them from user input) and none should import another to say
-"read". Why it is a leaf, and what its old home in `internal/pipeline` cost, is canonical.md §2.
+variants after them, `cli` parses them from user input, and `gateway` and `daemon` carry one through
+an assembly) and none should import another to say "read". Why it is a leaf, and what its old home
+in `internal/pipeline` cost, is canonical.md §2.
 
 ### Invariants and failure directions
 
