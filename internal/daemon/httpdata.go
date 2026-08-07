@@ -105,6 +105,14 @@ type httpConn struct {
 	ready    chan struct{}
 	err      error
 	lastUsed time.Time
+	// subs counts the OPEN notification streams hanging off this gateway.
+	//
+	// It pins the connection against the idle reaper, and the pin is not
+	// belt-and-braces: lastUsed advances on requests, and a credential whose
+	// client is only being PUSHED to makes none. Without it a stream dies
+	// after httpConnIdle, and dies quietly — closing the gateway is the
+	// ordinary teardown and says nothing about the subscriber it took away.
+	subs int
 }
 
 var _ httpbridge.Dispatcher = (*httpPlane)(nil)
@@ -142,6 +150,69 @@ func (p *httpPlane) Notify(ctx context.Context, c *httpbridge.Caller, _ *httpbri
 	}
 	if err := conn.Notify(n); err != nil {
 		p.deps.Log.Debug("notification not delivered to the gateway", "method", n.Method, "error", err)
+	}
+}
+
+// Subscribe implements httpbridge.Dispatcher.
+//
+// The subscription rides the credential's gateway, which is the same one its
+// calls ride: one Conn per credential, shared by every session that
+// credential opened, so a notification produced for that scope reaches every
+// stream the credential has open.
+func (p *httpPlane) Subscribe(
+	ctx context.Context, c *httpbridge.Caller, _ *httpbridge.Session, accept func(string) bool,
+) (httpbridge.Subscription, error) {
+	conn, err := p.connFor(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	sub, err := conn.Subscribe(accept)
+	if err != nil {
+		return nil, err
+	}
+	if !p.pin(c.Identity()) {
+		// The gateway was reaped or the plane closed between connFor and
+		// here. Fail rather than hand back a subscription on a connection
+		// nothing is keeping alive.
+		sub.Close()
+		return nil, fmt.Errorf("daemon: gateway went away before its stream opened")
+	}
+	return &pinnedSub{Subscription: sub, unpin: sync.OnceFunc(func() { p.unpin(c.Identity()) })}, nil
+}
+
+// pinnedSub couples a subscription's lifetime to the reaper pin it holds.
+type pinnedSub struct {
+	*gateway.Subscription
+	unpin func()
+}
+
+func (s *pinnedSub) Close() {
+	s.Subscription.Close()
+	s.unpin()
+}
+
+// pin marks a credential's gateway as carrying an open stream. It reports
+// false when there is no longer a gateway to pin.
+func (p *httpPlane) pin(key string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	hc, ok := p.conns[key]
+	if !ok || p.closed {
+		return false
+	}
+	hc.subs++
+	return true
+}
+
+// unpin releases one stream's pin and restarts the idle clock from now: the
+// stream was activity, and reaping the gateway the instant its last stream
+// closed would punish a client that had just been listening.
+func (p *httpPlane) unpin(key string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if hc, ok := p.conns[key]; ok && hc.subs > 0 {
+		hc.subs--
+		hc.lastUsed = p.deps.Now()
 	}
 }
 
@@ -340,6 +411,9 @@ func (p *httpPlane) sweep(now time.Time) {
 		case <-hc.ready:
 		default:
 			continue // still assembling; never reap a connection in flight
+		}
+		if hc.subs > 0 {
+			continue // an open notification stream is holding this one up
 		}
 		if now.Sub(hc.lastUsed) < httpConnIdle {
 			continue

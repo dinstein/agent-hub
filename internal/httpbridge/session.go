@@ -146,6 +146,29 @@ func (s *sessions) get(id string, c *Caller) (*Session, bool) {
 	return sess, true
 }
 
+// touch refreshes a session's idle clock without carrying a request.
+//
+// A notification stream is why this exists. The TTL advances in get, on the
+// way past an incoming request — and a client that is being PUSHED to sends
+// none, so its session would expire underneath its own open stream. An
+// unknown id is a no-op rather than an error: the session may have been
+// deleted while the stream was writing, and that race resolves when the
+// stream's next write fails.
+//
+// No ownership check, unlike get: the only caller already holds the *Session
+// it resolved through get, so there is no id here that was not proven to
+// belong to this caller.
+func (s *sessions) touch(id string) {
+	if id == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess, ok := s.byID[id]; ok {
+		sess.lastSeen = s.now()
+	}
+}
+
 // drop terminates a session the caller owns. It reports whether anything was
 // removed, so DELETE of an unknown id answers 404 like every other miss.
 func (s *sessions) drop(id string, c *Caller) bool {

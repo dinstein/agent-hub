@@ -48,6 +48,25 @@ type Dispatcher interface {
 	Dispatch(ctx context.Context, c *Caller, s *Session, req *mcp.Request) *mcp.Response
 	// Notify handles one notification. It never answers.
 	Notify(ctx context.Context, c *Caller, s *Session, n *mcp.Notification)
+	// Subscribe opens the server→client direction for one caller, so this
+	// face can carry a notification the MCP logic produced.
+	//
+	// accept narrows what the client asked for and may be nil, meaning every
+	// method. It is the CLIENT's own filter, never a gate: what may be
+	// produced for this caller was already decided by the scope its
+	// credential resolves to, on the other side of this seam.
+	Subscribe(ctx context.Context, c *Caller, s *Session, accept func(method string) bool) (Subscription, error)
+}
+
+// Subscription is one open server→client notification channel.
+//
+// Next blocks until a notification arrives; ok=false means none ever will,
+// because ctx ended or the channel closed underneath. The caller MUST Close
+// it — that is what returns the stream quota slot and the resources behind
+// the seam.
+type Subscription interface {
+	Next(ctx context.Context) (*mcp.Notification, bool)
+	Close()
 }
 
 // Options configures a Server.
@@ -63,6 +82,8 @@ type Options struct {
 	MaxSessions int
 	// MaxInFlight overrides the in-flight ceiling.
 	MaxInFlight int
+	// MaxStreams overrides the open-notification-stream ceiling.
+	MaxStreams int
 	// Logger receives rejection and lifecycle records (nil = discard).
 	Logger *slog.Logger
 	// Events receives the session lifecycle as records (nil = prose only).
@@ -87,18 +108,26 @@ type Options struct {
 //	       or any request carrying the per-request _meta — pass with no
 //	       session and mint none (see handleRequest).
 //	DELETE terminate the session named by Mcp-Session-Id.
-//	GET    405. canonical.md §5b freezes the transport asymmetry: agenthub
-//	       never grows a new SSE exposure face, so there is no server-
-//	       initiated stream to open here.
+//	GET    the ≤ 2025-11-25 notification stream, as text/event-stream
+//	       (stream.go). A GET whose Accept rules that out is still a 405.
+//
+// The GET stream is streamable-HTTP's OWN server→client channel, and adding
+// it did not reopen ruling #29: legacy HTTP+SSE — the 2024-11-05 two-endpoint
+// transport with its `endpoint` event — remains a read-side transport that
+// this face never offers.
 type Server struct {
 	dispatcher Dispatcher
 	auth       *Authenticator
 	path       string
 	sessions   *sessions
 	inflight   semaphore
-	log        *slog.Logger
-	events     *eventlog.Stream
-	now        func() time.Time
+	// streams is the second quota, and deliberately not a slice of the
+	// first: see MaxStreams for why an open stream and an executing request
+	// cannot share a ceiling.
+	streams semaphore
+	log     *slog.Logger
+	events  *eventlog.Stream
+	now     func() time.Time
 }
 
 // New builds the server. It fails rather than defaulting when a required
@@ -119,6 +148,10 @@ func New(opts Options) (*Server, error) {
 	if inflight <= 0 {
 		inflight = MaxInFlight
 	}
+	streams := opts.MaxStreams
+	if streams <= 0 {
+		streams = MaxStreams
+	}
 	now := opts.Now
 	if now == nil {
 		now = time.Now
@@ -133,6 +166,7 @@ func New(opts Options) (*Server, error) {
 		path:       path,
 		sessions:   newSessions(opts.SessionTTL, opts.MaxSessions, now),
 		inflight:   newSemaphore(inflight),
+		streams:    newSemaphore(streams),
 		log:        log,
 		events:     opts.Events,
 		now:        now,
@@ -197,7 +231,12 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, errOverloaded)
 		return
 	}
-	defer s.inflight.release()
+	// Held through the ordinary paths and handed back early by a request
+	// that stops being one: a notification stream releases this before
+	// parking on the stream quota instead. Release is idempotent, so this
+	// defer is correct in both cases.
+	held := &slot{sem: s.inflight}
+	defer held.release()
 
 	if err := checkFetchMetadata(r); err != nil {
 		s.fail(w, r, err)
@@ -221,9 +260,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		s.handleDelete(w, r, caller)
 	case http.MethodGet:
-		// No SSE exposure face (canonical.md §5b). Clients treat 405 as
-		// "this server offers no notification stream" and carry on.
-		s.fail(w, r, errNoStream)
+		s.handleGet(w, r, caller, held)
 	default:
 		s.fail(w, r, errMethod)
 	}

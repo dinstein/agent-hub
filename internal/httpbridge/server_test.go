@@ -30,6 +30,14 @@ type recordingDispatcher struct {
 	// exec, when set, runs the request through a pipeline so a test can
 	// prove the caller's tier actually reaches the governance chain.
 	exec func(ctx context.Context, c *httpbridge.Caller, req *mcp.Request) *mcp.Response
+	// subscribe, when set, supplies the subscription a stream test drives.
+	// Unset, Subscribe hands back one that never delivers — what a test
+	// asserting on the response head wants.
+	subscribe func(accept func(string) bool) (httpbridge.Subscription, error)
+	// subscribes counts Subscribe calls and accepts records each filter, so
+	// a test can prove an allow list reached the seam.
+	subscribes int
+	accepts    []func(string) bool
 }
 
 // Caller is a local copy of the fields a test asserts on (the recorder
@@ -60,6 +68,35 @@ func (d *recordingDispatcher) Notify(context.Context, *httpbridge.Caller, *httpb
 	d.mu.Lock()
 	d.notifies++
 	d.mu.Unlock()
+}
+
+func (d *recordingDispatcher) Subscribe(
+	_ context.Context, _ *httpbridge.Caller, _ *httpbridge.Session, accept func(string) bool,
+) (httpbridge.Subscription, error) {
+	d.mu.Lock()
+	d.subscribes++
+	d.accepts = append(d.accepts, accept)
+	fn := d.subscribe
+	d.mu.Unlock()
+	if fn != nil {
+		return fn(accept)
+	}
+	return newTestSub(), nil
+}
+
+func (d *recordingDispatcher) subscribeCount() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.subscribes
+}
+
+func (d *recordingDispatcher) lastAccept() func(string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.accepts) == 0 {
+		return nil
+	}
+	return d.accepts[len(d.accepts)-1]
 }
 
 func (d *recordingDispatcher) lastCaller() *Caller {
@@ -527,8 +564,10 @@ func TestCrossSiteAndCORS(t *testing.T) {
 	}
 }
 
-// No SSE exposure face (canonical.md §5b), and an unknown path answers the
-// same frozen 404 as an unknown session.
+// A GET that did not ask for the stream is still a 405 — the endpoint has
+// nothing else to offer that verb — and an unknown path answers the same
+// frozen 404 as an unknown session. The GET that DOES ask for it is
+// stream_test.go's subject.
 func TestVerbsAndPaths(t *testing.T) {
 	t.Parallel()
 	store := newStore(t)
@@ -543,7 +582,7 @@ func TestVerbsAndPaths(t *testing.T) {
 	}
 	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != http.StatusMethodNotAllowed {
-		t.Fatalf("GET status = %d, want 405 (no SSE exposure face)", res.StatusCode)
+		t.Fatalf("GET status = %d, want 405 (no Accept: text/event-stream)", res.StatusCode)
 	}
 
 	other, _ := http.NewRequest(http.MethodPost, h.srv.URL+"/admin", strings.NewReader(initFrame))

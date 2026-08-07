@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,6 +29,21 @@ const (
 	// saturated downstream pool converts a slow server into an unbounded
 	// memory sink.
 	MaxInFlight = 256
+	// MaxStreams bounds concurrently OPEN notification streams, and is a
+	// second quota rather than a slice of the first because the two limit
+	// different things. MaxInFlight bounds WORK an unauthenticated caller
+	// can induce, and every request it covers is short by construction. A
+	// notification stream is the opposite: it does no work at all after it
+	// opens, and it stays open for hours. Counted against MaxInFlight, 256
+	// idle streams would shed every real call on the server while consuming
+	// nothing — the cap would be enforcing the wrong thing, loudly.
+	//
+	// A stream is only reachable AFTER authentication, so this quota bounds
+	// what a credential holder can hold open, not what an anonymous caller
+	// can cause. It is below MaxSessions on purpose: an open response costs
+	// more than a table entry, and a client needs at most one stream per
+	// session, never the reverse.
+	MaxStreams = 64
 )
 
 // httpError is a rejection with its status and stable code. Codes are ABI
@@ -63,8 +79,14 @@ var (
 	errOverloaded   = &httpError{http.StatusServiceUnavailable, CodeOverloaded, "too many requests in flight"}
 	errCrossSite    = &httpError{http.StatusForbidden, CodeForbidden, "cross-site requests are not accepted"}
 	errBodyTooLarge = &httpError{http.StatusRequestEntityTooLarge, CodePayloadTooBig, "request body exceeds the ingress limit"}
-	errNoStream     = &httpError{http.StatusMethodNotAllowed, CodeMethodNotAllow, "this endpoint does not offer a server-initiated stream"}
-	errMethod       = &httpError{http.StatusMethodNotAllowed, CodeMethodNotAllow, "method not allowed"}
+	// errNoStream answers a GET that did not ask for the stream. The stream
+	// itself exists (stream.go); what this rejects is a GET with an Accept
+	// header that rules out text/event-stream, which the specification
+	// answers with exactly this status.
+	errNoStream    = &httpError{http.StatusMethodNotAllowed, CodeMethodNotAllow, "this endpoint offers only a text/event-stream response to GET"}
+	errNoStreams   = &httpError{http.StatusServiceUnavailable, CodeOverloaded, "too many notification streams are open"}
+	errStreamSetup = &httpError{http.StatusServiceUnavailable, CodeOverloaded, "the notification stream could not be opened"}
+	errMethod      = &httpError{http.StatusMethodNotAllowed, CodeMethodNotAllow, "method not allowed"}
 	// Outside the frozen set above, and deliberately: that rule unifies
 	// every answer about an id that was PRESENTED, so the endpoint cannot
 	// be probed for which sessions exist. This one answers a request that
@@ -93,6 +115,26 @@ func (s semaphore) acquire() bool {
 }
 
 func (s semaphore) release() { <-s }
+
+// slot is one held semaphore acquisition that can be handed back EARLY.
+//
+// It exists for the one request shape that stops being a request: a
+// notification stream acquires an in-flight slot like everything else, then
+// gives it back before parking for hours on its own quota. Release is
+// idempotent so the handler's `defer` stays exactly where it is and stays
+// correct either way — the alternative, a bool the deferred call consults,
+// puts the decision in two places and is how a slot ends up released twice.
+type slot struct {
+	sem  semaphore
+	once sync.Once
+}
+
+func (s *slot) release() {
+	if s == nil {
+		return
+	}
+	s.once.Do(func() { s.sem.release() })
+}
 
 // checkFetchMetadata rejects browser-originated cross-site requests.
 //

@@ -500,7 +500,8 @@ ingress hard limits guarding it, and the tiered agent token credential layer.
 
 It is deliberately **not** the control plane: management traffic goes over the UDS socket, where identity
 is an OS peer credential and no tokens exist. `Server` answers three verbs on one path — POST for one
-JSON-RPC message in and out, DELETE to terminate a session, **GET returns 405**. `Dispatcher` is the only
+JSON-RPC message in and out, DELETE to terminate a session, and **GET for the ≤ 2025-11-25 notification
+stream** (a GET that does not ask for `text/event-stream` is still a 405). `Dispatcher` is the only
 seam to the MCP logic behind it, so this package owns one thing without growing a second gate chain.
 
 ### Invariants and failure directions
@@ -552,6 +553,17 @@ reading access logs can tell "body too large" from "token revoked" from "someone
 work an unauthenticated caller can induce, and over the limit is a 503 shed rather than queuing — queuing
 behind a saturated downstream pool turns a slow server into an unbounded memory sink.
 
+**A notification stream holds a SECOND quota, and giving it one did not loosen the first.** `MaxInFlight`
+bounds *work an unauthenticated caller can induce*, and every request it covers is short by construction.
+An open stream is the opposite on both counts: it is reachable only *after* authentication, it performs no
+work once open, and it stays open for hours. Counted against `MaxInFlight`, 64 idle streams would shed
+real calls while consuming nothing — the ceiling would be enforcing the wrong thing, loudly. So a stream
+takes `MaxStreams` (64, below `MaxSessions` because an open response costs more than a table entry, and a
+client needs at most one stream per session) and **hands its in-flight slot back** before parking; the
+handback is a `slot` whose release is idempotent, so the handler's `defer` is correct either way. Both
+quotas shed with 503 rather than queue, for the reason above. What must never be done is let a stream
+park while holding an in-flight slot: 256 of them would close the data plane to everyone.
+
 **Ingress hard limits** (header size, header read deadline, body size, body read deadline, concurrency)
 are constants in `ingress.go`. The two header limits **cannot be enforced inside the handler**, since by
 then the headers are read, so they are `http.Server` fields reachable only through `Server.HTTPServer()`;
@@ -559,8 +571,21 @@ an assembly that mounts `Handler()` bare is choosing to serve without a header-s
 deadline, and that comment now says so instead of inviting it. The body read deadline is per request via
 `ResponseController`, because a server-level `ReadTimeout` would also limit long-lived connections.
 
-**Only Streamable HTTP is exposed.** canonical.md §5b freezes the asymmetry: agenthub **reads** legacy
-HTTP+SSE downstreams but **never grows a new SSE exposure surface**, so GET is a 405.
+**Only Streamable HTTP is exposed, and its GET stream is part of it.** canonical.md §5b freezes one
+asymmetry and no longer freezes another. Still frozen (ruling #29): legacy HTTP+SSE — the 2024-11-05
+two-endpoint binding with its `endpoint` event — is a **read-side transport only**, and this face never
+offers it. No longer frozen: the stance that neither generation would get an out-of-band notification
+stream here. `GET` now opens streamable HTTP's own server→client channel (`stream.go`), because nothing
+else can tell a client over this face that its tool set moved — catalog refresh is driven entirely by
+`tools/list_changed`, and the capability declaration this face makes has always promised one.
+
+**The stream's lifetime crosses three owners, and each had to be taught about it.** The session TTL
+advances in `sessions.get`, on the way past an incoming request — and a client being *pushed* to sends
+none, so `sessions.touch` refreshes it from the stream itself. The daemon's per-credential gateway is
+reaped after `httpConnIdle` on the same "no requests" evidence, so `httpPlane` counts open streams
+(`httpConn.subs`) and the sweep skips a pinned connection. And the SSE keep-alive is not decoration:
+it is what stops an idle NAT or proxy from reaping the connection, and it is the only way this side
+**learns** the peer is gone, since without traffic there is no write to fail.
 
 **Token shape and storage.** `agt_` plus 64 hex characters, and **dispatch is by prefix and mutually
 exclusive in both directions**: `agt_` is only ever looked up in the store, everything else only ever
