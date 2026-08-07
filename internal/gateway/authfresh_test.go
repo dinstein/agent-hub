@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"strings"
 	"sync"
@@ -248,5 +249,72 @@ func TestProactiveSourceIsWiredIntoTheGatewaysAuth(t *testing.T) {
 	ts := build("srv", secrets.DefaultScope)
 	if _, ok := ts.(interface{ NotAfter() time.Time }); !ok {
 		t.Fatal("the gateway's TokenSource does not carry a credential deadline: proactive refresh is off")
+	}
+}
+
+// TestUninjectedAssemblyCarriesBothCredentialFaces asks the same question one
+// level up, of the ASSEMBLY rather than of vaultAuth: does a gateway built the
+// way production builds one actually end up with the wiring above attached?
+//
+// The test above can pass while this one fails, and that is the whole reason
+// this one exists. vaultAuth is reached only from the branch newGateway takes
+// when Config.Secrets is nil, and everything that branch produces travels
+// together — the deadline face, the epoch face, and the credEpochs counter set
+// that startCredWatch refuses to run without. A caller that hands in a
+// credential of its own skips the branch and gets none of the three, while the
+// bearer is still attached and the vault is still read, so nothing observable
+// changes until a token needs replacing inside a live connection.
+//
+// The daemon's HTTP data plane was such a caller. Its gateways held a bare
+// vault read that no announcement and no deadline could invalidate, leaving
+// them recoverable only by a downstream rejection — which a server answering
+// an expired token with 200 and an error result never issues. The daemon half
+// of that rule is pinned by TestDataPlaneLeavesCredentialsToTheGateway; this
+// is the half that says what the nil is FOR.
+func TestUninjectedAssemblyCarriesBothCredentialFaces(t *testing.T) {
+	t.Parallel()
+	// Secrets and Auth deliberately unset: this is the production shape, for
+	// the stdio gateway and the data plane's in-process ones alike.
+	g, err := newGateway(Config{
+		ClientID: "uninjected",
+		In:       strings.NewReader(""),
+		Out:      io.Discard,
+		Resolver: testResolver(t.TempDir()),
+		Log:      slog.New(slog.DiscardHandler),
+	})
+	if err != nil {
+		t.Fatalf("newGateway: %v", err)
+	}
+	defer g.shutdown()
+
+	if g.cfg.Auth == nil {
+		t.Fatal("no bearer factory: every OAuth downstream would be dialed bare and answer 401")
+	}
+	ts := g.cfg.Auth("srv", secrets.DefaultScope)
+	if _, ok := ts.(interface{ NotAfter() time.Time }); !ok {
+		t.Error("the assembled TokenSource carries no refresh deadline: a credential that ages out " +
+			"inside a live connection is never renewed, and a downstream answering an expired " +
+			"token with 200 rather than 401 is never recovered from at all")
+	}
+	if _, ok := ts.(interface{ Epoch() uint64 }); !ok {
+		t.Error("the assembled TokenSource carries no credential epoch: a login or refresh by any " +
+			"other process cannot drop the cached bearer, so the daemon's proactive refresher " +
+			"cannot reach a connection that is already up")
+	}
+
+	// The epoch face is only half of that second rule — something has to move
+	// the counter. startCredWatch is the subscriber, and its first line is a
+	// nil check on exactly the field an injected credential leaves unset, so
+	// asserting the counter set alone would not prove the announcement plane
+	// is connected. Called directly rather than through run(): shutdown closes
+	// the watcher either way, and the write to g.credWatcher is unlocked, so
+	// letting the run loop race this assertion would be a data race rather
+	// than a test.
+	if g.credEpochs == nil {
+		t.Fatal("no credential epoch counters: startCredWatch returns before it subscribes")
+	}
+	g.startCredWatch()
+	if g.credWatcher == nil {
+		t.Error("no credential watcher: nothing bumps the epoch, so the face above never fires")
 	}
 }
