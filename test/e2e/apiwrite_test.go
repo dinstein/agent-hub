@@ -2,6 +2,8 @@ package e2e_test
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -122,4 +124,126 @@ func TestAPIWriteReachesTheSameRegistryALiveGatewayWatches(t *testing.T) {
 		t.Fatalf("the CLI does not see the daemon's write: %+v", row)
 	}
 	gw.close()
+}
+
+// TestAPIWriteRefusesAStaleGeneration is why this route carries a
+// precondition at all.
+//
+// The registry has five writers — N gateways, the daemon, the CLI, the GUI and
+// any third party embedding `api` — and the file lock keeps a write from
+// TEARING, not from overwriting somebody else's change. A window holding a
+// minutes-old read that wrote last-writer-wins would silently discard edits
+// made elsewhere, and silently is the whole problem: nothing would report it,
+// and the user would find their change undone with nothing saying by what.
+//
+// The concurrent writer here is the CLI, which is the realistic shape rather
+// than a convenient one: it writes the files directly and sends no
+// precondition of its own, so it is exactly the writer a window cannot see
+// coming.
+func TestAPIWriteRefusesAStaleGeneration(t *testing.T) {
+	dataDir, socket, env := sandbox(t)
+	runAgenthubEnv(t, env, "", "server", "add", "alpha", "--cmd", fakemcpBin, "--json")
+
+	c := startDaemonForAPI(t, dataDir, socket, env)
+	ctx, cancel := apiCtx(t)
+	defer cancel()
+
+	stale, err := c.Servers.Get(ctx, "alpha")
+	if err != nil {
+		t.Fatalf("api Servers.Get: %v", err)
+	}
+
+	// Somebody else edits. The view the api client holds is now old.
+	runAgenthubEnv(t, env, "", "server", "add", "beta", "--cmd", fakemcpBin, "--json")
+
+	_, err = c.Servers.SetEnabled(ctx, "alpha", true, stale.Generation)
+	if err == nil {
+		t.Fatal("a write carrying a superseded generation was applied")
+	}
+	if !api.IsConflict(err) {
+		t.Fatalf("the refusal is not identifiable as a stale view: %v", err)
+	}
+	conflict, ok := api.AsConflict(err)
+	if !ok {
+		t.Fatalf("IsConflict said yes but AsConflict said no: %v", err)
+	}
+	// The answer has to carry what to re-read at. Without it the intended
+	// recovery — re-read, re-apply the user's intent, retry — needs a second
+	// round trip that can itself go stale.
+	if conflict.CurrentGeneration <= stale.Generation {
+		t.Fatalf("the conflict reports generation %d, which is not ahead of the stale %d",
+			conflict.CurrentGeneration, stale.Generation)
+	}
+
+	// NOTHING was written. This is the assertion the whole mechanism exists
+	// for: a refusal that had half-applied would be worse than last-writer-
+	// wins, because it reports failure and leaves a change behind.
+	if row := serverByID(t, dataDir, "alpha"); row.Enabled {
+		t.Fatalf("the refused write took effect anyway: %+v", row)
+	}
+
+	// The recovery is to retry at the generation the conflict REPORTED, and
+	// that is what the field is for: it comes from the write path, which
+	// compares under the registry lock, so it is the authoritative value.
+	//
+	// Re-reading first is the documented shape and is what a wholesale Update
+	// needs, but it is NOT interchangeable here. The daemon serves reads from a
+	// snapshot its registry watcher refreshes asynchronously, so for a couple of
+	// hundred milliseconds after an outside writer a re-read still answers the
+	// OLD generation and a retry at it earns a second conflict. A frontend that
+	// re-reads must therefore back off and retry rather than treat one repeat as
+	// a failure — recorded in docs/modules/controlplane.md, because it is a
+	// property of the route and not of this test.
+	if _, err = c.Servers.SetEnabled(ctx, "alpha", true, conflict.CurrentGeneration); err != nil {
+		t.Fatalf("the retry at the generation the conflict reported still failed: %v", err)
+	}
+	if row := serverByID(t, dataDir, "alpha"); !row.Enabled {
+		t.Fatalf("the retry reported success without writing: %+v", row)
+	}
+}
+
+// TestAPIDuplicateNameIsAConflictButNotAStaleView pins the narrowness of the
+// stale-view test, which is the half that is easy to get wrong and impossible
+// to notice.
+//
+// The daemon answers HTTP 409 for more than one reason: a superseded
+// generation, and a name already taken. Only the first is fixed by re-reading.
+// A client that promoted every 409 to "your view was stale" would send a
+// frontend into a retry loop that can never succeed — it would re-read, find
+// the name still taken, and try again forever — so `asConflict` requires the
+// status AND the E_STALE_PRECONDITION code, and this is what proves the second
+// half of that condition is load-bearing against a real daemon.
+func TestAPIDuplicateNameIsAConflictButNotAStaleView(t *testing.T) {
+	dataDir, socket, env := sandbox(t)
+	runAgenthubEnv(t, env, "", "server", "add", "alpha", "--cmd", fakemcpBin, "--json")
+
+	c := startDaemonForAPI(t, dataDir, socket, env)
+	ctx, cancel := apiCtx(t)
+	defer cancel()
+
+	// Generation 0 spells "do not check", so nothing here is stale by
+	// construction: whatever 409 comes back is about the NAME.
+	_, err := c.Servers.Create(ctx, api.ServerSpec{
+		ID:    "alpha",
+		Entry: api.ServerEntry{Command: fakemcpBin},
+	}, 0)
+	if err == nil {
+		t.Fatal("Create silently replaced an existing server")
+	}
+	var apiErr *api.Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("the refusal is not a control-plane error: %v", err)
+	}
+	if apiErr.Status != http.StatusConflict {
+		t.Fatalf("a duplicate name answered HTTP %d, want 409: %v", apiErr.Status, err)
+	}
+	if api.IsConflict(err) {
+		t.Fatalf("a duplicate name was reported as a stale view; re-reading fixes nothing: %v", err)
+	}
+
+	// And the existing definition is untouched — a refused create must not be
+	// a partial overwrite.
+	if row := serverByID(t, dataDir, "alpha"); row.Command != fakemcpBin || row.Enabled {
+		t.Fatalf("the refused create changed the stored entry: %+v", row)
+	}
 }
