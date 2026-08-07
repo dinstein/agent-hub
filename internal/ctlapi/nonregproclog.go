@@ -2,6 +2,7 @@ package ctlapi
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/api"
+	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/proclog"
 )
 
@@ -126,8 +128,8 @@ func (s *Server) handleProcLogs(w http.ResponseWriter, r *http.Request) {
 	for _, rec := range records {
 		out.Records = append(out.Records, api.ProcLogRecord{
 			Time: rec.TS, Origin: string(rec.Origin), Level: rec.Text, Message: rec.Msg,
-			Client: rec.Field("client"), Server: rec.Field("server"),
-			PID: intField(rec.Fields, "pid"), Fields: extraFields(rec.Fields),
+			Client: rec.Field(logx.FieldClient), Server: rec.Field(logx.FieldServer),
+			PID: intField(rec.Fields, logx.FieldPID), Fields: extraFields(rec.Fields),
 		})
 	}
 	writeOK(w, http.StatusOK, out)
@@ -137,7 +139,7 @@ func (s *Server) handleProcLogs(w http.ResponseWriter, r *http.Request) {
 // and the message it wrote. Two records agreeing on both in the same
 // nanosecond are the same line reported twice.
 func procLogTie(r proclog.Record) string {
-	return string(r.Origin) + "/" + strconv.Itoa(intField(r.Fields, "pid")) + "/" + r.Msg
+	return string(r.Origin) + "/" + strconv.Itoa(intField(r.Fields, logx.FieldPID)) + "/" + r.Msg
 }
 
 func intField(fields map[string]any, key string) int {
@@ -154,11 +156,19 @@ func intField(fields map[string]any, key string) int {
 // (time, level, msg): repeating them would put the same fact in a row twice,
 // and a UI reading the second copy is exactly the duplicate-key problem the
 // log convention exists to prevent.
+// extraFields carries everything the typed columns do not.
+//
+// The exclusion list is the promotion list: slog's own three top-level keys,
+// which travel as Time/Level/Message, plus the three logx fields promoted to
+// columns above. The two must agree — a promoted field left out of this
+// switch renders twice, once in its column and once here — which is why both
+// sides name the same constants rather than spelling the keys out.
 func extraFields(fields map[string]any) map[string]string {
 	var out map[string]string
 	for k, v := range fields {
 		switch k {
-		case "time", "level", "msg", "client", "server", "pid":
+		case slog.TimeKey, slog.LevelKey, slog.MessageKey,
+			logx.FieldClient, logx.FieldServer, logx.FieldPID:
 			continue
 		}
 		if out == nil {
