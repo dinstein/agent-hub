@@ -72,6 +72,17 @@ a truncated body is never success. Server error bodies pass through verbatim.
 **`X-Request-Id` is generated per request**, overridable with `WithRequestID` to propagate across
 processes, and carried into error bodies.
 
+**A conflict's recovery is "retry at `CurrentGeneration`", and re-reading first is not interchangeable
+with it.** `ConflictError.CurrentGeneration` comes from the write path, which compares inside the
+registry lock, so it is authoritative the moment it is handed back. A GET does not have that property:
+the daemon answers reads from a snapshot its registry watcher refreshes asynchronously, so for roughly
+two hundred milliseconds after an OUTSIDE writer — the CLI, which writes the files directly and sends no
+precondition — a re-read still reports the superseded generation, and a retry at it earns a second
+conflict. Measured while writing `test/e2e/apiwrite_test.go`; the number is the watcher's latency, not a
+constant anything guarantees. A caller that must re-read — a wholesale `Update`, whose body depends on
+the entry it read — therefore needs backoff and must not treat one repeat as a failure. A single-key
+write such as `SetEnabled` should use the reported generation and not re-read at all.
+
 **SSE consumption is tolerant.** `Subscribe` establishes the first connection synchronously, so the
 caller learns immediately whether the daemon is up, then maintains it with backoff and `Last-Event-ID`
 resumption; the channel closes only when the ctx ends, so falling out of a `range` means "the
@@ -1131,7 +1142,7 @@ pattern in `.gitignore`, so a crashed run's leftover is never committed.
 **Responsibility**: pin the full chain with real processes — TestMain compiles the real `agenthub` and
 `fakemcp` binaries, then drives them from the directions a user does.
 
-**Three axes, and a file belongs to one of them.** The *client* axis spawns a gateway and speaks MCP to it;
+**Four axes, and a file belongs to one of them.** The *client* axis spawns a gateway and speaks MCP to it;
 the *operator* axis runs CLI verbs against a registry, and where the verb's contract is about a running
 gateway it keeps one alive and asserts on the exposed surface rather than on the file the CLI wrote — a
 registry edit that nothing propagates is precisely the failure worth catching, and only a live client can
@@ -1147,6 +1158,15 @@ returns nil outright for the empty tier a stdio session carries (`internal/pipel
 The port is reserved and released before the start rather than discovered afterwards, because **the
 daemon reports its bound data-plane address nowhere a caller can read it** — neither `run/daemon.json`
 nor `daemon status` carries it, which is a real gap for an operator and not only for this suite.
+
+The fourth is the *frontend* axis (`apiwrite_test.go`): a real `api.Client` over the real control socket,
+which is the route the GUI writes by and the only one carrying the optimistic-concurrency precondition.
+**This suite may import `api`** — it is the published surface and imports nothing under `internal/`, so
+the client here is the one a third-party embedder gets. It exists because `api`'s own tests dial a fake
+daemon and `internal/ctlapi`'s run in process, leaving a Unix socket, an envelope encoding and a
+generation counter that has to mean the same thing on both sides with nothing spanning them. Its
+assertions land on the OTHER routes on purpose: a live gateway must follow the write, and the CLI must
+read the same entry back out of the files with no daemon in the path.
 
 **Credential paths are pinned to the encrypted file, never the OS keyring.** `vaultEnv` sets
 `AGENTHUB_SECRET_KEY`, which makes `Chain.encForRead`/`encForWrite` resolve to `secrets.enc`
