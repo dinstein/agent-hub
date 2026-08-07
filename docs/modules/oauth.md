@@ -84,15 +84,18 @@ In the 2025-11-25 priority order (pre-registration → CIMD → DCR → manual e
 
 | Shape | Supported | Mechanism |
 |---|---|---|
-| Operator pre-provisions a `client_id` (+ secret) | ✅ | `NewStaticRegistrar`, `--client-id` |
+| Operator pre-provisions a `client_id` (+ secret) | ⚠️ | `NewStaticRegistrar` implements it and `LoginRequest.Registrar` is the seam, but **nothing sets that field and there is no flag**. Not reachable by a user today |
 | CIMD (an https URL as the `client_id`) | ❌ | Seam exists, no implementation. Requires agenthub to first have a stable https hosting point |
-| RFC 7591 DCR | ✅ | `NewDCRRegistrar`, the default path |
+| RFC 7591 DCR | ✅ | `NewDCRRegistrar`, and — since `req.Registrar` is always nil — the only path |
 | Reuse of an already-registered `client_id` | ✅ | `State.ClientID`, avoids re-registering on every login |
 
-**This is our biggest spec gap today**: 2025-11-25 demoted DCR from SHOULD to **MAY** ("included for
-backwards compatibility") and promoted CIMD to **SHOULD**. Our default path happens to be the one
-that got demoted. For an AS that implements only the new spec and doesn't enable DCR, our only
-option right now is pre-provisioning via `--client-id`.
+**This is our biggest spec gap today, and it is one row wider than it looks**: 2025-11-25 demoted DCR
+from SHOULD to **MAY** ("included for backwards compatibility") and promoted CIMD to **SHOULD**. Our
+only path happens to be the one that got demoted. This table used to mark the first row ✅ and cite a
+`--client-id` flag as the way out; that flag has never existed, and `NewStaticRegistrar` has no
+caller outside its own test — so an AS that implements only the new spec and does not enable DCR
+currently has **no** route through `agenthub auth login` at all. Wiring the existing registrar to a
+flag is the small half of closing this; CIMD is the large one.
 
 ### Interaction modes
 
