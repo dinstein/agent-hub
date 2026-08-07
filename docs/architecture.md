@@ -223,10 +223,20 @@ downstream answered is what the caller reads.
 `pipeline.Execute`, and tests assert both advance every gate's counter identically. Any **new**
 execution path must carry the same assertions; "there are already tests" is not an exemption.
 
-**Success and error branches are shaped alike**: `defend_and_shape` runs once over the outcome
-whichever branch it came back on, so a large JSON-RPC error is budgeted like a large result. It kept
-its name after the defenses in it were removed, because the stdio/HTTP gate-count parity assertions
-compare these stage keys — renaming one would leave those tests passing while comparing nothing.
+**`defend_and_shape` runs once over the outcome whichever branch it came back on** — its counter
+advances either way, which is what the stdio/HTTP gate-count parity assertions compare. It kept its
+name after the defenses in it were removed, because those assertions compare these stage keys, and
+renaming one would leave the tests passing while comparing nothing.
+
+**What it BOUNDS is narrower than what it runs on, and the difference is a failure direction.** A
+tool error is a result — `isError: true` in a `CallResult` — so it is budgeted exactly like a
+success. A transport or protocol error is not: `req.Call` hands it back as an `error`, and the stage
+returns on a non-nil `callErr` before the budget is applied, so a downstream answering `tools/call`
+with a huge JSON-RPC error travels unbounded. That is deliberate — shaping rewrites a result's
+content and there is no result to rewrite — but it means the result budget bounds what a downstream
+ANSWERS, not everything it can make this process forward. This paragraph said the two branches were
+"shaped alike" and that a large JSON-RPC error was "budgeted like a large result"; the stage has
+short-circuited on `callErr` since the initial public release, and `pipeline_test.go` pins it.
 
 **The audit wrapper is strict observability, not a gate.** It persists the raw `tools/call` parameters
 before parsing and the routed identity before the gate chain, and gives every exit a `finished` event.
