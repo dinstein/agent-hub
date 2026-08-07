@@ -53,6 +53,19 @@ check runs silently. Only a row with no prior observation, or an explicit Refres
 Runtime-only events may cause a configuration re-read but do not retrigger probes; a newer registry
 revision does, because an external editor may change an endpoint without changing its id.
 
+**The registry read is the only thing the first paint waits on.** Credential metadata is fetched
+beside the fleet probe and repaints when it lands, never in front of the list — reading it costs one
+keychain lookup per stored entry, and on macOS each of those is a `security` subprocess the secrets
+chain runs under a single lock, so awaiting it put a subprocess per credential between the reader and
+a list containing none of that answer. What makes deferring it safe is `rowSignature`, which carries
+the stored credential as a **boolean, unconditionally**: a late answer then rebuilds exactly the rows
+whose menu gains or loses **Log out OAuth**. The full status stays gated on the row being expanded,
+because the daemon computes `expires_in` per request and an unconditional entry would rebuild every
+row on every read for a countdown only the open panel draws. Overlapping reads are ordered by epoch —
+a page-entry refresh and the read a completed login runs are both legitimate, and the older must not
+restore what the newer replaced. Anything added here on the strength of "it is only one more call"
+belongs on the same side of the paint.
+
 **A row moves only when the user changes configuration, never because of a probe result.** Grouping
 follows configuration, which the registry answers with certainty the moment it is read: `Enabled` and
 `Disabled`, both folding sections with a count, both ordered by id — the order `server ls` prints.

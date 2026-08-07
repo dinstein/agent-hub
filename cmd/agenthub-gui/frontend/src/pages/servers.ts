@@ -856,6 +856,11 @@ export function serversPage(): Page {
   const authStatuses = new Map<string, AuthStatus>();
   let authStatusLoaded = false;
   let authStatusError = "";
+  /** Orders overlapping credential reads, and keeps a second draw arriving
+   *  inside the first read's window from starting a duplicate. An explicit
+   *  refresh bypasses the latter: it is the control that exists to re-ask. */
+  let authStatusEpoch = 0;
+  let authStatusPending = false;
   let listedServers: Server[] = [];
   let fleetProbeEpoch = 0;
   let lastServerRevision = 0;
@@ -931,17 +936,30 @@ export function serversPage(): Page {
 
   /** Refreshes credential metadata only. The API deliberately carries no
    *  token values, so this cache can answer the disclosure without turning
-   *  an expansion click into a downstream request or a secret read. */
+   *  an expansion click into a downstream request or a secret read.
+   *
+   *  It repaints when it lands, because nothing awaits it on the way to the
+   *  first paint. The newest read wins: two can legitimately be in flight —
+   *  a page-entry refresh, and the one a completed login runs — and the
+   *  older one must not restore the state the newer already replaced. */
   async function loadAuthStatuses(): Promise<void> {
+    const epoch = ++authStatusEpoch;
+    authStatusPending = true;
     try {
       const statuses = (await hub.authStatus("")) ?? [];
+      if (epoch !== authStatusEpoch) return;
       authStatuses.clear();
       for (const status of statuses) authStatuses.set(status.server, status);
       authStatusError = "";
     } catch (err) {
+      if (epoch !== authStatusEpoch) return;
       authStatusError = asCallError(err).message;
     } finally {
-      authStatusLoaded = true;
+      if (epoch === authStatusEpoch) {
+        authStatusLoaded = true;
+        authStatusPending = false;
+        repaint(); // a no-op on a page that has been left: repaint guards on listRoot
+      }
     }
   }
 
@@ -2558,10 +2576,18 @@ export function serversPage(): Page {
       return;
     }
     listedServers = servers;
-    if (forceProbe || !authStatusLoaded) await loadAuthStatuses();
+    // Credential metadata is NOT on the way to the first paint. Reading it
+    // costs one keychain lookup per stored entry, and on macOS each of those
+    // is a `security` subprocess the secrets chain runs under one lock — so
+    // awaiting it here held the whole list behind work no row in it needs.
+    // The two surfaces that do read a status are the expanded Authorization
+    // panel and the row menu's Log out item, and rowSignature covers both,
+    // so the repaint this schedules rebuilds exactly the rows it changes.
+    const reading = forceProbe || (!authStatusLoaded && !authStatusPending);
+    const auth = reading ? loadAuthStatuses() : Promise.resolve();
     const probing = probeFleet(servers, forceProbe, showChecking);
     repaint();
-    if (waitForProbes) await probing;
+    if (waitForProbes) await Promise.all([auth, probing]);
   }
 
   return {
