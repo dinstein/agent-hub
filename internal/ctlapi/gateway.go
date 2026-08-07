@@ -75,11 +75,6 @@ const (
 	DefaultLinkAttachTimeout = 30 * time.Second
 )
 
-// linkFrameBuffer bounds the queue between overlay pushers and the SSE
-// writer. Pushers block (with ctx/timeout) rather than drop: an overlay
-// frame lost would strand its Mutate call until the ack timeout.
-const linkFrameBuffer = 16
-
 // linkFrame is one ready-to-write SSE frame on a gateway link.
 type linkFrame struct {
 	event string
@@ -96,7 +91,6 @@ type gatewayLink struct {
 	// meaningful name ("whose state is this?") instead of a session id.
 	clientID string
 
-	frames chan linkFrame
 	closed chan struct{}
 
 	mu          sync.Mutex
@@ -110,13 +104,13 @@ var _ session.ControlLink = (*gatewayLink)(nil)
 func newGatewayLink(clientID string) *gatewayLink {
 	return &gatewayLink{
 		clientID: clientID,
-		frames:   make(chan linkFrame, linkFrameBuffer),
 		closed:   make(chan struct{}),
 	}
 }
 
-// Close implements session.ControlLink. Idempotent; wakes every waiter
-// (pushers and the SSE writer) with the failure direction "not applied".
+// Close implements session.ControlLink. Idempotent; closing l.closed is what
+// wakes the SSE writer, which is the only waiter left now that nothing is
+// pushed down this link.
 func (l *gatewayLink) Close() error {
 	l.mu.Lock()
 	if l.closedFlag {
@@ -167,9 +161,15 @@ func (s *Server) gatewayFor(sid string) (*gatewayLink, bool) {
 	return l, ok
 }
 
-// gatewayPath matches /v1/gateway/{sid}/link and /v1/gateway/{sid}/ack on
+// gatewayPath matches /v1/gateway/{sid}/link and /v1/gateway/{sid}/servers on
 // the ESCAPED path (an id containing %2F cannot smuggle extra segments),
-// returning the unescaped sid and the action ("link" or "ack").
+// returning the unescaped sid and the action.
+//
+// The accepted set is the set the dispatch switch handles. It used to admit
+// "ack" as well, from the removed push-then-commit protocol; matching a path
+// no case answers is indistinguishable to a caller from not matching it — both
+// fall through to the uniform 404 — so the extra name only told a reader the
+// endpoint was still there.
 func gatewayPath(r *http.Request) (sid, action string, ok bool) {
 	p := r.URL.EscapedPath()
 	rest, found := strings.CutPrefix(p, "/v1/gateway/")
@@ -180,7 +180,7 @@ func gatewayPath(r *http.Request) (sid, action string, ok bool) {
 	if !found || seg == "" || strings.Contains(action, "/") {
 		return "", "", false
 	}
-	if action != "link" && action != "ack" && action != "servers" {
+	if action != "link" && action != "servers" {
 		return "", "", false
 	}
 	id, err := url.PathUnescape(seg)
@@ -308,10 +308,6 @@ func (s *Server) handleGatewayLink(w http.ResponseWriter, r *http.Request, sid s
 				return
 			}
 			_ = rc.Flush()
-		case f := <-link.frames:
-			if !s.writeLinkFrame(w, rc, f) {
-				return
-			}
 		case ev, ok := <-sub.Events():
 			if !ok {
 				return

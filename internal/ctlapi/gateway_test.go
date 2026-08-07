@@ -17,8 +17,8 @@ import (
 
 const gwTestTimeout = 10 * time.Second
 
-// fakeGateway drives the gateway-face wire protocol (register / link / ack)
-// exactly like a real stdio gateway process would, over the same UDS.
+// fakeGateway drives the gateway-face wire protocol (register / link /
+// servers) exactly like a real stdio gateway process would, over the same UDS.
 type fakeGateway struct {
 	t    *testing.T
 	hc   *http.Client
@@ -221,7 +221,10 @@ func TestGatewayUnknownSessionIsUniform404(t *testing.T) {
 		method, path string
 	}{
 		{http.MethodGet, "/v1/gateway/nope:1/link"},
-		{http.MethodPost, "/v1/gateway/nope:1/ack"},
+		// A served action with an unknown session, which is what this test
+		// is about: `/ack` stood here until the action was dropped, and an
+		// unrouted path would have passed on the uniform 404 alone.
+		{http.MethodPost, "/v1/gateway/nope:1/servers"},
 	} {
 		var body io.Reader
 		if req.method == http.MethodPost {
