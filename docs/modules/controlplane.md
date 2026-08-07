@@ -1104,15 +1104,29 @@ pattern in `.gitignore`, so a crashed run's leftover is never committed.
 ## test/e2e
 
 **Responsibility**: pin the full chain with real processes — TestMain compiles the real `agenthub` and
-`fakemcp` binaries, then drives them from the two directions a user does.
+`fakemcp` binaries, then drives them from the directions a user does.
 
-**Two axes, and a file belongs to one of them.** The *client* axis spawns a gateway and speaks MCP to it;
+**Three axes, and a file belongs to one of them.** The *client* axis spawns a gateway and speaks MCP to it;
 the *operator* axis runs CLI verbs against a registry, and where the verb's contract is about a running
 gateway it keeps one alive and asserts on the exposed surface rather than on the file the CLI wrote — a
 registry edit that nothing propagates is precisely the failure worth catching, and only a live client can
 see it. `gatewayClient` (`mcpclient_test.go`) is a **hand-written MCP stdio client** that spawns a real
 `agenthub connect --client <id>` and talks newline-delimited JSON-RPC to it, **deliberately using only
 `encoding/json`**, so the suite verifies the wire format from the outside.
+
+The third is the *agent* axis (`httpplane_test.go`, `httpplanegates_test.go`): a real
+`daemon start --http-addr` and a bearer token, reached by `httpPlaneClient` — the same hand-written
+approach one transport over, on `net/http` and `encoding/json` alone. It exists because it is the only
+axis on which a credential exists at all, so it is the only one where the tier gate can fire: the gate
+returns nil outright for the empty tier a stdio session carries (`internal/pipeline`'s `tokenTierGate`).
+The port is reserved and released before the start rather than discovered afterwards, because **the
+daemon reports its bound data-plane address nowhere a caller can read it** — neither `run/daemon.json`
+nor `daemon status` carries it, which is a real gap for an operator and not only for this suite.
+
+**Credential paths are pinned to the encrypted file, never the OS keyring.** `vaultEnv` sets
+`AGENTHUB_SECRET_KEY`, which makes `Chain.encForRead`/`encForWrite` resolve to `secrets.enc`
+unconditionally. Without it, `secret set` on a developer's macOS would write the real login keychain and
+prompt for it; the suite has no way to answer that dialog and no business creating the entry.
 
 ### Invariants and failure directions
 
@@ -1139,5 +1153,14 @@ the gateway from the **outside** and that surface is exactly the kind of ABI an 
 so the probe is exercised only in `internal/cli`, where "connect" is an in-process fake rather than a
 spawned child.
 
-**Only the real-npx case self-skips** (when `npx` is absent or `AGENTHUB_E2E_SKIP_NPX=1`); everything else
-always runs under `go test ./...`.
+**Three cases self-skip, and they are the ones that need something this machine may not have**: the
+real-npx case (`npx` absent, or `AGENTHUB_E2E_SKIP_NPX=1`), the docker-runtime case (no `docker`, a
+daemon that does not answer, or `AGENTHUB_E2E_SKIP_DOCKER=1`) and the daemon-restart case, which skips
+under `-short` because it waits out a 30s re-register ladder. Everything else always runs under
+`go test ./...`. This paragraph used to name only the first; it is the kind of claim that goes stale
+silently, since a skip nothing asserts on reads exactly like a pass.
+
+**An absence is asserted only after the same thing has been seen to arrive.** A test that expects a tool
+NOT to be exposed — a selector that narrowed, a token restricted to one server — polls for the positive
+case first and only then holds the negative for a fixed budget. Asserting straight away would pass
+identically against a scope that was never applied, which is the failure being looked for.
