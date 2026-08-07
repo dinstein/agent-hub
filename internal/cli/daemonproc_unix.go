@@ -32,3 +32,6 @@ func daemonKillGroup(pid int) error {
 func daemonAlive(pid int) bool {
 	return pid > 0 && syscall.Kill(pid, 0) == nil
 }
+
+// daemonStopBySignal: this platform stops a daemon by signalling it.
+const daemonStopBySignal = true

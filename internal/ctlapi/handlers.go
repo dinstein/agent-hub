@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 
@@ -160,4 +161,33 @@ func readBody(r *http.Request) ([]byte, error) {
 		return nil, fmt.Errorf("reading body: %w", err)
 	}
 	return b, nil
+}
+
+// handleDaemonStop implements POST /v1/daemon/stop: ask the daemon to begin
+// the graceful shutdown it takes on SIGTERM.
+//
+// 202, not 200. The daemon is still draining when this returns — the socket
+// this response travels over is one of the things being closed — so claiming
+// completion would be a lie the caller could catch by dialling again. The
+// caller confirms the same way `daemon stop` always has: poll the pid.
+//
+// The stop is requested BEFORE the response is written, and the write is
+// allowed to fail: once the daemon has been asked, a caller that never sees
+// the acknowledgement is in a better position than a daemon that was never
+// asked because writing a body failed.
+func (s *Server) handleDaemonStop(w http.ResponseWriter, r *http.Request) {
+	s.opts.RequestStop("stop requested over the control plane")
+	writeOK(w, http.StatusAccepted, DaemonStopAccepted{
+		Stopping: true,
+		Pid:      os.Getpid(),
+	})
+	_ = r
+}
+
+// DaemonStopAccepted is the body of an accepted stop request. Pid is the
+// daemon's own, so a caller that asked through a proxy or a stale socket can
+// tell which process it just asked to stop.
+type DaemonStopAccepted struct {
+	Stopping bool `json:"stopping"`
+	Pid      int  `json:"pid"`
 }

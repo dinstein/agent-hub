@@ -1,4 +1,4 @@
-//go:build !unix
+//go:build !unix && !windows
 
 package cli
 
@@ -8,11 +8,10 @@ import (
 	"github.com/dinstein/agent-hub/internal/platform"
 )
 
-// Non-unix stubs. The Windows control plane is a named pipe and its file
-// locks are LockFileEx, but daemon PROCESS control — detach, graceful stop,
-// force-kill the group — has no Windows implementation: it needs Job
-// Objects, and there is no machine to verify one on. `agenthub daemon stop`
-// therefore reports unsupported there; docs/windows.md tracks it.
+// Stubs for the platforms with neither a unix nor a Windows implementation.
+// Windows has its own file now (daemonproc_windows.go); what is left here is
+// js/wasm and anything else Go grows, where there is no process model to
+// speak of.
 //
 // Failure direction: every operation reports unsupported rather than
 // pretending to have signaled anything. daemonAlive answers false for the
@@ -25,3 +24,6 @@ func daemonSignalStop(int) error { return platform.ErrUnsupportedPlatform }
 func daemonKillGroup(int) error { return platform.ErrUnsupportedPlatform }
 
 func daemonAlive(int) bool { return false }
+
+// daemonStopBySignal: nothing here can stop a daemon at all.
+const daemonStopBySignal = false

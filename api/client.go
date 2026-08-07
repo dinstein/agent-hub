@@ -258,3 +258,33 @@ func decodeEnvelope(resp *http.Response, out any) error {
 	}
 	return nil
 }
+
+// DaemonStopAccepted is the answer to RequestStop: the daemon has begun its
+// shutdown, and Pid is the process that is stopping.
+type DaemonStopAccepted struct {
+	Stopping bool `json:"stopping"`
+	Pid      int  `json:"pid"`
+}
+
+// RequestStop asks the daemon to begin the graceful shutdown it takes on
+// SIGTERM, and returns as soon as the request is ACCEPTED.
+//
+// It is not a confirmation. The daemon is still draining when this returns —
+// the socket the answer travels over is among the things it closes — so a
+// caller that needs to know the process is gone polls for that separately,
+// which is what `agenthub daemon stop` does either way.
+//
+// It exists for the platform that has no signal. On Windows nothing can
+// deliver SIGTERM, and a console control event reaches only a process group
+// sharing the caller's console — never a daemon started from another
+// terminal or by a windowless application. Asking over the socket the caller
+// already holds works in every one of those cases.
+//
+// A daemon too old to serve the route answers 404, which surfaces as
+// ErrCodeNotFound; render that as "this daemon cannot be asked", not as a
+// broken hub.
+func (c *Client) RequestStop(ctx context.Context) (DaemonStopAccepted, error) {
+	var a DaemonStopAccepted
+	err := c.do(ctx, http.MethodPost, "/daemon/stop", nil, nil, &a)
+	return a, err
+}

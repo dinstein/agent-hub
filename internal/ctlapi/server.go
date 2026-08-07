@@ -92,6 +92,22 @@ type Options struct {
 	// /v1/ping so a caller can ASK whether the running hub is its own instead
 	// of remembering that it started one. 0 is a headless daemon.
 	Owner int
+	// RequestStop asks the daemon to begin the graceful shutdown it takes on
+	// SIGTERM. nil unregisters POST /v1/daemon/stop into the uniform 404, the
+	// same as every other absent collaborator.
+	//
+	// It exists because Windows has no signal to send, and emulating one does
+	// not work: GenerateConsoleCtrlEvent reaches only a process group sharing
+	// the CALLER's console, which a daemon started from another terminal — or
+	// by the GUI, with no console at all — never does. `daemon stop` is
+	// already holding this socket when it needs to stop the daemon (it reads
+	// the pid from /v1/ping), so it asks through the channel it has.
+	//
+	// It grants nothing new. This socket is owner-only — peer credentials on
+	// unix, an owner-only SDDL on the Windows pipe — and a caller who reaches
+	// it can already mint agent tokens and rewrite the registry. Stopping the
+	// daemon is strictly less than that.
+	RequestStop func(reason string)
 	// Registry is the configuration store (generation + servers document).
 	Registry *registry.Store
 	// Sessions is the live session registry.
@@ -301,6 +317,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	case "/v1/ping":
 		if r.Method == http.MethodGet {
 			s.handlePing(w, r)
+			return
+		}
+	case "/v1/daemon/stop":
+		if r.Method == http.MethodPost && s.opts.RequestStop != nil {
+			s.handleDaemonStop(w, r)
 			return
 		}
 	case "/v1/servers":

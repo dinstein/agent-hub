@@ -269,8 +269,12 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	srv, err := ctlapi.NewServer(ctlapi.Options{
-		Version:           cfg.Version,
-		Owner:             cfg.Owner.PID,
+		Version: cfg.Version,
+		Owner:   cfg.Owner.PID,
+		// The same handle the owner watch pulls. A stop asked for over the
+		// socket and an owner that died then take one code path, and the
+		// shutdown log reports each one's reason the same way.
+		RequestStop:       func(reason string) { ownerLost(errors.New(reason)) },
 		Registry:          store,
 		Sessions:          mgr,
 		Bus:               bus,

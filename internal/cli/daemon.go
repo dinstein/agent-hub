@@ -412,10 +412,25 @@ func (a *App) stopDaemon(ctx context.Context, force bool) (DaemonStopResult, err
 		}, nil
 	}
 
-	if err := daemonSignalStop(pid); err != nil {
+	// Two ways to ask, one per platform, and the difference is not taste:
+	// Windows has no signal to deliver, so the stop is REQUESTED over the
+	// same socket this function read the pid from a few lines above. What
+	// follows is identical either way, because neither a delivered SIGTERM
+	// nor an accepted request means the daemon has finished — the poll below
+	// is what decides that.
+	if daemonStopBySignal {
+		if err := daemonSignalStop(pid); err != nil {
+			return DaemonStopResult{}, &Error{
+				Code: CodeGeneral, ExitCode: ExitGeneral,
+				Message: fmt.Sprintf("signaling daemon pid %d", pid), Err: err,
+			}
+		}
+	} else if err := requestDaemonStop(ctx, socket); err != nil {
 		return DaemonStopResult{}, &Error{
 			Code: CodeGeneral, ExitCode: ExitGeneral,
-			Message: fmt.Sprintf("signaling daemon pid %d", pid), Err: err,
+			Message: fmt.Sprintf("asking daemon pid %d to stop", pid),
+			Hint:    "'agenthub daemon stop --force' ends it if it will not answer",
+			Err:     err,
 		}
 	}
 	deadline := time.NewTimer(daemonStopDeadline)
@@ -797,4 +812,16 @@ func fileTail(path string, limit int64) string {
 		}
 	}
 	return strings.TrimSpace(string(b))
+}
+
+// requestDaemonStop asks the daemon to stop over the control plane, for the
+// platforms that have no signal to send. It mirrors pingDaemon: its own
+// short-lived client, its own timeout, nothing retained.
+func requestDaemonStop(ctx context.Context, socket string) error {
+	client := api.New(socket)
+	defer client.Close()
+	sctx, cancel := context.WithTimeout(ctx, daemonPingTimeout)
+	defer cancel()
+	_, err := client.RequestStop(sctx)
+	return err
 }
