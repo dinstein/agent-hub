@@ -368,6 +368,39 @@ func (c *gatewayClient) textContent(res json.RawMessage) string {
 	return sb.String()
 }
 
+// errorText is textContent's mirror: it flattens the text of a tools/call
+// result that MUST report isError, and fails when the call succeeded.
+//
+// The two are separate helpers rather than one with a flag because they
+// guard opposite mistakes, and the dangerous one is silent. A meta-tool
+// refusal is a RESULT, not a JSON-RPC error (internal/discovery.ErrorResult),
+// so a test that read the text without checking isError would report a
+// refusal and a successful call identically — and pass on the call that
+// should never have run.
+func (c *gatewayClient) errorText(res json.RawMessage) string {
+	c.t.Helper()
+	var out struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+		IsError bool `json:"isError"`
+	}
+	if err := json.Unmarshal(res, &out); err != nil {
+		c.fatalf("tools/call result: %v\n%s", err, res)
+	}
+	if !out.IsError {
+		c.fatalf("tools/call SUCCEEDED where a refusal was required: %s", res)
+	}
+	var sb strings.Builder
+	for _, item := range out.Content {
+		if item.Type == "text" {
+			sb.WriteString(item.Text)
+		}
+	}
+	return sb.String()
+}
+
 // close performs a clean client-side disconnect (stdin EOF) and asserts the
 // gateway exits 0.
 func (c *gatewayClient) close() {
