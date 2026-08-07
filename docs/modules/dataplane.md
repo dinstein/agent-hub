@@ -1171,8 +1171,14 @@ something is in effect when it isn't" is far more dangerous than "knowing it isn
    and `gateway/handleFetchResult` explicitly does not honour it — page size comes from the shaping budget
    of page 1, stored alongside the entry. The field is retained so the wire shape does not change when it
    lands.
-2. **A batch of switches.** `shaping.FileStore` and `shaping.Reformat`/`ShapeResult` (TOON output) have no
-   caller — the gateway calls `shaping.Shape` directly. `discovery.Options.IntentVariants` is never set
+2. **A batch of switches.** `shaping.FileStore` has no caller. **TOON output is a switch with no setter,
+   not code with no caller** — `Shape` is a wrapper over `ShapeResult`, which calls `Reformat` on every
+   delivered result, so both run on the production path and `Reformat` returns the input unchanged
+   because `Options.Format` is never set to `FormatTOON`. What is unwired is the governance value:
+   `ParseFormat` has no caller and the `result_format` key its doc names does not exist in
+   `GovernanceDoc`. Stated the old way — "`Reformat`/`ShapeResult` have no caller" — this entry invited
+   the deletion of the shaping entry point every call goes through, which is the inverse of what the
+   list is for. `discovery.Options.IntentVariants` is never set
    (the registry already has the `intentVariants` field and `IntentVariantsEnabled()`; the gateway does not
    read it), and `Options.Pins` is passed from `g.pins`, which nothing ever assigns.
 

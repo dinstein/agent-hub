@@ -9,8 +9,13 @@ import (
 )
 
 // Format selects the wire encoding of a delivered result (docs/modules/dataplane.md,
-// "TOON encoding"). It is the typed form of the governance switch
-// `result_format`; ParseFormat maps the config string onto it.
+// "TOON encoding"). It is the typed form a governance switch would be read
+// into, and ParseFormat is the mapping — but no such key exists yet:
+// `result_format` is the name reserved for it, not a field of GovernanceDoc,
+// and nothing calls ParseFormat. Every delivery therefore runs Reformat with
+// the zero Format and gets its input back. Recorded here rather than in the
+// assembly-status appendix alone, because the gap is one line above the
+// function that would close it.
 //
 // The default is and stays JSON. TOON is a display projection with no
 // decoder (internal/shaping/toonenc doc.go), so turning it on is a decision
