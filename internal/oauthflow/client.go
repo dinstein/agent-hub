@@ -290,28 +290,9 @@ const mcpProtocolVersion = "2025-11-25"
 // "failed request" instead of an error would be nearly as bad — the caller
 // would retry against the same endpoint forever.
 func (c *Client) postForm(ctx context.Context, endpoint string, form url.Values, hdr http.Header) ([]byte, error) {
-	u, err := url.Parse(endpoint)
+	resp, err := c.postCredential(ctx, endpoint, "application/x-www-form-urlencoded", form.Encode(), hdr)
 	if err != nil {
-		return nil, newFlowError(ErrorTypeTransport, fmt.Errorf("oauthflow: bad endpoint %q: %w", endpoint, err))
-	}
-	if err := c.checkURL(u); err != nil {
 		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader(form.Encode()))
-	if err != nil {
-		return nil, newFlowError(ErrorTypeTransport, err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", c.cfg.UserAgent)
-	for k, vs := range hdr {
-		for _, v := range vs {
-			req.Header.Add(k, v)
-		}
-	}
-	resp, err := c.credential.Do(req)
-	if err != nil {
-		return nil, classifyTransportError(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if isRedirectStatus(resp.StatusCode) {
@@ -334,32 +315,13 @@ func (c *Client) postForm(ctx context.Context, endpoint string, form url.Values,
 // postJSON is postForm's JSON-bodied sibling, used by dynamic client
 // registration. Same zero-redirect rule.
 func (c *Client) postJSON(ctx context.Context, endpoint string, payload any, hdr http.Header) ([]byte, error) {
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		return nil, newFlowError(ErrorTypeTransport, fmt.Errorf("oauthflow: bad endpoint %q: %w", endpoint, err))
-	}
-	if err := c.checkURL(u); err != nil {
-		return nil, err
-	}
 	buf, err := json.Marshal(payload)
 	if err != nil {
 		return nil, newFlowError(ErrorTypeRegistration, err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader(string(buf)))
+	resp, err := c.postCredential(ctx, endpoint, "application/json", string(buf), hdr)
 	if err != nil {
-		return nil, newFlowError(ErrorTypeTransport, err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", c.cfg.UserAgent)
-	for k, vs := range hdr {
-		for _, v := range vs {
-			req.Header.Add(k, v)
-		}
-	}
-	resp, err := c.credential.Do(req)
-	if err != nil {
-		return nil, classifyTransportError(err)
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if isRedirectStatus(resp.StatusCode) {
@@ -376,6 +338,47 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, payload any, hdr
 		return nil, &statusError{Status: resp.StatusCode, URL: endpoint, Header: resp.Header, Body: body}
 	}
 	return body, nil
+}
+
+// postCredential builds and sends one credential-bearing POST with the
+// discipline every one of them owes: parse the endpoint, put it through
+// checkURL (the SSRF screen), set the standard headers, add the caller's, and
+// classify a transport failure. postForm and postJSON repeated all of it,
+// which meant a third credential POST written by copying one of them could
+// lose the screen without anything noticing.
+//
+// It deliberately stops at the response rather than also refusing the 3xx.
+// Both callers refuse it, but with different errors — a token exchange
+// redacts the Location it reports, because that header can echo back the
+// credential we just sent, while a registration does not read it at all —
+// and turning that into a parameter would make the zero-redirect rule read
+// as something a caller chooses. It is not a choice.
+func (c *Client) postCredential(ctx context.Context, endpoint, contentType, body string,
+	hdr http.Header) (*http.Response, error) {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, newFlowError(ErrorTypeTransport, fmt.Errorf("oauthflow: bad endpoint %q: %w", endpoint, err))
+	}
+	if err := c.checkURL(u); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader(body))
+	if err != nil {
+		return nil, newFlowError(ErrorTypeTransport, err)
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.cfg.UserAgent)
+	for k, vs := range hdr {
+		for _, v := range vs {
+			req.Header.Add(k, v)
+		}
+	}
+	resp, err := c.credential.Do(req)
+	if err != nil {
+		return nil, classifyTransportError(err)
+	}
+	return resp, nil
 }
 
 func isRedirectStatus(code int) bool { return code >= 300 && code < 400 }
