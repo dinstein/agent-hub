@@ -10,10 +10,21 @@
 // # What it exposes
 //
 // Streamable HTTP, and nothing else. canonical.md §5b freezes the transport
-// asymmetry: agenthub READS legacy HTTP+SSE downstreams but never grows a
-// new SSE exposure face, so GET on the endpoint is answered 405 rather than
-// upgraded to a stream. One POST carries one JSON-RPC message and gets one
-// JSON-RPC answer.
+// asymmetry: agenthub READS legacy HTTP+SSE downstreams but never grows a new
+// SSE exposure face. That is a rule about the 2024-11-05 two-endpoint
+// transport, the one whose `endpoint` event says where to POST — NOT about
+// streamable HTTP's own server→client channel, which this face does serve:
+//
+//   - POST carries one JSON-RPC message and gets one JSON-RPC answer, except
+//     subscriptions/listen (2026-07-28), whose response IS the stream;
+//   - GET opens the ≤ 2025-11-25 notification stream as text/event-stream. A
+//     GET whose Accept rules that out is still a 405.
+//
+// This paragraph said GET was answered 405 outright and that one POST always
+// meant one answer, and cited §5b for it — while §5b had already RETIRED that
+// stance in the same words it uses to record it. Server's own header
+// (server.go) has described the three verbs correctly throughout, so the
+// package's front door disagreed with the type behind it.
 //
 // # Fail-closed bindings
 //
