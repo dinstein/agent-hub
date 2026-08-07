@@ -166,6 +166,16 @@ func DiscoveryFor(snap *registry.Snapshot, profileName string) (DiscoveryMode, L
 // FromRegistry. The caller gets a layer it can merge either way, so a typo in
 // a token's profile pin costs visibility rather than granting it; ok is
 // returned separately so the caller can also say so out loud.
+//
+// KNOWN DIVERGENCE from profileLayer: this layer carries the profile's
+// Servers and Tools but NOT its Discovery. So the two routes to "this session
+// follows profile P" — a clients.json binding and an agent token's pin —
+// agree on every security field and disagree on the presentation mode, which
+// docs/modules/config.md otherwise describes as taken from the most specific
+// layer with no carve-out. Whether a token should inherit a profile's
+// discovery mode is a product question and changing it changes what an HTTP
+// agent is served, so it is recorded rather than settled here; config.md's
+// internal/scope section carries the item.
 func PinnedProfileLayer(snap *registry.Snapshot, name string) (ScopeLayer, bool) {
 	origin := "profiles.json#" + name
 	if snap != nil {

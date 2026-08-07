@@ -52,6 +52,17 @@ give two answers. Experience fields take the nearest value: `Discovery` from the
 (later layer wins within a `LayerKind`), `ResultBudget` per key. The one exception is `Budget.Forced`,
 capped at the **minimum**: a forced budget can only push the nearest value down.
 
+**Current assembly status: a pinned profile contributes no `Discovery`.** There are two routes to "this
+session follows profile P" — a `clients.json` binding, which reaches `profileLayer`, and an agent token's
+`Profile` pin, which reaches `PinnedProfileLayer` (`internal/daemon/httpdata.go`, `internal/cli/tool.go`).
+Only the first copies the profile's `Discovery` onto the layer, so an HTTP credential pinned to a profile
+whose mode is `lazy` is served in the global mode instead, while a client bound to that same profile is
+not. Every security field agrees across the two; this one field does not, and the rule above states no
+exception for it. Left as it is because the answer is a product decision — a token's presentation mode may
+legitimately belong to the token rather than to the profile it borrows visibility from — and either way
+settling it changes what a live agent is served. The divergence is also noted at `PinnedProfileLayer`, so
+the two constructors cannot be read side by side without meeting it.
+
 **The numeric ordering of `LayerKind` is the specificity ordering and must not be rearranged.** `Merge`
 does not require its layers sorted; specificity comes entirely from comparing `LayerKind`, so swapping
 the enum values silently changes who wins.
