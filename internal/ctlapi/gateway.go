@@ -19,7 +19,7 @@ import (
 // the control socket, then keeps one long-lived SSE link:
 //
 //	POST /v1/gateway/register             GatewayHelloWire -> GatewayRegistered
-//	GET  /v1/gateway/{sid}/link           SSE: "overlay" / "registry" frames
+//	GET  /v1/gateway/{sid}/link           SSE: "registry" frames
 //	POST /v1/gateway/{sid}/servers        GatewayServersReport (gatewaystate.go)
 //
 // The last one is the ONLY upward-flowing state on this face: the gateway is
@@ -27,13 +27,18 @@ import (
 // one that can say what they are doing (gatewaystate.go explains why the
 // daemon does not observe them itself).
 //
-// The daemon-side session.ControlLink implementation (gatewayLink below)
-// pushes overlays as SSE frames and blocks until the matching ack arrives —
-// push-then-commit: SessionManager.Mutate commits only after the gateway
-// acked, so daemon and gateway can never diverge.
+// The link is one-way and carries notifications only. It used to push scope
+// overlays and block for an ack — push-then-commit, so daemon and gateway
+// could not diverge on what a live session may see — and 0bae283 removed the
+// overlays, which is what left the link with nothing to commit. A gateway now
+// re-reads the registry itself rather than trusting a frame, so "registry"
+// frames are hints and the failure direction is a redundant re-read.
 
 // GatewayHelloWire is the register request body. Pid and ScopeHash are
-// informational in M1-B (logged; scope wiring lands in M1-C).
+// informational: both are logged and neither is acted on. ScopeHash was to
+// have let the daemon detect a gateway running against a stale scope and push
+// a correction, which is the overlay protocol that no longer exists; the
+// gateway reads its own scope from the registry.
 type GatewayHelloWire struct {
 	ClientID  string `json:"client_id"`
 	Pid       int    `json:"pid"`
@@ -191,7 +196,9 @@ func gatewayPath(r *http.Request) (sid, action string, ok bool) {
 }
 
 // handleGatewayRegister implements POST /v1/gateway/register: mint a stdio
-// session bound to a fresh control link and report the current overlay.
+// session bound to a fresh control link, and answer with its id. The id is
+// the whole response — there is no state to hand back, because the gateway
+// reads what it may serve from the registry rather than from this reply.
 func (s *Server) handleGatewayRegister(w http.ResponseWriter, r *http.Request) {
 	reqID := requestIDFrom(r.Context())
 	body, err := readBody(r)
@@ -258,13 +265,13 @@ func (s *Server) handleGatewayRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGatewayLink implements GET /v1/gateway/{sid}/link: the long-lived
-// SSE stream carrying overlay pushes and registry change notifications.
+// SSE stream carrying registry change notifications.
 //
 // Lifecycle invariant (docs/architecture.md §2): the stdio session lives exactly as
 // long as its link. When this handler returns for any reason — connection
 // drop, daemon shutdown, link closed elsewhere — the session is closed; the
-// gateway re-registers and receives a NEW identity (overlay authority died
-// with the old one).
+// gateway re-registers and receives a NEW identity, because a session id
+// whose link is gone names something nothing can be delivered to.
 func (s *Server) handleGatewayLink(w http.ResponseWriter, r *http.Request, sid string) {
 	link, ok := s.gatewayFor(sid)
 	if !ok {

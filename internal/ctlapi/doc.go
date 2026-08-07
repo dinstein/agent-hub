@@ -6,11 +6,10 @@
 //	GET  /v1/ping                     Hello (version, pid, registry generation)
 //	GET  /v1/servers                  configured servers + runtime state + Health
 //	GET  /v1/sessions                 live sessions
-//	POST /v1/sessions/{id}/scope      narrow-only overlay mutation via SessionManager.Mutate
+//	POST /v1/sessions/{id}/kill       force-disconnect one live session (handlers.go)
 //	GET  /v1/events                   SSE event stream (topic filter, coalescing, Last-Event-ID)
 //	POST /v1/gateway/register         stdio gateway registration (docs/architecture.md §2; gateway.go)
-//	GET  /v1/gateway/{sid}/link       per-gateway SSE link: overlay pushes + registry events
-//	POST /v1/gateway/{sid}/ack        gateway ack for one pushed overlay frame
+//	GET  /v1/gateway/{sid}/link       per-gateway SSE link: registry change notifications
 //	POST /v1/gateway/{sid}/servers    gateway runtime state report (gatewaystate.go)
 //
 // Configuration surface (docs/modules/controlplane.md), in admin*.go —
@@ -28,6 +27,15 @@
 // runtime scope change, no scanning of what a downstream returned), and no
 // route, handler or store for either survives. They are named here only so
 // this list is not read as an implementation gap and filled back in.
+//
+// Two routes above went with them and are named for the same reason:
+// POST /v1/sessions/{id}/scope, the narrow-only overlay mutation, and
+// POST /v1/gateway/{sid}/ack, the gateway's ack for one pushed overlay
+// frame. Both were listed here long after 0bae283 deleted them, which is
+// the worse half of the same mistake: a reader could go looking for the
+// handler, and a frontend author could believe a live session's surface can
+// still be narrowed at runtime. It cannot — a client's surface is decided by
+// configuration, before the call.
 //
 // Every write there takes an optional expected_generation and answers a
 // lost compare-and-swap with 409 + CodeStalePrecondition carrying the

@@ -11,9 +11,11 @@ import (
 // The client binding (docs/modules/controlplane.md §5): which profile a
 // client follows. Narrowing itself lives on the profile.
 //
-// Not to be confused with POST /v1/sessions/{id}/scope, which mutates one
-// LIVE session's volatile overlay and may only tighten. This surface edits
-// the PERSISTED binding, and the operator is allowed to loosen it — the
+// This is the ONLY place a client's surface is decided, and it decides it
+// before the call. There was once a POST /v1/sessions/{id}/scope beside it,
+// narrowing one live session's volatile overlay; it went with the rest of the
+// runtime governance surface (AGENTS.md), so the persisted binding written
+// here is the whole answer. The operator is allowed to loosen it — the
 // control plane is the only place that can.
 
 // scopeWire is the GET /v1/scope/{client} body.

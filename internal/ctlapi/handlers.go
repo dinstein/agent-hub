@@ -106,9 +106,10 @@ func killPathID(r *http.Request) (string, bool) {
 }
 
 // sessionPathID extracts the session id from /v1/sessions/{id}<suffix>.
-// Same escaping discipline as scopePathID: the match runs on the ESCAPED
-// path so a %2F inside an id cannot smuggle an extra path segment past the
-// router, and the single segment is unescaped afterwards.
+// Same escaping discipline as every other id matcher here (pathSegments,
+// gatewayPath): the match runs on the ESCAPED path so a %2F inside an id
+// cannot smuggle an extra path segment past the router, and the single
+// segment is unescaped afterwards.
 func sessionPathID(r *http.Request, suffix string) (string, bool) {
 	p := r.URL.EscapedPath()
 	rest, ok := strings.CutPrefix(p, "/v1/sessions/")
