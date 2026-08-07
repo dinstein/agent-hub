@@ -101,34 +101,11 @@ func docCommentTop(lines []string, declLine int) (int, bool) {
 	return i + 1, true
 }
 
-// goTestFiles lists every _test.go file in the tree, skipping vendored and
-// generated directories.
+// goTestFiles lists every _test.go file in the tree (walkRepoFiles owns the
+// skip set).
 func goTestFiles(t *testing.T, root string) []string {
 	t.Helper()
-	var out []string
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case "node_modules", ".git", "dist", "bin", "testdata":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(d.Name(), "_test.go") {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		out = append(out, rel)
-		return nil
+	return walkRepoFiles(t, root, "test files", func(name string) bool {
+		return strings.HasSuffix(name, "_test.go")
 	})
-	if err != nil {
-		t.Fatalf("walking %s for test files: %v", root, err)
-	}
-	return out
 }

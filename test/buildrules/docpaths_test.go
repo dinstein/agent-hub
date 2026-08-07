@@ -132,34 +132,12 @@ func exists(root, rel string) bool {
 	return err == nil
 }
 
-// markdownFiles walks the tree for .md files, skipping the vendored and
-// generated directories that are not ours to keep accurate.
+// markdownFiles walks the tree for .md files (walkRepoFiles owns the skip
+// set, which is what keeps this to the documents that are ours to keep
+// accurate).
 func markdownFiles(t *testing.T, root string) []string {
 	t.Helper()
-	var out []string
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case "node_modules", ".git", "dist", "bin", "testdata":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(d.Name(), ".md") {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		out = append(out, rel)
-		return nil
+	return walkRepoFiles(t, root, "markdown", func(name string) bool {
+		return strings.HasSuffix(name, ".md")
 	})
-	if err != nil {
-		t.Fatalf("walking %s for markdown: %v", root, err)
-	}
-	return out
 }

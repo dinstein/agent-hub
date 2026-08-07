@@ -132,32 +132,11 @@ func canonicalSections(t *testing.T, root string) map[string]map[string]bool {
 // citableFiles lists the files whose comments and prose may cite canonical.md.
 func citableFiles(t *testing.T, root string) []string {
 	t.Helper()
-	var out []string
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case "node_modules", ".git", "dist", "bin", "testdata":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		switch filepath.Ext(d.Name()) {
+	return walkRepoFiles(t, root, "citable files", func(name string) bool {
+		switch filepath.Ext(name) {
 		case ".go", ".md", ".ts", ".yml", ".yaml":
-		default:
-			return nil
+			return true
 		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		out = append(out, rel)
-		return nil
+		return false
 	})
-	if err != nil {
-		t.Fatalf("walking %s: %v", root, err)
-	}
-	return out
 }

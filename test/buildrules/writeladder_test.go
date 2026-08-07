@@ -184,38 +184,14 @@ func isTransientProbe(name string) bool {
 	return strings.HasPrefix(name, "zz_depguard_probe_")
 }
 
-// productionGoFiles lists non-test .go files, skipping vendored and generated
-// directories, and anything another package's test owns.
+// productionGoFiles lists non-test .go files (walkRepoFiles owns the skip
+// set), minus anything another package's test owns.
 func productionGoFiles(t *testing.T, root string) []string {
 	t.Helper()
-	var out []string
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case "node_modules", ".git", "dist", "bin", "testdata":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		name := d.Name()
+	return walkRepoFiles(t, root, "go files", func(name string) bool {
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			return nil
+			return false
 		}
-		if isTransientProbe(name) {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		out = append(out, rel)
-		return nil
+		return !isTransientProbe(name)
 	})
-	if err != nil {
-		t.Fatalf("walking %s for go files: %v", root, err)
-	}
-	return out
 }
