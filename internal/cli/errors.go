@@ -23,6 +23,13 @@ const (
 
 // Stable machine-readable error codes for the --json failure envelope.
 // New codes may be added; existing ones must never change meaning.
+//
+// This block is most of the set, not all of it: the `token` group keeps its
+// three (E_TOKEN_NOT_FOUND, E_TOKEN_EXISTS, E_TOKEN_LIMIT) beside the
+// commands that emit them, in token.go, under a header saying the same thing.
+// Said here because a client parsing our failures needs the WHOLE set, and an
+// unqualified "stable codes for the envelope" over a partial list reads as the
+// complete one.
 const (
 	CodeGeneral              = "E_GENERAL"
 	CodeUsage                = "E_USAGE"

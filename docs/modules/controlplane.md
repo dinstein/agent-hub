@@ -727,7 +727,7 @@ straight from `internal/ctlapi`, since the CLI is inside the module.
 | 0 | Success | — |
 | 1 | Generic error | Downstream/network/internal |
 | 2 | Usage error | Arguments, unknown flag, unknown subcommand |
-| 3 | Resource not found | server/profile/secret/skill/session/tool |
+| 3 | Resource not found | server/profile/secret/skill/session/tool/token |
 | 4 | Daemon offline but the command requires it | `DaemonDownf` |
 | 5 | Authentication/authorization failure | the OAuth flows; a downstream answering 401/403 to `server test`; a secret file that will not decrypt |
 | 6 | Refused by a guard | a skill's integrity pin, and the spawn guard screening a generated `docker run` |
