@@ -1,19 +1,24 @@
 asana	http	https://mcp.asana.com/v2/mcp	needsConfig=no	keys=-	params=-	auth=oauth
+aws-knowledge	http	https://knowledge-mcp.global.api.aws	needsConfig=no	keys=-	params=-	auth=-
 brave-search	stdio	npx -y @brave/brave-search-mcp-server --transport stdio	needsConfig=yes	keys=BRAVE_API_KEY	params=-	auth=-
 chrome-devtools	stdio	npx -y chrome-devtools-mcp@1.6.0	needsConfig=no	keys=-	params=-	auth=-
 cloudflare-docs	http	https://docs.mcp.cloudflare.com/mcp	needsConfig=no	keys=-	params=-	auth=-
+datadog	http	https://mcp.datadoghq.com/api/unstable/mcp-server/mcp	needsConfig=no	keys=-	params=-	auth=oauth
 deepwiki	http	https://mcp.deepwiki.com/mcp	needsConfig=no	keys=-	params=-	auth=-
 dune	http	https://api.dune.com/mcp/v1	needsConfig=yes	keys=DUNE_API_KEY	params=-	auth=-
 figma	http	https://mcp.figma.com/mcp	needsConfig=no	keys=-	params=-	auth=oauth
 filesystem	stdio	npx -y @modelcontextprotocol/server-filesystem {{directory}}	needsConfig=yes	keys=-	params=directory	auth=-
 git	stdio	uvx mcp-server-git --repository {{repository}}	needsConfig=yes	keys=-	params=repository	auth=-
 github	http	https://api.githubcopilot.com/mcp/	needsConfig=no	keys=-	params=-	auth=oauth
+grafana	http	https://mcp.grafana.com/mcp	needsConfig=no	keys=-	params=-	auth=oauth
 huggingface	http	https://huggingface.co/mcp	needsConfig=no	keys=-	params=-	auth=-
 linear	http	https://mcp.linear.app/mcp	needsConfig=no	keys=-	params=-	auth=oauth
 microsoft-learn	http	https://learn.microsoft.com/api/mcp	needsConfig=no	keys=-	params=-	auth=-
+mongodb	http	https://mcp.mongodb.com/mcp	needsConfig=no	keys=-	params=-	auth=oauth
 notion	http	https://mcp.notion.com/mcp	needsConfig=no	keys=-	params=-	auth=oauth
 playwright	stdio	npx -y @playwright/mcp@0.0.79	needsConfig=no	keys=-	params=-	auth=-
 sentry	http	https://mcp.sentry.dev/mcp	needsConfig=no	keys=-	params=-	auth=oauth
+slack	http	https://mcp.slack.com/mcp	needsConfig=no	keys=-	params=-	auth=oauth
 stripe	http	https://mcp.stripe.com	needsConfig=no	keys=-	params=-	auth=oauth
 supabase	http	https://mcp.supabase.com/mcp	needsConfig=no	keys=-	params=-	auth=oauth
 vercel	http	https://mcp.vercel.com	needsConfig=no	keys=-	params=-	auth=oauth

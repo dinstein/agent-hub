@@ -179,6 +179,17 @@
       "tags": ["docs", "search", "azure", "dotnet", "microsoft"]
     },
     {
+      "id": "aws-knowledge",
+      "name": "AWS Knowledge",
+      "description": "Search AWS documentation, blog posts and Well-Architected guidance, and check which regions an API or CloudFormation resource is available in. Needs no AWS account and no credential.",
+      "publisher": "AWS",
+      "homepage": "https://github.com/awslabs/mcp/tree/main/src/aws-knowledge-mcp-server",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://knowledge-mcp.global.api.aws",
+      "tags": ["docs", "search", "aws", "cloud"]
+    },
+    {
       "id": "deepwiki",
       "name": "DeepWiki",
       "description": "Ask questions about any public GitHub repository and read its generated wiki. Needs no login and no credential.",
@@ -235,6 +246,54 @@
       "url": "https://mcp.vercel.com",
       "auth": "oauth",
       "tags": ["deployment", "hosting", "logs", "frontend"]
+    },
+    {
+      "id": "slack",
+      "name": "Slack",
+      "description": "Slack's own hosted server: search messages, files and channels, read history, send messages, and read or write canvases. The login honours your existing Slack permissions — it cannot reach a channel you cannot.",
+      "publisher": "Slack",
+      "homepage": "https://docs.slack.dev/ai/slack-mcp-server/",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://mcp.slack.com/mcp",
+      "auth": "oauth",
+      "tags": ["chat", "messaging", "search", "team"]
+    },
+    {
+      "id": "grafana",
+      "name": "Grafana Cloud",
+      "description": "Grafana Cloud's hosted server: query dashboards, datasources, Prometheus and Loki, and read alert rules. This is the Cloud endpoint, not the self-hosted binary.",
+      "publisher": "Grafana",
+      "homepage": "https://grafana.com/docs/grafana-cloud/ai-tools/mcp-servers/cloud-mcp/",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://mcp.grafana.com/mcp",
+      "auth": "oauth",
+      "tags": ["metrics", "dashboards", "monitoring", "observability"]
+    },
+    {
+      "id": "datadog",
+      "name": "Datadog",
+      "description": "Datadog's hosted server: metrics, logs, traces, monitors and incidents.",
+      "publisher": "Datadog",
+      "homepage": "https://docs.datadoghq.com/bits_ai/mcp_server/",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp",
+      "auth": "oauth",
+      "tags": ["metrics", "logs", "traces", "monitoring", "observability"]
+    },
+    {
+      "id": "mongodb",
+      "name": "MongoDB Atlas",
+      "description": "MongoDB's hosted server: explore collections and indexes, run queries and aggregations, and administer an Atlas cluster.",
+      "publisher": "MongoDB",
+      "homepage": "https://www.mongodb.com/docs/mcp-server/",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://mcp.mongodb.com/mcp",
+      "auth": "oauth",
+      "tags": ["database", "nosql", "atlas", "backend"]
     },
     {
       "id": "dune",
