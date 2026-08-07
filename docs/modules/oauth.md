@@ -268,19 +268,34 @@ retained credential.
 
 ### Who refreshes, and what it logs
 
-Two processes can renew a token, and both renew *early*:
+Three renewers, all of them early. They are **components, not processes**, and the distinction is
+load-bearing rather than pedantic — two of the three can be running inside one process:
 
-| Process | Trigger | Serialization |
+| Component | Trigger | Serialization |
 |---|---|---|
-| daemon (`internal/daemon/oauth.go`) | proactive: a scan every ≤60s renews anything within the grace of `expires_at` | offline path (file lock) + an extra in-process singleflight |
-| stdio gateway (`internal/gateway/authfresh.go`) | proactive: a connection asking for the credential renews it when `expires_at` is inside the grace | offline path — `<secrets>/<server>.refresh.lock`, then a re-read of `expires_at` |
-| stdio gateway (`internal/gateway/auth.go`) | passive: a 401/403 from the downstream, refresh once and replay once | same |
+| daemon refresher (`internal/daemon/oauth.go`) | proactive: a scan every ≤60s renews anything within the grace of `expires_at` | offline path (file lock) + an extra in-process singleflight |
+| gateway, proactive (`internal/gateway/authfresh.go`) | a connection asking for the credential renews it when `expires_at` is inside the grace | offline path — `<secrets>/<server>.refresh.lock`, then a re-read of `expires_at` |
+| gateway, passive (`internal/gateway/auth.go`) | a 401/403 from the downstream: refresh once, replay once | same |
 
-The daemon renews on a timer because it is long-lived and owns every server at once. A stdio gateway
-owns whatever its client dialed and has no timer, so it renews at the only moment it is guaranteed
-to be looking — and its retry schedule **is** the deadline it reports to the round tripper, so a
-failing provider cannot be asked once per request and there is no second timer to own. Both use the
-same ladder, `oauthflow.RetryBackoff`, for the same reason the `trigger` values are shared constants.
+**"Gateway" here does not mean "stdio gateway".** The daemon's HTTP data plane assembles one gateway
+per credential inside its own process (`internal/daemon/httpdata.go`), and those reach both gateway
+rows by the same route an `agenthub connect` process does: `Config.Auth` is left nil, so `newGateway`
+builds the chain (`controlplane.md`, `internal/httpbridge` → "Who assembles it"). A daemon serving that
+plane therefore hosts the refresher **and** N gateway coordinators at once, over one vault.
+
+That is safe, and it is safe for the reason the offline path was chosen to begin with — which survives
+the move indoors: each acquisition opens its own descriptor, and `flock(2)` is held per open file
+description, so two coordinators in one process exclude each other exactly as two processes do. What
+would **not** survive is switching a gateway to the online path on the grounds that "it is inside the
+daemon now": `agenthub auth login/refresh` still writes the same vault from a third process, and no
+in-process singleflight can see it.
+
+The daemon refresher renews on a timer because it is long-lived and owns every server at once. A
+gateway owns whatever its client dialed and has no timer, so it renews at the only moment it is
+guaranteed to be looking — and its retry schedule **is** the deadline it reports to the round tripper,
+so a failing provider cannot be asked once per request and there is no second timer to own. All three
+use the same ladder, `oauthflow.RetryBackoff`, for the same reason the `trigger` values are shared
+constants.
 
 Servers that advertise no `expires_in` stay on the passive path permanently ("no expiry" means never
 expires, not expired, so no deadline is reported at all), as do servers with no stored OAuth state —
@@ -295,7 +310,7 @@ fire, and before the proactive one existed the credential stayed dead until the 
 *answer* is not an option and never was: nothing in the chain inspects what a call carries back
 (AGENTS.md). The gateway decides from its own vault instead.
 
-Both processes log the same four messages, and every record carries
+Refresher and gateway log the same four messages, and every record carries
 `trigger=expiry` (a proactive refresher) or `trigger=rejection` (a downstream 401/403) to say which
 one produced it. One grep therefore covers either deployment, and the field — not the wording — is
 what separates them:
@@ -307,11 +322,18 @@ what separates them:
 | `token cannot be refreshed without a new login` | WARN | dead end; only `agenthub auth login` fixes it |
 | `access token refresh failed` | WARN | transient. `attempt` + `retry_in` appear only under `trigger=expiry`, on either process: a proactive refresher has a ladder to report, while under `trigger=rejection` the next try is simply whenever the downstream rejects again — their absence is the information |
 
-The symmetry is deliberate. Which process renewed a token is a property of the deployment, not of the
-event, and an operator reading a log usually does not know whether a daemon was up — so it belongs in
-a field, not in prose greppable on only one of the two sides.
+The symmetry is deliberate. Which component renewed a token is a property of the deployment, not of
+the event, and an operator reading a log usually does not know whether a daemon was up — so it belongs
+in a field, not in prose greppable on only one of the two sides.
 `internal/gateway/authlog_test.go` and `internal/daemon/oauthlog_test.go` pin the two halves;
 renaming a message on one side alone is what they exist to catch.
+
+**Where those lines land is not symmetric, and only the field keeps them apart.** A stdio gateway
+writes to `<data>/logs/gateway-<client>.log`, one file per client. A data-plane gateway is handed the
+daemon's own logger, so its renewals and the refresher's arrive interleaved in `daemon.log` — the
+per-client file that `agenthub logs` is built around does not exist for it. Two fields separate them
+there: `trigger`, as above, and `client`, which every gateway line carries (`newGateway` binds it) and
+the refresher's lines never do.
 
 The gateway's lines are load-bearing rather than decorative: `internal/downstream`'s round tripper
 deliberately **discards** a refresh error and returns the downstream's original 401 (its

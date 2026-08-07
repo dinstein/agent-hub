@@ -12,13 +12,17 @@ import (
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 )
 
-// This file is the standalone gateway's PROACTIVE refresh: the half of
+// This file is the GATEWAY's proactive refresh: the half of
 // docs/modules/oauth.md that used to exist only in the daemon.
 //
-// The daemon renews on a timer because it is a long-lived process that owns
-// every server at once. A stdio gateway owns whatever its client dialed and
-// has no timer, so it renews at the only moment it is guaranteed to be
-// looking: when a connection asks for the credential. `expires_at` is read
+// "Gateway", not "stdio gateway". The daemon's data plane assembles gateways
+// of its own (internal/daemon/httpdata.go), and they reach this file by the
+// same route — Config.Auth left nil, so newGateway builds the chain. The
+// distinction that matters here is not the transport but the OWNERSHIP: the
+// daemon renews on a timer because it is long-lived and owns every server at
+// once, while a gateway owns whatever its client dialed and has no timer, so
+// it renews at the only moment it is guaranteed to be looking: when a
+// connection asks for the credential. `expires_at` is read
 // from the vault, and if the token is inside the refresh grace it is renewed
 // before the request goes out.
 //

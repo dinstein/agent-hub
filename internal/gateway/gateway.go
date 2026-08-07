@@ -1,6 +1,14 @@
-// Package gateway assembles the per-client stdio gateway — the implementation
-// body of `agenthub connect --client <id>` (canonical.md §2: gateway only
-// assembles; the execute pipeline lives in internal/pipeline).
+// Package gateway assembles the per-client gateway (canonical.md §2: gateway
+// only assembles; the execute pipeline lives in internal/pipeline).
+//
+// TWO ENTRY POINTS, ONE BODY. Run is the implementation of `agenthub connect
+// --client <id>`: one process per client, upstream over stdin/stdout. Open
+// (inproc.go) is the same assembly reached over an in-memory pipe pair, which
+// is what the daemon's HTTP data plane runs — one gateway per credential,
+// inside the daemon process. Everything below describes both. Where a file
+// here says "stdio gateway" it is naming the transport, never a second
+// implementation; canonical.md §2's "one execute pipeline" is why there is no
+// second one to name.
 //
 // Run serves the upstream AI client as an MCP server over the given
 // reader/writer pair (os.Stdin / os.Stdout in production; stdout is the

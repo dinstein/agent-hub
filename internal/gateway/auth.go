@@ -17,15 +17,25 @@ import (
 // downstream dial, which internal/downstream deliberately knows only through
 // its TokenSource seam.
 //
-// Refresh serialization: the stdio gateway takes the OFFLINE path — the
+// Refresh serialization: a gateway takes the OFFLINE path — the
 // <server>.refresh.lock sibling file lock — for the same reason the CLI does
-// (internal/cli/vault.go header). It is a separate process from the daemon,
-// so an in-process singleflight would protect nothing across the two, and
-// spending a one-time refresh token twice locks the user out of the server.
-// Taking a lock that was not needed costs one syscall; that asymmetry is why
-// Online stays nil here.
+// (internal/cli/vault.go header). Spending a one-time refresh token twice
+// locks the user out of the server, and there is always another writer that
+// an in-process singleflight cannot see: `agenthub auth login/refresh` writes
+// the vault directly from its own process.
 //
-// Logging: this is the ONLY place a stdio gateway's refresh can be recorded.
+// THE REASON IS "ANOTHER WRITER", NOT "ANOTHER PROCESS", and the distinction
+// became load-bearing when the daemon started hosting gateways of its own
+// (internal/daemon/httpdata.go). Those run this file inside the same process
+// as the daemon's proactive refresher, so a reader who takes the old wording
+// literally concludes the lock is redundant there and reaches for Online.
+// It is not redundant: every acquisition opens its own descriptor
+// (oauthflow.Coordinator, refresh.go), and flock(2) is held per open file
+// description, so two coordinators in one process exclude each other exactly
+// as two processes do. Taking a lock that was not needed costs one syscall;
+// that asymmetry is why Online stays nil here.
+//
+// Logging: this is the ONLY place a gateway's refresh can be recorded.
 // The trigger lives one layer down, in internal/downstream's 401/403 round
 // tripper, which deliberately swallows a refresh failure and hands the
 // downstream's own 401 back (its WWW-Authenticate is the better diagnostic) —
@@ -34,10 +44,16 @@ import (
 // happens to cause.
 //
 // The messages match internal/daemon/oauth.go's word for word, and the
-// `trigger` field is what separates the two: which process renewed a token is
-// a property of the DEPLOYMENT, not of the event, and the operator reading
+// `trigger` field is what separates the two: which component renewed a token
+// is a property of the DEPLOYMENT, not of the event, and the operator reading
 // the log usually does not know whether a daemon was up. Prose only one side
 // can be grepped for would make them answer that question by guessing.
+//
+// Same distinction as above, and now it decides more than wording: a
+// data-plane gateway logs through the logger the daemon handed it, so both
+// components' renewals land in the SAME daemon.log. The field is what tells
+// them apart there, plus the client id every gateway line carries and the
+// refresher's lines do not.
 
 // secretsDir resolves <data>/secrets, the directory holding secrets.enc, the
 // keyring key registry and the per-server refresh locks.
