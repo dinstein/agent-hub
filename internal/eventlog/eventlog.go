@@ -345,15 +345,15 @@ type Options struct {
 // Open opens (creating if needed) the event stream at path. The parent
 // directory must already exist.
 //
-// It also prunes old rotated segments. Pruning here rather than on a timer
-// is deliberate: rotation happens at 32 MiB of state-change records, which
-// is rare, while gateway processes open this file constantly — one per
-// `agenthub connect`. So the check runs often in practice and costs one
-// directory listing when it does. The bound it gives is "keepSegments plus
-// whatever a single process rotated during its own lifetime", which for a
-// stream of this shape is keepSegments.
+// Opening also runs jsonl's retention sweep — see WriterOptions.KeepSegments
+// for why the sweep sits there rather than on a timer. What that buys this
+// stream is a bound of "keepSegments plus whatever a single process rotated
+// during its own lifetime", which for a stream of this shape is keepSegments.
 func Open(path string, opts Options) (*Stream, error) {
-	w, err := jsonl.NewWriter(path, jsonl.WriterOptions{Clock: opts.Clock})
+	w, err := jsonl.NewWriter(path, jsonl.WriterOptions{
+		Clock:        opts.Clock,
+		KeepSegments: keepSegments,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -361,7 +361,6 @@ func Open(path string, opts Options) (*Stream, error) {
 	if s.pid == 0 {
 		s.pid = os.Getpid()
 	}
-	jsonl.Prune(path, keepSegments)
 	return s, nil
 }
 
