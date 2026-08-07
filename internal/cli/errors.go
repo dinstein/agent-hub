@@ -87,7 +87,13 @@ func NotFoundf(code, format string, a ...any) *Error {
 }
 
 // DaemonDownf builds an "online-only command, daemon offline" error (exit 4).
-// Unused until M1 introduces online-only commands; part of the frozen table.
+//
+// Unlike the two constructors below it, this row IS reached: every command
+// that needs the control socket goes through requireDaemon (support.go) or
+// ctlClient.do (ctl.go), and both answer an unreachable daemon with this. Its
+// comment claimed to be "unused until M1 introduces online-only commands"
+// long after those commands arrived, which reads as an invitation to delete
+// the one constructor in this family that the CLI leans on hardest.
 func DaemonDownf(format string, a ...any) *Error {
 	return &Error{
 		Code: CodeDaemonDown, ExitCode: ExitDaemonDown,
