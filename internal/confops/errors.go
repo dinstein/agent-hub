@@ -97,17 +97,13 @@ func (e *StaleError) Error() string {
 
 func (e *StaleError) Is(target error) bool { return target == ErrStalePrecondition }
 
-// AsError extracts the typed *Error from err, if any. Front ends use it to
-// map Kind/Code without importing the error-construction helpers.
-func AsError(err error) (*Error, bool) {
-	var e *Error
-	if errors.As(err, &e) {
-		return e, true
-	}
-	return nil, false
-}
-
 // AsStale extracts the typed *StaleError from err, if any.
+//
+// There is deliberately no AsError twin. Both front ends reach the typed
+// *Error by declaring one and calling errors.As, because they need it in
+// scope for a switch that follows; the helper that wrapped that for them had
+// no caller in either. This one earns its place: ctlapi tests for a stale
+// precondition and answers it without needing the value afterwards.
 func AsStale(err error) (*StaleError, bool) {
 	var e *StaleError
 	if errors.As(err, &e) {

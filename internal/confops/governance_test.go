@@ -2,6 +2,7 @@ package confops
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -108,7 +109,8 @@ func TestSetGovernanceValidation(t *testing.T) {
 	_, err = GetGovernance(st.Snapshot().Governance.V, "colour")
 	wantErrorKind(t, err, KindUsage, CodeConfigKeyUnknown)
 
-	e, _ := AsError(UnknownGovernanceKey("colour"))
+	var e *Error
+	_ = errors.As(UnknownGovernanceKey("colour"), &e)
 	if !strings.Contains(e.Hint, "discovery") || !strings.Contains(e.Hint, ResultBudgetPrefix) {
 		t.Errorf("hint = %q, want the full key list", e.Hint)
 	}

@@ -49,8 +49,8 @@ func wantErrorKind(t *testing.T, err error, kind Kind, code string) {
 	if err == nil {
 		t.Fatalf("want a %s error, got nil", kind)
 	}
-	e, ok := AsError(err)
-	if !ok {
+	var e *Error
+	if !errors.As(err, &e) {
 		t.Fatalf("error %v is not a *confops.Error", err)
 	}
 	if e.Kind != kind || e.Code != code {
