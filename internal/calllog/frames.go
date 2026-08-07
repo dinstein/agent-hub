@@ -152,19 +152,7 @@ func (f *frames) run() {
 
 func (f *frames) write(job frameJob) {
 	e := job.event
-	if e.TS.IsZero() {
-		e.TS = f.store.clock()
-	}
-	e.TS = e.TS.UTC()
-	if e.Version == 0 {
-		e.Version = Version
-	}
-	if e.PID == 0 {
-		e.PID = os.Getpid()
-	}
-	if e.BootID == "" {
-		e.BootID = f.store.bootID
-	}
+	f.store.stampEnvelope(&e)
 	day := utcDay(e.TS)
 
 	// The payload goes in FIRST, exactly as the lifecycle path does: a

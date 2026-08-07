@@ -288,16 +288,22 @@ func (s *Store) PutPayload(ts time.Time, callID string, kind PayloadKind, raw []
 	return d.pack.append(callID, kind, raw, s.durability == DurabilitySync, day)
 }
 
-// Append writes one bounded metadata event in a single O_APPEND write.
-func (s *Store) Append(e Event) error {
-	if s == nil {
-		return ErrClosed
-	}
+// stampEnvelope fills the provenance every record carries whichever writer
+// produced it: the instant in UTC, the schema version, and which process of
+// which boot wrote it.
+//
+// Two writers reach the ledger — Append for lifecycle records, frames.write
+// for wire frames — and a reader cannot tell them apart afterwards, which is
+// the point: `calls tail` and `calls verify` read one stream. That makes the
+// stamping a property of the stream rather than of either writer, and a
+// writer that stopped filling BootID would emit records indistinguishable
+// from an earlier boot's, with nothing downstream able to recover the
+// difference.
+func (s *Store) stampEnvelope(e *Event) {
 	if e.TS.IsZero() {
-		e.TS = s.clock().UTC()
-	} else {
-		e.TS = e.TS.UTC()
+		e.TS = s.clock()
 	}
+	e.TS = e.TS.UTC()
 	if e.Version == 0 {
 		e.Version = Version
 	}
@@ -307,6 +313,14 @@ func (s *Store) Append(e Event) error {
 	if e.BootID == "" {
 		e.BootID = s.bootID
 	}
+}
+
+// Append writes one bounded metadata event in a single O_APPEND write.
+func (s *Store) Append(e Event) error {
+	if s == nil {
+		return ErrClosed
+	}
+	s.stampEnvelope(&e)
 	// Unkeyed records carry no MAC and say so by leaving both fields empty.
 	// `calls verify` counts them as unauthenticated, which is a different
 	// answer from "authentication failed" and must not be confused with it.
