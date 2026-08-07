@@ -302,13 +302,7 @@ func renderSkillDocument(sk *Skill, body string) (string, bool) {
 	if body != "" {
 		b.WriteString("\n" + body + "\n")
 	}
-	var attach []string
-	for _, f := range sk.Files {
-		if f.Path != SkillFileName {
-			attach = append(attach, f.Path)
-		}
-	}
-	slices.Sort(attach)
+	attach := unmaterializedFiles(sk)
 	if len(attach) > 0 {
 		fmt.Fprintf(&b, "\n_Bundled files kept in the agenthub library, not delivered over MCP: %s_\n",
 			strings.Join(attach, ", "))

@@ -269,3 +269,27 @@ func (s *SkillSelector) selects(id string) bool {
 	}
 	return slices.Contains(s.Allow, id)
 }
+
+// unmaterializedFiles lists the bundled files a delivery does not carry —
+// everything but SKILL.md itself — in a stable order.
+//
+// Both skill documents name them, for the honesty reason renderSkillDocument
+// gives: a reader who is not told about the rest believes it has the whole
+// package. They collected the list separately, and only one of them sorted.
+//
+// The sort is not defensive decoration. Every builder of Skill.Files sorts by
+// path today, but this list is rendered into the sentinel block that
+// verifyOne compares byte for byte against disk — so an order that stopped
+// being stable would report every installed skill as Drifted and stop
+// automated writes, with the cause three files away in whichever builder
+// dropped its sort.
+func unmaterializedFiles(sk *Skill) []string {
+	var out []string
+	for _, f := range sk.Files {
+		if f.Path != SkillFileName {
+			out = append(out, f.Path)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
