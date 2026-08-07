@@ -25,9 +25,9 @@ import (
 // "retry registration every 30s while the daemon is absent").
 const defaultLinkRetry = 30 * time.Second
 
-// linkDialTimeout bounds only the connect phase of control-socket
-// requests; established long-poll calls (link SSE, approval Ask) still
-// run without a deadline.
+// linkDialTimeout bounds only the connect phase of control-socket requests.
+// The established link SSE is long-lived by design and still runs without a
+// deadline.
 const linkDialTimeout = 5 * time.Second
 
 // ctlLink is the gateway side of the gateway↔daemon control connection —
@@ -94,20 +94,20 @@ func newCtlLink(g *gateway, socket string, retry time.Duration) *ctlLink {
 		hc: &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-					// Bounded connect: requests over this client are
-					// long-poll by design (link SSE, approval Ask), so the
-					// client has no overall timeout — but a socket file
-					// left behind by a dead or wedged daemon must not hold
-					// a gated call open forever. Only the connect phase is
-					// bounded; an established call still waits for a human.
+					// Bounded connect: the link SSE this client carries is
+					// long-lived by design, so there is no overall timeout —
+					// but a socket file left behind by a dead or wedged
+					// daemon must not hold a request open forever. Only the
+					// connect phase is bounded; an established stream runs
+					// until the daemon or the gateway ends it.
 					d := net.Dialer{Timeout: linkDialTimeout}
 					return d.DialContext(ctx, "unix", socket)
 				},
 				// No connection reuse. Control traffic is a handful of
 				// long-lived requests, so pooling buys nothing — and a
 				// pooled connection to a daemon that has since died can
-				// swallow a gated call: the request goes out on a socket
-				// whose peer is gone and the reply never comes. Dialing
+				// swallow a request: it goes out on a socket whose peer
+				// is gone and the reply never comes. Dialing
 				// fresh turns that into an immediate connect failure,
 				// which the fail-closed path reports as Unreachable.
 				DisableKeepAlives: true,
