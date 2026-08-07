@@ -340,14 +340,18 @@ admission, login-shell PATH capture, proxy-variable userinfo redaction.
 
 ### Current assembly status — only the PATH half is wired
 
-`LoginPATH` and `MergePATH` are called from `internal/downstream/spec.go`. **`Filter`, `Config`,
-`RedactProxyValue` and `CaptureLoginPATH` have no caller outside this package's tests**, so everything the
-next section describes is a capability that exists rather than a rule in force. What a spawned downstream
-actually receives today is the parent environment minus the `AGENTHUB_` prefix, stripped by
-`internal/downstream` itself (`spec.go`, `envPrefix`) — a deny list, which is the opposite shape from the
-allowlist below. Recorded rather than fixed because admitting only the allowlist changes the environment of
-every spawned server, which can break a downstream that reads a variable nobody enumerated: a behaviour
-change with a blast radius, not a tidy.
+`LoginPATH` and `MergePATH` are called from `internal/downstream/spec.go`'s `widenPATHIfNeeded`, so a stdio
+child whose command cannot be found under the PATH it would be given is retried against the login shell's —
+the fix for a GUI-launched daemon unable to spawn `npx`. A PATH that already resolves the command never
+triggers a capture.
+
+**`Filter`, `Config`, `RedactProxyValue` and `CaptureLoginPATH` have no caller outside this package's
+tests**, so everything the next section describes is a capability that exists rather than a rule in force.
+What a spawned downstream actually receives today is the parent environment minus the `AGENTHUB_` prefix,
+stripped by `internal/downstream`'s own `buildEnv` (`spec.go`, `envPrefix`) — a deny list, which is the
+opposite shape from the allowlist below. Recorded rather than fixed because admitting only the allowlist
+changes the environment of every spawned server, which can break a downstream that reads a variable nobody
+enumerated: a behaviour change with a blast radius, not a tidy.
 
 ### Invariants and failure directions
 
@@ -388,16 +392,6 @@ unconditionally rather than behind a guess at whether the current PATH "looks tr
 `extra` are dropped — POSIX reads one as the current directory, which a login profile should not be able to
 add to a spawn — while an empty entry already in `base` is left alone, since removing it would change what
 `base` resolves.
-
-### Current assembly status
-
-**The PATH half is wired; the allowlist half is not.** `internal/downstream/spec.go` calls `LoginPATH` and
-`MergePATH` from `widenPATHIfNeeded`, so a stdio child whose command cannot be found under the PATH it would
-be given is retried against the login shell's — the fix for a GUI-launched daemon unable to spawn `npx`. A
-PATH that already resolves the command never triggers a capture. `Filter` still has **no production
-caller**: `downstream`'s `buildEnv` does its own `AGENTHUB_*` stripping and otherwise passes the parent
-environment through, so downstream admission is a passthrough rather than the deny-by-default this package
-describes. Turning it on is a behaviour change for every existing server, not a wiring task.
 
 ---
 
