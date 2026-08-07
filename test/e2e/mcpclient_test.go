@@ -311,6 +311,37 @@ func (c *gatewayClient) callTool(name string, args any, timeout time.Duration) j
 	}
 }
 
+// callToolRefused invokes tools/call expecting the gateway to REFUSE it,
+// and returns the JSON-RPC error it answered with.
+//
+// It retries the same transient busy error callTool does, and for a reason
+// that decides whether this helper proves anything: a gate rejection and a
+// downstream that has not finished connecting are both errors on the wire,
+// so a caller that asserted on the first error to arrive would pass on
+// whichever run lost that race — and would keep passing with every gate
+// removed. Only a non-busy error is a decision.
+//
+// A call that SUCCEEDS fails immediately rather than being retried: success
+// is terminal, and waiting out the deadline would report the refusal that
+// did not happen as a timeout.
+func (c *gatewayClient) callToolRefused(name string, args any, timeout time.Duration) *rpcError {
+	c.t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		res, rpcErr := c.call("tools/call", map[string]any{"name": name, "arguments": args}, timeout)
+		if rpcErr == nil {
+			c.fatalf("tools/call %s was ANSWERED, not refused: %s", name, res)
+		}
+		if rpcErr.Code != codeRetryBusy {
+			return rpcErr
+		}
+		if !time.Now().Before(deadline) {
+			c.fatalf("tools/call %s stayed busy for %s and never reached a decision", name, timeout)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
 // textContent flattens the text items of a tools/call result and asserts
 // the tool did not report an error.
 func (c *gatewayClient) textContent(res json.RawMessage) string {
