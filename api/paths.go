@@ -182,6 +182,21 @@ func runDir(goos string, lookup func(string) (string, bool), home func() (string
 }
 
 func dataDir(goos string, lookup func(string) (string, bool), home func() (string, error)) (string, error) {
+	return dataDirNamed(dirName, goos, lookup, home)
+}
+
+// dataDirNamed resolves the data directory under one of the two directory
+// names. Both flavours run these branches, for the reason internal/platform's
+// dataDirNamed gives for sharing its own: a rule applied to one copy and not
+// the other is how the dev and release directories come to sit in different
+// parents. windowsDataDir already shared the Windows branch; the Unix ones
+// were two copies of the same switch differing in a constant.
+//
+// It consults AGENTHUB_DATA_DIR ahead of every branch, and an explicit
+// override therefore answers both flavours with the one directory the caller
+// named. That is where this diverges from internal/platform, which keeps the
+// lookup out of dataDirNamed and answers it a layer up.
+func dataDirNamed(name, goos string, lookup func(string) (string, bool), home func() (string, error)) (string, error) {
 	if v, ok := lookup(envDataDir); ok && v != "" {
 		return v, nil
 	}
@@ -191,18 +206,18 @@ func dataDir(goos string, lookup func(string) (string, bool), home func() (strin
 		if err != nil {
 			return "", fmt.Errorf("api: resolve home: %w", err)
 		}
-		return filepath.Join(h, "Library", "Application Support", dirName), nil
+		return filepath.Join(h, "Library", "Application Support", name), nil
 	case "linux":
 		if v, ok := lookup("XDG_DATA_HOME"); ok && v != "" && filepath.IsAbs(v) {
-			return filepath.Join(v, dirName), nil
+			return filepath.Join(v, name), nil
 		}
 		h, err := home()
 		if err != nil {
 			return "", fmt.Errorf("api: resolve home: %w", err)
 		}
-		return filepath.Join(h, ".local", "share", dirName), nil
+		return filepath.Join(h, ".local", "share", name), nil
 	case "windows":
-		return windowsDataDir(dirName, lookup, home)
+		return windowsDataDir(name, lookup, home)
 	default:
 		return "", fmt.Errorf("api: %s: %w", goos, ErrUnsupportedPlatform)
 	}
@@ -223,30 +238,7 @@ func DevDataDir() (string, error) {
 }
 
 func devDataDir(goos string, lookup func(string) (string, bool), home func() (string, error)) (string, error) {
-	if v, ok := lookup(envDataDir); ok && v != "" {
-		return v, nil
-	}
-	switch goos {
-	case "darwin":
-		h, err := home()
-		if err != nil {
-			return "", fmt.Errorf("api: resolve home: %w", err)
-		}
-		return filepath.Join(h, "Library", "Application Support", devDirName), nil
-	case "linux":
-		if v, ok := lookup("XDG_DATA_HOME"); ok && v != "" && filepath.IsAbs(v) {
-			return filepath.Join(v, devDirName), nil
-		}
-		h, err := home()
-		if err != nil {
-			return "", fmt.Errorf("api: resolve home: %w", err)
-		}
-		return filepath.Join(h, ".local", "share", devDirName), nil
-	case "windows":
-		return windowsDataDir(devDirName, lookup, home)
-	default:
-		return "", fmt.Errorf("api: %s: %w", goos, ErrUnsupportedPlatform)
-	}
+	return dataDirNamed(devDirName, goos, lookup, home)
 }
 
 // windowsDataDir resolves %APPDATA%\<name>, falling back to the roaming
