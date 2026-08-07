@@ -88,9 +88,13 @@ func newExceeded(key Key, dec Decision) *ExceededError {
 // pipeline.CallRequest and spends AT MOST ONE token, however many times the
 // pipeline invokes the wrapped call.
 //
-// The single-charge rule is why this type exists instead of a plain
-// closure: the 7.2 argument self-heal re-issues the same call with repaired
-// arguments, and one agent intent must cost one token, not two.
+// That "however many times" is why this is a type and not a plain closure.
+// Today pipeline.Execute invokes the call exactly once, so the memo never
+// replays — but the rule it encodes is about agent INTENT, not about
+// invocations: one thing the caller asked for costs one token, whatever the
+// execute path does internally to deliver it. A retry the pipeline grows
+// later must not silently double every quota, and a closure would make that
+// the next author's problem to notice.
 type Admission struct {
 	lim *Limiter
 	key Key
@@ -121,7 +125,7 @@ func (a *Admission) check() error {
 }
 
 // Wrap returns call guarded by this admission. A nil call returns nil so
-// the wiring can wrap both CallRequest fields unconditionally.
+// Guard can wrap unconditionally rather than nil-checking at the call site.
 //
 // Placement invariant: the returned closure runs where the wrapped one did
 // — after EVERY gate (scope, token tier) and immediately
