@@ -53,7 +53,11 @@ type Conn struct {
 
 	mu      sync.Mutex
 	pending map[string]chan *mcp.Response
-	closed  bool
+	// subs are the live consumers of the gateway→client direction
+	// (subscribe.go). Guarded by the same mutex as pending, because both are
+	// touched by the read loop on every frame.
+	subs   map[*Subscription]struct{}
+	closed bool
 
 	closeOnce sync.Once
 }
@@ -189,6 +193,10 @@ func (c *Conn) Close() {
 		// writing while it drained.
 		_ = c.outW.Close()
 		<-c.readDone
+		// After readDone, because no further notification can be offered
+		// once the read loop has exited: a subscriber waking to "closed"
+		// has therefore seen everything this connection ever produced.
+		c.closeSubscriptions()
 		c.reverse.Wait()
 		_ = c.outR.Close()
 	})
@@ -212,12 +220,11 @@ func (c *Conn) readLoop() {
 		case *mcp.Response:
 			c.deliver(m)
 		case *mcp.Notification:
-			// Server-initiated notifications (tools/list_changed) have no
-			// carrier on this face: canonical.md §5b freezes the transport
-			// asymmetry — agenthub grows no SSE exposure face — so there is
-			// no stream to push them down. Dropping is the honest outcome;
-			// clients re-list on their own schedule.
-			c.g.log.Debug("dropping gateway notification (no upstream stream)", "method", m.Method)
+			// Server-initiated notifications (tools/list_changed) go to
+			// whoever subscribed (subscribe.go). Nobody subscribed is still
+			// a drop, and still the common case: a client that opened no
+			// stream is not owed one.
+			c.fanout(m)
 		case *mcp.Request:
 			// Reverse RPC (roots/list). Answered OFF the read loop: the pipes
 			// are unbuffered, so replying inline can deadlock against the
