@@ -533,10 +533,8 @@ func (a *App) newProfileToolLsCmd() *cobra.Command {
 				return e
 			}
 			if serverArg != "" {
-				if _, ok := snap.Servers.V.Servers[serverArg]; !ok {
-					e := NotFoundf(CodeServerNotFound, "no server %q", serverArg)
-					e.Hint = "run 'agenthub server ls' to see configured servers"
-					return e
+				if _, err := requireServer(snap, serverArg); err != nil {
+					return err
 				}
 			}
 			cached, err := gateway.LoadToolCache(a.resolver, nil)

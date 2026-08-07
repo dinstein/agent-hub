@@ -312,6 +312,12 @@ func dedupSorted(in []string) []string {
 
 // requireServer resolves a server id against the registry snapshot, turning
 // a typo into exit 3 instead of a silently created ghost entry.
+//
+// It is the only place the CLI spells that refusal. Five commands used to
+// hand-roll the same three lines, so the message, the machine code and the
+// hint a mistyped server id produces were assembled six times from one fact —
+// and a reader who found this helper could not tell whether it was the rule or
+// one of several. Callers that only need the existence check discard the entry.
 func requireServer(snap *registry.Snapshot, id string) (registry.ServerEntry, error) {
 	doc, ok := snap.Servers.V.Servers[id]
 	if !ok {

@@ -217,10 +217,8 @@ func (a *App) emitToolInspect(cmd *cobra.Command, profileName string, args []str
 	serverArg := ""
 	if len(args) == 2 {
 		serverArg = args[0]
-		if _, ok := snap.Servers.V.Servers[serverArg]; !ok {
-			e := NotFoundf(CodeServerNotFound, "no server %q", serverArg)
-			e.Hint = "run 'agenthub server ls' to see configured servers"
-			return e
+		if _, err := requireServer(snap, serverArg); err != nil {
+			return err
 		}
 	}
 	// The catalog is built under the GLOBAL layer alone in both spellings, so

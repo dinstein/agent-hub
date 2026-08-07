@@ -357,10 +357,8 @@ func (a *App) newAuthStatusCmd() *cobra.Command {
 			}
 			var ids []string
 			if len(args) == 1 {
-				if _, ok := store.Snapshot().Servers.V.Servers[args[0]]; !ok {
-					e := NotFoundf(CodeServerNotFound, "no server %q", args[0])
-					e.Hint = "run 'agenthub server ls' to see configured servers"
-					return e
+				if _, err := requireServer(store.Snapshot(), args[0]); err != nil {
+					return err
 				}
 				ids = []string{args[0]}
 			} else {
@@ -541,13 +539,11 @@ func (a *App) serverEntry(id string) (registry.ServerEntry, []string, error) {
 	if err != nil {
 		return registry.ServerEntry{}, warnings, err
 	}
-	doc, ok := store.Snapshot().Servers.V.Servers[id]
-	if !ok {
-		e := NotFoundf(CodeServerNotFound, "no server %q", id)
-		e.Hint = "run 'agenthub server ls' to see configured servers"
-		return registry.ServerEntry{}, warnings, e
+	entry, err := requireServer(store.Snapshot(), id)
+	if err != nil {
+		return registry.ServerEntry{}, warnings, err
 	}
-	return doc.V, warnings, nil
+	return entry, warnings, nil
 }
 
 // serverIsLocal reports whether the registry marks serverID as a local
