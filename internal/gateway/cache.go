@@ -82,6 +82,22 @@ const toolCacheSubdir = "tools"
 // A missing cache is an empty map, not an error (it only means no gateway
 // has connected yet); log may be nil.
 func LoadToolCache(resolver *platform.Resolver, log *slog.Logger) (map[string][]mcp.ToolDef, error) {
+	c, err := openToolCache(resolver, log)
+	if err != nil {
+		return nil, err
+	}
+	return c.load(), nil
+}
+
+// openToolCache resolves the cache directory and builds the reader both
+// offline entry points share.
+//
+// It exists so the projection claim above is structural rather than a
+// convention: the two readers used to repeat this sequence, so a defaulting
+// rule or a directory added to one of them would have left them reading
+// different files while the comment still said they could not disagree. The
+// third reader that comment anticipates calls this.
+func openToolCache(resolver *platform.Resolver, log *slog.Logger) (*toolCache, error) {
 	if resolver == nil {
 		resolver = platform.Default()
 	}
@@ -92,7 +108,7 @@ func LoadToolCache(resolver *platform.Resolver, log *slog.Logger) (map[string][]
 	if err != nil {
 		return nil, err
 	}
-	return newToolCache(filepath.Join(dir, toolCacheSubdir), log).load(), nil
+	return newToolCache(filepath.Join(dir, toolCacheSubdir), log), nil
 }
 
 // ToolCacheEntry is one server's cached catalog together with the moment it
@@ -115,17 +131,11 @@ type ToolCacheEntry struct {
 // other. Same offline contract: a missing cache is an empty map, not an
 // error, and log may be nil.
 func LoadToolCacheEntries(resolver *platform.Resolver, log *slog.Logger) (map[string]ToolCacheEntry, error) {
-	if resolver == nil {
-		resolver = platform.Default()
-	}
-	if log == nil {
-		log = slog.New(slog.DiscardHandler)
-	}
-	dir, err := resolver.CacheDir()
+	c, err := openToolCache(resolver, log)
 	if err != nil {
 		return nil, err
 	}
-	return newToolCache(filepath.Join(dir, toolCacheSubdir), log).loadEntries(), nil
+	return c.loadEntries(), nil
 }
 
 // ForgetToolCache deletes the persisted tool list of one server — the
