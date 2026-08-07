@@ -72,6 +72,105 @@ func seedControlAuditCallAt(
 	return keyID
 }
 
+// seedControlHubCall writes a call agenthub answered ITSELF: no route, and
+// therefore no server or tool on any of its records. A meta-tool carries the
+// surface and the exposed name; initialize, tools/list and ping carry neither
+// and are told apart by their method alone.
+func seedControlHubCall(t *testing.T, root, callID string, key []byte, ts time.Time, surface, exposed, method string) {
+	t.Helper()
+	keyID, err := calllog.KeyID(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := calllog.Open(calllog.Options{
+		Root: root, Key: key, KeyID: keyID, Durability: calllog.DurabilitySync,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	common := calllog.Event{
+		CallID: callID, Client: "codex", Face: "stdio",
+		Exposed: exposed, Surface: surface, Method: method,
+	}
+	received := common
+	received.TS, received.Kind = ts, calllog.EventReceived
+	if err := store.Append(received); err != nil {
+		t.Fatal(err)
+	}
+	finished := common
+	finished.TS, finished.Kind = ts.Add(time.Millisecond), calllog.EventFinished
+	finished.Outcome, finished.DurationMs = "success", 3
+	if err := store.Append(finished); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestHubAnsweredCallsAreCountedAndSelectable is the regression for a Calls
+// page whose Server and Tool dropdowns could not name agenthub: the options
+// come from the statistics, which counted the routed fields, and the hub's
+// own answers have none. An option that cannot be produced and a filter that
+// would not match it are one bug, so this asserts both halves — and that the
+// hub's rows never absorb a routed one.
+func TestHubAnsweredCallsAreCountedAndSelectable(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "calls")
+	key := []byte("0123456789abcdef0123456789abcdef")
+	base := time.Now().UTC().Add(-time.Minute)
+	seedControlAuditCallAt(t, root, "call-routed", key, base.Add(3*time.Second), "codex", "linear", "get_project")
+	seedControlHubCall(t, root, "call-meta", key, base.Add(2*time.Second), "meta", "search_tools", "tools/call")
+	seedControlHubCall(t, root, "call-list", key, base.Add(time.Second), "", "", "tools/list")
+	client, _ := startServer(t, func(o *Options) { o.NonRegistry.CallsRoot = root })
+
+	stats, err := client.Calls.Stats(t.Context(), base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Servers[calllog.HubServer] != 2 || stats.Servers["linear"] != 1 {
+		t.Fatalf("servers = %+v", stats.Servers)
+	}
+	if stats.ServerTools[calllog.HubServer]["search_tools"] != 1 ||
+		stats.ServerTools[calllog.HubServer]["tools/list"] != 1 ||
+		stats.ServerTools["linear"]["get_project"] != 1 {
+		t.Fatalf("serverTools = %+v", stats.ServerTools)
+	}
+
+	hub, err := client.Calls.List(t.Context(), api.CallFilter{
+		Since: base, Limit: 10, Server: calllog.HubServer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hub.Total != 2 {
+		t.Fatalf("calls filtered to the hub = %+v", hub)
+	}
+	for _, row := range hub.Calls {
+		if row.TargetServer != calllog.HubServer || row.Server != "" {
+			t.Fatalf("hub row kept a routed server: %+v", row)
+		}
+	}
+
+	meta, err := client.Calls.List(t.Context(), api.CallFilter{
+		Since: base, Limit: 10, Server: calllog.HubServer, Tool: "search_tools",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.Total != 1 || meta.Calls[0].CallID != "call-meta" || meta.Calls[0].TargetTool != "search_tools" {
+		t.Fatalf("calls filtered to one meta-tool = %+v", meta)
+	}
+
+	routed, err := client.Calls.List(t.Context(), api.CallFilter{Since: base, Limit: 10, Server: "linear"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if routed.Total != 1 || routed.Calls[0].CallID != "call-routed" ||
+		routed.Calls[0].TargetServer != "linear" || routed.Calls[0].TargetTool != "get_project" {
+		t.Fatalf("calls filtered to a server = %+v", routed)
+	}
+}
+
 func TestCallPageUseStableCursorAndServerSideFilters(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "calls")
 	key := []byte("0123456789abcdef0123456789abcdef")

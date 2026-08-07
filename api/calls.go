@@ -46,10 +46,20 @@ type CallSummary struct {
 	// reached. A row carries both, so "the client called the server" and
 	// "the client asked the hub, which called the server" are distinguishable
 	// without opening the call.
-	Method        string `json:"method,omitempty"`
-	Surface       string `json:"surface,omitempty"`
-	Server        string `json:"server,omitempty"`
-	Tool          string `json:"tool,omitempty"`
+	Method  string `json:"method,omitempty"`
+	Surface string `json:"surface,omitempty"`
+	Server  string `json:"server,omitempty"`
+	Tool    string `json:"tool,omitempty"`
+	// TargetServer and TargetTool are what the call REACHED, one groupable
+	// value each: the routed server and tool where routing happened, and
+	// agenthub's own sentinel where the hub answered the call itself — a
+	// meta-tool, a grouped listing, or a method that is not a tools/call.
+	// The statistics count them and the collection filters compare them, so
+	// a dropdown option always selects the rows rendered under that name.
+	// Server and Tool remain the routing fact, and stay empty when nothing
+	// was routed.
+	TargetServer  string `json:"targetServer,omitempty"`
+	TargetTool    string `json:"targetTool,omitempty"`
 	Outcome       string `json:"outcome,omitempty"`
 	DurationMs    int64  `json:"durationMs,omitempty"`
 	Code          string `json:"code,omitempty"`

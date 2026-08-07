@@ -84,6 +84,12 @@ func eventIntoSummary(out *api.CallSummary, e calllog.Event) {
 		out.Outcome, out.DurationMs, out.Code = e.Outcome, e.DurationMs, e.Code
 		out.ResultCapture = e.ResultCapture
 	}
+	// Derived last, from the joined row rather than from this event: the
+	// surface arrives after `received` and the route after that, so an event
+	// read on its own answers "what did this reach" with whatever had been
+	// learned by then.
+	out.TargetServer = calllog.TargetServer(out.Server, out.Surface, out.Method)
+	out.TargetTool = calllog.TargetTool(out.Tool, out.ExposedTool, out.Method)
 }
 
 func callMatches(c api.CallSummary, q map[string]string) bool {
@@ -100,9 +106,13 @@ func callMatches(c api.CallSummary, q map[string]string) bool {
 			return false
 		}
 	}
+	// Server and tool compare against the DERIVED target, which is what the
+	// statistics offered as an option. Comparing against the routed fields
+	// left the hub's own calls unselectable and, for a tool, matched an
+	// exposed name the dropdown never contained.
 	return (q["client"] == "" || c.Client == q["client"]) &&
-		(q["server"] == "" || c.Server == q["server"]) &&
-		(q["tool"] == "" || c.Tool == q["tool"] || c.ExposedTool == q["tool"]) &&
+		(q["server"] == "" || c.TargetServer == q["server"]) &&
+		(q["tool"] == "" || c.TargetTool == q["tool"] || c.ExposedTool == q["tool"]) &&
 		(q["outcome"] == "" || c.Outcome == q["outcome"])
 }
 
@@ -323,17 +333,24 @@ func (s *Server) handleCallsStats(w http.ResponseWriter, r *http.Request) {
 		if e.Kind == calllog.EventFinished {
 			finished[e.CallID] = true
 			out.Outcomes[e.Outcome]++
-			if e.Server != "" {
-				out.Servers[e.Server]++
+			// The finished record carries the whole of one call's identity —
+			// the surface and exposed name from before the route, the route
+			// if there was one — so the target derives from it alone.
+			// Counting the routed fields instead left every call agenthub
+			// answered itself out of the dropdowns that filter this list.
+			server := calllog.TargetServer(e.Server, e.Surface, e.Method)
+			tool := calllog.TargetTool(e.Tool, e.Exposed, e.Method)
+			if server != "" {
+				out.Servers[server]++
 			}
-			if e.Tool != "" {
-				out.Tools[e.Tool]++
+			if tool != "" {
+				out.Tools[tool]++
 			}
-			if e.Server != "" && e.Tool != "" {
-				if out.ServerTools[e.Server] == nil {
-					out.ServerTools[e.Server] = map[string]int{}
+			if server != "" && tool != "" {
+				if out.ServerTools[server] == nil {
+					out.ServerTools[server] = map[string]int{}
 				}
-				out.ServerTools[e.Server][e.Tool]++
+				out.ServerTools[server][tool]++
 			}
 		}
 		for _, ref := range []*calllog.PayloadRef{e.Request, e.EffectiveArgs, e.Result} {
