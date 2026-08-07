@@ -409,7 +409,7 @@ CLI 只为**运行期对象**去找 daemon：`session ls/show/kill`，以及 `se
 |---|---|
 | macOS | 完整支持，CI 覆盖 |
 | Linux | 完整支持，CI 覆盖 |
-| Windows | **实验性**：平台层已补齐——文件锁（`LockFileEx`）、named pipe 监听器（SDDL 收口）、api 拨号、GUI 通道接线、便携 zip 打包——但这层之上 `daemon stop` 与 `client connect` 的用户级路径尚未实现，且**从未在真实 Windows 机器上跑过任何一行**。见 [windows.md](../windows.md) |
+| Windows | **实验性，但已从「部分」变为「完整」**：平台层（文件锁 `LockFileEx`、named pipe 监听器（SDDL 收口）、api 拨号、GUI 通道接线、便携 zip 打包），加上此前缺的两件——`daemon stop`（改为经控制面请求，因为这里没有任何信号能送达一个脱离控制台的 daemon）与每个客户端的用户级路径。**从未在真实 Windows 机器上跑过任何一行**，所以以上全部是「能编译、经注入接缝做过单元测试」的代码，而不是有人观察过的行为。见 [windows.md](../windows.md) |
 
 GUI（`cmd/agenthub-gui`）默认**不参与**构建：链接 webview 需要 Linux CI runner 上没有的
 GTK/WebKit 开发包，所以 Wails 代码全部在 `//go:build wails` 之后，用 `make gui` 单独构建。

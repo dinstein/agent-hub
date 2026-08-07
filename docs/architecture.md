@@ -430,7 +430,7 @@ included — works with no daemon anywhere in the picture.
 |---|---|
 | macOS | Fully supported, covered by CI |
 | Linux | Fully supported, covered by CI |
-| Windows | **Experimental**: the platform layer is filled in — file locks (`LockFileEx`), named-pipe listener (SDDL-gated), api dialing, GUI channel wiring, and portable zip packaging — but `daemon stop` and `client connect`'s user-level paths are unimplemented above it, and **nothing has ever run on a real Windows machine**. See [windows.md](windows.md) |
+| Windows | **Experimental, and now complete rather than partial**: the platform layer (file locks via `LockFileEx`, the SDDL-gated named-pipe listener, api dialing, GUI channel wiring, portable zip packaging) plus the two things that were missing above it — `daemon stop`, which asks over the control plane because nothing can signal a detached daemon here, and every client's user-level path. **Nothing has ever run on a real Windows machine**, so all of it is code that compiles and is unit-tested through injected seams rather than behaviour anyone has observed. See [windows.md](windows.md) |
 
 The GUI (`cmd/agenthub-gui`) is **not** part of the default build: linking a webview needs GTK/WebKit
 dev packages the Linux CI runner lacks, so all Wails code sits behind `//go:build wails` and builds

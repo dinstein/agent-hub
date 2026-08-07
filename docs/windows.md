@@ -74,20 +74,18 @@ directory mode. Explicitly tightening the data directory's ACL is an open item (
 
 ## 2. Open items
 
-The daemon starts, the CLI runs, and the GUI finds its daemon. The first two items below are holes in
-that rather than polish — `daemon stop` and `client connect` each reach an unimplemented branch — and
-the three after them are polish.
+The daemon starts, the CLI runs, the GUI finds its daemon, and the two items that were holes rather
+than polish — `daemon stop` and `client connect` — are implemented. What is left below is polish,
+plus the one thing none of it substitutes for: a machine.
 
-### `daemon stop` has no Windows implementation
-
-`internal/cli/daemonproc_stub.go` (`//go:build !unix`) answers `ErrUnsupportedPlatform` for both
-`daemonSignalStop` and `daemonKillGroup`, and `daemonAlive` answers false. So a Windows daemon can be
-started and cannot be stopped by `agenthub daemon stop`, with or without `--force`; the user is left
-killing the process by hand. What it needs is a Job Object, which is also what
-`detachProcessGroup` would use — the two are one piece of work, and neither can be verified from here.
-
-The failure is at least loud: the operation reports unsupported rather than reporting success and
-signalling nothing.
+**A Job Object was the wrong answer, and this document was the one proposing it.** It said `daemon
+stop` "needs a Job Object", which does not fit a detached daemon started by a short-lived CLI: the
+job dies with the last handle, and the CLI exits immediately. A console control event is no better —
+`GenerateConsoleCtrlEvent` reaches only a process group sharing the CALLER's console, so it cannot
+reach a daemon started from another terminal or by a windowless GUI. What the graceful stop actually
+uses is the control plane: `POST /v1/daemon/stop`, over the socket `daemon stop` is already holding
+when it needs it. `--force` is `TerminateProcess`, and `daemonAlive` delegates to
+`platform.ProcessAlive`, which had been implemented here all along while the CLI stub answered false.
 
 ### The owner watch has one mechanism here instead of two
 
@@ -106,17 +104,25 @@ alternative to a hard stop is no stop at all, leaving a hub running with the app
 nothing on the machine that will ever end it. The Job Object that fixes `daemon stop` above fixes
 this too — one piece of work, and neither half is verifiable from here.
 
-### No client has a user-level location on Windows
+### The client paths are filled in, and unconfirmed
 
-`internal/clients/table.go` keys each client's user-level config path by GOOS, and `sameOnAll` /
-`perOS` only ever populate `darwin` and `linux`. A GOOS absent from that map makes the location
-unavailable rather than guessed, so on Windows `resolve` drops every user placement and returns only
-the project-relative ones. `agenthub client connect claude-desktop` therefore finds nothing to write
-for any client whose config is user-level only.
+`internal/clients/table.go` now answers for Windows in every row. Two conventions, kept apart because
+copying one onto the other is how a write lands somewhere the client never reads: the CLI-shaped
+clients keep a dotfile in the profile and are identical on all three platforms, while the
+application-shaped ones live under `%APPDATA%` — a different BASE, not just different segments. Zed
+is where the distinction bites (`.config/zed` on macOS and Linux, `%APPDATA%\Zed` here), and
+`%APPDATA%` is read from the environment rather than rebuilt under the home directory, because a
+roaming profile or a managed desktop redirects it.
 
-The dropping is deliberate and the right direction — inventing `%APPDATA%\Claude\...` and writing to
-it unverified is worse than finding nothing. Filling the table in is the work, and it needs a real
-machine to confirm each client's actual path.
+One redirect, and it is a probe rather than a guess. An MSIX-installed Claude Desktop reads a
+VIRTUALIZED `%APPDATA%`: its configuration lives under the package's `LocalCache`, and the documented
+`%APPDATA%\Claude` file is one the packaged application never opens. Writing there would parse,
+verify and change nothing observable. The probe only ever redirects toward a file that EXISTS, so an
+ordinary install keeps the documented path — but the package family name it looks for
+(`Claude_pzs8sxrjxfjjc`) comes from published reports, not from this project having seen one.
+
+What is owed is confirmation: every path in that table came from vendor documentation and community
+reports, and a wrong one fails in the way this table can least report — the write succeeds.
 
 ### Tighten the data directory's ACL
 
@@ -149,6 +155,12 @@ These are the checks that would graduate Windows from "experimental" to "support
 - A non-owner user being refused when connecting to the named pipe
 - The data directory landing correctly after spawning the gateway from a real MSIX-packaged client
 - The GUI starting the daemon successfully (pipe listener arming, `run/daemon.json` written)
+- `agenthub daemon stop` ending a daemon started from ANOTHER terminal, and from the GUI — the two
+  cases a console control event cannot reach, and the reason the graceful stop goes over the socket
+- `agenthub client connect <id>` writing a file each client then actually reads, for at least one
+  dotfile client and one `%APPDATA%` one. The Claude Desktop row is the one to check twice: an MSIX
+  install reads a virtualized `%APPDATA%`, and the redirect probe is the only thing standing between
+  a correct write and one that succeeds and is never read
 - The tray icon appearing (including from the notification-area overflow), its menu opening, and the
   close button hiding the window rather than ending the process
 - At least one end-to-end call through a downstream MCP server
