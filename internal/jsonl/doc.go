@@ -1,7 +1,8 @@
-// Package jsonl is the append-only JSONL writer shared by every stream this
-// product keeps on disk: the per-server wire trace (internal/downstream), the
-// control-plane event stream (internal/eventlog), and — through LineWriter —
-// the process logs slog writes (daemon.log, gateway-<client>.log).
+// Package jsonl is the append-only JSONL writer the streams under <data>/logs
+// go through: the control-plane event stream (internal/eventlog) and — through
+// LineWriter — the process logs slog writes (daemon.log, gateway-<client>.log).
+// The call ledger (internal/calllog) has a writer of its own, because capacity
+// arbitration and encryption are not this package's business.
 //
 // It was extracted from internal/audit, which owned it while the governance
 // streams existed. The streams went; the write discipline they were built on

@@ -165,7 +165,11 @@ func TestWriterRotation(t *testing.T) {
 	const n = 200
 	pad := strings.Repeat("y", 80)
 	for i := 0; i < n; i++ {
-		w.AppendLine(MarshalLine(appendLine{Proc: "p", Seq: i, Pad: pad}))
+		line, err := json.Marshal(appendLine{Proc: "p", Seq: i, Pad: pad})
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.AppendLine(line)
 	}
 	if err := w.Close(); err != nil {
 		t.Fatal(err)

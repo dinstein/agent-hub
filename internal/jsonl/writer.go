@@ -399,23 +399,3 @@ func (w *Writer) oversizeMarker(orig []byte) []byte {
 	}
 	return b
 }
-
-// MarshalLine encodes one record as a single JSON line for AppendLine. A
-// value that cannot be marshalled becomes a marshalError line rather than a
-// dropped record: a stream that silently loses entries is worse than one
-// that says it could not encode them.
-//
-// No production caller uses it today. internal/downstream and
-// internal/eventlog both marshal their own records and return on error,
-// which is the discipline this function exists to offer and neither takes
-// up. Whether they should is a behaviour question, not a naming one — the
-// failure is unreachable for the plain record types both write, so nothing
-// is known to be lost; it is noted here because the gap is invisible from
-// either call site, each of which looks locally reasonable.
-func MarshalLine(v any) []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
-		b, _ = json.Marshal(map[string]string{"marshalError": err.Error()})
-	}
-	return b
-}
