@@ -17,8 +17,12 @@ command tree — fourteen resource tables laid out along the domain model — an
 point: a resource can still have a hash route without taking permanent navigation space. Catalog
 follows Servers because the two are the configured and discoverable halves of one task. Credentials
 are configured from the server that needs them, not from a global vault page; there is deliberately
-**no global Secrets destination**. Tokens, Scope, Sessions and Skills keep routes but stay out of the
-navigation until they own a task not already expressed by server, profile and client configuration.
+**no global Secrets destination**. Six routes stay out of the navigation, for two different reasons.
+Tokens, Scope, Sessions and Skills are waiting for a task not already expressed by server, profile and
+client configuration. Config (the global governance layer) and Auth (a server's OAuth logins) are not
+waiting for anything — they are reached from the page that needs them, Auth from Playground and Config
+by hash alone, because neither is a place to start a task. Sessions is linked from onboarding for the
+same reason; Config, Tokens, Scope and Skills have no in-app link at all today.
 
 **Calls, Events and Logs are three destinations, not one.** They answer different questions — Calls
 reads the ledger (what a client ASKED agenthub for and where it went), Events reads the control-plane
