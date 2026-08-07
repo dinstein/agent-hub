@@ -503,8 +503,15 @@ which nothing else can reconstruct once the configuration moves.
 change that decision: `ledgerBegin` and `ledgerRoute` return nothing, and every method is recorded
 on one path with one failure direction. `tools/call` used to refuse to run when it could not be
 recorded, which put a full disk or an unreadable vault in the way of every call in exchange for a
-record that the failure had already lost. What is left is a history that can have holes and says so
-— `ledger record dropped; the call is unaffected`, at Error, once per record.
+record that the failure had already lost. What is left is a history that can have holes and says so,
+at Error, in **two shapes for two conditions**: `ledger record dropped; the call is unaffected` once
+per record, when a store that opened cannot complete a write; and `ledger unavailable; calls run
+unrecorded` once at gateway start, when it could not open at all. Once is right for the second — the
+condition cannot change while the process runs, and a line per call would bury it — and the gateway's
+own log is the only witness either way, since the ledger cannot record its own failure to record.
+`test/e2e/callsfailopen_test.go` drives the second shape by putting a FILE where the ledger's
+directory has to be, which breaks it regardless of who the test runs as; a permission bit would not,
+and would pass silently on any runner that happens to be root.
 
 **Nothing later in the call may refuse it either, and the finish is the sharp case.** A finish is
 written after the downstream has run, so its side effect has already happened; replacing the

@@ -1174,6 +1174,14 @@ generation counter that has to mean the same thing on both sides with nothing sp
 assertions land on the OTHER routes on purpose: a live gateway must follow the write, and the CLI must
 read the same entry back out of the files with no daemon in the path.
 
+**The observability streams are read back by a process that did not write them**, which is the only
+way any of their claims can be checked: `calls_test.go` and `callskeys_test.go` for the ledger,
+`observability_test.go` for `events` and `logs`. Two conventions there are worth copying. A
+disclosure assertion is made against the RAW command output rather than a decoded struct — a payload
+leaking through a field the test does not model would be invisible otherwise — and a selector is
+asserted to EXCLUDE the other side's marker as well as to include its own, because a selector that
+was never applied satisfies a presence check just as well as a working one.
+
 **Credential paths are pinned to the encrypted file, never the OS keyring.** `vaultEnv` sets
 `AGENTHUB_SECRET_KEY`, which makes `Chain.encForRead`/`encForWrite` resolve to `secrets.enc`
 unconditionally. Without it, `secret set` on a developer's macOS would write the real login keychain and
