@@ -326,9 +326,9 @@ func TestSearchOrderingIsDeterministic(t *testing.T) {
 		{query: "github", first: "github"},
 		{query: "FILE", first: "filesystem"},
 		// A shared topic tag gathers every entry carrying it, and an entry
-		// that merely sounds adjacent is not swept in: fetch retrieves a page
-		// over HTTP, it does not drive a browser.
-		{query: "browser", contains: []string{"chrome-devtools", "playwright"}, excludes: []string{"fetch"}},
+		// that merely sounds adjacent is not swept in: figma is a "frontend"
+		// entry that renders in a browser, it does not drive one.
+		{query: "browser", contains: []string{"chrome-devtools", "playwright"}, excludes: []string{"figma"}},
 		// A term in the id outranks the same term as a tag, so the entry whose
 		// name IS the query comes first.
 		{query: "search", first: "brave-search", contains: []string{"cloudflare-docs"}},

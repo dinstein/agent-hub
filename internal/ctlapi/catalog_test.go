@@ -104,20 +104,20 @@ type catalogAddBody struct {
 func TestCatalogAddOneClick(t *testing.T) {
 	env, _, _ := adminServer(t, nil)
 
-	res := doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/fetch/add", nil)
+	res := doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/playwright/add", nil)
 	if res.status != http.StatusOK {
 		t.Fatalf("add: %d %s", res.status, res.raw)
 	}
 	var added catalogAddBody
 	res.decode(t, &added)
-	if added.ID != "fetch" || added.CatalogID != "fetch" || !added.Changed || added.Generation == 0 {
+	if added.ID != "playwright" || added.CatalogID != "playwright" || !added.Changed || added.Generation == 0 {
 		t.Fatalf("add result = %+v", added)
 	}
-	stored, ok := env.reg.Snapshot().Servers.V.Servers["fetch"]
+	stored, ok := env.reg.Snapshot().Servers.V.Servers["playwright"]
 	if !ok {
 		t.Fatal("server not in registry")
 	}
-	if stored.V.Source != "catalog:fetch" || !stored.V.Enabled {
+	if stored.V.Source != "catalog:playwright" || !stored.V.Enabled {
 		t.Errorf("stored entry = %+v", stored.V)
 	}
 	if len(added.NextSteps) != 0 {
@@ -220,12 +220,12 @@ func TestCatalogAddFailureModes(t *testing.T) {
 		wantErr(t, http.StatusNotFound, CodeNotFound)
 
 	// A name already taken is a conflict, not a silent replacement.
-	doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/fetch/add", nil)
-	dup := doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/fetch/add", nil)
+	doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/playwright/add", nil)
+	dup := doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/playwright/add", nil)
 	dup.wantErr(t, http.StatusConflict, confops.CodeServerExists)
 
 	// A stale precondition is the ordinary 409 with the current generation.
-	stale := doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/memory/add", map[string]any{
+	stale := doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/chrome-devtools/add", map[string]any{
 		"expected_generation": 99,
 	})
 	stale.wantErr(t, http.StatusConflict, CodeStalePrecondition)
@@ -235,7 +235,7 @@ func TestCatalogAddFailureModes(t *testing.T) {
 
 	// A correct precondition goes through.
 	gen := env.reg.Snapshot().Generation
-	ok := doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/memory/add", map[string]any{
+	ok := doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/chrome-devtools/add", map[string]any{
 		"expected_generation": gen,
 	})
 	if ok.status != http.StatusOK {
@@ -243,7 +243,7 @@ func TestCatalogAddFailureModes(t *testing.T) {
 	}
 
 	// Malformed body.
-	doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/time/add", "{not json").
+	doAdmin(t, env.sock, http.MethodPost, "/v1/catalog/huggingface/add", "{not json").
 		wantErr(t, http.StatusBadRequest, CodeBadRequest)
 }
 

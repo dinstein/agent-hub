@@ -40,66 +40,6 @@
       "tags": ["git", "vcs", "local", "reference"]
     },
     {
-      "id": "fetch",
-      "name": "Fetch",
-      "description": "Fetch a URL and convert the page to markdown for reading.",
-      "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
-      "provenance": "curated",
-      "transport": "stdio",
-      "command": "uvx",
-      "args": ["mcp-server-fetch"],
-      "tags": ["web", "http", "reference"]
-    },
-    {
-      "id": "memory",
-      "name": "Memory",
-      "description": "A knowledge graph the agent can write notes into and recall later.",
-      "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
-      "provenance": "curated",
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"],
-      "tags": ["memory", "notes", "reference"]
-    },
-    {
-      "id": "sequential-thinking",
-      "name": "Sequential Thinking",
-      "description": "A scratchpad tool for step-by-step reasoning over a hard problem.",
-      "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
-      "provenance": "curated",
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
-      "tags": ["reasoning", "reference"]
-    },
-    {
-      "id": "everything",
-      "name": "Everything (protocol test server)",
-      "description": "The reference server exercising every MCP feature. Useful for testing agenthub itself.",
-      "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/everything",
-      "provenance": "curated",
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-everything"],
-      "tags": ["test", "diagnostics", "reference"]
-    },
-    {
-      "id": "time",
-      "name": "Time",
-      "description": "Current time and time-zone conversion.",
-      "publisher": "modelcontextprotocol",
-      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/time",
-      "provenance": "curated",
-      "transport": "stdio",
-      "command": "uvx",
-      "args": ["mcp-server-time"],
-      "tags": ["time", "timezone", "reference"]
-    },
-    {
       "id": "brave-search",
       "name": "Brave Search",
       "description": "Web, news, image and local search through the Brave Search API.",
@@ -129,7 +69,7 @@
       "provenance": "curated",
       "transport": "stdio",
       "command": "npx",
-      "args": ["@playwright/mcp@latest"],
+      "args": ["-y", "@playwright/mcp@0.0.79"],
       "tags": ["browser", "web", "automation", "puppeteer"]
     },
     {
@@ -141,7 +81,7 @@
       "provenance": "curated",
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest"],
+      "args": ["-y", "chrome-devtools-mcp@1.6.0"],
       "tags": ["browser", "debugging", "performance", "web"]
     },
     {
@@ -226,6 +166,75 @@
       "transport": "http",
       "url": "https://docs.mcp.cloudflare.com/mcp",
       "tags": ["docs", "search", "cloudflare"]
+    },
+    {
+      "id": "microsoft-learn",
+      "name": "Microsoft Learn",
+      "description": "Search Microsoft's official documentation and code samples across Azure, .NET, Windows and M365. Needs no login and no credential.",
+      "publisher": "Microsoft",
+      "homepage": "https://github.com/MicrosoftDocs/mcp",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://learn.microsoft.com/api/mcp",
+      "tags": ["docs", "search", "azure", "dotnet", "microsoft"]
+    },
+    {
+      "id": "deepwiki",
+      "name": "DeepWiki",
+      "description": "Ask questions about any public GitHub repository and read its generated wiki. Needs no login and no credential.",
+      "publisher": "Cognition",
+      "homepage": "https://docs.devin.ai/work-with-devin/deepwiki-mcp",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://mcp.deepwiki.com/mcp",
+      "tags": ["docs", "code", "github", "repository"]
+    },
+    {
+      "id": "huggingface",
+      "name": "Hugging Face",
+      "description": "Search models, datasets, Spaces and papers on the Hub, and read repository files. Works anonymously; adding an account only widens what you can reach.",
+      "publisher": "Hugging Face",
+      "homepage": "https://huggingface.co/settings/mcp",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://huggingface.co/mcp",
+      "tags": ["models", "datasets", "ml", "ai", "papers"]
+    },
+    {
+      "id": "figma",
+      "name": "Figma",
+      "description": "Figma's hosted server: read designs, components and variables, and turn a selected frame into code context.",
+      "publisher": "Figma",
+      "homepage": "https://developers.figma.com/docs/figma-mcp-server/",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://mcp.figma.com/mcp",
+      "auth": "oauth",
+      "tags": ["design", "ui", "components", "frontend"]
+    },
+    {
+      "id": "supabase",
+      "name": "Supabase",
+      "description": "Supabase's hosted server: inspect a project's schema, run SQL, manage branches and read logs.",
+      "publisher": "Supabase",
+      "homepage": "https://supabase.com/docs/guides/getting-started/mcp",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://mcp.supabase.com/mcp",
+      "auth": "oauth",
+      "tags": ["database", "postgres", "sql", "backend"]
+    },
+    {
+      "id": "vercel",
+      "name": "Vercel",
+      "description": "Vercel's hosted server: projects, deployments, build logs and environment configuration.",
+      "publisher": "Vercel",
+      "homepage": "https://vercel.com/docs/mcp/vercel-mcp",
+      "provenance": "curated",
+      "transport": "http",
+      "url": "https://mcp.vercel.com",
+      "auth": "oauth",
+      "tags": ["deployment", "hosting", "logs", "frontend"]
     },
     {
       "id": "dune",

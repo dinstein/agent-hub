@@ -92,8 +92,8 @@ func TestCatalogRoundTrip(t *testing.T) {
 // is left to do (nothing, here).
 func TestCatalogAddOneClick(t *testing.T) {
 	setDataDir(t)
-	out := mustRun(t, "", "catalog", "add", "fetch")
-	if !strings.Contains(out, "added: fetch (stdio, source=catalog:fetch)") {
+	out := mustRun(t, "", "catalog", "add", "playwright")
+	if !strings.Contains(out, "added: playwright (stdio, source=catalog:playwright)") {
 		t.Errorf("output = %q", out)
 	}
 	if strings.Contains(out, "next:") {
@@ -167,8 +167,8 @@ func TestCatalogAddRefusalWritesNothing(t *testing.T) {
 // replacement — the same rule `server add` follows.
 func TestCatalogAddTwiceConflicts(t *testing.T) {
 	setDataDir(t)
-	mustRun(t, "", "catalog", "add", "memory")
-	code, _, stderr := runCLI(t, "", "catalog", "add", "memory")
+	mustRun(t, "", "catalog", "add", "chrome-devtools")
+	code, _, stderr := runCLI(t, "", "catalog", "add", "chrome-devtools")
 	if code != ExitGeneral {
 		t.Fatalf("exit = %d, want %d (stderr: %s)", code, ExitGeneral, stderr)
 	}
@@ -193,7 +193,7 @@ func TestCatalogHumanTable(t *testing.T) {
 // line says what the grading is.
 func TestCatalogShowQualifiesProvenance(t *testing.T) {
 	setDataDir(t)
-	out := mustRun(t, "", "catalog", "show", "fetch")
+	out := mustRun(t, "", "catalog", "show", "playwright")
 	if !strings.Contains(out, "not a verification") {
 		t.Errorf("show output must qualify provenance:\n%s", out)
 	}
