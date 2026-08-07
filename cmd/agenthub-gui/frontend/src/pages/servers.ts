@@ -2278,6 +2278,14 @@ export function serversPage(): Page {
    * otherwise go stale invisibly. The expanded body's inputs are included only
    * while it is open, so a cached diagnostic arriving for a collapsed row does
    * not rebuild it.
+   *
+   * Credential state appears TWICE, at two granularities, because it reaches
+   * the row through two surfaces that change at different rates. The row menu
+   * offers Log out OAuth only while a credential is stored, and that menu is
+   * part of every row, collapsed or not — so the BOOLEAN is unconditional.
+   * The whole status is not: the daemon computes `expires_in` per request, so
+   * an unconditional status entry would rebuild every row on every read, for
+   * a countdown only the open panel shows.
    */
   function rowSignature(s: Server): string {
     const expanded = expandedServers.has(s.id);
@@ -2286,6 +2294,7 @@ export function serversPage(): Page {
       s,
       expanded,
       observation?.kind === "secret" ? observation.keys : null,
+      hasStoredCredential(s.id),
       expanded ? probeCache.get(s.id) ?? null : null,
       expanded ? authStatuses.get(s.id) ?? null : null,
       expanded ? [authStatusLoaded, authStatusError] : null,
