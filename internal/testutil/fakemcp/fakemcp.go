@@ -169,6 +169,25 @@ const (
 	ActStorm ActionKind = "storm"
 	// ActStderr writes Text to stderr.
 	ActStderr ActionKind = "stderr"
+	// ActInputRequired answers a tools/call with the MCP 2026-07-28
+	// input_required interim result (MRTR): the client must resolve every
+	// entry of inputRequests and retry the call — with a NEW JSON-RPC id —
+	// carrying the answers plus the requestState echoed verbatim.
+	//
+	// Result carries the inputRequests object (default: one roots/list
+	// request under the key "roots"); Text carries the requestState
+	// (default: an opaque constant). Pair it with Rule.Call to answer the
+	// first call this way and let the retry fall through to normal
+	// handling:
+	//
+	//	Rule{Method: mcp.MethodToolsCall, Call: 1,
+	//	     Actions: []Action{{Kind: ActInputRequired}}}
+	//
+	// The retry is CHECKED, not merely accepted: the fake refuses one whose
+	// requestState is missing or altered, and echoes the answers back in
+	// the result's structuredContent so a test can prove they arrived. A
+	// fake that took any retry would pass a client that dropped either.
+	ActInputRequired ActionKind = "input-required"
 )
 
 // Action is one step of a rule. Which fields are meaningful depends on

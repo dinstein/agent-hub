@@ -87,6 +87,12 @@ type server struct {
 	// any further scripted write would corrupt framing in an unintended
 	// way. All subsequent writes are suppressed.
 	poisoned bool
+
+	// pendingState is the requestState of an outstanding MRTR round: set
+	// when ActInputRequired hands one out, cleared by the retry that echoes
+	// it correctly. Non-nil means the next tools/call is a retry and is
+	// graded as one (checkMRTRRetry).
+	pendingState *string
 }
 
 func (s *server) handle(ctx context.Context, msg any) error {
@@ -210,6 +216,13 @@ func (s *server) run(ctx context.Context, actions []Action, req *mcp.Request) er
 			}
 		case ActStderr:
 			_, _ = io.WriteString(s.errOut, a.Text)
+		case ActInputRequired:
+			if req == nil {
+				continue
+			}
+			if err := s.write(s.inputRequired(a, req)); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("fakemcp: unknown action kind %q", a.Kind)
 		}
@@ -370,10 +383,13 @@ func (s *server) defaultResponse(req *mcp.Request) *mcp.Response {
 				Message: fmt.Sprintf("unknown tool %q", p.Name),
 			})
 		}
+		if resp := s.checkMRTRRetry(req, p); resp != nil {
+			return resp
+		}
 		if t.Result != nil {
 			return okResponse(req.ID, *t.Result)
 		}
-		return okResponse(req.ID, echoResult(p.Arguments))
+		return okResponse(req.ID, echoResult(p.Arguments, p.InputResponses))
 	default:
 		return methodNotFound(req)
 	}
@@ -484,6 +500,75 @@ func (s *server) checkRequestMeta(req *mcp.Request) *mcp.Response {
 	return nil
 }
 
+// defaultRequestState is the opaque blob handed out when a script does not
+// name one. Its content is meaningless by design — the client is forbidden
+// to inspect it, so the only property under test is that it comes back
+// byte-identical.
+const defaultRequestState = "fakemcp-request-state"
+
+// defaultInputRequests is what an ActInputRequired asks for when the script
+// names nothing: one roots/list, the single server-initiated method this
+// tree actually serves (sampling is refused by internal/mrtr).
+var defaultInputRequests = mcp.InputRequests{"roots": {Method: mcp.MethodRootsList}}
+
+// inputRequired answers a tools/call with the MRTR interim result and
+// remembers the requestState the retry must echo.
+func (s *server) inputRequired(a Action, req *mcp.Request) *mcp.Response {
+	state := a.Text
+	if state == "" {
+		state = defaultRequestState
+	}
+	reqs := defaultInputRequests
+	if len(a.Result) > 0 {
+		reqs = mcp.InputRequests{}
+		if err := json.Unmarshal(a.Result, &reqs); err != nil {
+			return mcp.NewErrorResponse(req.ID, &mcp.Error{
+				Code:    mcp.CodeInternalError,
+				Message: "fakemcp: input-required inputRequests: " + err.Error(),
+			})
+		}
+	}
+	s.pendingState = &state
+	return okResponse(req.ID, mcp.InputRequiredResult{
+		ResultType:    mcp.ResultTypeInputRequired,
+		InputRequests: reqs,
+		RequestState:  &state,
+	})
+}
+
+// checkMRTRRetry grades the retry of a call this fake answered with
+// input_required, and returns nil when there is nothing outstanding or the
+// retry is correct.
+//
+// The requestState is the whole point. A client MUST NOT inspect, parse or
+// modify it, and MUST echo it back verbatim — so a fake that accepted any
+// retry would pass a client that dropped it, mangled it, or invented one,
+// and the loop would still look like it worked from the outside. Refusing
+// here is what makes the round trip evidence rather than choreography.
+func (s *server) checkMRTRRetry(req *mcp.Request, p mcp.CallToolParams) *mcp.Response {
+	if s.pendingState == nil {
+		return nil
+	}
+	want := *s.pendingState
+	switch {
+	case p.RequestState == nil:
+		return mcp.NewErrorResponse(req.ID, &mcp.Error{
+			Code:    mcp.CodeInvalidParams,
+			Message: "MRTR retry carries no requestState; it must be echoed verbatim",
+		})
+	case *p.RequestState != want:
+		return mcp.NewErrorResponse(req.ID, &mcp.Error{
+			Code: mcp.CodeInvalidParams,
+			Message: fmt.Sprintf("MRTR retry requestState = %q, want the value handed out verbatim (%q)",
+				*p.RequestState, want),
+		})
+	}
+	// Cleared before answering, so a THIRD call is an ordinary one rather
+	// than a retry graded against a state nobody handed out again.
+	s.pendingState = nil
+	return nil
+}
+
 // speaks2026 reports whether this script advertises the stateless protocol,
 // which is what turns on every rule checkRequestMeta enforces.
 func (s *server) speaks2026() bool {
@@ -527,7 +612,13 @@ func okResponse(id mcp.ID, v any) *mcp.Response {
 
 // echoResult builds the echo tool's answer: one text content item holding
 // the raw argument JSON.
-func echoResult(args json.RawMessage) mcp.CallResult {
+//
+// An MRTR retry additionally gets the collected answers back in
+// structuredContent. The arguments alone could not show them: the retry
+// re-sends the ORIGINAL name and arguments, so an echo of those is
+// byte-identical whether the inputResponses arrived or were dropped on the
+// way — and a test asserting on it would pass either way.
+func echoResult(args json.RawMessage, responses mcp.InputResponses) mcp.CallResult {
 	if len(args) == 0 {
 		args = json.RawMessage("null")
 	}
@@ -536,9 +627,18 @@ func echoResult(args json.RawMessage) mcp.CallResult {
 		// Marshaling a string cannot fail.
 		panic(err)
 	}
-	return mcp.CallResult{
+	res := mcp.CallResult{
 		Content: json.RawMessage(fmt.Sprintf(`[{"type":"text","text":%s}]`, text)),
 	}
+	if len(responses) > 0 {
+		structured, err := json.Marshal(map[string]any{"inputResponses": responses})
+		if err != nil {
+			// Marshaling raw JSON values under string keys cannot fail.
+			panic(err)
+		}
+		res.StructuredContent = structured
+	}
+	return res
 }
 
 // sleepCtx sleeps for d or until ctx is cancelled.

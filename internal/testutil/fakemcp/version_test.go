@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -280,6 +281,104 @@ func TestA2026ScriptAnswersDiscoverWithoutNegotiation(t *testing.T) {
 	}
 	if dr.ServerInfo().Name != "fakemcp" {
 		t.Errorf("discover _meta carries no serverInfo: %+v", dr.Meta)
+	}
+}
+
+// --- scripted MRTR -------------------------------------------------------
+
+// callFrame builds a tools/call frame carrying a conformant 2026 _meta, so
+// these cases exercise the MRTR handling rather than the strictness above.
+func callFrame(id int, extra string) string {
+	const meta = `"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",` +
+		`"io.modelcontextprotocol/clientCapabilities":{}}`
+	params := `{"name":"echo","arguments":{"a":1},` + meta
+	if extra != "" {
+		params += "," + extra
+	}
+	return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":%s}}`, id, params)
+}
+
+// inputRequiredFirst is the script shape the MRTR cases share: answer the
+// first tools/call with input_required, handle the retry normally.
+func inputRequiredFirst() *fakemcp.Script {
+	sc := only2026()
+	return sc.With(fakemcp.Rule{
+		Method:  mcp.MethodToolsCall,
+		Call:    1,
+		Actions: []fakemcp.Action{{Kind: fakemcp.ActInputRequired}},
+	})
+}
+
+// TestInputRequiredActionWireShape pins what the interim result looks like
+// on the wire. The client decides it is an MRTR round by reading resultType
+// alone, so a fake that got that member wrong would be answering a complete
+// result with input_required's body — and every MRTR test would pass by
+// never entering the loop.
+func TestInputRequiredActionWireShape(t *testing.T) {
+	resps := serveRaw(t, inputRequiredFirst(), callFrame(1, ""))
+	if len(resps) != 1 || resps[0].Error != nil {
+		t.Fatalf("tools/call was refused: %+v", resps)
+	}
+	var ir mcp.InputRequiredResult
+	if err := json.Unmarshal(resps[0].Result, &ir); err != nil {
+		t.Fatal(err)
+	}
+	if ir.ResultType != mcp.ResultTypeInputRequired {
+		t.Fatalf("resultType = %q, want %q", ir.ResultType, mcp.ResultTypeInputRequired)
+	}
+	if ir.RequestState == nil || *ir.RequestState == "" {
+		t.Fatalf("no requestState to echo: %+v", ir)
+	}
+	if req, ok := ir.InputRequests["roots"]; !ok || req.Method != mcp.MethodRootsList {
+		t.Fatalf("inputRequests = %+v, want a roots/list under \"roots\"", ir.InputRequests)
+	}
+}
+
+// TestInputRequiredRetryIsGraded is what gives every MRTR test its meaning.
+//
+// A client MUST echo the requestState back verbatim and MUST NOT modify it.
+// If the fake accepted any retry, a client that dropped the blob, mangled it
+// or invented one would still complete the round trip and every test above
+// this layer would stay green — the loop would look like it worked because
+// nothing was checking the one thing the server owns.
+func TestInputRequiredRetryIsGraded(t *testing.T) {
+	cases := []struct {
+		name  string
+		retry string // extra params members on the second call
+		ok    bool
+	}{
+		{"echoed verbatim", `"requestState":"fakemcp-request-state",` +
+			`"inputResponses":{"roots":{"roots":[]}}`, true},
+		{"dropped", `"inputResponses":{"roots":{"roots":[]}}`, false},
+		{"altered", `"requestState":"not-what-was-handed-out",` +
+			`"inputResponses":{"roots":{"roots":[]}}`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resps := serveRaw(t, inputRequiredFirst(), callFrame(1, ""), callFrame(2, tc.retry))
+			if len(resps) != 2 {
+				t.Fatalf("got %d responses, want 2", len(resps))
+			}
+			if tc.ok {
+				if resps[1].Error != nil {
+					t.Fatalf("a correct retry was refused: %+v", resps[1].Error)
+				}
+				// The answers come back in structuredContent: the retry
+				// re-sends the original arguments, so an echo of those alone
+				// cannot show whether the responses arrived.
+				var cr mcp.CallResult
+				if err := json.Unmarshal(resps[1].Result, &cr); err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(string(cr.StructuredContent), "roots") {
+					t.Fatalf("the retry's inputResponses were not echoed: %s", cr.StructuredContent)
+				}
+				return
+			}
+			if resps[1].Error == nil {
+				t.Fatalf("retry with a %s requestState was ACCEPTED: %s", tc.name, resps[1].Result)
+			}
+		})
 	}
 }
 
