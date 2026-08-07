@@ -1,6 +1,6 @@
-// Package transport provides MCP transports beneath internal/downstream
-// (; path ruled canonical in canonical.md — the old
-// internal/downstream/transport name is dead).
+// Package transport provides MCP transports beneath internal/downstream. The
+// path internal/mcp/transport is the canonical one (canonical.md §2); the old
+// internal/downstream/transport name is dead.
 //
 // Three read-side transports live here (canonical.md §5b — the read side
 // does all three, the exposure side offers streamable-http only):
@@ -37,7 +37,9 @@ import (
 // Kind names a transport implementation.
 type Kind string
 
-// Transport kinds. All four are implemented.
+// Transport kinds. There are three, and docker is deliberately not a fourth:
+// it is a variant of stdio, and containerization is expressed by the registry's
+// runtime field rather than by the transport a server declares.
 const (
 	Stdio          Kind = "stdio"
 	StreamableHTTP Kind = "http"

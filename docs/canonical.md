@@ -57,7 +57,7 @@ Which package holds what: [architecture.md §3](architecture.md#3-core-module-ma
 | governance surface | the scope chain (§7 of architecture.md) | A second place that decides what a caller may see |
 
 Four packages are **leaves on purpose**: `internal/tier` (the read/write/destructive vocabulary),
-`internal/platform`, `internal/logx`, `internal/guard/*`. `tier` is the instructive one — five
+`internal/platform`, `internal/logx`, `internal/guard/*`. `tier` is the instructive one — seven
 packages need to say the word "read", and none should import another to do it. It used to live in
 `pipeline`, which turned rule 3's failing case into an **import cycle rather than a lint error**.
 
