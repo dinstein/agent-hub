@@ -311,7 +311,7 @@ satisfying `errors.Is(err, guard.ErrBlocked)`.
   time.
 - `HostIsDefinitelyPrivate` is wired, and **both of its callers use it to REFUSE rather than to grant
   trust** — the opposite of the role its own doc comment describes, deliberately.
-  `confops.ValidateOAuthURL` and `ValidateEndpoint` screen a URL at the moment the operator types it,
+  `confops.ValidateOAuthHint` and `ValidateEndpoint` screen a URL at the moment the operator types it,
   and there the fail-closed `HostIsPrivate` would reject a laptop with no network and a name that
   only resolves inside a VPN: honest edits refused for being unresolvable at edit time. Refusing with
   the fail-to-false predicate is sound *only* because this is not the boundary —

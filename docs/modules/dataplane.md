@@ -520,7 +520,7 @@ there is no way to know who is enabled.
 
 **Owed: that degraded start leaves no event, only a log line.** All three failures in `loadRegistry`
 (the registry dir unresolved, `registry.Open` returning no store, a store whose documents were
-quarantined) write a `Warn` and return `regOK=false`, and `gateway_started` is then emitted exactly as
+quarantined) write a `Warn` and return `regOK=false`, and `eventlog.KindGatewayStarted` is then emitted exactly as
 it would be for a healthy start — same kind, same `Detail`. So `agenthub events` shows a gateway that
 came up normally, and `--class disruption` shows nothing at all, while what actually happened is the
 state two other entries here already describe as consequential: **all** cached tools served rather than
@@ -723,7 +723,7 @@ knobs would let a caller set a base above its own cap. Three properties are load
   and for a stdio entry each rung is a process spawn.
 - **The ladder is driven by a recorded failure, never by the tick.** A connected server is never
   re-dialed; a gateway respawning healthy stdio children on a timer would be worse than the bug it fixes.
-- **Dials are claimed per server** (`beginDial` / `finishDial`) across startup, hot reload and re-dial, so
+- **Dials are claimed per server** (`beginDialLocked` / `finishDial`) across startup, hot reload and re-dial, so
   a reload landing next to a due rung cannot produce two connections for one server. A reload that cannot
   claim a slot hands the server to the ladder rather than dropping it; otherwise a redefinition arriving
   while the previous dial is in flight ends up dialed by nobody, since that dial drops itself as stale.

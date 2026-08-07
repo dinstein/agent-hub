@@ -355,9 +355,13 @@ document just re-read from disk) → return a `Result` carrying the post-commit 
 precondition comparison happens inside that lock and before the mutation**, so there is no window between
 comparing and writing; `Precondition{}` means no check, which is what the CLI's non-interactive path uses.
 
-**Operations whose subject isn't the registry can only do weak checks.** Such a store has its own lock and
-the registry's generation can advance between comparison and write, so `checkSnapshot` is **advisory**: it
-catches "the operator's view is stale", not "nothing moved under my feet".
+**Every precondition in the tree is that strong one.** There was a weaker form — `checkSnapshot`,
+compared against a snapshot outside any lock, for operations whose subject was not the registry — and it
+went with the tool-governance surface in `1a32789`. All twelve `adminPrecondition` sites now reach a
+`confops` operation and therefore `apply`, which compares inside `registry.Store.Update`. The writes whose
+subject is genuinely elsewhere (secrets, skills, tokens) take no precondition at all rather than an
+advisory one: a guard that catches "your view is stale" but not "something moved under me" is the shape a
+reader trusts for the second thing, so it is better absent than weak.
 
 **Validation rejects rather than normalizes** — an unknown transport or runtime leaves the registry
 untouched rather than landing on a default nobody asked for. **`Changed` is derived from the generation**,
