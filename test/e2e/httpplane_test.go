@@ -110,7 +110,17 @@ func mintToken(t *testing.T, env []string, name string, args ...string) string {
 // a JSON-RPC error.
 func (c *httpPlaneClient) do(body []byte) (int, http.Header, []byte) {
 	c.t.Helper()
-	req, err := http.NewRequest(http.MethodPost, c.url, bytes.NewReader(body))
+	return c.doWith(http.MethodPost, body, nil)
+}
+
+// doWith is do with the verb and extra headers under the caller's control.
+//
+// It exists for the protocol-header rules, which cannot be reached any other
+// way: they are about headers this client would otherwise never send, and one
+// of them has to hold on DELETE, a verb nothing else here uses.
+func (c *httpPlaneClient) doWith(method string, body []byte, extra map[string]string) (int, http.Header, []byte) {
+	c.t.Helper()
+	req, err := http.NewRequest(method, c.url, bytes.NewReader(body))
 	if err != nil {
 		c.t.Fatalf("building request: %v", err)
 	}
@@ -122,9 +132,12 @@ func (c *httpPlaneClient) do(body []byte) (int, http.Header, []byte) {
 	if c.session != "" {
 		req.Header.Set("Mcp-Session-Id", c.session)
 	}
+	for k, v := range extra {
+		req.Header.Set(k, v)
+	}
 	res, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	if err != nil {
-		c.t.Fatalf("POST %s: %v", c.url, err)
+		c.t.Fatalf("%s %s: %v", method, c.url, err)
 	}
 	defer func() { _ = res.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 8<<20))
