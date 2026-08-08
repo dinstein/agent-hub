@@ -102,7 +102,17 @@ func Covers(caller, tool Tier) bool {
 // single tier. It used to have a blunter counterpart — DefaultDestructive,
 // which read `{}` as destructive and fed the global denyDestructive veto —
 // and the asymmetry between the two was the point; the veto went with the
-// rest of the runtime governance, so the tier gate is now the only reader.
+// rest of the runtime governance.
+//
+// TWO readers remain, and this sentence used to name only the first.
+// internal/pipeline's tier gate compares the result against the caller's
+// credential; internal/discovery re-exports it (variants.go) to decide which
+// call_tool_read / _write / _destructive door a tool sits behind. The second
+// reader is why `{}` answering write rather than destructive is not a
+// private choice: change it and every silent-but-annotated tool moves door
+// in lazy mode — which is exactly what an agent's tool allow list is written
+// against, and a consequence a reader who checked only the gate would not
+// see coming.
 func ToolTier(annotations json.RawMessage) Tier {
 	trimmed := bytes.TrimSpace(annotations)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
