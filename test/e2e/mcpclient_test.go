@@ -354,8 +354,23 @@ func (c *gatewayClient) answerReverse(m *rpcMsg) {
 // initialize performs the MCP handshake and asserts the gateway identity.
 func (c *gatewayClient) initialize() {
 	c.t.Helper()
+	if got := c.initializeAs("2025-06-18"); got != "2025-06-18" {
+		c.fatalf("initialize negotiated %q, want the version the client asked for", got)
+	}
+}
+
+// initializeAs performs the handshake declaring version and RETURNS what the
+// gateway negotiated, without requiring it to be what was asked for.
+//
+// That difference is the whole reason it is separate. `initialize` can only
+// ever negotiate the stateful family — 2026-07-28's handshake is
+// server/discover — so a client declaring 2026 here is deliberately answered
+// with the gateway's default instead of having its claim echoed back, and a
+// helper that asserted equality could not express the rule it exists to test.
+func (c *gatewayClient) initializeAs(version string) string {
+	c.t.Helper()
 	res, rpcErr := c.call("initialize", map[string]any{
-		"protocolVersion": "2025-06-18",
+		"protocolVersion": version,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "agenthub-e2e", "version": "0"},
 	}, 30*time.Second)
@@ -371,10 +386,11 @@ func (c *gatewayClient) initialize() {
 	if err := json.Unmarshal(res, &init); err != nil {
 		c.fatalf("initialize result: %v\n%s", err, res)
 	}
-	if init.ServerInfo.Name != "agenthub" || init.ProtocolVersion != "2025-06-18" {
+	if init.ServerInfo.Name != "agenthub" {
 		c.fatalf("unexpected initialize result: %s", res)
 	}
 	c.notify("notifications/initialized", nil)
+	return init.ProtocolVersion
 }
 
 // listTools returns the current exposed tool names.
