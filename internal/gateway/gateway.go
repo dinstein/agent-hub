@@ -246,7 +246,15 @@ type gateway struct {
 	// limiter holds the rule set currently applied (nil = no quotas
 	// configured, the zero-cost path). They live here rather than inside the
 	// pipeline because a quota is an admission WRAPPER around the call, not
-	// a gate — the frozen gate chain stays four gates long.
+	// a gate — the frozen gate chain stays TWO gates long, scope then token
+	// tier (pipeline.New; AGENTS.md freezes that order).
+	//
+	// It read "four" until this was corrected, and four was right at the
+	// initial public release: the chain then also carried precheckGate and
+	// hitlGate, and both went with the runtime governance surface. A stale
+	// count is worse here than almost anywhere else in the tree — this
+	// sentence exists to show nothing was added to the chain, and it was
+	// showing it against a number nobody counting gates could reproduce.
 	rlStore *ratelimit.Store
 	limiter atomic.Pointer[ratelimit.Limiter]
 
