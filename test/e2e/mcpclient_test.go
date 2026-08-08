@@ -2,7 +2,6 @@ package e2e_test
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,16 +21,27 @@ import (
 // deliberately built on encoding/json alone (no internal/mcp import) so the
 // suite exercises the wire format from the outside.
 type gatewayClient struct {
-	t      *testing.T
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	msgs   chan []byte // frames read from the gateway's stdout
-	rdDone chan struct{}
-	stderr *tailBuffer
-	nextID int
+	t        *testing.T
+	cmd      *exec.Cmd
+	stdin    io.WriteCloser
+	msgs     chan []byte // frames read from the gateway's stdout
+	rdDone   chan struct{}
+	dispDone chan struct{}
+	stderr   *tailBuffer
 
-	mu    sync.Mutex
-	notes []string // notification methods observed (diagnostics)
+	// wmu serializes frame writes. The dispatcher answers reverse RPCs from
+	// its own goroutine while a test writes requests from its own, and two
+	// concurrent Writes to a pipe can interleave mid-frame.
+	wmu sync.Mutex
+
+	mu     sync.Mutex
+	nextID int
+	notes  []string // notification methods observed (diagnostics)
+	// pending maps a request's raw JSON id to whoever is awaiting it.
+	pending map[string]chan *rpcMsg
+	// dispErr is a fault the dispatcher could not report itself (t.Fatalf is
+	// illegal off the test goroutine); the next await surfaces it.
+	dispErr error
 }
 
 // rpcMsg is the union of everything the gateway may send us.
@@ -86,12 +96,14 @@ func startGatewayEnv(t *testing.T, env []string, clientID string) *gatewayClient
 	}
 
 	c := &gatewayClient{
-		t:      t,
-		cmd:    cmd,
-		stdin:  stdin,
-		msgs:   make(chan []byte, 64),
-		rdDone: make(chan struct{}),
-		stderr: tail,
+		t:        t,
+		cmd:      cmd,
+		stdin:    stdin,
+		msgs:     make(chan []byte, 64),
+		rdDone:   make(chan struct{}),
+		dispDone: make(chan struct{}),
+		stderr:   tail,
+		pending:  make(map[string]chan *rpcMsg),
 	}
 	go func() {
 		defer close(c.msgs)
@@ -102,6 +114,7 @@ func startGatewayEnv(t *testing.T, env []string, clientID string) *gatewayClient
 			c.msgs <- append([]byte(nil), sc.Bytes()...)
 		}
 	}()
+	go c.dispatch()
 	t.Cleanup(func() {
 		if cmd.ProcessState == nil {
 			_ = cmd.Process.Kill()
@@ -112,11 +125,77 @@ func startGatewayEnv(t *testing.T, env []string, clientID string) *gatewayClient
 	return c
 }
 
+// dispatch is the single reader of the gateway's frames: it routes each
+// response to whoever is waiting on that id, answers reverse RPCs, and
+// records notifications.
+//
+// It exists so MORE THAN ONE REQUEST CAN BE IN FLIGHT. call() used to read
+// the stream itself and discard every response whose id it was not waiting
+// for, which made the client structurally serial — a second request could
+// not be sent until the first was answered, and any test of concurrency was
+// unwritable rather than merely unwritten.
+//
+// It runs on its own goroutine and therefore must never call t.Fatalf: the
+// testing package only allows that from the test's own goroutine, and doing
+// it here would turn a diagnosable failure into a hung or panicking run.
+// Anything it cannot handle is recorded in dispErr and reported by the next
+// await() — on the test goroutine, where it can fail properly.
+func (c *gatewayClient) dispatch() {
+	defer close(c.dispDone)
+	for raw := range c.msgs {
+		var m rpcMsg
+		if err := json.Unmarshal(raw, &m); err != nil {
+			c.setDispErr(fmt.Errorf("gateway sent a non-JSON frame: %v\n%s", err, raw))
+			continue
+		}
+		switch {
+		case m.Method != "" && len(m.ID) > 0 && string(m.ID) != "null":
+			c.answerReverse(&m)
+		case m.Method != "":
+			c.mu.Lock()
+			c.notes = append(c.notes, m.Method)
+			c.mu.Unlock()
+		default:
+			c.deliver(&m)
+		}
+	}
+}
+
+// deliver hands a response to its waiter. A response nobody is waiting for
+// is DROPPED rather than reported: a cancelled request's late reply and a
+// stale reverse-RPC answer both land here legitimately.
+func (c *gatewayClient) deliver(m *rpcMsg) {
+	c.mu.Lock()
+	ch := c.pending[string(m.ID)]
+	delete(c.pending, string(m.ID))
+	c.mu.Unlock()
+	if ch != nil {
+		ch <- m
+	}
+}
+
+func (c *gatewayClient) setDispErr(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.dispErr == nil {
+		c.dispErr = err
+	}
+}
+
+func (c *gatewayClient) takeDispErr() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	err := c.dispErr
+	c.dispErr = nil
+	return err
+}
+
 // stderrTail returns the retained gateway stderr for failure diagnostics.
 func (c *gatewayClient) stderrTail() string { return c.stderr.String() }
 
-// noteSnapshot copies the notification methods observed so far. Frames are
-// drained inside call(), so this only advances across an intervening RPC.
+// noteSnapshot copies the notification methods observed so far. The
+// dispatcher records them as they arrive, so this advances on its own
+// rather than only across an intervening RPC.
 func (c *gatewayClient) noteSnapshot() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -140,14 +219,23 @@ func (c *gatewayClient) fatalf(format string, args ...any) {
 	c.t.Fatalf(format+"\n--- gateway stderr tail ---\n%s", append(args, c.stderrTail())...)
 }
 
+// writeFrame emits one frame. The lock is what keeps a reverse-RPC answer
+// written by the dispatcher from interleaving with a request written by a
+// test goroutine — two Writes to the same pipe are not atomic, and a torn
+// frame would surface as the gateway "sending garbage".
+//
+// It never calls t.Fatalf, because the dispatcher calls it too. A write
+// failure means the gateway is gone, which the awaiting call reports.
 func (c *gatewayClient) writeFrame(v any) {
-	c.t.Helper()
 	b, err := json.Marshal(v)
 	if err != nil {
-		c.t.Fatalf("encode frame: %v", err)
+		c.setDispErr(fmt.Errorf("encode frame: %w", err))
+		return
 	}
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
 	if _, err := c.stdin.Write(append(b, '\n')); err != nil {
-		c.fatalf("write frame %s: %v", b, err)
+		c.setDispErr(fmt.Errorf("write frame %s: %w", b, err))
 	}
 }
 
@@ -161,50 +249,69 @@ func (c *gatewayClient) notify(method string, params any) {
 	c.writeFrame(msg)
 }
 
-// call performs one request and waits for its response, transparently
-// answering gateway-initiated reverse RPCs (roots/list) and recording
-// notifications along the way.
-func (c *gatewayClient) call(method string, params any, timeout time.Duration) (json.RawMessage, *rpcError) {
-	c.t.Helper()
+// inflight is one sent request whose answer has not been collected yet. It
+// is what lets a test hold several requests open at once: begin returns
+// immediately, and each handle is awaited in whatever order the test likes.
+type inflight struct {
+	c      *gatewayClient
+	id     int
+	method string
+	ch     chan *rpcMsg
+}
+
+// begin sends a request and returns without waiting. The dispatcher parks
+// the response on the handle's channel whether or not anyone is awaiting it
+// yet, so a fast answer to an early request cannot be lost while the test is
+// still sending later ones.
+func (c *gatewayClient) begin(method string, params any) *inflight {
+	c.mu.Lock()
 	c.nextID++
 	id := c.nextID
+	ch := make(chan *rpcMsg, 1)
+	c.pending[fmt.Sprintf("%d", id)] = ch
+	c.mu.Unlock()
+
 	msg := map[string]any{"jsonrpc": "2.0", "id": id, "method": method}
 	if params != nil {
 		msg["params"] = params
 	}
 	c.writeFrame(msg)
+	return &inflight{c: c, id: id, method: method, ch: ch}
+}
 
-	wantID := []byte(fmt.Sprintf("%d", id))
-	deadline := time.After(timeout)
-	for {
-		select {
-		case raw, ok := <-c.msgs:
-			if !ok {
-				c.fatalf("gateway closed stdout while waiting for %s response", method)
-			}
-			var m rpcMsg
-			if err := json.Unmarshal(raw, &m); err != nil {
-				c.fatalf("gateway sent a non-JSON frame: %v\n%s", err, raw)
-			}
-			switch {
-			case m.Method != "" && len(m.ID) > 0 && string(m.ID) != "null":
-				c.answerReverse(&m)
-			case m.Method != "":
-				c.mu.Lock()
-				c.notes = append(c.notes, m.Method)
-				c.mu.Unlock()
-			case bytes.Equal(m.ID, wantID):
-				return m.Result, m.Error
-			default:
-				// Responses to other ids (stale reverse-RPC replies) drop.
-			}
-		case <-deadline:
-			// "timeout" alone cannot say where the gateway was parked, so
-			// take the goroutine dump with us on the way out.
-			c.dumpStacks()
-			c.fatalf("timeout (%s) waiting for %s response", timeout, method)
-		}
+// await blocks for this request's response.
+func (ic *inflight) await(timeout time.Duration) (json.RawMessage, *rpcError) {
+	c := ic.c
+	c.t.Helper()
+	if err := c.takeDispErr(); err != nil {
+		c.fatalf("%v", err)
 	}
+	select {
+	case m := <-ic.ch:
+		if err := c.takeDispErr(); err != nil {
+			c.fatalf("%v", err)
+		}
+		return m.Result, m.Error
+	case <-c.dispDone:
+		// The frame stream ended: the gateway closed stdout or died.
+		if err := c.takeDispErr(); err != nil {
+			c.fatalf("%v", err)
+		}
+		c.fatalf("gateway closed stdout while waiting for %s response", ic.method)
+	case <-time.After(timeout):
+		// "timeout" alone cannot say where the gateway was parked, so take
+		// the goroutine dump with us on the way out.
+		c.dumpStacks()
+		c.fatalf("timeout (%s) waiting for %s response", timeout, ic.method)
+	}
+	return nil, nil // unreachable: every branch above fails the test
+}
+
+// call performs one request and waits for its response — begin plus await,
+// which is what almost every case wants.
+func (c *gatewayClient) call(method string, params any, timeout time.Duration) (json.RawMessage, *rpcError) {
+	c.t.Helper()
+	return c.begin(method, params).await(timeout)
 }
 
 // answerReverse replies to a gateway->client request. The e2e client
