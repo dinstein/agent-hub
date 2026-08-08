@@ -307,6 +307,23 @@ func (ic *inflight) await(timeout time.Duration) (json.RawMessage, *rpcError) {
 	return nil, nil // unreachable: every branch above fails the test
 }
 
+// settled reports whether the response has already arrived, without waiting.
+// It is how a case asserts that one request is STILL running while another
+// finished — the distinction a serial client could not express at all, and
+// the one that separates "the fast call overtook the slow one" from "the
+// slow one had quietly already finished".
+func (ic *inflight) settled() bool { return len(ic.ch) > 0 }
+
+// abandon stops awaiting a request and releases its slot. A cancelled
+// request is never answered by contract, so its waiter would otherwise stay
+// registered for the client's lifetime.
+func (ic *inflight) abandon() {
+	c := ic.c
+	c.mu.Lock()
+	delete(c.pending, fmt.Sprintf("%d", ic.id))
+	c.mu.Unlock()
+}
+
 // call performs one request and waits for its response — begin plus await,
 // which is what almost every case wants.
 func (c *gatewayClient) call(method string, params any, timeout time.Duration) (json.RawMessage, *rpcError) {
