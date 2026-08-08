@@ -932,9 +932,23 @@ hash length-prefixed `(name, inputSchema, outputSchema, MaxBytes)`, so different
 **Responsibility in one sentence**: trim a tool result to a byte budget and hand the remainder back
 through a `fetch_result` cursor — a cost-saving mechanism, not a security boundary.
 
-`Store` has two implementations: `MemStore` (the stdio gateway — **the process is the session**, so cursor
-lifetime is aligned with the client connection by construction) and `FileStore` (the daemon's HTTP face,
-where cursors must survive a restart within the session TTL).
+`Store` has two implementations: `MemStore` (**the process is the session**, so cursor lifetime is
+aligned with the client connection by construction) and `FileStore`, written for a face where cursors
+must survive a restart within the session TTL.
+
+**`FileStore` is not wired.** `newGateway` assigns `MemStore` unconditionally and it is the only such
+assignment in the tree; `NewFileStore` is constructed nowhere outside its own package's tests. The
+daemon's HTTP face does not change that — it builds one gateway **per credential** inside its process
+(`internal/daemon/httpdata.go`), so each still gets a store of its own rather than sharing one.
+
+That is worth stating here because it makes a defence described below look better exercised than it
+is. **Owner validation currently arbitrates nothing in production**: no two sessions ever share a
+store, so another session's cursor misses because this store never held it, not because the owner
+check refused it. The check, its constant-time comparison and the double-check across the interface
+are all correct, and are what would hold the line the moment a shared store is wired — they are simply
+unreachable today, and `internal/shaping`'s own tests are the only thing reaching them.
+`test/e2e/cursororacle_test.go` pins the property that IS reachable: every miss, whoever asks, is the
+same bytes.
 
 ### Invariants and failure directions
 
