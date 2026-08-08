@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,13 +42,18 @@ type oauthProvider struct {
 	// mcp is the MCP half, reused from the http downstream fixture so that
 	// only the authorization is new here.
 	mcp *fakeHTTPServer
-	// granted is the access token this provider issues and the only value
-	// its MCP endpoint accepts.
-	granted string
+	// accessTTL is the advertised expires_in of an access token, in seconds.
+	accessTTL int
 
-	mu           sync.Mutex
+	mu sync.Mutex
+	// granted is the access token this provider currently accepts. It lives
+	// under the lock because a refresh ROTATES it, and rotation is what makes
+	// "the call succeeded" and "the renewed token reached the downstream" the
+	// same observation instead of two hopes.
+	granted      string
 	registered   int
 	deviceGrants int
+	refreshes    int
 	lastGrant    string
 	// challenged counts MCP requests answered 401: it is what proves the
 	// login started from a real refusal rather than from configuration.
@@ -57,8 +63,9 @@ type oauthProvider struct {
 func newOAuthProvider(t *testing.T) *oauthProvider {
 	t.Helper()
 	p := &oauthProvider{
-		mcp:     &fakeHTTPServer{script: fakemcp.Minimal()},
-		granted: "granted-access-token",
+		mcp:       &fakeHTTPServer{script: fakemcp.Minimal()},
+		granted:   "granted-access-token",
+		accessTTL: 3600,
 	}
 	// Unstarted, because the documents this provider serves name its own
 	// address: writing the URL into the handler after Start would be a race
@@ -121,35 +128,64 @@ func (p *oauthProvider) route(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// serveToken answers the device grant. The grant type is asserted rather than
-// ignored: a token handed out for the wrong grant would let this test pass
-// against a flow that never ran the one it claims to.
+// serveToken answers the device grant and the refresh grant. The grant type
+// is asserted rather than ignored: a token handed out for the wrong grant
+// would let a test pass against a flow that never ran the one it claims to.
+//
+// A refresh ROTATES the accepted access token. That is the whole mechanism
+// behind the renewal cases: the previous bearer stops working the moment a
+// renewal happens, so a later call that succeeds can only have carried the
+// new one, and no test has to reach into the vault to check.
 func (p *oauthProvider) serveToken(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	grant := r.Form.Get("grant_type")
 	p.mu.Lock()
-	p.deviceGrants++
-	p.lastGrant = r.Form.Get("grant_type")
+	p.lastGrant = grant
+	switch grant {
+	case "refresh_token":
+		p.refreshes++
+		p.granted = fmt.Sprintf("rotated-access-token-%d", p.refreshes)
+	case "urn:ietf:params:oauth:grant-type:device_code":
+		p.deviceGrants++
+	}
+	token, ttl := p.granted, p.accessTTL
 	p.mu.Unlock()
-	if r.Form.Get("grant_type") != "urn:ietf:params:oauth:grant-type:device_code" {
+
+	if grant != "refresh_token" && grant != "urn:ietf:params:oauth:grant-type:device_code" {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "unsupported_grant_type"})
 		return
 	}
-	writeJSONDoc(w, map[string]any{
-		"access_token":  p.granted,
+	doc := map[string]any{
+		"access_token":  token,
 		"token_type":    "Bearer",
-		"expires_in":    3600,
 		"refresh_token": "e2e-refresh-token",
 		"scope":         "mcp.read",
-	})
+	}
+	// Omitted entirely when accessTTL is zero: "no expires_in" and
+	// "expires_in: 0" are different statements, and only the first is the
+	// never-expires server the passive case needs.
+	if ttl > 0 {
+		doc["expires_in"] = ttl
+	}
+	writeJSONDoc(w, doc)
 }
 
-// serveMCP refuses until it is shown the token this provider issued, and the
-// refusal carries the RFC 9728 pointer that starts a login.
+// serveMCP refuses until it is shown the token this provider currently
+// accepts, and the refusal carries the RFC 9728 pointer that starts a login.
+//
+// How it refuses a STALE token is the knob. A missing Authorization header is
+// always 401 — that is what makes a first login possible at all. A present
+// but rotated-away token is 401 by default, and under staleIs200 it is
+// instead answered 200 with isError, which is the shape that makes the
+// passive refresh path unreachable.
 func (p *oauthProvider) serveMCP(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Authorization") != "Bearer "+p.granted {
+	p.mu.Lock()
+	want := "Bearer " + p.granted
+	p.mu.Unlock()
+	if r.Header.Get("Authorization") != want {
 		p.mu.Lock()
 		p.challenged++
 		p.mu.Unlock()
@@ -165,6 +201,14 @@ func (p *oauthProvider) counts() (registered, grants, challenged int, lastGrant 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.registered, p.deviceGrants, p.challenged, p.lastGrant
+}
+
+// renewals reports how many refresh grants the token endpoint redeemed, how
+// many MCP requests it refused, and the access token it currently accepts.
+func (p *oauthProvider) renewals() (refreshes, challenged int, accepted string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.refreshes, p.challenged, p.granted
 }
 
 func writeJSONDoc(w http.ResponseWriter, doc map[string]any) {
