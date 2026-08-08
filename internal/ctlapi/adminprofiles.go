@@ -42,7 +42,7 @@ type profileCreateWire struct {
 	// Servers is the initial membership; absent/null = no narrowing,
 	// [] = block-all.
 	//
-	// omitzero, matching profileWire above and api.ProfileSpec, rather than
+	// omitzero, matching profileWire above and api.Profile, rather than
 	// the omitempty that stood here. Nothing marshals this struct — it is
 	// only ever decoded into — so the tag was inert, which is exactly what
 	// makes it worth correcting: it is a request DTO other request DTOs get

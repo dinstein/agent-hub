@@ -12,8 +12,17 @@ import (
 // that turn an in-memory value into bytes somebody could write down.
 var encoderImport = regexp.MustCompile(`"encoding/(json|gob|xml)"|"gopkg\.in/yaml`)
 
-// overlayOwningPackages are the two packages that hold a *scope.Overlay: scope
-// defines it, session owns the live one.
+// overlayOwningPackages are the two packages that hold a session's runtime
+// security state: scope resolves what a session may see, session holds the
+// session itself (including its HTTP token).
+//
+// They were named for `*scope.Overlay`, and no such type survives — 0bae283
+// removed session overlays. The CHECK did not become pointless with it, and
+// the name is kept for the invariant it is filed under: what these two
+// packages hold is still per-session state that must not reach disk, now the
+// resolved scope and the Resolver's Extra credential layers rather than an
+// overlay. A serializer arriving in either package still deserves the
+// argument the doc demands.
 var overlayOwningPackages = []string{"internal/scope", "internal/session"}
 
 // TestOverlayPackagesCarryNoSerializer keeps the structural half of "overlays

@@ -15,9 +15,12 @@ import (
 // The client contributes no layer: clients.json says WHICH profile applies,
 // never what it contains.
 //
-// The session layer is NOT produced here — the Resolver appends the live
-// Overlay. Returned layers never alias snapshot-owned maps or slices
-// (Snapshot is a shared read-only view; FromRegistry stays pure).
+// Layers that are not persisted are NOT produced here — the Resolver
+// appends its Extra ones, which is how a credential narrows a session it
+// owns no registry entry for. It used to append a live session Overlay;
+// 0bae283 removed those, and Extra is the seam that remains. Returned
+// layers never alias snapshot-owned maps or slices (Snapshot is a shared
+// read-only view; FromRegistry stays pure).
 //
 // Dangling profile references resolve FAIL-CLOSED to an empty scope
 // (a block-all profile layer) and are reported as a Diagnostic — never
