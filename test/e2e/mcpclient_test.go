@@ -42,6 +42,13 @@ type gatewayClient struct {
 	// dispErr is a fault the dispatcher could not report itself (t.Fatalf is
 	// illegal off the test goroutine); the next await surfaces it.
 	dispErr error
+
+	// roots are the project roots this client reports. Set BEFORE initialize:
+	// a non-empty value makes the handshake declare the roots capability,
+	// which is what the gateway checks before it will ask at all — declaring
+	// it and then answering an empty list is a different client from one that
+	// never declared it, and the two take different paths.
+	roots []string
 }
 
 // rpcMsg is the union of everything the gateway may send us.
@@ -331,17 +338,22 @@ func (c *gatewayClient) call(method string, params any, timeout time.Duration) (
 	return c.begin(method, params).await(timeout)
 }
 
-// answerReverse replies to a gateway->client request. The e2e client
-// declares no roots capability, so roots/list should not arrive — but
-// answering defensively keeps the read loop deadlock-free either way.
+// answerReverse replies to a gateway->client request. By default this client
+// declares no roots capability, so roots/list should not arrive — answering
+// defensively keeps the read loop deadlock-free either way. A client that set
+// roots before initializing declares the capability and answers with them.
 func (c *gatewayClient) answerReverse(m *rpcMsg) {
 	c.t.Helper()
 	// DEPRECATED-UPSTREAM(roots, earliest-removal: 2027-07-28): the e2e
 	// client answers the reverse RPC a ≤ 2025-11-25 server may still send.
 	if m.Method == "roots/list" {
+		list := make([]any, 0, len(c.roots))
+		for _, uri := range c.roots {
+			list = append(list, map[string]any{"uri": uri})
+		}
 		c.writeFrame(map[string]any{
 			"jsonrpc": "2.0", "id": json.RawMessage(m.ID),
-			"result": map[string]any{"roots": []any{}},
+			"result": map[string]any{"roots": list},
 		})
 		return
 	}
@@ -369,9 +381,13 @@ func (c *gatewayClient) initialize() {
 // helper that asserted equality could not express the rule it exists to test.
 func (c *gatewayClient) initializeAs(version string) string {
 	c.t.Helper()
+	caps := map[string]any{}
+	if len(c.roots) > 0 {
+		caps["roots"] = map[string]any{"listChanged": true}
+	}
 	res, rpcErr := c.call("initialize", map[string]any{
 		"protocolVersion": version,
-		"capabilities":    map[string]any{},
+		"capabilities":    caps,
 		"clientInfo":      map[string]any{"name": "agenthub-e2e", "version": "0"},
 	}, 30*time.Second)
 	if rpcErr != nil {
