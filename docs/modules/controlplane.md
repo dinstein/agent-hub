@@ -675,18 +675,20 @@ otherwise the stored `http.*` governance keys. When neither names an address —
 is created at all**, and a non-loopback address additionally requires the matching confirmation from that
 same source, whose absence fails startup rather than quietly downgrading to loopback.
 
-**GAP: the resolved source is honoured for the bind and bypassed for the authenticator.** In
-`startHTTPPlane` the `AuthorizeBind` call reads `face.InsecureLoopback` — whichever source
-`resolveHTTPFace` chose — while the `httpbridge.Authenticator` beside it is built from
-`cfg.HTTPInsecureLoopback`, the command-line field alone. The two agree whenever the command line is the
-source, because any of the three flags sends `resolveHTTPFace` down that branch. They diverge for the
-STORED source: `http.insecureLoopback true` with no flags authorizes a credential-less bind and then
-builds an authenticator that refuses every unauthenticated caller, so the daemon binds, logs
-`MCP data plane serving`, and answers 401 to everyone with no credential configured anywhere. The
-direction is the safe one — the escape hatch is silently withheld, never silently granted — but it is
-the same class as the `AllowRemote` bug this section already records: the running system stops matching
-its configuration and nobody is told. The fix is one identifier and needs a regression test that drives
-the stored path, so it is a change of behaviour rather than a tidy edit.
+**The resolved face is what BOTH halves of that decision read.** `AuthorizeBind` and the
+`httpbridge.Authenticator` built beside it are one decision in two places — the bind is authorized
+*because* unauthenticated loopback callers are to be accepted, and the authenticator is what accepts
+them — so both take `face.InsecureLoopback`. The authenticator used to be built from
+`cfg.HTTPInsecureLoopback`, the command-line field alone. The two agreed whenever a flag was typed,
+since any of the three selects that branch, which is why nothing passing flags could see it; from the
+STORED source they split, and `http.insecureLoopback true` authorized a credential-less bind and then
+served it with an authenticator refusing every unauthenticated caller — the daemon bound, logged
+`MCP data plane serving`, and answered 401 to everyone, with no credential configured anywhere to answer
+differently. The direction was the safe one, but it is the same class as the `AllowRemote` bug above:
+the running system stopped matching its configuration and nobody was told.
+`TestStoredInsecureLoopbackReachesTheAuthenticator` pins it, and it **sends a request** — the older
+stored-face test connects a TCP socket and stops there, which is exactly how the divergence survived
+having a test on this path at all.
 
 `httpPlane` is deliberately thin: it maps an authenticated credential to a `gateway.Conn` — the same
 gateway body as `agenthub connect`, attached to an in-memory pipe. **There is no second assembly, and
