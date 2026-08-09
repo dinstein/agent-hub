@@ -269,8 +269,17 @@ func TestEndpointMovedIsTerminalAndHinted(t *testing.T) {
 	if !errors.Is(cerr, downstream.ErrEndpointMoved) {
 		t.Fatalf("err = %v, want errors.Is(..., downstream.ErrEndpointMoved)", cerr)
 	}
-	if !strings.Contains(cerr.Error(), "agenthub server add") {
-		t.Fatalf("410 error %q carries no URL remediation hint", cerr)
+	// The whole hint, not a fragment of it. Both moved.go and
+	// docs/modules/dataplane.md call this copy a contract "asserted by tests",
+	// and until now the assertion was strings.Contains(…, "agenthub server
+	// add") — which a rewrite of every other word would still pass, so the
+	// contract was documented in two places and enforced in none. Spelled out
+	// here the way internal/shaping spells goldenNotFound: a reworded hint
+	// fails this line, which is the friction frozen user-facing copy is for.
+	const goldenMovedHint = "update the configured URL: " +
+		"agenthub server add <id> --url <new-url> (or edit servers.json)"
+	if !strings.HasSuffix(cerr.Error(), " — "+goldenMovedHint) {
+		t.Fatalf("410 error %q does not end in the frozen remediation hint %q", cerr, goldenMovedHint)
 	}
 	if n := tr.count(mcp.MethodToolsCall); n != 1 {
 		t.Fatalf("tools/call attempts = %d, want 1 (410 must never be retried)", n)
