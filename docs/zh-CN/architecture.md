@@ -382,7 +382,8 @@ fail-closed 的链里就是一个绕过形状。它包在调用本身外面—�
 ├── calls/YYYY-MM-DD/         # 调用账本：calls.jsonl（共享元数据）+ frames-*.jsonl（每进程）+ 加密 payload pack
 ├── tokens.json  .token_key   # agent token（只存 HMAC）
 └── run/                      # Linux 未设 AGENTHUB_DATA_DIR 时优先 $XDG_RUNTIME_DIR/AgentHub
-    ├── ctl.sock  daemon.json # 控制 socket + 就绪握手（bind 成功后才写）
+    ├── ctl.sock  daemon.json # 控制 socket + 就绪握手（endpoint、pid、version、owner pid；
+    │                         # bind 成功后才写）
 ```
 
 `<data>` 按**构建渠道**分成两个互不相干的目录：

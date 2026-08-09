@@ -314,6 +314,7 @@ flowchart TD
     P["Profile: profiles.json<br/>enabled servers + tool allow + discovery"] --> S
     S["Credential: an agent token's server allowlist and profile pin<br/>HTTP face only; can only tighten"] --> M
     M{{"Merge: security fields intersect / OR<br/>experience fields overridden by the nearest layer"}} --> E["EffectiveScope (content-addressed, carries a Hash)"]
+    CL["clients.json: the client binding<br/>selects a profile, never narrows on top of one"] -. "which profile applies" .-> P
 ```
 
 **`clients.json` is not a layer.** It answers one question — *which* profile this client is on, or
