@@ -86,34 +86,21 @@ var ErrNoResolver = errors.New("downstream: secret placeholder used but no secre
 // to other substitution layers (${ROOT} et al.) or are literal text a
 // downstream expects to receive unchanged.
 func expandSecrets(ctx context.Context, serverID, scopeName, s string, resolve secrets.Resolver) (string, error) {
-	if !strings.Contains(s, "${") {
+	found, tail := scanPlaceholders(s)
+	if len(found) == 0 {
 		return s, nil
 	}
 	var b strings.Builder
-	rest := s
-	for {
-		i := strings.Index(rest, "${")
-		if i < 0 {
-			b.WriteString(rest)
-			return b.String(), nil
-		}
-		end := strings.Index(rest[i:], "}")
-		if end < 0 {
-			// Unterminated: not a placeholder at all, keep it verbatim.
-			b.WriteString(rest)
-			return b.String(), nil
-		}
-		end += i
-		name := rest[i+2 : end]
-		b.WriteString(rest[:i])
-		if !strings.HasPrefix(name, secretPrefix) {
-			b.WriteString(rest[i : end+1]) // not ours; verbatim
-			rest = rest[end+1:]
+	b.Grow(len(s))
+	for _, p := range found {
+		b.WriteString(p.before)
+		key, ours := p.secretKey()
+		if !ours {
+			b.WriteString(p.verbatim())
 			continue
 		}
-		key := strings.TrimPrefix(name, secretPrefix)
 		if strings.TrimSpace(key) == "" {
-			return "", fmt.Errorf("downstream %q: empty secret placeholder ${%s}", serverID, name)
+			return "", fmt.Errorf("downstream %q: empty secret placeholder %s", serverID, p.verbatim())
 		}
 		if resolve == nil {
 			return "", fmt.Errorf("%w (server %q, key %q)", ErrNoResolver, serverID, key)
@@ -128,6 +115,60 @@ func expandSecrets(ctx context.Context, serverID, scopeName, s string, resolve s
 			return "", &UnresolvedSecretError{ServerID: serverID, Key: key}
 		}
 		b.WriteString(val)
+	}
+	b.WriteString(tail)
+	return b.String(), nil
+}
+
+// placeholder is one ${…} occurrence found by scanPlaceholders: the literal
+// text since the previous occurrence, and the name between the braces.
+type placeholder struct {
+	before string
+	name   string
+}
+
+// secretKey reports the vault key this placeholder names, and whether it is
+// ours at all. Only the SECRET_ prefix is; the remainder is the key, spelled
+// the same way the environment level of the chain reads it from
+// AGENTHUB_SECRET_<KEY>.
+func (p placeholder) secretKey() (string, bool) {
+	if !strings.HasPrefix(p.name, secretPrefix) {
+		return "", false
+	}
+	return strings.TrimPrefix(p.name, secretPrefix), true
+}
+
+// verbatim renders the placeholder exactly as it appeared, which is what a
+// placeholder belonging to another substitution layer (${ROOT} et al.) is
+// worth to this one.
+func (p placeholder) verbatim() string { return "${" + p.name + "}" }
+
+// scanPlaceholders splits s at its ${…} occurrences and returns them together
+// with the literal tail after the last one. A string with no placeholder
+// yields no occurrences and the whole of s as tail.
+//
+// An opening "${" with no closing brace is not a placeholder at all: the scan
+// stops there, so everything from it onwards is tail and reaches the output
+// unchanged.
+//
+// One scanner for the two readers below it — expandSecrets, which substitutes,
+// and SecretKeysIn, which reports what would be substituted. The two must
+// agree on where a placeholder starts, where it ends and what its name is, and
+// while each carried its own copy of those three rules only a test held them
+// together. A rule nothing fails on is a rule that drifts.
+func scanPlaceholders(s string) (found []placeholder, tail string) {
+	rest := s
+	for {
+		i := strings.Index(rest, "${")
+		if i < 0 {
+			return found, rest
+		}
+		end := strings.Index(rest[i:], "}")
+		if end < 0 {
+			return found, rest
+		}
+		end += i
+		found = append(found, placeholder{before: rest[:i], name: rest[i+2 : end]})
 		rest = rest[end+1:]
 	}
 }
@@ -143,39 +184,26 @@ func expandSecrets(ctx context.Context, serverID, scopeName, s string, resolve s
 // listing ends up naming ${ROOT} as a missing credential while the real
 // ${SECRET_GITHUB_TOKEN} goes unmentioned: both rules — the SECRET_ prefix
 // and the stripping — belong to this file, and a second implementation of
-// them drifts silently because nothing fails when it does.
+// them drifts silently because nothing fails when it does. Which is why the
+// scan itself is shared (scanPlaceholders) and only the two answers differ.
 //
-// TestSecretKeysInMatchesExpansion pins the two together.
+// TestSecretKeysInMatchesExpansion pins those answers together.
 func SecretKeysIn(s string) []string {
-	if !strings.Contains(s, "${") {
-		return nil
-	}
+	found, _ := scanPlaceholders(s)
 	var out []string
-	rest := s
-	for {
-		i := strings.Index(rest, "${")
-		if i < 0 {
-			return out
-		}
-		end := strings.Index(rest[i:], "}")
-		if end < 0 {
-			// Unterminated: not a placeholder at all (expandSecrets keeps the
-			// tail verbatim and stops here).
-			return out
-		}
-		end += i
-		name := rest[i+2 : end]
-		rest = rest[end+1:]
-		if !strings.HasPrefix(name, secretPrefix) {
-			continue // not ours; another substitution layer owns it
+	for _, p := range found {
+		key, ours := p.secretKey()
+		if !ours {
+			continue // another substitution layer owns it
 		}
 		// An empty ${SECRET_} is a configuration error expandSecrets rejects at
 		// dial time. Naming "" as a required key here would be useless, so it
 		// is left to the dial to report.
-		if key := strings.TrimPrefix(name, secretPrefix); strings.TrimSpace(key) != "" {
+		if strings.TrimSpace(key) != "" {
 			out = append(out, key)
 		}
 	}
+	return out
 }
 
 // resolveScoped reads one vault entry under the instance's scope, falling
