@@ -1,7 +1,7 @@
 // Package router aggregates the tools of many downstream servers into one
 // namespaced catalog (docs/modules/dataplane.md, internal/router).
 //
-// Exposed names are sanitize(serverID) + "__" + sanitize(rawTool), with
+// Exposed names are Sanitize(serverID) + "__" + Sanitize(rawTool), with
 // deterministic _2/_3 suffixes on collisions. The mapping back to
 // (server, raw tool) is RouteOf — the ONLY legitimate reverse lookup. The
 // exposed name is an opaque handle: because serverIDs and tool names may
@@ -172,7 +172,7 @@ func build(sources []source) (*Router, error) {
 		}
 		seen[id] = true
 		for _, def := range src.tools {
-			base := sanitize(id) + "__" + sanitize(def.Name)
+			base := Sanitize(id) + "__" + Sanitize(def.Name)
 			groups[base] = append(groups[base], entry{
 				route: Route{ServerID: id, RawTool: def.Name},
 				def:   def,
@@ -273,10 +273,16 @@ func (r *Router) List() []mcp.ToolDef {
 	return out
 }
 
-// sanitize rewrites every rune outside [a-zA-Z0-9_-] to '_'. It keeps
+// Sanitize rewrites every rune outside [a-zA-Z0-9_-] to '_'. It keeps
 // exposed names within the conservative tool-name charset that upstream
 // clients accept.
-func sanitize(s string) string {
+//
+// Exported because it is not only this package's rule: internal/discovery
+// builds grouped mode's "<server>_tools" entries out of the same server ids,
+// under the same constraint about what an upstream client accepts, and used
+// to carry a byte-identical copy of this function held in step by a golden
+// test. One definition is the version of that agreement a compiler can keep.
+func Sanitize(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {

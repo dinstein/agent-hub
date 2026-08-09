@@ -271,7 +271,7 @@ func New(opts Options) *Surface {
 func (s *Surface) assignGroupNames() {
 	taken := make(map[string]bool, len(s.serverIDs))
 	for _, id := range s.serverIDs {
-		base := sanitize(id) + groupSuffix
+		base := router.Sanitize(id) + groupSuffix
 		name := base
 		for n := 2; taken[name]; n++ {
 			name = base + "_" + itoa(n)
@@ -459,24 +459,6 @@ func (s *Surface) ShouldDrop(name string) bool {
 // name parsing: this is the only place "__" is inspected, and the result is
 // never used for routing.
 func IsBareName(name string) bool { return !strings.Contains(name, "__") }
-
-// sanitize mirrors router's exposed-name charset: every rune outside
-// [a-zA-Z0-9_-] becomes '_'. Duplicated rather than imported because
-// router's copy is unexported; the two must not drift, which the grouped
-// golden test pins.
-func sanitize(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('_')
-		}
-	}
-	return b.String()
-}
 
 // itoa renders a small non-negative int without pulling in strconv at the
 // call sites. The grouped-mode collision suffix above was its first user and
