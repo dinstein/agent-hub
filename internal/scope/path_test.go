@@ -13,6 +13,11 @@ func TestNormalizePath(t *testing.T) {
 		{"/a//b", "/a/b"},
 		{"/", "/"},
 		{"///", "/"},
+		// A bare run of slashes is noise, not a UNC prefix: there is no host
+		// character behind it. "//" in particular is the input the stripping
+		// loop used to name in a guard that could never see it.
+		{"//", "/"},
+		{"////", "/"},
 		// Windows drive form: slashes unified, lowercased, trailing stripped.
 		{`C:\Users\Dev\Proj`, "c:/users/dev/proj"},
 		{`C:\Users\Dev\Proj\`, "c:/users/dev/proj"},

@@ -6,8 +6,9 @@ import "strings"
 // operation (docs/architecture.md §7, inherited toolport lesson):
 //
 //   - backslashes become '/'
-//   - duplicate slashes collapse (a single leading "//" is preserved for
-//     UNC paths)
+//   - duplicate slashes collapse (a single leading "//" is preserved when a
+//     host character follows it, which is the UNC form; a bare run of slashes
+//     is noise and becomes "/")
 //   - trailing slashes are stripped (bare "/" survives)
 //   - Windows-form paths (drive-letter prefix or any backslash in the input)
 //     are lowercased, because Windows paths compare case-insensitively
@@ -48,8 +49,16 @@ func NormalizePath(p string) string {
 		s = "/" + s // restore the single extra leading slash of a UNC path
 	}
 
-	// Strip trailing slashes; keep a bare root ("/" or UNC "//") intact.
-	for len(s) > 1 && s != "//" && strings.HasSuffix(s, "/") {
+	// Strip trailing slashes; the bare root "/" survives.
+	//
+	// There is no UNC case to exempt here, and the `s != "//"` that used to
+	// stand beside the length test could not fire: reaching it needs the
+	// collapse above to have produced "/" AND unc to be true, but unc requires
+	// a non-slash at index 2 of the pre-collapse string, which is exactly the
+	// character that keeps the collapsed form longer than one byte. A bare run
+	// of slashes is noise by the rule two blocks up — "//" normalizes to "/",
+	// and the guard read as though it did not.
+	for len(s) > 1 && strings.HasSuffix(s, "/") {
 		s = s[:len(s)-1]
 	}
 
