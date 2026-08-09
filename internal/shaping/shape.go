@@ -98,6 +98,12 @@ const trailerFormat = "Truncated by agenthub to fit the result budget: %d of %d 
 // a trailer costs more than it delivers.
 const minPartialBytes = 16
 
+// arrayOverhead is what the enclosing "[" and "]" of the content array cost,
+// charged before any block is. Both places that fill a budget subtract it —
+// paginate for page 1 and page for pages 2+ — and one of them spelled it as a
+// bare 2, so a reader of that line had to work out which two bytes were meant.
+const arrayOverhead = 2
+
 // DefaultTTL is the cursor lifetime when Options.TTL is zero.
 const DefaultTTL = 30 * time.Minute
 
@@ -125,7 +131,7 @@ func shape(res *mcp.CallResult, budget Budget, opts Options) (*mcp.CallResult, C
 	if res == nil || budget.Bytes <= 0 {
 		return res, Cursor{}, false
 	}
-	baselineBytes := len(res.Content) + len(res.StructuredContent)
+	baselineBytes := resultBytes(res)
 	if baselineBytes <= budget.Bytes {
 		return res, Cursor{}, false
 	}
@@ -170,8 +176,7 @@ func shape(res *mcp.CallResult, budget Budget, opts Options) (*mcp.CallResult, C
 	// exceeds the budget the shaped page can cost MORE than the original.
 	// Delivering the original is then better on every axis — fewer bytes
 	// AND no data withheld — so shaping stands down.
-	actualBytes := len(out.Content) + len(out.StructuredContent)
-	if actualBytes >= baselineBytes {
+	if resultBytes(out) >= baselineBytes {
 		return res, Cursor{}, false
 	}
 
@@ -273,7 +278,7 @@ func linearize(segs []segment) (full string, starts []int, total int) {
 // is deferred too — order is preserved, which is what makes the rune offset
 // into the linearized payload meaningful.
 func paginate(segs []segment, budget Budget) (page []json.RawMessage, cutSeg, cutRunes int, keepStructured bool) {
-	used := 2 // the enclosing "[" and "]"
+	used := arrayOverhead
 	cutSeg = -1
 	for i, s := range segs {
 		if s.structured {

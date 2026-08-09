@@ -63,7 +63,7 @@ func page(e Entry, offset int) *mcp.CallResult {
 	// Unbounded budget: the whole remainder in one page.
 	nRunes, nBytes := total-offset, len(rest)
 	if e.Budget.Bytes > 0 {
-		avail := e.Budget.Bytes - 2 - textBlockOverhead
+		avail := e.Budget.Bytes - arrayOverhead - textBlockOverhead
 		if avail < minPartialBytes {
 			avail = minPartialBytes
 		}
