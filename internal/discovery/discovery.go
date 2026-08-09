@@ -1,7 +1,5 @@
-// Package discovery implements the three tool-exposure modes of docs/flows.md
-//
-//	/ 7.2 — full, grouped and lazy — plus the lexical ranker, the
-//
+// Package discovery implements the three tool-exposure modes of
+// docs/flows.md — full, grouped and lazy — plus the lexical ranker, the
 // SearchGuard state machine, the search-trace record and the pinned-tool
 // seam (docs/modules/dataplane.md, internal/discovery).
 //
@@ -481,7 +479,11 @@ func sanitize(s string) string {
 }
 
 // itoa renders a small non-negative int without pulling in strconv at the
-// call sites; collision suffixes are the only user.
+// call sites. The grouped-mode collision suffix above was its first user and
+// is no longer its only one: the frozen error messages of query.go and
+// describe.go build their measurements with it too, which is what keeps those
+// sentences assembled from string concatenation alone and therefore trivially
+// identical to their golden files.
 func itoa(n int) string {
 	if n == 0 {
 		return "0"
