@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -235,14 +236,27 @@ func readBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 // sends nothing, and rejecting the latter would make the endpoint
 // undebuggable for no security gain.
 func acceptsJSON(r *http.Request) bool {
-	accept := r.Header.Get("Accept")
-	if strings.TrimSpace(accept) == "" {
+	if strings.TrimSpace(r.Header.Get("Accept")) == "" {
 		return true
 	}
-	for _, part := range strings.Split(accept, ",") {
+	return acceptsMedia(r, "*/*", "application/*", "application/json")
+}
+
+// acceptsMedia reports whether the request's Accept header names any of want.
+//
+// It shares only the SPLIT — comma-separated entries, everything after the
+// first semicolon dropped — because that is the whole of what its two callers
+// had in common, and carrying it twice made "how does this face read an Accept
+// header" a question with two answers.
+//
+// What an ABSENT header means is deliberately NOT decided here: acceptsJSON
+// reads silence as "anything" and acceptsSSE reads it as "not a stream", and
+// each states its reason at its own site. Folding that into a parameter would
+// put two different arguments behind one boolean.
+func acceptsMedia(r *http.Request, want ...string) bool {
+	for part := range strings.SplitSeq(r.Header.Get("Accept"), ",") {
 		media := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
-		switch media {
-		case "*/*", "application/*", "application/json":
+		if slices.Contains(want, media) {
 			return true
 		}
 	}

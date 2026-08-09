@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/logx"
@@ -412,13 +411,9 @@ func acknowledgement(honoured mcp.SubscriptionFilter, subID mcp.ID) (*mcp.Notifi
 // tooling that will read whatever comes back, while a GET with no Accept is
 // not asking for a stream, and answering one would hand a long-lived response
 // to a client that expected a document and will hang waiting for its end.
+//
+// The absence therefore needs no special case: acceptsMedia finds no media in
+// an empty header and answers false, which is already this rule.
 func acceptsSSE(r *http.Request) bool {
-	for _, part := range strings.Split(r.Header.Get("Accept"), ",") {
-		media := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
-		switch media {
-		case "*/*", "text/*", mediaSSE:
-			return true
-		}
-	}
-	return false
+	return acceptsMedia(r, "*/*", "text/*", mediaSSE)
 }
