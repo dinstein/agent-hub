@@ -130,6 +130,15 @@ reconnect is not counted as an automatic one. The ladder has its own parameters 
 250ms base, 30s cap) because a reconnect costs a process start; the first does not wait and the exponent
 is capped at `min(n-1, 16)`.
 
+**GAP: a `tools/list` refresh that answers does not set `served`.** Two of the three owner-queue kinds
+record their round trip — `kindCall` in `serve`, `kindPing` in `Server.Ping` — and `kindRefresh` returns
+before either. A connection whose only traffic between two deaths was refreshes (a `list_changed`
+reaction, or an explicit `RefreshTools`) is therefore charged to the ladder as a crash loop, which is
+precisely the reading `served` was added to prevent. It is narrow: any assembly with `PingInterval > 0`
+corrects itself within one probe period, so the exposure is a gateway with background probing off whose
+downstream is chatty enough to keep refreshing it. The fix is one `s.served.Store(true)` on a successful
+refresh — a behaviour change to the backoff, so it is recorded here rather than made on a tidy night.
+
 **HTTP 410 Gone is terminal.** `ErrEndpointMoved` is neither retried nor reconnected, and carries the
 frozen remediation text `movedHint` — the error text is a contract, asserted by tests.
 
