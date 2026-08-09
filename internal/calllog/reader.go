@@ -46,10 +46,10 @@ func ScanEventsSince(root string, since time.Time, visit func(Event) error) (int
 	skipped := 0
 	cutoffDay := ""
 	if !since.IsZero() {
-		cutoffDay = since.UTC().Format("2006-01-02")
+		cutoffDay = since.UTC().Format(DayLayout)
 	}
 	for _, day := range days {
-		if !day.IsDir() || len(day.Name()) != len("2006-01-02") {
+		if !day.IsDir() || len(day.Name()) != len(DayLayout) {
 			continue
 		}
 		if cutoffDay != "" && day.Name() < cutoffDay {
@@ -89,10 +89,10 @@ func ScanFramesSince(root string, since time.Time, visit func(Event) error) (int
 	skipped := 0
 	cutoffDay := ""
 	if !since.IsZero() {
-		cutoffDay = since.UTC().Format("2006-01-02")
+		cutoffDay = since.UTC().Format(DayLayout)
 	}
 	for _, day := range days {
-		if !day.IsDir() || len(day.Name()) != len("2006-01-02") {
+		if !day.IsDir() || len(day.Name()) != len(DayLayout) {
 			continue
 		}
 		if cutoffDay != "" && day.Name() < cutoffDay {

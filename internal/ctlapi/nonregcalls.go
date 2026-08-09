@@ -571,7 +571,7 @@ func (s *Server) handleCallsPrune(w http.ResponseWriter, r *http.Request) {
 		s.writeCallsError(w, r, err)
 		return
 	}
-	writeOK(w, http.StatusOK, api.CallsPrune{DryRun: req.DryRun, Before: cutoff.Format("2006-01-02"), Days: res.Days, Bytes: res.Bytes, Names: res.Names})
+	writeOK(w, http.StatusOK, api.CallsPrune{DryRun: req.DryRun, Before: cutoff.Format(calllog.DayLayout), Days: res.Days, Bytes: res.Bytes, Names: res.Names})
 }
 
 func (s *Server) writeCallsError(w http.ResponseWriter, r *http.Request, err error) {

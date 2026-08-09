@@ -208,7 +208,7 @@ func NewCallID() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func utcDay(t time.Time) string { return t.UTC().Format("2006-01-02") }
+func utcDay(t time.Time) string { return t.UTC().Format(DayLayout) }
 
 func (s *Store) dayLocked(day string) (*dayWriter, error) {
 	if s.closed {

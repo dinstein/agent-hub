@@ -26,7 +26,7 @@ func Inspect(root string) (Usage, error) {
 			return nil
 		}
 		if entry.IsDir() {
-			if filepath.Dir(path) == root && len(entry.Name()) == len("2006-01-02") {
+			if filepath.Dir(path) == root && len(entry.Name()) == len(DayLayout) {
 				out.Days++
 			}
 			return nil

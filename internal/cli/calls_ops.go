@@ -178,7 +178,7 @@ func (a *App) newCallsPruneCmd() *cobra.Command {
 				return err
 			}
 			return a.printer().Emit(CallsPrune{
-				DryRun: dryRun, Before: cutoff.Format("2006-01-02"), Days: pruned.Days,
+				DryRun: dryRun, Before: cutoff.Format(calllog.DayLayout), Days: pruned.Days,
 				Bytes: pruned.Bytes, Names: pruned.Names,
 			})
 		},

@@ -160,7 +160,7 @@ func (w *packWriter) close() error {
 }
 
 func readPayload(root string, ref PayloadRef, key []byte) ([]byte, packHeader, error) {
-	if _, err := time.Parse("2006-01-02", ref.Day); err != nil || ref.File == "" || filepath.Base(ref.File) != ref.File || ref.Offset < 0 || ref.Length <= 0 {
+	if _, err := time.Parse(DayLayout, ref.Day); err != nil || ref.File == "" || filepath.Base(ref.File) != ref.File || ref.Offset < 0 || ref.Length <= 0 {
 		return nil, packHeader{}, ErrBadReference
 	}
 	f, err := os.Open(filepath.Join(root, ref.Day, ref.File))

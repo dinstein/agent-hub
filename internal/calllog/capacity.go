@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-const dayLayout = "2006-01-02"
-
 // PruneResult describes whole UTC partitions removed by a retention pass.
 type PruneResult struct {
 	Days  int      `json:"days"`
@@ -18,7 +16,7 @@ type PruneResult struct {
 }
 
 func retentionCutoff(now time.Time, days int) time.Time {
-	today, _ := time.Parse(dayLayout, now.UTC().Format(dayLayout))
+	today, _ := time.Parse(DayLayout, now.UTC().Format(DayLayout))
 	return today.AddDate(0, 0, -(days - 1))
 }
 
@@ -36,8 +34,8 @@ func (s *Store) withCapacityLocked(day string, added int64, write func() error) 
 	}()
 	if s.retention > 0 {
 		cutoff := retentionCutoff(s.clock(), s.retention)
-		if day < cutoff.Format(dayLayout) {
-			return fmt.Errorf("%w: %s is before %s", ErrExpired, day, cutoff.Format(dayLayout))
+		if day < cutoff.Format(DayLayout) {
+			return fmt.Errorf("%w: %s is before %s", ErrExpired, day, cutoff.Format(DayLayout))
 		}
 		if _, err := pruneUnlocked(s.root, cutoff, false); err != nil {
 			return err
@@ -95,11 +93,11 @@ func pruneUnlocked(root string, cutoff time.Time, dryRun bool) (PruneResult, err
 	if err != nil {
 		return out, err
 	}
-	cutoffDay := cutoff.UTC().Format(dayLayout)
+	cutoffDay := cutoff.UTC().Format(DayLayout)
 	for _, entry := range entries {
 		name := entry.Name()
-		parsed, parseErr := time.Parse(dayLayout, name)
-		if !entry.IsDir() || parseErr != nil || parsed.Format(dayLayout) != name || name >= cutoffDay {
+		parsed, parseErr := time.Parse(DayLayout, name)
+		if !entry.IsDir() || parseErr != nil || parsed.Format(DayLayout) != name || name >= cutoffDay {
 			continue
 		}
 		target := filepath.Join(root, name)

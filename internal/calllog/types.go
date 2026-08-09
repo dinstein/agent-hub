@@ -16,6 +16,16 @@ const (
 	LegacyDirectoryName = "audit"
 	// EventFileName is the shared bounded metadata stream inside one UTC day.
 	EventFileName = "calls.jsonl"
+	// DayLayout names one UTC partition directory. It decides three things at
+	// once — which directory a record is written into, which directory names
+	// the pruner is willing to validate before removing, and which ones a
+	// reader walks — so the three must agree by construction rather than by
+	// having been typed the same way.
+	//
+	// It moved here from capacity.go for the reason PressurePolicy below is
+	// here: the format was already spelled as a bare literal in four other
+	// files, including the two length checks that read `len("2006-01-02")`.
+	DayLayout = "2006-01-02"
 	// PressurePolicy is what a status view reports for storage pressure, and
 	// it is a constant because there is nothing to choose: c08fa41 made both
 	// tiers fail open, so crossing maxBytes or minFreeBytes costs the record
