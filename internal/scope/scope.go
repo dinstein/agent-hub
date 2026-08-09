@@ -1,6 +1,6 @@
-// Package scope implements the three-layer scope resolution chain
-// : Global > Profile > Session, merged
-// by Merge into a content-addressed EffectiveScope.
+// Package scope implements the three-layer scope resolution chain — Global >
+// Profile > Session — merged by Merge into a content-addressed
+// EffectiveScope.
 //
 // Merge is a pure function: same inputs always produce the same output and
 // inputs are never mutated — the stdio gateway and the daemon call the same
