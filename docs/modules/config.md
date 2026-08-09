@@ -220,17 +220,14 @@ reference or be cheap closures.
 **The reset race in settling mode is solved with a `gen` counter.** A timer that has begun firing cannot be
 stopped, so every re-armed timer captures the `gen` at that moment and `fire` ignores stale callbacks.
 
-**GAP: `gen` counts per ENTRY, so it does not cover the same race across `Flush`.** A fresh entry starts at
-`gen` 0, and a callback stranded by `Flush` captured 0 too — a coalescer entry is never reset, so its timer
-always holds 0. The sequence is: a key's timer begins firing (its `stop` returns false), `Flush` detaches
-and emits that entry, the same key is `Add`ed again, and the stale callback then matches the NEW entry by
-generation and fires it immediately instead of a window later. Reproduced deterministically through the
-injectable `timerFactory`. The consequence is mild — one notification arrives early, and the bus contract
-already makes an early notification safe, since a consumer re-reads authoritative state rather than
-treating the event as a log — but the mechanism that would prevent it is the one already documented above,
-applied one level too narrowly. The fix is a monotonic sequence on the `Merger` rather than a counter on
-each entry, so no two armed timers can ever share a generation; that is a change of behaviour with a
-regression test to write, so it is recorded here rather than made on a tidy night.
+**The generation sequence lives on the MERGER, so no two armed timers share a number.** A per-entry
+counter answered the reset race and not the same race across `Flush`: a fresh entry started at zero, a
+coalescer entry is never reset so its stranded callback held zero too, and the two collided — a key's timer
+begins firing, `Flush` detaches and emits that entry, the key is `Add`ed again, and the stranded callback
+matches the NEW entry and fires it a window early. A monotonic sequence on the `Merger` makes a stranded
+callback match nothing but the timer it was armed for, and subsumes the reset case rather than replacing
+it. Both are pinned by tests that run the timer by hand: the interleaving is the subject, and a sleep would
+test the scheduler instead.
 
 **`Close` discards pending events; `Flush` fires them.** Dropping one merged notification at shutdown is
 acceptable — the bus contract already requires consumers to re-read after a loss. After `Close`, `Add` is a
