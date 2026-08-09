@@ -18,6 +18,21 @@ import (
 //
 // The rotated name carries a fixed-width, zero-padded UTC stamp, so lexical
 // order is chronological order.
+//
+// The glob is NECESSARY BUT NOT SUFFICIENT, which is what IsSegment is here
+// for. <base>-*<ext> matches every rotated file of this stream and also every
+// stream whose own name extends this one: the pattern for
+// gateway-claude-code.log matches gateway-claude-code-dev.log — a second
+// client's ACTIVE log — and everything rotated off it. Two clients named
+// claude-code and claude-code-dev are the whole precondition, and process logs
+// are named gateway-<client>.log from ids an operator chooses.
+//
+// Unfiltered, that reached both halves of this file. A reader merged the
+// sibling's records into this stream's, while the sibling's own read stayed
+// clean, so the two disagreed about what one client did. Worse, Prune below
+// walks the same list and calls os.Remove on it — and NewWriter calls Prune on
+// every open — so starting one client's gateway could DELETE another client's
+// live log.
 func Segments(path string) []string {
 	ext := filepath.Ext(path)
 	base := strings.TrimSuffix(path, ext)
@@ -25,8 +40,30 @@ func Segments(path string) []string {
 	if err != nil {
 		matches = nil
 	}
-	slices.Sort(matches)
-	return append(matches, path)
+	segments := matches[:0]
+	for _, m := range matches {
+		if stemOf(m) == base {
+			segments = append(segments, m)
+		}
+	}
+	slices.Sort(segments)
+	return append(segments, path)
+}
+
+// stemOf returns the extension-less path of the stream a rotated file belongs
+// to, or "" when the file carries no segment suffix at all.
+//
+// Comparing the stem is the whole filter, and IsSegment alone is not enough:
+// gateway-claude-code-dev-<stamp>.p9.log IS a segment, of a DIFFERENT stream,
+// and it matches the shorter stream's glob. Only the name the suffix was
+// appended to says which stream a file is part of.
+func stemOf(path string) string {
+	body := strings.TrimSuffix(path, filepath.Ext(path))
+	loc := segmentSuffix.FindStringIndex(body)
+	if loc == nil {
+		return ""
+	}
+	return body[:loc[0]]
 }
 
 // segmentSuffix matches the "-<stamp>.p<pid>" tail segmentPath appends. The
