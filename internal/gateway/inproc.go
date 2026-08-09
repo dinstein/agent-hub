@@ -11,8 +11,9 @@ import (
 	"github.com/dinstein/agent-hub/internal/mcp"
 )
 
-// This file is the seam the daemon's HTTP data plane hangs off (docs/canonical.md §2
-// ). It exposes the SAME gateway assembly Run serves over stdin/stdout,
+// This file is the seam the daemon's HTTP data plane hangs off
+// (docs/canonical.md §2). It exposes the SAME gateway assembly Run serves over
+// stdin/stdout,
 // connected over an in-memory pipe pair instead.
 //
 // Why reuse rather than assemble a second data plane: canonical.md §2 freezes

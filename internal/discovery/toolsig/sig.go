@@ -35,8 +35,9 @@ type Signature struct {
 	Text string
 	// Lossy reports that the rendering dropped information — a folded
 	// nested object, a truncated enum or parameter list, an unparsable
-	// schema. It is the "lossy" field of the search result in docs/modules/dataplane.md
-	// , and it is the agent's cue that describe_tool has more.
+	// schema. It is the "lossy" field of the search result in
+	// docs/modules/dataplane.md, and it is the agent's cue that describe_tool
+	// has more.
 	Lossy bool
 	// Params is how many parameters the schema declares; Shown is how many
 	// survived the length budget.

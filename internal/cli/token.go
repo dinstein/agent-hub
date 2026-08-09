@@ -14,8 +14,9 @@ import (
 	"github.com/dinstein/agent-hub/internal/tier"
 )
 
-// The `token` group is the CLI face of the agent-token layer (docs/architecture.md §9
-// ): the graded credentials for the daemon's HTTP data plane.
+// The `token` group is the CLI face of the agent-token layer
+// (docs/architecture.md §9): the graded credentials for the daemon's HTTP
+// data plane.
 //
 // INVARIANT, and the reason the types below have no value field: a token's
 // PLAINTEXT is printed exactly once, by `token create`, and is never

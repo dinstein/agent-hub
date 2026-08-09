@@ -28,8 +28,8 @@ const (
 	lockFileName     = ".lock"
 
 	// MarkerFileName proves an installed directory is ours. Its presence is
-	// the ONLY thing that lets Apply/Remove touch a directory (docs/modules/config.md
-	// : OwnedFile's frozen prefix, in directory form).
+	// the ONLY thing that lets Apply/Remove touch a directory
+	// (docs/modules/config.md: OwnedFile's frozen prefix, in directory form).
 	MarkerFileName = ".agenthub-managed.json"
 )
 

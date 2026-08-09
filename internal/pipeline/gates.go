@@ -83,8 +83,9 @@ func ScopeAllows(es *scope.EffectiveScope, serverID, rawTool string) bool {
 type scopeGate struct {
 	n atomic.Uint64
 	// scopeOf returns the caller's effective scope; the SAME pointer the
-	// assembling gateway serves tools/list from (cache-shared, docs/architecture.md §7
-	// ). nil func / nil scope = no scope authority (see Options.Scope):
+	// assembling gateway serves tools/list from (cache-shared,
+	// docs/architecture.md §7). nil func / nil scope = no scope authority (see
+	// Options.Scope):
 	// allow — that mode has no registry, hence nothing to enforce.
 	scopeOf func() *scope.EffectiveScope
 }

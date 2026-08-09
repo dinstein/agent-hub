@@ -1,6 +1,6 @@
-// Package session implements session identity and lifecycle (docs/architecture.md §7
-// /4.4): the daemon-side session registry whose stdio gateways are
-// remote members and whose HTTP sessions are local.
+// Package session implements session identity and lifecycle
+// (docs/architecture.md §7): the daemon-side session registry whose stdio
+// gateways are remote members and whose HTTP sessions are local.
 //
 // Identity ruling (A.1 #7): short IDs "client:seq" for humans, a random
 // 128-bit token on the protocol side of HTTP sessions.

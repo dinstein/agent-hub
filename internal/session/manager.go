@@ -50,8 +50,9 @@ var (
 	ErrNotFound = errors.New("session: not found")
 )
 
-// SessionManager is the daemon-side session registry contract (docs/architecture.md §7
-// ). Deviations from the sketch there, both deliberate:
+// SessionManager is the daemon-side session registry contract
+// (docs/architecture.md §7). Deviations from the sketch there, both
+// deliberate:
 //   - Touch is exposed for the HTTP bridge (LastSeen refresh).
 type SessionManager interface {
 	// Register admits a stdio gateway dialing in over the control socket.
