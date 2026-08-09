@@ -87,11 +87,11 @@ type Result struct {
 func Read(path string, q Query) (Result, error) {
 	var out Result
 	for _, f := range jsonl.Segments(path) {
-		records, skipped, err := readFile(f, q)
+		records, skipped, found, err := readFile(f, q)
 		if err != nil {
 			return Result{}, err
 		}
-		if records == nil && skipped == 0 && !fileExists(f) {
+		if !found {
 			continue
 		}
 		out.Files = append(out.Files, f)
@@ -105,20 +105,32 @@ func Read(path string, q Query) (Result, error) {
 	return out, nil
 }
 
-func readFile(path string, q Query) ([]Record, int, error) {
+// readFile decodes one segment. found reports whether the file was there at
+// all, which is what decides if its path joins Result.Files.
+//
+// It is returned rather than re-derived by the caller because os.Open already
+// answered it: Read used to throw the answer away and stat the path a second
+// time, so between the open and the stat a rotation could rename the file and
+// leave Files naming a path nothing read — or dropping one that was read. A
+// list documented as "which files a report covers" is the wrong place to hold
+// a second opinion about that.
+//
+// An empty file that exists is still found: "no records over three segments"
+// and "no records over none" are different facts, which is what Files is for.
+func readFile(path string, q Query) (recs []Record, skipped int, found bool, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, 0, nil
+			return nil, 0, false, nil
 		}
-		return nil, 0, fmt.Errorf("open %s: %w", path, err)
+		return nil, 0, false, fmt.Errorf("open %s: %w", path, err)
 	}
 	defer func() { _ = f.Close() }()
 	records, skipped, err := decodeRecords(f, q)
 	if err != nil {
-		return nil, skipped, fmt.Errorf("read %s: %w", path, err)
+		return nil, skipped, true, fmt.Errorf("read %s: %w", path, err)
 	}
-	return records, skipped, nil
+	return records, skipped, true, nil
 }
 
 func decodeRecords(r io.Reader, q Query) ([]Record, int, error) {
@@ -152,9 +164,4 @@ func decodeRecords(r io.Reader, q Query) ([]Record, int, error) {
 		out = append(out, rec)
 	}
 	return out, skipped, sc.Err()
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
