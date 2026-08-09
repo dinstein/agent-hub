@@ -209,6 +209,14 @@ func HostIsDefinitelyPrivate(host string) bool {
 //
 // Failure direction: FAIL-CLOSED — an address that cannot be parsed is
 // rejected, and every rejection satisfies errors.Is(err, guard.ErrBlocked).
+// It strips the port and brackets itself rather than calling canonicalHost,
+// and the two must not be merged on the strength of looking alike.
+// canonicalHost trims surrounding whitespace, so it parses inputs this one
+// refuses: " 8.8.8.8:53 " is unparsable here and a public address there, which
+// turns a rejection into a dial. The dialer only ever hands Control the
+// resolved host:port it built itself, so no such input can arrive — but a
+// fail-closed predicate is the wrong place to widen what is accepted on the
+// strength of an argument about what cannot happen.
 func DialControl(_, address string, _ syscall.RawConn) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {

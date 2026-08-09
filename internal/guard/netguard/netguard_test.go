@@ -238,6 +238,13 @@ func TestDialControl(t *testing.T) {
 		"not-an-ip:80",     // fail-closed: Control must only see IP literals
 		"garbage",          // fail-closed: unparsable
 		"evil.example:443", // fail-closed: unresolved hostname reached Control
+		// Whitespace is not trimmed here, and that is the difference from
+		// canonicalHost worth pinning: trimming would make this a public
+		// address and the dial would go out. The dialer cannot produce such an
+		// input, so this asserts the failure DIRECTION rather than a reachable
+		// case — which is the half a future tidy would remove by merging the
+		// two strippers.
+		" 8.8.8.8:53 ",
 	}
 	for _, addr := range blockCases {
 		t.Run("block "+addr, func(t *testing.T) {
