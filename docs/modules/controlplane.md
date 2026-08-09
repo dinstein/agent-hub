@@ -675,6 +675,19 @@ otherwise the stored `http.*` governance keys. When neither names an address —
 is created at all**, and a non-loopback address additionally requires the matching confirmation from that
 same source, whose absence fails startup rather than quietly downgrading to loopback.
 
+**GAP: the resolved source is honoured for the bind and bypassed for the authenticator.** In
+`startHTTPPlane` the `AuthorizeBind` call reads `face.InsecureLoopback` — whichever source
+`resolveHTTPFace` chose — while the `httpbridge.Authenticator` beside it is built from
+`cfg.HTTPInsecureLoopback`, the command-line field alone. The two agree whenever the command line is the
+source, because any of the three flags sends `resolveHTTPFace` down that branch. They diverge for the
+STORED source: `http.insecureLoopback true` with no flags authorizes a credential-less bind and then
+builds an authenticator that refuses every unauthenticated caller, so the daemon binds, logs
+`MCP data plane serving`, and answers 401 to everyone with no credential configured anywhere. The
+direction is the safe one — the escape hatch is silently withheld, never silently granted — but it is
+the same class as the `AllowRemote` bug this section already records: the running system stops matching
+its configuration and nobody is told. The fix is one identifier and needs a regression test that drives
+the stored path, so it is a change of behaviour rather than a tidy edit.
+
 `httpPlane` is deliberately thin: it maps an authenticated credential to a `gateway.Conn` — the same
 gateway body as `agenthub connect`, attached to an in-memory pipe. **There is no second assembly, and
 therefore no second execution path**: an HTTP request traverses the same discovery surface, the same
