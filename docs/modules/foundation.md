@@ -294,6 +294,18 @@ by N processes at once needs.
   would be the second place the scheme lives, and the way that goes wrong is a reader opening only
   the ACTIVE file and reporting "nothing happened" for everything rotation moved aside — which is
   the bug the retired savings projection shipped.
+- **GAP: `Segments` globs but does not filter, so a stream whose name is a prefix of another's
+  swallows it.** The glob for `gateway-claude-code.log` is `gateway-claude-code-*.log`, which matches
+  `gateway-claude-code-dev.log` — a second client's ACTIVE log — and every segment rotated off it.
+  Two clients named `claude-code` and `claude-code-dev` are enough, and process logs are named
+  `gateway-<client>.log` from ids an operator chooses. Every reader built on `Segments` inherits it:
+  `agenthub logs --client claude-code` merges the sibling's records in, while the sibling's own read
+  is unaffected, so the two disagree about what one client did. The predicate that fixes it is
+  already in this file and was written for exactly this hazard — `IsSegment`, whose comment says a
+  caller listing streams by glob needs it because `gateway-*.log` matches `gateway-claude-code.log`
+  and every segment rotated off it. `Segments` is such a caller and does not use it. The fix is to
+  filter the glob output through `IsSegment`; that is a change of behaviour with a regression test
+  to write, so it is recorded here rather than made on a tidy night.
 - **Retention is opt-in (`KeepSegments`), and the sweep runs in `NewWriter`.** A stream that is
   someone's archive must not lose history to a default. `DefaultKeepSegments` = 3 is the number every
   stream here uses, in one place, so "how much history do these files keep" has one answer.
