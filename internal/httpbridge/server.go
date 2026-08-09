@@ -297,7 +297,7 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request, c *Caller, h
 	// decision, and a transport is what this package is.
 	if req, ok := msg.(*mcp.Request); ok && req.Method == mcp.MethodSubscriptionsListen {
 		if e := checkMcpHeaders(r, req.Method, req.Params); e != nil {
-			s.replyRPCError(w, http.StatusBadRequest, req.ID, e)
+			s.replyRPCError(w, r, http.StatusBadRequest, req.ID, e)
 			return
 		}
 		s.handleListen(w, r, c, req, held)
@@ -312,7 +312,7 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request, c *Caller, h
 	switch m := msg.(type) {
 	case *mcp.Request:
 		if e := checkMcpHeaders(r, m.Method, m.Params); e != nil {
-			s.replyRPCError(w, http.StatusBadRequest, m.ID, e)
+			s.replyRPCError(w, r, http.StatusBadRequest, m.ID, e)
 			return
 		}
 		s.handleRequest(w, r, c, m)
@@ -618,10 +618,16 @@ func checkMcpHeaders(r *http.Request, method string, params json.RawMessage) *mc
 // replyRPCError writes a JSON-RPC error response with the given HTTP
 // status: the 2026-07-28 header rejections are protocol-level errors that
 // still bind to the request id.
-func (s *Server) replyRPCError(w http.ResponseWriter, status int, id mcp.ID, e *mcp.Error) {
+//
+// It takes the request only so its own encode failure can be reported like
+// every other rejection on this face. That path is not reachable today — an
+// mcp.ID holds validated JSON text and these errors carry no Data — but fail
+// reads the request unconditionally, so the one call site that passed nil
+// answered an unencodable response with a panic.
+func (s *Server) replyRPCError(w http.ResponseWriter, r *http.Request, status int, id mcp.ID, e *mcp.Error) {
 	raw, err := json.Marshal(mcp.NewErrorResponse(id, e))
 	if err != nil {
-		s.fail(w, nil, &httpError{http.StatusInternalServerError, CodeBadRequest, "response could not be encoded"})
+		s.fail(w, r, &httpError{http.StatusInternalServerError, CodeBadRequest, "response could not be encoded"})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

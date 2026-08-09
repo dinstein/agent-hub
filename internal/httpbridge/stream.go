@@ -88,7 +88,7 @@ func (s *Server) handleListen(w http.ResponseWriter, r *http.Request, c *Caller,
 	var params mcp.SubscriptionsListenParams
 	if len(req.Params) > 0 {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
-			s.replyRPCError(w, http.StatusBadRequest, req.ID, &mcp.Error{
+			s.replyRPCError(w, r, http.StatusBadRequest, req.ID, &mcp.Error{
 				Code: mcp.CodeInvalidParams, Message: "subscriptions/listen params could not be read",
 			})
 			return
@@ -99,7 +99,7 @@ func (s *Server) handleListen(w http.ResponseWriter, r *http.Request, c *Caller,
 		// as a JSON-RPC error beats opening one the client will not read:
 		// agenthub's own read side treats a JSON answer here as "this server
 		// does not offer the stream", which is the accurate reading.
-		s.replyRPCError(w, http.StatusNotAcceptable, req.ID, &mcp.Error{
+		s.replyRPCError(w, r, http.StatusNotAcceptable, req.ID, &mcp.Error{
 			Code:    mcp.CodeInvalidRequest,
 			Message: "subscriptions/listen is answered with text/event-stream, which this request does not accept",
 		})
@@ -115,7 +115,7 @@ func (s *Server) handleListen(w http.ResponseWriter, r *http.Request, c *Caller,
 	honoured := honouredFilter(params.Notifications)
 	ack, err := acknowledgement(honoured, req.ID)
 	if err != nil {
-		s.replyRPCError(w, http.StatusInternalServerError, req.ID, &mcp.Error{
+		s.replyRPCError(w, r, http.StatusInternalServerError, req.ID, &mcp.Error{
 			Code: mcp.CodeInternalError, Message: "the subscription could not be acknowledged",
 		})
 		return
