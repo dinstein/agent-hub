@@ -416,7 +416,7 @@ func Run(ctx context.Context, cfg Config) error {
 		Version:  cfg.Version,
 		Registry: store,
 		Dial:     cfg.Dial,
-	}, tokens, store.Snapshot(), log)
+	}, tokens, store.Snapshot())
 	if herr != nil {
 		// Same teardown as every other exit, in the same order: stop serving,
 		// then release what was assembled. Nothing is draining here — the

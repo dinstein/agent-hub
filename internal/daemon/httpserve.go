@@ -103,7 +103,17 @@ func resolveHTTPFace(cfg Config, snap *registry.Snapshot, log *slog.Logger) regi
 // live endpoint or an error: a configured endpoint that cannot be brought up
 // fails the daemon rather than degrading it into a daemon without the data
 // plane its operator asked for.
-func startHTTPPlane(ctx context.Context, cfg Config, deps httpPlaneDeps, tokens *httpbridge.Store, snap *registry.Snapshot, log *slog.Logger) (*httpEndpoint, error) {
+//
+// The logger comes from deps and only from there. It was a parameter as well,
+// handed the same value by the one caller, so this function carried two names
+// for one logger while newHTTPPlane below read the other one.
+func startHTTPPlane(ctx context.Context, cfg Config, deps httpPlaneDeps, tokens *httpbridge.Store, snap *registry.Snapshot) (*httpEndpoint, error) {
+	log := deps.Log
+	if log == nil {
+		// Same default newHTTPPlane applies to the copy it keeps, so the two
+		// halves of this assembly cannot end up logging to different places.
+		log = slog.New(slog.DiscardHandler)
+	}
 	face := resolveHTTPFace(cfg, snap, log)
 	addr := strings.TrimSpace(face.Addr)
 	if addr == "" {
