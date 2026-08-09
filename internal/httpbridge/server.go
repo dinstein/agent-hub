@@ -683,19 +683,31 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		"method", r.Method, "path", r.URL.Path, "status", he.Status, "code", he.Code)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(he.Status)
-	body, merr := json.Marshal(struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}{Error: struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	}{Code: he.Code, Message: he.Message}})
+	body, merr := json.Marshal(rejectionBody{
+		Error: rejection{Code: he.Code, Message: he.Message},
+	})
 	if merr != nil {
 		return
 	}
 	_, _ = w.Write(body)
+}
+
+// rejectionBody is the frozen shape of every rejection this face writes:
+// {"error":{"code":"…","message":"…"}}. The codes are ABI for anything
+// parsing it (see the Code* constants in ingress.go).
+//
+// Named rather than written inline, where the shape appeared twice — as the
+// anonymous type and again as the literal's type. The compiler did hold the
+// two copies identical, so the cost was entirely the reader's: eleven lines
+// of field declarations in the middle of the error path, and no name for the
+// thing they describe. A frozen wire shape is worth being able to point at.
+type rejectionBody struct {
+	Error rejection `json:"error"`
+}
+
+type rejection struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // asHTTPError normalises any error into a rejection. Anything unrecognised
