@@ -48,6 +48,14 @@ type Merger struct {
 	mu      sync.Mutex
 	pending map[mergeKey]*mergeEntry
 	closed  bool
+	// seq numbers every armed timer, monotonically for the life of the
+	// Merger. It is on the MERGER and not on the entry because the race it
+	// settles outlives an entry: Flush detaches a key whose timer had already
+	// begun firing, the same key is Added again, and a per-entry counter would
+	// start the replacement back at the stranded callback's own generation. A
+	// number nothing else can hold is the only version of this that a later
+	// Add cannot collide with.
+	seq uint64
 }
 
 type mergeKey struct {
@@ -58,9 +66,11 @@ type mergeKey struct {
 type mergeEntry struct {
 	build func() any
 	stop  func() bool
-	// gen guards the settler reset race: a timer that already started firing
-	// cannot be stopped, so each (re)armed timer captures the entry's gen and
-	// fire ignores callbacks whose gen is stale.
+	// gen is the Merger sequence number of the timer currently armed for this
+	// entry. A timer that already started firing cannot be stopped, so fire
+	// ignores any callback whose captured number is no longer the entry's —
+	// which covers a settler reset and, because the numbers are never reused,
+	// a callback stranded by Flush meeting a later entry for the same key.
 	gen uint64
 }
 
@@ -111,16 +121,22 @@ func (m *Merger) Add(topic Topic, key string, build func() any) {
 			// timer is already mid-fire; the gen bump makes that stale
 			// callback a no-op.
 			e.stop()
-			e.gen++
-			gen := e.gen
+			gen := m.nextGen()
+			e.gen = gen
 			e.stop = m.timer(m.window, func() { m.fire(k, gen) })
 		}
 		return
 	}
-	e := &mergeEntry{build: build}
+	gen := m.nextGen()
+	e := &mergeEntry{build: build, gen: gen}
 	m.pending[k] = e
-	gen := e.gen // captured by value: a later reset must strand THIS timer
 	e.stop = m.timer(m.window, func() { m.fire(k, gen) })
+}
+
+// nextGen mints the number of one armed timer. Caller holds m.mu.
+func (m *Merger) nextGen() uint64 {
+	m.seq++
+	return m.seq
 }
 
 // fire is the timer callback: detach the entry, then build + publish
