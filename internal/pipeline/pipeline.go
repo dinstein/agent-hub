@@ -8,9 +8,16 @@
 //	scope gate → token tier gate
 //
 // then the downstream call, then the shaping hook (budget-shape through
-// Options.ResultShaper). Success and
-// error branches share defend_and_shape (docs/flows.md: a malicious server
-// must not bypass scanning by answering with a JSON-RPC error).
+// Options.ResultShaper).
+//
+// Both branches enter that hook and its counter advances either way, which is
+// what the stdio/HTTP gate-count parity assertions compare; only the success
+// branch is shaped, an error carrying no payload to bound. This paragraph used
+// to justify the shared entry as a scan a malicious server could otherwise
+// dodge by answering with a JSON-RPC error. There is no scan: the injection
+// and leak stages went with the rest of the runtime governance surface, which
+// shape.go and docs/modules/dataplane.md both say — and which ShapeFunc below
+// already said while this sentence still named them.
 //
 // M1.5 state: every gate is real. The token tier gate enforces
 // CallRequest.CallerTier (minted by internal/httpbridge's agent tokens)
