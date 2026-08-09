@@ -157,9 +157,15 @@ func startHTTPPlane(ctx context.Context, cfg Config, deps httpPlaneDeps, tokens 
 	srv, err := httpbridge.New(httpbridge.Options{
 		Dispatcher: plane,
 		Auth: &httpbridge.Authenticator{
-			AdminToken:       cfg.HTTPAdminToken,
-			Tokens:           tokens,
-			InsecureLoopback: cfg.HTTPInsecureLoopback,
+			AdminToken: cfg.HTTPAdminToken,
+			Tokens:     tokens,
+			// face, not cfg. AuthorizeBind above already reads the RESOLVED
+			// answer, and these two are halves of one decision: the bind is
+			// authorized because unauthenticated loopback callers are to be
+			// accepted, and this is what accepts them. Reading cfg here made
+			// the stored source authorize a credential-less bind and then
+			// refuse every caller of it.
+			InsecureLoopback: face.InsecureLoopback,
 		},
 		Logger: log,
 		Events: deps.Events,

@@ -2,13 +2,17 @@ package daemon_test
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/daemon"
+	"github.com/dinstein/agent-hub/internal/httpbridge"
+	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/platform"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/testutil/fakemcp"
@@ -133,6 +137,57 @@ func TestStoredHTTPAddressBringsUpTheDataPlane(t *testing.T) {
 		t.Fatalf("nothing is accepting on the address the daemon reported (%s): %v", addrs[0], err)
 	}
 	_ = conn.Close()
+}
+
+// The stored source has to reach the AUTHENTICATOR, not only the bind
+// decision — the two used to read different fields.
+//
+// AuthorizeBind was given the resolved face while httpbridge.Authenticator was
+// built from the command-line field alone. Both sources agree whenever a flag
+// was typed, because any of the three sends resolveHTTPFace down that branch,
+// so nothing that passes flags could see it. From the stored source it split:
+// `http.insecureLoopback true` authorized a credential-less bind and then
+// served it with an authenticator that refuses every unauthenticated caller,
+// so the endpoint came up, logged that it was serving, and answered 401 to
+// everybody — with no credential configured anywhere to answer differently.
+//
+// The previous test on this path connects a TCP socket and stops there, which
+// is exactly the evidence the divergence survives. This one sends a request.
+func TestStoredInsecureLoopbackReachesTheAuthenticator(t *testing.T) {
+	d := startHTTPDaemon(t, func(cfg *daemon.Config) {
+		// No HTTP fields at all — what the desktop application passes — so
+		// every one of the three comes from the store.
+		cfg.HTTPAddr = ""
+		seedHTTPFace(t, cfg.Resolver, registry.HTTPFace{Addr: "127.0.0.1:0", InsecureLoopback: true})
+	})
+
+	// Unauthenticated, from loopback: precisely what the stored escape hatch
+	// says to accept. No token is minted anywhere in this test, so a 401 here
+	// cannot be answered by configuring one.
+	//
+	// initialize rather than ping, because it is the one request that needs no
+	// session of its own — a 200 here therefore says the call reached the
+	// dispatcher, not merely that it got past the authenticator.
+	params, err := json.Marshal(mcp.InitializeParams{
+		ProtocolVersion: mcp.ProtocolVersion,
+		ClientInfo:      mcp.Implementation{Name: "stored-face-test", Version: "0"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, hdr, body := d.mcpPost(t, "", "",
+		mcp.NewRequest(mcp.NewIntID(1), mcp.MethodInitialize, params))
+	if status == http.StatusUnauthorized {
+		t.Fatalf("an unauthenticated loopback caller got 401 while http.insecureLoopback is stored true "+
+			"(body %s): the bind was authorized by the resolved face and then served by an "+
+			"authenticator built from the command line", body)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("initialize over the stored insecure-loopback face: HTTP %d (%s)", status, body)
+	}
+	if hdr.Get(httpbridge.SessionHeader) == "" {
+		t.Fatalf("initialize bound no session over the stored face (body %s)", body)
+	}
 }
 
 // The command line replaces the stored set rather than merging with it. An
