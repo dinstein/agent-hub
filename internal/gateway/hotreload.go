@@ -14,8 +14,9 @@ import (
 	"github.com/dinstein/agent-hub/internal/scope"
 )
 
-// This file is the gateway's configuration hot-reload plane (docs/modules/foundation.md
-// / 6.5, canonical.md §5c). Change notifications arrive on TWO channels —
+// This file is the gateway's configuration hot-reload plane
+// (docs/modules/foundation.md, canonical.md §5c). Change notifications arrive
+// on TWO channels —
 // the local registry watcher (fsnotify + poll) and the daemon control link
 // (LinkEventRegistry) — and both funnel into onRegistryChange, which
 // re-reads the registry itself (a Change is a notification, never a

@@ -22,8 +22,8 @@
 //     nothing is Unknown and MUST be dropped — never promoted to a
 //     meta-tool. Under a cold catalog (scope resolved before any downstream
 //     answered tools/list) the visible set is empty, so every routed name is
-//     Unknown; that is the closed direction and is deliberate (docs/flows.md
-//     , failure branch).
+//     Unknown; that is the closed direction and is deliberate
+//     (docs/flows.md, failure branch).
 //
 // The package computes and formats; it never executes. call_tool and
 // fetch_result are parsed and validated here, then handed to the gateway,
