@@ -250,6 +250,17 @@ func TestPeerRequestInlineReply(t *testing.T) {
 			wantErrIn: mcp.CodeInternalError,
 		},
 		{
+			// A handler that answers neither a response nor an error still owes
+			// the server a reply: the request id is outstanding on the wire and
+			// nothing else will ever close it. This is the last of invokePeer's
+			// four outcomes, and the only one the table did not reach.
+			name: "handler returning nothing becomes internal error reply",
+			handler: func(context.Context, *mcp.Request) (*mcp.Response, error) {
+				return nil, nil
+			},
+			wantErrIn: mcp.CodeInternalError,
+		},
+		{
 			name:      "no handler yields method not found",
 			handler:   nil,
 			wantErrIn: mcp.CodeMethodNotFound,

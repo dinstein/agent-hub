@@ -136,39 +136,20 @@ func (c *conn) deliver(resp *mcp.Response) {
 	// Unmatched responses (cancelled calls racing a late reply) are dropped.
 }
 
-// handlePeer answers a server-initiated reverse RPC inline on the read
-// loop. The response id is forced to the request id regardless of what the
-// handler set.
+// handlePeer answers a server-initiated reverse RPC inline on the read loop.
+//
+// The reply is invokePeer's — the same normalisation both HTTP transports
+// use, and the one whose own comment says it mirrors the stdio contract while
+// this function held the stdio copy of that contract. Three call sites and
+// two implementations is how a reverse-RPC answer comes to differ by
+// transport for no reason anybody chose. What stays here is the half that
+// genuinely is stdio's: writing the frame, and what an oversized one costs.
 func (c *conn) handlePeer(req *mcp.Request) {
 	c.mu.Lock()
 	h := c.peer
 	c.mu.Unlock()
 
-	var resp *mcp.Response
-	if h == nil {
-		resp = mcp.NewErrorResponse(req.ID, &mcp.Error{
-			Code:    mcp.CodeMethodNotFound,
-			Message: fmt.Sprintf("no peer handler for %q", req.Method),
-		})
-	} else {
-		r, err := h(c.ctx, req)
-		switch {
-		case err != nil:
-			resp = mcp.NewErrorResponse(req.ID, &mcp.Error{
-				Code:    mcp.CodeInternalError,
-				Message: err.Error(),
-			})
-		case r == nil:
-			resp = mcp.NewErrorResponse(req.ID, &mcp.Error{
-				Code:    mcp.CodeInternalError,
-				Message: "peer handler returned no response",
-			})
-		default:
-			resp = r
-			resp.JSONRPC = mcp.Version
-			resp.ID = req.ID
-		}
-	}
+	resp := invokePeer(c.ctx, h, req)
 	if err := c.fw.WriteFrame(resp); err != nil {
 		if errors.Is(err, mcp.ErrFrameTooLarge) {
 			// Replace the oversized reply with an in-band error; the
