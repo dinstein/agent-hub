@@ -742,15 +742,20 @@ func withLastWords(fields []any, tail string) []any {
 	return append(fields, "child_stderr", tail)
 }
 
-// respawnFields renders the cause of one respawn for the log. The trigger is
-// flattened to its text and omitted when absent: a "trigger":null on every
-// manual reconnect would read as a failure nobody could name.
-// respawnFields is the trigger that made a respawn happen, if there was one.
+// respawnFields renders the error that TRIGGERED one respawn, for the log. It
+// is flattened to its text and omitted when there is none: a "trigger":null on
+// every manual reconnect would read as a failure nobody could name.
 //
-// The cause and the attempt number are on the RECORD — Detail and Count — and
-// Emit renders both, the number under the noun its kind gives it. Repeating
-// them here would be one fact under two names, which is how the same number
-// came to be `reconnects` in the log line and `respawns` in the event.
+// The attempt number is deliberately not here. It is on the RECORD, as Count,
+// and Emit renders it under the noun its kind gives it; naming it here as well
+// is how the same number came to be `reconnects` in the log line and
+// `respawns` in the event.
+//
+// The cause is on the record too, as Detail — but Emit does not render Detail,
+// whose meaning changes with the kind (an error here, an address for
+// listener_bound, a version for started). So the two call sites pass `cause`
+// through attrs by hand, and that is the only path by which it reaches the
+// prose.
 func respawnFields(trigger error) []any {
 	if trigger == nil {
 		return nil
