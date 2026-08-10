@@ -37,8 +37,9 @@ Claude Code · Cursor · Codex · Open WebUI · 以及另外 8 种
 - **可选 GUI `agenthub-gui`** —— Wails3，仅消费控制面 API；它没有任何 CLI 没有的能力
 
 > **状态：功能相对设计已完整。** CI 双矩阵全绿，真实 Claude Code 经网关调用真实下游 MCP server
-> 的端到端验收通过。macOS + Linux 已验证；Windows 为**实验性**——平台层已补齐，
-> 尚有两个命令未实现，且从未在真实机器上跑过（[详见](#平台)）。
+> 的端到端验收通过。macOS + Linux 已验证；Windows 为**实验性**——包括 `daemon stop` 和
+> `client connect` 在内的每一项能力都已实现，交叉编译和单元测试均通过，但从未在真实硬件上跑过
+> （[详见](#平台)）。
 
 ## 安装
 
@@ -113,10 +114,10 @@ agenthub client connect claude-code
 |---|---|
 | [docs/zh-CN/guide.md](docs/zh-CN/guide.md) | **怎么用**：三个名词（server / profile / client）、日常路径，以及你真正要做的那几个决定 |
 | [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md) | **要改代码先看这个**：进程模型、核心模块地图、分层与依赖约束、一次调用穿过什么、三条数据流向、两道防线 |
-| [docs/flows.md](docs/flows.md) | 六个关键流程的时序图与失败分支（英文） |
+| [docs/flows.md](docs/flows.md) | 七个运行时流程的时序图与失败分支（英文） |
 | [docs/modules/](docs/modules/) | 逐包文档：职责、关键类型、不变量与失败方向（英文） |
 | [docs/canonical.md](docs/canonical.md) | 架构约定的唯一真源：冻结标识符、依赖约束、命令名规则、全部裁决记录（英文） |
-| [docs/windows.md](docs/windows.md) | Windows 现状：已实现什么、还有什么完全不能用、验收标准（英文） |
+| [docs/windows.md](docs/windows.md) | Windows 现状：已实现什么、哪些还未在真实硬件上验证、验收标准（英文） |
 
 中文只覆盖上面两篇——讲产品怎么用、怎么切分的那一层。其余几篇跟着代码一起变，一份中文镜像
 就是每次改行为都要记得同步的第二个文件，而忘掉同步的那一份看上去和最新的一模一样。
@@ -127,7 +128,7 @@ agenthub client connect claude-code
 |---|---|
 | macOS | ✅ 支持，CI 常跑 |
 | Linux | ✅ 支持，CI 常跑 |
-| Windows | 🧪 **实验性**：平台层已补齐（`LockFileEx` 跨进程锁、带 SDDL 的 named pipe 控制面、api 拨号、便携 zip 打包），CI 门禁为 `GOOS=windows` build + vet，每次 release 附带两个架构的 zip。仍有两处不能用 —— `daemon stop` 和 `client connect` 的用户级路径；且从未在真实 Windows 机器上跑过。[详见](docs/windows.md) |
+| Windows | 🧪 **实验性**：每一项能力都已实现（`LockFileEx` 跨进程锁、带 SDDL 的 named pipe 控制面、api 拨号、`daemon stop`、`client connect`、便携 zip 打包），CI 门禁为 `GOOS=windows` build + vet，每次 release 附带两个架构的 zip，但从未在真实 Windows 机器上跑过。[详见](docs/windows.md) |
 
 ## 隐私：不收集任何数据
 

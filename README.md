@@ -40,8 +40,9 @@ hands each client exactly the surface you decided it should see.
 
 > **Status: feature-complete against its design.** CI is green across both matrices, and end-to-end
 > acceptance passes with real Claude Code calling real downstream MCP servers through the gateway.
-> macOS and Linux are verified; Windows is **experimental** — platform layer filled in, two commands
-> still unimplemented, never run on real hardware ([details](#platforms)).
+> macOS and Linux are verified; Windows is **experimental** — every capability, including
+> `daemon stop` and `client connect`, is implemented and cross-compiles and unit-tests cleanly, but
+> none of it has ever run on real hardware ([details](#platforms)).
 
 ## Install
 
@@ -117,10 +118,10 @@ again. Full walkthrough — profiles, narrowing, the whole model — in [docs/gu
 |---|---|
 | [docs/guide.md](docs/guide.md) | **Using it**: the three nouns (server / profile / client), the everyday path, and the decisions you actually have to make |
 | [docs/architecture.md](docs/architecture.md) | **Changing it**: process model, core module map, layering and dependency constraints, what a single call passes through, the three data-flow directions, the two lines of defense |
-| [docs/flows.md](docs/flows.md) | Sequence diagrams and failure branches for six key flows |
+| [docs/flows.md](docs/flows.md) | Sequence diagrams and failure branches for seven runtime flows |
 | [docs/modules/](docs/modules/) | Per-package documentation: responsibilities, key types, invariants and failure directions |
 | [docs/canonical.md](docs/canonical.md) | The single source of truth for architectural conventions: frozen identifiers, package layout, dependency constraints, command naming rules, and every decision record |
-| [docs/windows.md](docs/windows.md) | Windows status: what is implemented, what still does not work, and acceptance criteria |
+| [docs/windows.md](docs/windows.md) | Windows status: what is implemented, what remains unverified on real hardware, and acceptance criteria |
 
 Chinese translations cover the product surface — this README, [docs/zh-CN/guide.md](docs/zh-CN/guide.md)
 and [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md). The rest is English only, because those
@@ -133,7 +134,7 @@ that is current.
 |---|---|
 | macOS | ✅ Supported, exercised by CI |
 | Linux | ✅ Supported, exercised by CI |
-| Windows | 🧪 **Experimental**: the platform layer is filled in (`LockFileEx` cross-process locks, named-pipe control plane with SDDL, api dialing, portable zip packaging) and CI gates on `GOOS=windows` build + vet. Two things still do not work — `daemon stop` and `client connect`'s user-level paths — and nothing has ever run on a real Windows machine. [Details](docs/windows.md) |
+| Windows | 🧪 **Experimental**: every capability is implemented (`LockFileEx` cross-process locks, named-pipe control plane with SDDL, api dialing, `daemon stop`, `client connect`, portable zip packaging) and CI gates on `GOOS=windows` build + vet, but nothing has ever run on a real Windows machine. [Details](docs/windows.md) |
 
 ## Privacy: no data collection
 
