@@ -158,8 +158,11 @@ for a different answer — two engines disagreeing is signal, the same engine tw
 starts a branch, and that branch lands or is discarded the same day. Waiting for an answer is the
 expected shape; **the bad end is a finding nobody wrote down**, not one nobody fixed.
 
-**Across sweeps:** fixed is in `git log`; refuted, declined and unanswered are in `docs/modules/`. A
-ledger goes stale first.
+**Across sweeps:** fixed is in `git log`; declined and unanswered are in `docs/modules/`. A separate
+ledger goes stale first. Verify's refutations are recorded nowhere, deliberately — most are noise, and
+writing them down would bury the two lists that matter. The exception is a non-bug that keeps coming
+back: adjudication's counts show it, and its correction goes **into the brief below**, which every
+future finder reads — otherwise each sweep pays three verifiers to re-refute the same sentence.
 
 ## When it goes wrong
 
