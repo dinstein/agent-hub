@@ -114,8 +114,10 @@ fix when both engines report the same non-bug:
   set, one target per path. A parser of untrusted input with no target is itself a finding:
   `test/buildrules` only proves the three declared lists agree with each other, never that a
   newly-landed path joined them.
-- Read the shard's [docs/modules/](../../../docs/modules/) file first. Several things here look redundant
-  and are load bearing; that file is where the reason was written down.
+- Read the [docs/modules/](../../../docs/modules/) files covering the shard first — they are cut by
+  plane, so a trust-boundary shard usually spans more than one, and `security.md` is always among
+  them: it holds what earlier sweeps raised, declined, and closed. Several things here look redundant
+  and are load bearing; those files are where the reason was written down.
 
 ## 3. Report and stop
 
