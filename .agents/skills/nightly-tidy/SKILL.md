@@ -105,7 +105,7 @@ invariant is that file.
 
 `make ci` already fails on the mechanical half — dead backticked paths, comments crediting a deleted
 test, unresolvable `canonical.md` citations, prose teaching a retired command, a fuzz target missing
-from the Makefile or AGENTS.md, a README badge disagreeing with `VERSION`, an untranslated English
+from the Makefile or AGENTS.md, an untranslated English
 doc. Do not repeat the machine.
 
 What a human has to read for:
@@ -153,5 +153,5 @@ Not because they are perfect, but because a scheduled pass is the wrong place to
 - The four hard constraints and their proofs in `internal/depguardtest`
 - The gate chain, its order, and any predicate's failure direction
 - Frozen identifiers ([docs/canonical.md](../../../docs/canonical.md) §1)
-- `VERSION`, the README badges, and `.github/workflows/` — those belong to the [release skill](../release/SKILL.md)
+- `VERSION` and `.github/workflows/` — those belong to the [release skill](../release/SKILL.md)
 - Any file an open worktree has claimed

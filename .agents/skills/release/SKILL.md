@@ -37,18 +37,17 @@ lower one.
 
 A pre-release carries a `-` (`0.14.0-rc1`) and the workflow marks the Release accordingly.
 
-## 2. Bump it in all three places
+## 2. Bump VERSION
 
 ```bash
-new=0.13.2 ; old=$(cat VERSION)
+new=0.13.2
 printf '%s\n' "$new" > VERSION
-sed -i '' "s|version-${old}-blue|version-${new}-blue|" README.md README.zh-CN.md
-git diff --stat                         # exactly 3 files
+git diff --stat                         # exactly 1 file
 ```
 
-`VERSION` reaches the binary, the `.app`'s `Info.plist` and the Release title on its own. The two
-README badges derive from nothing and are edited by hand — `TestReadmeBadgesMatchVERSION` fails when
-they disagree, which is why step 4 runs the tests before the tag exists.
+`VERSION` reaches the binary, the `.app`'s `Info.plist` and the Release title on its own. The README
+version badges query GitHub's latest release, so they follow the tag pushed in step 5 without an
+edit — and until that push they keep showing the previous version, which is the truth.
 
 ## 3. Write the changelog
 
@@ -80,7 +79,7 @@ NDJSON as a single object and failed on the first progress line.
 
 ```bash
 make ci                                 # must be green BEFORE the tag exists
-git add VERSION README.md README.zh-CN.md
+git add VERSION
 git commit                              # message from step 3
 git push origin main
 ```

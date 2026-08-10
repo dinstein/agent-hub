@@ -107,7 +107,7 @@ What `make ci` will not ask for:
 | A package/command name, dependency direction, or frozen identifier | [docs/canonical.md](../../../docs/canonical.md), same commit |
 | A new `.md` under `docs/` | A `docs/zh-CN/` counterpart, or a `contributorOnlyDocs` entry with the reason |
 | The GUI frontend | `make gui-frontend-ci` — `make gui` runs `npm install`, repairing a lockfile CI's `npm ci` rejects |
-| Anything user-visible | New flags and commands are yours; the README badge belongs to the [release skill](../release/SKILL.md) |
+| Anything user-visible | New flags and commands are yours; the version number belongs to the [release skill](../release/SKILL.md) |
 
 **Commit while nothing else is writing.** If a background agent is working in this tree, a clean
 `git status` means "nothing written *yet*", not "finished".
