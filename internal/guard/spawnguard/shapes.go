@@ -652,6 +652,7 @@ func checkContainerFlag(key, val string) error {
 		v := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(val)), ":", "=")
 		if strings.Contains(v, "seccomp=unconfined") ||
 			strings.Contains(v, "apparmor=unconfined") ||
+			strings.Contains(v, "systempaths=unconfined") ||
 			v == "disable" || v == "label=disable" {
 			return blockedf(CodeContainerEscape, "--security-opt=%s disables a confinement layer", val)
 		}
