@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/calllog"
+	"github.com/dinstein/agent-hub/internal/logx"
 )
 
 // Frame recording, as it exists now that the wire trace lives in the call
@@ -159,7 +160,12 @@ func (l *FrameLog) recv(o Origin, seq int, method string, raw json.RawMessage, e
 	e := l.event(calllog.EventRecv, o, seq, method)
 	e.DurationMs = dur.Milliseconds()
 	if err != nil {
-		e.Error = err.Error()
+		// The error can embed a downstream HTTP body snippet or a peer's
+		// JSON-RPC message, which may quote a credential. Unlike the payload,
+		// this metadata line is written to the plaintext frame ledger even when
+		// capture is off and no evidence key exists, so scrub it before it is
+		// persisted.
+		e.Error = logx.ScrubString(err.Error())
 		e.Outcome = "error"
 	} else {
 		e.Outcome = "success"
