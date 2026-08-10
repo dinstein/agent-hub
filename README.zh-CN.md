@@ -90,17 +90,18 @@ agenthub client connect claude-code
 ```
 
 第 4 步**每个客户端只做一次**：它写进去的条目跑的是 `agenthub connect --client claude-code`，
-所以之后你再加的每个 server 都会被自动带上，不用再动客户端的配置。
-完整走法（profile、收窄、整套模型）见 [docs/guide.md](docs/guide.md)。
+所以之后你再加的每个 server 都会被自动带上，不用再动客户端的配置。想确认它生效了，
+打开 Claude Code 跑一下 `/mcp`——列表里会出现 `agenthub`，带着你启用的全部 server。
+完整走法（profile、收窄、整套模型）见 [docs/zh-CN/guide.md](docs/zh-CN/guide.md)。
 
 ## 能力
 
 | 面 | 内容 |
 |---|---|
-| 协议 | MCP `2026-07-28`（无状态逐请求 `_meta`、`server/discover`、MRTR、`subscriptions/listen`）加上有状态各版本 `2025-11-25` / `2025-06-18` / `2025-03-26`，**双面都支持**：对下游，`server/discover` 协商双方都支持的最高版本、失败回退 `initialize`；对上游，网关按每个 client 讲的那一代作答。只代理工具——resource 和 prompt 不代理，extension 能力不转发（fail closed）。细节见 [docs/mcp-2026-07-28.md](docs/mcp-2026-07-28.md)（英文） |
+| 协议 | MCP `2026-07-28`（无状态逐请求 `_meta`、`server/discover`、MRTR、`subscriptions/listen`）加上有状态各版本 `2025-11-25` / `2025-06-18` / `2025-03-26`，双面各自协商——对每个下游取双方支持的最高版本，对每个 client 用它讲的那一代作答。只代理工具；resource、prompt 与 extension 能力都不转发（fail closed）。细节见 [docs/mcp-2026-07-28.md](docs/mcp-2026-07-28.md)（英文） |
 | 网关 | stdio（每 client 一进程）+ streamable-http（daemon 共享池）；下游 transport 三种：stdio / streamable-http / legacy HTTP+SSE |
 | 发现 | `full` / `grouped` / `lazy` 三模式；lazy 模式五件套 meta-tool（`status`、`search_tools`、`describe_tool`、`call_tool`、`fetch_result`）+ 意图变体；紧凑签名文法 + 二段 describe |
-| 访问控制 | 事先决定，永不在调用时决定：server 开或关、提供全部工具或指定子集；profile 取 server 的子集并可进一步收窄其工具；client 绑定 profile。各层取交集，任何一层都不能放宽；悬垂 profile 引用 fail-closed 到空集 |
+| 访问控制 | 事先决定，永不在调用时决定：server 提供全部工具或指定子集，profile 收窄 server，client 绑定 profile——各层取交集、任何一层都不能放宽，悬垂引用 fail-closed 到空集。完整模型见 [docs/zh-CN/guide.md](docs/zh-CN/guide.md) |
 | 安全 | spawn guard（反走私）、SSRF 双向谓词 + DialContext 内筛查、HTTP 面的 agent token 分级（read/write/destructive）、协作式调用配额。它们拒绝的是目的地和进程，与谁发起无关——没有一项会检查下游返回了什么 |
 | 隔离 | **Docker 隔离 Spawner**：`runtime: host\|docker`，默认无网络、只挂载显式声明的目录（默认只读）、资源限额、密钥不进 argv（无网络、只读挂载、资源限额） |
 | 结果整形 | 分页 / 预算 / `fetch_result` 缓存 / TOON 单向投影编码（never-larger + 数字保真两条构造性保证） |
@@ -160,10 +161,8 @@ GUI **不在默认构建里**：链接 webview 需要 CI runner 上没有的 GTK
 `make gui-go` 分别构建前后两半。前端是 vanilla TS + Vite，唯一运行时依赖是 `@wailsio/runtime`，
 且只能通过 `api` 包访问控制面——它没有任何 CLI 没有的能力。
 
-四条依赖方向硬约束由 CI 保证（详见 [canonical.md](docs/canonical.md) §2）：`cmd/agenthub-gui`
-与 `api` 不得 import `internal/*`；`internal/mcp` 只依赖标准库、且是唯一的 MCP 协议门面；
-`internal/pipeline` 不得 import `internal/ctlapi`；`internal/mcp`、`internal/platform`、
-`internal/logx`、`internal/guard/*` 保持零业务依赖。
+贡献规则——worktree 分支流程、commit 约定，以及 CI 强制的四条依赖方向约束——都在
+[AGENTS.md](AGENTS.md)（英文），其背后的裁决记录在 [canonical.md](docs/canonical.md)。
 
 ## License
 

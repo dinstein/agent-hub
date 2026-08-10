@@ -95,16 +95,18 @@ agenthub client connect claude-code
 
 Step 4 happens **once per client**: the entry it writes runs `agenthub connect --client
 claude-code`, so every server you add later is picked up without touching the client's config
-again. Full walkthrough — profiles, narrowing, the whole model — in [docs/guide.md](docs/guide.md).
+again. To see that it took, open Claude Code and run `/mcp` — an `agenthub` entry is listed,
+carrying every server you enabled. Full walkthrough — profiles, narrowing, the whole model — in
+[docs/guide.md](docs/guide.md).
 
 ## Capabilities
 
 | Area | What it covers |
 |---|---|
-| Protocol | MCP `2026-07-28` (stateless per-request `_meta`, `server/discover`, MRTR, `subscriptions/listen`) plus the stateful generations `2025-11-25` / `2025-06-18` / `2025-03-26`, on **both faces**: downstream, `server/discover` picks the highest mutually supported version and falls back to `initialize`; upstream, the gateway answers whichever generation each client speaks. Tools only — resources and prompts are not proxied, and extension capabilities are not forwarded (fail closed). Details: [docs/mcp-2026-07-28.md](docs/mcp-2026-07-28.md) |
+| Protocol | MCP `2026-07-28` (stateless per-request `_meta`, `server/discover`, MRTR, `subscriptions/listen`) plus the stateful generations `2025-11-25` / `2025-06-18` / `2025-03-26`, negotiated on both faces — each downstream at the highest mutual version, each client in whichever generation it speaks. Tools only; resources, prompts and extension capabilities are not forwarded (fail closed). Details: [docs/mcp-2026-07-28.md](docs/mcp-2026-07-28.md) |
 | Gateway | stdio (one process per client) + streamable-http (shared daemon pool); three downstream transports: stdio / streamable-http / legacy HTTP+SSE |
 | Discovery | Three modes — `full` / `grouped` / `lazy`; lazy mode ships five meta-tools (`status`, `search_tools`, `describe_tool`, `call_tool`, `fetch_result`) plus intent variants; compact signature grammar + two-stage describe |
-| Access | Decided in advance, never at call time: a server is on or off and offers all its tools or a named subset; a profile takes a subset of the servers and may narrow their tools further; a client follows a profile. Layers intersect and none can widen; a dangling profile reference fails closed to an empty set |
+| Access | Decided in advance, never at call time: a server offers all of its tools or a named subset, a profile narrows servers, a client follows a profile — layers intersect, none can widen, and a dangling reference fails closed to an empty set. The full model: [docs/guide.md](docs/guide.md) |
 | Security | Spawn guard (anti-smuggling), bidirectional SSRF predicates with in-DialContext screening, agent tokens graded read/write/destructive on the HTTP face, cooperative call quotas. These refuse a destination or a process regardless of who asked — none of them inspects what a downstream returned |
 | Isolation | **Docker isolation spawner**: `runtime: host\|docker`, no network by default, mounts only explicitly declared directories (read-only by default), resource limits, secrets never enter argv |
 | Result shaping | Pagination / budgets / `fetch_result` caching / TOON one-way projection encoding (with two constructive guarantees: never-larger and numeric fidelity) |
@@ -146,8 +148,9 @@ The process makes only three kinds of outbound connection, all determined by you
 the downstream MCP servers in `servers.json`, those servers' OAuth authorization servers (only
 after you run `agenthub auth login`), and endpoints you specify explicitly (`server add --url`).
 
-The call ledger — lifecycle records, the frames of a traced server, and the encrypted payloads of both — is **written to local disk only**. Version updates are left to your package manager.
-See the decision record in [canonical.md](docs/canonical.md) §7, item 6.
+The call ledger — lifecycle records, the frames of a traced server, and the encrypted payloads of
+both — is **written to local disk only**. Version updates are left to your package manager. See the
+decision record in [canonical.md](docs/canonical.md) §7, item 6.
 
 ## Development
 
@@ -168,10 +171,9 @@ produces a placeholder main. `make gui-frontend` / `make gui-go` build the two h
 The frontend is vanilla TS + Vite with `@wailsio/runtime` as its only runtime dependency, and it
 reaches the control plane solely through the `api` package — it has no capability the CLI lacks.
 
-Four dependency-direction constraints are enforced by CI (see [canonical.md](docs/canonical.md) §2):
-`cmd/agenthub-gui` and `api` must not import `internal/*`; `internal/mcp` is standard-library-only
-and is the sole MCP protocol facade; `internal/pipeline` must not import `internal/ctlapi`; and
-`internal/mcp`, `internal/platform`, `internal/logx`, `internal/guard/*` stay zero-business-dependency.
+The contributor rules — the worktree branch flow, the commit convention, and the four
+dependency-direction constraints CI enforces — live in [AGENTS.md](AGENTS.md), with the decision
+records behind them in [canonical.md](docs/canonical.md).
 
 ## License
 
