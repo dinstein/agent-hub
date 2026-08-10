@@ -385,9 +385,9 @@ with no self-healing path. **If a future version ever writes this file again, bo
 
 **Responsibility**: answer the question a config table cannot — "what can I add next, and what does it
 cost". Two routes to a proposed server definition, and **neither writes to disk**: the curated catalog
-(`catalog.go` + embedded `seed.json`) and paste parsing (`paste.go`). `internal/confops` remains the only
-implementation of every registry write, so a catalog entry gets exactly the same scrutiny as a hand-typed
-one.
+(`catalog.go` + embedded `seed.json`) and paste parsing (`entrymap.go` + `paste.go`). `internal/confops`
+remains the only implementation of every registry write, so a catalog entry gets exactly the same scrutiny
+as a hand-typed one.
 
 ### Invariants and failure directions
 
@@ -402,13 +402,44 @@ unsubstituted placeholders anywhere in the command line/URL/environment/headers.
 placeholders are a refusal, never a literal `{{directory}}` written through** — a server that fails at
 connect time because of a path nobody typed is far harder to explain than a refusal at add time.
 
+**There is one reader of a pasted client configuration, and it is `entrymap.go`.** Two commands take the
+same snippet — the GUI's paste preview (`catalog.ParseClientConfig`) and `agenthub server add --stdin`
+(`internal/cli`) — and both get the document shape from `Recognize` and each entry from `MapEntry`. Which
+wrapper keys name a servers section, which shapes count as a document, which keys an entry may carry and
+what each one means: one answer, in one file. `paste.go` is what the preview route adds on top —
+proposals, skips, credential warnings, and the refusal of a format we recognise but do not parse
+(TOML/YAML).
+
+It was not always one reader, and the drift is why the rule is written here. The transport spelling table
+was duplicated first and the two copies disagreed; sharing it (`TransportFromSpelling`) fixed that
+question and no other, and the rest of the mapping drifted the same way. `--stdin` modelled no
+`disabled`/`enabled` key, so its `DisallowUnknownFields` decoder made a Cline or Zed snippet a hard error
+on the CLI and a clean add in the GUI; it knew only the `mcpServers` wrapper, so a VS Code
+`{"mcp":{"servers":…}}` fragment failed with a per-entry complaint about a server named `mcp`; and it read
+only `url`, not the `serverUrl`/`httpUrl` spellings. **`TestPasteRoutesAgreeOnWholeSnippets`
+(`internal/cli`) drives whole documents through both routes and compares the resulting entries**, which
+is what a marker-level test could not see.
+
 **The two routes treat an unknown field differently, deliberately**: a **warning** on the paste route, a
-**hard error** on `server add --stdin`. The preview shows verbatim what is about to be stored, so "these
-keys were ignored" is actionable; a write with no preview can only refuse, or the user never learns that
-the `oauth` block they pasted vanished.
+**hard error** on `server add --stdin`. It is the `UnknownFields` argument to `MapEntry`, a parameter
+rather than a fork. The preview shows verbatim what is about to be stored, so "these keys were ignored" is
+actionable; a write with no preview can only refuse, or the user never learns that the `oauth` block they
+pasted vanished. A key whose VALUE has a type the parser cannot read travels the same way, for the same
+reason: either way the pasted value is not in the entry.
+
+**What each route decides for itself is policy, never reading.** `MapEntry` returns what the snippet says
+and nothing about who is asking, so three fields stay with the caller and the parity test exempts exactly
+those three: `Source` (`pasted` vs `manual`), `Enabled` (`server add` lands every server switched off
+whatever the configuration claims — `server enable` is the separate step that probes — while the preview
+reports the snippet's own switch), and `Provenance` (the paste route pins `remote`; empty means the same
+screening, `registry/types.go`). Endpoint screening and the treatment of agenthub's own gateway entry are
+policy too: the preview **skips** that entry and shows the skip, `--stdin` **refuses** the paste, because
+a write has nowhere to report a skip.
 
 **Wrapper key paths come from `internal/clients`**, the same table that decides where each client's
-servers live, so adding one client row extends this parser for free.
+servers live, so adding one client row extends this parser for free. A section that is itself an entry
+object does not count as a wrapper, so a bare map whose one server happens to be called `servers` keeps
+its name instead of being read as a VS Code document.
 
 **Raised and not reproduced (security sweep):** that `decodeAdminBody` uses `json.Unmarshal`, so a
 misspelled narrowing key is dropped and the write succeeds at the *wider* setting. The reasoning
