@@ -88,7 +88,7 @@ func (g *gateway) handleMetaCall(ctx context.Context, req *mcp.Request, s *disco
 	switch p.Name {
 	case discovery.MetaStatus:
 		g.guard.ObserveOther()
-		g.replyResult(req.ID, s.HandleStatus(g.connDiagnosis()))
+		g.replyResult(req.ID, s.HandleStatus(g.connDiagnosis(g.currentScope())))
 
 	case discovery.MetaSearchTools:
 		// The guard is advanced BY Search (it is the search observer); no

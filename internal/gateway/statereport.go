@@ -13,6 +13,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
+	"github.com/dinstein/agent-hub/internal/scope"
 )
 
 // reportTimeout bounds one runtime-state push to the daemon. The report is
@@ -92,7 +93,8 @@ func (g *gateway) serverStates() []ctlapi.GatewayServerState {
 }
 
 // connDiagnosis renders the downstream connection report that the discovery
-// status reply appends after its visibility block.
+// status reply appends after its visibility block, for the caller whose
+// effective scope is es.
 //
 // discovery.Surface knows only what is VISIBLE, so on its own it answers a
 // total connection failure and a genuinely empty registry with the same
@@ -101,11 +103,29 @@ func (g *gateway) serverStates() []ctlapi.GatewayServerState {
 // records why each server failed for the control link; this puts the same
 // witness in front of the one who can act on it.
 //
+// It is scoped and redacted because it crosses back to an MCP caller, which
+// serverStates() (the trusted daemon control link) is not: only servers in the
+// caller's effective scope appear, and the raw connect detail — which can quote
+// a server's URL query, i.e. a credential — is NOT rendered; a server ID plus
+// a needs-auth hint is the actionable part. es == nil means no scope authority
+// (a local session), which sees every server, matching the scope gate's
+// allow-when-no-authority branch; an empty es hides everything.
+//
 // It only ever ADDS text: a server that is merely slow stays "connecting",
 // and a fully connected session yields the empty string.
-func (g *gateway) connDiagnosis() string {
+func (g *gateway) connDiagnosis(es *scope.EffectiveScope) string {
+	inScope := func(id string) bool {
+		if es == nil {
+			return true
+		}
+		_, ok := es.Servers[id]
+		return ok
+	}
 	var failed, connecting []ctlapi.GatewayServerState
 	for _, st := range g.serverStates() {
+		if !inScope(st.ID) {
+			continue
+		}
 		switch st.Conn {
 		case string(ctlapi.ConnError):
 			failed = append(failed, st)
@@ -123,7 +143,11 @@ func (g *gateway) connDiagnosis() string {
 	if len(failed) > 0 {
 		fmt.Fprintf(&b, "\n%d server(s) failed to connect:\n", len(failed))
 		for _, st := range failed {
-			fmt.Fprintf(&b, "  %s: %s\n", st.ID, st.Detail)
+			if st.NeedsAuth {
+				fmt.Fprintf(&b, "  %s (needs auth)\n", st.ID)
+			} else {
+				fmt.Fprintf(&b, "  %s\n", st.ID)
+			}
 		}
 	}
 	if len(connecting) > 0 {
