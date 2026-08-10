@@ -603,7 +603,7 @@ the readiness check — they have no downstream to wait for, and calling them bu
 connect would be a lie. Derived instance selection happens **after routing and before the gate chain**:
 "which process executes" is a per-call connection-plane decision, while routing — and therefore
 visibility, scope and the quota key — is always the baseline server, whose tool table also supplies the
-routed tool's `inputSchema` / `annotations`.
+routed tool's `annotations`.
 
 **Unknown names are dropped fail-closed and never reinterpreted as meta-tools.** One exception is
 carefully drawn: a name that **has a route** but is not on the surface is hidden by **scope**, so the call

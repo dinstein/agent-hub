@@ -447,7 +447,6 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 		g.runCall(ctx, req, callTarget{
 			exposed:     exposed,
 			route:       route,
-			inputSchema: def.InputSchema,
 			annotations: def.Annotations,
 			provider:    "host",
 			call: func(ctx context.Context) (*mcp.CallResult, error) {
@@ -480,15 +479,13 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 		return
 	}
 	// The routed tool's definition feeds the token tier gate (annotations;
-	// absent = destructive, fail-closed — see pipeline.ToolTier). The
-	// inputSchema travels with it and is read by NOTHING: the precheck gate
-	// that consumed it is gone. It is read from the BASE server: a derived
-	// instance serves the same catalog by construction, and the base list is
-	// the one the router aggregated.
-	var inputSchema, annotations json.RawMessage
+	// absent = destructive, fail-closed — see pipeline.ToolTier). It is read
+	// from the BASE server: a derived instance serves the same catalog by
+	// construction, and the base list is the one the router aggregated.
+	var annotations json.RawMessage
 	for _, def := range srv.Tools() {
 		if def.Name == route.RawTool {
-			inputSchema, annotations = def.InputSchema, def.Annotations
+			annotations = def.Annotations
 			break
 		}
 	}
@@ -496,7 +493,6 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 	g.runCall(ctx, req, callTarget{
 		exposed:     exposed,
 		route:       route,
-		inputSchema: inputSchema,
 		annotations: annotations,
 		// Derived instances (docs/modules/dataplane.md): which PROCESS runs
 		// this call is a connection-plane decision made per call. It is made
@@ -532,7 +528,6 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 type callTarget struct {
 	exposed     string
 	route       router.Route
-	inputSchema json.RawMessage
 	annotations json.RawMessage
 	provider    string
 	call        pipeline.CallFunc
@@ -552,7 +547,6 @@ func (g *gateway) runCall(ctx context.Context, req *mcp.Request, t callTarget, a
 		ServerID:    route.ServerID,
 		RawTool:     route.RawTool,
 		Args:        args,
-		InputSchema: t.inputSchema,
 		Annotations: t.annotations,
 		// The credential's tier rides EVERY execute path of this gateway
 		// because there is only one: direct tools/call and lazy call_tool
