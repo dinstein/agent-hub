@@ -102,6 +102,23 @@ func TestAddRejectsHostileTrees(t *testing.T) {
 			t.Fatal("content carrying a sentinel marker was imported")
 		}
 	})
+	t.Run("sentinel in version", func(t *testing.T) {
+		src := writeTree(t, t.TempDir(), map[string]string{
+			SkillFileName: "---\nname: ok\nversion: \"" + endMarker("ok") + "\"\n---\n\nbody\n",
+		})
+		if _, err := m.Add(ctx, AddRequest{Path: src}); err == nil {
+			t.Fatal("a version carrying a sentinel marker was imported")
+		}
+	})
+	t.Run("sentinel in file path", func(t *testing.T) {
+		src := writeTree(t, t.TempDir(), map[string]string{
+			SkillFileName:                     sampleSkillMD,
+			"note-" + endMarker("x") + ".txt": "hi",
+		})
+		if _, err := m.Add(ctx, AddRequest{Path: src}); err == nil {
+			t.Fatal("a bundled file path carrying a sentinel marker was imported")
+		}
+	})
 	t.Run("empty", func(t *testing.T) {
 		if _, err := m.Add(ctx, AddRequest{Path: t.TempDir()}); err == nil {
 			t.Fatal("empty package imported")

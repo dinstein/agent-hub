@@ -25,6 +25,28 @@ func containsSentinelMarker(text string) bool {
 	return strings.Contains(text, sentinelPrefix)
 }
 
+// scanCarriesSentinelMarker reports whether any field of a scanned skill that
+// renderSkillBody embeds into a managed block carries an agenthub marker: the
+// name, description, body, VERSION, and every bundled file PATH. Version and
+// paths were missing from the original import guard, so a marker smuggled in
+// either reached the shared client file. It matches any id (the prefix), so a
+// marker naming a DIFFERENT skill — inert to findBlock for this id — is also
+// kept out of the library.
+func scanCarriesSentinelMarker(name string, sc *scanned) bool {
+	if containsSentinelMarker(name) ||
+		containsSentinelMarker(sc.meta.Description) ||
+		containsSentinelMarker(sc.meta.Body) ||
+		containsSentinelMarker(sc.meta.Version) {
+		return true
+	}
+	for _, f := range sc.files {
+		if containsSentinelMarker(f.Path) {
+			return true
+		}
+	}
+	return false
+}
+
 // blockSpan locates one skill's block inside a file.
 type blockSpan struct {
 	// start is the byte offset of the start marker.

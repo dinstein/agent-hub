@@ -302,6 +302,16 @@ func (m *Manager) applySentinel(sk *Skill, t TargetDef, path string) (string, er
 			Reason: fmt.Sprintf("rendered file would be %d characters, over the %d character cap of %s", utf8.RuneCountInString(next), t.CharCap, t.ClientID),
 		}
 	}
+	// Verify the block reads back cleanly BEFORE touching disk: a marker
+	// smuggled into the rendered body (e.g. via an attacker-controlled skill
+	// Version or file path) produces a duplicate-marker file that findBlock
+	// rejects. Writing first (as this once did) committed that corrupt,
+	// unremovable block to a shared client file and only then errored. Now a
+	// poisoned skill leaves the target untouched.
+	span, found, err := findBlock(next, sk.ID, path)
+	if err != nil || !found {
+		return "", fmt.Errorf("skills: refusing to write %s: block does not read back (%v)", path, err)
+	}
 	if err := platform.EnsureDir(filepath.Dir(path)); err != nil {
 		return "", err
 	}
@@ -310,10 +320,6 @@ func (m *Manager) applySentinel(sk *Skill, t TargetDef, path string) (string, er
 	}
 	if err := atomicWrite(path, []byte(next)); err != nil {
 		return "", err
-	}
-	span, found, err := findBlock(next, sk.ID, path)
-	if err != nil || !found {
-		return "", fmt.Errorf("skills: wrote %s but cannot find the block back (%v)", path, err)
 	}
 	return hashBytes([]byte(span.body)), nil
 }
