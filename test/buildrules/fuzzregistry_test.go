@@ -13,7 +13,7 @@ import (
 //
 // The Makefile carries FUZZ_TARGETS, a hand-written list of
 // <package>:<FuzzName> pairs, because the target name alone is not enough to
-// run one — `go test -fuzz` needs to be pointed at a package, and the seven
+// run one — `go test -fuzz` needs to be pointed at a package, and the eight
 // targets do not all live in the same one. Nothing keeps that list in step
 // with the tree.
 //
@@ -62,6 +62,31 @@ func TestAgentsMdNamesEveryFuzzTarget(t *testing.T) {
 		name := pkgTarget[strings.LastIndex(pkgTarget, ":")+1:]
 		if !strings.Contains(text, name) {
 			t.Errorf("AGENTS.md does not mention the fuzz target %s, so nobody is told it exists", name)
+		}
+	}
+}
+
+// TestMakefileProseNamesEveryFuzzTarget keeps the FUZZ_TARGETS comment block
+// — the inventory a contributor reads first, right above the list itself —
+// from drifting the way it already had: it once named seven targets while
+// FUZZ_TARGETS carried eight, so a reader trusting the prose undercounted
+// what `make fuzz` actually runs. The prose is free text, so this only
+// checks that every declared target's name appears in it; it cannot verify
+// the wording, only that nothing was silently dropped.
+func TestMakefileProseNamesEveryFuzzTarget(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "Makefile")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading the Makefile: %v", err)
+	}
+	text := string(data)
+	declared := parseFuzzTargets(t, path)
+	for pkgTarget := range declared {
+		name := pkgTarget[strings.LastIndex(pkgTarget, ":")+1:]
+		if !strings.Contains(text, name) {
+			t.Errorf("Makefile's FUZZ_TARGETS declares %s, but the prose above it "+
+				"never names %s, so a reader of that comment undercounts the list", pkgTarget, name)
 		}
 	}
 }

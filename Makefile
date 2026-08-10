@@ -113,13 +113,16 @@ E2E_XDG ?= /tmp/fake-xdg-e2e
 #
 #   FuzzParseMessage      downstream JSON-RPC frames
 #   FuzzSSEScanner        remote SSE streams — a hand-written line scanner,
-#                         the least trustworthy of the seven
+#                         the least trustworthy of the eight
 #   FuzzScanAuthParam     remote WWW-Authenticate, hand-written index scanning
 #   FuzzEncodeJSON        downstream tool results, on the response path
 #   FuzzScanTOMLServers   another application's config file, hand-written
 #   FuzzBlankJSONC        the JSONC comment-blanking pass
 #   FuzzSpliceEntryKeepsEverythingElse
 #                         the splice that edits a settings.json in place
+#   FuzzDecodeHeaderValue the Mcp-Name base64 sentinel a caller's header
+#                         carries, decoded before validation compares it to
+#                         the body
 #
 # Touching one of those parsers means running its target — `make fuzz
 # FUZZ=FuzzSSEScanner` — not necessarily the whole set.
