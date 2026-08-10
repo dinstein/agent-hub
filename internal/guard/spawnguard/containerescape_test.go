@@ -45,6 +45,12 @@ func TestContainerEscapeFlagsAreMatchedByMeaningNotSpelling(t *testing.T) {
 		{"label disable with :", []string{"run", "--security-opt", "label:disable", "img"}},
 		{"bare disable", []string{"run", "--security-opt", "disable", "img"}},
 		{"upper-cased", []string{"run", "--security-opt", "SECCOMP:UNCONFINED", "img"}},
+		// systempaths=unconfined unmasks /proc kernel-memory paths
+		// (/proc/kcore, /proc/keys, /sys/firmware); it disables a confinement
+		// layer exactly like the seccomp/apparmor forms above.
+		{"systempaths with =", []string{"run", "--security-opt", "systempaths=unconfined", "img"}},
+		{"systempaths with :", []string{"run", "--security-opt", "systempaths:unconfined", "img"}},
+		{"systempaths attached in cluster", []string{"run", "-it", "--security-opt=systempaths=unconfined", "img"}},
 	}
 	for _, tc := range blocked {
 		t.Run(tc.name, func(t *testing.T) {
