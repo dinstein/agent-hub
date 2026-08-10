@@ -347,7 +347,7 @@ func TestParseRejectsUnrecognizedInput(t *testing.T) {
 // The wrapper keys come from the internal/clients table, so the four shapes
 // the design names must all be present without this package listing them.
 func TestSectionCandidatesCoverTheClientTable(t *testing.T) {
-	got := sectionNames()
+	got := SectionNames()
 	for _, want := range []string{"mcpServers", "servers", "mcp.servers", "context_servers"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("section candidates %v missing %q", got, want)

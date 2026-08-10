@@ -1,14 +1,12 @@
 package catalog
 
 import (
-	"cmp"
 	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
-	"github.com/dinstein/agent-hub/internal/clients"
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
@@ -27,13 +25,12 @@ import (
 // on; a write with no preview has to refuse instead, because the user would
 // never learn that the "oauth" block they pasted vanished.
 //
-// The wrapper key paths are taken from internal/clients — the same table
-// that decides where each client's servers live on disk — so a new client
-// row extends this parser for free instead of needing a second list that
-// drifts from the first. The per-entry conversion mirrors that package's
-// vocabulary (see the fields type below); it is not shared code because the
-// conversion there is unexported and file-shaped, while this one works on a
-// string and reports its findings instead of failing the batch.
+// The reading itself — which wrapper keys name a servers section, which
+// document shapes count, and what each entry key means — is not here: it is
+// in entrymap.go, shared verbatim with `agenthub server add --stdin`, which
+// takes the same snippet without a preview in front of it. This file is what
+// the PREVIEW route adds on top: proposals, skips, warnings, and the refusal
+// of a format we recognize but do not parse.
 
 // Shape names the wrapper a pasted document was recognized as.
 type Shape string
@@ -154,22 +151,15 @@ func ParseClientConfig(text string) (ParseResult, error) {
 		}
 	}
 
-	res := ParseResult{}
-	var raws map[string]json.RawMessage
-	if section, servers, ok := findSection(top); ok {
-		res.Shape, res.Section, raws = ShapeWrapped, section, servers
-	} else if isEntryObject(top) {
-		res.Shape = ShapeSingleEntry
-		raws = map[string]json.RawMessage{"": json.RawMessage(trimmed)}
-	} else if m, ok := asEntryMap(top); ok {
-		res.Shape, raws = ShapeEntryMap, m
-	} else {
+	shape, section, raws, ok := Recognize(top)
+	if !ok {
 		return ParseResult{}, &ParseError{
 			Reason: "the pasted JSON does not look like an MCP server configuration",
-			Hint: "expected a wrapper key (" + strings.Join(sectionNames(), ", ") +
+			Hint: "expected a wrapper key (" + strings.Join(SectionNames(), ", ") +
 				"), a name -> entry object, or a single entry with a command or url",
 		}
 	}
+	res := ParseResult{Shape: shape, Section: section}
 	if len(raws) == 0 {
 		return ParseResult{}, &ParseError{
 			Reason: "the pasted configuration declares no servers",
@@ -205,165 +195,22 @@ func ParseClientConfig(text string) (ParseResult, error) {
 	return res, nil
 }
 
-// sectionCandidates returns the wrapper key paths to look for, longest
-// first so a nested path ("mcp.servers") is tried before a shallow one
-// ("servers") that could also match a different document.
+// entryFrom converts one pasted entry into a registry definition, as the
+// PREVIEW route wants it: unmodeled keys are reported and the entry survives.
 //
-// The list comes from the internal/clients table rather than a literal here:
-// the key paths are that table's knowledge, and duplicating them would make
-// a new client row silently unparseable.
-func sectionCandidates() [][]string {
-	seen := map[string]struct{}{}
-	var out [][]string
-	for _, f := range clients.Formats() {
-		for _, loc := range f.Locations("") {
-			if len(loc.Section) == 0 {
-				continue // TOML / YAML / remote: no JSON key path
-			}
-			key := strings.Join(loc.Section, ".")
-			if _, dup := seen[key]; dup {
-				continue
-			}
-			seen[key] = struct{}{}
-			out = append(out, loc.Section)
-		}
-	}
-	slices.SortStableFunc(out, func(a, b []string) int {
-		if c := cmp.Compare(len(b), len(a)); c != 0 { // longer first (descending)
-			return c
-		}
-		return strings.Compare(strings.Join(a, "."), strings.Join(b, "."))
-	})
-	return out
-}
-
-// sectionNames renders the candidate paths for an error hint.
-func sectionNames() []string {
-	cands := sectionCandidates()
-	out := make([]string, 0, len(cands))
-	for _, c := range cands {
-		out = append(out, strings.Join(c, "."))
-	}
-	return out
-}
-
-// findSection walks each candidate key path and returns the first one that
-// resolves to a JSON object.
-func findSection(top map[string]json.RawMessage) ([]string, map[string]json.RawMessage, bool) {
-	for _, path := range sectionCandidates() {
-		cur := top
-		var servers map[string]json.RawMessage
-		ok := true
-		for i, key := range path {
-			raw, present := cur[key]
-			if !present {
-				ok = false
-				break
-			}
-			var next map[string]json.RawMessage
-			if json.Unmarshal(raw, &next) != nil {
-				ok = false
-				break
-			}
-			if i == len(path)-1 {
-				servers = next
-			} else {
-				cur = next
-			}
-		}
-		if ok && servers != nil {
-			return path, servers, true
-		}
-	}
-	return nil, nil, false
-}
-
-// isEntryObject reports whether an object is ITSELF one server entry rather
-// than a map of them: it names a command or a url directly.
-func isEntryObject(obj map[string]json.RawMessage) bool {
-	f := fields(obj)
-	return f.str("command") != "" || f.url() != ""
-}
-
-// asEntryMap accepts a bare name -> entry map. Every value must be a JSON
-// object; one that is not means the document is something else entirely,
-// and guessing would produce entries out of a settings file.
-func asEntryMap(top map[string]json.RawMessage) (map[string]json.RawMessage, bool) {
-	if len(top) == 0 {
-		return nil, false
-	}
-	for _, raw := range top {
-		var obj map[string]json.RawMessage
-		if json.Unmarshal(raw, &obj) != nil {
-			return nil, false
-		}
-		if !isEntryObject(obj) {
-			return nil, false
-		}
-	}
-	return top, true
-}
-
-// entryKeys are the keys this parser consumes. Anything else is reported as
-// ignored — dropped silently is the one behaviour a preview must not have.
-var entryKeys = map[string]struct{}{
-	"type": {}, "transport": {}, "command": {}, "args": {}, "env": {}, "cwd": {},
-	"url": {}, "serverUrl": {}, "httpUrl": {}, "headers": {}, "oauth": {},
-	"disabled": {}, "enabled": {},
-}
-
-// entryFrom converts one pasted entry into a registry definition.
-//
-// Failure direction: an entry naming neither a command nor a url is
-// REFUSED, never defaulted into a half-formed server that fails much later
-// at connect time with an unrelated-looking message.
+// The conversion itself is MapEntry (entrymap.go), shared with `server add
+// --stdin`; what belongs to this route and not to that one is added here.
 func entryFrom(raw json.RawMessage) (registry.ServerEntry, []string, error) {
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		return registry.ServerEntry{}, nil, fmt.Errorf("entry is not a JSON object")
+	entry, warnings, err := MapEntry(raw, WarnOnUnknownFields)
+	if err != nil {
+		return registry.ServerEntry{}, nil, err
 	}
-	f := fields(obj)
-	var warnings []string
-	if ignored := f.unknownKeys(); len(ignored) > 0 {
-		warnings = append(warnings, "ignored fields agenthub does not model: "+strings.Join(ignored, ", "))
-	}
-
-	entry := registry.ServerEntry{
-		Enabled: !f.boolean("disabled"),
-		Source:  SourcePasted,
-	}
-	if _, ok := obj["enabled"]; ok {
-		// Zed spells the switch positively. Both spellings present and
-		// disagreeing lands on DISABLED: the entry arrives switched off,
-		// which is the reversible direction.
-		entry.Enabled = entry.Enabled && f.boolean("enabled")
-	}
-	switch kind := f.transport(); kind {
-	case registry.TransportStdio:
-		entry.Transport = registry.TransportStdio
-		entry.Command = f.str("command")
-		if entry.Command == "" {
-			return registry.ServerEntry{}, nil, fmt.Errorf("stdio entry has no command")
-		}
-		entry.Args = f.strings("args")
-		entry.Env = f.strMap("env")
-		entry.Cwd = f.str("cwd")
-	case registry.TransportHTTP, registry.TransportSSE:
-		entry.Transport = kind
-		entry.URL = f.url()
-		if entry.URL == "" {
-			return registry.ServerEntry{}, nil, fmt.Errorf("%s entry has no url", kind)
-		}
-		entry.Headers = f.strMap("headers")
+	entry.Source = SourcePasted
+	if entry.Transport != registry.TransportStdio {
 		// Provenance is a trust declaration, and a pasted endpoint has made
 		// none: default to the screened value so SSRF checks stay on. Only
 		// an explicit operator action may relax it.
 		entry.Provenance = registry.ProvenanceRemote
-	default:
-		return registry.ServerEntry{}, nil, fmt.Errorf("entry names neither a command nor a url")
-	}
-	if hint := f.oauthHint(); hint != nil {
-		entry.OAuth = hint
 	}
 	if leaked := literalCredentials(entry); len(leaked) > 0 {
 		warnings = append(warnings,
@@ -512,149 +359,4 @@ func unsupported(format string) *UnsupportedError {
 			"  agenthub server add <name> --cmd <command> --args <arg1>,<arg2>\n" +
 			"or paste the equivalent JSON: {\"mcpServers\":{\"<name>\":{\"command\":\"…\",\"args\":[…]}}}",
 	}
-}
-
-// fields is a tolerant view of one pasted entry: every key stays raw, so a
-// value of an unexpected TYPE degrades that one field instead of failing the
-// whole entry. Same discipline (and same accessor names) as
-// internal/clients, which reads the identical shapes off disk.
-type fields map[string]json.RawMessage
-
-func (f fields) str(key string) string {
-	raw, ok := f[key]
-	if !ok {
-		return ""
-	}
-	var s string
-	if json.Unmarshal(raw, &s) != nil {
-		return ""
-	}
-	return s
-}
-
-func (f fields) boolean(key string) bool {
-	raw, ok := f[key]
-	if !ok {
-		return false
-	}
-	var b bool
-	if json.Unmarshal(raw, &b) != nil {
-		return false
-	}
-	return b
-}
-
-func (f fields) strings(key string) []string {
-	raw, ok := f[key]
-	if !ok {
-		return nil
-	}
-	var s []string
-	if json.Unmarshal(raw, &s) != nil {
-		return nil
-	}
-	return s
-}
-
-func (f fields) strMap(key string) map[string]string {
-	raw, ok := f[key]
-	if !ok {
-		return nil
-	}
-	var m map[string]string
-	if json.Unmarshal(raw, &m) != nil || len(m) == 0 {
-		return nil
-	}
-	return m
-}
-
-// url accepts the three spellings clients use for a remote endpoint.
-func (f fields) url() string {
-	for _, k := range []string{"url", "serverUrl", "httpUrl"} {
-		if v := f.str(k); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-// TransportFromSpelling maps one written transport marker onto a registry
-// transport, folding the spellings client configs use in the wild. The marker
-// is trimmed and case-folded.
-//
-// An unrecognized marker yields "", and so does the empty string. The caller
-// decides whether "absent" may be inferred from the entry's shape, because
-// "not stated" and "stated as nonsense" must not lead to the same place: a
-// typo'd "htpp" falling back to stdio would silently downgrade a remote server
-// into launching a local process.
-//
-// It exists so that "how is a transport spelled" has ONE answer. Two paste
-// paths read the same kind of snippet — `agenthub catalog` and
-// `server add --stdin` — and they disagreed: this table was here, while the CLI
-// carried a narrower, case-SENSITIVE copy recognizing only streamable-http,
-// streamableHttp and http-stream. Configs the catalog accepted were refused by
-// `server add --stdin` for no reason a user could infer, which is what a second
-// implementation of a rule eventually always does (compare
-// downstream.SecretKeysIn, written against the same failure).
-func TransportFromSpelling(marker string) string {
-	switch strings.ToLower(strings.TrimSpace(marker)) {
-	case "stdio", "local", "command":
-		return registry.TransportStdio
-	case "sse":
-		return registry.TransportSSE
-	case "http", "streamable-http", "streamablehttp", "streamable_http", "http-stream", "remote":
-		return registry.TransportHTTP
-	}
-	return ""
-}
-
-// transport normalises the transport marker, inferring it from the entry's
-// own shape when absent. An unrecognized explicit marker yields "" (which
-// the caller refuses) rather than falling back to inference: a typo'd
-// "htpp" must not silently become stdio.
-func (f fields) transport() string {
-	marker := strings.TrimSpace(f.str("type"))
-	if marker == "" {
-		marker = strings.TrimSpace(f.str("transport"))
-	}
-	if marker != "" {
-		return TransportFromSpelling(marker)
-	}
-	switch {
-	case f.str("command") != "":
-		return registry.TransportStdio
-	case f.url() != "":
-		return registry.TransportHTTP
-	}
-	return ""
-}
-
-// oauthHint decodes the optional login hints. A malformed block yields nil
-// rather than an error: the hints are an optimization over RFC 9728
-// discovery, and the preview already lists the block as present.
-func (f fields) oauthHint() *registry.OAuthHint {
-	raw, ok := f["oauth"]
-	if !ok {
-		return nil
-	}
-	var hint registry.OAuthHint
-	if json.Unmarshal(raw, &hint) != nil {
-		return nil
-	}
-	if hint.Issuer == "" && hint.ResourceMetadataURL == "" && len(hint.Scopes) == 0 {
-		return nil
-	}
-	return &hint
-}
-
-// unknownKeys lists the entry's keys this parser does not consume, sorted.
-func (f fields) unknownKeys() []string {
-	var out []string
-	for k := range f {
-		if _, known := entryKeys[k]; !known {
-			out = append(out, k)
-		}
-	}
-	slices.Sort(out)
-	return out
 }
