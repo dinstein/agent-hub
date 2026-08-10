@@ -229,10 +229,6 @@ type gateway struct {
 	traces *traceLogs
 	// events is the control-plane event stream (internal/eventlog), shared
 	// by every server this gateway connects. nil when the switch is off or
-	// the file could not be opened — and a nil *Stream is silent, so no
-	// call site distinguishes the two.
-	// events is the control-plane event stream (internal/eventlog), shared
-	// by every server this gateway connects. nil when the switch is off or
 	// the file could not be opened — and a nil *Stream is silent, so no call
 	// site can tell the two apart or act differently on them.
 	//
