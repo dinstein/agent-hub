@@ -297,11 +297,34 @@ func (b *httpBase) newRequest(ctx context.Context, method string, u *url.URL, bo
 //	      non-idempotent call must not be replayed; the breaker counts it
 //	other 4xx → ClassFatal: our request was rejected on its merits, which
 //	      says nothing about server health, so it must not trip the breaker
+//
+// requestWhere renders "METHOD scheme://host/path" for an error message. It
+// drops the query and userinfo deliberately: url.URL.Redacted masks only the
+// userinfo password and keeps the query verbatim, but a legacy HTTP+SSE POST
+// address carries the session id there (?sessionId=), and an operator's
+// configured endpoint may carry ?api_key=. This string is folded into
+// ClassFatal/connect errors that reach Warn-level logs and trace frames, whose
+// scrubber matches key names it knows and would pass sessionId straight
+// through — so the query is removed here rather than relied on to be redacted.
+func requestWhere(req *http.Request) string {
+	if req == nil {
+		return ""
+	}
+	if req.URL == nil {
+		return req.Method
+	}
+	u := req.URL
+	if u.Scheme == "" && u.Host == "" {
+		return req.Method + " " + u.EscapedPath()
+	}
+	return req.Method + " " + u.Scheme + "://" + u.Host + u.EscapedPath()
+}
+
 func httpError(resp *http.Response) *Error {
 	body := drainBody(resp)
 	snippet := bodySnippet(body)
 	rpcCode := rpcErrorCode(body)
-	where := resp.Request.Method + " " + resp.Request.URL.Redacted()
+	where := requestWhere(resp.Request)
 	// Every branch carries StatusCode: callers classify by status (see
 	// StatusOf / IsAuthStatus) rather than by grepping the message, which
 	// also contains the response-body snippet.
