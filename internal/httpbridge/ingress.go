@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dinstein/agent-hub/internal/guard/netguard"
 )
 
 // Ingress hard bounds (docs/modules/controlplane.md; the numbers are inherited
@@ -183,7 +185,7 @@ func checkFetchMetadata(r *http.Request) error {
 // other. That is what a local UI served from this endpoint sends, and it is
 // what an attacker cannot produce without already being on this machine.
 //
-// Failure direction: reject. AddrIsLoopback is false for anything it cannot
+// Failure direction: reject. netguard.AddrIsLoopback is false for anything it cannot
 // prove (a hostname such as 127.0.0.1.nip.io, an unparsable authority), and
 // the check runs before authentication, so a false positive costs a
 // browser-shaped client a 403 while a false negative costs tool execution.
@@ -201,7 +203,7 @@ func checkOrigin(r *http.Request) error {
 	if host != r.Host {
 		return errCrossSite
 	}
-	if !AddrIsLoopback(host) {
+	if !netguard.AddrIsLoopback(host) {
 		return errCrossSite
 	}
 	return nil

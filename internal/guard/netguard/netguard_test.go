@@ -361,3 +361,39 @@ func TestV4EmbeddingFormsDoNotGrantLocalTrust(t *testing.T) {
 		}
 	}
 }
+
+// TestAddrIsLoopback pins the fail-to-false direction of the listen/authority
+// predicate. The false cases are the ones that matter: each is an address a
+// bug here would let a caller bind or an Origin pass, and the things reached
+// that way are tool execution (internal/httpbridge) and heap dumps holding
+// credentials (internal/diag).
+func TestAddrIsLoopback(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		addr string
+		want bool
+	}{
+		{"127.0.0.1:7777", true},
+		{"127.0.0.1", true},
+		{"127.9.9.9:1", true}, // the whole 127/8 block
+		{"localhost:7777", true},
+		{"LocalHost:7777", true}, // the comparison is case-insensitive
+		{"[::1]:7777", true},
+		{"::1", true},
+
+		{"", false},                      // no host at all
+		{":7777", false},                 // every interface, and the classic mistake
+		{"0.0.0.0:7777", false},          // every interface, spelled out
+		{"[::]:7777", false},             // every interface, v6
+		{"192.168.1.5:7777", false},      // private, but not this machine
+		{"8.8.8.8:7777", false},          // public
+		{"example.com:7777", false},      // a name is never resolved here
+		{"127.0.0.1.nip.io:7777", false}, // a name that merely looks loopback
+		{"not an addr", false},           // unparsable
+	}
+	for _, tc := range cases {
+		if got := AddrIsLoopback(tc.addr); got != tc.want {
+			t.Errorf("AddrIsLoopback(%q) = %v, want %v", tc.addr, got, tc.want)
+		}
+	}
+}

@@ -3,8 +3,8 @@ package httpbridge
 import (
 	"errors"
 	"fmt"
-	"net"
-	"strings"
+
+	"github.com/dinstein/agent-hub/internal/guard/netguard"
 )
 
 // ErrBindUnauthorized is returned when a listener would accept connections
@@ -78,7 +78,7 @@ type BindConfig struct {
 //   - the registered-client path only authorizes loopback binds, for the
 //     same reason: a clients.json entry is configuration, not a credential.
 func AuthorizeBind(cfg BindConfig) (BindDecision, error) {
-	loopback := AddrIsLoopback(cfg.Addr)
+	loopback := netguard.AddrIsLoopback(cfg.Addr)
 	dec := BindDecision{Addr: cfg.Addr, Loopback: loopback}
 
 	// The escape hatch is judged BEFORE anything can authorize the bind, and
@@ -134,30 +134,9 @@ func AuthorizeBind(cfg BindConfig) (BindDecision, error) {
 			"or pass --insecure-loopback to accept unauthenticated local callers", ErrBindUnauthorized)
 }
 
-// AddrIsLoopback reports whether addr names a loopback host. It is exported
-// because the assembling daemon needs the SAME predicate to decide whether a
-// configured listen address requires the operator's explicit
-// expose-to-the-network confirmation; two implementations of "is this
-// loopback" would eventually disagree, and the direction they disagree in is
-// the one that publishes tool execution to a LAN.
-//
-// Failure direction: everything it cannot prove is loopback is treated as
-// NOT loopback (an empty host — bind to every interface — a hostname, an
-// unparsable address). The predicate is used to grant a weaker
-// authorization, so it must be the "fail-to-false" of the pair, mirroring
-// the SSRF screen's HostIsDefinitelyPrivate (docs/flows.md).
-func AddrIsLoopback(addr string) bool {
-	host := addr
-	if h, _, err := net.SplitHostPort(addr); err == nil {
-		host = h
-	}
-	host = strings.TrimSpace(host)
-	if host == "" {
-		return false // ":8080" listens on every interface
-	}
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	return ip != nil && ip.IsLoopback()
-}
+// The loopback predicate this package binds and screens Origin by is
+// netguard.AddrIsLoopback. It used to live here and moved when internal/diag
+// came to need the same answer: that package sits below this one, so keeping
+// it here would have meant either an upward import or a second
+// implementation, and a second answer to "is this loopback" disagrees,
+// eventually, in the direction that publishes something to a LAN.

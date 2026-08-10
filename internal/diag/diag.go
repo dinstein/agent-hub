@@ -42,7 +42,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dinstein/agent-hub/internal/httpbridge"
+	"github.com/dinstein/agent-hub/internal/guard/netguard"
 )
 
 // EnvAddr is the environment variable that turns the endpoint on by naming
@@ -74,11 +74,11 @@ type Server struct {
 //
 // Failure direction: fail closed on every count. A non-loopback address is
 // refused, and so is one whose loopback-ness cannot be proven — the
-// predicate is httpbridge.AddrIsLoopback, shared with the daemon's listener
+// predicate is netguard.AddrIsLoopback, shared with the daemon's listener
 // so that "is this loopback" has one answer repo-wide, and it already
 // resolves everything it cannot prove to false.
 func Serve(addr string) (*Server, error) {
-	if !httpbridge.AddrIsLoopback(addr) {
+	if !netguard.AddrIsLoopback(addr) {
 		return nil, fmt.Errorf("%w: %q. Profiles are the process memory — they carry "+
 			"downstream credentials and call payloads — so there is no allow-remote for "+
 			"them. Use a loopback address such as 127.0.0.1:0", ErrNotLoopback, addr)

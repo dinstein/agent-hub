@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/guard/netguard"
 	"github.com/dinstein/agent-hub/internal/httpbridge"
 	"github.com/dinstein/agent-hub/internal/registry"
 )
@@ -119,7 +120,7 @@ func startHTTPPlane(ctx context.Context, cfg Config, deps httpPlaneDeps, tokens 
 	if addr == "" {
 		return nil, nil
 	}
-	if !httpbridge.AddrIsLoopback(addr) && !face.AllowRemote {
+	if !netguard.AddrIsLoopback(addr) && !face.AllowRemote {
 		return nil, fmt.Errorf(
 			"daemon: refusing to serve MCP on %s: it is not a loopback address. "+
 				"Exposing tool execution beyond this machine needs an explicit "+

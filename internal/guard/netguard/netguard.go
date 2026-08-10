@@ -202,6 +202,44 @@ func HostIsDefinitelyPrivate(host string) bool {
 	return a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast() || a.IsUnspecified()
 }
 
+// AddrIsLoopback reports whether a host[:port] authority names a loopback
+// host, and is the repository's one answer to that question:
+// internal/httpbridge binds the MCP face by it and screens a browser's
+// Origin with it, internal/daemon decides from it whether an operator must
+// confirm exposure to the network, and internal/diag refuses to publish
+// profiles anywhere else. Two implementations would eventually disagree, and
+// the direction they disagree in is the one that publishes tool execution,
+// or a heap dump holding credentials, to a LAN.
+//
+// It lives beside the outbound predicates rather than in the package that
+// binds, because the packages that need it sit on different layers and the
+// lower ones must not import the higher to ask. Note it is not
+// interchangeable with HostIsDefinitelyPrivate: this reads an authority on
+// THIS side ("where am I accepting from, and who is calling"), that one
+// reads a destination ("may I connect there"), and only that one has a
+// rebinding problem to defend against.
+//
+// Failure direction: FAIL-TO-FALSE, the same as HostIsDefinitelyPrivate and
+// for the same reason — the answer GRANTS a weaker authorization, so
+// everything it cannot prove is loopback must read as not loopback: an empty
+// host (which binds every interface), a hostname other than localhost, an
+// unparsable address.
+func AddrIsLoopback(addr string) bool {
+	host := addr
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
+	}
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return false // ":8080" listens on every interface
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
 // DialControl is a net.Dialer.Control hook that rejects connections to
 // private/non-public addresses. The address it sees is the one the socket is
 // about to connect to — already resolved — which closes the DNS-rebind
