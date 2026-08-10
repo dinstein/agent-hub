@@ -1298,6 +1298,15 @@ still one that can be profiled.
   arguments and results in whatever form they had at the snapshot, and a goroutine dump names every
   downstream. A reachable endpoint is a credential disclosure with a stable URL. The predicate is
   `netguard.AddrIsLoopback`, shared with the packages that bind, and it is fail-to-false.
+- **The bind address is proven once; every request is checked again.** Loopback binding stops the
+  network, not a local browser under DNS rebinding — a page served from `evil.example:PORT` whose
+  name is rebound to `127.0.0.1` is same-origin from the browser's point of view and can read
+  `/debug/pprof/heap`. `Serve`'s mux is wrapped in a request-level guard (`requestGuard`) that
+  reuses the mechanism `internal/httpbridge/ingress.go`'s `checkOrigin` documents rather than
+  re-deriving it: it fails closed, refusing any request carrying an `Origin` header at all (there is
+  no browser client here to whitelist, so — unlike the bridge — no Origin is ever legitimate) and any
+  request whose `Host` cannot itself be proven loopback via `netguard.AddrIsLoopback`, since under
+  rebinding `Host` carries the attacker's chosen name rather than this process's own address.
 - **A refused or unavailable address FAILS THE PROCESS START.** "Delivered or refused" applies: an
   operator who asked for profiles and silently did not get them attaches to a port that never
   answers and reads a healthy process as wedged — the diagnosis this package exists to prevent.

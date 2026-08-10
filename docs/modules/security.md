@@ -308,8 +308,10 @@ bind address is not resolved by anybody else — which is why it is not a specia
 It lives here rather than in the package that binds because its callers sit on **three different
 layers**: `internal/httpbridge` binds the MCP face by it and screens `Origin` with it,
 `internal/daemon` decides from it whether exposing the endpoint needs the operator's explicit
-confirmation, and `internal/diag` refuses to publish profiles anywhere else. The lower ones must not
-import the higher to ask, and a second copy would eventually disagree with the first — in the
+confirmation, and `internal/diag` refuses to publish profiles anywhere else — and, on top of the
+bind-time refusal, screens every request's `Host` with it too, for the same reason the bridge screens
+`Origin`: the bind address alone stops the network but not a browser rebound onto it. The lower ones
+must not import the higher to ask, and a second copy would eventually disagree with the first — in the
 direction that publishes tool execution, or a heap dump holding credentials, to a LAN.
 
 `DialControl` is the package's real line of defense; install it on `net.Dialer.Control`. The address
