@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/ctlapi"
+	"github.com/dinstein/agent-hub/internal/diag"
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/event"
 	"github.com/dinstein/agent-hub/internal/eventlog"
@@ -196,6 +197,17 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	defer func() { _ = logClose() }()
+
+	// Opt-in profiling (internal/diag), armed as soon as there is a logger to
+	// announce it through and before any of the slow startup below, so that a
+	// daemon which never finishes starting is still one that can be profiled.
+	// A refusal is fatal, on the same reasoning as the MCP listener's: an
+	// address that cannot be served safely is refused, never downgraded.
+	prof, err := diag.ServeFromEnv(log)
+	if err != nil {
+		return fmt.Errorf("daemon: %w", err)
+	}
+	defer func() { _ = prof.Close() }()
 
 	// The owner watch (owner.go) is what makes this daemon's lifetime the
 	// owning application's. It is armed here, before the registry is opened

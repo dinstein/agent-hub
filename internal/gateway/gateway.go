@@ -58,6 +58,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/diag"
 	"github.com/dinstein/agent-hub/internal/discovery"
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/eventlog"
@@ -183,6 +184,20 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	defer g.shutdown()
+
+	// Opt-in profiling (internal/diag), assembled after the logger exists so
+	// the bound address is written where 'agenthub logs' will find it — with
+	// one gateway per client, port 0 is the spelling that works, and then the
+	// log is the only record of where it landed. A refusal is fatal: an
+	// operator who asked for profiles and got a silently dead port would read
+	// this process as wedged, which is the diagnosis the endpoint exists to
+	// make possible.
+	prof, err := diag.ServeFromEnv(g.log)
+	if err != nil {
+		return fmt.Errorf("gateway: %w", err)
+	}
+	defer func() { _ = prof.Close() }()
+
 	return g.run(ctx)
 }
 

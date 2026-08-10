@@ -98,6 +98,48 @@ func TestServeBindsLoopbackAndAnswers(t *testing.T) {
 	}
 }
 
+// TestServeFromEnv covers the three outcomes the two call sites assemble
+// against: unset is not an error and starts nothing, a loopback address
+// starts an endpoint, and a refused address is an error rather than a
+// silently absent endpoint.
+func TestServeFromEnv(t *testing.T) {
+	t.Run("unset starts nothing", func(t *testing.T) {
+		t.Setenv(diag.EnvAddr, "")
+		s, err := diag.ServeFromEnv(nil)
+		if err != nil {
+			t.Fatalf("ServeFromEnv() = %v, want nil", err)
+		}
+		if s != nil {
+			t.Errorf("ServeFromEnv() started %s, want no endpoint", s.Addr())
+			_ = s.Close()
+		}
+	})
+
+	t.Run("loopback serves", func(t *testing.T) {
+		t.Setenv(diag.EnvAddr, "127.0.0.1:0")
+		s, err := diag.ServeFromEnv(nil)
+		if err != nil {
+			t.Fatalf("ServeFromEnv(): %v", err)
+		}
+		defer func() { _ = s.Close() }()
+		if s == nil || s.Addr() == "" {
+			t.Fatal("ServeFromEnv() returned no listening endpoint")
+		}
+	})
+
+	t.Run("non-loopback is an error", func(t *testing.T) {
+		t.Setenv(diag.EnvAddr, "0.0.0.0:0")
+		s, err := diag.ServeFromEnv(nil)
+		if !errors.Is(err, diag.ErrNotLoopback) {
+			t.Fatalf("ServeFromEnv() error = %v, want ErrNotLoopback", err)
+		}
+		if s != nil {
+			t.Errorf("ServeFromEnv() started %s despite refusing", s.Addr())
+			_ = s.Close()
+		}
+	})
+}
+
 // TestCloseIsSafeWhenNothingStarted pins the nil-receiver contract, which is
 // what lets a caller defer Close unconditionally next to a conditional
 // Serve — the shape both the gateway and the daemon use.

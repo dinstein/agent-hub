@@ -34,6 +34,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -108,6 +109,36 @@ func Serve(addr string) (*Server, error) {
 		ReadHeaderTimeout: 10 * time.Second,
 	}}
 	go func() { _ = s.srv.Serve(ln) }()
+	return s, nil
+}
+
+// ServeFromEnv starts the endpoint described by AGENTHUB_PPROF_ADDR and
+// announces where it landed. It returns (nil, nil) when the variable is
+// unset — the ordinary case — so a caller can assemble it unconditionally:
+//
+//	prof, err := diag.ServeFromEnv(log)
+//	if err != nil {
+//		return fmt.Errorf("gateway: %w", err)
+//	}
+//	defer func() { _ = prof.Close() }()
+//
+// The announcement goes through the process logger rather than to stderr
+// because port 0 — the spelling that works when several gateways run at
+// once — makes the log the only place the bound port is written down, and
+// 'agenthub logs' is where an operator will look for it.
+func ServeFromEnv(log *slog.Logger) (*Server, error) {
+	addr := Addr()
+	if addr == "" {
+		return nil, nil
+	}
+	s, err := Serve(addr)
+	if err != nil {
+		return nil, err
+	}
+	if log != nil {
+		log.Info("profiling endpoint serving", "addr", s.Addr(),
+			"heap", "http://"+s.Addr()+"/debug/pprof/heap")
+	}
 	return s, nil
 }
 
