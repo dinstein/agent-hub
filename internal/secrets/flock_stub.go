@@ -7,8 +7,9 @@ import (
 	"os"
 )
 
-// Stub for platforms with no flock implementation. Darwin, linux and windows
-// all have one; the build tag above names exactly who lands here.
+// Stub for platforms with no lock implementation. Darwin, linux and windows
+// are all served by flock.go through internal/platform; the build tag above
+// names exactly who lands here instead.
 //
 // Failure direction: FAIL CLOSED. Without a cross-process lock every vault
 // write degrades to last-writer-wins, which is the credential loss the lock

@@ -25,7 +25,7 @@ var goFileRef = regexp.MustCompile(`\b((?:internal|cmd|api|test|build|scripts)/[
 // the other half of the prose.
 //
 // Comments in this tree cross-reference files constantly — "delegating to
-// internal/platform (flock_windows.go)", "the rule in doc.go", "see
+// internal/platform (flock.go)", "the rule in doc.go", "see
 // daemonproc_stub.go" — because a package's reasoning is spread across files
 // and the comment is what stitches it back together. The docs got a guard for
 // exactly this and the code did not, though the code has far more of these
@@ -47,8 +47,8 @@ var goFileRef = regexp.MustCompile(`\b((?:internal|cmd|api|test|build|scripts)/[
 // this test. A BARE filename is only checked against the set of basenames in
 // the tree, which is as far as it can be taken: 46 of the tree's ~210 bare
 // citations point outside the citing package (test/buildrules discusses other
-// packages' files constantly, and filelock_other.go names the flock_*.go that
-// live in seven others), so requiring the same directory would be 46 false
+// packages' files constantly, and the seven packages that lock a file all
+// name flock_stub.go), so requiring the same directory would be 46 false
 // positives. The consequence is worth stating rather than discovering: rename
 // one package's doc.go and this test stays green, because eight other
 // packages still have one. A distinctive name is caught; a common one is not.

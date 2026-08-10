@@ -7,9 +7,9 @@ import (
 	"os"
 )
 
-// Cross-process locking is implemented for darwin/linux (flock_unix.go) and
-// windows (flock_windows.go, LockFileEx via internal/platform). These stubs
-// keep the call sites compiling on everything else.
+// Cross-process locking is implemented for darwin, linux and windows in
+// flock.go, all through internal/platform. These stubs keep the call sites
+// compiling on everything else.
 //
 // Failure direction on an unsupported platform: acquiring the refresh lock
 // fails, so the offline refresh path refuses to run rather than running

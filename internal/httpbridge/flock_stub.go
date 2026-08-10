@@ -7,9 +7,10 @@ import (
 	"os"
 )
 
-// Cross-process locking is darwin/linux only until the Windows port (M2).
-// The stubs keep the store's call sites compiling; on an unsupported
-// platform a transaction fails loudly rather than writing unserialized.
+// Cross-process locking is implemented for darwin, linux and windows in
+// flock.go, all through internal/platform; the build tag above names exactly
+// who lands here instead. On such a platform a transaction fails loudly
+// rather than writing unserialized.
 
 func flockExclusiveNB(_ *os.File) error { return errors.ErrUnsupported }
 

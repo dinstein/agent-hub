@@ -1326,8 +1326,9 @@ still one that can be profiled.
 has its own **line-based** ring buffer. They serve different presentations — finding one does not
 mean you have changed the other.
 
-**Windows cross-process locking is implemented but unverified.** The registry lock uses
-`LockFileEx`/`UnlockFileEx` delegating to `internal/platform`, the stub build tag was narrowed to
-`!darwin && !linux && !windows`, and `internal/ratelimit` and `internal/calllog` both set
-`crossProcessLockSupported = true` there. Nothing has run on a real Windows machine — see
+**Windows cross-process locking is implemented but unverified.** Both halves of the lock live in
+`internal/platform` — `LockFileEx`/`UnlockFileEx` on Windows, `flock(2)` on darwin/linux — and each
+locking package owns a `flock.go` tagged `darwin || linux || windows` that delegates to them, with
+`flock_stub.go` (`!darwin && !linux && !windows`) failing closed elsewhere. `internal/ratelimit`,
+`internal/calllog` and `internal/secrets` set `crossProcessLockSupported = true` there. Nothing has run on a real Windows machine — see
 [../windows.md](../windows.md).

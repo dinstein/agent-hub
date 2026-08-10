@@ -495,11 +495,12 @@ that replacing the deprecated mechanism is a constructor swap rather than a rewr
 - **Every error is a sentinel or a `*FlowError` that unwraps to one**, so callers classify with
   `errors.Is` and never by string matching. `FlowError.Suggestion` is operator-facing and must never
   carry a secret.
-- **Dependency budget**: standard library + `internal/secrets` + `internal/guard/netguard`. It imports
+- **Dependency budget**: standard library + `internal/secrets` + `internal/guard/netguard` +
+  `internal/platform` (the file lock, and nothing else). It imports
   no control plane, no pipeline, and no logging package — it returns a structured `*FlowError` and
   lets the caller decide how to render it.
-- The file lock is real on darwin/linux (`syscall.Flock`) and on Windows (`LockFileEx`, via
-  `internal/platform`); anywhere else it is an `errors.ErrUnsupported` stub, so **the offline refresh
+- The file lock is real on darwin/linux (`flock(2)`) and on Windows (`LockFileEx`), both through
+  `internal/platform`; anywhere else it is an `errors.ErrUnsupported` stub, so **the offline refresh
   path would rather refuse to run than run unordered**: two processes racing for one single-use
   refresh token is worse than one "unsupported" refresh failure.
 

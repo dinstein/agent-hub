@@ -36,9 +36,10 @@ var lockTimeoutSentinel = regexp.MustCompile(`(?m)^\s*(?:var\s+)?ErrLockTimeout\
 //
 // So the check is on the declarations: whatever declares the sentinel has to
 // appear in the table. Seven packages take a cross-process flock, but only
-// the ones with a TIMEOUT ladder can report contention to a user at all —
-// audit and ratelimit block on LOCK_EX and oauthflow tries once — and
-// declaring ErrLockTimeout is what tells the two apart.
+// the ones that report contention as a TYPED error reach a user as
+// contention at all — calllog and ratelimit take the blocking lock and wait,
+// and oauthflow polls but returns plain prose — and declaring ErrLockTimeout
+// is what tells them apart.
 func TestEveryLockTimeoutStoreIsInTheParityTable(t *testing.T) {
 	root := repoRoot(t)
 
