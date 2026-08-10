@@ -15,6 +15,11 @@ that description into a live connection, and `mcp` supplies the grammar spoken o
 exception (`fsnotify`, for watching), and each rule is backed by a failing case in
 `internal/depguardtest`.
 
+A tenth, `internal/diag`, is documented here for want of a better home rather than because it fits
+the sentence above: nothing depends on it, and it depends on one leaf
+(`internal/guard/netguard`). It is the opt-in profiling endpoint, and it sits at this altitude for
+a reason worth keeping — both long-lived processes reach for it, and they are on different layers.
+
 ---
 
 ## internal/platform
@@ -1265,6 +1270,52 @@ falls toward `ShutdownUnknown`**: a marker that cannot be read or parsed, or tha
 unrecognized version, is unknown, because a diagnostic must not issue a clean bill of health out of
 thin air. The pid and timestamp are purely diagnostic, and the verdict **does not depend on whether
 that pid still exists** (pids are reused, and the check is meaningless across machines or reboots).
+
+---
+
+## internal/diag
+
+**One-line responsibility**: serve the Go runtime's own profiles — heap, goroutines, allocations,
+mutex, CPU — over a loopback-only HTTP endpoint that does not exist unless asked for.
+
+It answers a question no log line can carry. A stdio gateway holding 21 downstreams sits at roughly
+**28MB of physical footprint against ~8MB of live heap**, and the difference is GC headroom plus
+spans not yet returned to the OS; splitting the 8MB by call site takes an allocation profile. The
+measurement that motivated it also found the larger cost, which this package cannot fix and should
+not be mistaken for addressing: with **one gateway process per client and no daemon**, N processes
+each dial the same downstreams and cache the same tool schemas, and none of it is shared.
+
+`AGENTHUB_PPROF_ADDR` names the address; unset — the ordinary case — creates no listener and logs
+nothing. Both long-lived processes assemble it: `internal/gateway` after its logger exists,
+`internal/daemon` before the slow part of its startup, so a daemon that never finishes starting is
+still one that can be profiled.
+
+### Invariants and failure directions
+
+- **Loopback or nothing, and there is no allow-remote.** A non-loopback address is REFUSED, never
+  downgraded. `internal/daemon` has an escape hatch for its MCP listener; this has none deliberately,
+  because these profiles *are* the process memory — a heap dump holds downstream credentials, tool
+  arguments and results in whatever form they had at the snapshot, and a goroutine dump names every
+  downstream. A reachable endpoint is a credential disclosure with a stable URL. The predicate is
+  `netguard.AddrIsLoopback`, shared with the packages that bind, and it is fail-to-false.
+- **A refused or unavailable address FAILS THE PROCESS START.** "Delivered or refused" applies: an
+  operator who asked for profiles and silently did not get them attaches to a port that never
+  answers and reads a healthy process as wedged — the diagnosis this package exists to prevent.
+- **Port 0 is the intended spelling, and the log is where the port is written down.** One gateway
+  runs per client, so a fixed port in a shell profile lets the first start and breaks every one
+  after it with "address already in use". `Server.Addr` therefore reads the listener rather than
+  echoing the request, and `ServeFromEnv` announces it through the process logger — `agenthub logs`
+  is where it will be looked for.
+- **A private mux, never `http.DefaultServeMux`.** Importing `net/http/pprof` registers handlers on
+  the default mux as a side effect; a package that decides its own exposure must not depend on which
+  mux some other server in the process happens to use. Nothing in the tree uses the default mux
+  today, and this does not become a reason to start.
+- **No `WriteTimeout`.** A CPU profile or execution trace holds its request open for its whole
+  duration, and a write deadline would truncate exactly the long profile worth taking.
+  `ReadHeaderTimeout` still bounds a client that connects and says nothing.
+- `AGENTHUB_PPROF_ADDR` is an `AGENTHUB_*` variable and so is **stripped before a downstream server
+  is spawned** (canonical.md §1): profiling our own process never turns on profiling in someone
+  else's.
 
 ---
 

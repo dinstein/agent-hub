@@ -248,7 +248,8 @@ missing from the next assembly.
 ## internal/guard/netguard
 
 **One-line responsibility**: answer "is this destination private / not publicly routable", and screen
-again at dial time against the IP actually resolved, closing the DNS-rebinding TOCTOU window.
+again at dial time against the IP actually resolved, closing the DNS-rebinding TOCTOU window. It also
+holds the repository's one answer to "is this authority loopback", for the packages that bind.
 
 ### Why there are two predicates
 
@@ -291,6 +292,21 @@ Two shapes in that table are the ones to watch:
   extracting and reclassifying the embedded v4: the only purpose the two deprecated forms have **is
   spelling an IPv4 address**, rejecting the range costs nothing, and it doesn't depend on a decoder
   being correct.
+
+`AddrIsLoopback(addr) bool` is a **third question, not a third answer to that one**: the two above
+judge a destination we are about to reach, this one judges an authority on *this* side — the address
+a listener would bind, and the `Origin` a browser claims. **fail-to-false**, like
+`HostIsDefinitelyPrivate` and for the same reason: it grants a weaker authorization, so an empty host
+(which binds every interface), a name other than `localhost`, and an unparsable address all read as
+not loopback. Unlike the destination predicates it has no rebinding problem to defend against — a
+bind address is not resolved by anybody else — which is why it is not a special case of either.
+
+It lives here rather than in the package that binds because its callers sit on **three different
+layers**: `internal/httpbridge` binds the MCP face by it and screens `Origin` with it,
+`internal/daemon` decides from it whether exposing the endpoint needs the operator's explicit
+confirmation, and `internal/diag` refuses to publish profiles anywhere else. The lower ones must not
+import the higher to ask, and a second copy would eventually disagree with the first — in the
+direction that publishes tool execution, or a heap dump holding credentials, to a LAN.
 
 `DialControl` is the package's real line of defense; install it on `net.Dialer.Control`. The address
 it sees is the **already-resolved** address the socket is about to connect to, so whatever rebind

@@ -154,6 +154,7 @@ flowchart TD
         EVTL["internal/eventlog<br/>closed-vocabulary event stream"]
         EVT["internal/event<br/>in-process bus"]
         TIER["internal/tier<br/>operation tier vocabulary"]
+        DIAG["internal/diag<br/>opt-in loopback-only pprof endpoint"]
     end
     L5 --> L4
     GUIP -. "only via api" .-> APIP

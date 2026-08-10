@@ -147,6 +147,7 @@ flowchart TD
         EVTL["internal/eventlog<br/>闭集词汇的事件流"]
         EVT["internal/event<br/>进程内事件总线"]
         TIER["internal/tier<br/>操作等级词汇表"]
+        DIAG["internal/diag<br/>可选开启、仅 loopback 的 pprof 端点"]
     end
     L5 --> L4
     GUIP -. "只能经 api" .-> APIP
