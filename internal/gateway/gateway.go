@@ -295,10 +295,16 @@ type gateway struct {
 	snap     atomic.Pointer[registry.Snapshot]
 	applier  registry.Applier
 	scopeRes *scope.CachedResolver
-	watcher  *registry.Watcher
-	watchWG  sync.WaitGroup
-	redialWG sync.WaitGroup // the re-dial loop (redial.go)
-	redial   redialParams   // its resolved ladder
+	// scopeFailClosed makes currentScope return an empty scope (nothing
+	// visible) even though scopeRes is nil. It is set when a credential brought
+	// narrowing layers but no registry store could be opened to resolve them:
+	// the layers cannot be dropped, so visibility fails closed instead of
+	// widening to the uncredentialed full-cache baseline (see newGateway).
+	scopeFailClosed bool
+	watcher         *registry.Watcher
+	watchWG         sync.WaitGroup
+	redialWG        sync.WaitGroup // the re-dial loop (redial.go)
+	redial          redialParams   // its resolved ladder
 	// The credential announcement plane (credwatch.go). credEpochs is nil in
 	// an assembly with no vault wiring, which is what startCredWatch tests
 	// before subscribing.
@@ -502,6 +508,19 @@ func newGateway(cfg Config) (*gateway, error) {
 				return cfg.ScopeLayers()
 			},
 		})
+		scopeFn = g.currentScope
+	} else if cfg.ScopeLayers != nil {
+		// A credential that brought narrowing layers (an HTTP agent token's
+		// server allowlist / profile pin) but whose registry store failed to
+		// open must NOT fall through to the uncredentialed full-cache baseline
+		// below: that serves every cached server's catalog to a token that
+		// asked to be confined. Isolation a config claims must be delivered or
+		// refused — fail the scope closed to an empty set rather than silently
+		// widen. Nothing connects without a store, so the reachable impact this
+		// bounds is catalog disclosure; an empty scope hides it fail-closed.
+		// currentScope honours this flag so BOTH the pipeline gate and the
+		// discovery surface (tools/list, search_tools) see the empty scope.
+		g.scopeFailClosed = true
 		scopeFn = g.currentScope
 	}
 

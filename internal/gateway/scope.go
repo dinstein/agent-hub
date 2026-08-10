@@ -43,11 +43,16 @@ func (g *gateway) scopeKey() scope.SessionKey {
 
 // currentScope resolves the session's effective scope through the cached
 // resolver. Returns nil only when scope authority does not exist at all
-// (no registry store — see newGateway); with a store present, a resolution
-// failure returns an EMPTY scope (zero visible servers): fail-closed, an
-// error must never widen visibility.
+// (no registry store AND no narrowing credential — see newGateway); with a
+// store present, a resolution failure returns an EMPTY scope (zero visible
+// servers): fail-closed, an error must never widen visibility.
 func (g *gateway) currentScope() *scope.EffectiveScope {
 	if g.scopeRes == nil {
+		if g.scopeFailClosed {
+			// A narrowing credential with no store to resolve against: fail
+			// closed to an empty scope, never the nil (allow-all) baseline.
+			return &scope.EffectiveScope{Servers: map[string]scope.ToolView{}}
+		}
 		return nil
 	}
 	es, err := g.scopeRes.Resolve(g.lifeCtx, g.scopeKey())
