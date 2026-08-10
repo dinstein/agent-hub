@@ -176,7 +176,7 @@ func ParseClientConfig(text string) (ParseResult, error) {
 			res.Skipped = append(res.Skipped, Skip{Name: name, Reason: err.Error()})
 			continue
 		}
-		if reason, self := isGatewayEntry(entry); self {
+		if reason, self := IsGatewayEntry(entry); self {
 			res.Skipped = append(res.Skipped, Skip{Name: name, Reason: reason})
 			continue
 		}
@@ -220,10 +220,15 @@ func entryFrom(raw json.RawMessage) (registry.ServerEntry, []string, error) {
 	return entry, warnings, nil
 }
 
-// isGatewayEntry recognizes agenthub's own gateway entry, which every
+// IsGatewayEntry recognizes agenthub's own gateway entry, which every
 // adapted client configuration contains. Adding it would point agenthub at
 // itself — an infinite regress that presents as a hang, not an error.
-func isGatewayEntry(e registry.ServerEntry) (string, bool) {
+//
+// Both paste routes ask, and answer it differently for the same reason they
+// differ on an unmodeled key: the preview SKIPS the entry and says so, while
+// `server add --stdin` REFUSES the paste, because a write with no preview
+// cannot report "I left one out" anywhere the user will read it.
+func IsGatewayEntry(e registry.ServerEntry) (string, bool) {
 	if len(e.Args) == 0 || e.Args[0] != "connect" {
 		return "", false
 	}

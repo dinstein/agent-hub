@@ -761,6 +761,9 @@ type namedEntry struct {
 //     is the separate step that probes it and puts it into service. Nothing is
 //     lost in silence — the command prints "added: <name> (…, disabled)".
 //   - Source is "manual": an operator typed this, whatever it was copied from.
+//   - agenthub's own gateway entry — present in every adapted client
+//     configuration — is REFUSED rather than skipped: a write has nowhere to
+//     report a skip.
 //   - a remote endpoint is screened with no --local escape hatch: a snippet
 //     copied from a README must not be able to point the connector at a
 //     private address (fail-closed; `server add --url --local` is the
@@ -812,6 +815,13 @@ func normalizeStdin(data []byte, nameArg string) ([]namedEntry, error) {
 		entry, _, err := catalog.MapEntry(raw, catalog.RejectUnknownFields)
 		if err != nil {
 			return nil, stdinEntryError(name, err)
+		}
+		if reason, self := catalog.IsGatewayEntry(entry); self {
+			// The preview skips this one; a write has nowhere to report a
+			// skip, so it refuses the whole paste instead. Adding agenthub's
+			// own gateway entry points it at itself, and the regress presents
+			// as a hang rather than as an error.
+			return nil, invalid("server %q: %s", name, reason)
 		}
 		entry.Enabled = false
 		entry.Source = sourceManual
