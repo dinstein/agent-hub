@@ -317,6 +317,12 @@ func (g *gateway) statelessSession() bool {
 	return g.stateless
 }
 
+// listTTLMs is the freshness hint stamped on 2026-07-28 tools/list answers.
+// Deliberately short: the surface changes with profile bindings and
+// downstream list_changed at any moment, and the listChanged notification —
+// not the TTL — is the real invalidation signal.
+const listTTLMs int64 = 60_000
+
 // handleToolsList answers from the current exposure surface: the current
 // catalog — the live router when ready, the cache-built one otherwise —
 // projected through the session's effective scope and rendered in the
@@ -325,12 +331,6 @@ func (g *gateway) statelessSession() bool {
 // The router is never rebuilt for a scope or mode change: visibility is a
 // query-time projection (docs/architecture.md §7 invariant 2), and the mode only
 // decides how many of the visible names are printed.
-// listTTLMs is the freshness hint stamped on 2026-07-28 tools/list answers.
-// Deliberately short: the surface changes with profile bindings and
-// downstream list_changed at any moment, and the listChanged notification —
-// not the TTL — is the real invalidation signal.
-const listTTLMs int64 = 60_000
-
 func (g *gateway) handleToolsList(req *mcp.Request) {
 	res := mcp.ListToolsResult{Tools: g.currentSurface().List()}
 	if g.statelessSession() {
