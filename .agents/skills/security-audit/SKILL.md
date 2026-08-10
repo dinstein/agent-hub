@@ -105,6 +105,10 @@ fix when both engines report the same non-bug:
   returns permissive on error → finding, and the shape this sweep exists for.
 - **Isolation a config claims must be delivered or refused** — a silent degradation to the weaker
   runtime is the highest-severity shape in the tree.
+- **Every path by which external bytes arrive maps to a fuzz target** — AGENTS.md lists the current
+  set, one target per path. A parser of untrusted input with no target is itself a finding:
+  `test/buildrules` only proves the three declared lists agree with each other, never that a
+  newly-landed path joined them.
 - Read the shard's [docs/modules/](../../../docs/modules/) file first. Several things here look redundant
   and are load bearing; that file is where the reason was written down.
 
