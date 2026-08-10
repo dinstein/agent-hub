@@ -3,6 +3,7 @@ package diag_test
 import (
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -136,6 +137,72 @@ func TestServeFromEnv(t *testing.T) {
 		if s != nil {
 			t.Errorf("ServeFromEnv() started %s despite refusing", s.Addr())
 			_ = s.Close()
+		}
+	})
+}
+
+// TestRequestGuardDefendsAgainstRebinding is the request-level proof to go
+// with TestServeRefusesNonLoopback's address-level one. Binding to
+// 127.0.0.1 stops the network, but a browser that has been DNS-rebound onto
+// this loopback address is a same-origin client the bind address cannot
+// distinguish from a legitimate one — see the guard's doc comment and
+// internal/httpbridge/ingress.go's checkOrigin for the mechanism.
+func TestRequestGuardDefendsAgainstRebinding(t *testing.T) {
+	s, err := diag.Serve("127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+
+	get := func(t *testing.T, host, origin string) int {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, "http://"+s.Addr()+"/debug/pprof/", nil)
+		if err != nil {
+			t.Fatalf("NewRequest: %v", err)
+		}
+		if host != "" {
+			req.Host = host
+		}
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Do: %v", err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	t.Run("any Origin is refused, even one that equals Host", func(t *testing.T) {
+		// This is the exact shape a rebound page produces: Origin and Host
+		// read identical because, from the browser's point of view, the
+		// request IS same-origin. There is no browser client here at all, so
+		// unlike the bridge's checkOrigin this refuses it anyway.
+		if got := get(t, s.Addr(), "http://"+s.Addr()); got != http.StatusForbidden {
+			t.Errorf("status = %d, want %d for an Origin matching Host", got, http.StatusForbidden)
+		}
+	})
+
+	t.Run("a Host that cannot be proven loopback is refused", func(t *testing.T) {
+		if got := get(t, "evil.example:6060", ""); got != http.StatusForbidden {
+			t.Errorf("status = %d, want %d for a non-loopback Host", got, http.StatusForbidden)
+		}
+	})
+
+	t.Run("a curl-shaped request with port succeeds", func(t *testing.T) {
+		if got := get(t, s.Addr(), ""); got != http.StatusOK {
+			t.Errorf("status = %d, want %d for Host=%s, no Origin", got, http.StatusOK, s.Addr())
+		}
+	})
+
+	t.Run("a curl-shaped request without a port succeeds", func(t *testing.T) {
+		host, _, err := net.SplitHostPort(s.Addr())
+		if err != nil {
+			t.Fatalf("SplitHostPort(%q): %v", s.Addr(), err)
+		}
+		if got := get(t, host, ""); got != http.StatusOK {
+			t.Errorf("status = %d, want %d for bare Host=%s, no Origin", got, http.StatusOK, host)
 		}
 	})
 }

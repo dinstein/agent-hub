@@ -17,6 +17,19 @@
 // convenience, so this package has no equivalent of the daemon's
 // allow-remote escape hatch: there is no address that opens it up.
 //
+// Binding loopback-only stops the network, but not a local browser under DNS
+// rebinding: a page served from evil.example:PORT whose name is rebound to
+// 127.0.0.1 is same-origin from the browser's point of view and can fetch
+// /debug/pprof/heap and read the response — see internal/httpbridge's
+// checkOrigin for the mechanism, which this package's request-level guard
+// reuses rather than re-deriving. Every request is checked before it reaches
+// the pprof handlers, fail-closed: any Origin header refuses the request
+// outright (there is no browser client to serve here, so none is ever
+// legitimate — stricter than the bridge, which has one), and the Host header
+// must independently prove loopback via netguard.AddrIsLoopback, since under
+// rebinding Host carries the attacker's chosen name rather than this
+// process's own address.
+//
 // A failed bind FAILS THE PROCESS START rather than continuing without an
 // endpoint. An operator who asked for profiles and silently did not get them
 // would attach to a port that never answers and conclude the process was
@@ -105,11 +118,46 @@ func Serve(addr string) (*Server, error) {
 	// profile that was worth taking. ReadHeaderTimeout still bounds a client
 	// that connects and says nothing.
 	s := &Server{ln: ln, srv: &http.Server{
-		Handler:           mux,
+		Handler:           requestGuard(mux),
 		ReadHeaderTimeout: 10 * time.Second,
 	}}
 	go func() { _ = s.srv.Serve(ln) }()
 	return s, nil
+}
+
+// requestGuard wraps the pprof mux with the one check loopback binding alone
+// cannot provide. The bind address (checked once, above, in Serve) proves
+// where the socket sits; it says nothing about who a browser thinks it is
+// talking to once DNS has been rebound to point at it — see the package doc
+// and internal/httpbridge/ingress.go's checkOrigin, which spells out the
+// rebinding mechanism this reuses rather than repeats.
+//
+// It is STRICTER than checkOrigin: the bridge serves a local UI, so a
+// same-origin request from that UI is legitimate traffic it must let
+// through. This package serves no browser client at all, so there is no
+// Origin value — same-origin or otherwise — that is ever legitimate: ANY
+// Origin header refuses the request, without comparing it to Host.
+//
+// Host still has to be checked independently, because an absent Origin is
+// also what a rebound page's simple GET for an image or script produces, and
+// because a non-browser client's Host is the only authority available at
+// all: under rebinding the attacker's DNS answer is what the browser puts in
+// Host, so equality with anything derived from the request proves nothing
+// and Host must instead be checked against netguard.AddrIsLoopback, which
+// resolves everything it cannot prove to false.
+//
+// Failure direction: fail closed, like Serve's own address check — anything
+// this cannot prove safe (a present Origin, a Host that is not provably
+// loopback) is refused with a bare 403, no body detail, before reaching any
+// pprof handler.
+func requestGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") != "" || !netguard.AddrIsLoopback(r.Host) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ServeFromEnv starts the endpoint described by AGENTHUB_PPROF_ADDR and
