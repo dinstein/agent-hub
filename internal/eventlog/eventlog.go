@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dinstein/agent-hub/internal/jsonl"
+	"github.com/dinstein/agent-hub/internal/logx"
 )
 
 // FileName is the stream's file name under <data>/logs.
@@ -378,6 +379,15 @@ func (s *Stream) Append(r Record) {
 	}
 	r.TS = r.TS.UTC()
 	r.PID = s.pid
+	// Detail is polymorphic free text — a connect error, a respawn cause, a
+	// probe failure — and reaches this durable stream carrying whatever a
+	// downstream error or a child's stderr embedded, including resolved
+	// ${SECRET} values and userinfo credentials. Emit's slog twin passes
+	// through logx's scrub handler; this half must too, or a secret redacted in
+	// the process log persists in the clear in events.jsonl (which `agenthub
+	// events` and the GUI serve). Scrub before the cap so the fit measures the
+	// redacted text.
+	r.Detail = logx.ScrubString(r.Detail)
 	if len(r.Detail) > detailCap {
 		r.Detail = trimValidUTF8(r.Detail, detailCap)
 	}
