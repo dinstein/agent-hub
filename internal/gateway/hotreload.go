@@ -288,13 +288,11 @@ func (g *gateway) specByIDLocked(id string) (downstream.Spec, bool) {
 func specEqual(a, b downstream.Spec) bool {
 	if a.ID != b.ID || a.Kind != b.Kind || a.Command != b.Command ||
 		a.Cwd != b.Cwd || a.URL != b.URL || a.Derive != b.Derive ||
-		a.Provenance != b.Provenance || len(a.Args) != len(b.Args) {
+		a.Provenance != b.Provenance {
 		return false
 	}
-	for i := range a.Args {
-		if a.Args[i] != b.Args[i] {
-			return false
-		}
+	if !slices.Equal(a.Args, b.Args) {
+		return false
 	}
 	if !maps.Equal(a.Env, b.Env) || !maps.Equal(a.Headers, b.Headers) {
 		return false
