@@ -384,8 +384,16 @@ func (d *Discoverer) DiscoverFromResource(ctx context.Context, resourceURL, reso
 	}
 	res.Protected = prm
 	res.Status = DiscoveryProtected
-	if strings.TrimSpace(prm.Resource) != "" {
-		res.Resource = prm.Resource
+	// The document is fetched from candidates the resource server (or its
+	// unauthenticated 401 pointer) names, so prm.Resource is attacker-supplied.
+	// Adopt it as the RFC 8707 audience only when it names the server actually
+	// being contacted; otherwise a malicious server could publish a victim's
+	// resource identifier and have a token minted for that audience under its
+	// own id (RFC 9728 resource-identifier validation). On mismatch keep the
+	// honest canonical value already in res.Resource — a token bound to the
+	// server we contacted and sent to it is not a confused deputy.
+	if adv := strings.TrimSpace(prm.Resource); adv != "" && resourceNamesContacted(adv, ru) {
+		res.Resource = adv
 	}
 	if len(prm.AuthorizationServers) == 0 {
 		e := newFlowError(ErrorTypeDiscovery,
@@ -657,6 +665,24 @@ func canonicalResource(u *url.URL) string {
 		s = strings.TrimSuffix(s, "/")
 	}
 	return s
+}
+
+// resourceNamesContacted reports whether an advertised protected-resource
+// `resource` value names the server actually being contacted. It is accepted
+// when it equals the contacted URL's canonical resource, or the contacted
+// URL's bare origin (scheme://host) — the origin-root shape a deployment may
+// legitimately publish, where the resource id is the origin while the MCP
+// endpoint sits under a path. Anything else (a different host, or a different
+// path on the same host) is a cross-audience substitution and is refused. An
+// unparseable value is refused.
+func resourceNamesContacted(advertised string, ru *url.URL) bool {
+	adv, err := parseAbsoluteURL(advertised)
+	if err != nil {
+		return false
+	}
+	canon := canonicalResource(adv)
+	origin := canonicalResource(&url.URL{Scheme: ru.Scheme, Host: ru.Host})
+	return canon == canonicalResource(ru) || canon == origin
 }
 
 // ResourceMetadataURLFromResponse pulls the RFC 9728 `resource_metadata`

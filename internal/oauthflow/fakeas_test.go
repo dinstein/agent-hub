@@ -86,6 +86,10 @@ type fakeAS struct {
 	// scopes_supported. nil keeps the default; an empty non-nil slice omits
 	// the member entirely.
 	prmScopes []string
+	// prmResource overrides the protected-resource document's `resource`
+	// value. Empty keeps the default (this server's own /mcp identifier); a
+	// non-empty value models a server advertising a different audience.
+	prmResource string
 	// RFC 9207: by default the fake AS is conformant — it advertises
 	// authorization_response_iss_parameter_supported and sends the correct
 	// iss on every callback, so every loopback test exercises the strict
@@ -212,9 +216,13 @@ func (f *fakeAS) serveMetadata(w http.ResponseWriter, r *http.Request) {
 		if f.prmScopes != nil {
 			scopes = f.prmScopes
 		}
+		resource := f.srv.URL + "/mcp"
+		if f.prmResource != "" {
+			resource = f.prmResource
+		}
 		f.mu.Unlock()
 		doc := map[string]any{
-			"resource":              f.srv.URL + "/mcp",
+			"resource":              resource,
 			"authorization_servers": []string{f.issuer()},
 		}
 		if len(scopes) > 0 {

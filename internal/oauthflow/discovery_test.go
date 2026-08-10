@@ -195,6 +195,42 @@ func TestDiscoverFromResource(t *testing.T) {
 	}
 }
 
+// TestDiscoverFromResourceRejectsCrossOriginResource is the regression for
+// the 2026-08-10 sweep's confused-deputy finding: a malicious resource server
+// must not be able to publish a DIFFERENT audience in its protected-resource
+// document and have the token minted for it. The advertised value is refused
+// and the honest contacted resource is kept.
+func TestDiscoverFromResourceRejectsCrossOriginResource(t *testing.T) {
+	as := newFakeAS(t)
+	as.prmResource = "https://victim.example/api" // a different origin entirely
+	d := NewDiscoverer(as.client())
+	res, err := d.DiscoverFromResource(context.Background(), as.srv.URL+"/mcp", "")
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	if res.Resource != as.srv.URL+"/mcp" {
+		t.Fatalf("resource = %q, want the contacted server %q (substituted audience was adopted)",
+			res.Resource, as.srv.URL+"/mcp")
+	}
+}
+
+// TestDiscoverFromResourceAcceptsOriginRootResource guards the fix against
+// over-tightening: a server whose published resource id is its bare origin
+// while the MCP endpoint sits under a path is a legitimate shape, and that
+// value must still be adopted.
+func TestDiscoverFromResourceAcceptsOriginRootResource(t *testing.T) {
+	as := newFakeAS(t)
+	as.prmResource = as.srv.URL // bare origin, same host as the contacted URL
+	d := NewDiscoverer(as.client())
+	res, err := d.DiscoverFromResource(context.Background(), as.srv.URL+"/mcp", "")
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	if res.Resource != as.srv.URL {
+		t.Fatalf("resource = %q, want the advertised origin-root %q", res.Resource, as.srv.URL)
+	}
+}
+
 // TestDiscoverFromResourceOrigin covers a real deployment shape that was
 // undiscoverable before: the resource server publishes NO RFC 9728
 // document, but does serve RFC 8414 metadata on its own origin. The
