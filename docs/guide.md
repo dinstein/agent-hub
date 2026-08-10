@@ -302,9 +302,9 @@ history.jsonl` writes metadata to a new 0600 file and refuses to overwrite one;
 add `--payloads` only when you truly need decrypted arguments and results,
 because the exported file then carries credentials outside the bounded ledger.
 And `calls disable` stops new capture without deleting history or keys, just as
-`audit rotate-key` keeps the old keys so existing history stays readable.
+`calls rotate-key` keeps the old keys so existing history stays readable.
 
-`audit verify` detects modified metadata, corrupted payloads and swapped
+`calls verify` detects modified metadata, corrupted payloads and swapped
 references. All the evidence is local, so it cannot prove a whole day directory
 was deleted; if deletion evidence matters to you, archive externally.
 

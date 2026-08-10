@@ -259,9 +259,9 @@ agenthub calls verify
 导出和关掉它之前有两件事要知道。`calls export --output history.jsonl` 只把元数据写进一个新的
 0600 文件，并拒绝覆盖已有文件；确实需要明文参数与结果时才加 `--payloads`，因为导出文件从此就带着
 凭据离开了那个有界账本。以及 `calls disable` 只停止新增记录，不删历史也不删密钥，
-正如 `audit rotate-key` 会留着旧密钥，让已有历史仍然读得出来。
+正如 `calls rotate-key` 会留着旧密钥，让已有历史仍然读得出来。
 
-`audit verify` 能发现元数据被改、payload 损坏和引用被调包。但所有证据都在本地，所以它无法证明
+`calls verify` 能发现元数据被改、payload 损坏和引用被调包。但所有证据都在本地，所以它无法证明
 某个完整日目录从未被删过；删除证据对你重要的话，再接一个外部归档。
 
 ## 服务器出问题，而你当时没在看
