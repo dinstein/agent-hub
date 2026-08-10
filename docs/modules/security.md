@@ -320,6 +320,16 @@ window a hostname-level pre-check leaves open is closed here. It is fail-closed 
 cannot parse as an IP literal is refused rather than guessed at, and refusals return a `*BlockedError`
 satisfying `errors.Is(err, guard.ErrBlocked)`.
 
+**One thing defeats this screen, and it is recorded, not fixed: an environment proxy.** When
+`HTTP_PROXY`/`HTTPS_PROXY` is set, the transports that carry downstream traffic
+(`internal/mcp/transport`'s `newHTTPClient` and `internal/downstream/httpdial.go`'s auth client) hand
+`DialControl` the *proxy's* address, and the proxy then resolves and connects to the real destination
+— so the address this predicate screens is not the one reached. It is a self-inflicted precondition
+(the operator sets the daemon's environment; no client or downstream can), which is why it is owed a
+decision rather than an emergency patch. The gap and the shape of the decision live in
+[foundation.md](foundation.md) and [dataplane.md](dataplane.md); this note exists so an audit that
+starts from the SSRF boundary here does not conclude the screen is unconditional.
+
 ### Invariants and failure directions
 
 - "Private" in this package means uniformly "not publicly routable", not "RFC1918". When changing
