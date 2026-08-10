@@ -851,7 +851,7 @@ correctly absent: it is raised on the MCP face and handled there.
 Recorded beside the code they are about, not in a backlog file. All three were re-verified against the source
 during a later tidy pass and still reproduce.
 
-- **`clients/jsonc.go:535` — `dropChanged` unwinds only ONE created section level, which breaks the DEFAULT
+- **`clients/jsonc.go`'s `dropChanged` unwinds only ONE created section level, which breaks the DEFAULT
   `agenthub client connect vscode`.** VS Code's user placement is the two-level section `["mcp","servers"]`.
   Against a `settings.json` with comments (so the splice path is taken) and no `mcp` key, `spliceEntry`
   correctly inserts `"mcp": {"servers": {"agenthub": …}}`, but `dropChanged` deletes only `parent["servers"]`,
