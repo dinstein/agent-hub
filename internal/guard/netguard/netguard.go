@@ -99,20 +99,27 @@ var nonPublicPrefixes = []netip.Prefix{
 	// reaching it means something.
 	netip.MustParsePrefix("fec0::/10"), // site-local (RFC 3879, deprecated)
 
-	// The v4-embedding ranges. All three carry an IPv4 address inside an IPv6
+	// The v4-embedding ranges. All four carry an IPv4 address inside an IPv6
 	// one, so classifying the v6 form on its own merits answers the wrong
-	// question: ::127.0.0.1, 2002:7f00:1:: and 64:ff9b::7f00:1 all name
-	// 127.0.0.1, and none of them looks private to IsLoopback.
+	// question: ::127.0.0.1, 2002:7f00:1::, 64:ff9b::7f00:1 and
+	// 64:ff9b:1::7f00:1 all name 127.0.0.1, and none of them looks private to
+	// IsLoopback.
 	//
 	// Blocked wholesale rather than by decoding the embedded v4 and
 	// classifying that. Both of the deprecated forms exist only as a way to
 	// spell an IPv4 address, and neither has a use worth preserving: IPv4-
 	// compatible was deprecated by RFC 4291 and 6to4's relays were shut down
-	// (RFC 7526). Refusing the whole range costs nothing real and needs no
-	// decoder to be correct.
-	netip.MustParsePrefix("64:ff9b::/96"), // NAT64 well-known prefix
-	netip.MustParsePrefix("::/96"),        // IPv4-compatible (RFC 4291 §2.5.5.1, deprecated)
-	netip.MustParsePrefix("2002::/16"),    // 6to4 (RFC 3056, deprecated by RFC 7526)
+	// (RFC 7526). The two NAT64 prefixes are not deprecated, but a wholesale
+	// block is still the right call for them: the well-known prefix already
+	// takes this shape below, and a NAT64 translator's whole job is to carry
+	// an arbitrary v4 destination across the v6 side, so decoding and
+	// re-judging the embedded address would only reintroduce the address
+	// exactly the SSRF screen exists to catch. Refusing the whole range costs
+	// nothing real and needs no decoder to be correct.
+	netip.MustParsePrefix("64:ff9b::/96"),   // NAT64 well-known prefix (RFC 6052)
+	netip.MustParsePrefix("64:ff9b:1::/48"), // NAT64 local-use prefix (RFC 8215)
+	netip.MustParsePrefix("::/96"),          // IPv4-compatible (RFC 4291 §2.5.5.1, deprecated)
+	netip.MustParsePrefix("2002::/16"),      // 6to4 (RFC 3056, deprecated by RFC 7526)
 }
 
 // AddrIsPrivate reports whether a resolved address is NOT publicly routable

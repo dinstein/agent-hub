@@ -88,7 +88,8 @@ func TestAddrIsPrivate(t *testing.T) {
 		{"255.255.255.255", true},
 		{"2001:db8::1", true},
 		{"100::1", true},
-		{"64:ff9b::a00:1", true}, // NAT64 embedding 10.0.0.1
+		{"64:ff9b::a00:1", true},    // NAT64 well-known prefix embedding 10.0.0.1
+		{"64:ff9b:1:a00:1::", true}, // NAT64 local-use prefix (RFC 8215) embedding 10.0.0.1
 		// multicast
 		{"224.0.0.1", true},
 		{"ff02::1", true},
@@ -304,21 +305,35 @@ func TestDNSRebindScenario(t *testing.T) {
 	}
 }
 
-// TestV4EmbeddingV6FormsAreNotPublic covers the three ways an IPv4 address can
+// TestV4EmbeddingV6FormsAreNotPublic covers the four ways an IPv4 address can
 // be written as an IPv6 one. Classifying the v6 form on its own merits answers
-// the wrong question: ::127.0.0.1, 2002:7f00:1:: and 64:ff9b::7f00:1 all name
-// 127.0.0.1, and none of them looks like loopback to netip.
+// the wrong question: ::127.0.0.1, 2002:7f00:1::, 64:ff9b::7f00:1 and
+// 64:ff9b:1:7f00:1:: all name 127.0.0.1, and none of them looks like loopback
+// to netip.
 //
-// Only the NAT64 prefix was covered. The other two reached DialControl — the
-// re-screen that exists precisely to be the last word on where a socket may
-// connect — and were allowed there too, so neither the hostname precheck nor
-// the dial-time check would have stopped them.
+// Only the NAT64 well-known prefix was covered originally. The other forms
+// reached DialControl — the re-screen that exists precisely to be the last
+// word on where a socket may connect — and were allowed there too, so neither
+// the hostname precheck nor the dial-time check would have stopped them.
+// RFC 8215's local-use NAT64 prefix, 64:ff9b:1::/48, was the same gap: an
+// incomplete enumeration of the same family, not a decision to leave it open.
+//
+// The block is wholesale for every one of these, including a NAT64 form that
+// embeds a PUBLIC v4 address (the last two "private" entries below): a NAT64
+// translator's whole job is to carry an arbitrary v4 destination across the
+// v6 side, so decoding and re-judging the embedded address would only
+// reintroduce the address the SSRF screen exists to catch. The well-known
+// prefix already draws the line there, and the local-use prefix mirrors it.
 func TestV4EmbeddingV6FormsAreNotPublic(t *testing.T) {
 	private := []string{
 		"::ffff:127.0.0.1", // v4-mapped (already handled by Unmap)
 		"::ffff:10.0.0.1",
 		"64:ff9b::7f00:1", // NAT64 well-known
 		"64:ff9b::a00:1",
+		"64:ff9b:1:7f00:1::",  // NAT64 local-use (RFC 8215), embeds 127.0.0.1
+		"64:ff9b:1:a00:1::",   // NAT64 local-use, embeds 10.0.0.1 (private)
+		"64:ff9b:1:808:808::", // NAT64 local-use, embeds 8.8.8.8 (PUBLIC) — still
+		// blocked: the whole prefix is wholesale-refused, not decoded
 		"::127.0.0.1", // IPv4-compatible, deprecated
 		"::10.0.0.1",
 		"::169.254.169.254", // the cloud metadata address, v4-compatible
@@ -355,7 +370,7 @@ func TestV4EmbeddingV6FormsAreNotPublic(t *testing.T) {
 // refused above, but it must never CONFER local trust either — only a literal
 // private address or a localhost name does that.
 func TestV4EmbeddingFormsDoNotGrantLocalTrust(t *testing.T) {
-	for _, s := range []string{"::127.0.0.1", "2002:7f00:1::", "64:ff9b::7f00:1"} {
+	for _, s := range []string{"::127.0.0.1", "2002:7f00:1::", "64:ff9b::7f00:1", "64:ff9b:1:7f00:1::"} {
 		if HostIsDefinitelyPrivate(s) {
 			t.Errorf("%s granted local trust; only literal private addresses may", s)
 		}
