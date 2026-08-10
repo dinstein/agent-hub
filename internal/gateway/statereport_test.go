@@ -2,14 +2,63 @@ package gateway
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/mcp"
 	"github.com/dinstein/agent-hub/internal/mcp/transport"
+	"github.com/dinstein/agent-hub/internal/scope"
 	"github.com/dinstein/agent-hub/internal/testutil/fakemcp"
 )
+
+// TestConnDiagnosisScopesAndRedacts is the regression for the 2026-08-10
+// sweep's cross-scope disclosure finding. The `status` meta-tool crosses back
+// to an MCP caller (unlike serverStates(), which feeds the trusted daemon
+// link), yet connDiagnosis reported EVERY applied server's id and the raw
+// connect detail — which can quote a server URL's query, i.e. a credential.
+// The report must be filtered to the caller's scope and must not render the
+// raw detail.
+func TestConnDiagnosisScopesAndRedacts(t *testing.T) {
+	t.Parallel()
+	g := newCredGateway("alpha", "beta")
+	g.noteConnectResult("alpha", &transport.Error{
+		StatusCode: 401,
+		Err:        errors.New("GET https://alpha.example/mcp?token=ALPHASECRET -> 401"),
+	})
+	g.noteConnectResult("beta", &transport.Error{
+		StatusCode: 500,
+		Err:        errors.New("GET https://beta.example/mcp?api_key=BETASECRET failed"),
+	})
+
+	// A caller scoped to alpha only.
+	es := &scope.EffectiveScope{Servers: map[string]scope.ToolView{"alpha": {}}}
+	out := g.connDiagnosis(es)
+
+	if strings.Contains(out, "beta") || strings.Contains(out, "BETASECRET") {
+		t.Fatalf("out-of-scope server leaked into the status report:\n%s", out)
+	}
+	if strings.Contains(out, "ALPHASECRET") || strings.Contains(out, "token=") {
+		t.Fatalf("raw connect detail (a credential-bearing URL) was rendered:\n%s", out)
+	}
+	if !strings.Contains(out, "alpha") {
+		t.Fatalf("the in-scope failed server should still be reported:\n%s", out)
+	}
+	if !strings.Contains(out, "needs auth") {
+		t.Fatalf("the actionable needs-auth hint should be kept:\n%s", out)
+	}
+
+	// A nil scope (a local session with no authority) sees every server, but
+	// still no raw detail.
+	all := g.connDiagnosis(nil)
+	if !strings.Contains(all, "alpha") || !strings.Contains(all, "beta") {
+		t.Fatalf("nil scope should report both servers:\n%s", all)
+	}
+	if strings.Contains(all, "ALPHASECRET") || strings.Contains(all, "BETASECRET") {
+		t.Fatalf("nil scope still must not render raw detail:\n%s", all)
+	}
+}
 
 func TestServerStatesClassifiesHandshakeAuthByTypedStatus(t *testing.T) {
 	t.Parallel()
