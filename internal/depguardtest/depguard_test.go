@@ -375,6 +375,24 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 			assertClean(t, "4-logx", out, err)
 		})
 	})
+
+	// Also cover internal/guard with the same rule-4 shaped probe: it has
+	// its own depguard rule (guard-zero-dep) that would silently rot if
+	// only platform and logx were exercised (canonical.md §6).
+	t.Run("rule4_guard_zero_dep", func(t *testing.T) {
+		t.Run("violation_blocked", func(t *testing.T) {
+			writeProbe(t, filepath.Join(work, "internal", "guard", "zz_depguard_probe_rule4.go"),
+				"package guard\n\n"+
+					"// Probe: internal/guard is a zero-dependency foundation (canonical.md §2 rule 4).\n"+
+					"import _ \"github.com/spf13/cobra\"\n")
+			out, err := runLint(t, bin, work, "internal/guard")
+			assertBlocked(t, "4-guard", out, err)
+		})
+		t.Run("clean_passes", func(t *testing.T) {
+			out, err := runLint(t, bin, work, "internal/guard")
+			assertClean(t, "4-guard", out, err)
+		})
+	})
 }
 
 // assertNoProbesIn fails if a probe file exists anywhere under dir. Run
