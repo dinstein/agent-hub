@@ -1,9 +1,9 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -730,52 +730,45 @@ type namedEntry struct {
 	Entry registry.ServerEntry
 }
 
-// stdinEntry is the shape accepted per server in pasted JSON. It matches the
-// de-facto client convention ("command"/"args"/"env", optional "type") plus
-// our own field names ("transport", "cwd", "headers").
-type stdinEntry struct {
-	Type      string            `json:"type,omitempty"`
-	Transport string            `json:"transport,omitempty"`
-	Command   string            `json:"command"`
-	Args      []string          `json:"args,omitempty"`
-	Env       map[string]string `json:"env,omitempty"`
-	Cwd       string            `json:"cwd,omitempty"`
-	URL       string            `json:"url,omitempty"`
-	Headers   map[string]string `json:"headers,omitempty"`
-	// OAuth carries the login hints (issuer / scopes / resource metadata
-	// pointer) for a server whose authorization server cannot be found by
-	// RFC 9728 discovery. NeedsAuth is deliberately not accepted: it is
-	// runtime state (a live 401), never configuration.
-	OAuth *registry.OAuthHint `json:"oauth,omitempty"`
-}
-
-// normalizeStdin turns pasted JSON into registry entries. Accepted shapes,
-// in order of detection (docs/modules/controlplane.md: "paste a README's mcpServers
-// fragment" is the highest-frequency action):
+// normalizeStdin turns pasted JSON into registry entries.
 //
-//  1. {"mcpServers": {"name": {...}, ...}}   client-config wrapper
-//  2. {"command": ..., ...}                  single entry (name argument required)
-//  3. {"name": {...}, ...}                   bare name->entry map
+// It reads the document with internal/catalog — Recognize for the shape,
+// MapEntry for each entry — which is the SAME reader the GUI's paste preview
+// uses, with the one deliberate difference passed in as an argument:
+// RejectUnknownFields. A key agenthub does not model, or a key whose value has
+// a type it cannot read, is an ERROR here rather than a warning, because this
+// path writes with no preview in front of it; `server add` would otherwise
+// report success while the "oauth" block the user pasted is simply absent
+// (docs/modules/controlplane.md).
 //
-// A name argument may rename the entry only when exactly one entry is
-// present. Results are sorted by name for deterministic output.
+// This used to be a second reader — a struct with DisallowUnknownFields and a
+// literal "mcpServers" check — and it drifted from the first in every
+// direction the type system does not police. It modelled no "disabled" /
+// "enabled" key, so a Cline or Zed snippet was a hard error here and fine in
+// the GUI; it knew one wrapper key, so a VS Code {"mcp":{"servers":…}}
+// fragment failed with a per-entry complaint about a server named "mcp"; and
+// it read only "url", not the "serverUrl" / "httpUrl" spellings. The transport
+// table had already been shared for the same reason one drift earlier (see
+// catalog.TransportFromSpelling); this is the rest of it.
+// TestPasteRoutesAgreeOnWholeSnippets drives whole documents through both
+// routes and compares the entries, so a private copy of any of it fails there
+// rather than in somebody's paste.
 //
-// Every transport is accepted, not just stdio. The kind comes from "type" or,
-// failing that, "transport"; with neither, a non-empty "url" means http and
-// anything else means stdio.
+// What stays this route's own, because it is policy rather than reading:
 //
-// The marker itself is resolved by catalog.TransportFromSpelling, the ONE
-// table both paste paths use. They used to carry separate ones: the catalog
-// folded case and accepted "local", "command", "streamable_http" and
-// "remote", while this path matched exactly and knew only three spellings of
-// streamable-http — so a snippet `agenthub catalog` accepted, `server add
-// --stdin` refused, for no reason a user could infer from either. Sharing the
-// table is what closed that, and TestNormalizeStdinAgreesWithTheCatalogOnSpellings
-// drives the table's whole input set through here, so re-inlining a private
-// copy fails in that test rather than in somebody's paste.
+//   - the entry lands DISABLED whatever the pasted configuration says, exactly
+//     as the flags path does. `add` records what a server IS; `server enable`
+//     is the separate step that probes it and puts it into service. Nothing is
+//     lost in silence — the command prints "added: <name> (…, disabled)".
+//   - Source is "manual": an operator typed this, whatever it was copied from.
+//   - a remote endpoint is screened with no --local escape hatch: a snippet
+//     copied from a README must not be able to point the connector at a
+//     private address (fail-closed; `server add --url --local` is the
+//     explicit, typed-by-a-human path).
 //
-// Unmodeled keys are an ERROR rather than a silent drop; see the decoder below
-// for why that direction is not negotiable.
+// A name argument may rename the entry only when exactly one entry is present,
+// and is REQUIRED for the single-entry shape, which names nothing. Results are
+// sorted by name for deterministic output.
 func normalizeStdin(data []byte, nameArg string) ([]namedEntry, error) {
 	invalid := func(format string, a ...any) *Error {
 		return &Error{Code: CodeInvalidJSON, ExitCode: ExitGeneral, Message: fmt.Sprintf(format, a...)}
@@ -788,21 +781,14 @@ func normalizeStdin(data []byte, nameArg string) ([]namedEntry, error) {
 	if err := json.Unmarshal(data, &top); err != nil {
 		return nil, invalid("stdin is not a JSON object: %v", err)
 	}
-
-	rawEntries := map[string]json.RawMessage{}
-	switch {
-	case top["mcpServers"] != nil:
-		if err := json.Unmarshal(top["mcpServers"], &rawEntries); err != nil {
-			return nil, invalid(`"mcpServers" must be an object of name -> entry: %v`, err)
-		}
-	case isStringField(top, "command") || isStringField(top, "url"):
-		// Single bare entry.
-		if nameArg == "" {
-			return nil, Usagef("a server name argument is required when stdin holds a single entry")
-		}
-		rawEntries[nameArg] = json.RawMessage(data)
-	default:
-		rawEntries = top
+	shape, _, rawEntries, ok := catalog.Recognize(top)
+	if !ok {
+		return nil, invalid("stdin does not look like an MCP server configuration; "+
+			"expected a wrapper key (%s), a name -> entry object, or a single entry "+
+			"with a command or url", strings.Join(catalog.SectionNames(), ", "))
+	}
+	if shape == catalog.ShapeSingleEntry && nameArg == "" {
+		return nil, Usagef("a server name argument is required when stdin holds a single entry")
 	}
 	if len(rawEntries) == 0 {
 		return nil, invalid("no server entries found in stdin JSON")
@@ -823,71 +809,15 @@ func normalizeStdin(data []byte, nameArg string) ([]namedEntry, error) {
 		if strings.TrimSpace(name) == "" {
 			return nil, invalid("server entries must have a non-empty name")
 		}
-		// DisallowUnknownFields: a key we do not model must be reported, not
-		// dropped. Silently discarding one produces the worst failure shape
-		// there is — `server add` reports success while the setting the user
-		// pasted (an "oauth" block, say) is simply absent, and the mismatch
-		// only surfaces much later as an unrelated-looking auth failure.
-		dec := json.NewDecoder(bytes.NewReader(raw))
-		dec.DisallowUnknownFields()
-		var spec stdinEntry
-		if err := dec.Decode(&spec); err != nil {
-			return nil, invalid("server %q: %v", name, err)
+		entry, _, err := catalog.MapEntry(raw, catalog.RejectUnknownFields)
+		if err != nil {
+			return nil, stdinEntryError(name, err)
 		}
-		// "type" is the de-facto client-config spelling, "transport" ours;
-		// either may name the transport, and a bare "url" implies http
-		// (which is what every published remote-server snippet looks like).
-		marker := strings.TrimSpace(spec.Type)
-		if marker == "" {
-			marker = strings.TrimSpace(spec.Transport)
-		}
-		var kind string
-		switch {
-		case marker != "":
-			// One spelling table, shared with the catalog paste parser, so the
-			// same snippet resolves the same way through either command. An
-			// unrecognized marker stays "" and is refused below rather than
-			// inferred: a typo'd "htpp" must not become a local process launch.
-			kind = catalog.TransportFromSpelling(marker)
-		case spec.URL != "":
-			kind = registry.TransportHTTP
-		default:
-			kind = registry.TransportStdio
-		}
-		// Enabled is false for the same reason as the flags path: `add` is
-		// configuration only, `enable` puts the server into service.
-		entry := registry.ServerEntry{Transport: kind, Enabled: false, Source: sourceManual}
-		// Login hints are transport-independent: carried over before the
-		// transport switch so an stdio entry that proxies to a remote AS
-		// keeps them too.
-		entry.OAuth = spec.OAuth
-		switch kind {
-		case registry.TransportStdio:
-			if spec.Command == "" {
-				return nil, invalid("server %q: %q is required for the stdio transport", name, "command")
-			}
-			entry.Command = spec.Command
-			entry.Args = spec.Args
-			entry.Env = spec.Env
-			entry.Cwd = spec.Cwd
-		case registry.TransportHTTP, registry.TransportSSE:
-			if spec.URL == "" {
-				return nil, invalid("server %q: %q is required for the %s transport", name, "url", kind)
-			}
-			// Pasted JSON has no --local escape hatch on purpose: a snippet
-			// copied from a README must not be able to point the connector
-			// at a private address (fail-closed; `server add --url --local`
-			// is the explicit, typed-by-a-human path).
-			if err := validateEndpoint(spec.URL, false); err != nil {
+		entry.Enabled = false
+		entry.Source = sourceManual
+		if entry.Transport != registry.TransportStdio {
+			if err := validateEndpoint(entry.URL, false); err != nil {
 				return nil, err
-			}
-			entry.URL = spec.URL
-			entry.Headers = spec.Headers
-		default:
-			return nil, &Error{
-				Code: CodeUnsupportedTransport, ExitCode: ExitGeneral,
-				Message: fmt.Sprintf("server %q: unknown transport %q", name, kind),
-				Hint:    "supported transports: stdio, http (streamable-http), sse (legacy HTTP+SSE)",
 			}
 		}
 		entries = append(entries, namedEntry{Name: name, Entry: entry})
@@ -896,14 +826,20 @@ func normalizeStdin(data []byte, nameArg string) ([]namedEntry, error) {
 	return entries, nil
 }
 
-// isStringField reports whether m[key] exists and is a JSON string — used to
-// tell a single bare entry ({"command":"npx"}) apart from a name->entry map
-// (where every value is an object).
-func isStringField(m map[string]json.RawMessage, key string) bool {
-	raw, ok := m[key]
-	if !ok {
-		return false
+// stdinEntryError translates a catalog mapping refusal into this command's
+// vocabulary. It switches on the KIND rather than on the message, so the two
+// routes may word the same refusal differently without the exit code moving.
+func stdinEntryError(name string, err error) error {
+	var mapErr *catalog.EntryError
+	if errors.As(err, &mapErr) && mapErr.Kind == catalog.EntryUnknownTransport {
+		return &Error{
+			Code: CodeUnsupportedTransport, ExitCode: ExitGeneral,
+			Message: fmt.Sprintf("server %q: %s", name, mapErr.Message),
+			Hint:    "supported transports: stdio, http (streamable-http), sse (legacy HTTP+SSE)",
+		}
 	}
-	var s string
-	return json.Unmarshal(raw, &s) == nil
+	return &Error{
+		Code: CodeInvalidJSON, ExitCode: ExitGeneral,
+		Message: fmt.Sprintf("server %q: %v", name, err),
+	}
 }
