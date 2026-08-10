@@ -156,9 +156,10 @@ func (g *gateway) rebuildAndNotify() {
 	g.swapCatalog(rt, true)
 }
 
-// buildColdCatalog aggregates the on-disk tool cache. It is the pre-connection catalog of docs/flows.md — listable, not
-// callable for downstream tools — and never fails: an aggregation error
-// degrades to an empty catalog, as does an unknown policy.
+// buildColdCatalog aggregates the on-disk tool cache. It is the
+// pre-connection catalog of docs/flows.md — listable, not callable for
+// downstream tools — and never fails: an aggregation error degrades to an
+// empty catalog.
 func (g *gateway) buildColdCatalog() *router.Router {
 	cached, providers := g.cachedCatalog, g.providers()
 	rt, err := router.BuildFromCacheWith(cached, providers)
