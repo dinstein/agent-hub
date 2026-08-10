@@ -479,21 +479,18 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 		return
 	}
 	// The routed tool's definition feeds the token tier gate (annotations;
-	// absent = destructive, fail-closed — see pipeline.ToolTier). It is read
-	// from the BASE server: a derived instance serves the same catalog by
-	// construction, and the base list is the one the router aggregated.
-	var annotations json.RawMessage
-	for _, def := range srv.Tools() {
-		if def.Name == route.RawTool {
-			annotations = def.Annotations
-			break
-		}
-	}
+	// absent = destructive, fail-closed — see pipeline.ToolTier). rt.Def
+	// reads the router's own snapshot rather than re-scanning the server's
+	// live tool table (router.Def's doc: that is exactly why it exists), so
+	// a list_changed refresh that lands between routing and this read cannot
+	// hand the gate a definition inconsistent with the snapshot the call was
+	// routed and scope-checked against.
+	def, _ := rt.Def(exposed)
 
 	g.runCall(ctx, req, callTarget{
 		exposed:     exposed,
 		route:       route,
-		annotations: annotations,
+		annotations: def.Annotations,
 		// Derived instances (docs/modules/dataplane.md): which PROCESS runs
 		// this call is a connection-plane decision made per call. It is made
 		// INSIDE the call closure, so it happens after both gates and after

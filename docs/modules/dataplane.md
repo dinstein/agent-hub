@@ -602,8 +602,11 @@ unchanged, so an expired definition is never wired into the catalog.
 the readiness check — they have no downstream to wait for, and calling them busy while other servers
 connect would be a lie. Derived instance selection happens **after routing and before the gate chain**:
 "which process executes" is a per-call connection-plane decision, while routing — and therefore
-visibility, scope and the quota key — is always the baseline server, whose tool table also supplies the
-routed tool's `annotations`.
+visibility, scope and the quota key — is always the baseline server. Both branches read the routed
+tool's `annotations` the same way, through `router.Def(exposed)` rather than a scan of a server's
+live tool table: `Def` returns the router's own snapshot, so a `list_changed` refresh landing between
+routing and this read cannot hand the gate an annotation set inconsistent with the snapshot the call
+was routed and scope-checked against.
 
 **Unknown names are dropped fail-closed and never reinterpreted as meta-tools.** One exception is
 carefully drawn: a name that **has a route** but is not on the surface is hidden by **scope**, so the call
