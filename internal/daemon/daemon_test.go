@@ -16,6 +16,7 @@ import (
 	"github.com/dinstein/agent-hub/api"
 	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/daemon"
+	"github.com/dinstein/agent-hub/internal/diag"
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/gateway"
 	"github.com/dinstein/agent-hub/internal/mcp"
@@ -233,6 +234,29 @@ func TestDaemonRefusesSecondInstance(t *testing.T) {
 	})
 	if !errors.Is(err, ctlapi.ErrAlreadyRunning) {
 		t.Fatalf("second Run = %v, want ErrAlreadyRunning", err)
+	}
+}
+
+// TestDaemonRefusesNonLoopbackProfilingAddr mirrors the gateway's
+// TestRunRefusesNonLoopbackProfilingAddr: profiling (internal/diag) is armed
+// before any of the daemon's slower startup — registry, socket, owner watch
+// — precisely so that a refusal here reaches the process rather than
+// stopping silently inside internal/diag. It must fail before OnReady ever
+// fires.
+func TestDaemonRefusesNonLoopbackProfilingAddr(t *testing.T) {
+	t.Setenv(diag.EnvAddr, "0.0.0.0:0")
+	resolver := testResolver(t, t.TempDir())
+
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	err := daemon.Run(ctx, daemon.Config{
+		Version:  "test-daemon",
+		Resolver: resolver,
+		Log:      slog.New(slog.DiscardHandler),
+	})
+	if !errors.Is(err, diag.ErrNotLoopback) {
+		t.Fatalf("Run() error = %v, want ErrNotLoopback", err)
 	}
 }
 
