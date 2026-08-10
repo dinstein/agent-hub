@@ -274,7 +274,7 @@ invalid zero-value `Addr` (fail-closed) and calls `Unmap()` before deciding, so 
 classified as `10.0.0.1`. Beyond the standard library's own loopback / private / unspecified /
 link-local / multicast classifiers it adds a prefix table: `0.0.0.0/8`, CGNAT, the IETF protocol
 assignments, the three TEST-NETs, benchmark `198.18.0.0/15`, `240.0.0.0/4`, the v6 discard and
-documentation ranges, **deprecated IPv6 site-local `fec0::/10`**, and the three v4-embedding
+documentation ranges, **deprecated IPv6 site-local `fec0::/10`**, and the four v4-embedding
 prefixes.
 
 Two shapes in that table are the ones to watch:
@@ -284,14 +284,18 @@ Two shapes in that table are the ones to watch:
   `DialControl` both consult that single function, one missing prefix opened both doors at once — a
   range being deprecated (RFC 3879) makes it *less* likely to be filtered elsewhere on the host, not
   more.
-- `64:ff9b::/96` (NAT64), `::/96` (IPv4-compatible, deprecated by RFC 4291) and `2002::/16` (6to4,
-  deprecated by RFC 7526) are all ways of writing an IPv4 address as IPv6, so **judging them by their
-  v6 form answers the wrong question** — `::127.0.0.1`, `2002:7f00:1::` and `64:ff9b::7f00:1` all mean
-  127.0.0.1, and none of them looks like loopback to `IsLoopback()`. (At one point only the NAT64
-  range was covered; the other two got past even `DialControl`.) We reject the whole range rather than
-  extracting and reclassifying the embedded v4: the only purpose the two deprecated forms have **is
-  spelling an IPv4 address**, rejecting the range costs nothing, and it doesn't depend on a decoder
-  being correct.
+- `64:ff9b::/96` (NAT64 well-known, RFC 6052), `64:ff9b:1::/48` (NAT64 local-use, RFC 8215), `::/96`
+  (IPv4-compatible, deprecated by RFC 4291) and `2002::/16` (6to4, deprecated by RFC 7526) are all ways
+  of writing an IPv4 address as IPv6, so **judging them by their v6 form answers the wrong question**
+  — `::127.0.0.1`, `2002:7f00:1::`, `64:ff9b::7f00:1` and `64:ff9b:1:7f00:1::` all mean 127.0.0.1, and
+  none of them looks like loopback to `IsLoopback()`. (At one point only the NAT64 well-known prefix
+  was covered; the deprecated forms got past even `DialControl`, and the NAT64 local-use prefix was
+  the same gap, caught later by the 2026-07-31 sweep.) We reject the whole range rather than extracting
+  and reclassifying the embedded v4: the deprecated forms exist only **to spell an IPv4 address**, and
+  a NAT64 translator's whole job is to carry an arbitrary v4 destination — public or private — across
+  the v6 side, so decoding and re-judging that address would only reintroduce the thing this predicate
+  exists to catch. Rejecting the whole range costs nothing real and doesn't depend on a decoder being
+  correct.
 
 `AddrIsLoopback(addr) bool` is a **third question, not a third answer to that one**: the two above
 judge a destination we are about to reach, this one judges an authority on *this* side — the address
@@ -503,18 +507,3 @@ that replacing the deprecated mechanism is a constructor swap rather than a rewr
   `internal/platform`; anywhere else it is an `errors.ErrUnsupported` stub, so **the offline refresh
   path would rather refuse to run than run unordered**: two processes racing for one single-use
   refresh token is worse than one "unsupported" refresh failure.
-
-## Raised by the 2026-07-31 sweep, not fixed on that branch
-
-Recorded beside the invariant it bends rather than in a backlog file, because that is who needs to
-see it. It survived three-lens adversarial verification and was re-read against the code; it was not
-fixed on the sweep's branch, whose scope was the findings both engines confirmed independently plus
-the two single-engine highs.
-
-- **`netguard.go:113` — the non-public prefix table omits RFC 8215's local-use NAT64 prefix
-  `64:ff9b:1::/48`.** The v4-embedding group lists `64:ff9b::/96`, `::/96` and `2002::/16` and nothing
-  else, so on a network routing the local-use prefix through a NAT64 translator, a literal from it
-  encodes an RFC1918 destination that `AddrIsPrivate` answers false for — passing both the hostname
-  screen and the dial-time hook. The reasoning already written down for the v4-embedding block
-  ("classifying the v6 form on its own merits answers the wrong question") applies identically, and
-  that set was widened once before, which makes this an incomplete enumeration rather than a decision.
