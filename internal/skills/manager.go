@@ -99,8 +99,10 @@ func (m *Manager) Add(ctx context.Context, req AddRequest) (*Skill, error) {
 	}
 	// Content carrying our sentinel strings could truncate its own block on
 	// a sentinel-block target and orphan everything after the fake END, so
-	// it is refused at the door rather than at install time.
-	if containsSentinelMarker(name) || containsSentinelMarker(sc.meta.Description) || containsSentinelMarker(sc.meta.Body) {
+	// it is refused at the door rather than at install time. The check covers
+	// every field renderSkillBody embeds — including the version and file
+	// paths — not just name/description/body.
+	if scanCarriesSentinelMarker(name, sc) {
 		return nil, &ImportError{Path: req.Path, Reason: "content contains an agenthub sentinel marker"}
 	}
 
@@ -742,7 +744,7 @@ func (m *Manager) Update(ctx context.Context, req UpdateRequest) (*UpdateResult,
 		if err := m.scanContent(sc, name); err != nil {
 			return err
 		}
-		if containsSentinelMarker(name) || containsSentinelMarker(sc.meta.Description) || containsSentinelMarker(sc.meta.Body) {
+		if scanCarriesSentinelMarker(name, sc) {
 			return &ImportError{Path: src, Reason: "content contains an agenthub sentinel marker"}
 		}
 		next := sk
