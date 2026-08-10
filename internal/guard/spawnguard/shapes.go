@@ -543,14 +543,27 @@ func checkContainer(base string, args []string) error {
 			}
 			continue // an explicit --privileged=false is what it says
 		}
+		// A bare single-dash cluster (-it, -itd, -itv, -itv/:/host, -v/:/host):
+		// decompose it the way docker/pflag do rather than letting the generic
+		// branch below assume the WHOLE token takes a value and swallow the next
+		// argument — which hid `-it --privileged` and `-itv /:/host` from the
+		// checks below.
+		if strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") && len(a) > 2 {
+			consumed, err := checkShortCluster(a, args, i)
+			if err != nil {
+				return err
+			}
+			if consumed {
+				i++
+			}
+			continue
+		}
 		key, val := a, ""
 		hasVal := false
 		switch {
 		case strings.HasPrefix(a, "--") && strings.Contains(a, "="):
 			key, val, _ = strings.Cut(a, "=")
 			hasVal = true
-		case strings.HasPrefix(a, "-v") && len(a) > 2 && !strings.HasPrefix(a, "--"):
-			key, val, hasVal = "-v", a[2:], true // pflag attached shorthand
 		case containerBoolFlags[a]:
 			// Takes no value: the next argument is not its value.
 		case strings.HasPrefix(a, "-") && i+1 < len(args):
@@ -575,6 +588,42 @@ func checkContainer(base string, args []string) error {
 		}
 	}
 	return nil
+}
+
+// checkShortCluster decomposes a bare short-flag cluster (-it, -itd, -itv,
+// -itv/:/host, -v/:/host) and reports whether it consumed the NEXT argument.
+//
+// docker/pflag stack boolean shorts and let the LAST short take a value —
+// attached as the token remainder, or the following argument. containerBoolFlags
+// (its "-x" single-letter entries) says which letters are valueless. A leading
+// run of those consumes nothing; the first value-taking short ends the cluster
+// and takes the value, which is then judged by checkContainerFlag under its
+// "-x" key (only "-v" is inspected there; the rest fall through harmlessly).
+//
+// An unrecognized short letter is treated as value-taking, not blocked: that is
+// this layer's shape-check direction (fail open), the docker short set is closed
+// so it does not arise in practice, and blocking would turn a future docker flag
+// into a hard connect-time failure. The failure this fixes was the OPPOSITE — a
+// cluster mistaken for a single value-taking flag, swallowing the escape flag
+// after it.
+func checkShortCluster(a string, args []string, i int) (consumedNext bool, err error) {
+	letters := a[1:]
+	for j := 0; j < len(letters); j++ {
+		short := letters[j : j+1]
+		if containerBoolFlags["-"+short] {
+			continue // a valueless short: the rest of the cluster follows
+		}
+		// The first non-boolean (value-taking or unknown) short ends the
+		// cluster and takes the value.
+		if rest := letters[j+1:]; rest != "" {
+			return false, checkContainerFlag("-"+short, rest)
+		}
+		if i+1 < len(args) {
+			return true, checkContainerFlag("-"+short, args[i+1])
+		}
+		return false, nil // trailing value-taking short with no value present
+	}
+	return false, nil // an all-boolean cluster consumes nothing
 }
 
 func checkContainerFlag(key, val string) error {

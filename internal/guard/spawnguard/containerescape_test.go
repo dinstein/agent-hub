@@ -78,3 +78,61 @@ func TestContainerEscapeFlagsAreMatchedByMeaningNotSpelling(t *testing.T) {
 		})
 	}
 }
+
+// TestContainerEscapeShortFlagClusters is the regression for the 2026-08-10
+// sweep's critical finding. A combined short-flag cluster like -it is not in
+// containerBoolFlags (which lists -i and -t separately), so it fell to the
+// generic "assume it takes a value" branch and SWALLOWED the following
+// argument — the very escape flag or mount value the guard exists to judge.
+// The variant -itv additionally hid a mount because checkContainerFlag never
+// saw the -v key.
+func TestContainerEscapeShortFlagClusters(t *testing.T) {
+	g := New(Config{})
+
+	blocked := []struct {
+		name string
+		args []string
+	}{
+		{"cluster hides privileged", []string{"run", "-it", "--privileged", "img"}},
+		{"cluster hides separate volume", []string{"run", "-it", "-v", "/:/host", "img"}},
+		{"cluster ends in v, next-arg volume", []string{"run", "-itv", "/:/host", "img"}},
+		{"cluster ends in v, attached volume", []string{"run", "-itv/:/host", "img"}},
+		{"v-first attached volume", []string{"run", "-v/:/host", "img"}},
+		{"cluster then privileged", []string{"run", "-itd", "--privileged", "img"}},
+		{"exec cluster hides privileged", []string{"exec", "-it", "--privileged", "ctr", "sh"}},
+	}
+	for _, tc := range blocked {
+		t.Run(tc.name, func(t *testing.T) {
+			err := g.Check("docker", tc.args, nil)
+			if err == nil {
+				t.Fatalf("docker %v was allowed", tc.args)
+			}
+			if !errors.Is(err, guard.ErrBlocked) {
+				t.Errorf("refusal does not unwrap to guard.ErrBlocked: %v", err)
+			}
+		})
+	}
+
+	// Benign clusters and attached values must still pass, so the fix does not
+	// push operators off ordinary invocations. An unrecognized short letter is
+	// tolerated (fail open, matching this layer's shape-check direction).
+	allowed := []struct {
+		name string
+		args []string
+	}{
+		{"plain interactive tty", []string{"run", "-it", "img"}},
+		{"detached interactive tty", []string{"run", "-itd", "img"}},
+		{"cluster with project mount", []string{"run", "-itv", "./data:/data", "img"}},
+		{"memory attached in cluster", []string{"run", "-itm512m", "img"}},
+		{"publish attached in cluster", []string{"run", "-itp8080:80", "img"}},
+		{"hostname short takes a value", []string{"run", "-h", "myhost", "img"}},
+		{"unknown short letter tolerated", []string{"run", "-itZ", "img"}},
+	}
+	for _, tc := range allowed {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := g.Check("docker", tc.args, nil); err != nil {
+				t.Fatalf("docker %v was refused: %v", tc.args, err)
+			}
+		})
+	}
+}
