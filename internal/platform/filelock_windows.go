@@ -16,10 +16,9 @@ import (
 //
 // Cross-process file locking for Windows, used by every package that keeps a
 // single-writer file (internal/registry, skills, calllog, ratelimit,
-// httpbridge, oauthflow). Each of those owns a three-line
-// flock_windows.go that calls in here; the Unix side stays local to each
-// package because syscall.Flock is a one-liner, while this is forty lines of
-// overlapped-IO plumbing that must not exist seven times.
+// httpbridge, oauthflow, secrets). Each of those owns a four-line wrapper
+// that calls in here; filelock_unix.go answers the same four names with
+// flock(2), so a caller writes one call and the build picks the syscall.
 //
 // syscall.NewLazyDLL rather than golang.org/x/sys/windows, which has both
 // calls ready made: internal/platform is a zero-dependency foundation
