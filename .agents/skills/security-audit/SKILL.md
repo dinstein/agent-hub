@@ -47,6 +47,11 @@ isolation, and the surface exposed outward. Then cap each at **~8k non-test line
 git ls-files '*.go' | grep -v _test.go | xargs wc -l | sort -rn | head -40
 ```
 
+**The tree sets the sweep's scale.** At today's size that is a dozen shards, two finders each, plus
+three verifiers per finding — well past any default agent-count guideline a session carries. Cutting
+fewer, larger shards to fit under one is how the overlap the health check needs disappears; the
+symptom table catches that only after the sweep has run.
+
 Both engines get the **identical** shard — comparing two answers only means something when they were
 asked the same question about the same files. A package split by file must **say so** in the prompt:
 a finder shown half a package and not told reports the other half's callers as unreachable.
