@@ -102,10 +102,10 @@ carrying every server you enabled. Full walkthrough — profiles, narrowing, the
 To let an agent drive the CLI rather than you, hand it the skill the binary carries:
 
 ```bash
-mkdir -p ~/.claude/skills/agenthub && agenthub --skill > ~/.claude/skills/agenthub/SKILL.md
+mkdir -p ~/.claude/skills/agenthub && agenthub manual > ~/.claude/skills/agenthub/SKILL.md
 ```
 
-`--skill` prints the copy compiled into the binary you just installed, so the document and the CLI
+`agenthub manual` prints the copy compiled into the binary you just installed, so the document and the CLI
 it describes are the same release. The Homebrew tap publishes that same file; nothing needs a
 checkout to get it.
 

@@ -963,16 +963,32 @@ already found `session`. Its own group, at the global altitude, rather than a li
 per-server and per-client steps, and a fourth entry beside them would read as a fourth step of a path
 that has three. Manage is what is left after it, one command, and its title dropped "governance" with it.
 
-**`agenthub --skill` prints the binary's own SKILL.md, and it is a root flag rather than a member of
-the withheld `skill` group.** The document is compiled in (`skills/agenthub`, embedded verbatim), so
-the copy an AI client reads and the binary it drives are one artifact — before this, the only channel
-was the Homebrew tap `scripts/tap-sync.sh` regenerates per release, and a `go install` build, a
-downloaded binary or a machine with no tap got nothing. The group would have been the wrong home
-twice over: it manages a library of imported packages and reads state on disk, while this reads a
-constant and cannot fail, and the group is **withheld** on a release page, which is exactly the build
-where a client that has never heard of agenthub has to be able to ask what it is. Output is the bytes
-and nothing else — a header or a trailing hint lands inside the file the caller redirects into
-(`agenthub --skill > ~/.claude/skills/agenthub/SKILL.md`) — so `--json` is where the printing binary's
+**`agenthub manual` prints the binary's own SKILL.md, and it is a command of its own — not `skill doc`,
+and no longer the root `--skill` flag it shipped as first.** The document is compiled in
+(`skills/agenthub`, embedded verbatim), so the copy an AI client reads and the binary it drives are one
+artifact — before this, the only channel was the Homebrew tap `scripts/tap-sync.sh` regenerates per
+release, and a `go install` build, a downloaded binary or a machine with no tap got nothing.
+
+**Not the `skill` group, because the two hold opposite trust models.** That group manages a library the
+operator imports from elsewhere, and every invariant it has is built for text agenthub did not write:
+imports refuse symlinks, `enabled` reads fail-closed to disabled, a library copy is fingerprint-pinned
+and goes Tampered when it drifts, and the skills-over-MCP face is off by default because it is a new
+supply channel of untrusted text (`internal/gateway/skills.go`). This document is the binary describing
+itself, as trustworthy as the code printing it. Filing it there would take a third `SourceKind`, an
+exception to that fail-closed default, and a meaning for `update` and `rm` on something that ships
+compiled in — four invariants bent for one entry. It is also **withheld** on a release page, which is
+exactly the build where a client that has never heard of agenthub has to be able to ask what it is.
+
+**Not a flag, because it was a verb wearing a flag's clothes.** `--skill` was root-only and
+non-persistent, and the root `RunE` needed a hand-written precedence check (`len(args) > 0`) so
+`agenthub --skill srever` failed as usage rather than answering half of a typo with 350 lines of
+markdown. A subcommand gets that precedence from cobra's own parsing, and the check is gone with it.
+
+Its own group rather than a third line in Wire up, for the reason recorded there: an entry beside
+`profile` and `client` reads as a step the everyday path requires, and this one is not — agenthub
+serves tools to a client that never reads the manual. Output is the bytes and nothing else — a header
+or a trailing hint lands inside the file the caller redirects into
+(`agenthub manual > ~/.claude/skills/agenthub/SKILL.md`) — so `--json` is where the printing binary's
 version is reported. **The tap's copy is the same document plus a banner and an injected `version:`
 frontmatter field, and this path must not become a second writer of that block**: two generators of
 one YAML header is how a copy acquires two version lines, with a parser picking whichever one

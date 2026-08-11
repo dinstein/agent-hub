@@ -8,15 +8,15 @@ import (
 	bundledskill "github.com/dinstein/agent-hub/skills/agenthub"
 )
 
-// TestSkillFlagPrintsTheDocumentVerbatim is the whole contract of `--skill`:
-// what comes out of stdout is a file a client will load.
+// TestManualPrintsTheDocumentVerbatim is the whole contract of `manual`: what
+// comes out of stdout is a file a client will load.
 //
 // Byte equality, not a substring check. The failure this guards against is a
 // helpful line — a header, a "wrote N bytes", a trailing hint — landing inside
 // the SKILL.md the caller is redirecting into, where it is either invalid
 // frontmatter or invisible prose the agent then follows.
-func TestSkillFlagPrintsTheDocumentVerbatim(t *testing.T) {
-	code, out, errOut := runCLI(t, "", "--skill")
+func TestManualPrintsTheDocumentVerbatim(t *testing.T) {
+	code, out, errOut := runCLI(t, "", "manual")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, errOut)
 	}
@@ -32,7 +32,7 @@ func TestSkillFlagPrintsTheDocumentVerbatim(t *testing.T) {
 	}
 }
 
-// TestSkillFlagJSONCarriesTheBinaryVersion pins the machine path: the document
+// TestManualJSONCarriesTheBinaryVersion pins the machine path: the document
 // under "content", and the version of the binary that printed it beside it.
 //
 // The version is the point of the envelope. The embedded document carries no
@@ -40,8 +40,8 @@ func TestSkillFlagPrintsTheDocumentVerbatim(t *testing.T) {
 // at release time, and this path deliberately does not become a second writer
 // of that block — so out of band is the only place a caller can read which
 // release the text describes.
-func TestSkillFlagJSONCarriesTheBinaryVersion(t *testing.T) {
-	code, out, errOut := runCLI(t, "", "--skill", "--json")
+func TestManualJSONCarriesTheBinaryVersion(t *testing.T) {
+	code, out, errOut := runCLI(t, "", "manual", "--json")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, errOut)
 	}
@@ -67,47 +67,47 @@ func TestSkillFlagJSONCarriesTheBinaryVersion(t *testing.T) {
 	}
 }
 
-// TestSkillFlagIsRootOnly keeps the flag off every subcommand. It answers with
-// a constant, so on a subcommand it can only be a mistake — and one that would
-// otherwise be answered by printing 200 lines of markdown where the caller
-// asked for a server listing.
-func TestSkillFlagIsRootOnly(t *testing.T) {
-	code, out, errOut := runCLI(t, "", "server", "ls", "--skill")
+// TestManualTakesNoArguments keeps the command from answering something it was
+// not asked. It prints one constant, so an argument is always a mistake — and
+// one that would otherwise be swallowed, sending 350 lines of markdown to a
+// caller who typed a subcommand that does not exist.
+func TestManualTakesNoArguments(t *testing.T) {
+	code, out, errOut := runCLI(t, "", "manual", "srever")
 	if code != ExitUsage {
-		t.Errorf("exit %d, want %d (usage); stdout %q stderr %q", code, ExitUsage, out, errOut)
+		t.Errorf("exit %d, want %d (usage); stderr %q", code, ExitUsage, errOut)
 	}
 	if strings.Contains(out, "name: agenthub") {
-		t.Error("a subcommand printed the skill document")
+		t.Error("an unknown argument was answered with the skill document")
 	}
 }
 
-// TestSkillFlagDoesNotSwallowAnUnknownCommand pins the precedence in the root
-// RunE: `agenthub --skill srever` asked for two things and got one of them
-// wrong, so it is a usage error rather than a document with a typo buried in
-// the invocation that produced it.
-func TestSkillFlagDoesNotSwallowAnUnknownCommand(t *testing.T) {
-	code, out, _ := runCLI(t, "", "--skill", "srever")
+// TestNoSkillFlagRemains pins the removal. `--skill` was the first shape of
+// this command: a root-only boolean that needed a hand-written precedence
+// check against unknown subcommands in the root RunE. If it comes back beside
+// `manual`, the document has two spellings and the check has to exist again.
+func TestNoSkillFlagRemains(t *testing.T) {
+	code, out, _ := runCLI(t, "", "--skill")
 	if code != ExitUsage {
-		t.Errorf("exit %d, want %d (usage)", code, ExitUsage)
+		t.Errorf("exit %d, want %d (usage) for a flag that no longer exists", code, ExitUsage)
 	}
 	if strings.Contains(out, "name: agenthub") {
-		t.Error("an unknown command was answered with the skill document")
+		t.Error("--skill still prints the skill document")
 	}
 }
 
-// TestSkillFlagShowsOnAReleasePage is the reason it is a root flag rather than
-// a member of the withheld `skill` group: a client that has never heard of
-// agenthub asks the shipped binary what it does, and a release build has to
-// answer.
-func TestSkillFlagShowsOnAReleasePage(t *testing.T) {
+// TestManualShowsOnAReleasePage is the reason it is a command of its own
+// rather than a member of the withheld `skill` group: a client that has never
+// heard of agenthub asks the shipped binary what it does, and a release build
+// has to answer.
+func TestManualShowsOnAReleasePage(t *testing.T) {
 	code, out, errOut := runCLIReleaseHelp(t, "", "--help")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, errOut)
 	}
-	if !strings.Contains(out, "--skill") {
-		t.Error("a release build's help page does not mention --skill")
+	if !strings.Contains(out, "manual") {
+		t.Error("a release build's help page does not mention `manual`")
 	}
-	code, out, errOut = runCLIReleaseHelp(t, "", "--skill")
+	code, out, errOut = runCLIReleaseHelp(t, "", "manual")
 	if code != 0 || out != bundledskill.SkillMD {
 		t.Errorf("a release build did not print the document: exit %d, %d bytes, stderr %q",
 			code, len(out), errOut)

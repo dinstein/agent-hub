@@ -97,10 +97,10 @@ agenthub client connect claude-code
 想让 agent 自己来驱动这个 CLI，就把二进制自带的那份 skill 交给它：
 
 ```bash
-mkdir -p ~/.claude/skills/agenthub && agenthub --skill > ~/.claude/skills/agenthub/SKILL.md
+mkdir -p ~/.claude/skills/agenthub && agenthub manual > ~/.claude/skills/agenthub/SKILL.md
 ```
 
-`--skill` 打印的是编进你刚装的这个二进制里的那一份，所以文档和它描述的 CLI 一定是同一个版本。
+`agenthub manual` 打印的是编进你刚装的这个二进制里的那一份，所以文档和它描述的 CLI 一定是同一个版本。
 Homebrew tap 发布的是同一个文件；拿到它不需要任何 checkout。
 
 ## 能力

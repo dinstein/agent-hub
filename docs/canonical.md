@@ -135,6 +135,13 @@ needing precise control, while JSON-RPC encoding itself is not much work. The fa
   existing servers are brought over by pasting its configuration
 - The `skill` group is `add | ls | inspect | rm | enable | disable | install-to | sync | update |
   verify` (`install-to` materializes one entry, `sync` in bulk by scope; both coexist)
+- **`manual` prints the binary's own SKILL.md, and it is neither `skill doc` nor a flag.** A leaf
+  command, no subcommands, no plural. Not under `skill`, because every invariant that group has is
+  built for text the operator imported from elsewhere while this document is the binary describing
+  itself, and because the group is withheld on the release page that most needs to answer "what is
+  this" (docs/modules/controlplane.md); not the root `--skill` flag it shipped as in 0.42.0, because
+  a flag that prints a document and exits is a verb, and being one made the root `RunE` hand-write a
+  precedence check against unknown subcommands
 
 ### `add` and `enable` are separate primitives, and stay that way
 

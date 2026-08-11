@@ -13,7 +13,7 @@
 // `version:` field, written by tap-sync.sh; a second writer of that same YAML
 // block is how a copy ends up carrying two version lines, with a parser
 // picking whichever one disagrees with the release. Whoever prints these bytes
-// says what release they came from out of band — `agenthub --skill --json`
+// says what release they came from out of band — `agenthub manual --json`
 // carries the binary's version beside the document (internal/cli/skilldoc.go).
 //
 // The package sits here, outside internal/, because the file cannot move to

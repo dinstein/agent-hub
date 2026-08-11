@@ -10,7 +10,7 @@
 //     SAME ranker the gateway's search_tools uses. Registry writes go
 //     offline-direct through registry.Store.Update (cross-process .lock +
 //     atomic write) until daemon-mediated writes land. The one dependency
-//     outside internal/ is skills/agenthub, the embedded SKILL.md `--skill`
+//     outside internal/ is skills/agenthub, the embedded SKILL.md `manual`
 //     prints (skilldoc.go); it exports a string and nothing else.
 //   - Resource groups use the singular as the canonical command name with
 //     the plural as a cobra alias (server/servers, client/clients).
@@ -86,8 +86,7 @@ type App struct {
 
 	reducedHelp bool
 
-	jsonOut  bool // bound to the persistent --json flag
-	skillOut bool // bound to the root-only --skill flag (skilldoc.go)
+	jsonOut bool // bound to the persistent --json flag
 }
 
 // Main runs the CLI and returns the process exit code. It is the single
@@ -156,20 +155,11 @@ func (a *App) newRoot() *cobra.Command {
 			"through agenthub. Bring servers in with 'agenthub server', hand them to a\n" +
 			"client with 'agenthub client'; to give one client less than everything, put\n" +
 			"it on a profile.",
-		Version:       a.version,
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		Args:          cobra.ArbitraryArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// An unknown command wins over --skill: `agenthub --skill srever`
-			// asked for two things and got one of them wrong, and answering
-			// the half that parsed would send the typo to stdout inside a
-			// 200-line document.
-			if len(args) > 0 || !a.skillOut {
-				return groupRunE(cmd, args)
-			}
-			return a.emitSkill()
-		},
+		Version:           a.version,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		Args:              cobra.ArbitraryArgs,
+		RunE:              groupRunE,
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	}
 	root.SetVersionTemplate("agenthub {{.Version}}\n")
@@ -181,12 +171,6 @@ func (a *App) newRoot() *cobra.Command {
 	cobra.EnableCommandSorting = false
 	root.PersistentFlags().BoolVar(&a.jsonOut, "json", false,
 		"emit a machine-readable JSON envelope instead of human output")
-	// Root-only, and deliberately not persistent: it prints one constant
-	// document, so `agenthub server ls --skill` is a typo rather than a
-	// request, and a local flag says so with the usage error every other
-	// unknown flag gets (skilldoc.go).
-	root.Flags().BoolVar(&a.skillOut, "skill", false,
-		"print the SKILL.md that teaches an AI client to drive this CLI, then exit")
 	// Funnel every flag-parse error (unknown flag, bad value, ...) into the
 	// typed usage error so it maps to exit 2. Inherited by all subcommands.
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
@@ -245,6 +229,21 @@ func (a *App) newRoot() *cobra.Command {
 	// directly after Wire up for the same reason: the defaults are what the
 	// wiring lands on.
 	addGrouped(root, groupConfigure, a.newConfigCmd())
+	// `manual` is VISIBLE in every build, and it is alone in its group.
+	//
+	// Visible because the document is what a client that has never heard of
+	// agenthub reads to learn the CLI, and a shipped binary is exactly where
+	// that question gets asked. The `skill` group below is withheld, which is
+	// half of why this is not `skill doc`; the other half is in skilldoc.go.
+	//
+	// A group of its own rather than a third line in Wire up, for the reason
+	// recorded there: Setup and Wire up are the everyday path, and an entry
+	// beside `profile` and `client` reads as a step that path requires. This
+	// one is not required — agenthub serves tools to a client that never reads
+	// it. It sits after Configure because the manual describes the tree above
+	// it, and before Diagnose because it is still something to do rather than
+	// something to run when a step did not take.
+	addGrouped(root, groupManual, a.newManualCmd())
 	// Hidden takes these two groups off the help page only: cobra still
 	// resolves and runs them, so `agenthub skill ls` or `agenthub token ls`
 	// behaves identically in a release build. Routing them through the same
@@ -357,8 +356,11 @@ var (
 	// Configure follows Wire up, visible in every build: the keys are global,
 	// so they are what the per-server and per-client steps above land on.
 	groupConfigure = &cobra.Group{ID: "configure", Title: "Configure — the global defaults every surface inherits:"}
-	groupDaemon    = &cobra.Group{ID: "daemon", Title: "Daemon — the coordination plane and what rides on it:"}
-	groupManage    = &cobra.Group{ID: "manage", Title: "Manage — local state:"}
+	// Manual follows Configure and is visible in every build: it hands an AI
+	// client the document for driving everything above it.
+	groupManual = &cobra.Group{ID: "manual", Title: "Manual — teach an AI client to drive this CLI:"}
+	groupDaemon = &cobra.Group{ID: "daemon", Title: "Daemon — the coordination plane and what rides on it:"}
+	groupManage = &cobra.Group{ID: "manage", Title: "Manage — local state:"}
 	// Diagnose sits after Manage and before the machine entry point, so on a
 	// shipped page it lands directly under Wire up: the path, then what to run
 	// when the path does not work.

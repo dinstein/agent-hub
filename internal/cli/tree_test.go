@@ -286,6 +286,12 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 		// so they are what the per-server and per-client steps above land on,
 		// which is also why it follows Wire up rather than opening the page.
 		{"configure", []string{"config"}},
+		// One member, visible in a shipped build too: the document is what a
+		// client that has never heard of agenthub reads, so the release page is
+		// exactly where it has to be answerable. After Configure because it
+		// describes the tree above it, before Diagnose because it is still
+		// something to do rather than what to run when a step did not take.
+		{"manual", []string{"manual"}},
 		// Split on one testable question — does this need a running daemon?
 		// `token` mints credentials for the daemon's HTTP data plane, so it
 		// sits with the daemon rather than with the other governance verbs.
