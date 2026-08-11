@@ -99,6 +99,16 @@ again. To see that it took, open Claude Code and run `/mcp` — an `agenthub` en
 carrying every server you enabled. Full walkthrough — profiles, narrowing, the whole model — in
 [docs/guide.md](docs/guide.md).
 
+To let an agent drive the CLI rather than you, hand it the skill the binary carries:
+
+```bash
+mkdir -p ~/.claude/skills/agenthub && agenthub --skill > ~/.claude/skills/agenthub/SKILL.md
+```
+
+`--skill` prints the copy compiled into the binary you just installed, so the document and the CLI
+it describes are the same release. The Homebrew tap publishes that same file; nothing needs a
+checkout to get it.
+
 ## Capabilities
 
 | Area | What it covers |

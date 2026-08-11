@@ -138,6 +138,12 @@ Exceptions:
 - **open-webui**: no file; you get an HTTP endpoint to register on its side.
 - **continue**: neither read nor written; entry goes in by hand.
 
+**Hand the client this skill too** — the binary carries the copy that matches it, so no tap or checkout is needed:
+
+```bash
+mkdir -p ~/.claude/skills/agenthub && agenthub --skill > ~/.claude/skills/agenthub/SKILL.md
+```
+
 `CONNECTED` in `client ls`: `yes`/`no` are definitive; `denied`/`unreadable`/`?` means agenthub could not read or parse the file — `client inspect <id>` says which file and why. `--stat-only` skips reads (no macOS privacy prompt).
 
 ## 6. Narrow what each client sees
