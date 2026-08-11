@@ -9,7 +9,9 @@
 //     through internal/router + internal/discovery so the CLI ranks with the
 //     SAME ranker the gateway's search_tools uses. Registry writes go
 //     offline-direct through registry.Store.Update (cross-process .lock +
-//     atomic write) until daemon-mediated writes land.
+//     atomic write) until daemon-mediated writes land. The one dependency
+//     outside internal/ is skills/agenthub, the embedded SKILL.md `--skill`
+//     prints (skilldoc.go); it exports a string and nothing else.
 //   - Resource groups use the singular as the canonical command name with
 //     the plural as a cobra alias (server/servers, client/clients).
 //   - Every command supports --json; human and JSON output are rendered
@@ -84,7 +86,8 @@ type App struct {
 
 	reducedHelp bool
 
-	jsonOut bool // bound to the persistent --json flag
+	jsonOut  bool // bound to the persistent --json flag
+	skillOut bool // bound to the root-only --skill flag (skilldoc.go)
 }
 
 // Main runs the CLI and returns the process exit code. It is the single
@@ -153,11 +156,20 @@ func (a *App) newRoot() *cobra.Command {
 			"through agenthub. Bring servers in with 'agenthub server', hand them to a\n" +
 			"client with 'agenthub client'; to give one client less than everything, put\n" +
 			"it on a profile.",
-		Version:           a.version,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
-		Args:              cobra.ArbitraryArgs,
-		RunE:              groupRunE,
+		Version:       a.version,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		Args:          cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// An unknown command wins over --skill: `agenthub --skill srever`
+			// asked for two things and got one of them wrong, and answering
+			// the half that parsed would send the typo to stdout inside a
+			// 200-line document.
+			if len(args) > 0 || !a.skillOut {
+				return groupRunE(cmd, args)
+			}
+			return a.emitSkill()
+		},
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	}
 	root.SetVersionTemplate("agenthub {{.Version}}\n")
@@ -169,6 +181,12 @@ func (a *App) newRoot() *cobra.Command {
 	cobra.EnableCommandSorting = false
 	root.PersistentFlags().BoolVar(&a.jsonOut, "json", false,
 		"emit a machine-readable JSON envelope instead of human output")
+	// Root-only, and deliberately not persistent: it prints one constant
+	// document, so `agenthub server ls --skill` is a typo rather than a
+	// request, and a local flag says so with the usage error every other
+	// unknown flag gets (skilldoc.go).
+	root.Flags().BoolVar(&a.skillOut, "skill", false,
+		"print the SKILL.md that teaches an AI client to drive this CLI, then exit")
 	// Funnel every flag-parse error (unknown flag, bad value, ...) into the
 	// typed usage error so it maps to exit 2. Inherited by all subcommands.
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {

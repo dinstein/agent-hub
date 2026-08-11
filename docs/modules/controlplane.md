@@ -963,6 +963,21 @@ already found `session`. Its own group, at the global altitude, rather than a li
 per-server and per-client steps, and a fourth entry beside them would read as a fourth step of a path
 that has three. Manage is what is left after it, one command, and its title dropped "governance" with it.
 
+**`agenthub --skill` prints the binary's own SKILL.md, and it is a root flag rather than a member of
+the withheld `skill` group.** The document is compiled in (`skills/agenthub`, embedded verbatim), so
+the copy an AI client reads and the binary it drives are one artifact — before this, the only channel
+was the Homebrew tap `scripts/tap-sync.sh` regenerates per release, and a `go install` build, a
+downloaded binary or a machine with no tap got nothing. The group would have been the wrong home
+twice over: it manages a library of imported packages and reads state on disk, while this reads a
+constant and cannot fail, and the group is **withheld** on a release page, which is exactly the build
+where a client that has never heard of agenthub has to be able to ask what it is. Output is the bytes
+and nothing else — a header or a trailing hint lands inside the file the caller redirects into
+(`agenthub --skill > ~/.claude/skills/agenthub/SKILL.md`) — so `--json` is where the printing binary's
+version is reported. **The tap's copy is the same document plus a banner and an injected `version:`
+frontmatter field, and this path must not become a second writer of that block**: two generators of
+one YAML header is how a copy acquires two version lines, with a parser picking whichever one
+disagrees with the release.
+
 **`logs`'s filters are the mandatory `logx` field names (`--client`, `--server`) rather than free text**,
 which is what makes a merged stream joinable at all, and they are **fail-closed** like
 `--since`/`--level`: a daemon record carries no `server`, so `--server x` excludes it rather than
