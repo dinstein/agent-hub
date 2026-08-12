@@ -256,7 +256,10 @@ func (p authProbe) classifyOAuth(ctx context.Context, id string, now time.Time) 
 		ClientRegistrar: st.RegistrarKind,
 		ExpiresAt:       st.ExpiresAt,
 		ExpiresIn:       secondsUntil(st.ExpiresAt, now),
-		HasRefreshToken: st.RefreshToken != "",
+		// Stored AND usable. A refused grant leaves the bytes in place, and
+		// this flag chooses which repair gets offered — reporting true would
+		// send the operator to `auth refresh`, which can only fail.
+		HasRefreshToken: st.RefreshToken != "" && !st.GrantRevoked(),
 	}
 	// The lifecycle — including whether the action is refresh or login — is
 	// oauthlifecycle.go's to decide, in the one copy `auth status` also uses.
@@ -349,6 +352,8 @@ func (a *ServerAuth) cell() string {
 			return "oauth:expiring"
 		case api.AuthStateExpired:
 			return "oauth:expired"
+		case api.AuthStateRevoked:
+			return "oauth:revoked"
 		case api.AuthStateNone:
 			return "oauth:login"
 		default:
@@ -390,8 +395,9 @@ func (a *ServerAuth) hint(id string) string {
 	}
 	// The OAuth sentences are oauthlifecycle.go's, in the copy `auth status`
 	// renders too: one server must not be told two different things by two
-	// commands reading one vault.
-	return oauthHintFor(id, a.State, a.HasRefreshToken, a.ExpiresIn)
+	// commands reading one vault. Detail carries the provider's own words for
+	// a refusal, which is the one sentence that needs something from here.
+	return oauthHintFor(id, a.State, a.HasRefreshToken, a.ExpiresIn, a.Detail)
 }
 
 // line renders the credential for `server inspect`, where one server has the

@@ -98,8 +98,10 @@ func (a *App) enableAfterLogin(ctx context.Context, serverID string) (bool, []st
 
 // AuthStatusRow is one server's authorization state.
 type AuthStatusRow struct {
-	Server    string `json:"server"`
-	State     string `json:"state"` // authorized | expiring | expired | none
+	Server string `json:"server"`
+	// State is an api.AuthState* constant: authorized | expiring | expired |
+	// revoked | none | error.
+	State     string `json:"state"`
 	Issuer    string `json:"issuer,omitempty"`
 	Scope     string `json:"scope,omitempty"`
 	ExpiresAt int64  `json:"expiresAt"`
@@ -390,7 +392,7 @@ func (a *App) newAuthStatusCmd() *cobra.Command {
 				row := authStatusOf(cmd.Context(), deps, id, now)
 				// Without an explicit server argument, a server that never
 				// had credentials is noise, not information.
-				if len(args) == 0 && row.State == "none" {
+				if len(args) == 0 && row.State == api.AuthStateNone {
 					continue
 				}
 				rows = append(rows, row)
@@ -419,7 +421,10 @@ func authStatusOf(ctx context.Context, deps *oauthDeps, id string, now time.Time
 	row.Scope = st.Scope
 	row.ExpiresAt = st.ExpiresAt
 	row.ExpiresIn = secondsUntil(st.ExpiresAt, now)
-	row.HasRefreshToken = st.RefreshToken != ""
+	// Stored AND usable: a refused grant leaves the bytes in place, and this
+	// field is what a frontend reads to decide whether to offer a renewal
+	// that needs nobody present.
+	row.HasRefreshToken = st.RefreshToken != "" && !st.GrantRevoked()
 	row.ClientRegistrar = st.RegistrarKind
 
 	// The lifecycle, the action and the sentence all come from
@@ -430,16 +435,20 @@ func authStatusOf(ctx context.Context, deps *oauthDeps, id string, now time.Time
 	_, terr := deps.store.LoadAccessToken(ctx, id)
 	lc := lifecycleOf(st, terr == nil, now)
 	row.State, row.Action, row.Detail = lc.State, lc.Action, lc.Detail
-	row.Hint = oauthHintFor(id, row.State, row.HasRefreshToken, row.ExpiresIn)
+	row.Hint = oauthHintFor(id, row.State, row.HasRefreshToken, row.ExpiresIn, row.Detail)
 	return row
 }
 
 func (a *App) newAuthRefreshCmd() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+	cmd := &cobra.Command{
 		Use:   "refresh <server>",
 		Short: "Renew a server's sign-in now instead of waiting for it to expire",
 		Long: "agenthub renews tokens by itself before they run out, so this is mainly for\n" +
-			"confirming that renewal still works.",
+			"confirming that renewal still works.\n\n" +
+			"Once a provider has refused the stored sign-in, agenthub stops asking and says\n" +
+			"so instead. Use --force to ask one more time — for a provider that has since\n" +
+			"been put right, or that said no when it meant something else.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serverID := args[0]
@@ -452,6 +461,16 @@ func (a *App) newAuthRefreshCmd() *cobra.Command {
 				return err
 			}
 			p := a.printer()
+			if force {
+				// Clearing the mark is the whole of --force: the refusal
+				// below re-records it if the provider says no again, so the
+				// override cannot leave a dead credential looking live.
+				// A server with nothing stored fails here, which is the same
+				// answer the refresh itself would have given.
+				if cerr := deps.store.ClearGrantRevoked(cmd.Context(), serverID); cerr != nil {
+					return authError(cerr)
+				}
+			}
 			p.Progress(output.ProgressEvent{
 				Event:   "refreshing",
 				Message: "refreshing the access token…",
@@ -470,6 +489,9 @@ func (a *App) newAuthRefreshCmd() *cobra.Command {
 			})
 		},
 	}
+	cmd.Flags().BoolVar(&force, "force", false,
+		"ask again even though the provider already refused this sign-in")
+	return cmd
 }
 
 func (a *App) newAuthLogoutCmd() *cobra.Command {

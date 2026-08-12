@@ -69,6 +69,12 @@ func TestClassifyServerAuthLadder(t *testing.T) {
 	expiringNoRefresh.ExpiresAt, expiringNoRefresh.RefreshToken = now.Add(30*time.Second).Unix(), ""
 	expiredNoRefresh := freshState(now)
 	expiredNoRefresh.ExpiresAt, expiredNoRefresh.RefreshToken = now.Add(-time.Second).Unix(), ""
+	// A refused grant keeps its refresh token — the bytes are still there,
+	// they are simply no longer worth offering — and is not yet expired, so
+	// nothing but the refusal can be producing the answer.
+	revoked := freshState(now)
+	revoked.GrantRevokedAt = now.Add(-time.Minute).Unix()
+	revoked.GrantRevokedReason = "invalid_grant: consent withdrawn"
 
 	for _, tc := range []struct {
 		name   string
@@ -166,6 +172,26 @@ func TestClassifyServerAuthLadder(t *testing.T) {
 				[]secrets.Ref{secrets.OAuthStateRef("srv"), secrets.HTTPAuthRef("srv")},
 				map[string]*oauthflow.State{"srv": expiringNoRefresh}, nil),
 			want: "oauth:expiring", kind: authKindOAuth, state: api.AuthStateExpiring,
+			action: api.ActionLogin,
+		},
+		{
+			name:  "a grant the provider refused needs a human whatever is stored",
+			entry: httpEntry(nil),
+			probe: probeFor(
+				[]secrets.Ref{secrets.OAuthStateRef("srv"), secrets.HTTPAuthRef("srv")},
+				map[string]*oauthflow.State{"srv": revoked}, nil),
+			want: "oauth:revoked", kind: authKindOAuth, state: api.AuthStateRevoked,
+			action: api.ActionLogin,
+		},
+		{
+			// The refusal outranks the missing access token: whatever else
+			// this record lacks, the provider has already answered the
+			// question both rungs lead to.
+			name:  "a refused grant with no access token either",
+			entry: httpEntry(nil),
+			probe: probeFor([]secrets.Ref{secrets.OAuthStateRef("srv")},
+				map[string]*oauthflow.State{"srv": revoked}, nil),
+			want: "oauth:revoked", kind: authKindOAuth, state: api.AuthStateRevoked,
 			action: api.ActionLogin,
 		},
 		{

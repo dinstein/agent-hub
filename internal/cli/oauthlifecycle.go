@@ -43,6 +43,18 @@ type oauthLifecycle struct {
 // loads the token, the other asks its index whether the key exists — and that
 // difference is the whole cost distinction between them.
 func lifecycleOf(st *oauthflow.State, hasAccessToken bool, now time.Time) oauthLifecycle {
+	if st.GrantRevoked() {
+		// Outranks every rung below, the missing-token one included: whatever
+		// else this record lacks, the provider has already answered the
+		// question all of them lead to. The action is FIXED at login — a
+		// refused grant makes `auth refresh` a command that can only fail,
+		// whatever bytes are still stored.
+		return oauthLifecycle{
+			State:  api.AuthStateRevoked,
+			Action: api.ActionLogin,
+			Detail: revokedDetail(st),
+		}
+	}
 	if !hasAccessToken {
 		// State without a token is the DCR-credentials-only shape: a login was
 		// started (or the token write failed) and nothing usable came of it.
@@ -63,6 +75,18 @@ func lifecycleOf(st *oauthflow.State, hasAccessToken bool, now time.Time) oauthL
 	default:
 		return oauthLifecycle{State: api.AuthStateAuthorized}
 	}
+}
+
+// revokedDetail renders what the provider said, which is the only
+// provider-specific part of a refusal an operator can act on: "consent
+// withdrawn" and "refresh token expired" call for different conversations
+// with the same command. It falls back to a bare statement rather than
+// inventing a reason.
+func revokedDetail(st *oauthflow.State) string {
+	if st.GrantRevokedReason == "" {
+		return "the authorization server refused the stored grant"
+	}
+	return "the authorization server refused the stored grant: " + st.GrantRevokedReason
 }
 
 // renewActionFor is renewCommandFor's machine-readable half: one predicate
@@ -91,10 +115,15 @@ func renewCommandFor(id string, hasRefreshToken bool) string {
 //
 // It names commands and the server id and nothing else: no caller passes it a
 // credential value, and there is none in the lifecycle to pass.
-func oauthHintFor(id, state string, hasRefreshToken bool, expiresIn int64) string {
+func oauthHintFor(id, state string, hasRefreshToken bool, expiresIn int64, detail string) string {
 	switch state {
 	case api.AuthStateNone:
 		return fmt.Sprintf("%s: not signed in — run 'agenthub auth login %s'", id, id)
+	case api.AuthStateRevoked:
+		// Never renewCommandFor: this is the one state where the unattended
+		// repair is known not to exist. The detail is the provider's own
+		// words, which is what makes the sentence worth reading twice.
+		return fmt.Sprintf("%s: %s — run 'agenthub auth login %s'", id, detail, id)
 	case api.AuthStateExpired:
 		return fmt.Sprintf("%s: sign-in expired — run '%s'", id, renewCommandFor(id, hasRefreshToken))
 	case api.AuthStateExpiring:

@@ -30,6 +30,9 @@ type fakeAuthServer struct {
 	issued    atomic.Int64
 	tokenHits atomic.Int64
 	regHits   atomic.Int64
+	// refuse turns the token endpoint into a provider that has ended the
+	// session: every grant is answered invalid_grant.
+	refuse atomic.Bool
 }
 
 func newFakeAuthServer(t *testing.T, resource string) *fakeAuthServer {
@@ -56,6 +59,16 @@ func newFakeAuthServer(t *testing.T, resource string) *fakeAuthServer {
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
 		as.tokenHits.Add(1)
+		if as.refuse.Load() {
+			// 400 + invalid_grant is the answer a revoked, spent or
+			// rotated-away grant gets, and the one no retry survives.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			writeJSON(w, map[string]any{
+				"error": "invalid_grant", "error_description": "consent withdrawn",
+			})
+			return
+		}
 		n := as.issued.Add(1)
 		writeJSON(w, map[string]any{
 			"access_token":  fmt.Sprintf("access-%d", n),
@@ -332,5 +345,117 @@ func TestAuthCommandsAgreeOnAnExpiredToken(t *testing.T) {
 	}
 	if strings.Contains(mustRun(t, "", "server", "ls", "--json"), "expired-access-token") {
 		t.Fatal("server ls rendered the access token")
+	}
+}
+
+// TestAuthRefreshStopsAfterTheProviderRefuses walks the failure a user
+// actually meets, at the altitude they meet it: a sign-in that worked
+// yesterday, a provider that has since ended the session, and every command
+// that is supposed to explain it.
+//
+// The counter is what makes it a test rather than a demonstration. "Backs
+// off" and "stops" produce the same output and the same log line; only the
+// number of times the provider is asked tells them apart.
+func TestAuthRefreshStopsAfterTheProviderRefuses(t *testing.T) {
+	setDataDir(t)
+	t.Setenv("AGENTHUB_SECRET_KEY", "test-passphrase-for-cli-auth")
+	mcpSrv, as := newProtectedMCPServer(t)
+
+	if code, out, _ := runCLI(t, "", "server", "add", "remote",
+		"--url", mcpSrv.URL+"/mcp", "--local", "--json"); code != ExitOK {
+		t.Fatalf("server add exit = %d\n%s", code, out)
+	}
+	if code, out, _ := runCLI(t, "auth-code-xyz\n",
+		"auth", "login", "remote", "--manual", "--allow-local", "--json"); code != ExitOK {
+		t.Fatalf("auth login exit = %d\n%s", code, out)
+	}
+
+	statusOf := func(t *testing.T) AuthStatusRow {
+		t.Helper()
+		code, out, _ := runCLI(t, "", "auth", "status", "remote", "--json")
+		if code != ExitOK {
+			t.Fatalf("auth status exit = %d\n%s", code, out)
+		}
+		var rows AuthStatusList
+		if err := json.Unmarshal(decodeEnvelope(t, out).Data, &rows); err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("status rows = %+v", rows)
+		}
+		return rows[0]
+	}
+
+	// The provider ends the session. Nothing in the stored state says so.
+	as.refuse.Store(true)
+	asked := as.tokenHits.Load()
+
+	code, out, _ := runCLI(t, "", "auth", "refresh", "remote", "--json")
+	if code != ExitAuth {
+		t.Fatalf("refresh exit = %d, want %d\n%s", code, ExitAuth, out)
+	}
+	if got := as.tokenHits.Load(); got != asked+1 {
+		t.Fatalf("token endpoint hits = %d, want one ask", got)
+	}
+
+	row := statusOf(t)
+	if row.State != api.AuthStateRevoked {
+		t.Fatalf("state = %q, want %q", row.State, api.AuthStateRevoked)
+	}
+	if row.HasRefreshToken {
+		t.Error("a refused grant must not advertise an unattended repair")
+	}
+	if !strings.Contains(row.Detail, "consent withdrawn") {
+		t.Errorf("detail = %q, want the provider's own words", row.Detail)
+	}
+
+	// And the credential is reported the same way by the listing every error
+	// hint sends people to.
+	code, out, _ = runCLI(t, "", "server", "ls", "--json")
+	if code != ExitOK {
+		t.Fatalf("server ls exit = %d\n%s", code, out)
+	}
+	if !strings.Contains(out, `"revoked"`) || !strings.Contains(out, "auth login remote") {
+		t.Errorf("server ls does not name the refusal or its repair:\n%s", out)
+	}
+
+	// Every later attempt is answered from the vault. This is the assertion
+	// the whole mechanism exists for: before it, the same dead credential
+	// went back to the provider on every renewer's schedule, forever.
+	asked = as.tokenHits.Load()
+	for range 3 {
+		if code, _, _ := runCLI(t, "", "auth", "refresh", "remote", "--json"); code != ExitAuth {
+			t.Fatalf("repeat refresh exit = %d, want %d", code, ExitAuth)
+		}
+	}
+	if got := as.tokenHits.Load(); got != asked {
+		t.Fatalf("token endpoint hits = %d after three more refreshes, want %d", got, asked)
+	}
+
+	// --force is the human override: exactly one more ask, and the refusal
+	// is recorded again so the override cannot leave a dead credential
+	// looking live.
+	if code, _, _ := runCLI(t, "", "auth", "refresh", "remote", "--force", "--json"); code != ExitAuth {
+		t.Fatal("forced refresh against a refusing provider must still fail")
+	}
+	if got := as.tokenHits.Load(); got != asked+1 {
+		t.Fatalf("token endpoint hits = %d, want exactly one forced ask", got)
+	}
+	if statusOf(t).State != api.AuthStateRevoked {
+		t.Fatal("the second refusal must be recorded like the first")
+	}
+
+	// A fresh login clears it, and renewal works again — recovery is
+	// structural, not something a command has to remember to reset.
+	as.refuse.Store(false)
+	if code, out, _ := runCLI(t, "auth-code-2\n",
+		"auth", "login", "remote", "--manual", "--allow-local", "--json"); code != ExitOK {
+		t.Fatalf("re-login exit = %d\n%s", code, out)
+	}
+	if row := statusOf(t); row.State != api.AuthStateAuthorized || !row.HasRefreshToken {
+		t.Fatalf("after a fresh login, status = %+v", row)
+	}
+	if code, out, _ := runCLI(t, "", "auth", "refresh", "remote", "--json"); code != ExitOK {
+		t.Fatalf("refresh after a fresh login exit = %d\n%s", code, out)
 	}
 }

@@ -16,6 +16,14 @@ const (
 	// AuthStateExpired: the credential is past its deadline. Recoverable
 	// without a human only when HasRefreshToken is set.
 	AuthStateExpired = "expired"
+	// AuthStateRevoked: the authorization server refused the stored refresh
+	// grant — spent, rotated away, consent withdrawn, or the client
+	// registration deleted. Distinct from expired because the repairs
+	// differ: an expired credential with a refresh token behind it renews
+	// unattended, and this one needs a browser and a human whatever is
+	// stored. HasRefreshToken is reported false alongside it for the same
+	// reason — the bytes may still be there, but no unattended repair is.
+	AuthStateRevoked = "revoked"
 	// AuthStateNone: no credential is stored for this server.
 	AuthStateNone = "none"
 	// AuthStateError: the stored state could not be read. It is a row of
