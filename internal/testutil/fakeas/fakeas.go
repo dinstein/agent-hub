@@ -49,11 +49,15 @@ type Options struct {
 	// answers 200 with an empty body, which is enough for tests that only
 	// care about the credential.
 	MCP http.Handler
-	// AccessTTL is the advertised expires_in, in seconds. Zero OMITS
-	// expires_in entirely — "no expires_in" and "expires_in: 0" are
-	// different statements, and only the first is the never-expires provider
-	// that no proactive refresh may touch.
+	// AccessTTL is the advertised expires_in, in seconds. Zero takes the
+	// hour-long default; to omit expires_in, set NoExpiry.
 	AccessTTL int
+	// NoExpiry omits expires_in from every token response. It is a separate
+	// field rather than AccessTTL: 0 because "no expires_in" and
+	// "expires_in: 0" are different statements — the first means never
+	// expires and no proactive refresh may touch it — and a zero value that
+	// meant the rarer of the two would be read wrongly every time.
+	NoExpiry bool
 	// StaleIs200 answers a rotated-away bearer with 200 and an error RESULT
 	// instead of 401. Real providers do this, and it is the shape that makes
 	// the passive refresh path unreachable: nothing rejects the credential,
@@ -108,10 +112,14 @@ type Counts struct {
 // New starts a provider and registers its shutdown with t.
 func New(t *testing.T, opts Options) *Server {
 	t.Helper()
-	if opts.AccessTTL == 0 {
-		opts.AccessTTL = 3600
+	ttl := opts.AccessTTL
+	switch {
+	case opts.NoExpiry:
+		ttl = 0
+	case ttl <= 0:
+		ttl = 3600
 	}
-	s := &Server{opts: opts, granted: "granted-access-token", accessTTL: opts.AccessTTL}
+	s := &Server{opts: opts, granted: "granted-access-token", accessTTL: ttl}
 	// Unstarted, because the documents this provider serves name its own
 	// address: writing the URL into the handler after Start would be a race
 	// against the requests it is already able to answer.
@@ -119,14 +127,6 @@ func New(t *testing.T, opts Options) *Server {
 	s.base = "http://" + s.srv.Listener.Addr().String()
 	s.srv.Start()
 	t.Cleanup(s.srv.Close)
-	return s
-}
-
-// NeverExpires is the provider that advertises no token lifetime at all.
-func NeverExpires(t *testing.T, mcp http.Handler) *Server {
-	t.Helper()
-	s := New(t, Options{MCP: mcp})
-	s.SetAccessTTL(0)
 	return s
 }
 
@@ -178,7 +178,8 @@ func (s *Server) RefuseClient(on bool) {
 }
 
 // SetAccessTTL changes the advertised lifetime of tokens issued from now on.
-// Zero omits expires_in (see Options.AccessTTL).
+// Zero or less omits expires_in — explicit here, unlike in Options, because a
+// call is a statement and a zero field is a default.
 func (s *Server) SetAccessTTL(seconds int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
