@@ -334,7 +334,7 @@ func TestServerAuthActionAgreesWithTheHint(t *testing.T) {
 			if hasRefresh {
 				want = api.ActionRefresh
 			}
-			if got := auth.renewAction(); got != want {
+			if got := renewActionFor(hasRefresh); got != want {
 				t.Errorf("state %q refresh=%v: action = %q, want %q", state, hasRefresh, got, want)
 			}
 		}

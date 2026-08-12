@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dinstein/agent-hub/api"
 	"github.com/dinstein/agent-hub/internal/cli/output"
 	"github.com/dinstein/agent-hub/internal/confops"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
@@ -388,11 +389,11 @@ func (a *App) newAuthStatusCmd() *cobra.Command {
 // into the row (State/Detail) rather than aborting the listing: `auth
 // status` is a diagnostic, and one corrupt entry must not hide the rest.
 func authStatusOf(ctx context.Context, deps *oauthDeps, id string, now time.Time) AuthStatusRow {
-	row := AuthStatusRow{Server: id, State: "none"}
+	row := AuthStatusRow{Server: id, State: api.AuthStateNone}
 	st, err := deps.store.LoadState(ctx, id)
 	if err != nil {
 		if !errors.Is(err, oauthflow.ErrNoState) {
-			row.State = "error"
+			row.State = api.AuthStateError
 			row.Detail = err.Error()
 		}
 		return row
@@ -404,21 +405,14 @@ func authStatusOf(ctx context.Context, deps *oauthDeps, id string, now time.Time
 	row.HasRefreshToken = st.RefreshToken != ""
 	row.ClientRegistrar = st.RegistrarKind
 
-	if _, terr := deps.store.LoadAccessToken(ctx, id); terr != nil {
-		// State without a token is the DCR-credentials-only shape: a login
-		// was started (or the token write failed) but nothing is usable.
-		row.State = "none"
-		row.Detail = "client registration stored, no access token"
-		return row
-	}
-	switch {
-	case st.Expired(now):
-		row.State = "expired"
-	case st.NeedsRefresh(now):
-		row.State = "expiring"
-	default:
-		row.State = "authorized"
-	}
+	// The lifecycle, the action and the sentence all come from
+	// oauthlifecycle.go — the same copy `server ls` renders. What is local to
+	// here is that the access token's existence is learned by READING it:
+	// `auth status` is the command you run about one credential, so the
+	// keychain cost `server ls` refuses to pay is the right cost here.
+	_, terr := deps.store.LoadAccessToken(ctx, id)
+	lc := lifecycleOf(st, terr == nil, now)
+	row.State, row.Detail = lc.State, lc.Detail
 	return row
 }
 

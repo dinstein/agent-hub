@@ -245,37 +245,13 @@ func (p authProbe) classifyOAuth(ctx context.Context, id string, now time.Time) 
 		ExpiresIn:       secondsUntil(st.ExpiresAt, now),
 		HasRefreshToken: st.RefreshToken != "",
 	}
-	if !p.stored(id, secrets.KeyHTTPAuth) {
-		// State without a token is the DCR-credentials-only shape: a login was
-		// started (or the token write failed) and nothing usable came of it.
-		out.State, out.Action = api.AuthStateNone, api.ActionLogin
-		out.Detail = "client registration stored, no access token"
-		return out, true
-	}
-	// The action follows the same rule renewCommand renders in the hint, and
-	// for the same reason: a stored refresh token makes the repair unattended,
-	// and a caller reading only `action` must not be sent to a browser for a
-	// renewal no human needs to watch. The DCR-credentials-only branch above
-	// keeps `login` on purpose — it has no access token to renew.
-	switch {
-	case st.Expired(now):
-		out.State, out.Action = api.AuthStateExpired, out.renewAction()
-	case st.NeedsRefresh(now):
-		out.State, out.Action = api.AuthStateExpiring, out.renewAction()
-	default:
-		out.State = api.AuthStateAuthorized
-	}
+	// The lifecycle — including whether the action is refresh or login — is
+	// oauthlifecycle.go's to decide, in the one copy `auth status` also uses.
+	// What is local to here is HOW the access token's existence is learned:
+	// the index, never a value read (see the cost rule in this file's header).
+	lc := lifecycleOf(st, p.stored(id, secrets.KeyHTTPAuth), now)
+	out.State, out.Action, out.Detail = lc.State, lc.Action, lc.Detail
 	return out, true
-}
-
-// renewAction is renewCommand's machine-readable half: the same choice, in
-// the api.Action* vocabulary. Keeping them one line apart is what stops the
-// column and the hint from ever again saying different things.
-func (a *ServerAuth) renewAction() string {
-	if a.HasRefreshToken {
-		return api.ActionRefresh
-	}
-	return api.ActionLogin
 }
 
 // missingSecrets returns the keys of refs that resolve nowhere.
@@ -399,27 +375,10 @@ func (a *ServerAuth) hint(id string) string {
 	case a.Kind != authKindOAuth:
 		return ""
 	}
-	switch a.State {
-	case api.AuthStateNone:
-		return fmt.Sprintf("%s: not signed in — run 'agenthub auth login %s'", id, id)
-	case api.AuthStateExpired:
-		return fmt.Sprintf("%s: sign-in expired — run '%s'", id, a.renewCommand(id))
-	case api.AuthStateExpiring:
-		return fmt.Sprintf("%s: sign-in expires in %s — run '%s'",
-			id, time.Duration(a.ExpiresIn)*time.Second, a.renewCommand(id))
-	default:
-		return ""
-	}
-}
-
-// renewCommand prefers refresh over login when a refresh token exists: the
-// repair that needs no browser is the one to offer first, and `auth login`
-// stays the answer for the case where nothing can be renewed without a human.
-func (a *ServerAuth) renewCommand(id string) string {
-	if a.HasRefreshToken {
-		return "agenthub auth refresh " + id
-	}
-	return "agenthub auth login " + id
+	// The OAuth sentences are oauthlifecycle.go's, in the copy `auth status`
+	// renders too: one server must not be told two different things by two
+	// commands reading one vault.
+	return oauthHintFor(id, a.State, a.HasRefreshToken, a.ExpiresIn)
 }
 
 // line renders the credential for `server inspect`, where one server has the
