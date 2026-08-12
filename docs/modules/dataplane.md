@@ -362,6 +362,12 @@ still has its reactive path. What a gateway does with an announcement depends on
 nothing for a handshake that never completed. Epochs are keyed by server, not by scope, because a derived
 instance inherits its base server's login.
 
+**Two layers read the same epoch, for two different things.** `WithEpoch` drops the cached BEARER; the
+proactive source ([oauth.md](oauth.md)) drops its SCHEDULE. The second matters because a renewal that
+gives up earns a hold measured in hours — a day, for a grant the provider refused — and that hold
+describes the credential it was taken about. `auth login` replaces exactly that credential, so without
+the epoch the repair would sit unused until a schedule expired on a credential that no longer exists.
+
 ### Current wiring status
 
 `internal/gateway` wires `Log` / `Dial` / `ConnectTimeout` / `Secrets` / `AuthFor` / `FramesFor` / `Events`

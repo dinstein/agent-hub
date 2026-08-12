@@ -90,6 +90,15 @@ func vaultAuth(chain *secrets.Chain, dir string, epochs *credEpochs, log *slog.L
 	// Refresh stays keyed on serverID: the refresh token is the server's, and
 	// a per-scope lock would let two derivations spend it concurrently.
 	return func(serverID, scopeName string) downstream.TokenSource {
+		// The epoch is read by two layers for two different reasons: the
+		// WithEpoch wrapper drops the CACHED BEARER when the vault changes,
+		// and the proactive source drops its SCHEDULE. A renewal parked for a
+		// day because the provider refused yesterday's grant must not survive
+		// the login that replaced it.
+		var epoch func() uint64
+		if epochs != nil {
+			epoch = func() uint64 { return epochs.get(serverID) }
+		}
 		// Two triggers, one coordinator. The inner source renews when a
 		// downstream rejects the token (trigger=rejection); proactiveSource
 		// renews before expiry, when a connection asks for the credential
@@ -99,11 +108,11 @@ func vaultAuth(chain *secrets.Chain, dir string, epochs *credEpochs, log *slog.L
 		ts := downstream.TokenSource(newProactiveSource(
 			downstream.NewScopedVaultTokenSource(serverID, scopeName, resolve,
 				loggedRenew(coord, serverID, scopeName, log)),
-			coord, serverID, scopeName, log))
-		if epochs == nil {
+			coord, serverID, scopeName, epoch, log))
+		if epoch == nil {
 			return ts
 		}
-		return downstream.WithEpoch(ts, func() uint64 { return epochs.get(serverID) })
+		return downstream.WithEpoch(ts, epoch)
 	}
 }
 
@@ -131,9 +140,11 @@ func loggedRenew(coord oauthflow.Refresher, serverID, scopeName string, log *slo
 			log.Info("access token refreshed", logx.Server(serverID),
 				"trigger", oauthflow.TriggerRejection, "superseded", err != nil)
 			return tok, nil
-		case errors.Is(err, oauthflow.ErrNoRefreshToken), errors.Is(err, oauthflow.ErrNoState):
+		case oauthflow.NeedsLogin(err), oauthflow.IsUnmanaged(err):
 			// Not transient: no retry and no amount of waiting fixes it, only
-			// `agenthub auth login`.
+			// `agenthub auth login`. A grant the provider has already refused
+			// is answered here from the vault, so this branch costs the
+			// downstream one 401 and the provider nothing.
 			log.Warn("token cannot be refreshed without a new login",
 				logx.Server(serverID), "trigger", oauthflow.TriggerRejection, "error", err)
 			return "", err

@@ -61,10 +61,21 @@ type proactiveSource struct {
 	scopeName string
 	log       *slog.Logger
 
+	// epoch reports this server's credential epoch (credwatch.go), or is nil
+	// in an assembly with no announcement plane. It is what keeps a decision
+	// taken about one credential from outliving it: every schedule below —
+	// including the long hold a refused grant earns — describes the bytes in
+	// the vault at the time it was taken, and a login replaces those bytes.
+	// Without this, `auth login` fixed the credential while the renewer that
+	// gave up on the old one stayed parked for its whole backoff.
+	epoch func() uint64
+
 	// now overrides time.Now (tests).
 	now func() time.Time
 
 	mu sync.Mutex
+	// seenEpoch is the epoch the current schedule was decided under.
+	seenEpoch uint64
 	// notAfter is what NotAfter reports and, equivalently, when this source
 	// will next consult the coordinator. Zero means "never again": either
 	// there is no OAuth state at all (a hand-pasted token) or the provider
@@ -90,11 +101,21 @@ var (
 )
 
 // newProactiveSource wraps base with the proactive renewal of this file.
+// epoch may be nil; then a schedule stands until it expires on its own.
 func newProactiveSource(base downstream.TokenSource, coord *oauthflow.Coordinator,
-	serverID, scopeName string, log *slog.Logger) *proactiveSource {
+	serverID, scopeName string, epoch func() uint64, log *slog.Logger) *proactiveSource {
 	return &proactiveSource{
-		TokenSource: base, coord: coord, serverID: serverID, scopeName: scopeName, log: log,
+		TokenSource: base, coord: coord, serverID: serverID, scopeName: scopeName,
+		epoch: epoch, log: log,
 	}
+}
+
+// currentEpoch reads the credential epoch, or 0 without an announcement plane.
+func (p *proactiveSource) currentEpoch() uint64 {
+	if p.epoch == nil {
+		return 0
+	}
+	return p.epoch()
 }
 
 func (p *proactiveSource) clock() time.Time {
@@ -127,8 +148,16 @@ func (p *proactiveSource) Token(ctx context.Context) (string, bool, error) {
 
 // due reports whether the coordinator should be consulted now.
 func (p *proactiveSource) due(now time.Time) bool {
+	// Read the epoch outside the lock: it has one of its own, and nothing
+	// under it calls back into this source.
+	cur := p.currentEpoch()
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if cur != p.seenEpoch {
+		// Somebody stored new credentials for this server. Every decision
+		// below was taken about the ones they replaced.
+		return true
+	}
 	if p.checked && p.notAfter.IsZero() {
 		return false // decided: this server has no proactive schedule
 	}
@@ -165,10 +194,12 @@ func (p *proactiveSource) ensureFresh(ctx context.Context) {
 // scheduleFrom records the next look from the state now in the vault.
 func (p *proactiveSource) scheduleFrom(st *oauthflow.State, now time.Time) {
 	at, scheduled := st.RefreshAt()
+	cur := p.currentEpoch()
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.fails = 0
 	p.checked = true
+	p.seenEpoch = cur
 	if !scheduled {
 		// No expiry advertised means "never expires", not "expired"
 		// (docs/modules/oauth.md). The 401/403 path owns this server.
@@ -187,11 +218,16 @@ func (p *proactiveSource) scheduleFrom(st *oauthflow.State, now time.Time) {
 
 // renewalFailed records a failed renewal and holds off for one backoff rung.
 func (p *proactiveSource) renewalFailed(now time.Time, err error) {
-	dead := errors.Is(err, oauthflow.ErrNoRefreshToken)
-	unmanaged := errors.Is(err, oauthflow.ErrNoState)
+	// The same two predicates the daemon's scan uses, for the same reason:
+	// this is the second of the two places that must agree about which
+	// failures a human has to repair.
+	dead := oauthflow.NeedsLogin(err)
+	unmanaged := oauthflow.IsUnmanaged(err)
+	cur := p.currentEpoch()
 
 	p.mu.Lock()
 	p.checked = true
+	p.seenEpoch = cur
 	switch {
 	case unmanaged:
 		// Not an OAuth server at all: a hand-pasted token, or one that was
@@ -201,6 +237,13 @@ func (p *proactiveSource) renewalFailed(now time.Time, err error) {
 	case dead:
 		// Only `agenthub auth login` fixes this. Jump to the slowest rung
 		// rather than asking the provider again on a schedule.
+		//
+		// The rung is a ceiling, not a wait: a login announces itself
+		// (credwatch.go) and due() re-consults on the epoch bump, so the 24
+		// hours are what an installation with no announcement plane falls
+		// back to. And a REVOKED grant does not reach the provider at all
+		// even when the rung expires — the coordinator answers it from the
+		// vault — so what this rung bounds here is a vault read.
 		p.fails = oauthflow.FastRetries + len(oauthflow.SlowBackoffLadder)
 		p.notAfter = now.Add(oauthflow.RetryBackoff(p.fails))
 	default:

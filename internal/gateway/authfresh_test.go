@@ -66,9 +66,11 @@ func newFreshFixture(t *testing.T, now time.Time) (*proactiveSource, *memVault, 
 		Now:     func() time.Time { return now },
 	})
 	h := &recordHandler{}
+	// No epoch: these tests are about the schedule a source decides on its
+	// own. The one that is about the announcement plane installs its own.
 	p := newProactiveSource(
 		downstream.NewScopedVaultTokenSource("srv", secrets.DefaultScope, vault.resolve, nil),
-		coord, "srv", secrets.DefaultScope, slog.New(h))
+		coord, "srv", secrets.DefaultScope, nil, slog.New(h))
 	p.now = func() time.Time { return now }
 	return p, vault, h
 }
@@ -228,6 +230,88 @@ func TestProactiveSourceHoldsOffAfterAFailedRenewal(t *testing.T) {
 	}
 	if got, want2 := p.NotAfter(), want.Add(time.Second).Add(oauthflow.RetryBackoff(2)); !got.Equal(want2) {
 		t.Errorf("after the second failure NotAfter() = %v, want %v", got, want2)
+	}
+}
+
+// seedRevoked stores a state the provider has already refused. The token
+// endpoint is a literal loopback address the SSRF screen refuses, so if the
+// recorded refusal were ever ignored the renewal would fail loudly rather
+// than quietly reaching a real server.
+func seedRevoked(t *testing.T, vault *memVault, now time.Time) {
+	t.Helper()
+	st := &oauthflow.State{
+		TokenEndpoint: "http://127.0.0.1:1/token", ClientID: "c", RefreshToken: "r",
+		IssuedAt: now.Add(-time.Hour).Unix(), ExpiresAt: now.Add(10 * time.Second).Unix(),
+		GrantRevokedAt: now.Add(-time.Minute).Unix(), GrantRevokedReason: "invalid_grant: consent withdrawn",
+	}
+	if err := oauthflow.NewStore(vault).Save(context.Background(), "srv", st, "at-stale"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestProactiveSourceParksARevokedGrant: the credential is still handed over
+// — it may well still be accepted — but the renewal is held at the slowest
+// rung and says the one thing an operator can act on.
+func TestProactiveSourceParksARevokedGrant(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1_000_000, 0)
+	p, vault, h := newFreshFixture(t, now)
+	seedRevoked(t, vault, now)
+
+	tok, ok, err := p.Token(context.Background())
+	if err != nil || !ok || tok != "at-stale" {
+		t.Fatalf("Token() = %q, %v, %v; a refused grant must not take the access token away", tok, ok, err)
+	}
+	if _, found := h.find("token cannot be refreshed without a new login"); !found {
+		t.Fatalf("the refusal was not reported; got %q", h.messages())
+	}
+	want := now.Add(oauthflow.RetryBackoff(oauthflow.FastRetries + 5))
+	if got := p.NotAfter(); !got.Equal(want) {
+		t.Errorf("NotAfter() = %v, want the slowest rung at %v", got, want)
+	}
+}
+
+// TestProactiveSourceForgetsAScheduleTakenAboutOldCredentials: the rung above
+// is a day long, and `auth login` is what an operator does about it. Without
+// the epoch the fix would sit unused until the rung expired — on a credential
+// that no longer exists.
+func TestProactiveSourceForgetsAScheduleTakenAboutOldCredentials(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1_000_000, 0)
+	p, vault, _ := newFreshFixture(t, now)
+	var epoch atomic.Uint64
+	p.epoch = epoch.Load
+	seedRevoked(t, vault, now)
+
+	if _, _, err := p.Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if p.NotAfter().IsZero() {
+		t.Fatal("setup: the refusal must have earned a hold")
+	}
+	if p.due(now) {
+		t.Fatal("inside the hold and at the same epoch, nothing is due")
+	}
+
+	// A login lands: new credentials, and the announcement plane says so.
+	st := &oauthflow.State{
+		TokenEndpoint: "https://as.example/token", ClientID: "c", RefreshToken: "r2",
+		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(),
+	}
+	if err := oauthflow.NewStore(vault).Save(context.Background(), "srv", st, "at-new"); err != nil {
+		t.Fatal(err)
+	}
+	epoch.Add(1)
+
+	if !p.due(now) {
+		t.Fatal("a credential change must retire a schedule decided about the credential it replaced")
+	}
+	if _, _, err := p.Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := st.RefreshAt()
+	if got := p.NotAfter(); !got.Equal(want) {
+		t.Errorf("NotAfter() = %v, want the new credential's own schedule %v", got, want)
 	}
 }
 
