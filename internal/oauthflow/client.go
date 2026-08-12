@@ -107,6 +107,21 @@ func NewClient(cfg Config) *Client {
 	return c
 }
 
+// WithLoopback returns a copy of this client with the loopback carve-out on,
+// keeping every other setting.
+//
+// It exists because the carve-out is a PER-SERVER decision — a self-hosted
+// provider the operator marked `provenance: local` — while a Client is built
+// once and shared by every server a process renews. Building a second one
+// from scratch at the call site would silently drop the timeout, user agent
+// and transport the original was configured with, and the drop would be
+// invisible until the day one of them mattered.
+func (c *Client) WithLoopback() *Client {
+	cfg := c.cfg
+	cfg.AllowLoopback = true
+	return NewClient(cfg)
+}
+
 // newTransport builds the screened transport: netguard.DialControl runs on
 // the ACTUAL resolved address, so a hostname that passed checkURL and then
 // flipped to a private answer is still refused.

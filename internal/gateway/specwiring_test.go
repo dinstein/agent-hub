@@ -61,7 +61,7 @@ func specsOf(t *testing.T, resolver *platform.Resolver) []downstream.Spec {
 func TestGatewayAttachesACredentialSourceToHTTPDownstreams(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	g, _, _ := startGateway(t, Config{ClientID: "auth-test", Resolver: resolver,
-		Auth: func(serverID, scopeName string) downstream.TokenSource {
+		Auth: func(serverID, scopeName string, _ bool) downstream.TokenSource {
 			return downstream.NewScopedVaultTokenSource(serverID, scopeName, nil, nil)
 		}})
 	deps := g.downstreamDeps()
@@ -79,7 +79,7 @@ func TestGatewayAttachesACredentialSourceToHTTPDownstreams(t *testing.T) {
 func TestStdioDownstreamsGetNoBearer(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	g, _, _ := startGateway(t, Config{ClientID: "auth-test", Resolver: resolver,
-		Auth: func(serverID, scopeName string) downstream.TokenSource {
+		Auth: func(serverID, scopeName string, _ bool) downstream.TokenSource {
 			return downstream.NewScopedVaultTokenSource(serverID, scopeName, nil, nil)
 		}})
 	authFor := g.downstreamDeps().AuthFor
@@ -100,7 +100,7 @@ func TestDerivedInstanceCarriesItsOwnVaultScope(t *testing.T) {
 	resolver := testResolver(t.TempDir())
 	var got []string
 	g, _, _ := startGateway(t, Config{ClientID: "auth-test", Resolver: resolver,
-		Auth: func(serverID, scopeName string) downstream.TokenSource {
+		Auth: func(serverID, scopeName string, _ bool) downstream.TokenSource {
 			got = append(got, serverID+"/"+scopeName)
 			return nil
 		}})

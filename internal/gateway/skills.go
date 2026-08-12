@@ -190,7 +190,10 @@ func (g *gateway) downstreamDeps() downstream.Deps {
 			if scopeName == "" {
 				scopeName = secrets.DefaultScope
 			}
-			return g.cfg.Auth(spec.ID, scopeName)
+			// The provenance decision travels with the id: the refresher
+			// renews by server and would otherwise have to re-derive from
+			// the registry what the caller is already holding.
+			return g.cfg.Auth(spec.ID, scopeName, spec.AllowsLoopback())
 		},
 	}
 }

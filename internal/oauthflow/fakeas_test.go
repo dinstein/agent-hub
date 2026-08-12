@@ -139,9 +139,19 @@ func (f *fakeAS) issuer() string {
 	return f.srv.URL + "/" + strings.Trim(f.issuerPath, "/")
 }
 
-// client builds a Client wired to this server.
+// client builds a Client wired to this server. The carve-out is on because
+// httptest binds 127.0.0.1: without it every test here would be testing the
+// SSRF screen instead of what it says it tests.
 func (f *fakeAS) client() *Client {
 	return NewClient(Config{AllowLoopback: true, Timeout: 5 * time.Second})
+}
+
+// client0 is the same client with the carve-out OFF — the shape production
+// builds. A test that means to exercise the PER-SERVER decision has to start
+// from this one, or it proves nothing: a client already permitting loopback
+// would reach this server whatever the decision said.
+func (f *fakeAS) client0() *Client {
+	return NewClient(Config{Timeout: 5 * time.Second})
 }
 
 func (f *fakeAS) metadata() *AuthServerMetadata {

@@ -93,6 +93,53 @@ func TestARefusedGrantIsAskedExactlyOnce(t *testing.T) {
 	}
 }
 
+// TestCoordinatorRefusesALoopbackTokenEndpoint is the fail-closed half of the
+// per-server carve-out, and the reason it is here rather than in an e2e: the
+// two directions differ only by a predicate, and asserting both against the
+// same authorization server is the only way to show that what changed is the
+// DECISION and not the address.
+//
+// The refusal is a screen, not a rejection — the request is never made — so
+// the counter is the assertion. A log line could not tell the two apart.
+func TestCoordinatorRefusesALoopbackTokenEndpoint(t *testing.T) {
+	cases := []struct {
+		name  string
+		allow func(string) bool
+		want  bool // want the request to reach the authorization server
+	}{
+		{"no hook at all", nil, false},
+		{"a hook that says no", func(string) bool { return false }, false},
+		{"a hook naming another server", func(id string) bool { return id == "somebody-else" }, false},
+		{"the server's own declaration", func(id string) bool { return id == "gh" }, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			as := newFakeAS(t)
+			store := NewStore(newFakeVault())
+			seedState(t, store, as, "gh", 100)
+			co := NewCoordinator(CoordinatorConfig{
+				Store: store, Client: as.client0(), LockDir: t.TempDir(),
+				AllowLoopback: tc.allow,
+				Now:           func() time.Time { return time.Unix(1000, 0) },
+			})
+			_, _, err := co.Refresh(context.Background(), "gh")
+			reached := tokenHits(as) > 0
+			if reached != tc.want {
+				t.Fatalf("token endpoint reached = %t, want %t (err = %v)", reached, tc.want, err)
+			}
+			if !tc.want {
+				if !errors.Is(err, ErrBlocked) && !errors.Is(err, ErrInsecureTransport) {
+					t.Fatalf("err = %v, want the SSRF screen's refusal", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("refresh: %v", err)
+			}
+		})
+	}
+}
+
 // TestEnsureFreshReportsARevokedGrantWithoutAsking: the proactive path runs
 // on a timer, so it is the one that would produce the traffic.
 func TestEnsureFreshReportsARevokedGrantWithoutAsking(t *testing.T) {

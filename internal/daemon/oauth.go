@@ -64,7 +64,9 @@ type refresherConfig struct {
 	// Log is the daemon logger. Required.
 	Log *slog.Logger
 	// AllowLoopback relaxes the OAuth client's SSRF screen to literal
-	// loopback authorization servers (self-hosted providers, tests).
+	// loopback authorization servers for EVERY server, whatever the registry
+	// says. It is a test seam and a last-resort override; the ordinary route
+	// is `server add --local`, which the scan reads per server below.
 	AllowLoopback bool
 	// Now overrides time.Now (tests).
 	Now func() time.Time
@@ -173,19 +175,40 @@ func newRefresher(cfg refresherConfig) *refresher {
 	}
 	store := oauthflow.NewStore(cfg.Secrets)
 	client := oauthflow.NewClient(oauthflow.Config{AllowLoopback: cfg.AllowLoopback})
-	return &refresher{
-		cfg:   cfg,
-		store: store,
-		coord: oauthflow.NewCoordinator(oauthflow.CoordinatorConfig{
-			Store:   store,
-			Client:  client,
-			LockDir: cfg.LockDir,
-			Now:     cfg.Now,
-			// Online is deliberately nil — see the file comment, decision 1.
-		}),
+	r := &refresher{
+		cfg:     cfg,
+		store:   store,
 		fails:   map[string]int{},
 		retryAt: map[string]backoffState{},
 	}
+	r.coord = oauthflow.NewCoordinator(oauthflow.CoordinatorConfig{
+		Store:   store,
+		Client:  client,
+		LockDir: cfg.LockDir,
+		Now:     cfg.Now,
+		// Read per refresh rather than captured, so `server add --local` and
+		// a registry reload take effect without restarting the daemon.
+		AllowLoopback: r.allowsLoopback,
+		// Online is deliberately nil — see the file comment, decision 1.
+	})
+	return r
+}
+
+// allowsLoopback answers the coordinator's per-server carve-out question from
+// the registry: the same operator declaration (`server add --local`) that lets
+// the data plane dial this server's endpoint over loopback lets its token be
+// renewed over loopback. Anything narrower means a self-hosted provider works
+// at login and dies at the first expiry, which is what it did.
+//
+// Failure direction: FAIL-CLOSED. A server missing from the snapshot — a
+// registry that could not be read, an id removed since — is not local, and its
+// refresh screens the authorization server exactly as before.
+func (r *refresher) allowsLoopback(serverID string) bool {
+	if r.cfg.AllowLoopback {
+		return true
+	}
+	doc, ok := r.cfg.Store.Snapshot().Servers.V.Servers[serverID]
+	return ok && doc.V.Provenance == registry.ProvenanceLocal
 }
 
 // run drives the scan loop until ctx is done.

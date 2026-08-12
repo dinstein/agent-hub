@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"path/filepath"
+	"sync"
 
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/logx"
@@ -55,6 +56,34 @@ import (
 // them apart there, plus the client id every gateway line carries and the
 // refresher's lines do not.
 
+// authFactory builds one server's credential face. allowLoopback is the
+// caller's provenance decision (downstream.Spec.AllowsLoopback) travelling to
+// the refresher, which has no Spec of its own.
+type authFactory func(serverID, scopeName string, allowLoopback bool) downstream.TokenSource
+
+// localServers remembers which servers declared themselves local. It is
+// written as sources are built (one dial) and read on every refresh, which
+// is why it is guarded rather than a plain map.
+type localServers struct {
+	mu  sync.Mutex
+	ids map[string]bool
+}
+
+func (l *localServers) set(serverID string, allow bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.ids == nil {
+		l.ids = map[string]bool{}
+	}
+	l.ids[serverID] = allow
+}
+
+func (l *localServers) allows(serverID string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.ids[serverID]
+}
+
 // secretsDir resolves <data>/secrets, the directory holding secrets.enc, the
 // keyring key registry and the per-server refresh locks.
 func secretsDir(resolver *platform.Resolver) (string, error) {
@@ -77,11 +106,19 @@ func secretsDir(resolver *platform.Resolver) (string, error) {
 // see credEpochs.
 //
 // log records every renewal this process performs; it must not be nil.
-func vaultAuth(chain *secrets.Chain, dir string, epochs *credEpochs, log *slog.Logger) func(string, string) downstream.TokenSource {
+func vaultAuth(chain *secrets.Chain, dir string, epochs *credEpochs, log *slog.Logger) authFactory {
+	// Which servers may have a loopback authorization server is learned as
+	// their sources are built, because that is when this gateway is told —
+	// the caller holds the Spec and the coordinator is shared by every
+	// server, so it can only be asked by id. Fail-closed: a server no source
+	// was ever built for is not in the set, and a refresh for it screens the
+	// endpoint exactly as before.
+	local := &localServers{}
 	coord := oauthflow.NewCoordinator(oauthflow.CoordinatorConfig{
-		Store:   oauthflow.NewStore(chain),
-		Client:  oauthflow.NewClient(oauthflow.Config{}),
-		LockDir: dir,
+		Store:         oauthflow.NewStore(chain),
+		Client:        oauthflow.NewClient(oauthflow.Config{}),
+		LockDir:       dir,
+		AllowLoopback: local.allows,
 		// Online is deliberately nil: see the file comment.
 	})
 	resolve := chain.Resolver()
@@ -89,7 +126,8 @@ func vaultAuth(chain *secrets.Chain, dir string, epochs *credEpochs, log *slog.L
 	// credential first and inherits the shared login only when it has none.
 	// Refresh stays keyed on serverID: the refresh token is the server's, and
 	// a per-scope lock would let two derivations spend it concurrently.
-	return func(serverID, scopeName string) downstream.TokenSource {
+	return func(serverID, scopeName string, allowLoopback bool) downstream.TokenSource {
+		local.set(serverID, allowLoopback)
 		// The epoch is read by two layers for two different reasons: the
 		// WithEpoch wrapper drops the CACHED BEARER when the vault changes,
 		// and the proactive source drops its SCHEDULE. A renewal parked for a

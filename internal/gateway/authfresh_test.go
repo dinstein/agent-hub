@@ -330,9 +330,29 @@ func TestProactiveSourceIsWiredIntoTheGatewaysAuth(t *testing.T) {
 	})
 	build := vaultAuth(chain, t.TempDir(), &credEpochs{}, slog.New(&recordHandler{}))
 
-	ts := build("srv", secrets.DefaultScope)
+	ts := build("srv", secrets.DefaultScope, false)
 	if _, ok := ts.(interface{ NotAfter() time.Time }); !ok {
 		t.Fatal("the gateway's TokenSource does not carry a credential deadline: proactive refresh is off")
+	}
+}
+
+// TestVaultAuthCarriesProvenanceToTheRefresher: the coordinator is shared by
+// every server and can only be asked by id, so the caller's Spec decision has
+// to be recorded as sources are built. A server nobody built a source for
+// must stay refused — this is a loopback carve-out, and the default is no.
+func TestVaultAuthCarriesProvenanceToTheRefresher(t *testing.T) {
+	t.Parallel()
+	var l localServers
+	if l.allows("never-seen") {
+		t.Fatal("an unknown server must not be granted the carve-out")
+	}
+	l.set("remote", false)
+	l.set("selfhosted", true)
+	if l.allows("remote") {
+		t.Fatal("a remote server must not be granted the carve-out")
+	}
+	if !l.allows("selfhosted") {
+		t.Fatal("a server declared local must be granted it")
 	}
 }
 
@@ -374,7 +394,7 @@ func TestUninjectedAssemblyCarriesBothCredentialFaces(t *testing.T) {
 	if g.cfg.Auth == nil {
 		t.Fatal("no bearer factory: every OAuth downstream would be dialed bare and answer 401")
 	}
-	ts := g.cfg.Auth("srv", secrets.DefaultScope)
+	ts := g.cfg.Auth("srv", secrets.DefaultScope, false)
 	if _, ok := ts.(interface{ NotAfter() time.Time }); !ok {
 		t.Error("the assembled TokenSource carries no refresh deadline: a credential that ages out " +
 			"inside a live connection is never renewed, and a downstream answering an expired " +

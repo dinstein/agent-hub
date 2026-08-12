@@ -189,7 +189,7 @@ func screenEndpoint(spec Spec) error {
 // for a local server, because those are the ranges cloud metadata services
 // and intranet hosts live in.
 func dialContextFor(spec Spec) transport.DialContextFunc {
-	allowLoopback := spec.Provenance == ProvenanceLocal
+	allowLoopback := spec.AllowsLoopback()
 	d := &net.Dialer{
 		Timeout:   10 * time.Second,
 		KeepAlive: 30 * time.Second,

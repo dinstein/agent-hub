@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -122,6 +123,24 @@ type CoordinatorConfig struct {
 	// package keeps its narrow dependency budget and so tests need no
 	// environment mutation.
 	LockDir string
+	// AllowLoopback reports whether serverID's authorization server may be a
+	// literal loopback address. nil means "no server may", which is what
+	// every caller got before this existed.
+	//
+	// It is a per-SERVER question answered by a per-PROCESS object, and that
+	// mismatch is the bug it closes: one Coordinator serves every server, so
+	// a single AllowLoopback on its Client had to be all or nothing, and the
+	// safe choice — nothing — meant a self-hosted provider worked at login
+	// and stopped forever at the first expiry. The predicate is the same one
+	// the dialer uses (downstream.Spec.AllowsLoopback), because a server the
+	// data plane will connect to over loopback and one whose token may be
+	// renewed over loopback must not be two different sets.
+	//
+	// Failure direction: FAIL-CLOSED. A nil hook, an unknown server, or any
+	// doubt refuses the carve-out; the cost is a refresh that fails loudly,
+	// against a cost of talking to something on 127.0.0.1 that nobody
+	// declared.
+	AllowLoopback func(serverID string) bool
 	// Online reports whether the daemon owns refreshes for this process.
 	// nil means offline.
 	//
@@ -163,6 +182,12 @@ type Coordinator struct {
 	// Coordinators over the same vault would each dedup their own callers
 	// and then race each other.
 	group Group[refreshOutcome]
+
+	// loopbackOnce guards the derived client the AllowLoopback servers use.
+	// Derived rather than configured so it inherits the real client's
+	// timeout, user agent and transport (Client.WithLoopback).
+	loopbackOnce sync.Once
+	loopback     *Client
 }
 
 // NewCoordinator builds a Coordinator.
@@ -179,6 +204,16 @@ func (c *Coordinator) now() time.Time {
 
 func (c *Coordinator) online() bool {
 	return c.cfg.Online != nil && c.cfg.Online()
+}
+
+// client returns the HTTP face to use for serverID: the configured one, or a
+// loopback-permitting derivation of it for a server whose provenance says so.
+func (c *Coordinator) client(serverID string) *Client {
+	if c.cfg.AllowLoopback == nil || !c.cfg.AllowLoopback(serverID) {
+		return c.cfg.Client
+	}
+	c.loopbackOnce.Do(func() { c.loopback = c.cfg.Client.WithLoopback() })
+	return c.loopback
 }
 
 // Refresh renews serverID's token under the appropriate serialization.
@@ -268,7 +303,7 @@ func (c *Coordinator) refreshNow(ctx context.Context, serverID string, observedE
 		e.Suggestion = "this provider issued no refresh token; run `agenthub auth login " + serverID + "`"
 		return nil, "", e
 	}
-	tok, err := c.cfg.Client.Refresh(ctx, RefreshRequest{
+	tok, err := c.client(serverID).Refresh(ctx, RefreshRequest{
 		TokenEndpoint: st.TokenEndpoint,
 		ClientID:      st.ClientID,
 		ClientSecret:  st.ClientSecret,

@@ -58,6 +58,18 @@ const (
 	ProvenanceLocal = "local"
 )
 
+// AllowsLoopback reports whether this server's operator declared it local,
+// which is the one thing that unblocks a literal loopback address.
+//
+// It is a method rather than a comparison spelled at each site, because the
+// sites are no longer all in this package: the dialer asks it about the MCP
+// endpoint, and the OAuth refresher asks it about the authorization server
+// (internal/oauthflow, CoordinatorConfig.AllowLoopback). The two have to be
+// the same set — a server the data plane may reach over loopback and one
+// whose token may be renewed over loopback — and two spellings of one
+// comparison is exactly how they would stop being.
+func (s Spec) AllowsLoopback() bool { return s.Provenance == ProvenanceLocal }
+
 // Spec is the runtime description of one downstream server, resolved from
 // registry.ServerEntry (see SpecFromEntry). Placeholders in Env and Headers
 // are still unresolved here: they are expanded against the vault at dial

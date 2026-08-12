@@ -215,35 +215,40 @@ grounds that it limits a malicious RS's lateral probing surface. Deployments lis
 are rare in the wild; if you hit one where the first is unavailable and a later one works, the only
 option today is specifying `--issuer` by hand.
 
-### 5. A loopback provider can be logged into, and can never be refreshed
+### 5. ~~A loopback provider can be logged into, and can never be refreshed~~ — closed, and how
 
-**Signing in and staying signed in disagree about the same server.** `auth login --allow-local`
+**Signing in and staying signed in disagreed about the same server.** `auth login --allow-local`
 reaches a loopback authorization server, and `server add --local` records that judgement permanently
 as `provenance=local`, which both login paths honour — `internal/cli/auth.go` ORs it into
-`AllowLoopback`, `internal/ctlapi/nonreglogin.go` derives it outright. **No renewal path has an
-equivalent.** `internal/gateway/auth.go` builds `oauthflow.NewClient(oauthflow.Config{})` with
-`AllowLoopback` unset, and its `func(serverID, scopeName)` factory never sees the entry, so it cannot
-consult provenance even in principle; the daemon's `OAuthAllowLoopback` is a `Config` field that
-tests set and nothing in production does.
+`AllowLoopback`, `internal/ctlapi/nonreglogin.go` derives it outright. **No renewal path had an
+equivalent**, so the screen refused the renewal *before making a request*, for both gateway renewers
+and the daemon's. A self-hosted OAuth MCP server worked after login and stopped the moment its token
+expired, permanently, with one `WARN access token refresh failed … insecure transport` line to say so.
 
-The screen therefore refuses the renewal — for both gateway renewers and the daemon's — and refuses
-it *before making a request*, so the authorization server is never contacted at all.
+The mismatch was never about the trade — `--local` is exactly the operator saying "this endpoint is
+not an SSRF probe" — but about SHAPE: the carve-out lived on a `Client` built once per process, while
+provenance is per server. `CoordinatorConfig.AllowLoopback func(serverID) bool` moves the question to
+where the answer is, and `Client.WithLoopback` derives the permissive client from the configured one
+so the timeout, user agent and transport cannot silently diverge. The two renewers answer it from the
+same declaration the dialer uses:
 
-What a user sees: a self-hosted OAuth MCP server works after login and stops the moment its token
-expires, permanently, with only a `WARN access token refresh failed … insecure transport` line in the
-gateway log. Another `auth login` fixes it until the next expiry.
+| Caller | Source of the answer |
+|---|---|
+| `internal/daemon/oauth.go` | the registry snapshot, re-read per refresh, so `server add --local` needs no restart |
+| `internal/gateway/auth.go` | `downstream.Spec.AllowsLoopback()`, recorded as each server's token source is built — the coordinator is shared and can only be asked by id |
+| `internal/cli/vault.go` | unchanged: it already built one client per invocation from the entry |
 
-Whether that is the right trade is genuinely open — a loopback OAuth endpoint is normally a
-misconfiguration or an SSRF probe, which is why the screen exists, and `--local` is exactly the
-operator saying *this one is not*. It is recorded rather than fixed in passing because the fix is a
-change to a security control, not a wiring change.
+**Failure direction: fail-closed, at every layer.** A nil hook, a server absent from the snapshot, a
+server no source was ever built for — none of them get the carve-out, and RFC1918, CGNAT and
+link-local stay blocked for everyone, exactly as `downstream`'s dialer treats them.
 
-It also **bounds this repository's e2e coverage**, which is how it was found: the only authorization
-server a test may run is on loopback, and TLS does not help, because the carve-out is gated on
-`AllowLoopback` whatever the scheme. **No end-to-end test can demonstrate a successful refresh.**
-`test/e2e/oauthrefresh_test.go` pins the refusal instead — so the behaviour above is enforced rather
-than incidental, and so that making refresh work locally is announced by a failing test rather than
-discovered later.
+Closing it also **unbounded this repository's e2e coverage**, which is how the gap was found: the only
+authorization server a test may run is on loopback, so before this **no end-to-end test could
+demonstrate a successful refresh**. `test/e2e/oauthrefresh_test.go` now demonstrates one, and the
+refusal is pinned next to the code that decides it
+(`internal/oauthflow`, `TestCoordinatorRefusesALoopbackTokenEndpoint`), which is where both directions
+can be shown against one authorization server — the way to prove that what changed is the decision
+and not the address.
 
 ## Credential lifecycle
 

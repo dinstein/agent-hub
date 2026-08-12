@@ -128,8 +128,10 @@ type Config struct {
 	// same tokens as authorized — the gateway held the vault but never
 	// opened it.
 	// scopeName is secrets.DefaultScope for a base connection and the derive
-	// key for a derived instance (docs/modules/dataplane.md).
-	Auth func(serverID, scopeName string) downstream.TokenSource
+	// key for a derived instance (docs/modules/dataplane.md); allowLoopback
+	// is the spec's provenance decision, which travels here because the
+	// refresher behind this seam renews by server id and holds no Spec.
+	Auth authFactory
 	// Log overrides the logger. nil builds the production logx pair: text
 	// to LogWriter (default os.Stderr) + JSON to
 	// <data>/logs/gateway-<client>.log.

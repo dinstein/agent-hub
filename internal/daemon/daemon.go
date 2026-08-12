@@ -109,9 +109,14 @@ type Config struct {
 	// inject an in-memory store so no test ever touches the OS keyring.
 	Secrets secrets.Store
 	// OAuthAllowLoopback lets the refresh coordinator talk to a literal
-	// loopback authorization server (self-hosted providers, tests). Off by
-	// default: an OAuth endpoint on 127.0.0.1 is normally a
+	// loopback authorization server for EVERY server, whatever the registry
+	// says. Off by default: an OAuth endpoint on 127.0.0.1 is normally a
 	// misconfiguration or an SSRF probe.
+	//
+	// It is a blanket override kept for tests. The ordinary route is per
+	// server and needs nothing here: `server add --local` records
+	// provenance, and the refresher reads it per refresh (oauth.go,
+	// allowsLoopback).
 	OAuthAllowLoopback bool
 	// RefreshScanInterval overrides how often the refresh coordinator
 	// rescans for newly stored credentials (0 = 60s). Tests shrink it.
