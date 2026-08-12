@@ -310,6 +310,13 @@ load-bearing rather than pedantic — two of the three can be running inside one
 | gateway, proactive (`internal/gateway/authfresh.go`) | a connection asking for the credential renews it when `expires_at` is inside the grace | offline path — `<secrets>/<server>.refresh.lock`, then a re-read of `expires_at` |
 | gateway, passive (`internal/gateway/auth.go`) | a 401/403 from the downstream: refresh once, replay once | same |
 
+**What these three mean for what a status command may SAY.** An expired access token with a refresh
+token behind it is, on this machine, a repair no human is needed for — and usually one that has already
+happened by the time anyone looks. So `server ls` reports `action: "refresh"` rather than `"login"`
+there, and `ComputeHealth`'s token rung does the same from `HasRefreshToken` (`controlplane.md`). The
+distinction is about whether a browser is required and nothing else: neither command claims the
+credential still WORKS, which stays a live 401's answer.
+
 **"Gateway" here does not mean "stdio gateway".** The daemon's HTTP data plane assembles one gateway
 per credential inside its own process (`internal/daemon/httpdata.go`), and those reach both gateway
 rows by the same route an `agenthub connect` process does: `Config.Auth` is left nil, so `newGateway`

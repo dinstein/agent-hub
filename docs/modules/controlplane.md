@@ -198,8 +198,8 @@ flowchart TD
     D -->|"connected / unknown"| E["5. OAuth failure at call time"]
     E -->|"hit"| E1["degraded + login"]
     E -->|"no hit"| F["6. token state"]
-    F -->|"expired"| F1["unhealthy + login"]
-    F -->|"expiring"| F2["degraded + login"]
+    F -->|"expired"| F1["unhealthy + refresh<br/>(login without a refresh token)"]
+    F -->|"expiring"| F2["degraded + refresh<br/>(login without a refresh token)"]
     F -->|"ok"| G["7. healthy"]
     G -->|"conn = connected"| G1["healthy / \"ok\""]
     G -->|"conn = unknown"| G2["healthy / \"not observed\"<br/>(nobody is watching, not nothing is wrong)"]
@@ -214,6 +214,25 @@ connection-error branch because restarting cannot repair it; and on rung 7 `unkn
 currently holds a connection** — a fact about the observer, not the server — so `level` stays healthy
 while `summary` becomes `"not observed"`. On rung 4 `unknown` falls through with `connected`, because a
 server nobody is using whose token has expired must still report `token expired`.
+
+**Rung 6 is the only rung whose action is chosen rather than fixed**, and `HasRefreshToken` is what
+chooses it: a stored refresh token makes the repair unattended (`refresh`), and its absence makes a
+browser and a human necessary (`login`). It moves nothing else — same level, same summary — and false
+is the safe default, because `login` repairs both cases while `refresh` repairs one. Rungs 3, 4 and 5
+therefore keep `login` unconditionally: each is evidence the credential is being REFUSED or cannot be
+built, which no refresh repairs. The gateway report carries the flag beside `token`, and the aggregator
+folds it with **AND** — the one field not folded with OR, because it announces that a repair is
+AVAILABLE rather than that something is wrong, so a reporter that stays silent (an older gateway, one
+that never looked) must drag the answer back to `login` rather than hand an operator a command that can
+only fail.
+
+**Current assembly status — rungs 5 and 6 are unreachable in production.** The only `ServerStateSource`
+the daemon builds is `GatewayStates`, fed only by `internal/gateway`'s `serverStates()`, and that
+snapshot sets `conn`, `tools`, `detail` and `needs_auth` — never `token`, `call_auth_failed` or
+`has_refresh_token`. Both rungs are therefore live code with no producer: they are exercised by tests
+and by any future state source, while today the GUI learns about an expired token only through a failed
+connection. The CLI's own `server ls` does not depend on this — it reads the vault directly and reports
+the same distinction offline.
 
 **Push and pull share one payload.** `serverList()` feeds both `GET /v1/servers` and the `servers` SSE
 frames, so either is authoritative.
@@ -844,6 +863,18 @@ rung does **not** guess (`-`, never "probably needs a login"). Reading it is **i
 rather than an optimization: a command that pops a keychain dialog is one people stop running. Failure
 direction is **fail-open for the listing, fail-visible for the cells** — an unreadable vault still prints
 every registry fact, but its cells read `error`, never `-`.
+
+**The action and the hint on one row must name the same repair, and one predicate decides both.** An
+OAuth expiry reported `action: "login"` whatever was stored, while the sentence printed beside it
+already offered `agenthub auth refresh` when a refresh token existed — so a caller reading the field
+that exists FOR callers who read one thing was sent to a browser for a renewal that runs unattended,
+and that the gateway's own token source usually performs by itself. `renewAction` now answers in the
+`api.Action*` vocabulary what `renewCommand` answers as a command, from the same `HasRefreshToken`, and
+a test walks all four combinations. The `login` on the DCR-credentials-only rung is not that bug
+returning: there is no access token there to renew. The sentence itself is CARRIED rather than left to
+the text mode — `auth.hint`, composed once in `classify` and read back by the footer instead of
+recomputed — because a `--json` caller rebuilding it from kind/state/action is a reconstruction free to
+drift with nothing to catch it.
 
 **A rule is reported by the resource that stores it; a listing reports its effect** (canonical.md §3), so
 `server tool ls --rules` is hidden and going. `TestBothToolListingsTakeTheSameFlags` compares the two
