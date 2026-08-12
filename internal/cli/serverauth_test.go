@@ -63,6 +63,12 @@ func TestClassifyServerAuthLadder(t *testing.T) {
 	expired.ExpiresAt = now.Add(-time.Second).Unix()
 	never := freshState(now)
 	never.ExpiresAt, never.IssuedAt = 0, 0
+	// The same two lifecycle states with nothing to renew from: the action
+	// must then name the repair that does need a human.
+	expiringNoRefresh := freshState(now)
+	expiringNoRefresh.ExpiresAt, expiringNoRefresh.RefreshToken = now.Add(30*time.Second).Unix(), ""
+	expiredNoRefresh := freshState(now)
+	expiredNoRefresh.ExpiresAt, expiredNoRefresh.RefreshToken = now.Add(-time.Second).Unix(), ""
 
 	for _, tc := range []struct {
 		name   string
@@ -133,15 +139,33 @@ func TestClassifyServerAuthLadder(t *testing.T) {
 				[]secrets.Ref{secrets.OAuthStateRef("srv"), secrets.HTTPAuthRef("srv")},
 				map[string]*oauthflow.State{"srv": expiring}, nil),
 			want: "oauth:expiring", kind: authKindOAuth, state: api.AuthStateExpiring,
-			action: api.ActionLogin,
+			action: api.ActionRefresh,
 		},
 		{
-			name:  "an expired OAuth login",
+			name:  "an expired OAuth login with a refresh token needs no human",
 			entry: httpEntry(nil),
 			probe: probeFor(
 				[]secrets.Ref{secrets.OAuthStateRef("srv"), secrets.HTTPAuthRef("srv")},
 				map[string]*oauthflow.State{"srv": expired}, nil),
 			want: "oauth:expired", kind: authKindOAuth, state: api.AuthStateExpired,
+			action: api.ActionRefresh,
+		},
+		{
+			name:  "an expired OAuth login with nothing to renew from",
+			entry: httpEntry(nil),
+			probe: probeFor(
+				[]secrets.Ref{secrets.OAuthStateRef("srv"), secrets.HTTPAuthRef("srv")},
+				map[string]*oauthflow.State{"srv": expiredNoRefresh}, nil),
+			want: "oauth:expired", kind: authKindOAuth, state: api.AuthStateExpired,
+			action: api.ActionLogin,
+		},
+		{
+			name:  "an expiring OAuth login with nothing to renew from",
+			entry: httpEntry(nil),
+			probe: probeFor(
+				[]secrets.Ref{secrets.OAuthStateRef("srv"), secrets.HTTPAuthRef("srv")},
+				map[string]*oauthflow.State{"srv": expiringNoRefresh}, nil),
+			want: "oauth:expiring", kind: authKindOAuth, state: api.AuthStateExpiring,
 			action: api.ActionLogin,
 		},
 		{
@@ -283,6 +307,37 @@ func TestServerAuthHints(t *testing.T) {
 				t.Errorf("hint = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestServerAuthActionAgreesWithTheHint is the assertion the refresh action
+// exists for: the machine-readable field and the sentence beside it must name
+// the same repair. They disagreed once — every OAuth expiry reported `login`
+// while the hint offered `auth refresh` — and a frontend reading only the
+// field sent people to a browser for a renewal that needed no human.
+func TestServerAuthActionAgreesWithTheHint(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{api.AuthStateExpired, api.AuthStateExpiring} {
+		for _, hasRefresh := range []bool{true, false} {
+			auth := ServerAuth{Kind: authKindOAuth, State: state, HasRefreshToken: hasRefresh}
+			hint := auth.hint("notion")
+			wantVerb := "agenthub auth login"
+			if hasRefresh {
+				wantVerb = "agenthub auth refresh"
+			}
+			if !strings.Contains(hint, wantVerb) {
+				t.Fatalf("state %q refresh=%v: hint = %q, want it to offer %q",
+					state, hasRefresh, hint, wantVerb)
+			}
+			// The action is the same verb, in the api vocabulary.
+			want := api.ActionLogin
+			if hasRefresh {
+				want = api.ActionRefresh
+			}
+			if got := auth.renewAction(); got != want {
+				t.Errorf("state %q refresh=%v: action = %q, want %q", state, hasRefresh, got, want)
+			}
+		}
 	}
 }
 

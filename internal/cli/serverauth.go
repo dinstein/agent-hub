@@ -231,15 +231,30 @@ func (p authProbe) classifyOAuth(ctx context.Context, id string, now time.Time) 
 		out.Detail = "client registration stored, no access token"
 		return out, true
 	}
+	// The action follows the same rule renewCommand renders in the hint, and
+	// for the same reason: a stored refresh token makes the repair unattended,
+	// and a caller reading only `action` must not be sent to a browser for a
+	// renewal no human needs to watch. The DCR-credentials-only branch above
+	// keeps `login` on purpose — it has no access token to renew.
 	switch {
 	case st.Expired(now):
-		out.State, out.Action = api.AuthStateExpired, api.ActionLogin
+		out.State, out.Action = api.AuthStateExpired, out.renewAction()
 	case st.NeedsRefresh(now):
-		out.State, out.Action = api.AuthStateExpiring, api.ActionLogin
+		out.State, out.Action = api.AuthStateExpiring, out.renewAction()
 	default:
 		out.State = api.AuthStateAuthorized
 	}
 	return out, true
+}
+
+// renewAction is renewCommand's machine-readable half: the same choice, in
+// the api.Action* vocabulary. Keeping them one line apart is what stops the
+// column and the hint from ever again saying different things.
+func (a *ServerAuth) renewAction() string {
+	if a.HasRefreshToken {
+		return api.ActionRefresh
+	}
+	return api.ActionLogin
 }
 
 // missingSecrets returns the keys of refs that resolve nowhere.
