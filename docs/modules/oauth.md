@@ -252,7 +252,7 @@ have:
 
 | Entry | Contents |
 |---|---|
-| `__oauth_state__` | OAuth state JSON: refresh token, client_id/secret, token_endpoint |
+| `__oauth_state__` | OAuth state JSON: refresh token, client_id/secret, token_endpoint, and whether the provider has refused this grant |
 | `__http_auth__` | Access token (shared slot for OAuth tokens and manually pasted tokens) |
 | Any custom key | Whatever `secret set <server> <KEY>` stored, possibly under a non-default scope |
 
@@ -298,6 +298,44 @@ and — until `secrets.Chain.HasUnreadableEnc` existed — reported a clean purg
 refresh token. The predicate separates "nothing is stored" from "something may be stored that I
 cannot see", and answers TRUE on any doubt: a spurious warning costs nothing next to a silently
 retained credential.
+
+### When the grant itself is refused
+
+A refresh token dies in ways a client cannot see coming: it is spent, it is rotated away by a
+concurrent writer, the user withdraws consent in a browser tab, the provider expires it on a schedule
+of its own, or it garbage-collects the dynamic client registration behind it. All of them arrive as
+one HTTP response — `400 invalid_grant`, or `invalid_client` — and **no retry survives any of them**.
+
+`terminalGrant` (`token.go`) is the only place that decides this, and it decides on the response
+SHAPE, not on the error code alone: status 400 or 401 plus one of those two codes. An authorization
+server having a bad day answers 500, and a proxy in front of one answers 502 with whatever body it
+likes. The failure direction is asymmetric and picks itself — a transient failure misread as terminal
+parks a working server until a human logs in, while the reverse merely retries — so anything that is
+not exactly that shape keeps the retry ladder. The token EXCHANGE path is excluded outright: an
+`invalid_grant` there is a spent authorization code and says nothing about what is in the vault.
+
+What follows a real refusal is a **fact recorded in the state entry** (`grant_revoked_at`, plus the
+provider's own words in `grant_revoked_reason`), and from then on the coordinator answers every
+refresh from the vault without a request. That fact cannot be re-derived: a dead refresh token and a
+live one are the same bytes, and the only way to know is to have been told once.
+
+| | |
+|---|---|
+| Written by | `Store.MarkGrantRevoked`, inside the same lock as the refresh that earned it |
+| Never written for | a timeout, a 5xx, a network error, or a refusal of a record that is no longer stored |
+| Cleared by | `Store.SaveFromToken` — i.e. **any** path that obtains a token, so `auth login` recovers structurally rather than by anyone remembering |
+| Overridden by | `Store.ClearGrantRevoked`, which is what `auth refresh --force` calls before asking once more |
+| Does NOT touch | the access token, which may still be accepted for the rest of its life |
+
+The mark is a read-modify-write against the key `auth login` also writes in whole (the shared-entry
+gap above), so it re-reads and compares the refresh token and expiry before writing: a login that
+lands while the refusal is in flight wins, and is not overwritten by a stale record carrying
+"revoked". Recording the same refusal twice is a no-op — every renewer that meets it calls this, and a
+keychain write per rejected attempt is exactly the traffic being stopped.
+
+**Failure direction: fail-open.** A mark that cannot be persisted leaves the caller with the retry
+ladder it had before, which is noisy but correct; the error says so alongside the refusal rather than
+in place of it.
 
 ### Who refreshes, and what it logs
 

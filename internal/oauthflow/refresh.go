@@ -254,6 +254,14 @@ func (c *Coordinator) refreshNow(ctx context.Context, serverID string, observedE
 		}
 		return st, tok, fmt.Errorf("%w (server %q)", ErrRefreshSuperseded, serverID)
 	}
+	if st.GrantRevoked() {
+		// The provider has already refused this exact grant, and said so in
+		// the vault. Asking again is a request whose answer is on file. The
+		// one honest reason to send it anyway — "in case the provider changed
+		// its mind" — is `auth refresh --force`, and nothing does it on a
+		// timer.
+		return nil, "", revokedError(serverID, st.GrantRevokedReason)
+	}
 	if strings.TrimSpace(st.RefreshToken) == "" {
 		e := newFlowError(ErrorTypeRefresh, fmt.Errorf("%w: server %q", ErrNoRefreshToken, serverID))
 		e.ServerID = serverID
@@ -272,7 +280,7 @@ func (c *Coordinator) refreshNow(ctx context.Context, serverID string, observedE
 		if errors.As(err, &fe) && fe.ServerID == "" {
 			fe.ServerID = serverID
 		}
-		return nil, "", err
+		return nil, "", c.recordRefusal(ctx, serverID, st, err)
 	}
 	next := *st
 	next.RefreshToken = "" // let SaveFromToken carry forward or rotate
@@ -281,6 +289,67 @@ func (c *Coordinator) refreshNow(ctx context.Context, serverID string, observedE
 		return nil, "", err
 	}
 	return saved, tok.AccessToken, nil
+}
+
+// recordRefusal files a terminal refusal in the vault and returns the error
+// the caller should propagate. Anything else passes straight through.
+//
+// It runs inside the same serialization as the refresh that earned it — the
+// file lock offline, the singleflight online — which is what lets the mark be
+// a read-modify-write at all.
+//
+// A mark that cannot be written is APPENDED to the error rather than replacing
+// it: the caller must still see NeedsLogin (the grant really is dead), and an
+// operator whose vault is read-only must still be told that the reason the
+// same warning returns every hour is the vault, not the provider.
+func (c *Coordinator) recordRefusal(ctx context.Context, serverID string, refused *State, err error) error {
+	if !errors.Is(err, ErrGrantRevoked) && !errors.Is(err, ErrClientRejected) {
+		return err
+	}
+	_, markErr := c.cfg.Store.MarkGrantRevoked(ctx, serverID, refused, refusalReason(err), c.now())
+	if markErr != nil {
+		return fmt.Errorf("%w (the refusal could not be recorded: %v)", err, markErr)
+	}
+	return err
+}
+
+// refusalReason renders what the authorization server said, for the vault and
+// for every surface that reads it back. It prefers the AS's own code and
+// description over this package's wording: "invalid_grant: consent withdrawn"
+// tells an operator which of a dozen provider behaviours they met, and
+// "refresh grant rejected" tells them only that we are here.
+func refusalReason(err error) string {
+	var te *TokenError
+	if !errors.As(err, &te) {
+		return err.Error()
+	}
+	if te.Description == "" {
+		return te.Code
+	}
+	return te.Code + ": " + te.Description
+}
+
+// revokedError rebuilds the terminal error from what the vault remembers, so
+// a refusal recorded an hour ago is reported in the same shape as the one that
+// just came back from the provider — same sentinel, same suggestion, same
+// server id. A caller that classified the live refusal correctly cannot then
+// mis-handle the remembered one.
+//
+// At rest the two live sentinels collapse into ErrGrantRevoked: what was
+// recorded is that the grant this record holds is refused, and a rejected
+// client and a rejected grant call for the same login. WHICH answer the
+// provider gave survives in the reason, in the provider's own words, which is
+// the part an operator can act on.
+func revokedError(serverID, reason string) error {
+	cause := error(ErrGrantRevoked)
+	if reason != "" {
+		cause = fmt.Errorf("%w: %s", ErrGrantRevoked, reason)
+	}
+	e := newFlowError(ErrorTypeRefresh, cause)
+	e.ServerID = serverID
+	e.Suggestion = "the authorization server refused this grant; run `agenthub auth login " + serverID +
+		"` (or `agenthub auth refresh --force " + serverID + "` to ask it once more)"
+	return e
 }
 
 // --- refresh lock ---------------------------------------------------------
