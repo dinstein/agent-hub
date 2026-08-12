@@ -222,6 +222,19 @@ func (r *refresher) cycle(ctx context.Context) time.Duration {
 			}
 			continue
 		}
+		if st.GrantRevoked() {
+			// The provider refused this grant, and that was written down. The
+			// scan skips the server outright rather than falling through to
+			// the ladder: the ladder's slowest rung is still a request every
+			// 24 hours, and the answer to every one of them is already on
+			// file. Nothing is logged per cycle either — the refusal was
+			// logged once, when it happened, and `agenthub auth status`
+			// answers on demand.
+			//
+			// Recovery needs no signal from anywhere: a login clears the mark
+			// and this branch re-reads the vault on every scan.
+			continue
+		}
 		at, scheduled := st.RefreshAt()
 		if !scheduled {
 			continue // no expiry advertised: the 401 path owns this server
@@ -284,7 +297,14 @@ func (r *refresher) refreshOne(ctx context.Context, id string, now time.Time, ob
 			"trigger", oauthflow.TriggerExpiry,
 			"superseded", errors.Is(err, oauthflow.ErrRefreshSuperseded),
 			"shared", shared)
-	case errors.Is(err, oauthflow.ErrNoRefreshToken), errors.Is(err, oauthflow.ErrNoState):
+	case oauthflow.NeedsLogin(err), oauthflow.IsUnmanaged(err):
+		// One predicate rather than a list of sentinels: this branch and the
+		// gateway's must agree, and two independently maintained lists only
+		// disagree about the sentinel one of them has not heard of yet.
+		//
+		// A refusal recorded by the coordinator additionally takes the server
+		// out of the scan entirely (see cycle), so this line is emitted once
+		// per revocation rather than once per rung.
 		r.noteFailure(id, now, observedExpiresAt, true)
 		r.cfg.Log.Warn("token cannot be refreshed without a new login",
 			logx.Server(id), "trigger", oauthflow.TriggerExpiry, "error", err)

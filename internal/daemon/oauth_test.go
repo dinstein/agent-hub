@@ -59,6 +59,7 @@ type fakeAS struct {
 	srv    *httptest.Server
 	calls  atomic.Int64
 	fail   atomic.Bool
+	refuse atomic.Bool
 	issued atomic.Int64
 
 	// presented records every refresh_token this endpoint was asked to
@@ -87,6 +88,15 @@ func newFakeAS(t *testing.T) *fakeAS {
 				as.presented = append(as.presented, rt)
 				as.presentedMu.Unlock()
 			}
+		}
+		if as.refuse.Load() {
+			// The terminal shape: 400 + invalid_grant is the answer a
+			// revoked, spent or rotated-away refresh token gets, and no
+			// retry survives it.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"invalid_grant","error_description":"consent withdrawn"}`))
+			return
 		}
 		if as.fail.Load() {
 			w.Header().Set("Content-Type", "application/json")
@@ -296,6 +306,54 @@ func TestRefresherParksServersNeedingALogin(t *testing.T) {
 	hold, ok := r.hold("remote", 0)
 	if !ok || time.Until(hold) < time.Hour {
 		t.Fatalf("retryAt = %v, want the slow ladder", hold)
+	}
+}
+
+// TestRefresherStopsAskingAfterARefusal: the ladder's slowest rung is still
+// a request every 24 hours, and the answer to every one of them is on file
+// from the first. What the counter proves here is the difference between
+// "backs off" and "stops" — the two are indistinguishable in a log, and only
+// one of them is what a revoked credential deserves.
+func TestRefresherStopsAskingAfterARefusal(t *testing.T) {
+	as := newFakeAS(t)
+	as.refuse.Store(true)
+	vault := newMemStore()
+	seedState(t, vault, "remote", as.srv.URL+"/token", time.Now().Add(-10*time.Second).Unix())
+
+	r := testRefresher(t, refresherConfig{
+		Store:   testRegistry(t, map[string]registry.ServerEntry{"remote": {Transport: "http", URL: "https://x/mcp", Enabled: true}}),
+		Secrets: vault,
+	})
+	r.cycle(context.Background())
+	if as.calls.Load() != 1 {
+		t.Fatalf("calls = %d, want the one ask that earned the refusal", as.calls.Load())
+	}
+
+	var st oauthflow.State
+	if err := json.Unmarshal([]byte(vault.get(t, secrets.OAuthStateRef("remote"))), &st); err != nil {
+		t.Fatal(err)
+	}
+	if !st.GrantRevoked() {
+		t.Fatalf("the refusal was not recorded: %+v", st)
+	}
+
+	for range 5 {
+		r.cycle(context.Background())
+	}
+	if as.calls.Load() != 1 {
+		t.Fatalf("calls = %d after six cycles, want the scan to skip a revoked grant entirely", as.calls.Load())
+	}
+
+	// A fresh login rewrites the state without the mark. The scan reads the
+	// vault every cycle, so recovery needs no signal from anywhere. The
+	// credential seeded here is deliberately due already — a login normally
+	// yields an hour of validity and nothing would happen for an hour, which
+	// would test the clock rather than the recovery.
+	as.refuse.Store(false)
+	seedState(t, vault, "remote", as.srv.URL+"/token", time.Now().Add(-5*time.Second).Unix())
+	r.cycle(context.Background())
+	if as.calls.Load() != 2 {
+		t.Fatalf("calls = %d, want the fresh credential to be renewed", as.calls.Load())
 	}
 }
 
