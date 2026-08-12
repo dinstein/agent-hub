@@ -36,6 +36,11 @@ const (
 	TokenOK       TokenState = ""
 	TokenExpiring TokenState = "expiring"
 	TokenExpired  TokenState = "expired"
+	// TokenRevoked: the authorization server refused the stored refresh
+	// grant. It outranks expired because it is a different sentence — an
+	// expired token normally repairs itself within the minute and a revoked
+	// grant never does — and because only one of the two can be waited out.
+	TokenRevoked TokenState = "revoked"
 )
 
 // HealthInput is everything ComputeHealth consumes: one flat snapshot of a
@@ -218,6 +223,17 @@ func ComputeHealth(in HealthInput) api.Health {
 		renew = api.ActionRefresh
 	}
 	switch in.Token {
+	case TokenRevoked:
+		// The one token state whose action is not chosen: a refused grant
+		// makes `refresh` a command that can only fail, whatever is stored.
+		// Producers report HasRefreshToken false here for the same reason,
+		// and this rung does not depend on their doing so.
+		return api.Health{
+			Level:      api.HealthLevelUnhealthy,
+			AdminState: admin,
+			Summary:    "authorization revoked",
+			Action:     api.ActionLogin,
+		}
 	case TokenExpired:
 		return api.Health{
 			Level:      api.HealthLevelUnhealthy,

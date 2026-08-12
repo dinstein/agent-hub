@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -68,6 +69,13 @@ type refresherConfig struct {
 	// says. It is a test seam and a last-resort override; the ordinary route
 	// is `server add --local`, which the scan reads per server below.
 	AllowLoopback bool
+	// TokenStates, when set, receives one snapshot of every scanned
+	// server's credential lifecycle per cycle. It is the control plane's
+	// only producer for the health contract's token rung (ctlapi/
+	// tokenstate.go), and it is published from here because this loop
+	// already reads exactly that state — a second reader would mean a
+	// second vault access, which on macOS means a keychain dialog.
+	TokenStates *ctlapi.TokenStates
 	// Now overrides time.Now (tests).
 	Now func() time.Time
 	// MaxScan overrides maxRefreshScan (tests shrink it).
@@ -232,6 +240,11 @@ func (r *refresher) cycle(ctx context.Context) time.Duration {
 	now := r.cfg.Now()
 	next := now.Add(r.cfg.MaxScan)
 	attempted := 0
+	// The control plane's view of every credential, rebuilt from the same
+	// reads this loop performs for its own purposes. Whole-snapshot, so a
+	// server deleted, disabled or logged out since the last scan disappears
+	// without anyone having to remember to remove it.
+	facts := map[string]ctlapi.TokenFacts{}
 
 	for _, id := range r.servers() {
 		st, err := r.store.LoadState(ctx, id)
@@ -245,6 +258,7 @@ func (r *refresher) cycle(ctx context.Context) time.Duration {
 			}
 			continue
 		}
+		facts[id] = tokenFactsOf(st, now)
 		if st.GrantRevoked() {
 			// The provider refused this grant, and that was written down. The
 			// scan skips the server outright rather than falling through to
@@ -274,12 +288,25 @@ func (r *refresher) cycle(ctx context.Context) time.Duration {
 			continue
 		}
 		attempted++
-		r.refreshOne(ctx, id, now, st.ExpiresAt)
+		// The attempt is newer than the state read above it, so its outcome
+		// wins. Without this the control plane would show "expiring" for up
+		// to a scan interval after every successful renewal — a degraded
+		// badge for the one outcome that is entirely healthy — and would not
+		// learn about a refusal until the following scan.
+		switch r.refreshOne(ctx, id, now, st.ExpiresAt) {
+		case renewalOK:
+			facts[id] = ctlapi.TokenFacts{State: ctlapi.TokenOK, HasRefreshToken: true}
+		case renewalRefused:
+			facts[id] = ctlapi.TokenFacts{State: ctlapi.TokenRevoked}
+		}
 		if hold, ok := r.hold(id, st.ExpiresAt); ok {
 			next = earliest(next, hold)
 		}
 	}
 
+	if r.cfg.TokenStates != nil {
+		r.cfg.TokenStates.Replace(facts)
+	}
 	if r.cfg.OnCycle != nil {
 		r.cfg.OnCycle(attempted)
 	}
@@ -301,7 +328,11 @@ func (r *refresher) cycle(ctx context.Context) time.Duration {
 // renewed by this daemon or by a stdio gateway that took a 401 is a property
 // of the DEPLOYMENT, not of the event, so it belongs in the trigger field
 // rather than in prose only one of the two sides can be grepped for.
-func (r *refresher) refreshOne(ctx context.Context, id string, now time.Time, observedExpiresAt int64) {
+//
+// It reports what the attempt made of the credential, because the caller
+// publishes the control plane's view of it and the state read a moment ago is
+// stale by exactly this call.
+func (r *refresher) refreshOne(ctx context.Context, id string, now time.Time, observedExpiresAt int64) renewal {
 	r.cfg.Log.Debug("refreshing a downstream access token", logx.Server(id),
 		"trigger", oauthflow.TriggerExpiry)
 	_, shared, err := r.group.Do(ctx, id, func(ctx context.Context) (string, error) {
@@ -320,6 +351,7 @@ func (r *refresher) refreshOne(ctx context.Context, id string, now time.Time, ob
 			"trigger", oauthflow.TriggerExpiry,
 			"superseded", errors.Is(err, oauthflow.ErrRefreshSuperseded),
 			"shared", shared)
+		return renewalOK
 	case oauthflow.NeedsLogin(err), oauthflow.IsUnmanaged(err):
 		// One predicate rather than a list of sentinels: this branch and the
 		// gateway's must agree, and two independently maintained lists only
@@ -331,6 +363,13 @@ func (r *refresher) refreshOne(ctx context.Context, id string, now time.Time, ob
 		r.noteFailure(id, now, observedExpiresAt, true)
 		r.cfg.Log.Warn("token cannot be refreshed without a new login",
 			logx.Server(id), "trigger", oauthflow.TriggerExpiry, "error", err)
+		if oauthflow.GrantRefused(err) {
+			// Narrower than the branch it sits in: "no refresh token is
+			// stored" needs the same login but is not something the provider
+			// said, and reporting it as a revocation would put words in the
+			// provider's mouth.
+			return renewalRefused
+		}
 	default:
 		// The old wording said "keeping the current token" here. It is still
 		// true — a proactive failure happens while the stored token is valid —
@@ -341,6 +380,44 @@ func (r *refresher) refreshOne(ctx context.Context, id string, now time.Time, ob
 			logx.Server(id), "trigger", oauthflow.TriggerExpiry,
 			"attempt", n, "retry_in", d, "error", err)
 	}
+	return renewalFailed
+}
+
+// renewal is what one refresh attempt made of the credential.
+type renewal int
+
+const (
+	// renewalFailed: nothing is known beyond what the vault already said.
+	renewalFailed renewal = iota
+	// renewalOK: there is a working credential now, whoever stored it.
+	renewalOK
+	// renewalRefused: the authorization server rejected the grant itself.
+	renewalRefused
+)
+
+// tokenFactsOf renders one stored credential for the control plane.
+//
+// The order is the order of severity, and revoked comes first because it is
+// the only one of the three that does not repair itself: an expired token
+// with a live refresh token behind it is usually renewed before anyone looks.
+func tokenFactsOf(st *oauthflow.State, now time.Time) ctlapi.TokenFacts {
+	f := ctlapi.TokenFacts{
+		// "Stored AND usable": a refused grant leaves the bytes in place,
+		// and offering `auth refresh` for them sends an operator to a
+		// command that can only fail (ctlapi.TokenFacts).
+		HasRefreshToken: st.RefreshToken != "" && !st.GrantRevoked(),
+	}
+	switch {
+	case st.GrantRevoked():
+		f.State = ctlapi.TokenRevoked
+	case st.Expired(now):
+		f.State = ctlapi.TokenExpired
+	case st.NeedsRefresh(now):
+		f.State = ctlapi.TokenExpiring
+	default:
+		f.State = ctlapi.TokenOK
+	}
+	return f
 }
 
 // servers lists the enabled HTTP-transport servers, sorted, so a cycle is
@@ -369,7 +446,8 @@ func earliest(a, b time.Time) time.Time {
 // It returns nil (and logs) when the vault directory cannot be resolved:
 // no refresh coordination is a degradation, never a reason to refuse to
 // coordinate anything else.
-func startRefresher(ctx context.Context, cfg Config, store *registry.Store, dataDir string, log *slog.Logger) *refresher {
+func startRefresher(ctx context.Context, cfg Config, store *registry.Store, dataDir string,
+	tokens *ctlapi.TokenStates, log *slog.Logger) *refresher {
 	sec := cfg.Secrets
 	if sec == nil {
 		sec = secrets.NewChain(secrets.ChainConfig{Dir: filepath.Join(dataDir, "secrets")})
@@ -381,6 +459,7 @@ func startRefresher(ctx context.Context, cfg Config, store *registry.Store, data
 		Log:           log,
 		AllowLoopback: cfg.OAuthAllowLoopback,
 		MaxScan:       cfg.RefreshScanInterval,
+		TokenStates:   tokens,
 	})
 	go r.run(ctx)
 	return r

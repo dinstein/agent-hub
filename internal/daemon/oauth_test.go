@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/secrets"
@@ -354,6 +355,62 @@ func TestRefresherStopsAskingAfterARefusal(t *testing.T) {
 	r.cycle(context.Background())
 	if as.calls.Load() != 2 {
 		t.Fatalf("calls = %d, want the fresh credential to be renewed", as.calls.Load())
+	}
+}
+
+// TestRefresherPublishesEveryCredentialsState: the control plane's token rung
+// had no producer at all, so an expired or refused credential reached the GUI
+// only as a failed connection, and only if somebody was connected. This loop
+// is the producer because it already reads exactly that state — a second
+// reader would mean a second vault access, and on macOS that means a keychain
+// dialog.
+func TestRefresherPublishesEveryCredentialsState(t *testing.T) {
+	as := newFakeAS(t)
+	vault := newMemStore()
+	tokens := ctlapi.NewTokenStates()
+
+	// healthy: hours left. refused: the provider says no. Both are enabled
+	// HTTP servers, so both are scanned.
+	seedState(t, vault, "healthy", as.srv.URL+"/token", time.Now().Add(time.Hour).Unix())
+	seedState(t, vault, "refused", as.srv.URL+"/token", time.Now().Add(-10*time.Second).Unix())
+	as.refuse.Store(true)
+
+	entry := registry.ServerEntry{Transport: "http", URL: "https://x/mcp", Enabled: true}
+	r := testRefresher(t, refresherConfig{
+		Store: testRegistry(t, map[string]registry.ServerEntry{
+			"healthy": entry, "refused": entry, "unauthorized": entry,
+		}),
+		Secrets:     vault,
+		TokenStates: tokens,
+	})
+	r.cycle(context.Background())
+
+	if f, ok := tokens.TokenState("healthy"); !ok || f.State != ctlapi.TokenOK || !f.HasRefreshToken {
+		t.Errorf("healthy = %+v, %t", f, ok)
+	}
+	f, ok := tokens.TokenState("refused")
+	if !ok || f.State != ctlapi.TokenRevoked {
+		t.Errorf("refused = %+v, %t, want revoked", f, ok)
+	}
+	if f.HasRefreshToken {
+		t.Error("a refused grant must not advertise an unattended repair: " +
+			"`auth refresh` for it can only fail")
+	}
+	// A server with no credential at all is not a credential in an unknown
+	// state: it must be absent, so the health contract keeps its own answer.
+	if _, ok := tokens.TokenState("unauthorized"); ok {
+		t.Error("a server with no OAuth state must not appear in the snapshot")
+	}
+
+	// A renewal that just succeeded is reported as healthy immediately.
+	// Publishing the state read BEFORE the refresh would show "expiring" for
+	// up to a scan interval after every successful renewal — a degraded badge
+	// for the one outcome that is entirely fine.
+	as.refuse.Store(false)
+	seedState(t, vault, "healthy", as.srv.URL+"/token", time.Now().Add(-10*time.Second).Unix())
+	r.cycle(context.Background())
+	if f, ok := tokens.TokenState("healthy"); !ok || f.State != ctlapi.TokenOK {
+		t.Errorf("after a successful renewal = %+v, %t, want ok", f, ok)
 	}
 }
 

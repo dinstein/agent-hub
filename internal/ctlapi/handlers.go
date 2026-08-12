@@ -31,6 +31,15 @@ func (s *Server) serverList() []api.Server {
 		if s.opts.States != nil {
 			rt, haveRT = s.opts.States.ServerRuntime(id)
 		}
+		// The vault half. It OVERWRITES rather than merges, and it is read
+		// whether or not a gateway reported anything: a credential's
+		// lifecycle is not something a connection can know better, and the
+		// case worth reporting is the one where nobody is connected at all.
+		if s.opts.TokenStates != nil {
+			if f, ok := s.opts.TokenStates.TokenState(id); ok {
+				rt.Token, rt.HasRefreshToken = f.State, f.HasRefreshToken
+			}
+		}
 		admin := api.AdminStateEnabled
 		if !entry.Enabled {
 			admin = api.AdminStateDisabled

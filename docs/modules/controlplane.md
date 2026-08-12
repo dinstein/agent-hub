@@ -198,6 +198,7 @@ flowchart TD
     D -->|"connected / unknown"| E["5. OAuth failure at call time"]
     E -->|"hit"| E1["degraded + login"]
     E -->|"no hit"| F["6. token state"]
+    F -->|"revoked"| F0["unhealthy + login<br/>(fixed: refresh can only fail)"]
     F -->|"expired"| F1["unhealthy + refresh<br/>(login without a refresh token)"]
     F -->|"expiring"| F2["degraded + refresh<br/>(login without a refresh token)"]
     F -->|"ok"| G["7. healthy"]
@@ -226,13 +227,29 @@ AVAILABLE rather than that something is wrong, so a reporter that stays silent (
 that never looked) must drag the answer back to `login` rather than hand an operator a command that can
 only fail.
 
-**Current assembly status — rungs 5 and 6 are unreachable in production.** The only `ServerStateSource`
-the daemon builds is `GatewayStates`, fed only by `internal/gateway`'s `serverStates()`, and that
-snapshot sets `conn`, `tools`, `detail` and `needs_auth` — never `token`, `call_auth_failed` or
-`has_refresh_token`. Both rungs are therefore live code with no producer: they are exercised by tests
-and by any future state source, while today the GUI learns about an expired token only through a failed
-connection. The CLI's own `server ls` does not depend on this — it reads the vault directly and reports
-the same distinction offline.
+`TokenRevoked` is the exception to the sentence above: it is the one token state whose action is
+**fixed** at `login`, because a grant the authorization server has refused makes `refresh` a command
+that can only fail, whatever bytes are stored. Its producers report `has_refresh_token: false` for the
+same reason, and the rung does not depend on their doing so.
+
+**Rung 6 has a producer, and it is not a gateway.** `GatewayStates` folds what connected gateways
+report, and `internal/gateway`'s `serverStates()` sets `conn`, `tools`, `detail` and `needs_auth` —
+nothing in a gateway looks at token lifetimes. Nor could it be fixed there: `ServerRuntime` answers
+`ok=false` when no gateway holds a server, which is the steady state of a daemon nobody is connected
+to, and "the credential died while nobody was looking" is precisely the case worth reporting.
+
+`Options.TokenStates` is therefore a **second source** (`ctlapi/tokenstate.go`), read whether or not a
+gateway reported anything and overwriting `token` / `has_refresh_token` for every server it knows. Its
+producer is the daemon's proactive refresher, which already reads exactly that state on a timer — the
+deciding constraint, because a vault read per `/v1/servers` request could pop an OS keychain dialog.
+Each scan publishes a **whole snapshot**, so a server deleted, disabled or logged out of disappears
+without anyone remembering to retract it, and the outcome of a refresh performed during that scan
+overrides the state read just before it — otherwise every successful renewal would show `expiring`
+until the following scan.
+
+**Rung 5 (`call_auth_failed`) still has no producer**: nothing observes 401s at call time, so it stays
+live code reached only by tests. The CLI's own `server ls` depends on none of this — it reads the vault
+directly and reports the same distinctions offline.
 
 **Push and pull share one payload.** `serverList()` feeds both `GET /v1/servers` and the `servers` SSE
 frames, so either is authoritative.

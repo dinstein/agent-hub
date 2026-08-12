@@ -285,18 +285,29 @@ func Run(ctx context.Context, cfg Config) error {
 		nonReg, tokens = nonRegistryDeps(cfg, dataDir, cfg.Secrets, log, events, coordRef.Load)
 	}
 
+	// The credential half of /v1/servers, filled by the refresher below. It
+	// is built here rather than there so the control plane needs no late
+	// binding: the refresher starts after the server, and a holder that is
+	// simply empty until it does is indistinguishable from one nobody feeds.
+	tokenStates := ctlapi.NewTokenStates()
+
 	srv, err := ctlapi.NewServer(ctlapi.Options{
 		Version: cfg.Version,
 		Owner:   cfg.Owner.PID,
 		// The same handle the owner watch pulls. A stop asked for over the
 		// socket and an owner that died then take one code path, and the
 		// shutdown log reports each one's reason the same way.
-		RequestStop:       func(reason string) { ownerLost(errors.New(reason)) },
-		Registry:          store,
-		Sessions:          mgr,
-		Bus:               bus,
-		States:            states,
-		ServerReports:     states,
+		RequestStop:   func(reason string) { ownerLost(errors.New(reason)) },
+		Registry:      store,
+		Sessions:      mgr,
+		Bus:           bus,
+		States:        states,
+		ServerReports: states,
+		// Empty until the refresher publishes its first scan, and empty
+		// forever if the data dir could not be resolved — which reads as
+		// "nothing is known about any credential", the answer this control
+		// plane gave before there was a producer at all.
+		TokenStates:       tokenStates,
 		Logger:            log,
 		LinkAttachTimeout: cfg.LinkAttachTimeout,
 		NonRegistry:       nonReg,
@@ -365,7 +376,7 @@ func Run(ctx context.Context, cfg Config) error {
 	if dataErr != nil {
 		log.Warn("data dir unresolved; running without proactive token refresh", "error", dataErr)
 	} else {
-		refr := startRefresher(bgCtx, cfg, store, dataDir, log)
+		refr := startRefresher(bgCtx, cfg, store, dataDir, tokenStates, log)
 		// A control-plane refresh joins the daemon's singleflight instead of
 		// racing it: a one-time refresh token spent twice cannot be undone.
 		srv.SetRefresher(refr.Coordinator())

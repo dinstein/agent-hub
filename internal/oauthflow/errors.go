@@ -343,9 +343,17 @@ func (e *TokenError) Is(target error) bool {
 // not a broken login, it is a server that never had one (a hand-pasted
 // token, or one that authorizes some other way) — see IsUnmanaged.
 func NeedsLogin(err error) bool {
-	return errors.Is(err, ErrNoRefreshToken) ||
-		errors.Is(err, ErrGrantRevoked) ||
-		errors.Is(err, ErrClientRejected)
+	return errors.Is(err, ErrNoRefreshToken) || GrantRefused(err)
+}
+
+// GrantRefused reports the subset of NeedsLogin that the AUTHORIZATION
+// SERVER decided: the grant or the client behind it was rejected outright.
+// It is narrower than NeedsLogin on purpose — "there is no refresh token
+// stored" needs the same login and is not something a provider said, so a
+// caller reporting what the provider thinks of a credential must not include
+// it.
+func GrantRefused(err error) bool {
+	return errors.Is(err, ErrGrantRevoked) || errors.Is(err, ErrClientRejected)
 }
 
 // IsUnmanaged reports a server this package holds nothing for. Callers use

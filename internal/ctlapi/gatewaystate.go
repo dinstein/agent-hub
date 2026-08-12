@@ -302,8 +302,10 @@ func tokenSeverity(t TokenState) int {
 		return 1
 	case TokenExpired:
 		return 2
-	default:
+	case TokenRevoked:
 		return 3
+	default:
+		return 4
 	}
 }
 

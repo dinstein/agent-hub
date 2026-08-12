@@ -126,6 +126,14 @@ type Options struct {
 	// injects ONE *GatewayStates as both this and States; keeping the two
 	// fields apart keeps the read side free of the writer's identity.
 	ServerReports ServerStateSink
+	// TokenStates supplies the credential-lifecycle half of the same view
+	// (nil = no producer, which is what every caller had before it existed).
+	//
+	// It is a second source rather than more fields on States because the
+	// two answer to different observers: States folds what connected
+	// gateways see, and reports nothing at all when none is connected, while
+	// a token expires whether or not anybody is watching (tokenstate.go).
+	TokenStates TokenStateSource
 	// Logger receives server-side diagnostics (nil = discard).
 	Logger *slog.Logger
 	// CoalesceWindow overrides the servers-topic coalescing window
