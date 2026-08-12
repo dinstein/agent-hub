@@ -106,6 +106,121 @@ func TestInvalidGrantCarriesReLoginSuggestion(t *testing.T) {
 	}
 }
 
+// refuseRefresh answers every request with one RFC 6749 §5.2 error body and
+// returns what Refresh made of it.
+func refuseRefresh(t *testing.T, status int, code string) error {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, status, map[string]any{"error": code, "error_description": "no"})
+	}))
+	defer srv.Close()
+	c := NewClient(Config{AllowLoopback: true})
+	_, err := c.Refresh(context.Background(), RefreshRequest{
+		TokenEndpoint: srv.URL + "/token", ClientID: "c", RefreshToken: "r",
+	})
+	if err == nil {
+		t.Fatal("a refused refresh must be an error")
+	}
+	return err
+}
+
+// TestTerminalGrantIsRecognizedOnlyInItsExactShape is the guard on the whole
+// terminal classification: it decides whether a server is parked until a
+// human logs in, so a 500 that happens to carry the word invalid_grant must
+// not reach it.
+func TestTerminalGrantIsRecognizedOnlyInItsExactShape(t *testing.T) {
+	cases := []struct {
+		name    string
+		status  int
+		code    string
+		want    error // nil = must NOT be terminal
+		wantMsg string
+	}{
+		{"invalid_grant on 400", 400, "invalid_grant", ErrGrantRevoked, ""},
+		{"invalid_grant on 401", 401, "invalid_grant", ErrGrantRevoked, ""},
+		{"invalid_client on 401", 401, "invalid_client", ErrClientRejected, ""},
+		{"invalid_client on 400", 400, "invalid_client", ErrClientRejected, ""},
+		{"invalid_grant on 500 is the AS having a bad day", 500, "invalid_grant", nil, ""},
+		{"invalid_grant on 502 is a proxy, not the AS", 502, "invalid_grant", nil, ""},
+		{"invalid_request stays retryable", 400, "invalid_request", nil, ""},
+		{"an empty error code stays retryable", 400, "", nil, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := refuseRefresh(t, tc.status, tc.code)
+			if tc.want == nil {
+				if NeedsLogin(err) {
+					t.Fatalf("err = %v, want a retryable failure", err)
+				}
+				return
+			}
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
+			}
+			if !NeedsLogin(err) {
+				t.Fatalf("%v must satisfy NeedsLogin", tc.want)
+			}
+			// The TokenError has to survive the extra wrapping: it carries
+			// the AS's own description, which is the only diagnosis an
+			// operator gets for a provider-specific refusal.
+			var te *TokenError
+			if !errors.As(err, &te) || te.Code != tc.code {
+				t.Fatalf("the authorization server's own error was lost: %v", err)
+			}
+			var fe *FlowError
+			if !errors.As(err, &fe) || fe.Type != ErrorTypeRefresh || fe.Suggestion == "" {
+				t.Fatalf("classification: %v", err)
+			}
+		})
+	}
+}
+
+// TestASpentAuthorizationCodeIsNotATerminalGrant: the token exchange returns
+// the same code for a consent screen used twice, and treating that as a dead
+// credential would park a server on the strength of a mistyped login.
+func TestASpentAuthorizationCodeIsNotATerminalGrant(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 400, map[string]any{"error": "invalid_grant", "error_description": "code already used"})
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{AllowLoopback: true})
+	_, err := c.Exchange(context.Background(), ExchangeRequest{
+		TokenEndpoint: srv.URL + "/token", ClientID: "c", Code: "x", CodeVerifier: "v",
+	})
+	if NeedsLogin(err) {
+		t.Fatalf("err = %v, want the exchange path to stay out of the terminal classification", err)
+	}
+	var fe *FlowError
+	if !errors.As(err, &fe) || fe.Suggestion == "" {
+		t.Fatalf("the exchange must keep its own suggestion: %v", err)
+	}
+}
+
+func TestNeedsLoginAndIsUnmanaged(t *testing.T) {
+	cases := []struct {
+		err            error
+		login, unmanag bool
+	}{
+		{ErrGrantRevoked, true, false},
+		{ErrClientRejected, true, false},
+		{ErrNoRefreshToken, true, false},
+		{ErrNoState, false, true},
+		{ErrNoToken, false, false},
+		{ErrRefreshSuperseded, false, false},
+		{newFlowError(ErrorTypeRefresh, ErrGrantRevoked), true, false},
+		{nil, false, false},
+	}
+	for _, tc := range cases {
+		if got := NeedsLogin(tc.err); got != tc.login {
+			t.Errorf("NeedsLogin(%v) = %t, want %t", tc.err, got, tc.login)
+		}
+		if got := IsUnmanaged(tc.err); got != tc.unmanag {
+			t.Errorf("IsUnmanaged(%v) = %t, want %t", tc.err, got, tc.unmanag)
+		}
+	}
+}
+
 func TestTokenErrorClassification(t *testing.T) {
 	pending := &TokenError{Code: errAuthorizationPending}
 	if !pending.IsAuthorizationPending() || pending.IsSlowDown() || pending.IsInvalidGrant() {

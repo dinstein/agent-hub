@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -333,6 +334,14 @@ func (c *Client) Refresh(ctx context.Context, req RefreshRequest) (*TokenRespons
 // wrapTokenError keeps an already-typed FlowError intact (blocked, redirect
 // and transport classifications must survive) and wraps a bare *TokenError
 // so the caller sees a FlowError with the right type and suggestion.
+//
+// On the REFRESH path it additionally wraps the AS's answer in a terminal
+// sentinel (terminalGrant). The token EXCHANGE path is deliberately left
+// out even though it can produce the same codes: an `invalid_grant` there is
+// a spent or mistyped authorization code, which says nothing about the
+// credential in the vault, and a login that parks itself as unrecoverable
+// the first time a consent screen is used twice would be worse than the bug
+// this closes.
 func wrapTokenError(t ErrorType, err error) error {
 	var fe *FlowError
 	if errors.As(err, &fe) {
@@ -340,10 +349,46 @@ func wrapTokenError(t ErrorType, err error) error {
 	}
 	e := newFlowError(t, err)
 	var te *TokenError
-	if errors.As(err, &te) && te.IsInvalidGrant() {
+	if !errors.As(err, &te) {
+		return e
+	}
+	switch {
+	case te.IsInvalidGrant():
 		e.Suggestion = "the grant was already used, rotated or revoked; run `agenthub auth login` for this server"
+	case te.IsInvalidClient():
+		e.Suggestion = "the authorization server no longer recognizes this client registration; run `agenthub auth login` for this server"
+	}
+	if t == ErrorTypeRefresh {
+		if sentinel, ok := terminalGrant(te); ok {
+			e.Err = fmt.Errorf("%w: %w", sentinel, te)
+		}
 	}
 	return e
+}
+
+// terminalGrant returns the sentinel for an authorization server answer that
+// no amount of retrying can survive, and whether there is one.
+//
+// The status check is the whole guard against a false terminal, and it is
+// why this is not simply `te.IsInvalidGrant()`. RFC 6749 §5.2 puts these
+// codes on a 400 (401 is additionally allowed for `invalid_client`), while an
+// authorization server having a bad day answers 500, and a proxy in front of
+// one answers 502 with whatever body it likes — including, observed in the
+// wild, a cached error page. Failure direction: a transient failure misread
+// as terminal parks a working server until a human logs in, and the reverse
+// merely retries. So the shape must match exactly, and anything else keeps
+// the retry ladder it has today.
+func terminalGrant(e *TokenError) (error, bool) {
+	if e.HTTPStatus != http.StatusBadRequest && e.HTTPStatus != http.StatusUnauthorized {
+		return nil, false
+	}
+	switch {
+	case e.IsInvalidGrant():
+		return ErrGrantRevoked, true
+	case e.IsInvalidClient():
+		return ErrClientRejected, true
+	}
+	return nil, false
 }
 
 // ExpiresAt converts an advertised lifetime into an absolute deadline.

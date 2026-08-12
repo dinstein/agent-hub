@@ -67,6 +67,20 @@ var (
 	// refresh token. The only remedy is an interactive login.
 	ErrNoRefreshToken = errors.New("oauthflow: no refresh token stored")
 
+	// ErrGrantRevoked reports that the authorization server REFUSED the
+	// stored refresh grant: spent, rotated away, revoked by the user, or
+	// expired on the provider's side. It is terminal — the identical request
+	// tomorrow gets the identical answer — and only an interactive login
+	// recovers.
+	ErrGrantRevoked = errors.New("oauthflow: refresh grant rejected by the authorization server")
+
+	// ErrClientRejected reports that the authorization server no longer
+	// recognizes the CLIENT the grant belongs to (RFC 6749 invalid_client),
+	// which is what a provider garbage-collecting an unused dynamic
+	// registration looks like. Terminal for the same reason: a refresh
+	// carries no way to register a new client.
+	ErrClientRejected = errors.New("oauthflow: client credentials rejected by the authorization server")
+
 	// ErrRefreshSuperseded reports that another writer already refreshed
 	// this server's token while we waited for the lock, so this refresh
 	// was abandoned. It is a success-shaped outcome, not a failure: the
@@ -284,6 +298,7 @@ const (
 	errAccessDenied         = "access_denied"
 	errExpiredToken         = "expired_token"
 	errInvalidGrant         = "invalid_grant"
+	errInvalidClient        = "invalid_client"
 )
 
 // IsAuthorizationPending reports the device-flow "keep polling" signal.
@@ -297,6 +312,12 @@ func (e *TokenError) IsSlowDown() bool { return e.Code == errSlowDown }
 // is terminal: only an interactive login recovers.
 func (e *TokenError) IsInvalidGrant() bool { return e.Code == errInvalidGrant }
 
+// IsInvalidClient reports a client the authorization server does not (or no
+// longer) recognizes. For a refresh this is terminal too, and for a
+// different reason than IsInvalidGrant: the grant may be perfectly good and
+// the registration it belongs to gone.
+func (e *TokenError) IsInvalidClient() bool { return e.Code == errInvalidClient }
+
 // Is lets errors.Is classify AS-side denials without the caller reaching
 // for the code strings.
 func (e *TokenError) Is(target error) bool {
@@ -308,3 +329,27 @@ func (e *TokenError) Is(target error) bool {
 	}
 	return false
 }
+
+// NeedsLogin reports a renewal failure that no retry and no waiting can
+// repair: only `agenthub auth login` does. It exists so the several
+// components that renew tokens — the daemon's scan loop, the gateway's
+// proactive source, the gateway's 401 path, the CLI — ask the question in
+// one place instead of each maintaining its own list of sentinels. A list
+// assembled independently on four sides is a list that disagrees on the
+// fifth sentinel, and the disagreement is invisible: the component that
+// missed one simply keeps retrying.
+//
+// ErrNoState is deliberately NOT in it. "This server has no OAuth state" is
+// not a broken login, it is a server that never had one (a hand-pasted
+// token, or one that authorizes some other way) — see IsUnmanaged.
+func NeedsLogin(err error) bool {
+	return errors.Is(err, ErrNoRefreshToken) ||
+		errors.Is(err, ErrGrantRevoked) ||
+		errors.Is(err, ErrClientRejected)
+}
+
+// IsUnmanaged reports a server this package holds nothing for. Callers use
+// it to stop looking WITHOUT reporting anything: it is the normal steady
+// state of every server that does not use OAuth, and a warning per request
+// for the normal case is how a log stops being read.
+func IsUnmanaged(err error) bool { return errors.Is(err, ErrNoState) }
