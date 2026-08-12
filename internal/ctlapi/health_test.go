@@ -147,6 +147,31 @@ func TestComputeHealthMatrix(t *testing.T) {
 			in:   HealthInput{Conn: ConnConnected, Token: TokenExpiring},
 			want: api.Health{Level: api.HealthLevelDegraded, AdminState: api.AdminStateEnabled, Summary: "token expiring soon", Action: api.ActionLogin},
 		},
+		// A refresh token changes the ACTION and nothing else: same level,
+		// same summary, a repair that needs no browser.
+		{
+			name: "an expired token with a refresh token asks for a refresh",
+			in:   HealthInput{Conn: ConnConnected, Token: TokenExpired, HasRefreshToken: true},
+			want: api.Health{Level: api.HealthLevelUnhealthy, AdminState: api.AdminStateEnabled, Summary: "token expired", Action: api.ActionRefresh},
+		},
+		{
+			name: "an expiring token with a refresh token asks for a refresh",
+			in:   HealthInput{Conn: ConnConnected, Token: TokenExpiring, HasRefreshToken: true},
+			want: api.Health{Level: api.HealthLevelDegraded, AdminState: api.AdminStateEnabled, Summary: "token expiring soon", Action: api.ActionRefresh},
+		},
+		{
+			// Rungs above 6 are evidence the credential is being REFUSED or
+			// cannot be built, and no refresh repairs that: holding a refresh
+			// token must not turn any of them into `refresh`.
+			name: "a refresh token does not soften the rungs above the token rung",
+			in:   HealthInput{Conn: ConnConnected, CallAuthFailed: true, Token: TokenExpired, HasRefreshToken: true},
+			want: api.Health{Level: api.HealthLevelDegraded, AdminState: api.AdminStateEnabled, Summary: "authentication failing on calls", Action: api.ActionLogin},
+		},
+		{
+			name: "a refresh token does not soften a handshake auth refusal",
+			in:   HealthInput{Conn: ConnConnected, NeedsAuth: true, HasRefreshToken: true},
+			want: api.Health{Level: api.HealthLevelUnhealthy, AdminState: api.AdminStateEnabled, Summary: "authentication required", Action: api.ActionLogin},
+		},
 		// ConnUnknown and ConnConnected share rung 4 (both fall through) and
 		// share rungs 5 and 6 — secret/OAuth/token facts hold whether or not
 		// anyone is connected. They separate only at rung 7, where the

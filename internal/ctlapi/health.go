@@ -65,6 +65,13 @@ type HealthInput struct {
 	CallAuthFailed bool
 	// Token is the OAuth token lifecycle state.
 	Token TokenState
+	// HasRefreshToken says a refresh token is stored, so a token that has
+	// expired or is about to is repairable without a human. It chooses
+	// BETWEEN two actions on the token rung and does nothing else: it never
+	// moves the level and never suppresses a rung. False is therefore the
+	// safe default — an observer that does not know reports `login`, which
+	// repairs both cases, rather than `refresh`, which repairs one.
+	HasRefreshToken bool
 }
 
 // ComputeHealth is the pure function of docs/modules/controlplane.md: it maps one
@@ -84,8 +91,10 @@ type HealthInput struct {
 //     (transient, no action); connected/unknown → next rung.
 //  5. Call-time auth failures: degraded, action login (connection is up but
 //     calls bounce off authentication).
-//  6. Token: expired → unhealthy + login (calls will fail); expiring →
-//     degraded + login (works now, act soon).
+//  6. Token: expired → unhealthy (calls will fail); expiring → degraded
+//     (works now, act soon). The action is refresh when a refresh token is
+//     stored and login when it is not — the two differ by whether a human
+//     has to be present.
 //  7. healthy — "ok" when someone is actually watching, "not observed" when
 //     nobody is (see below).
 //
@@ -198,21 +207,30 @@ func ComputeHealth(in HealthInput) api.Health {
 		}
 	}
 
-	// Rung 6: token state.
+	// Rung 6: token state. The action distinguishes the two repairs a token
+	// lifecycle problem can have — a stored refresh token renews unattended,
+	// nothing else needs a browser and a human — while the level stays what
+	// the lifecycle state alone decides. Rungs 3, 4 and 5 keep `login`
+	// unconditionally: each of them is evidence the credential itself is
+	// being REFUSED or is unbuildable, which no refresh repairs.
+	renew := api.ActionLogin
+	if in.HasRefreshToken {
+		renew = api.ActionRefresh
+	}
 	switch in.Token {
 	case TokenExpired:
 		return api.Health{
 			Level:      api.HealthLevelUnhealthy,
 			AdminState: admin,
 			Summary:    "token expired",
-			Action:     api.ActionLogin,
+			Action:     renew,
 		}
 	case TokenExpiring:
 		return api.Health{
 			Level:      api.HealthLevelDegraded,
 			AdminState: admin,
 			Summary:    "token expiring soon",
-			Action:     api.ActionLogin,
+			Action:     renew,
 		}
 	}
 

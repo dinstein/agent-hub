@@ -64,6 +64,11 @@ type GatewayServerState struct {
 	CallAuthFailed bool `json:"call_auth_failed,omitempty"`
 	// Token is the OAuth token lifecycle state (TokenState wire string).
 	Token string `json:"token,omitempty"`
+	// HasRefreshToken says the credential renews without a human. Absent
+	// means "not known to", never "does not have one": a gateway too old to
+	// send the field, or one that never looked, then produces `login`, which
+	// repairs the expiry either way.
+	HasRefreshToken bool `json:"has_refresh_token,omitempty"`
 }
 
 // GatewayServersReport is the body of POST /v1/gateway/{sid}/servers.
@@ -109,7 +114,8 @@ type ServerStateSink interface {
 //     and that 0 must not erase a catalog another instance actually listed.
 //   - MissingSecrets: sorted union; OAuthConfigError: first non-empty in
 //     client order; NeedsAuth / CallAuthFailed / Quarantined: logical OR;
-//     Token: worst.
+//     Token: worst; HasRefreshToken: logical AND, because it announces a
+//     repair rather than a problem (see the fold).
 //     All of these are properties of the server's configuration rather than
 //     of one connection, so any reporter seeing a problem is enough.
 //
@@ -217,6 +223,14 @@ func (g *GatewayStates) ServerRuntime(id string) (ServerRuntime, bool) {
 		if tokenSeverity(TokenState(r.state.Token)) > tokenSeverity(rt.Token) {
 			rt.Token = TokenState(r.state.Token)
 		}
+		// AND, not OR — the one field here folded that way. Every other flag
+		// reports a PROBLEM, where one witness is enough; this one reports
+		// that a repair is available, and offering `agenthub auth refresh` to
+		// someone who has no refresh token hands them a command that fails.
+		// A reporter that says nothing (an older gateway, one that never
+		// looked) therefore drags the answer to login, which repairs the
+		// expiry either way.
+		rt.HasRefreshToken = (i == 0 || rt.HasRefreshToken) && r.state.HasRefreshToken
 	}
 	if len(secrets) > 0 {
 		rt.MissingSecrets = make([]string, 0, len(secrets))

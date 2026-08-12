@@ -71,6 +71,11 @@ type ServerRuntime struct {
 	CallAuthFailed bool
 	// Token is the OAuth token lifecycle state.
 	Token TokenState
+	// HasRefreshToken says the stored credential can be renewed without a
+	// human, which is what makes the token rung's action refresh rather than
+	// login. It travels beside Token because it qualifies Token and nothing
+	// else.
+	HasRefreshToken bool
 }
 
 // ServerStateSource supplies runtime state for /v1/servers and the servers

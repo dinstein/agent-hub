@@ -208,6 +208,53 @@ func TestGatewayStatesFold(t *testing.T) {
 	}
 }
 
+// TestGatewayStatesFoldRefreshTokenIsAnd pins the one flag folded with AND.
+// Every other flag reports a problem, where one witness is enough. This one
+// reports that a repair is AVAILABLE, and the failure it guards against is
+// telling an operator to run `agenthub auth refresh` against a server with no
+// refresh token — a command that can only fail.
+func TestGatewayStatesFoldRefreshTokenIsAnd(t *testing.T) {
+	expired := func(hasRefresh bool) []GatewayServerState {
+		return []GatewayServerState{{
+			ID: "elk", Conn: string(ConnConnected),
+			Token: string(TokenExpired), HasRefreshToken: hasRefresh,
+		}}
+	}
+	actionFor := func(rt ServerRuntime) string {
+		return ComputeHealth(HealthInput{
+			Conn: rt.Conn, Token: rt.Token, HasRefreshToken: rt.HasRefreshToken,
+		}).Action
+	}
+
+	g := NewGatewayStates()
+	g.ReportServers("s1", "claude-code", expired(true))
+	rt, _ := g.ServerRuntime("elk")
+	if !rt.HasRefreshToken {
+		t.Fatalf("one reporter with a refresh token folded to %+v", rt)
+	}
+	if got := actionFor(rt); got != api.ActionRefresh {
+		t.Errorf("action = %q, want %q", got, api.ActionRefresh)
+	}
+
+	// A second reporter that does not say so — an older gateway, or one that
+	// never looked — drags the answer back to the repair that works either way.
+	g.ReportServers("s2", "cursor", expired(false))
+	rt, _ = g.ServerRuntime("elk")
+	if rt.HasRefreshToken {
+		t.Fatalf("a silent reporter did not clear the flag: %+v", rt)
+	}
+	if got := actionFor(rt); got != api.ActionLogin {
+		t.Errorf("action = %q, want %q", got, api.ActionLogin)
+	}
+
+	// And it returns when that reporter goes away: the fold is over live
+	// reports only.
+	g.DropSession("s2")
+	if rt, _ = g.ServerRuntime("elk"); !rt.HasRefreshToken {
+		t.Errorf("after the drop = %+v, want s1's refresh token back", rt)
+	}
+}
+
 // TestGatewayReportWithoutSinkIs404 pins the half-wired-daemon shape: a
 // server assembled without a state sink answers the uniform 404 rather than
 // pretending the report landed.

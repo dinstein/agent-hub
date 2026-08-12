@@ -55,6 +55,7 @@ func (s *Server) serverList() []api.Server {
 				ConnDetail:       rt.ConnDetail,
 				CallAuthFailed:   rt.CallAuthFailed,
 				Token:            rt.Token,
+				HasRefreshToken:  rt.HasRefreshToken,
 			}),
 		})
 	}
