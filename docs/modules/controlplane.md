@@ -876,6 +876,23 @@ the text mode — `auth.hint`, composed once in `classify` and read back by the 
 recomputed — because a `--json` caller rebuilding it from kind/state/action is a reconstruction free to
 drift with nothing to catch it.
 
+**`auth status` and `server ls` are two wire shapes over ONE decision** (`internal/cli/oauthlifecycle.go`).
+The shapes stay separate because the commands genuinely differ: `auth status` is OAuth-only and reads
+values, `server ls` covers every credential kind and is index-first, so one carries the scope and the
+registrar and the other carries the kind, the missing secrets and a hint for kinds that are not OAuth
+at all. What was **not** different, and was written twice anyway, is the lifecycle in the middle —
+access token present, past its deadline, inside the grace, renewable without a human — and that
+duplicate is exactly how the action drifted above. `lifecycleOf` and `oauthHintFor` now serve both, and
+`assertAuthCommandsAgree` compares the two commands' output field by field on a seeded **expired**
+credential, because the state where they disagreed is the state no live provider will hand you.
+
+Which fact goes where is decided by **cost, not by tidiness**. `auth status` gained `action` and `hint`
+(it was the per-credential command with no answer to "so what do I run"); `server ls` gained `scope` and
+`clientRegistrar`, and only for rows that had ALREADY read the OAuth state — a field that would force a
+value read on a server that needs none does not belong on that listing at any price. All four are
+JSON-only: the `AUTH` column is one cell wide, and the `auth status` table already prints what a
+terminal reader wants.
+
 **A rule is reported by the resource that stores it; a listing reports its effect** (canonical.md §3), so
 `server tool ls --rules` is hidden and going. `TestBothToolListingsTakeTheSameFlags` compares the two
 listings' flag sets directly: a flag added to one and forgotten on the other is how one mechanism quietly
