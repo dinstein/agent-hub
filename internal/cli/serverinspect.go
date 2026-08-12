@@ -258,7 +258,7 @@ func (i ServerInspect) writeCredentials(d *detailWriter) {
 	d.section("credentials")
 	if auth {
 		d.field("auth", "%s", r.Auth.line())
-		if h := r.Auth.hint(r.ID); h != "" {
+		if h := r.Auth.hintText(); h != "" {
 			d.cont("%s", h)
 		}
 	}

@@ -403,6 +403,45 @@ func TestServerLsReportsStoredCredentials(t *testing.T) {
 	}
 }
 
+// TestServerLsCarriesTheHintInJSON proves the repair sentence crosses to
+// --json as the SAME bytes the text footer prints. A caller reading the JSON
+// should not have to rebuild that sentence out of kind/state/action — the
+// reconstruction nothing would catch drifting.
+func TestServerLsCarriesTheHintInJSON(t *testing.T) {
+	secretEnv(t)
+	mustRun(t, "", "server", "add", "local", "--cmd", "srv")
+	mustRun(t, "", "server", "add", "api", "--url", "https://mcp.example.com/mcp",
+		"--header", "X-Api-Key=${SECRET_API_KEY}")
+
+	_, text, _ := runCLI(t, "", "server", "ls")
+	var rows ServerList
+	decodeInto(t, mustRun(t, "", "server", "ls", "--json"), &rows)
+
+	var hinted int
+	for _, r := range rows {
+		hint := r.Auth.hintText()
+		switch r.ID {
+		case "local":
+			// Nothing to repair, so nothing to say — which is what makes the
+			// field usable as "is there anything to do here".
+			if hint != "" {
+				t.Errorf("a row with no credential carried a hint: %q", hint)
+			}
+		case "api":
+			hinted++
+			if !strings.Contains(hint, "agenthub secret set api API_KEY") {
+				t.Errorf("json hint = %q, want the secret-set command", hint)
+			}
+			if !strings.Contains(text, hint) {
+				t.Errorf("json hint %q is not what the text output printed:\n%s", hint, text)
+			}
+		}
+	}
+	if hinted != 1 {
+		t.Fatalf("expected exactly one hinted row, got %d in %+v", hinted, rows)
+	}
+}
+
 // TestServerAddEmitsNoCredentialState pins the compatibility half: `add`
 // writes configuration and knows nothing about credentials, so its --json
 // output must not grow an auth object (nor pay for a vault read to produce

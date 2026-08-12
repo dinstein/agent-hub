@@ -91,6 +91,15 @@ type ServerAuth struct {
 	// in the spelling `agenthub secret set` takes.
 	MissingSecrets []string `json:"missingSecrets,omitempty"`
 	Detail         string   `json:"detail,omitempty"`
+	// Hint is the repair sentence the text output prints under the table,
+	// carried on the row so --json does not have to rebuild it from kind,
+	// state and action — the reconstruction that would be free to drift, and
+	// that a caller has no way to check. Empty for a row that needs no
+	// repair, which is what makes it usable as "is there anything to do".
+	//
+	// It names commands and the server id, never a credential: it is composed
+	// by hint() from this struct, which holds no value field at all.
+	Hint string `json:"hint,omitempty"`
 }
 
 // authProbe is the local credential store, narrowed to the two questions the
@@ -166,7 +175,19 @@ func (a *App) newAuthProbe(ctx context.Context) (authProbe, []string) {
 //
 // Rung 7 does not guess. An HTTP endpoint with no credential and no hints is
 // "-", not "probably needs a login": whether it does is a live 401's answer.
+//
+// The repair sentence is attached HERE, once, rather than by each output
+// mode. The text footer and the --json row then cannot say different things
+// about the same server, which is the whole failure this file has already
+// had once, between the action field and that sentence.
 func (p authProbe) classify(ctx context.Context, id string, e registry.ServerEntry, now time.Time) ServerAuth {
+	out := p.classifyStored(ctx, id, e, now)
+	out.Hint = out.hint(id)
+	return out
+}
+
+// classifyStored is the ladder itself; classify wraps it.
+func (p authProbe) classifyStored(ctx context.Context, id string, e registry.ServerEntry, now time.Time) ServerAuth {
 	if p.indexErr != nil {
 		return ServerAuth{Kind: authKindUnknown, State: api.AuthStateError, Detail: p.indexErr.Error()}
 	}
@@ -351,7 +372,18 @@ func (a *ServerAuth) cell() string {
 	}
 }
 
-// hint is the one-line repair instruction for a row that needs one, or "".
+// hintText is the repair sentence as CARRIED, nil-safe. Every renderer reads
+// this rather than calling hint() again: the sentence is composed once, in
+// classify, and the text output must print the same bytes --json carries.
+func (a *ServerAuth) hintText() string {
+	if a == nil {
+		return ""
+	}
+	return a.Hint
+}
+
+// hint composes the one-line repair instruction for a row that needs one, or
+// "". Called once per row by classify; read it back through hintText.
 func (a *ServerAuth) hint(id string) string {
 	if a == nil {
 		return ""

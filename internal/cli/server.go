@@ -189,7 +189,7 @@ const authHintLimit = 3
 func (l ServerList) writeAuthHints(w io.Writer) error {
 	var hints []string
 	for _, r := range l {
-		if h := r.Auth.hint(r.ID); h != "" {
+		if h := r.Auth.hintText(); h != "" {
 			hints = append(hints, h)
 		}
 	}
