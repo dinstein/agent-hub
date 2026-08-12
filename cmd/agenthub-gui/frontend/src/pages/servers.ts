@@ -78,6 +78,11 @@ import { AuthState, ErrCode, LoginMode, LoginPhase, Provenance, Runtime, Transpo
  *  ordinary GUI action. */
 const TERMINAL_ACTIONS: Record<string, { label: string; command: string; note?: string }> = {
   [HealthAction.ViewLogs]: { label: "View logs", command: "agenthub server logs <id> --follow" },
+  [HealthAction.Refresh]: {
+    label: "Renew the sign-in",
+    command: "agenthub auth refresh <id>",
+    note: "a refresh token is stored, so this needs no browser",
+  },
   [HealthAction.Restart]: {
     label: "Restart",
     command: "agenthub daemon restart",
@@ -2081,7 +2086,11 @@ export function serversPage(): Page {
     // A credential is missing, not a connection broken. The warning spine
     // matches the setup action and avoids painting routine auth/key setup as
     // the same red failure used for network and protocol faults.
-    if (s.health.action === HealthAction.Login || s.health.action === HealthAction.SetSecret) return "warning";
+    if (
+      s.health.action === HealthAction.Login
+      || s.health.action === HealthAction.Refresh
+      || s.health.action === HealthAction.SetSecret
+    ) return "warning";
     if (s.health.level === HealthLevel.Healthy) return "ok";
     if (s.health.level === HealthLevel.Degraded) return "warning";
     return "bad";

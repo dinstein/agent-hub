@@ -42,6 +42,7 @@ export const AdminStateValues: readonly AdminState[] = [
 // the Servers page buttons. "" means there is nothing to do.
 export const HealthAction = {
   Login: "login",
+  Refresh: "refresh",
   Restart: "restart",
   Enable: "enable",
   SetSecret: "set_secret",
@@ -53,6 +54,7 @@ export type HealthAction = (typeof HealthAction)[keyof typeof HealthAction];
 
 export const HealthActionValues: readonly HealthAction[] = [
   HealthAction.Login,
+  HealthAction.Refresh,
   HealthAction.Restart,
   HealthAction.Enable,
   HealthAction.SetSecret,

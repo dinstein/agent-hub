@@ -34,8 +34,18 @@ const (
 // Action constants (docs/modules/controlplane.md): the machine-readable suggested action
 // that drives UI buttons, `server ls` hint columns and doctor output.
 const (
-	// ActionLogin suggests running OAuth login for the server.
+	// ActionLogin suggests running OAuth login for the server: a browser and
+	// a human, because nothing stored can renew the credential unattended.
 	ActionLogin = "login"
+	// ActionRefresh suggests renewing the token from the stored refresh
+	// token — the repair that needs no browser. It exists because an expired
+	// access token with a refresh token behind it was previously reported as
+	// `login`, and the two differ by whether a human has to be present, which
+	// is the whole question the operator (or the frontend choosing a button)
+	// is asking. Emitted only where a refresh token is KNOWN to exist; where
+	// that is unknown, `login` remains the honest answer, since it repairs
+	// both cases and refresh repairs only one.
+	ActionRefresh = "refresh"
 	// ActionRestart suggests restarting the server connection.
 	ActionRestart = "restart"
 	// ActionEnable suggests re-enabling a disabled server.

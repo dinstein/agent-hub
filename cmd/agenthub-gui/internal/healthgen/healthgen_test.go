@@ -55,6 +55,7 @@ func TestCollectedConstantsMatchGoPackage(t *testing.T) {
 		"AdminStateEnabled":    api.AdminStateEnabled,
 		"AdminStateDisabled":   api.AdminStateDisabled,
 		"ActionLogin":          api.ActionLogin,
+		"ActionRefresh":        api.ActionRefresh,
 		"ActionRestart":        api.ActionRestart,
 		"ActionEnable":         api.ActionEnable,
 		"ActionSetSecret":      api.ActionSetSecret,
