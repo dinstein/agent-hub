@@ -80,6 +80,17 @@ type ServerAuth struct {
 	// Health uses, so a frontend joining the two never has to translate.
 	Action string `json:"action,omitempty"`
 	Issuer string `json:"issuer,omitempty"`
+	// Scope and ClientRegistrar are the remaining two facts `auth status`
+	// reports that this row did not, and they are here for what they cost:
+	// nothing. Only a row that ALREADY read the OAuth state can fill them in,
+	// so no server pays a value read it was not already paying, and the
+	// index-first rule this file is arranged around is untouched.
+	//
+	// They are JSON-only. The AUTH column is one cell wide and `server
+	// inspect`'s credential line is a sentence; a scope string is neither, and
+	// `auth status` remains the place to read one in a terminal.
+	Scope           string `json:"scope,omitempty"`
+	ClientRegistrar string `json:"clientRegistrar,omitempty"`
 	// ExpiresAt is Unix seconds; 0 means the provider advertised no expiry,
 	// which is "never expires", NOT "expired" (docs/modules/oauth.md).
 	ExpiresAt int64 `json:"expiresAt,omitempty"`
@@ -241,6 +252,8 @@ func (p authProbe) classifyOAuth(ctx context.Context, id string, now time.Time) 
 	out := ServerAuth{
 		Kind:            authKindOAuth,
 		Issuer:          st.Issuer,
+		Scope:           st.Scope,
+		ClientRegistrar: st.RegistrarKind,
 		ExpiresAt:       st.ExpiresAt,
 		ExpiresIn:       secondsUntil(st.ExpiresAt, now),
 		HasRefreshToken: st.RefreshToken != "",

@@ -1,13 +1,20 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/dinstein/agent-hub/api"
+	"github.com/dinstein/agent-hub/internal/oauthflow"
+	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
 // fakeAuthServer is a loopback OAuth 2.1 authorization server: RFC 9728
@@ -163,6 +170,12 @@ func TestAuthLoginManualRoundTrip(t *testing.T) {
 		t.Fatalf("auth status leaked a credential:\n%s", out)
 	}
 
+	// The two commands reading this one vault must agree about it. Their wire
+	// shapes stay separate on purpose — different domains, different costs —
+	// but the lifecycle in the middle is one function now, and this is what
+	// says so from OUTSIDE: same server, both commands, field by field.
+	assertAuthCommandsAgree(t, "remote")
+
 	// refresh spends the rotated refresh token exactly once.
 	code, out, stderr = runCLI(t, "", "auth", "refresh", "remote", "--json")
 	if code != ExitOK {
@@ -219,5 +232,105 @@ func TestAuthLoginManualRejectsMismatchedState(t *testing.T) {
 	}
 	if as.tokenHits.Load() != 0 {
 		t.Fatal("a code from a foreign authorization request was exchanged")
+	}
+}
+
+// assertAuthCommandsAgree compares what `auth status` and `server ls` say
+// about one server. Everything both of them carry must match, because both
+// read one vault through one lifecycle function; the fields only one of them
+// carries (kind, missing secrets on one side, the registrar on neither
+// exclusively) are not this assertion's business.
+//
+// It exists because the drift it forbids already happened once: the refresh
+// action was added to `server ls` alone, so the same expired token was
+// `refresh` in one command and `login` in the other.
+func assertAuthCommandsAgree(t *testing.T, id string) {
+	t.Helper()
+
+	var rows AuthStatusList
+	decodeInto(t, mustRun(t, "", "auth", "status", id, "--json"), &rows)
+	if len(rows) != 1 {
+		t.Fatalf("auth status returned %d rows for %q", len(rows), id)
+	}
+	status := rows[0]
+
+	var servers ServerList
+	decodeInto(t, mustRun(t, "", "server", "ls", "--json"), &servers)
+	var ls *ServerAuth
+	for _, s := range servers {
+		if s.ID == id {
+			ls = s.Auth
+		}
+	}
+	if ls == nil {
+		t.Fatalf("server ls carried no auth for %q: %+v", id, servers)
+	}
+
+	for _, f := range []struct {
+		name      string
+		got, want any
+	}{
+		{"state", ls.State, status.State},
+		{"action", ls.Action, status.Action},
+		{"hint", ls.Hint, status.Hint},
+		{"hasRefreshToken", ls.HasRefreshToken, status.HasRefreshToken},
+		{"issuer", ls.Issuer, status.Issuer},
+		{"scope", ls.Scope, status.Scope},
+		{"clientRegistrar", ls.ClientRegistrar, status.ClientRegistrar},
+		{"expiresAt", ls.ExpiresAt, status.ExpiresAt},
+		{"detail", ls.Detail, status.Detail},
+	} {
+		if f.got != f.want {
+			t.Errorf("%s: server ls says %#v, auth status says %#v", f.name, f.got, f.want)
+		}
+	}
+}
+
+// TestAuthCommandsAgreeOnAnExpiredToken is the same agreement in the state
+// that matters most: expired, with a refresh token, which is where the two
+// commands drifted apart. The round-trip test above reaches only `authorized`,
+// where action and hint are both empty and the comparison is nearly vacuous.
+func TestAuthCommandsAgreeOnAnExpiredToken(t *testing.T) {
+	dir := setDataDir(t)
+	t.Setenv("AGENTHUB_SECRET_KEY", "test-passphrase-for-cli-auth")
+	mustRun(t, "", "server", "add", "remote", "--url", "https://mcp.example.com/mcp", "--json")
+
+	// Seed the vault directly: no fake provider can be made to hand out a
+	// token that is already expired.
+	store := oauthflow.NewStore(secrets.NewChain(secrets.ChainConfig{Dir: filepath.Join(dir, "secrets")}))
+	now := time.Now()
+	err := store.Save(context.Background(), "remote", &oauthflow.State{
+		Issuer:        "https://idp.example.com",
+		Scope:         "read write",
+		RegistrarKind: "dcr",
+		RefreshToken:  "r",
+		IssuedAt:      now.Add(-2 * time.Hour).Unix(),
+		ExpiresAt:     now.Add(-time.Hour).Unix(),
+	}, "expired-access-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertAuthCommandsAgree(t, "remote")
+
+	// And the agreement is on the values this change is about, not on two
+	// empty strings.
+	var rows AuthStatusList
+	decodeInto(t, mustRun(t, "", "auth", "status", "remote", "--json"), &rows)
+	if len(rows) != 1 {
+		t.Fatalf("auth status rows = %+v", rows)
+	}
+	switch got := rows[0]; {
+	case got.State != api.AuthStateExpired:
+		t.Errorf("state = %q, want expired", got.State)
+	case got.Action != api.ActionRefresh:
+		t.Errorf("action = %q, want refresh — a refresh token is stored", got.Action)
+	case !strings.Contains(got.Hint, "agenthub auth refresh remote"):
+		t.Errorf("hint = %q, want the refresh command", got.Hint)
+	case got.Scope != "read write" || got.ClientRegistrar != "dcr":
+		t.Errorf("scope/registrar = %q/%q", got.Scope, got.ClientRegistrar)
+	}
+	if strings.Contains(mustRun(t, "", "server", "ls", "--json"), "expired-access-token") {
+		t.Fatal("server ls rendered the access token")
 	}
 }

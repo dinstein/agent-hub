@@ -109,6 +109,21 @@ type AuthStatusRow struct {
 	HasRefreshToken bool   `json:"hasRefreshToken"`
 	ClientRegistrar string `json:"clientRegistrar,omitempty"`
 	Detail          string `json:"detail,omitempty"`
+	// Action is the api.Action* suggestion — the same vocabulary `server ls`
+	// and the daemon's Health use, decided by the same function, so a caller
+	// joining any two of the three never has to translate.
+	Action string `json:"action,omitempty"`
+	// Hint is the repair sentence, identical to the one `server ls` carries
+	// for the same server. Both are JSON-only: the table below prints the
+	// STATE and REFRESH columns people read, and a footer of sentences under
+	// a per-server command would be repeating the row it sits beneath.
+	//
+	// Empty for a row with nothing to repair AND for a server with nothing
+	// stored at all. The second is the ladder's "does not guess" rule: this
+	// command cannot tell an OAuth server nobody has logged into yet from a
+	// plain subprocess that will never need a login, and only one of those
+	// wants to be told to run `auth login`.
+	Hint string `json:"hint,omitempty"`
 }
 
 // AuthStatusList is the `auth status` result.
@@ -395,6 +410,8 @@ func authStatusOf(ctx context.Context, deps *oauthDeps, id string, now time.Time
 		if !errors.Is(err, oauthflow.ErrNoState) {
 			row.State = api.AuthStateError
 			row.Detail = err.Error()
+			row.Hint = fmt.Sprintf("%s: the stored credential could not be read: %s",
+				id, oneLine(row.Detail, descriptionColumnBytes))
 		}
 		return row
 	}
@@ -412,7 +429,8 @@ func authStatusOf(ctx context.Context, deps *oauthDeps, id string, now time.Time
 	// keychain cost `server ls` refuses to pay is the right cost here.
 	_, terr := deps.store.LoadAccessToken(ctx, id)
 	lc := lifecycleOf(st, terr == nil, now)
-	row.State, row.Detail = lc.State, lc.Detail
+	row.State, row.Action, row.Detail = lc.State, lc.Action, lc.Detail
+	row.Hint = oauthHintFor(id, row.State, row.HasRefreshToken, row.ExpiresIn)
 	return row
 }
 
