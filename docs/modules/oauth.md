@@ -132,6 +132,8 @@ would block forever waiting.
 | `expires_in` arriving as a string (non-conforming but common) | ✅ Tolerated |
 | An omitted `scope` meaning "unchanged" (RFC 6749 §5.1) | ✅ Not misread as a downgrade |
 | 401/403 triggering a single refresh | ✅ 403 counts too; several providers use 403 to signal an expired token |
+| A refused grant (`invalid_grant` / `invalid_client`) ending the retries | ✅ Recorded in the vault and never asked again — see "When the grant itself is refused" |
+| A loopback authorization server for a server declared `--local` | ✅ Per server, from the same provenance the dialer uses |
 
 ## Scope selection
 
@@ -347,11 +349,16 @@ in place of it.
 Three renewers, all of them early. They are **components, not processes**, and the distinction is
 load-bearing rather than pedantic — two of the three can be running inside one process:
 
-| Component | Trigger | Serialization |
-|---|---|---|
-| daemon refresher (`internal/daemon/oauth.go`) | proactive: a scan every ≤60s renews anything within the grace of `expires_at` | offline path (file lock) + an extra in-process singleflight |
-| gateway, proactive (`internal/gateway/authfresh.go`) | a connection asking for the credential renews it when `expires_at` is inside the grace | offline path — `<secrets>/<server>.refresh.lock`, then a re-read of `expires_at` |
-| gateway, passive (`internal/gateway/auth.go`) | a 401/403 from the downstream: refresh once, replay once | same |
+| Component | Trigger | Serialization | On a recorded refusal |
+|---|---|---|---|
+| daemon refresher (`internal/daemon/oauth.go`) | proactive: a scan every ≤60s renews anything within the grace of `expires_at` | offline path (file lock) + an extra in-process singleflight | skips the server outright, before the backoff ladder is consulted |
+| gateway, proactive (`internal/gateway/authfresh.go`) | a connection asking for the credential renews it when `expires_at` is inside the grace | offline path — `<secrets>/<server>.refresh.lock`, then a re-read of `expires_at` | holds at the slowest rung, retired early by a credential epoch bump |
+| gateway, passive (`internal/gateway/auth.go`) | a 401/403 from the downstream: refresh once, replay once | same | answered from the vault; the downstream's own 401 is what the caller sees |
+
+None of the three reaches the provider once a refusal is on file — the coordinator answers first
+(`refreshNow`) — so the differences above are only about how often each one asks the VAULT. All three
+share one predicate for "a human is needed", `oauthflow.NeedsLogin`, because three independently
+maintained lists of sentinels disagree exactly about the one a later commit adds.
 
 **What these three mean for what a status command may SAY.** An expired access token with a refresh
 token behind it is, on this machine, a repair no human is needed for — and usually one that has already
@@ -359,6 +366,13 @@ happened by the time anyone looks. So `server ls` reports `action: "refresh"` ra
 there, and `ComputeHealth`'s token rung does the same from `HasRefreshToken` (`controlplane.md`). The
 distinction is about whether a browser is required and nothing else: neither command claims the
 credential still WORKS, which stays a live 401's answer.
+
+The exception is a **recorded refusal**, and it is the one case where this machine does know something
+about whether a credential works, because the provider said so once. `server ls` then reads
+`oauth:revoked`, `auth status` reports `revoked` with the provider's own words, and both route to
+`login`: `HasRefreshToken` becomes "stored AND usable" everywhere it is produced, so nothing offers a
+renewal that can only fail. `auth refresh --force` is the way back for a provider that has since been
+put right — it clears the mark and asks once, and a second refusal is recorded like the first.
 
 **"Gateway" here does not mean "stdio gateway".** The daemon's HTTP data plane assembles one gateway
 per credential inside its own process (`internal/daemon/httpdata.go`), and those reach both gateway

@@ -281,6 +281,15 @@ exactly one vault writer; offline it is the `<server>.refresh.lock` file lock, a
 re-read *after* acquiring it — if `expires_at` already moved, abandon this refresh rather than spend a
 one-shot refresh token twice.
 
+**A refusal ends the loop, and is written down.** `400 invalid_grant` (or `invalid_client`) is the
+authorization server saying the stored grant will never work again — consent withdrawn, the token
+already spent, the dynamic registration collected. It is recorded in `__oauth_state__` inside the same
+lock, and from then on every renewer answers from the vault without a request: retrying is asking a
+question whose answer is on file, and the only repair is `auth login`. Only that exact response shape
+counts, because the direction is asymmetric — a transient failure misread as terminal parks a working
+server until a human appears, while the reverse merely retries. See
+[modules/oauth.md](modules/oauth.md).
+
 ---
 
 ## 6. Derived downstream instances

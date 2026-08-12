@@ -194,9 +194,10 @@ agenthub config set discovery full
 `auth status` 分别把前三份读回来。
 
 只要有任何一台 server 存了凭据，`server ls` 就会多出一列 `AUTH`，告诉你这台机器上存的是什么：
-有凭据时是 `oauth`、`token`、`secret`，需要你出手时是 `oauth:expired`、`secret:missing`，
-并在表格下面直接给出该跑哪条命令。它报告的是本机存了什么，不是对方还认不认——那个问题由
-`agenthub server test <id>` 去真连一次来回答。
+有凭据时是 `oauth`、`token`、`secret`，需要你出手时是 `oauth:expired`、`oauth:revoked`、
+`secret:missing`，并在表格下面直接给出该跑哪条命令。其中 `oauth:revoked` 是唯一不会自己好起来的
+一种：对方已经拒绝了这份登录，后台不再续期，只能重新登录一次。它报告的是本机存了什么，不是对方
+还认不认——那个问题由 `agenthub server test <id>` 去真连一次来回答。
 
 ## 端到端验证
 

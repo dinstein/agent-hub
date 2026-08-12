@@ -102,8 +102,11 @@ agenthub auth login github              # auto-selects a flow
 agenthub auth login github --manual     # prints URL, reads pasted callback
 agenthub auth login github --device     # RFC 8628, no browser on this machine
 agenthub auth refresh github
+agenthub auth refresh github --force    # ask once more after the provider refused
 agenthub auth logout github
 ```
+
+**`revoked`** in `auth status` or `oauth:revoked` in `server ls` means the provider refused the stored sign-in — consent withdrawn, the token spent, the registration deleted. Nothing renews in the background any more and `auth refresh` cannot help: the repair is `auth login`. `--force` is only for a provider that has since been put right.
 
 Non-interactive sessions: `--manual` or `--device`. When discovery fails, pin with `--issuer`, `--scopes`, `--authorization-endpoint`, or store pins with `server add --oauth-*`. A successful login also **enables** the server.
 

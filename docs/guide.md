@@ -221,10 +221,12 @@ None of it needs editing by hand — the commands above are what write it, and
 
 `server ls` grows an `AUTH` column as soon as any server has a credential,
 saying what is stored here: `oauth`, `token` or `secret` when there is one,
-`oauth:expired` or `secret:missing` when something needs you — with the
-command that fixes it printed under the table. It reports what this machine
-holds, not whether the server still accepts it; `agenthub server test <id>`
-goes and asks.
+`oauth:expired`, `oauth:revoked` or `secret:missing` when something needs you —
+with the command that fixes it printed under the table. `oauth:revoked` is the
+one that will not sort itself out: the provider has refused the stored sign-in,
+so nothing is renewed in the background and only a fresh login helps. It
+reports what this machine holds, not whether the server still accepts it;
+`agenthub server test <id>` goes and asks.
 
 ## Verifying it end to end
 
