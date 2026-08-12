@@ -1,15 +1,12 @@
 package e2e_test
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
+	"github.com/dinstein/agent-hub/internal/testutil/fakeas"
 	"github.com/dinstein/agent-hub/internal/testutil/fakemcp"
 )
 
@@ -31,199 +28,19 @@ import (
 // that let mode selection decide could open a browser on a developer's machine
 // the day the selection rule changes.
 
-// oauthProvider is a resource server and its authorization server on one
-// loopback origin, the same arrangement internal/oauthflow's own fixture uses.
-// It answers only what a login needs: the RFC 9728 pointer, RFC 8414 metadata,
-// dynamic client registration, the device grant, and the MCP endpoint that
-// starts refusing and ends up answering.
-type oauthProvider struct {
-	srv  *httptest.Server
-	base string
-	// mcp is the MCP half, reused from the http downstream fixture so that
-	// only the authorization is new here.
-	mcp *fakeHTTPServer
-	// accessTTL is the advertised expires_in of an access token, in seconds.
-	accessTTL int
-
-	mu sync.Mutex
-	// granted is the access token this provider currently accepts. It lives
-	// under the lock because a refresh ROTATES it, and rotation is what makes
-	// "the call succeeded" and "the renewed token reached the downstream" the
-	// same observation instead of two hopes.
-	granted      string
-	registered   int
-	deviceGrants int
-	refreshes    int
-	lastGrant    string
-	// challenged counts MCP requests answered 401: it is what proves the
-	// login started from a real refusal rather than from configuration.
-	challenged int
-}
-
-func newOAuthProvider(t *testing.T) *oauthProvider {
+// newOAuthProvider starts the shared fake provider (internal/testutil/fakeas)
+// with this suite's MCP fixture behind it. The provider used to be a second,
+// weaker copy living here, so the suite that tests what a USER meets could not
+// reach the failures the protocol tests could; opts lets a caller turn the
+// knobs it needs.
+func newOAuthProvider(t *testing.T, opts ...func(*fakeas.Options)) *fakeas.Server {
 	t.Helper()
-	p := &oauthProvider{
-		mcp:       &fakeHTTPServer{script: fakemcp.Minimal()},
-		granted:   "granted-access-token",
-		accessTTL: 3600,
+	mcp := &fakeHTTPServer{script: fakemcp.Minimal()}
+	o := fakeas.Options{MCP: http.HandlerFunc(mcp.handle)}
+	for _, f := range opts {
+		f(&o)
 	}
-	// Unstarted, because the documents this provider serves name its own
-	// address: writing the URL into the handler after Start would be a race
-	// against the requests it is already able to answer.
-	p.srv = httptest.NewUnstartedServer(http.HandlerFunc(p.route))
-	p.base = "http://" + p.srv.Listener.Addr().String()
-	p.srv.Start()
-	t.Cleanup(p.srv.Close)
-	return p
-}
-
-func (p *oauthProvider) mcpURL() string { return p.base + "/mcp" }
-
-// prmURL is where the 401 challenge points. Naming it explicitly, rather than
-// relying on the candidate search, is what makes a failure here a failure of
-// the login and not of discovery — which has its own coverage upstream.
-func (p *oauthProvider) prmURL() string { return p.base + "/.well-known/oauth-protected-resource/mcp" }
-
-func (p *oauthProvider) route(w http.ResponseWriter, r *http.Request) {
-	switch {
-	case strings.Contains(r.URL.Path, "/.well-known/oauth-protected-resource"):
-		writeJSONDoc(w, map[string]any{
-			"resource":              p.mcpURL(),
-			"authorization_servers": []string{p.base},
-			"scopes_supported":      []string{"mcp.read"},
-		})
-	case strings.Contains(r.URL.Path, "/.well-known/"):
-		writeJSONDoc(w, map[string]any{
-			"issuer":                                         p.base,
-			"authorization_endpoint":                         p.base + "/authorize",
-			"token_endpoint":                                 p.base + "/token",
-			"registration_endpoint":                          p.base + "/register",
-			"device_authorization_endpoint":                  p.base + "/device",
-			"code_challenge_methods_supported":               []string{"S256"},
-			"authorization_response_iss_parameter_supported": true,
-		})
-	case r.URL.Path == "/register":
-		p.mu.Lock()
-		p.registered++
-		p.mu.Unlock()
-		w.WriteHeader(http.StatusCreated)
-		writeJSONBody(w, map[string]any{
-			"client_id":           "e2e-registered-client",
-			"client_id_issued_at": 1,
-		})
-	case r.URL.Path == "/device":
-		writeJSONDoc(w, map[string]any{
-			"device_code":      "e2e-device-code",
-			"user_code":        "WDJB-MJHT",
-			"verification_uri": p.base + "/activate",
-			"expires_in":       300,
-			"interval":         1,
-		})
-	case r.URL.Path == "/token":
-		p.serveToken(w, r)
-	case r.URL.Path == "/mcp":
-		p.serveMCP(w, r)
-	default:
-		http.NotFound(w, r)
-	}
-}
-
-// serveToken answers the device grant and the refresh grant. The grant type
-// is asserted rather than ignored: a token handed out for the wrong grant
-// would let a test pass against a flow that never ran the one it claims to.
-//
-// A refresh ROTATES the accepted access token. That is the whole mechanism
-// behind the renewal cases: the previous bearer stops working the moment a
-// renewal happens, so a later call that succeeds can only have carried the
-// new one, and no test has to reach into the vault to check.
-func (p *oauthProvider) serveToken(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
-		return
-	}
-	grant := r.Form.Get("grant_type")
-	p.mu.Lock()
-	p.lastGrant = grant
-	switch grant {
-	case "refresh_token":
-		p.refreshes++
-		p.granted = fmt.Sprintf("rotated-access-token-%d", p.refreshes)
-	case "urn:ietf:params:oauth:grant-type:device_code":
-		p.deviceGrants++
-	}
-	token, ttl := p.granted, p.accessTTL
-	p.mu.Unlock()
-
-	if grant != "refresh_token" && grant != "urn:ietf:params:oauth:grant-type:device_code" {
-		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "unsupported_grant_type"})
-		return
-	}
-	doc := map[string]any{
-		"access_token":  token,
-		"token_type":    "Bearer",
-		"refresh_token": "e2e-refresh-token",
-		"scope":         "mcp.read",
-	}
-	// Omitted entirely when accessTTL is zero: "no expires_in" and
-	// "expires_in: 0" are different statements, and only the first is the
-	// never-expires server the passive case needs.
-	if ttl > 0 {
-		doc["expires_in"] = ttl
-	}
-	writeJSONDoc(w, doc)
-}
-
-// serveMCP refuses until it is shown the token this provider currently
-// accepts, and the refusal carries the RFC 9728 pointer that starts a login.
-//
-// How it refuses a STALE token is the knob. A missing Authorization header is
-// always 401 — that is what makes a first login possible at all. A present
-// but rotated-away token is 401 by default, and under staleIs200 it is
-// instead answered 200 with isError, which is the shape that makes the
-// passive refresh path unreachable.
-func (p *oauthProvider) serveMCP(w http.ResponseWriter, r *http.Request) {
-	p.mu.Lock()
-	want := "Bearer " + p.granted
-	p.mu.Unlock()
-	if r.Header.Get("Authorization") != want {
-		p.mu.Lock()
-		p.challenged++
-		p.mu.Unlock()
-		w.Header().Set("WWW-Authenticate",
-			`Bearer realm="agenthub-e2e", resource_metadata="`+p.prmURL()+`"`)
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-	p.mcp.handle(w, r)
-}
-
-func (p *oauthProvider) counts() (registered, grants, challenged int, lastGrant string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.registered, p.deviceGrants, p.challenged, p.lastGrant
-}
-
-// renewals reports how many refresh grants the token endpoint redeemed, how
-// many MCP requests it refused, and the access token it currently accepts.
-func (p *oauthProvider) renewals() (refreshes, challenged int, accepted string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.refreshes, p.challenged, p.granted
-}
-
-func writeJSONDoc(w http.ResponseWriter, doc map[string]any) {
-	writeJSONStatus(w, http.StatusOK, doc)
-}
-
-func writeJSONBody(w http.ResponseWriter, doc map[string]any) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(doc)
-}
-
-func writeJSONStatus(w http.ResponseWriter, status int, doc map[string]any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(doc)
+	return fakeas.New(t, o)
 }
 
 // TestAuthLoginStoresATokenLaterConnectionsUse walks the whole authorization
@@ -245,7 +62,7 @@ func TestAuthLoginStoresATokenLaterConnectionsUse(t *testing.T) {
 	p := newOAuthProvider(t)
 
 	runAgenthubEnv(t, env, "", "server", "add", "guarded",
-		"--url", p.mcpURL(), "--transport", "http", "--local", "--json")
+		"--url", p.MCPURL(), "--transport", "http", "--local", "--json")
 
 	// Before the login the server does not work, and that is how a user finds
 	// out they need one. Asserting it here also means the success later cannot
@@ -263,26 +80,27 @@ func TestAuthLoginStoresATokenLaterConnectionsUse(t *testing.T) {
 		t.Fatalf("auth login failed: %s\nstderr: %s", out, stderr)
 	}
 
-	registered, grants, challenged, lastGrant := p.counts()
-	if challenged == 0 {
+	observed := p.Counts()
+	if observed.Challenges == 0 {
 		t.Fatal("the login never saw a 401; it cannot have started from a real challenge")
 	}
-	if registered == 0 {
+	if observed.Registrations == 0 {
 		t.Fatal("no dynamic client registration reached the provider")
 	}
-	if grants == 0 || lastGrant != "urn:ietf:params:oauth:grant-type:device_code" {
-		t.Fatalf("the token was not obtained through the device grant (%d grants, last %q)", grants, lastGrant)
+	if observed.DeviceGrants == 0 || observed.LastGrant != "urn:ietf:params:oauth:grant-type:device_code" {
+		t.Fatalf("the token was not obtained through the device grant (%d grants, last %q)",
+			observed.DeviceGrants, observed.LastGrant)
 	}
 
 	// The credential is never printed, by any of these commands.
-	if strings.Contains(out+stderr, p.granted) {
+	if strings.Contains(out+stderr, observed.Accepted) {
 		t.Fatal("auth login printed the access token")
 	}
 	out, _ = runAgenthubEnv(t, env, "", "auth", "status", "--json")
 	if !strings.Contains(out, "guarded") {
 		t.Fatalf("auth status does not know about the server just signed in to: %s", out)
 	}
-	if strings.Contains(out, p.granted) {
+	if strings.Contains(out, observed.Accepted) {
 		t.Fatalf("auth status printed the access token: %s", out)
 	}
 

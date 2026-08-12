@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dinstein/agent-hub/internal/testutil/fakeas"
 )
 
 // The OAuth suite covered getting a credential and not keeping one:
@@ -32,10 +34,10 @@ import (
 
 // loginTo runs the shared setup: register the provider's MCP endpoint, sign
 // in through the device grant, and put the server into service.
-func loginTo(t *testing.T, env []string, p *oauthProvider, serverID string) {
+func loginTo(t *testing.T, env []string, p *fakeas.Server, serverID string) {
 	t.Helper()
 	runAgenthubEnv(t, env, "", "server", "add", serverID,
-		"--url", p.mcpURL(), "--transport", "http", "--local", "--json")
+		"--url", p.MCPURL(), "--transport", "http", "--local", "--json")
 	out, stderr := runAgenthubEnv(t, env, "", "auth", "login", serverID,
 		"--device", "--allow-local", "--json")
 	if e := lastEnvelope(t, out); !e.OK {
@@ -66,7 +68,7 @@ func TestALocalProvidersCredentialIsRenewedOnRejection(t *testing.T) {
 	p := newOAuthProvider(t)
 
 	loginTo(t, env, p, "selfhosted")
-	grantsAfterLogin, _, first := p.renewals()
+	before := p.Counts()
 
 	c := startGatewayEnv(t, env, "selfhostedclient")
 	defer c.close()
@@ -79,21 +81,20 @@ func TestALocalProvidersCredentialIsRenewedOnRejection(t *testing.T) {
 
 	// Rotate out from under the client, the way a provider ending a session
 	// does. Nothing in the stored state says this happened.
-	p.mu.Lock()
-	p.granted = "rotated-by-the-provider"
-	p.mu.Unlock()
+	p.RotateAccessToken()
 
 	if got := c.textContent(c.callTool("selfhosted__echo",
 		map[string]any{"marker": "after-rotation"}, 45*time.Second)); !strings.Contains(got, "after-rotation") {
 		c.fatalf("the call was not recovered by a renewal: %q", got)
 	}
 
-	refreshes, _, accepted := p.renewals()
-	if refreshes != grantsAfterLogin+1 {
+	after := p.Counts()
+	if after.Refreshes != before.Refreshes+1 {
 		t.Errorf("refresh grants = %d, want exactly one more than the %d the login left; "+
-			"the passive renewer must ask once, not per request", refreshes, grantsAfterLogin)
+			"the passive renewer must ask once, not per request", after.Refreshes, before.Refreshes)
 	}
-	if accepted == first || accepted == "rotated-by-the-provider" {
-		t.Errorf("the provider still accepts %q; the call cannot have carried a renewed credential", accepted)
+	if after.Accepted == before.Accepted {
+		t.Errorf("the provider still accepts %q; the call cannot have carried a renewed credential",
+			after.Accepted)
 	}
 }
