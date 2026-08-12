@@ -72,6 +72,19 @@ const (
 	// KindOAuthRefreshFailed: a token refresh failed; calls will start
 	// failing when the current token expires.
 	KindOAuthRefreshFailed Kind = "oauth_refresh_failed"
+	// KindOAuthGrantRevoked: the authorization server REFUSED the stored
+	// grant, in its own words (Detail). Nothing will be asked of it again
+	// until somebody logs in.
+	//
+	// A kind of its own rather than an oauth_refresh_failed with a longer
+	// detail, because the two answer the question a reader of this timeline
+	// is actually asking — "do I have to do something?" — in opposite
+	// directions. A failed refresh is usually a blip the next attempt
+	// clears; this never clears, no further attempt is made, and the only
+	// repair is a human at a browser. A filter that cannot separate them
+	// either buries the one that needs somebody or pages on the one that
+	// does not.
+	KindOAuthGrantRevoked Kind = "oauth_grant_revoked"
 	// KindSecretsMissing: the connection is blocked on unresolved secrets.
 	KindSecretsMissing Kind = "secrets_missing"
 	// KindOAuthLoginStarted: an interactive login for this server began.
@@ -161,7 +174,7 @@ var allKinds = map[Scope][]Kind{
 		KindRespawned, KindRespawnFailed,
 		KindCircuitOpen, KindCircuitHalfOpen, KindCircuitClosed,
 		KindHealthDown, KindHealthUp, KindToolsChanged,
-		KindOAuthRefreshFailed, KindSecretsMissing,
+		KindOAuthRefreshFailed, KindOAuthGrantRevoked, KindSecretsMissing,
 		KindOAuthLoginStarted, KindOAuthLoginWaiting,
 		KindOAuthLoginCompleted, KindOAuthLoginFailed,
 	},

@@ -42,8 +42,8 @@ import (
 func Level(kind Kind) slog.Level {
 	switch kind {
 	case KindConnectFailed, KindRespawnFailed, KindCircuitOpen, KindHealthDown,
-		KindOAuthRefreshFailed, KindSecretsMissing, KindRegistryReloadFailed,
-		KindOAuthLoginFailed:
+		KindOAuthRefreshFailed, KindOAuthGrantRevoked, KindSecretsMissing,
+		KindRegistryReloadFailed, KindOAuthLoginFailed:
 		return slog.LevelWarn
 	default:
 		return slog.LevelInfo

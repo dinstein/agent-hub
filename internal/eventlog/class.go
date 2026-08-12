@@ -47,7 +47,7 @@ var classOrder = []Class{ClassRoutine, ClassDisruption}
 var disruptions = []Kind{
 	// Something is wrong now.
 	KindConnectFailed, KindRespawnFailed, KindCircuitOpen, KindHealthDown,
-	KindOAuthRefreshFailed, KindSecretsMissing, KindOAuthLoginFailed,
+	KindOAuthRefreshFailed, KindOAuthGrantRevoked, KindSecretsMissing, KindOAuthLoginFailed,
 	KindRegistryReloadFailed,
 	// The hub reacting to it. A connection that ended and a child that was
 	// restarted are not failures in themselves — a planned shutdown ends

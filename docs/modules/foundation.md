@@ -424,7 +424,7 @@ Kinds are checked as a **(scope, kind) pair**, never a bare kind: a gateway and 
 | Scope | Kinds | Class |
 |---|---|---|
 | `server` | `connected`, `tools_changed`, `oauth_login_started`, `oauth_login_waiting`, `oauth_login_completed` | routine |
-| `server` | `connect_failed`, `disconnected`, `respawned`, `respawn_failed`, `circuit_open`, `circuit_half_open`, `circuit_closed`, `health_down`, `health_up`, `oauth_refresh_failed`, `secrets_missing`, `oauth_login_failed` | disruption |
+| `server` | `connect_failed`, `disconnected`, `respawned`, `respawn_failed`, `circuit_open`, `circuit_half_open`, `circuit_closed`, `health_down`, `health_up`, `oauth_refresh_failed`, `oauth_grant_revoked`, `secrets_missing`, `oauth_login_failed` | disruption |
 | `gateway` | `started`, `stopped`, `client_attached`, `session_opened`, `session_closed` | routine |
 | `gateway` | `registry_reload_failed` | disruption |
 | `daemon` | `started`, `stopping`, `listener_bound`, `config_reloaded` | routine |

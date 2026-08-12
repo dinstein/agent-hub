@@ -376,7 +376,7 @@ func Run(ctx context.Context, cfg Config) error {
 	if dataErr != nil {
 		log.Warn("data dir unresolved; running without proactive token refresh", "error", dataErr)
 	} else {
-		refr := startRefresher(bgCtx, cfg, store, dataDir, tokenStates, log)
+		refr := startRefresher(bgCtx, cfg, store, dataDir, tokenStates, events, log)
 		// A control-plane refresh joins the daemon's singleflight instead of
 		// racing it: a one-time refresh token spent twice cannot be undone.
 		srv.SetRefresher(refr.Coordinator())

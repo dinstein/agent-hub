@@ -19,6 +19,7 @@ func TestEveryKindHasADeliberateLevel(t *testing.T) {
 		KindConnectFailed: true, KindRespawnFailed: true, KindCircuitOpen: true,
 		KindHealthDown: true, KindOAuthRefreshFailed: true, KindSecretsMissing: true,
 		KindRegistryReloadFailed: true, KindOAuthLoginFailed: true,
+		KindOAuthGrantRevoked: true,
 	}
 	for scope, kinds := range allKinds {
 		for _, k := range kinds {
@@ -133,7 +134,8 @@ func TestEveryKindIsClassifiedDeliberately(t *testing.T) {
 		"server/circuit_open": ClassDisruption, "server/circuit_half_open": ClassDisruption,
 		"server/circuit_closed": ClassDisruption, "server/health_down": ClassDisruption,
 		"server/health_up": ClassDisruption, "server/oauth_refresh_failed": ClassDisruption,
-		"server/secrets_missing": ClassDisruption, "server/oauth_login_failed": ClassDisruption,
+		"server/oauth_grant_revoked": ClassDisruption,
+		"server/secrets_missing":     ClassDisruption, "server/oauth_login_failed": ClassDisruption,
 		"gateway/started": ClassRoutine, "gateway/stopped": ClassRoutine,
 		"gateway/client_attached": ClassRoutine, "gateway/registry_reload_failed": ClassDisruption,
 		"gateway/session_opened": ClassRoutine, "gateway/session_closed": ClassRoutine,

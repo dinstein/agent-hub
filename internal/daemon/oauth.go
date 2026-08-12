@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/ctlapi"
+	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/logx"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -64,6 +65,12 @@ type refresherConfig struct {
 	LockDir string
 	// Log is the daemon logger. Required.
 	Log *slog.Logger
+	// Events, when set, receives the server-scope timeline entry a refusal
+	// earns. It is the daemon's stream because the daemon is the component
+	// that notices: a server nobody is connected to has no gateway to
+	// observe it, and that is the case a revocation is most likely to be
+	// found in.
+	Events *eventlog.Stream
 	// AllowLoopback relaxes the OAuth client's SSRF screen to literal
 	// loopback authorization servers for EVERY server, whatever the registry
 	// says. It is a test seam and a last-resort override; the ordinary route
@@ -368,6 +375,16 @@ func (r *refresher) refreshOne(ctx context.Context, id string, now time.Time, ob
 			// stored" needs the same login but is not something the provider
 			// said, and reporting it as a revocation would put words in the
 			// provider's mouth.
+			//
+			// Emitted exactly once per revocation, because the scan skips a
+			// recorded refusal from the next cycle on — a timeline is only
+			// useful if an entry in it means something happened.
+			if r.cfg.Events != nil {
+				r.cfg.Events.Emit(r.cfg.Log, eventlog.Record{
+					Scope: eventlog.ScopeServer, Kind: eventlog.KindOAuthGrantRevoked,
+					Server: id, Detail: err.Error(),
+				}, "the authorization server refused the stored grant", logx.Server(id))
+			}
 			return renewalRefused
 		}
 	default:
@@ -447,7 +464,7 @@ func earliest(a, b time.Time) time.Time {
 // no refresh coordination is a degradation, never a reason to refuse to
 // coordinate anything else.
 func startRefresher(ctx context.Context, cfg Config, store *registry.Store, dataDir string,
-	tokens *ctlapi.TokenStates, log *slog.Logger) *refresher {
+	tokens *ctlapi.TokenStates, events *eventlog.Stream, log *slog.Logger) *refresher {
 	sec := cfg.Secrets
 	if sec == nil {
 		sec = secrets.NewChain(secrets.ChainConfig{Dir: filepath.Join(dataDir, "secrets")})
@@ -460,6 +477,7 @@ func startRefresher(ctx context.Context, cfg Config, store *registry.Store, data
 		AllowLoopback: cfg.OAuthAllowLoopback,
 		MaxScan:       cfg.RefreshScanInterval,
 		TokenStates:   tokens,
+		Events:        events,
 	})
 	go r.run(ctx)
 	return r

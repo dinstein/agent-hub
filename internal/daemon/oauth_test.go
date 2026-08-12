@@ -7,12 +7,15 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/dinstein/agent-hub/internal/ctlapi"
+	"github.com/dinstein/agent-hub/internal/eventlog"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/secrets"
@@ -321,9 +324,17 @@ func TestRefresherStopsAskingAfterARefusal(t *testing.T) {
 	vault := newMemStore()
 	seedState(t, vault, "remote", as.srv.URL+"/token", time.Now().Add(-10*time.Second).Unix())
 
+	eventsPath := filepath.Join(t.TempDir(), "events.jsonl")
+	events, err := eventlog.Open(eventsPath, eventlog.Options{PID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = events.Close() }()
+
 	r := testRefresher(t, refresherConfig{
 		Store:   testRegistry(t, map[string]registry.ServerEntry{"remote": {Transport: "http", URL: "https://x/mcp", Enabled: true}}),
 		Secrets: vault,
+		Events:  events,
 	})
 	r.cycle(context.Background())
 	if as.calls.Load() != 1 {
@@ -343,6 +354,32 @@ func TestRefresherStopsAskingAfterARefusal(t *testing.T) {
 	}
 	if as.calls.Load() != 1 {
 		t.Fatalf("calls = %d after six cycles, want the scan to skip a revoked grant entirely", as.calls.Load())
+	}
+
+	// Exactly one timeline entry, and it is the kind that says a human is
+	// needed rather than the one that says a renewal did not work. Six
+	// cycles producing six entries would be a timeline where an entry means
+	// nothing happened.
+	//
+	// Sync first: the stream's writer is asynchronous, so reading the file
+	// without it races the write and reports an empty timeline on whichever
+	// machine loses.
+	events.Sync()
+	res, err := eventlog.Read(eventsPath, eventlog.Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var revoked []eventlog.Record
+	for _, rec := range res.Records {
+		if rec.Kind == eventlog.KindOAuthGrantRevoked {
+			revoked = append(revoked, rec)
+		}
+	}
+	if len(revoked) != 1 {
+		t.Fatalf("oauth_grant_revoked records = %d, want exactly 1: %+v", len(revoked), res.Records)
+	}
+	if revoked[0].Server != "remote" || !strings.Contains(revoked[0].Detail, "invalid_grant") {
+		t.Errorf("record = %+v, want it to name the server and carry the provider's words", revoked[0])
 	}
 
 	// A fresh login rewrites the state without the mark. The scan reads the
