@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/api"
+	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 	"github.com/dinstein/agent-hub/internal/registry"
 	"github.com/dinstein/agent-hub/internal/secrets"
@@ -341,27 +342,42 @@ func TestServerAuthHints(t *testing.T) {
 // the same repair. They disagreed once — every OAuth expiry reported `login`
 // while the hint offered `auth refresh` — and a frontend reading only the
 // field sent people to a browser for a renewal that needed no human.
+// The action half is taken from ctlapi.OAuthLifecycleOf rather than from a
+// predicate beside it: that IS the decision now, shared with `auth status` and
+// GET /v1/auth, so a change there has to reach this assertion.
 func TestServerAuthActionAgreesWithTheHint(t *testing.T) {
 	t.Parallel()
-	for _, state := range []string{api.AuthStateExpired, api.AuthStateExpiring} {
+	now := time.Unix(1_700_000_000, 0)
+	// Two stored records that land on the two states by arithmetic rather than
+	// by assignment. Both advertise a lifetime longer than the grace floor, so
+	// the grace applies and "expiring" is reachable at all.
+	states := map[string]*oauthflow.State{
+		api.AuthStateExpired:  {IssuedAt: now.Add(-2 * time.Hour).Unix(), ExpiresAt: now.Add(-time.Hour).Unix()},
+		api.AuthStateExpiring: {IssuedAt: now.Add(-time.Hour).Unix(), ExpiresAt: now.Add(30 * time.Second).Unix()},
+	}
+	for state, base := range states {
 		for _, hasRefresh := range []bool{true, false} {
-			auth := ServerAuth{Kind: authKindOAuth, State: state, HasRefreshToken: hasRefresh}
+			st := *base
+			if hasRefresh {
+				st.RefreshToken = "stored"
+			}
+			lc := ctlapi.OAuthLifecycleOf(&st, true, now)
+			if lc.State != state {
+				t.Fatalf("refresh=%v: state = %q, want %q", hasRefresh, lc.State, state)
+			}
+			auth := ServerAuth{Kind: authKindOAuth, State: lc.State, HasRefreshToken: lc.HasRefreshToken}
 			hint := auth.hint("notion")
 			wantVerb := "agenthub auth login"
+			want := api.ActionLogin
 			if hasRefresh {
-				wantVerb = "agenthub auth refresh"
+				wantVerb, want = "agenthub auth refresh", api.ActionRefresh
 			}
 			if !strings.Contains(hint, wantVerb) {
 				t.Fatalf("state %q refresh=%v: hint = %q, want it to offer %q",
 					state, hasRefresh, hint, wantVerb)
 			}
-			// The action is the same verb, in the api vocabulary.
-			want := api.ActionLogin
-			if hasRefresh {
-				want = api.ActionRefresh
-			}
-			if got := renewActionFor(hasRefresh); got != want {
-				t.Errorf("state %q refresh=%v: action = %q, want %q", state, hasRefresh, got, want)
+			if lc.Action != want {
+				t.Errorf("state %q refresh=%v: action = %q, want %q", state, hasRefresh, lc.Action, want)
 			}
 		}
 	}

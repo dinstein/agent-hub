@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dinstein/agent-hub/api"
+	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/downstream"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 	"github.com/dinstein/agent-hub/internal/registry"
@@ -256,17 +257,15 @@ func (p authProbe) classifyOAuth(ctx context.Context, id string, now time.Time) 
 		ClientRegistrar: st.RegistrarKind,
 		ExpiresAt:       st.ExpiresAt,
 		ExpiresIn:       secondsUntil(st.ExpiresAt, now),
-		// Stored AND usable. A refused grant leaves the bytes in place, and
-		// this flag chooses which repair gets offered — reporting true would
-		// send the operator to `auth refresh`, which can only fail.
-		HasRefreshToken: st.RefreshToken != "" && !st.GrantRevoked(),
 	}
-	// The lifecycle — including whether the action is refresh or login — is
-	// oauthlifecycle.go's to decide, in the one copy `auth status` also uses.
-	// What is local to here is HOW the access token's existence is learned:
-	// the index, never a value read (see the cost rule in this file's header).
-	lc := lifecycleOf(st, p.stored(id, secrets.KeyHTTPAuth), now)
+	// The lifecycle — whether the action is refresh or login, and whether the
+	// stored refresh token is usable at all — is ctlapi.OAuthLifecycleOf's to
+	// decide, in the one copy `auth status` and `GET /v1/auth` also use. What
+	// is local to here is HOW the access token's existence is learned: the
+	// index, never a value read (see the cost rule in this file's header).
+	lc := ctlapi.OAuthLifecycleOf(st, p.stored(id, secrets.KeyHTTPAuth), now)
 	out.State, out.Action, out.Detail = lc.State, lc.Action, lc.Detail
+	out.HasRefreshToken = lc.HasRefreshToken
 	return out, true
 }
 

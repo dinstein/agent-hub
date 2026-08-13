@@ -16,6 +16,7 @@ import (
 	"github.com/dinstein/agent-hub/api"
 	"github.com/dinstein/agent-hub/internal/cli/output"
 	"github.com/dinstein/agent-hub/internal/confops"
+	"github.com/dinstein/agent-hub/internal/ctlapi"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 	"github.com/dinstein/agent-hub/internal/registry"
 )
@@ -421,20 +422,18 @@ func authStatusOf(ctx context.Context, deps *oauthDeps, id string, now time.Time
 	row.Scope = st.Scope
 	row.ExpiresAt = st.ExpiresAt
 	row.ExpiresIn = secondsUntil(st.ExpiresAt, now)
-	// Stored AND usable: a refused grant leaves the bytes in place, and this
-	// field is what a frontend reads to decide whether to offer a renewal
-	// that needs nobody present.
-	row.HasRefreshToken = st.RefreshToken != "" && !st.GrantRevoked()
 	row.ClientRegistrar = st.RegistrarKind
 
-	// The lifecycle, the action and the sentence all come from
-	// oauthlifecycle.go — the same copy `server ls` renders. What is local to
-	// here is that the access token's existence is learned by READING it:
-	// `auth status` is the command you run about one credential, so the
-	// keychain cost `server ls` refuses to pay is the right cost here.
+	// The lifecycle, the action, the sentence and "is the refresh token
+	// usable" all come from ctlapi.OAuthLifecycleOf — the one copy `server ls`
+	// and `GET /v1/auth` also read. What is local to here is that the access
+	// token's existence is learned by READING it: `auth status` is the command
+	// you run about one credential, so the keychain cost `server ls` refuses to
+	// pay is the right cost here.
 	_, terr := deps.store.LoadAccessToken(ctx, id)
-	lc := lifecycleOf(st, terr == nil, now)
+	lc := ctlapi.OAuthLifecycleOf(st, terr == nil, now)
 	row.State, row.Action, row.Detail = lc.State, lc.Action, lc.Detail
+	row.HasRefreshToken = lc.HasRefreshToken
 	row.Hint = oauthHintFor(id, row.State, row.HasRefreshToken, row.ExpiresIn, row.Detail)
 	return row
 }
