@@ -3,9 +3,11 @@ package ctlapi
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/dinstein/agent-hub/api"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 )
 
@@ -68,6 +70,57 @@ func TestAuthStatus(t *testing.T) {
 	}
 
 	// The refresh token itself never travels.
+	if nrContains(body, nrRefreshToken) {
+		t.Fatalf("auth status leaked the refresh token: %s", body)
+	}
+}
+
+// TestAuthStatusReportsARefusedGrant is the assertion this endpoint was
+// missing entirely. api.AuthStateRevoked is published, and api.AuthStatus says
+// in as many words that HasRefreshToken is reported false beside it — "the
+// bytes may still be there, but no unattended repair is". This endpoint
+// decided the lifecycle itself, was never taught the state, and spelled the
+// flag `RefreshToken != ""`, so it answered `authorized` with
+// `has_refresh_token: true` about a credential `agenthub auth status` called
+// revoked. A frontend reading the contract then offered a refresh that can
+// only fail.
+//
+// The record keeps its refresh token and is NOT past its expiry, so nothing
+// but the refusal can be producing either half of the answer.
+func TestAuthStatusReportsARefusedGrant(t *testing.T) {
+	now := time.Now().Unix()
+	store := nrAuthStore()
+	store.states["revoked"] = &oauthflow.State{
+		Issuer: "https://auth.example", RefreshToken: nrRefreshToken,
+		IssuedAt: now - 60, ExpiresAt: now + 3600,
+		GrantRevokedAt: now - 30, GrantRevokedReason: "invalid_grant: consent withdrawn",
+	}
+	store.tokens["revoked"] = "access-token"
+	env := nrStart(t, func(d *NonRegistryDeps) { d.OAuth = store })
+	seedServer(t, env.reg, "revoked", true)
+
+	status, body := nrDo(t, env.sock, http.MethodGet, "/v1/auth?server=revoked", nil)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d: %s", status, body)
+	}
+	var out []AuthStatusWire
+	nrData(t, body, &out)
+	if len(out) != 1 {
+		t.Fatalf("out = %+v", out)
+	}
+	row := out[0]
+	if row.State != api.AuthStateRevoked {
+		t.Errorf("state = %q, want %q", row.State, api.AuthStateRevoked)
+	}
+	if row.HasRefreshToken {
+		t.Errorf("has_refresh_token = true for a refused grant: %+v", row)
+	}
+	// The provider's own words are the only provider-specific part an operator
+	// can act on, and they are what separates "consent withdrawn" from
+	// "refresh token expired".
+	if !strings.Contains(row.Detail, "consent withdrawn") {
+		t.Errorf("detail = %q, want the authorization server's own reason", row.Detail)
+	}
 	if nrContains(body, nrRefreshToken) {
 		t.Fatalf("auth status leaked the refresh token: %s", body)
 	}

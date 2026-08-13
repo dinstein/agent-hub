@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/dinstein/agent-hub/api"
 	"github.com/dinstein/agent-hub/internal/oauthflow"
 )
 
@@ -27,7 +28,8 @@ import (
 // AuthStatusWire is one server's authorization state.
 type AuthStatusWire struct {
 	Server string `json:"server"`
-	// State is authorized | expiring | expired | none | error.
+	// State is an api.AuthState* value: authorized | expiring | expired |
+	// revoked | none | error.
 	State  string `json:"state"`
 	Issuer string `json:"issuer,omitempty"`
 	Scope  string `json:"scope,omitempty"`
@@ -36,7 +38,10 @@ type AuthStatusWire struct {
 	ExpiresAt int64 `json:"expires_at"`
 	ExpiresIn int64 `json:"expires_in"`
 	// HasRefreshToken decides whether an expiry is recoverable without a
-	// human. The token itself is never included.
+	// human. It is "stored AND usable": a grant the provider has refused
+	// answers false however many bytes are still in the vault, because the
+	// unattended repair is what the flag is read for and there is none. The
+	// token itself is never included.
 	HasRefreshToken bool   `json:"has_refresh_token"`
 	ClientRegistrar string `json:"client_registrar,omitempty"`
 	Detail          string `json:"detail,omitempty"`
@@ -81,7 +86,7 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	out := make([]AuthStatusWire, 0, len(ids))
 	for _, id := range ids {
 		row := s.authStatusOf(r.Context(), id, now)
-		if one == "" && row.State == "none" {
+		if one == "" && row.State == api.AuthStateNone {
 			continue
 		}
 		out = append(out, row)
@@ -93,11 +98,11 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 // into the row rather than aborting the listing: this is a diagnostic, and
 // one corrupt entry must not hide the other twenty-nine.
 func (s *Server) authStatusOf(ctx context.Context, id string, now time.Time) AuthStatusWire {
-	row := AuthStatusWire{Server: id, State: "none"}
+	row := AuthStatusWire{Server: id, State: api.AuthStateNone}
 	st, err := s.opts.NonRegistry.OAuth.LoadState(ctx, id)
 	if err != nil {
 		if !errors.Is(err, oauthflow.ErrNoState) {
-			row.State = "error"
+			row.State = api.AuthStateError
 			row.Detail = err.Error()
 		}
 		return row
@@ -106,24 +111,24 @@ func (s *Server) authStatusOf(ctx context.Context, id string, now time.Time) Aut
 	row.Scope = st.Scope
 	row.ExpiresAt = st.ExpiresAt
 	row.ExpiresIn = secondsUntil(st.ExpiresAt, now)
-	row.HasRefreshToken = st.RefreshToken != ""
 	row.ClientRegistrar = st.RegistrarKind
 
-	if _, terr := s.opts.NonRegistry.OAuth.LoadAccessToken(ctx, id); terr != nil {
-		// State without a token is the registration-only shape: a login was
-		// started (or the token write failed) and nothing is usable yet.
-		row.State = "none"
-		row.Detail = "client registration stored, no access token"
-		return row
-	}
-	switch {
-	case st.Expired(now):
-		row.State = "expired"
-	case st.NeedsRefresh(now):
-		row.State = "expiring"
-	default:
-		row.State = "authorized"
-	}
+	// The lifecycle comes from OAuthLifecycleOf, the one copy `auth status` and
+	// `server ls` also read. This file used to decide it inline, and by the
+	// time a refused grant became a state worth reporting it was the copy
+	// nobody remembered: no revoked arm, and HasRefreshToken spelled
+	// `RefreshToken != ""`. So this endpoint answered `authorized` with
+	// `has_refresh_token: true` about a credential `agenthub auth status`
+	// called revoked, and a frontend reading api.AuthStatus — which documents
+	// the state and promises the flag is false beside it — was told to offer
+	// the one repair that cannot work.
+	//
+	// What is local to here is that the access token's existence is learned by
+	// READING it. This endpoint is a diagnostic and the daemon holds the vault
+	// open already, so the cost `server ls` refuses to pay is the right one.
+	_, terr := s.opts.NonRegistry.OAuth.LoadAccessToken(ctx, id)
+	lc := OAuthLifecycleOf(st, terr == nil, now)
+	row.State, row.Detail, row.HasRefreshToken = lc.State, lc.Detail, lc.HasRefreshToken
 	return row
 }
 
