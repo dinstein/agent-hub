@@ -50,8 +50,15 @@ type State struct {
 	// must send the same value or the AS may mint a token for a different
 	// audience.
 	Resource string `json:"resource,omitempty"`
-	// Scope is the granted scope, echoed back on refresh when the provider
-	// requires it.
+	// Scope is the granted scope, kept for reporting and for carry-forward
+	// when a refresh response omits it (RFC 6749 §5.1: omitted means
+	// unchanged).
+	//
+	// It is deliberately NOT sent back on a refresh — refreshNow leaves
+	// RefreshRequest.Scope empty, which is what makes the AS reuse the
+	// original grant. This said "echoed back on refresh when the provider
+	// requires it", which no code does and which reads as an invitation to
+	// add it; docs/modules/oauth.md records omitting it as the ruling.
 	Scope string `json:"scope,omitempty"`
 	// RedirectURI and CallbackPort are persisted because many providers
 	// require an EXACT redirect_uri match; a dynamically chosen loopback
