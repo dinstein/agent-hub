@@ -417,6 +417,19 @@ const (
 // The order is the order of severity, and revoked comes first because it is
 // the only one of the three that does not repair itself: an expired token
 // with a live refresh token behind it is usually renewed before anyone looks.
+//
+// IT IS THE SAME LADDER AS ctlapi.OAuthLifecycleOf, in the other vocabulary,
+// and the two must move together. They are not folded into one because the
+// inputs genuinely differ: that one is told whether an access token exists and
+// can therefore answer `none`, while this loop deliberately never reads the
+// token — a vault read per scan is a keychain dialog on macOS, which is the
+// constraint the whole TokenStates arrangement was built around
+// (ctlapi/tokenstate.go). So a rung added there has to be added here by hand.
+//
+// This note is not hypothetical. The last state to be added, revoked, reached
+// three of the four surfaces that classify a credential and not the fourth,
+// and the one it missed reported the opposite of the contract for a release.
+// Whatever the next rung is, this is the copy with nothing to remind anyone.
 func tokenFactsOf(st *oauthflow.State, now time.Time) ctlapi.TokenFacts {
 	f := ctlapi.TokenFacts{
 		// "Stored AND usable": a refused grant leaves the bytes in place,

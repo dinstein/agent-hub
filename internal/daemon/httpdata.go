@@ -146,7 +146,14 @@ func (p *httpPlane) Dispatch(ctx context.Context, c *httpbridge.Caller, _ *httpb
 func (p *httpPlane) Notify(ctx context.Context, c *httpbridge.Caller, _ *httpbridge.Session, n *mcp.Notification) {
 	conn, err := p.connFor(ctx, c)
 	if err != nil {
-		return // a notification is never answered, so a failure is only logged below
+		// Silently. A notification has no response to carry a failure in, and
+		// the line below is about DELIVERY to an assembled gateway, not about
+		// assembly — this comment said the failure was "only logged below",
+		// which named a line that never runs on this path. An assembly failure
+		// is reported by Dispatch, which the same credential reaches for
+		// anything it expects an answer to; a caller that only ever notifies
+		// gets nothing, and that is the gap this branch leaves.
+		return
 	}
 	if err := conn.Notify(n); err != nil {
 		p.deps.Log.Debug("notification not delivered to the gateway", "method", n.Method, "error", err)
