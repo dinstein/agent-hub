@@ -148,9 +148,14 @@ func (g *gateway) acquire(ctx context.Context, base *downstream.Server, serverID
 	spec, known := g.specByIDLocked(serverID)
 	pool := g.pool
 	g.mu.Unlock()
-	if !known || pool == nil || spec.Derive == downstream.DeriveNone || spec.Derive == "" {
+	if !known || pool == nil {
 		return &downstream.Lease{Server: base}, nil
 	}
+	// An empty key is the one "run on the base instance" answer, and
+	// deriveTargetFor already gives it for every mode that does not derive —
+	// including DeriveNone and the zero value — without touching the roots
+	// cache. Testing spec.Derive here as well only asked the same question
+	// twice, in a spelling that had to be kept in step with that switch.
 	key, dc := g.deriveTargetFor(ctx, spec)
 	if key == "" {
 		return &downstream.Lease{Server: base}, nil

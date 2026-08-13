@@ -307,8 +307,7 @@ func dockerEqual(a, b *transport.DockerConfig) bool {
 		return a == b
 	}
 	if a.Image != b.Image || a.Network != b.Network || a.Memory != b.Memory ||
-		a.CPUs != b.CPUs || a.User != b.User || a.Workdir != b.Workdir ||
-		len(a.Mounts) != len(b.Mounts) || len(a.ExtraRunArgs) != len(b.ExtraRunArgs) {
+		a.CPUs != b.CPUs || a.User != b.User || a.Workdir != b.Workdir {
 		return false
 	}
 	return slices.Equal(a.Mounts, b.Mounts) && slices.Equal(a.ExtraRunArgs, b.ExtraRunArgs)

@@ -183,9 +183,6 @@ func (g *gateway) noteConnectResult(id string, failure error) {
 		delete(g.connErr, id)
 		g.resetLadderLocked(id)
 	} else {
-		if g.connErr == nil {
-			g.connErr = make(map[string]connectFailure)
-		}
 		g.connErr[id] = connectFailure{
 			detail:    failure.Error(),
 			needsAuth: transport.IsAuthStatus(failure),
