@@ -34,9 +34,15 @@ import (
 //     lookup a per-root identity could never exist.
 
 // DeriveMode is the per-server derivation policy from the registry
-// (ServerEntry.Derive). The zero value is DeriveNone, so an entry written
-// before this field existed derives nothing — backward compatible by
-// construction.
+// (ServerEntry.Derive). An entry written before this field existed derives
+// nothing — backward compatible by construction — but that normalization is
+// ParseDeriveMode's and not the type's: the zero DeriveMode is "", which does
+// NOT compare equal to DeriveNone. This said the opposite, and a caller acted
+// on it, testing both spellings because the sentence left it unable to say
+// which one it would be handed.
+//
+// Every Spec on the connection plane comes from SpecFromEntry, which parses,
+// so "" never travels with one: compare against DeriveNone and nothing else.
 type DeriveMode string
 
 // The three derivation modes.
