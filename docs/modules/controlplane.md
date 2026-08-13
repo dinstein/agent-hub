@@ -893,15 +893,23 @@ the text mode — `auth.hint`, composed once in `classify` and read back by the 
 recomputed — because a `--json` caller rebuilding it from kind/state/action is a reconstruction free to
 drift with nothing to catch it.
 
-**`auth status` and `server ls` are two wire shapes over ONE decision** (`internal/cli/oauthlifecycle.go`).
-The shapes stay separate because the commands genuinely differ: `auth status` is OAuth-only and reads
-values, `server ls` covers every credential kind and is index-first, so one carries the scope and the
-registrar and the other carries the kind, the missing secrets and a hint for kinds that are not OAuth
-at all. What was **not** different, and was written twice anyway, is the lifecycle in the middle —
-access token present, past its deadline, inside the grace, renewable without a human — and that
-duplicate is exactly how the action drifted above. `lifecycleOf` and `oauthHintFor` now serve both, and
-`assertAuthCommandsAgree` compares the two commands' output field by field on a seeded **expired**
-credential, because the state where they disagreed is the state no live provider will hand you.
+**`auth status`, `server ls` and `GET /v1/auth` are three wire shapes over ONE decision**
+(`ctlapi.OAuthLifecycleOf`). The shapes stay separate because the surfaces genuinely differ:
+`auth status` is OAuth-only and reads values, `server ls` covers every credential kind and is
+index-first, `/v1/auth` is the same question over HTTP — so one carries the scope and the registrar
+and another carries the kind, the missing secrets and a hint for kinds that are not OAuth at all.
+What is **not** different, and was written three times anyway, is the lifecycle in the middle —
+refused grant, access token present, past its deadline, inside the grace, renewable without a human
+— and that duplicate is exactly how the action drifted above.
+
+It drifted a second time before it was fixed properly. The two CLI copies were folded into one in
+`internal/cli`, where `internal/ctlapi` cannot see it, so the HTTP copy kept its own and was never
+taught the `revoked` state — `oauth.md` records what that cost. The decision now lives in
+`internal/ctlapi`, which `internal/cli` already imports, and it returns `HasRefreshToken` rather than
+leaving each caller to re-spell "stored AND usable". `oauthHintFor` stays in the CLI, because a hint
+names commands. `assertAuthCommandsAgree` compares the two commands' output field by field on a
+seeded **expired** credential, because the state where they disagreed is the state no live provider
+will hand you.
 
 Which fact goes where is decided by **cost, not by tidiness**. `auth status` gained `action` and `hint`
 (it was the per-credential command with no answer to "so what do I run"); `server ls` gained `scope` and

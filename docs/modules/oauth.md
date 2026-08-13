@@ -282,18 +282,21 @@ carried. Both now say what happens instead. Closing it is a behaviour change to 
 bind failure has to be told apart from every other, and a re-registration is a request to the provider
 — so it belongs on a branch of its own rather than in a tidy.
 
-**Gap: `/v1/auth` cannot report a refused grant, and says the opposite.** `api.AuthStateRevoked`
-is published, and `api/auth.go` states in as many words that `HasRefreshToken` is reported **false**
-alongside it, "the bytes may still be there, but no unattended repair is". The producer —
-`ctlapi.Server.authStatusOf` (`internal/ctlapi/nonregauth.go`) — predates that work and was not
-touched by it: its `State` switch has no `revoked` arm, and `HasRefreshToken` is `st.RefreshToken !=
-""` with no `GrantRevoked()` term. The three other producers (`internal/cli/auth.go`,
-`internal/cli/serverauth.go`, `internal/daemon/oauth.go`) all carry it, so the CLI and the HTTP API
-disagree about the same server: `agenthub auth status` reads `revoked` where `GET /v1/auth` reads
-`authorized` with `has_refresh_token: true`. A graphical frontend reading the contract therefore
-offers the one repair that cannot work — the failure the state was minted to remove. Restoring the
-`GrantRevoked()` term alone would fix the boolean, but the row would still be missing its state, so
-the two move together on a feature branch.
+**~~Gap: `/v1/auth` cannot report a refused grant, and says the opposite~~ — closed, and how.**
+`api.AuthStateRevoked` is published, and `api/auth.go` states in as many words that
+`HasRefreshToken` is reported **false** alongside it, "the bytes may still be there, but no
+unattended repair is". `ctlapi.Server.authStatusOf` had neither half: no `revoked` arm, and
+`HasRefreshToken` spelled `st.RefreshToken != ""`. So one server answered two ways depending on
+which face you asked — `agenthub auth status` read `revoked` while `GET /v1/auth` read `authorized`
+with `has_refresh_token: true` — and a graphical frontend, which has only that face, offered the
+refresh the recorded refusal exists to stop.
+
+**What let it happen is the shape, not the omission.** The lifecycle decision lived in
+`internal/cli`, which `internal/ctlapi` cannot import, so folding the CLI's two copies together was
+invisible from the third surface. It is now `ctlapi.OAuthLifecycleOf`, which `internal/cli` already
+imports, and it carries `HasRefreshToken` as a field of its result — the term was previously
+re-spelled beside each caller's other fields, which is how one caller came to spell it without
+`GrantRevoked()`. All three read one answer, and there is no longer a spelling to get wrong.
 
 Deletion paths:
 
@@ -394,11 +397,12 @@ credential still WORKS, which stays a live 401's answer.
 The exception is a **recorded refusal**, and it is the one case where this machine does know something
 about whether a credential works, because the provider said so once. `server ls` then reads
 `oauth:revoked`, `auth status` reports `revoked` with the provider's own words, and both route to
-`login`: `HasRefreshToken` means "stored AND usable" on every producer that carries the term, so
-nothing there offers a renewal that can only fail. This read "everywhere it is produced", and one
-producer does not — `GET /v1/auth`, the gap recorded under "Credential lifecycle" above, which is the
-whole of the HTTP API's answer. `auth refresh --force` is the way back for a provider that has since
-been put right — it clears the mark and asks once, and a second refusal is recorded like the first.
+`login`: `HasRefreshToken` means "stored AND usable" everywhere it is produced, so nothing offers a
+renewal that can only fail. That is now a property of one function rather than of three call sites
+agreeing — `ctlapi.OAuthLifecycleOf` decides the state, the reason and the flag together, and the
+sentence was untrue for the whole of `GET /v1/auth` while they were separate (see "Credential
+lifecycle" above). `auth refresh --force` is the way back for a provider that has since been put
+right — it clears the mark and asks once, and a second refusal is recorded like the first.
 
 **"Gateway" here does not mean "stdio gateway".** The daemon's HTTP data plane assembles one gateway
 per credential inside its own process (`internal/daemon/httpdata.go`), and those reach both gateway
