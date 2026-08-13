@@ -271,6 +271,30 @@ narrow rather than absent, since credentials are persisted precisely so re-regis
 happen on every start. Closing it means a third entry holding the registration alone, which is
 additive and does not disturb the state-before-token write ordering.
 
+**Gap: an occupied fixed callback port has no way out.** A provider requiring a byte-for-byte
+`redirect_uri` gets `State.CallbackPort` persisted and re-bound on the next login
+(`internal/cli/auth.go` sets `FixedCallbackPort` from the stored value). If something else holds that
+port, `listenLoopback` fails the bind — correctly, and never by quietly binding a different one — and
+the login ends there. **It ends there on every retry**, because nothing discards the registration that
+pinned the port. `Store.ClearClientRegistration` is exactly that operation and has **no caller**; two
+comments described the discard in the present tense, and this file was cited for a rule it no longer
+carried. Both now say what happens instead. Closing it is a behaviour change to `auth login` — one
+bind failure has to be told apart from every other, and a re-registration is a request to the provider
+— so it belongs on a branch of its own rather than in a tidy.
+
+**Gap: `/v1/auth` cannot report a refused grant, and says the opposite.** `api.AuthStateRevoked`
+is published, and `api/auth.go` states in as many words that `HasRefreshToken` is reported **false**
+alongside it, "the bytes may still be there, but no unattended repair is". The producer —
+`ctlapi.Server.authStatusOf` (`internal/ctlapi/nonregauth.go`) — predates that work and was not
+touched by it: its `State` switch has no `revoked` arm, and `HasRefreshToken` is `st.RefreshToken !=
+""` with no `GrantRevoked()` term. The three other producers (`internal/cli/auth.go`,
+`internal/cli/serverauth.go`, `internal/daemon/oauth.go`) all carry it, so the CLI and the HTTP API
+disagree about the same server: `agenthub auth status` reads `revoked` where `GET /v1/auth` reads
+`authorized` with `has_refresh_token: true`. A graphical frontend reading the contract therefore
+offers the one repair that cannot work — the failure the state was minted to remove. Restoring the
+`GrantRevoked()` term alone would fix the boolean, but the row would still be missing its state, so
+the two move together on a feature branch.
+
 Deletion paths:
 
 | Command | Effect |
@@ -370,9 +394,11 @@ credential still WORKS, which stays a live 401's answer.
 The exception is a **recorded refusal**, and it is the one case where this machine does know something
 about whether a credential works, because the provider said so once. `server ls` then reads
 `oauth:revoked`, `auth status` reports `revoked` with the provider's own words, and both route to
-`login`: `HasRefreshToken` becomes "stored AND usable" everywhere it is produced, so nothing offers a
-renewal that can only fail. `auth refresh --force` is the way back for a provider that has since been
-put right — it clears the mark and asks once, and a second refusal is recorded like the first.
+`login`: `HasRefreshToken` means "stored AND usable" on every producer that carries the term, so
+nothing there offers a renewal that can only fail. This read "everywhere it is produced", and one
+producer does not — `GET /v1/auth`, the gap recorded under "Credential lifecycle" above, which is the
+whole of the HTTP API's answer. `auth refresh --force` is the way back for a provider that has since
+been put right — it clears the mark and asks once, and a second refusal is recorded like the first.
 
 **"Gateway" here does not mean "stdio gateway".** The daemon's HTTP data plane assembles one gateway
 per credential inside its own process (`internal/daemon/httpdata.go`), and those reach both gateway

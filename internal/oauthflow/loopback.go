@@ -52,9 +52,16 @@ const DefaultCallbackPath = "/callback"
 //
 // The cost is that providers requiring an exact pre-registered redirect_uri
 // cannot use a random port. For those, State.CallbackPort persists the port
-// that was registered and ListenOnPort re-binds it; if it is occupied, the
-// caller discards the DCR credentials and re-registers rather than silently
-// binding a different port (docs/modules/oauth.md).
+// that was registered and ListenOnPort re-binds it.
+//
+// An OCCUPIED stored port fails the bind, loudly, and never silently binds a
+// different one — that half is by construction, in listenLoopback. The other
+// half is not here: this said the caller then "discards the DCR credentials
+// and re-registers", and no caller does. Store.ClearClientRegistration is the
+// operation it names and has no caller either, so a login whose stored port is
+// taken fails the same way on every retry. Recorded under "Credential
+// lifecycle" in docs/modules/oauth.md rather than repaired in passing, because
+// the repair is a behaviour change to what `auth login` does.
 //
 // (The BSD/macOS "clear O_NONBLOCK on the accepted socket" caveat from the
 // Rust implementation has no analogue here: Go's netpoller owns the
