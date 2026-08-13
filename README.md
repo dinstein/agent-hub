@@ -2,9 +2,10 @@
 
 # AgentHub
 
-**One configuration, one set of credentials, one aggregation point — shared by every AI client.**
+**Configure an MCP server once. Every AI client gets it — with the credentials, and with only the
+tools you allowed.**
 
-Claude Code · Cursor · Codex · Open WebUI · and 8 more
+Claude Code · Cursor · Codex · Zed · Open WebUI · 7 more — one binary, no account, no telemetry
 
 [![CI](https://github.com/dinstein/agent-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/dinstein/agent-hub/actions/workflows/ci.yml)
 [![Go 1.26+](https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
@@ -19,9 +20,21 @@ Claude Code · Cursor · Codex · Open WebUI · and 8 more
 
 ---
 
-Every AI client wants its own copy of your MCP server list, its own copy of your API keys, and
-its own idea of what a tool is allowed to do. AgentHub is the one place that holds all three, and
-hands each client exactly the surface you decided it should see.
+## The problem it removes
+
+You use more than one AI client. So today:
+
+- The same MCP server is written down in four config files, in four formats, and the fourth one is
+  out of date.
+- The same API key sits in those same four files, and rotating it is a search-and-replace across
+  your home directory.
+- Signing in is per client — a separate browser round trip each time, for the clients that can do
+  OAuth at all.
+- Every tool you enabled is in every client's context on every turn, whether or not that client was
+  ever meant to use it.
+
+AgentHub is one local process holding the servers, the credentials and the rules, handing each
+client exactly the surface you decided it should see.
 
 ```
    Claude Code ──┐                                   ┌── linear
@@ -33,16 +46,14 @@ hands each client exactly the surface you decided it should see.
                         └──────────────────┘
 ```
 
-- **A single required binary, `agenthub`** — `connect` (stdio gateway, one process per client),
-  `daemon` (shared HTTP pool + control plane + coordination plane), plus CLI management subcommands
-- **An optional GUI, `agenthub-gui`** — Wails3, consumes the control-plane API only; it has no
-  capability the CLI lacks
-
-> **Status: feature-complete against its design.** CI is green across both matrices, and end-to-end
-> acceptance passes with real Claude Code calling real downstream MCP servers through the gateway.
-> macOS and Linux are verified; Windows is **experimental** — every capability, including
-> `daemon stop` and `client connect`, is implemented and cross-compiles and unit-tests cleanly, but
-> none of it has ever run on real hardware ([details](#platforms)).
+|  | Without AgentHub | With AgentHub |
+|---|---|---|
+| Add a server | edit every client's config, in its own format | `agenthub server add` — once |
+| Rotate a key | find every copy of it first | one vault, keyed `(server, scope)` |
+| Sign in | per client, if it supports OAuth at all | `agenthub auth login`, headless, shared |
+| Context cost | every tool of every server, every turn | five meta-tools, the rest searched on demand |
+| Withdraw a server | one edit per client, then restart each | `agenthub server disable`, unconditional |
+| A call went wrong | whatever the client happened to log | `calls` · `logs` · `events` · per-server wire trace |
 
 ## Install
 
@@ -109,6 +120,46 @@ mkdir -p ~/.claude/skills/agenthub && agenthub manual > ~/.claude/skills/agenthu
 it describes are the same release. The Homebrew tap publishes that same file; nothing needs a
 checkout to get it.
 
+## What makes it different
+
+### It is a CLI, and the GUI has no capability it lacks
+
+One Go binary, `agenthub`: `connect` is the stdio gateway (one process per client), `daemon` is the
+shared HTTP pool carrying the control and coordination planes, and everything else is management
+subcommands. Nothing else is required — no runtime, no account, no background updater. The optional
+`agenthub-gui` is a view onto the same control-plane API, so anything you can click you can script,
+and a headless box never needs it.
+
+### Sign in once, not once per client
+
+Credentials resolve through four levels — environment, explicit bare environment, the encrypted
+`secrets.enc` vault, the OS keyring — under the composite key `(serverID, scopeName)`, so two
+servers may hold two different tokens for the same provider. OAuth runs headless, with three
+callback modes and cross-process refresh coordination, so four clients pointed at one server do not
+race for one token. No key is ever copied into a client's config file.
+
+### Hundreds of tools, five names in the context
+
+`lazy` discovery is the default: a client is handed `status`, `search_tools`, `describe_tool`,
+`call_tool` and `fetch_result`, and finds everything else on demand through a compact signature
+grammar and a two-stage describe. `grouped` and `full` are there for the surfaces small enough not
+to care.
+
+### What a client may reach is decided before it connects
+
+A server offers all of its tools or a named subset; a profile takes a subset of the servers and may
+narrow their tools further; a client follows one profile. Every layer intersects and none can
+widen, and a dangling reference fails closed to an empty set. Nothing is decided while a call is in
+flight — no approval queue, no runtime scope change — which is what makes `agenthub server disable`
+an unconditional kill switch rather than a suggestion.
+
+### An unfamiliar server can run with no network and nothing mounted
+
+`runtime: docker` gives a stdio server no network by default, mounts only the directories you
+declared (read-only unless you said otherwise), holds it to explicit resource limits, and keeps
+secrets out of argv. Isolation a config claims is delivered or refused: a `docker` server that
+cannot be isolated fails rather than quietly running on the host.
+
 ## Capabilities
 
 | Area | What it covers |
@@ -141,6 +192,9 @@ documents move whenever the code does and the copy that gets forgotten looks exa
 that is current.
 
 ## Platforms
+
+**Feature-complete against its design.** CI is green across both matrices, and end-to-end acceptance
+passes with real Claude Code calling real downstream MCP servers through the gateway.
 
 | Platform | Status |
 |---|---|

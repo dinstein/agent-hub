@@ -2,9 +2,9 @@
 
 # AgentHub
 
-**一份配置、一套凭据、一个聚合点，供全部 AI 客户端共享。**
+**一个 MCP server 只配一次。每个 AI 客户端都拿得到它——连同凭据，并且只带上你允许的那些工具。**
 
-Claude Code · Cursor · Codex · Open WebUI · 以及另外 8 种
+Claude Code · Cursor · Codex · Zed · Open WebUI · 以及另外 7 种 —— 一个二进制，不需要账号，没有遥测
 
 [![CI](https://github.com/dinstein/agent-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/dinstein/agent-hub/actions/workflows/ci.yml)
 [![Go 1.26+](https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
@@ -19,27 +19,36 @@ Claude Code · Cursor · Codex · Open WebUI · 以及另外 8 种
 
 ---
 
-每个 AI 客户端都想有自己那份 MCP server 清单、自己那份 API key、以及自己那套「工具能干什么」的
-判断。AgentHub 就是同时持有这三样的那一个地方，并且只把你决定给它看的那一面递给每个客户端。
+## 它消掉的那些麻烦
+
+你手上不止一个 AI 客户端。于是今天是这样的：
+
+- 同一个 MCP server 被写进了四份配置文件、四种格式，其中第四份已经过期了。
+- 同一个 API key 也在那四份文件里，轮换它意味着在整个 home 目录里做一次搜索替换。
+- 登录是逐客户端的——每个都要单独走一遍浏览器往返，前提是那个客户端支持 OAuth。
+- 你启用的每个工具都出现在每个客户端的每一轮上下文里，不管那个客户端是不是本来就该用到它。
+
+AgentHub 就是同时持有 server、凭据和规则的那一个本地进程，并且只把你决定给它看的那一面递给每个
+客户端。
 
 ```
    Claude Code ──┐                                   ┌── linear
    Cursor ───────┤      ┌──────────────────┐         ├── github
    Codex ────────┼─────►│     AgentHub     │────────►┼── postgres
-   Open WebUI ───┤      └──────────────────┘         ├── filesystem
-   … +8 ─────────┘                                   └── …
-
-                一份配置 · 一套凭据 · 一条治理管线
+   Open WebUI ───┤      │  一份配置        │         ├── filesystem
+   … 另外 8 种 ──┘      │  一套凭据        │         └── …
+                        │  一条治理管线    │
+                        └──────────────────┘
 ```
 
-- **单一必装二进制 `agenthub`** —— `connect`（stdio 网关，每 client 一进程）、
-  `daemon`（HTTP 共享池 + 控制面 + 协调面），以及 CLI 管理子命令
-- **可选 GUI `agenthub-gui`** —— Wails3，仅消费控制面 API；它没有任何 CLI 没有的能力
-
-> **状态：功能相对设计已完整。** CI 双矩阵全绿，真实 Claude Code 经网关调用真实下游 MCP server
-> 的端到端验收通过。macOS + Linux 已验证；Windows 为**实验性**——包括 `daemon stop` 和
-> `client connect` 在内的每一项能力都已实现，交叉编译和单元测试均通过，但从未在真实硬件上跑过
-> （[详见](#平台)）。
+|  | 没有 AgentHub | 有 AgentHub |
+|---|---|---|
+| 加一个 server | 每个客户端各改一遍，各按各的格式 | `agenthub server add`，一次 |
+| 轮换一个 key | 先得找出它的每一份副本 | 一个 vault，键是 `(server, scope)` |
+| 登录 | 逐客户端，且以它支持 OAuth 为前提 | `agenthub auth login`，headless，共用 |
+| 上下文开销 | 每个 server 的每个工具，每一轮 | 五个 meta-tool，其余按需搜索 |
+| 收回一个 server | 每个客户端各改一次，再各重启一次 | `agenthub server disable`，无条件 |
+| 某次调用出错了 | 客户端碰巧记了什么就只有什么 | `calls` · `logs` · `events` · 逐 server 报文抓取 |
 
 ## 安装
 
@@ -103,6 +112,41 @@ mkdir -p ~/.claude/skills/agenthub && agenthub manual > ~/.claude/skills/agenthu
 `agenthub manual` 打印的是编进你刚装的这个二进制里的那一份，所以文档和它描述的 CLI 一定是同一个版本。
 Homebrew tap 发布的是同一个文件；拿到它不需要任何 checkout。
 
+## 它不一样在哪
+
+### 它是个 CLI，而 GUI 没有任何它没有的能力
+
+一个 Go 二进制 `agenthub`：`connect` 是 stdio 网关（每 client 一进程），`daemon` 是承载控制面与
+协调面的 HTTP 共享池，其余都是管理子命令。除此之外什么都不需要——没有运行时要装，没有账号要注册，
+没有后台更新器。可选的 `agenthub-gui` 只是同一套控制面 API 的一个视图，所以凡是能点的都能脚本化，
+而一台无头机器根本用不到它。
+
+### 登录一次，而不是每个客户端各登一次
+
+凭据按四级解析——环境变量、显式 bare env、加密的 `secrets.enc` vault、OS keyring——键是复合的
+`(serverID, scopeName)`，所以两个 server 可以各自持有同一家 provider 的两个 token。OAuth 是
+headless 的，三种回调模式，刷新在进程间协调，因此四个客户端指向同一个 server 时不会为一个 token
+互相踩踏。任何 key 都不会被复制进某个客户端的配置文件。
+
+### 几百个工具，上下文里只有五个名字
+
+`lazy` 发现是默认模式：客户端拿到的是 `status`、`search_tools`、`describe_tool`、`call_tool`、
+`fetch_result`，其余全部按需查——靠一套紧凑签名文法和二段式 describe。`grouped` 和 `full` 留给
+那些小到不必在意这件事的面。
+
+### 一个客户端能够到什么，在它连上来之前就定了
+
+server 提供它的全部工具或一个指定子集；profile 取 server 的一个子集，并可以把它们的工具再收窄；
+client 绑定一个 profile。各层取交集、没有哪一层能放宽，悬垂引用 fail-closed 到空集。没有任何事
+是在调用飞行途中决定的——没有审批队列，没有运行时改 scope——这正是 `agenthub server disable` 是
+一个无条件的总闸而不是一句建议的原因。
+
+### 一个来路不明的 server，可以在没有网络、什么都没挂载的情况下跑
+
+`runtime: docker` 让一个 stdio server 默认没有网络，只挂载你声明过的目录（除非另行指定，否则
+只读），受显式的资源限额约束，并且密钥不进 argv。配置声称的隔离要么兑现要么拒绝：一个无法被隔离
+的 `docker` server 会失败，而不是悄悄退回到宿主机上跑。
+
 ## 能力
 
 | 面 | 内容 |
@@ -112,7 +156,7 @@ Homebrew tap 发布的是同一个文件；拿到它不需要任何 checkout。
 | 发现 | `full` / `grouped` / `lazy` 三模式；lazy 模式五件套 meta-tool（`status`、`search_tools`、`describe_tool`、`call_tool`、`fetch_result`）+ 意图变体；紧凑签名文法 + 二段 describe |
 | 访问控制 | 事先决定，永不在调用时决定：server 提供全部工具或指定子集，profile 收窄 server，client 绑定 profile——各层取交集、任何一层都不能放宽，悬垂引用 fail-closed 到空集。完整模型见 [docs/zh-CN/guide.md](docs/zh-CN/guide.md) |
 | 安全 | spawn guard（反走私）、SSRF 双向谓词 + DialContext 内筛查、HTTP 面的 agent token 分级（read/write/destructive）、协作式调用配额。它们拒绝的是目的地和进程，与谁发起无关——没有一项会检查下游返回了什么 |
-| 隔离 | **Docker 隔离 Spawner**：`runtime: host\|docker`，默认无网络、只挂载显式声明的目录（默认只读）、资源限额、密钥不进 argv（无网络、只读挂载、资源限额） |
+| 隔离 | **Docker 隔离 Spawner**：`runtime: host\|docker`，默认无网络、只挂载显式声明的目录（默认只读）、资源限额、密钥不进 argv |
 | 结果整形 | 分页 / 预算 / `fetch_result` 缓存 / TOON 单向投影编码（never-larger + 数字保真两条构造性保证） |
 | 凭据 | 四级解析链（env → 显式 bare env → `secrets.enc` → OS keyring）、vault 复合键 `(serverID, scopeName)`、headless OAuth 三模式回调 + 刷新协调 |
 | 客户端 | 12 种客户端配置适配（Format 驱动）、skills 库/安装两层管理、skills-over-MCP 供给 |
@@ -133,6 +177,9 @@ Homebrew tap 发布的是同一个文件；拿到它不需要任何 checkout。
 就是每次改行为都要记得同步的第二个文件，而忘掉同步的那一份看上去和最新的一模一样。
 
 ## 平台
+
+**功能相对设计已完整。** CI 双矩阵全绿，真实 Claude Code 经网关调用真实下游 MCP server
+的端到端验收通过。
 
 | 平台 | 状态 |
 |---|---|
