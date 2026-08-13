@@ -21,12 +21,10 @@ Claude Code · Cursor · Codex · Zed · Open WebUI · 以及另外 7 种 ——
 
 ## 它消掉的那些麻烦
 
-你手上不止一个 AI 客户端。于是今天是这样的：
-
-- 同一个 MCP server 被写进了四份配置文件、四种格式，其中第四份已经过期了。
-- 同一个 API key 也在那四份文件里，轮换它意味着在整个 home 目录里做一次搜索替换。
-- 登录是逐客户端的——每个都要单独走一遍浏览器往返，前提是那个客户端支持 OAuth。
-- 你启用的每个工具都出现在每个客户端的每一轮上下文里，不管那个客户端是不是本来就该用到它。
+你手上不止一个 AI 客户端。于是同一个 MCP server 被写进了四份配置文件、四种格式，其中第四份已经
+过期了；同一个 API key 也在那四份文件里，轮换它意味着在整个 home 目录里做一次搜索替换；登录是逐
+客户端的，前提还得是那个客户端支持 OAuth；而你启用的每个工具都出现在每个客户端的每一轮上下文里，
+不管那个客户端是不是本来就该用到它。
 
 AgentHub 就是同时持有 server、凭据和规则的那一个本地进程，并且只把你决定给它看的那一面递给每个
 客户端。
@@ -52,17 +50,15 @@ AgentHub 就是同时持有 server、凭据和规则的那一个本地进程，�
 
 ## 安装
 
-**CLI，macOS 与 Linux，不需要包管理器**——同一条命令既是安装也是升级：
+**macOS 与 Linux，不需要包管理器**——同一条命令既是安装也是升级：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dinstein/agent-hub/main/scripts/install.sh | sh
 ```
 
-`brew` 自己要跑 `git`，因此需要 Xcode Command Line Tools；这条路只用系统自带的东西。
-它把 `agenthub` 装到 `~/.local/bin`（`--prefix` 可改），解包之前先用该版本锁定的 sha256
-校验下载，并且只打印需要追加的 `PATH` 那一行，不去改你的 shell 配置。`--uninstall` 卸载，
-`--help` 列出其余选项；不习惯把脚本直接管道进 shell 的话，[脚本本身](scripts/install.sh)
-值得先读一遍。
+它在解包之前先用该版本锁定的 sha256 校验下载，把 `agenthub` 装到 `~/.local/bin`（`--prefix`
+可改），并且只打印需要追加的 `PATH` 那一行，不去改你的 shell 配置。`--uninstall` 卸载，`--help`
+列出其余选项；不习惯把脚本直接管道进 shell 的话，[脚本本身](scripts/install.sh)值得先读一遍。
 
 **用 Homebrew**——也是拿到 macOS 应用的唯一途径：
 
@@ -73,12 +69,9 @@ brew install agenthub                 # CLI，装它就够了
 brew install --cask agenthub-gui      # macOS 应用，CLI 随它一起装上
 ```
 
-两条路选一条：它们都会往一个自认为归自己管的路径上放二进制，而且事后谁也发现不了对方。
-cask 装的是 `AgentHub.app`，并且依赖上面那个 formula，所以走这条路 `$PATH` 上的
-`agenthub` 同样只有一个归属。应用只做了 ad-hoc 签名，**没有做公证（notarization）**：
-cask 会清掉 macOS 给下载文件打的 quarantine 标记，替 Gatekeeper 作保的是它锁定的
-sha256——脚本那边的校验和是同一件事，也不比它更强，因为两者都随它们所描述的那个 release
-一起发布。Windows 目前没有包，从
+两条路选一条：它们都会往一个自认为归自己管的路径上放二进制，而且事后谁也发现不了对方。应用只做了
+ad-hoc 签名，**没有做公证（notarization）**——cask 会清掉 macOS 给下载文件打的 quarantine 标记，
+替 Gatekeeper 作保的是它锁定的 sha256。Windows 目前没有包，从
 [Releases](https://github.com/dinstein/agent-hub/releases) 取 `.zip`。
 
 ## 快速开始
@@ -99,9 +92,9 @@ agenthub client connect claude-code
 ```
 
 第 4 步**每个客户端只做一次**：它写进去的条目跑的是 `agenthub connect --client claude-code`，
-所以之后你再加的每个 server 都会被自动带上，不用再动客户端的配置。想确认它生效了，
-打开 Claude Code 跑一下 `/mcp`——列表里会出现 `agenthub`，带着你启用的全部 server。
-完整走法（profile、收窄、整套模型）见 [docs/zh-CN/guide.md](docs/zh-CN/guide.md)。
+所以之后你再加的每个 server 都会被自动带上，不用再动那份配置。想确认它生效了，打开 Claude Code
+跑一下 `/mcp`。整套模型——profile、收窄、发现模式——见
+[docs/zh-CN/guide.md](docs/zh-CN/guide.md)。
 
 想让 agent 自己来驱动这个 CLI，就把二进制自带的那份 skill 交给它：
 
@@ -109,72 +102,54 @@ agenthub client connect claude-code
 mkdir -p ~/.claude/skills/agenthub && agenthub manual > ~/.claude/skills/agenthub/SKILL.md
 ```
 
-`agenthub manual` 打印的是编进你刚装的这个二进制里的那一份，所以文档和它描述的 CLI 一定是同一个版本。
-Homebrew tap 发布的是同一个文件；拿到它不需要任何 checkout。
+`agenthub manual` 打印的是编进你刚装的这个二进制里的那一份，所以文档和它描述的 CLI 一定是同一个
+版本。
 
 ## 它不一样在哪
 
-### 它是个 CLI，而 GUI 没有任何它没有的能力
-
-一个 Go 二进制 `agenthub`：`connect` 是 stdio 网关（每 client 一进程），`daemon` 是承载控制面与
-协调面的 HTTP 共享池，其余都是管理子命令。除此之外什么都不需要——没有运行时要装，没有账号要注册，
-没有后台更新器。可选的 `agenthub-gui` 只是同一套控制面 API 的一个视图，所以凡是能点的都能脚本化，
-而一台无头机器根本用不到它。
-
-### 登录一次，而不是每个客户端各登一次
-
-凭据按四级解析——环境变量、显式 bare env、加密的 `secrets.enc` vault、OS keyring——键是复合的
-`(serverID, scopeName)`，所以两个 server 可以各自持有同一家 provider 的两个 token。OAuth 是
-headless 的，三种回调模式，刷新在进程间协调，因此四个客户端指向同一个 server 时不会为一个 token
-互相踩踏。任何 key 都不会被复制进某个客户端的配置文件。
-
-### 几百个工具，上下文里只有五个名字
-
-`lazy` 发现是默认模式：客户端拿到的是 `status`、`search_tools`、`describe_tool`、`call_tool`、
-`fetch_result`，其余全部按需查——靠一套紧凑签名文法和二段式 describe。`grouped` 和 `full` 留给
-那些小到不必在意这件事的面。
-
-### 一个客户端能够到什么，在它连上来之前就定了
-
-server 提供它的全部工具或一个指定子集；profile 取 server 的一个子集，并可以把它们的工具再收窄；
-client 绑定一个 profile。各层取交集、没有哪一层能放宽，悬垂引用 fail-closed 到空集。没有任何事
-是在调用飞行途中决定的——没有审批队列，没有运行时改 scope——这正是 `agenthub server disable` 是
-一个无条件的总闸而不是一句建议的原因。
-
-### 一个来路不明的 server，可以在没有网络、什么都没挂载的情况下跑
-
-`runtime: docker` 让一个 stdio server 默认没有网络，只挂载你声明过的目录（除非另行指定，否则
-只读），受显式的资源限额约束，并且密钥不进 argv。配置声称的隔离要么兑现要么拒绝：一个无法被隔离
-的 `docker` server 会失败，而不是悄悄退回到宿主机上跑。
+- **它是个 CLI，而 GUI 没有任何它没有的能力。** 一个 Go 二进制：`connect` 是 stdio 网关（每
+  client 一进程），`daemon` 是承载控制面与协调面的 HTTP 共享池，其余都是管理子命令。没有运行时要
+  装，没有账号要注册，没有后台更新器。可选的 `agenthub-gui` 只是同一套控制面 API 的一个视图，凡是
+  能点的都能脚本化。
+- **登录一次，而不是每个客户端各登一次。** 凭据按环境变量 → 显式 bare env → 加密的 `secrets.enc`
+  → OS keyring 四级解析，键是复合的 `(serverID, scopeName)`。OAuth 是 headless 的，刷新在进程间
+  协调，因此四个客户端指向同一个 server 时不会为一个 token 互相踩踏，任何 key 也不会被复制进某个
+  客户端的配置文件。
+- **几百个工具，上下文里只有五个名字。** `lazy` 发现给客户端的是 `status`、`search_tools`、
+  `describe_tool`、`call_tool`、`fetch_result`，其余全部靠一套紧凑签名文法按需查。`grouped` 和
+  `full` 留给那些小到不必在意这件事的面。
+- **一个客户端能够到什么，在它连上来之前就定了。** server 的工具子集、profile、client 三层取交
+  集，没有哪一层能放宽，悬垂引用 fail-closed 到空集。没有任何事是在调用飞行途中决定的——没有审批
+  队列，没有运行时改 scope——这正是 `agenthub server disable` 是一个无条件的总闸而不是一句建议的
+  原因。
+- **一个来路不明的 server，可以在没有网络、什么都没挂载的情况下跑。** `runtime: docker` 让一个
+  stdio server 默认没有网络，只挂载你声明过的目录（除非另行指定，否则只读），受显式的资源限额约
+  束，并且密钥不进 argv。配置声称的隔离要么兑现要么拒绝，绝不悄悄退回到宿主机上跑。
 
 ## 能力
 
+上面五条是理由，这里是矩阵。
+
 | 面 | 内容 |
 |---|---|
-| 协议 | MCP `2026-07-28`（无状态逐请求 `_meta`、`server/discover`、MRTR、`subscriptions/listen`）加上有状态各版本 `2025-11-25` / `2025-06-18` / `2025-03-26`，双面各自协商——对每个下游取双方支持的最高版本，对每个 client 用它讲的那一代作答。只代理工具；resource、prompt 与 extension 能力都不转发（fail closed）。细节见 [docs/mcp-2026-07-28.md](docs/mcp-2026-07-28.md)（英文） |
-| 网关 | stdio（每 client 一进程）+ streamable-http（daemon 共享池）；下游 transport 三种：stdio / streamable-http / legacy HTTP+SSE |
-| 发现 | `full` / `grouped` / `lazy` 三模式；lazy 模式五件套 meta-tool（`status`、`search_tools`、`describe_tool`、`call_tool`、`fetch_result`）+ 意图变体；紧凑签名文法 + 二段 describe |
-| 访问控制 | 事先决定，永不在调用时决定：server 提供全部工具或指定子集，profile 收窄 server，client 绑定 profile——各层取交集、任何一层都不能放宽，悬垂引用 fail-closed 到空集。完整模型见 [docs/zh-CN/guide.md](docs/zh-CN/guide.md) |
-| 安全 | spawn guard（反走私）、SSRF 双向谓词 + DialContext 内筛查、HTTP 面的 agent token 分级（read/write/destructive）、协作式调用配额。它们拒绝的是目的地和进程，与谁发起无关——没有一项会检查下游返回了什么 |
-| 隔离 | **Docker 隔离 Spawner**：`runtime: host\|docker`，默认无网络、只挂载显式声明的目录（默认只读）、资源限额、密钥不进 argv |
-| 结果整形 | 分页 / 预算 / `fetch_result` 缓存 / TOON 单向投影编码（never-larger + 数字保真两条构造性保证） |
-| 凭据 | 四级解析链（env → 显式 bare env → `secrets.enc` → OS keyring）、vault 复合键 `(serverID, scopeName)`、headless OAuth 三模式回调 + 刷新协调 |
-| 客户端 | 12 种客户端配置适配（Format 驱动）、skills 库/安装两层管理、skills-over-MCP 供给 |
-| 运维 | `agenthub doctor` 全面体检、`agenthub calls` 背后加密且有硬边界的 tools/call 历史、`agenthub logs` 把各进程日志归并成一条时间线、`agenthub events` 以闭集词汇记录 server/gateway/daemon 的状态变更、每 server 的 JSON-RPC 报文抓取（默认关，`server trace`）、X-Request-Id 全链路 |
+| 协议 | MCP `2026-07-28`（无状态逐请求 `_meta`、`server/discover`、MRTR、`subscriptions/listen`）加上 `2025-11-25` / `2025-06-18` / `2025-03-26`，双面各自协商。只代理工具——resource、prompt 与 extension 能力都不转发（[细节](docs/mcp-2026-07-28.md)，英文） |
+| 网关 | stdio（每 client 一进程）+ streamable-http（daemon 共享池）；下游走 stdio / streamable-http / legacy HTTP+SSE |
+| 发现 | `full` / `grouped` / `lazy`；五件套 meta-tool 加意图变体，紧凑签名文法，二段式 describe |
+| 安全 | spawn guard（反走私）、`DialContext` 内筛查的 SSRF 双向谓词、分级为 read/write/destructive 的 agent token、协作式调用配额 |
+| 结果整形 | 分页、预算、`fetch_result` 缓存、TOON 投影编码（never-larger 与数字保真两条构造性保证） |
+| 客户端 | 12 种客户端的配置适配（Format 驱动）、skills 库/安装两层管理、skills-over-MCP 供给 |
+| 运维 | `doctor` 体检、`calls` 背后加密且有硬边界的调用账本、把各进程归并成一条流的 `logs`、闭集词汇的 `events`、逐 server 报文抓取、全链路 X-Request-Id |
 
 ## 文档
 
 | 文件 | 内容 |
 |---|---|
-| [docs/zh-CN/guide.md](docs/zh-CN/guide.md) | **怎么用**：三个名词（server / profile / client）、日常路径，以及你真正要做的那几个决定 |
-| [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md) | **要改代码先看这个**：进程模型、核心模块地图、分层与依赖约束、一次调用穿过什么、三条数据流向、两道防线 |
+| [docs/zh-CN/guide.md](docs/zh-CN/guide.md) | **怎么用**——server / profile / client、日常路径，以及你真正要做的那几个决定 |
+| [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md) | **要改代码先看这个**——进程模型、模块地图、一次调用穿过什么、两道防线 |
 | [docs/flows.md](docs/flows.md) | 七个运行时流程的时序图与失败分支（英文） |
-| [docs/modules/](docs/modules/) | 逐包文档：职责、关键类型、不变量与失败方向（英文） |
-| [docs/canonical.md](docs/canonical.md) | 架构约定的唯一真源：冻结标识符、依赖约束、命令名规则、全部裁决记录（英文） |
-| [docs/windows.md](docs/windows.md) | Windows 现状：已实现什么、哪些还未在真实硬件上验证、验收标准（英文） |
-
-中文只覆盖上面两篇——讲产品怎么用、怎么切分的那一层。其余几篇跟着代码一起变，一份中文镜像
-就是每次改行为都要记得同步的第二个文件，而忘掉同步的那一份看上去和最新的一模一样。
+| [docs/modules/](docs/modules/) | 逐包的职责、不变量与失败方向（英文） |
+| [docs/canonical.md](docs/canonical.md) | 冻结标识符、依赖约束、命名规则、全部裁决记录（英文） |
+| [docs/windows.md](docs/windows.md) | Windows 现状：已实现什么、哪些还未验证、验收标准（英文） |
 
 ## 平台
 
@@ -189,15 +164,12 @@ client 绑定一个 profile。各层取交集、没有哪一层能放宽，悬�
 
 ## 隐私：不收集任何数据
 
-AgentHub **不收集任何数据**。没有遥测、没有崩溃上报、没有使用统计、没有更新检查器，
-默认关闭与手动开启都不存在——这条通道根本没有实现。不存在指向 AgentHub 自有域名的请求。
+AgentHub **不收集任何数据**——没有遥测、没有崩溃上报、没有使用统计、没有更新检查器。默认关闭与
+手动开启都不存在：这条通道根本没有实现，也不存在指向 AgentHub 自有域名的请求。
 
-进程的出站连接只有三类，全部由你的配置决定：你在 `servers.json` 里配置的下游 MCP server、
-这些 server 的 OAuth 授权服务器（仅在你执行 `agenthub auth login` 后），以及你显式指定的
-endpoint（例如 `server add --url`）。
-
-调用账本——生命周期记录、开了 trace 的 server 的帧，以及两者的加密内容——**只写本地磁盘**。
-版本更新交给你的包管理器。裁决记录见 [canonical.md](docs/canonical.md) §7 第 6 项。
+出站连接只有你的配置点了名的那些：`servers.json` 里的下游 server、这些 server 的 OAuth 授权服务器
+（仅在你执行 `agenthub auth login` 后），以及你显式给出的 endpoint。调用账本**只写本地磁盘**，
+版本更新交给你的包管理器——裁决记录见 [canonical.md](docs/canonical.md) §7 第 6 项。
 
 ## 开发
 
@@ -205,17 +177,9 @@ endpoint（例如 `server add --url`）。
 
 ```bash
 make         # 列出全部 target，每个一行
-make build   # go build ./...
-make test    # go test ./...
-make lint    # golangci-lint run
 make ci      # build + test + lint
-make gui     # GUI 单独构建（见下）
+make gui     # GUI 单独构建 —— 它不在默认构建里
 ```
-
-GUI **不在默认构建里**：链接 webview 需要 CI runner 上没有的 GTK/WebKit 开发包，所以 Wails
-代码全部带 `//go:build wails` 标签，默认构建拿到的是占位 main；`make gui-frontend` /
-`make gui-go` 分别构建前后两半。前端是 vanilla TS + Vite，唯一运行时依赖是 `@wailsio/runtime`，
-且只能通过 `api` 包访问控制面——它没有任何 CLI 没有的能力。
 
 贡献规则——worktree 分支流程、commit 约定，以及 CI 强制的四条依赖方向约束——都在
 [AGENTS.md](AGENTS.md)（英文），其背后的裁决记录在 [canonical.md](docs/canonical.md)。
