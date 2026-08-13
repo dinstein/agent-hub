@@ -365,9 +365,15 @@ func (s *Store) Clear(ctx context.Context, serverID string) error {
 }
 
 // ClearClientRegistration drops only the client credentials, keeping the
-// tokens. docs/modules/oauth.md: when a preferred callback port is occupied the DCR
-// credentials must be discarded so the next login re-registers with the
-// port it actually got.
+// tokens, so the next login re-registers with the callback port it actually
+// gets instead of re-binding a stored one that is occupied.
+//
+// NOTHING CALLS IT. That is the whole of the recovery half of the fixed-port
+// rule, and it has no caller in this repository — see the gap recorded under
+// "Credential lifecycle" in docs/modules/oauth.md for what happens instead.
+// This comment used to cite that file for a rule stated in the present tense,
+// and the file has not carried the rule for some time; it is kept as the seam
+// the fix needs rather than deleted as dead surface.
 func (s *Store) ClearClientRegistration(ctx context.Context, serverID string) error {
 	st, err := s.LoadState(ctx, serverID)
 	if err != nil {
@@ -378,14 +384,7 @@ func (s *Store) ClearClientRegistration(ctx context.Context, serverID string) er
 	st.RegistrarKind = ""
 	st.RedirectURI = ""
 	st.CallbackPort = 0
-	raw, err := json.Marshal(st)
-	if err != nil {
-		return newFlowError(ErrorTypePersistence, err)
-	}
-	if err := s.sec.Set(ctx, stateRef(serverID), string(raw)); err != nil {
-		return newFlowError(ErrorTypePersistence, err)
-	}
-	return nil
+	return s.writeState(ctx, serverID, st)
 }
 
 // MarkGrantRevoked records that the authorization server refused `refused`'s
@@ -452,9 +451,15 @@ func (s *Store) ClearGrantRevoked(ctx context.Context, serverID string) error {
 	return s.writeState(ctx, serverID, st)
 }
 
-// writeState persists a whole state record. The two revocation mutators
-// share it; Save does not, because it owns the ordering invariant with the
-// access token and neither of these touches that token.
+// writeState persists a whole state record. Every mutator that leaves the
+// access token alone shares it — the two revocation ones and
+// ClearClientRegistration; Save does not, because it owns the ordering
+// invariant with that token.
+//
+// ClearClientRegistration wrote its own copy of these six lines until the
+// error messages had drifted: the copy reported a failed keychain write with
+// no mention of what was being written or for which server, which is the half
+// of the message a reader needs.
 func (s *Store) writeState(ctx context.Context, serverID string, st *State) error {
 	raw, err := json.Marshal(st)
 	if err != nil {
