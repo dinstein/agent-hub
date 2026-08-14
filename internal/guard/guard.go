@@ -1,5 +1,5 @@
 // Package guard is the root of the security guard foundation
-// (canonical.md §2: internal/guard/* are zero-business-dependency
+// (docs/conventions.md#package-layout: internal/guard/* are zero-business-dependency
 // foundations; depguard restricts them to the standard library plus
 // internal/guard itself).
 //
@@ -15,7 +15,7 @@
 // verdict. Nothing in agenthub inspects what a downstream returned.
 //
 // This package only holds what the subpackages share: the decidable
-// rejection sentinel. Per canonical.md §6 ("error handling"), every typed
+// rejection sentinel. Per docs/conventions.md#engineering-conventions ("error handling"), every typed
 // guard rejection — *spawnguard.Blocked, *netguard.BlockedError — must
 // satisfy errors.Is(err, guard.ErrBlocked) so callers can classify guard
 // rejections without importing every subpackage.

@@ -4,10 +4,10 @@
 //
 // Two constraints, from different places and held by different means:
 //   - Zero business dependencies: this package imports only the standard
-//     library and must never import other internal packages. canonical.md §2,
+//     library and must never import other internal packages. docs/conventions.md#package-layout,
 //     and depguard fails the build on a violation.
 //   - The AGENTHUB_* environment variable names are frozen identifiers:
-//     renaming the product must never rename them. canonical.md §1, where the
+//     renaming the product must never rename them. docs/conventions.md#frozen-identifiers, where the
 //     ABI is listed. NOTHING enforces this one — depguard reads imports, not
 //     string constants — so it holds only as long as a reader knows it is a
 //     rule. Which is why it is stated here, next to the constants.
@@ -15,7 +15,7 @@
 // Platform support: macOS and Linux are implemented and exercised in CI.
 // Windows is implemented here as of M2 (ruling A.5 #23 put the seam in this
 // package) but is NOT VERIFIED ON REAL HARDWARE — see windows.go and
-// docs/windows.md. Everything Windows-specific is reachable from this
+// docs/status/windows.md. Everything Windows-specific is reachable from this
 // package alone, so the day a Windows machine exists the verification
 // surface is one package plus the control-plane listener.
 //
@@ -37,10 +37,10 @@ import (
 // darwin, linux and windows). Callers must test for it with errors.Is.
 var ErrUnsupportedPlatform = errors.New("unsupported platform")
 
-// Frozen environment variable names. These are ABI, listed in canonical.md §1
+// Frozen environment variable names. These are ABI, listed in docs/conventions.md#frozen-identifiers
 // alongside the module path and the binary names: renaming the product must
 // never rename them. docs/subsystems/docs/subsystems/controlplane.md describes what each one
-// does; the ruling that they cannot move is in canonical.md.
+// does; the ruling that they cannot move is in docs/conventions.md.
 const (
 	// EnvDataDir overrides the whole data directory.
 	EnvDataDir = "AGENTHUB_DATA_DIR"
@@ -203,7 +203,7 @@ func (r *Resolver) home() (string, error) {
 //     absolute path (relative values are ignored per the XDG spec),
 //     otherwise ~/.local/share/AgentHub.
 //  4. Windows: %APPDATA%\AgentHub, subject to the MSIX container escape
-//     described in windows.go (UNVERIFIED — see docs/windows.md).
+//     described in windows.go (UNVERIFIED — see docs/status/windows.md).
 //
 // Any other platform returns ErrUnsupportedPlatform.
 func (r *Resolver) DataDir() (string, error) {
@@ -366,7 +366,7 @@ func (r *Resolver) dataSub(name string) (string, error) {
 // this function does NOT restrict access on Windows. %APPDATA% is already
 // per-user, and the control endpoint's protection is the pipe SDDL
 // (CtlPipeSDDL), not a directory mode. Tightening the data directory ACL
-// explicitly is tracked in docs/windows.md.
+// explicitly is tracked in docs/status/windows.md.
 func EnsureDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("platform: ensure dir: %w", err)

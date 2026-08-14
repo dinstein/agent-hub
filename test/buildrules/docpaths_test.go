@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// retiredNames are the old package names canonical.md §"Retired old names"
+// retiredNames are the old package names docs/conventions.md §"Retired old names"
 // deliberately writes down BECAUSE they no longer exist: the table's whole
 // job is to tell a reader who met them in early material what replaced them.
 // They are the one legitimate reason for a docs path not to resolve, so they
@@ -36,7 +36,7 @@ var retiredNames = map[string]string{
 	"internal/approval":  "",
 	// The token-savings ledger, removed rather than replaced: nothing else
 	// records what a call cost against what it would have cost, so there is
-	// no forwarding address to write here (canonical.md §7 decision 9).
+	// no forwarding address to write here (docs/decisions/0009-savings-ledger-removed.md).
 	"internal/savings": "",
 }
 
@@ -94,7 +94,7 @@ func TestDocsCitePathsThatExist(t *testing.T) {
 					// a removal, and there is nothing to assert about it.
 					if canonical != "" && !exists(root, canonical) {
 						t.Errorf("%s:%d cites the retired name %q, but its canonical replacement %q "+
-							"does not exist either — canonical.md's retirement table is now wrong in both columns",
+							"does not exist either — docs/conventions.md's retirement table is now wrong in both columns",
 							doc, i+1, ref, canonical)
 					}
 					continue
@@ -102,7 +102,7 @@ func TestDocsCitePathsThatExist(t *testing.T) {
 				if !exists(root, ref) {
 					t.Errorf("%s:%d cites %q, which does not exist.\n"+
 						"Point it at the real path, or — if it is an old name worth recording — add it to "+
-						"canonical.md's retirement table and to retiredNames in this test.",
+						"docs/conventions.md's retirement table and to retiredNames in this test.",
 						doc, i+1, ref)
 				}
 			}

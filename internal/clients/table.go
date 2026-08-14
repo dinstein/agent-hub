@@ -469,7 +469,7 @@ const msixClaudeDesktopPkg = "Claude_pzs8sxrjxfjjc"
 //
 // It is a PROBE, not a guess, and it only ever redirects toward a file that
 // exists — the same shape internal/platform uses for the loopback-UNC twin
-// (docs/windows.md). The failure direction is the documented path: an MSIX
+// (docs/status/windows.md). The failure direction is the documented path: an MSIX
 // install with no config yet, or a store layout that has moved, leaves the
 // write where the vendor documents it rather than in a directory this
 // program invented.

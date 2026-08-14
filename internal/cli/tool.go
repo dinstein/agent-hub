@@ -194,7 +194,7 @@ func (l ToolList) Human(w io.Writer) error {
 func (a *App) newToolCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "tool",
-		Aliases: []string{"tools"}, // singular canonical, plural alias (canonical.md §3)
+		Aliases: []string{"tools"}, // singular canonical, plural alias (docs/conventions.md#command-naming)
 		Short:   "See and narrow the tools the servers contribute",
 		Long: "What the servers on this machine offer, and how much of it they are\n" +
 			"allowed to offer.\n\n" +

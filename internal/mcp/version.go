@@ -24,7 +24,7 @@ const (
 // pre-2026 (the legacy path only runs once server/discover has failed), and
 // the 2026-07-28 declaration travels per-request in _meta instead, built by
 // transport.BuildRequestMeta from Version2026 directly. See
-// docs/mcp-2026-07-28.md §6.1 for the resolution of the original
+// docs/status/mcp-2026-07-28.md §6.1 for the resolution of the original
 // "flip this constant" plan.
 const ProtocolVersion = Version2025
 

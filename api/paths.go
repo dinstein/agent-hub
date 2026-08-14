@@ -40,7 +40,7 @@ const (
 	// windowsAppDataEnv is where Windows keeps roaming application data.
 	windowsAppDataEnv = "APPDATA"
 	// The two control-pipe names, one per build channel. Frozen identifiers
-	// (canonical.md §1), and under the same contract as dirName above: each
+	// (docs/conventions.md#frozen-identifiers), and under the same contract as dirName above: each
 	// must equal internal/platform's spelling, and only a test holds them
 	// together. Spelled out whole rather than one derived from the other, for
 	// the reason internal/platform gives at length: a name that is the output
@@ -90,7 +90,7 @@ func DevSocketPath() (string, error) {
 //
 // CONTRACT: this must stay byte-identical to
 // internal/platform.(*Resolver).CtlSocketPath. api cannot import
-// internal/platform (canonical.md §2 rule 1), so the logic is duplicated
+// internal/platform (docs/conventions.md#dependency-directions rule 1), so the logic is duplicated
 // here on purpose; the cross-package contract test pinning both sides
 // together lives on the internal/ctlapi side, which may import both.
 func defaultSocketPath(goos string, lookup func(string) (string, bool), home func() (string, error), sid func() (string, error)) (string, error) {

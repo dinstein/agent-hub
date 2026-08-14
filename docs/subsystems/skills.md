@@ -185,7 +185,7 @@ evidence.
 **This package never shells out to git and never touches the network.** git sources are imported from a
 local checkout the caller already has, and `--pin <rev>` is recorded so the revision that produced the
 library copy is reproducible. Fetch, clone and ref resolution are a capability boundary
-[canonical.md §4](../canonical.md#4-known-capability-boundaries) records deliberately, and until it
+[conventions.md#capability-boundaries](../conventions.md#capability-boundaries) records deliberately, and until it
 moves, an `Update` on a git skill without a new checkout path returns `ErrGitFetchUnsupported` rather
 than reporting "already up to date" without having looked.
 

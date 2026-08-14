@@ -1,7 +1,7 @@
 # The CLI
 
 > **Answers** how the command tree is built, what each exit code means, and which commands work with no daemon.
-> **Not here** the naming rules → [canonical.md §3](../canonical.md#3-command-naming-rules); what a command writes → [registry.md](registry.md).
+> **Not here** the naming rules → [conventions.md#command-naming](../conventions.md#command-naming); what a command writes → [registry.md](registry.md).
 > **Kept true by** `internal/cli/tree_test.go`, the frozen error golden files, and `TestAShippedPageNeverRecommendsWhatItWithholds`.
 
 `internal/cli` is the entire `agenthub` command tree: offline registry editing, online control-plane

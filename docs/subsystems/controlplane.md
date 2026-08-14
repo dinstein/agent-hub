@@ -37,7 +37,7 @@ endpoint, and therefore to something the CLI can do too, so "the GUI is optional
 than a promise.
 
 **Never imports `internal/*` and never takes a third-party dependency**
-([canonical.md §2](../canonical.md#hard-dependency-direction-constraints-enforced-at-compile-time-by-depguard)
+([conventions.md#package-layout](../conventions.md#package-layout)
 rule 1). The cost is that `paths.go` reimplements the socket path resolution; the compensation is a
 contract test on the `ctlapi` side — the only place that can import both — asserting the two agree in
 every environment.

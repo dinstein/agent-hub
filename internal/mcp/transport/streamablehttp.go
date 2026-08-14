@@ -26,7 +26,7 @@ const deleteTimeout = 3 * time.Second
 
 // streamableHTTP is the MCP 2025-11-25 Streamable HTTP client transport.
 //
-// Shape of the binding (canonical.md §5b — read side):
+// Shape of the binding (docs/conventions.md#mcp-protocol-scope — read side):
 //
 //   - every client→server message is POSTed to the single endpoint,
 //   - the POST answer is either application/json (one response) or
@@ -89,7 +89,7 @@ type streamableHTTP struct {
 //
 // SSRF screening is the caller's to inject via HTTPConfig.DialContext —
 // this package is standard-library only and cannot import
-// internal/guard/netguard (canonical.md §2 rule 2).
+// internal/guard/netguard (docs/conventions.md#dependency-directions rule 2).
 func DialStreamableHTTP(cfg HTTPConfig) (Transport, error) {
 	base, err := newHTTPBase(cfg)
 	if err != nil {

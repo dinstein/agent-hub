@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestDeprecationMarkersCarryAReadableRemovalDate makes canonical.md §5b's
+// TestDeprecationMarkersCarryAReadableRemovalDate makes docs/conventions.md#mcp-protocol-scope's
 // promise checkable.
 //
 // The section says no removal is scheduled earlier than 2027-07-28 and that
@@ -36,7 +36,7 @@ import (
 //     date nobody means.
 //
 // What is deliberately NOT checked is the date's value. Whether 2027-07-28 is
-// the right number is a decision recorded in canonical.md's table, and a test
+// the right number is a decision recorded in docs/conventions.md's table, and a test
 // asserting it would have to be edited every time the decision is revisited —
 // which is how a check ends up being updated to match whatever the code says.
 func TestDeprecationMarkersCarryAReadableRemovalDate(t *testing.T) {
@@ -55,7 +55,7 @@ func TestDeprecationMarkersCarryAReadableRemovalDate(t *testing.T) {
 		if !ok {
 			t.Errorf("%s:%d carries a DEPRECATED-UPSTREAM marker whose earliest-removal is not "+
 				"a date or `none`:\n  %s\n"+
-				"canonical.md §5b: the field says when the feature may GO. A deprecation date "+
+				"docs/conventions.md#mcp-protocol-scope: the field says when the feature may GO. A deprecation date "+
 				"there reads as a removal date already past, and a sweep deleting what it "+
 				"finds would remove something being kept on purpose.", m.file, m.line, m.text)
 		}
@@ -110,7 +110,7 @@ func findDeprecationMarkers(t *testing.T, root string) []deprecationSite {
 			if m == "" {
 				t.Errorf("%s:%d opens a DEPRECATED-UPSTREAM marker that does not close on the "+
 					"same line:\n  %s\n"+
-					"canonical.md §5b promises one grep finds every use site; a marker wrapped "+
+					"docs/conventions.md#mcp-protocol-scope promises one grep finds every use site; a marker wrapped "+
 					"across comment lines is not found by it.", rel, i+1, strings.TrimSpace(line))
 				continue
 			}
@@ -145,7 +145,7 @@ var deprecatedWireNames = []struct{ Feature, Literal string }{
 // check above leaves open: it proves the markers that exist are well-formed,
 // not that the ones that should exist do.
 //
-// docs/mcp-2026-07-28.md §1.3 promises "each use site in this tree carries a
+// docs/status/mcp-2026-07-28.md §1.3 promises "each use site in this tree carries a
 // DEPRECATED-UPSTREAM comment, so one grep finds them all". That promise had
 // been false for `sampling` since the feature was deprecated: mcp.
 // MethodSamplingCreate declared it and internal/mrtr matched on it to refuse
@@ -172,7 +172,7 @@ func TestEveryDeprecatedFeatureNamedCarriesItsMarker(t *testing.T) {
 			// message as a malformed marker.
 			t.Errorf("%s names the deprecated %s wire method %s but carries no "+
 				"%s marker naming %q.\n"+
-				"docs/mcp-2026-07-28.md §1.3 promises one grep finds every use site; "+
+				"docs/status/mcp-2026-07-28.md §1.3 promises one grep finds every use site; "+
 				"a site the grep misses is one nobody will migrate.",
 				f.file, want.Feature, want.Literal, markerTag, want.Feature)
 		}

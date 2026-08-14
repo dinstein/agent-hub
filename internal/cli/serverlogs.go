@@ -19,7 +19,7 @@ import (
 // It used to read a file of its own, logs/server-<id>.log, and that file is
 // gone: the frames are records in the call ledger now, so every one of them
 // carries the id of the client call that caused it. The command keeps its
-// name and its shape — canonical.md §3 fixes what `logs`, `daemon logs` and
+// name and its shape — docs/conventions.md#command-naming fixes what `logs`, `daemon logs` and
 // `server logs` each mean, and this is still the third of those — while
 // answering a question it never could: which call a frame belongs to, and
 // which attempt of it.

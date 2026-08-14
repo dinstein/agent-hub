@@ -25,7 +25,7 @@ const headerAuthorization = "Authorization"
 // transport facade.
 //
 // The transport package is standard-library only and cannot import
-// internal/guard/netguard (canonical.md §2 rule 2), so screening is
+// internal/guard/netguard (docs/conventions.md#dependency-directions rule 2), so screening is
 // injected from here — either as HTTPConfig.DialContext, or, when a
 // credential is in play, inside the http.Client that also carries the
 // bearer injection and the 401/403 retry.
@@ -241,7 +241,7 @@ func isLiteralLoopbackHost(host string) bool {
 // downgrade; neither is a place this vault credential may go.
 //
 // transport.sameOrigin is the same predicate. It is duplicated rather than
-// shared because internal/mcp is standard-library only (canonical.md §2
+// shared because internal/mcp is standard-library only (docs/conventions.md#package-layout
 // rule 2) and this package must not reach into it for an unexported helper
 // — and because the two are independent gates, which AGENTS.md says are
 // never collapsed into one.

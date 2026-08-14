@@ -14,7 +14,7 @@ import (
 // Hash itself. Map keys are visited in sorted order and every string is
 // length-prefixed, so the encoding is injective and the hash is stable
 // across processes and Go versions (golden-tested — determinism is
-// contract, canonical.md §6).
+// contract, docs/conventions.md#engineering-conventions).
 func hashScope(es *EffectiveScope) [32]byte {
 	h := sha256.New()
 

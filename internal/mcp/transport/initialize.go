@@ -48,7 +48,7 @@ func initializeLegacy(ctx context.Context, t Transport, clientInfo mcp.Implement
 // BuildRequestMeta produces the per-request _meta payload that every
 // outgoing request must carry once the negotiated protocol version is
 // mcp.Version2026 (stateless protocol — the handshake state moved into the
-// requests themselves; docs/mcp-2026-07-28.md §1.1).
+// requests themselves; docs/status/mcp-2026-07-28.md §1.1).
 func BuildRequestMeta(version string, caps mcp.ClientCapabilities, info mcp.Implementation) *mcp.RequestMeta {
 	return &mcp.RequestMeta{
 		ProtocolVersion:    version,
@@ -61,7 +61,7 @@ func BuildRequestMeta(version string, caps mcp.ClientCapabilities, info mcp.Impl
 // _meta. Empty until the MRTR coordinator (Phase 2) can actually answer
 // input requests: a capability declared here invites input_required results,
 // so declaring one we cannot serve would fail mid-call rather than up front
-// (fail closed; docs/mcp-2026-07-28.md §6.2).
+// (fail closed; docs/status/mcp-2026-07-28.md §6.2).
 func clientCapabilities2026() mcp.ClientCapabilities {
 	return mcp.ClientCapabilities{}
 }

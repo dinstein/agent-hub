@@ -14,10 +14,10 @@ import (
 // `docs/` prefix. This is the spelling that replaced `§N`: an anchor is a
 // slugged heading, so it survives a section being moved or renumbered and
 // breaks loudly when the heading it names is renamed.
-var anchorCite = regexp.MustCompile(`(?:docs/)?((?:\.\./)*(?:zh-CN/|modules/|subsystems/|status/|decisions/)?[a-z0-9][a-z0-9._-]*\.md)#([\p{L}\p{N}][\p{L}\p{N}-]*)`)
+var anchorCite = regexp.MustCompile(`(?:docs/)?((?:\.\./)*(?:zh-CN/|subsystems/|status/|decisions/)?[a-z0-9][a-z0-9._-]*\.md)(?:#([\p{L}\p{N}][\p{L}\p{N}-]*))?`)
 
-// TestDocAnchorsResolve fails when the tree cites a `docs/*.md#anchor` that no
-// document answers to.
+// TestDocReferencesResolve fails when the tree cites a document under docs/
+// that does not exist, or an anchor in one that no heading answers to.
 //
 // It is the successor to the numbered-section checks, and it exists for the
 // same reason: a cross-reference into prose goes stale without the file it
@@ -31,7 +31,7 @@ var anchorCite = regexp.MustCompile(`(?:docs/)?((?:\.\./)*(?:zh-CN/|modules/|sub
 // some heading in it slugs to the cited anchor. It cannot check that the
 // section says what the citing comment claims; semantic drift stays a review
 // question.
-func TestDocAnchorsResolve(t *testing.T) {
+func TestDocReferencesResolve(t *testing.T) {
 	root := repoRoot(t)
 	files := citableFiles(t, root)
 	if len(files) == 0 {
@@ -71,7 +71,7 @@ func TestDocAnchorsResolve(t *testing.T) {
 						filepath.Clean(filepath.Join(filepath.Dir(rel), doc)), "docs/"))
 					candidates = append([]string{fromHere}, candidates...)
 				}
-				resolved, found := "", false
+				resolved, found := "", anchor == ""
 				for _, c := range candidates {
 					set, ok := anchors[c]
 					if !ok {
@@ -88,7 +88,10 @@ func TestDocAnchorsResolve(t *testing.T) {
 					if resolved == "" && set != nil {
 						resolved = c
 					}
-					if set[anchor] {
+					if anchor == "" && set != nil {
+						break // the document exists, which is the whole claim
+					}
+					if anchor != "" && set[anchor] {
 						found = true
 						break
 					}
@@ -97,8 +100,8 @@ func TestDocAnchorsResolve(t *testing.T) {
 				switch {
 				case found:
 				case resolved == "":
-					t.Errorf("%s:%d cites %s#%s, and no such document exists (tried %v)",
-						rel, i+1, doc, anchor, candidates)
+					t.Errorf("%s:%d cites %s, and no such document exists (tried %v).\n"+
+						"A document that moved takes its citations with it.", rel, i+1, doc, candidates)
 				default:
 					t.Errorf("%s:%d cites docs/%s#%s, which no heading in that document slugs to.\n"+
 						"Point it at the section that now holds the rule — a renamed heading takes its "+
@@ -107,8 +110,8 @@ func TestDocAnchorsResolve(t *testing.T) {
 			}
 		}
 	}
-	if checked < 100 {
-		t.Fatalf("resolved only %d anchor citations; the pattern stopped matching the tree's "+
+	if checked < 200 {
+		t.Fatalf("resolved only %d document citations; the pattern stopped matching the tree's "+
 			"spellings, and a scan that reaches nothing agrees with everything", checked)
 	}
 	t.Logf("checked %d anchor citations across %d documents", checked, len(anchors))
@@ -154,4 +157,16 @@ func slugify(heading string) string {
 		}
 	}
 	return b.String()
+}
+
+// citableFiles lists the files whose comments and prose may cite a document.
+func citableFiles(t *testing.T, root string) []string {
+	t.Helper()
+	return walkRepoFiles(t, root, "citable files", func(name string) bool {
+		switch filepath.Ext(name) {
+		case ".go", ".md", ".ts", ".yml", ".yaml":
+			return true
+		}
+		return false
+	})
 }

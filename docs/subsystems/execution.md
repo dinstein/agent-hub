@@ -75,7 +75,7 @@ after the defences in it were removed, because the gate-count parity assertions 
 and renaming one would leave the tests passing while comparing nothing.
 
 **Dependency constraint**: this package may not import `internal/ctlapi`
-([canonical.md §2](../canonical.md#hard-dependency-direction-constraints-enforced-at-compile-time-by-depguard)
+([conventions.md#package-layout](../conventions.md#package-layout)
 rule 3) — the data plane does not depend on the control plane.
 
 ## internal/gateway

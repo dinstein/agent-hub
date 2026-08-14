@@ -1,4 +1,4 @@
-// Package gateway assembles the per-client gateway (canonical.md §2: gateway
+// Package gateway assembles the per-client gateway (docs/conventions.md#package-layout: gateway
 // only assembles; the execute pipeline lives in internal/pipeline).
 //
 // TWO ENTRY POINTS, ONE BODY. Run is the implementation of `agenthub connect
@@ -7,7 +7,7 @@
 // is what the daemon's HTTP data plane runs — one gateway per credential,
 // inside the daemon process. Everything below describes both. Where a file
 // here says "stdio gateway" it is naming the transport, never a second
-// implementation; canonical.md §2's "one execute pipeline" is why there is no
+// implementation; docs/conventions.md#package-layout's "one execute pipeline" is why there is no
 // second one to name.
 //
 // Run serves the upstream AI client as an MCP server over the given
@@ -289,7 +289,7 @@ type gateway struct {
 	// store is the registry handle (nil when the registry could not be
 	// opened at all — the gateway then serves unscoped from the tool cache,
 	// docs/flows.md). snap is the APPLIED snapshot (adoption goes through
-	// applier: read generation >= applied, canonical.md §5c #2); scopeRes
+	// applier: read generation >= applied, docs/conventions.md#the-hot-reload-path #2); scopeRes
 	// caches the effective-scope resolution over it. watcher is the local
 	// fsnotify+poll channel (the daemon link is the second, faster channel;
 	// both feed onRegistryChange).

@@ -258,7 +258,7 @@ func (r RemovedServer) Human(w io.Writer) error {
 func (a *App) newServerCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "server",
-		Aliases: []string{"servers"}, // singular canonical, plural alias (canonical.md §3)
+		Aliases: []string{"servers"}, // singular canonical, plural alias (docs/conventions.md#command-naming)
 		Short:   "Add, switch on and inspect the MCP servers agenthub connects to",
 		Long: "Servers are registered once here, for every client at the same time. 'add'\n" +
 			"writes the definition and leaves it off; 'enable' connects and puts it into\n" +

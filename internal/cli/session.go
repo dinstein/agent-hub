@@ -152,7 +152,7 @@ func (r SessionKillResult) Human(w io.Writer) error {
 func (a *App) newSessionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "session",
-		Aliases: []string{"sessions"}, // singular canonical, plural alias (canonical.md §3)
+		Aliases: []string{"sessions"}, // singular canonical, plural alias (docs/conventions.md#command-naming)
 		Short:   "Inspect and adjust live sessions (requires a running daemon)",
 		Args:    cobra.ArbitraryArgs,
 		RunE:    groupRunE,

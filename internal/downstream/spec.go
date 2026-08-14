@@ -33,7 +33,7 @@ var (
 )
 
 // envPrefix is stripped from the child environment on spawn
-// (canonical.md §1: AGENTHUB_* is stripped wholesale for downstreams).
+// (docs/conventions.md#frozen-identifiers: AGENTHUB_* is stripped wholesale for downstreams).
 const envPrefix = "AGENTHUB_"
 
 // DefaultConnectTimeout bounds the first connection (dial + initialize +

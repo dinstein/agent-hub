@@ -118,7 +118,7 @@ func TestParseClientConfigSendsTheTextVerbatim(t *testing.T) {
 
 // codeUnsupportedFormat mirrors internal/ctlapi.CodeUnsupportedFormat. It is
 // spelled out rather than imported because this package may import only the
-// public api package (canonical.md §2 rule 1), and api has no constant for
+// public api package (docs/conventions.md#dependency-directions rule 1), and api has no constant for
 // it — the wire value is the contract either way.
 const codeUnsupportedFormat = "E_UNSUPPORTED_FORMAT"
 

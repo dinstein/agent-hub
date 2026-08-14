@@ -7,7 +7,7 @@ import (
 )
 
 // Catalog is the tool-directory snapshot consumed by internal/scope
-// (canonical.md A.4 ruling: the tool-directory snapshot is router.Catalog — distinct from
+// (docs/conventions.md A.4 ruling: the tool-directory snapshot is router.Catalog — distinct from
 // internal/catalog, which is the curated server directory): every currently
 // known server mapped to its ORIGINAL (raw) tool names. Exposed names never
 // appear here — scope intersections are keyed by original names only

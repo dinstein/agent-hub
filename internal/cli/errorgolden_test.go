@@ -12,7 +12,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// canonical.md §6 lists three golden-test families that must run in CI from
+// docs/conventions.md#engineering-conventions lists three golden-test families that must run in CI from
 // day one: the signature grammar, the search ranking, and the ERROR COPY.
 // The first two live in internal/discovery (testdata/ranking.txt and the
 // exposure corpora); this file is the third.

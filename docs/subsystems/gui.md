@@ -1,7 +1,7 @@
 # The GUI
 
 > **Answers** why the desktop application is shaped the way it is, on both sides of the bridge, and which of its rules must not be casually changed.
-> **Not here** the endpoints it calls → [controlplane.md](controlplane.md); the tech-stack ruling → [canonical.md §7](../canonical.md#7-decision-records) item 3.
+> **Not here** the endpoints it calls → [controlplane.md](controlplane.md); the tech-stack ruling → [decisions/](../decisions) item 3.
 > **Kept true by** the separate `gui` CI job on macOS, `internal/depguardtest`, and the healthgen golden test.
 
 ## The Go side
@@ -349,7 +349,7 @@ touches a native API goes through `application.InvokeSync` unless the call is kn
 **Platforms.** macOS and Windows drive a tray. Linux deliberately does not: Wails registers the icon
 over dbus `StatusNotifierItem`, and a desktop with no `StatusNotifierHost` — a default GNOME session,
 for one — accepts the registration and then shows nothing. Windows compiles and vets but is
-unverified on real hardware ([../windows.md](../windows.md)).
+unverified on real hardware ([../windows.md](../status/windows.md)).
 
 Deliberately not done, each for its own reason: **launch at login** (three platform mechanisms plus
 their uninstall residue), **notifications when a server drops** (a new dependency, a permission prompt

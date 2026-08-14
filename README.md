@@ -141,7 +141,7 @@ The five above are the argument; this is the matrix.
 
 | Area | What it covers |
 |---|---|
-| Protocol | MCP `2026-07-28` (stateless per-request `_meta`, `server/discover`, MRTR, `subscriptions/listen`) plus `2025-11-25` / `2025-06-18` / `2025-03-26`, negotiated on both faces. Tools only — resources, prompts and extension capabilities are not forwarded ([details](docs/mcp-2026-07-28.md)) |
+| Protocol | MCP `2026-07-28` (stateless per-request `_meta`, `server/discover`, MRTR, `subscriptions/listen`) plus `2025-11-25` / `2025-06-18` / `2025-03-26`, negotiated on both faces. Tools only — resources, prompts and extension capabilities are not forwarded ([details](docs/status/mcp-2026-07-28.md)) |
 | Gateway | stdio (one process per client) + streamable-http (shared daemon pool); downstream over stdio / streamable-http / legacy HTTP+SSE |
 | Discovery | `full` / `grouped` / `lazy`; five meta-tools plus intent variants, compact signature grammar, two-stage describe |
 | Security | Spawn guard (anti-smuggling), bidirectional SSRF predicates screened inside `DialContext`, agent tokens graded read/write/destructive, cooperative call quotas |
@@ -157,8 +157,8 @@ The five above are the argument; this is the matrix.
 | [docs/architecture.md](docs/architecture.md) | **Changing it** — process model, module map, what a call passes through, the two lines of defense |
 | [docs/flows.md](docs/flows.md) | Sequence diagrams and failure branches for seven runtime flows |
 | [docs/subsystems/](docs/subsystems/) | Per-seam invariants and failure directions |
-| [docs/canonical.md](docs/canonical.md) | Frozen identifiers, dependency constraints, naming rules, every decision record |
-| [docs/windows.md](docs/windows.md) | Windows status: what is implemented, what is unverified, acceptance criteria |
+| [docs/conventions.md](docs/conventions.md) | Frozen identifiers, dependency constraints, naming rules, every decision record |
+| [docs/status/windows.md](docs/status/windows.md) | Windows status: what is implemented, what is unverified, acceptance criteria |
 
 ## Platforms
 
@@ -169,7 +169,7 @@ passes with real Claude Code calling real downstream MCP servers through the gat
 |---|---|
 | macOS | ✅ Supported, exercised by CI |
 | Linux | ✅ Supported, exercised by CI |
-| Windows | 🧪 **Experimental**: every capability is implemented (`LockFileEx` cross-process locks, named-pipe control plane with SDDL, api dialing, `daemon stop`, `client connect`, portable zip packaging) and CI gates on `GOOS=windows` build + vet, but nothing has ever run on a real Windows machine. [Details](docs/windows.md) |
+| Windows | 🧪 **Experimental**: every capability is implemented (`LockFileEx` cross-process locks, named-pipe control plane with SDDL, api dialing, `daemon stop`, `client connect`, portable zip packaging) and CI gates on `GOOS=windows` build + vet, but nothing has ever run on a real Windows machine. [Details](docs/status/windows.md) |
 
 ## Privacy: no data collection
 
@@ -180,7 +180,7 @@ request ever targets an AgentHub-owned domain.
 The only outbound connections are the ones your configuration names: the downstream servers in
 `servers.json`, those servers' OAuth authorization servers (only after `agenthub auth login`), and
 endpoints you gave explicitly. The call ledger is **written to local disk only**, and version updates
-are left to your package manager — the decision record is [canonical.md](docs/canonical.md) §7,
+are left to your package manager — the decision record is [docs/conventions.md](docs/conventions.md) §7,
 item 6.
 
 ## Development
@@ -195,7 +195,7 @@ make gui     # the GUI, built separately — it is excluded from the default bui
 
 The contributor rules — the worktree branch flow, the commit convention, and the four
 dependency-direction constraints CI enforces — live in [AGENTS.md](AGENTS.md), with the decision
-records behind them in [canonical.md](docs/canonical.md).
+records behind them in [docs/conventions.md](docs/conventions.md).
 
 ## License
 

@@ -1,7 +1,7 @@
 // Package cli implements the agenthub command tree (connect, server, tool,
 // client, daemon, grant, doctor) on top of cobra.
 //
-// Constraints (canonical.md §2, §3):
+// Constraints (docs/conventions.md#package-layout, §3):
 //   - Depends on the api client + internal/registry (plus the
 //     zero-dependency foundations internal/platform and the sibling output
 //     package); the daemon/gateway entry subcommands additionally assemble

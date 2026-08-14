@@ -4,7 +4,7 @@ package services
 // does, and the daemon-ownership answer the tray needs to label Quit.
 //
 // WHY THE PREFERENCES LIVE IN MEMORY HERE AND ON DISK IN THE FRONTEND. This
-// package may not read or write the data directory (canonical.md §2 rule 1),
+// package may not read or write the data directory (docs/conventions.md#dependency-directions rule 1),
 // and the daemon's registry is the wrong home for them anyway: "the close
 // button minimises" is a property of THIS window on THIS machine, exactly like
 // the theme, and storing it in the registry would imply the hub has an opinion

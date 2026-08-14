@@ -1,7 +1,7 @@
 // Package toonenc implements TOON (Token-Oriented Object Notation), the
 // compact display encoding of docs/subsystems/shaping.md "TOON encoding".
 //
-// # Ruling (canonical.md §7 #4): TOON is a ONE-WAY PROJECTION
+// # Ruling (docs/decisions/0004-toon-and-signature-grammars.md): TOON is a ONE-WAY PROJECTION
 //
 // Appendix A.6 #4 left the grammar range and the golden corpus open because
 // no Go implementation exists. RULED, and the first decision is the one every
@@ -48,7 +48,7 @@
 //     null, strings bare unless quoting is required.
 //   - Object keys are sorted byte-ascending. JSON object order is not
 //     preserved by any Go decoder, so sorting is the only deterministic
-//     choice; determinism is contract (canonical.md §6).
+//     choice; determinism is contract (docs/conventions.md#engineering-conventions).
 //   - An empty object is "{}" and an empty list is "[]", on the key's own
 //     line. They are the only inline aggregates.
 //   - TABLE FORM is the whole point of the encoding. A list qualifies when

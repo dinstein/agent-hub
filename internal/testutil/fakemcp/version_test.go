@@ -19,7 +19,7 @@ import (
 // than a setting: it answered initialize and nothing else, so every stdio
 // test in the tree ran the pre-2026 path and the 2026 one was proven only by
 // test/mcpstub, which is an httptest.Server and therefore proves things about
-// streamable HTTP (docs/mcp-2026-07-28.md §7.7).
+// streamable HTTP (docs/status/mcp-2026-07-28.md §7.7).
 //
 // Script.SupportedVersions is that setting. The cases below cover the three
 // outcomes a discover can have and the adversarial half of the stateless

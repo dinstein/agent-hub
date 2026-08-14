@@ -332,7 +332,7 @@ unknown names are evidence too. Direct names and lazy `call_tool` both keep two 
 wrapper and the effective downstream arguments — complete up to the MCP frame bound, whatever the
 result capture setting is.
 
-**Storage failure costs the record, never the call** ([canonical.md §7](canonical.md#7-decision-records)
+**Storage failure costs the record, never the call** ([decisions/](decisions)
 #11). A missing key, an invalid policy, a full ledger, a crossed free-space reserve or a failed write
 leaves a hole, and the hole is announced: `ledger record dropped; the call is unaffected`, at Error,
 once per record. By the time a write fails the record is already lost, so refusing the call would add

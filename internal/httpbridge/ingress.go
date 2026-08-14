@@ -13,7 +13,7 @@ import (
 )
 
 // Ingress hard bounds (docs/subsystems/docs/subsystems/controlplane.md; the numbers are inherited
-// verbatim from toolport's ingress limits, per canonical.md §5). They are hard because they bound work an UNAUTHENTICATED
+// verbatim from toolport's ingress limits, per docs/conventions.md#reference-code-policy). They are hard because they bound work an UNAUTHENTICATED
 // caller can cause: header and body reads happen before, or alongside,
 // credential checking.
 const (
@@ -78,7 +78,7 @@ const (
 // every miss — unknown session, expired session, foreign session, unknown
 // path — so the endpoint cannot be probed for which sessions exist
 // (docs/subsystems/docs/subsystems/controlplane.md, "The 404 text is unified and frozen byte for
-// byte"; the same anti-enumeration rule canonical.md §7 #4 freezes for
+// byte"; the same anti-enumeration rule docs/decisions/0004-toon-and-signature-grammars.md freezes for
 // describe_tool and fetch_result).
 var (
 	errUnauthorized = &httpError{http.StatusUnauthorized, CodeUnauthorized, "missing or invalid credentials"}

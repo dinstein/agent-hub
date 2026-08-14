@@ -13,7 +13,7 @@ import (
 
 // TestFileLockExcludesASecondHolder is the half of the seam that can actually
 // run on the machines that run the tests: flock(2) is real here, while the
-// Windows branch of this API has never executed anywhere (docs/windows.md).
+// Windows branch of this API has never executed anywhere (docs/status/windows.md).
 //
 // Two separate opens of one path, because flock is per open file description
 // — two descriptors dup'd from one open would BOTH hold the same lock and the

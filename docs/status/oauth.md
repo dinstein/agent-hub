@@ -11,7 +11,7 @@ downstream OAuth server will not connect, read this file first.
 
 The authorization baseline is MCP `2025-11-25`, which is also the `MCP-Protocol-Version` header this
 package sends on metadata requests (`mcpProtocolVersion` in `internal/oauthflow/client.go`; the tree
-also speaks `2026-07-28` elsewhere — canonical.md §5b). That revision's authorization chapter changed
+also speaks `2026-07-28` elsewhere — docs/conventions.md#mcp-protocol-scope). That revision's authorization chapter changed
 substantially relative to `2025-06-18`, and the gap table below is aligned to it.
 
 | Spec | Where it's used | Our status |

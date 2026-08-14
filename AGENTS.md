@@ -24,7 +24,7 @@ regardless of who asked.
 | [docs/flows.md](docs/flows.md) | How a flow runs at runtime, and which way it falls on failure |
 | [docs/subsystems/](docs/subsystems/) | Before touching a package — its invariants and failure directions |
 | [docs/status/oauth.md](docs/status/oauth.md) | An OAuth downstream will not connect, or which provider shapes are supported |
-| [docs/canonical.md](docs/canonical.md) | Whether a name/dependency/convention may change, and why it was decided |
+| [docs/conventions.md](docs/conventions.md) | Whether a name/dependency/convention may change, and why it was decided |
 | [.agents/skills/](.agents/skills/) | You are about to **do** one of the standard workflows, and want its steps in order |
 
 `docs/` explains how the system works; skills are what you execute. Four repository workflows exist
@@ -38,7 +38,7 @@ files.
 
 Confirmed gaps, pinned to a line but not yet fixed, live in the `docs/subsystems/` file of the package
 that owns them — under "current assembly status", or beside the invariant they bend — and, for one
-platform's overall state, in [docs/windows.md](docs/windows.md). There is no separate backlog file:
+platform's overall state, in [docs/status/windows.md](docs/status/windows.md). There is no separate backlog file:
 a gap recorded next to the code it is about gets read by whoever touches that code, which is more
 than a central list can claim.
 
@@ -92,7 +92,7 @@ make gui         # build the GUI separately (excluded from build/lint by default
 and all covered by the branch's own PR checks, which is why the skill spends the local run on the
 landing rather than on every push:
 
-1. **A skipped depguard proof is not a proof** (CANONICAL §6). Without golangci-lint,
+1. **A skipped depguard proof is not a proof** (docs/conventions.md#engineering-conventions). Without golangci-lint,
    `internal/depguardtest` calls `t.Skip` and `make test` counts it as success; CI greps for
    `--- SKIP` and fails. `make ci-depguard-proof` is the local equivalent, and it greps a log it
    piped through `tee`; `ci-landing` does the same over the whole of `ci-full`. Those two are the

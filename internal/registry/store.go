@@ -20,7 +20,7 @@
 // Unknown JSON fields are preserved at every nesting level via the Doc[T]
 // envelope, so newer-version fields survive load-modify-save by older code.
 //
-// M1 additions (canonical.md §5c): Watch (fsnotify + debounce with a polling
+// M1 additions (docs/conventions.md#the-hot-reload-path): Watch (fsnotify + debounce with a polling
 // fallback, per-document Change{Kind, Rev} events, see watch.go), the Applier
 // adoption criterion (generation >= applied, see applier.go), and self-write
 // suppression (bounded TTL fingerprint set, see selfwrite.go).
@@ -61,7 +61,7 @@ type Store struct {
 
 	// selfWrites backs self-write suppression: every payload this Store
 	// writes is fingerprinted here before the write so Watchers on the same
-	// Store can tell own writes from external ones (canonical.md §5c #1).
+	// Store can tell own writes from external ones (docs/conventions.md#the-hot-reload-path #1).
 	selfWrites selfWriteSet
 
 	mu   sync.Mutex

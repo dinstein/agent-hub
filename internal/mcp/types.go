@@ -67,7 +67,7 @@ const (
 
 // Root is one entry of a roots/list result.
 // DEPRECATED-UPSTREAM(roots, earliest-removal: 2027-07-28): kept per
-// canonical.md §5b; the gateway RootSource seam absorbs a future removal.
+// docs/conventions.md#mcp-protocol-scope; the gateway RootSource seam absorbs a future removal.
 type Root struct {
 	URI  string `json:"uri"`
 	Name string `json:"name,omitempty"`
@@ -88,7 +88,7 @@ type Implementation struct {
 
 // RootsCapability advertises roots support.
 // DEPRECATED-UPSTREAM(roots, earliest-removal: 2027-07-28): kept per
-// canonical.md §5b; the RootSource seam absorbs a future removal.
+// docs/conventions.md#mcp-protocol-scope; the RootSource seam absorbs a future removal.
 type RootsCapability struct {
 	ListChanged bool `json:"listChanged,omitempty"`
 }

@@ -10,12 +10,12 @@ import (
 
 // The refresh lock, delegated to internal/platform: flock(2) on darwin/linux,
 // LockFileEx on Windows, one implementation of each behind one name. See
-// docs/windows.md for what the Windows half is worth (it cross-compiles and
+// docs/status/windows.md for what the Windows half is worth (it cross-compiles and
 // has never run).
 //
 // This package's dependency budget is the standard library plus
 // internal/secrets, internal/guard/netguard and internal/platform. The last
-// is a zero-business-dependency foundation (canonical.md §2 rule 4), so
+// is a zero-business-dependency foundation (docs/conventions.md#dependency-directions rule 4), so
 // reaching it adds nothing the dependency directions care about — which is
 // what the local copy this replaced could not say for itself: it retried no
 // EINTR while internal/secrets' identical function did, and a signal

@@ -46,7 +46,7 @@ const (
 
 // Frozen JSON Schemas for the meta-tools. Written as literals rather than
 // marshalled from structs so the exact bytes are reviewable and golden-
-// testable (agents are sensitive to schema wording, canonical.md §6).
+// testable (agents are sensitive to schema wording, docs/conventions.md#engineering-conventions).
 const (
 	schemaStatus = `{"type":"object","properties":{},"additionalProperties":false}`
 

@@ -56,7 +56,7 @@
 //
 // Every request carries an X-Request-Id (echo-or-generate; the response
 // header is set before the handler runs so even a panic cannot lose it) and
-// error bodies carry it too (canonical.md §4). It correlates a request
+// error bodies carry it too (docs/conventions.md#capability-boundaries). It correlates a request
 // across the daemon's own logs; there is no audit stream for it to key
 // into — see docs/subsystems/docs/subsystems/controlplane.md.
 //

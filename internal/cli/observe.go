@@ -22,7 +22,7 @@ import (
 //
 // What is NOT unified is the shape above the flags. `calls` is a group
 // because the ledger has verbs — enable, verify, prune, rotate-key — and
-// `events` and `logs` are leaves because they have none; canonical.md §3
+// `events` and `logs` are leaves because they have none; docs/conventions.md#command-naming
 // rules on that, and inventing `events tail` to match would add a subcommand
 // with nothing to distinguish it from its own parent.
 

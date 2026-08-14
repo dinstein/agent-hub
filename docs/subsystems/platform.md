@@ -29,7 +29,7 @@ zero value equals `Default()`.
 ### Invariants
 
 **The directory name `AgentHub` and the `AGENTHUB_*` variable names are ABI.** Users' configuration and
-other clients' launch scripts hardcode them ([canonical.md §1](../canonical.md#1-frozen-identifiers-abi-unchangeable-as-of-v1)).
+other clients' launch scripts hardcode them ([conventions.md#frozen-identifiers](../conventions.md#frozen-identifiers)).
 
 **An explicit override always wins.** `AGENTHUB_DATA_DIR` is taken verbatim on every platform,
 including inside an MSIX container: "the user named a path" needs no platform knowledge.
@@ -54,7 +54,7 @@ read as "not mine to signal"; the daemon's owner watch needs it to read as "stil
 state directories hold sockets and credentials. On Windows it does neither, and returning early is the
 honest answer: Go's permission bits do not map onto ACLs there, so a chmod would report success while
 restricting nothing. What protects those directories on Windows is `%APPDATA%` being per-user and, for
-the control endpoint, the pipe SDDL. An explicit owner-only ACL is owed — [windows.md](../windows.md).
+the control endpoint, the pipe SDDL. An explicit owner-only ACL is owed — [windows.md](../status/windows.md).
 
 ### The Windows branch
 

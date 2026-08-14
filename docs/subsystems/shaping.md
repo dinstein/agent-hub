@@ -1,7 +1,7 @@
 # Result budget
 
 > **Answers** how a large result is trimmed, how the remainder comes back, and why every failure here delivers more rather than less.
-> **Not here** the gates → [execution.md](execution.md); what a truncated page costs a client → [../mcp-2026-07-28.md](../mcp-2026-07-28.md).
+> **Not here** the gates → [execution.md](execution.md); what a truncated page costs a client → [../mcp-2026-07-28.md](../status/mcp-2026-07-28.md).
 > **Kept true by** `internal/shaping`'s byte-accounting invariant tests and `test/e2e/cursororacle_test.go`.
 
 `internal/shaping` trims a tool result to a byte budget and hands the remainder back through a
@@ -14,7 +14,7 @@ cost-saving mechanisms, not security boundaries, and both fail open.
    and are deferred whole — which means a truncated page carries no `structuredContent`, and if the tool
    declared an `outputSchema` that page does not satisfy it. Nothing is lost, since the payload is in the
    remainder, but it is a conformance cost with a product decision in front of both possible fixes: read
-   [mcp-2026-07-28.md](../mcp-2026-07-28.md) §7.14 before changing this. Page 1 preserves the original
+   [mcp-2026-07-28.md](../status/mcp-2026-07-28.md) §7.14 before changing this. Page 1 preserves the original
    block structure; page 2 onward is a plain-text slice of the retained payload.
 2. **The recovery trailer is the last content block and is exempt from the budget** — neither truncated
    nor wrapped, because a recovery hint the agent cannot read is not a recovery hint. A page may

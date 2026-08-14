@@ -17,7 +17,7 @@ import (
 //
 //	go test ./internal/discovery/toolsig -update
 //
-// and REVIEW the diff: the file IS the grammar (canonical.md §7 #4). Every
+// and REVIEW the diff: the file IS the grammar (docs/decisions/0004-toon-and-signature-grammars.md). Every
 // byte in it reaches an agent's prompt.
 var updateGolden = flag.Bool("update", false, "rewrite testdata golden files")
 
@@ -208,7 +208,7 @@ func assertGolden(t *testing.T, name, got string) {
 		t.Fatalf("read golden %s: %v (run: go test ./internal/discovery/toolsig -update)", path, err)
 	}
 	if got != string(want) {
-		t.Fatalf("%s drifted — determinism is contract (canonical.md §6)\n--- got ---\n%s\n--- want ---\n%s",
+		t.Fatalf("%s drifted — determinism is contract (docs/conventions.md#engineering-conventions)\n--- got ---\n%s\n--- want ---\n%s",
 			path, got, want)
 	}
 }

@@ -12,7 +12,7 @@ import (
 // logic through the Resolver hooks, which is the whole point of putting the
 // seam in this package (ruling A.5 #23). They prove the LOGIC, not the
 // platform — no assertion here says anything about how Windows actually
-// behaves inside an MSIX container. See docs/windows.md.
+// behaves inside an MSIX container. See docs/status/windows.md.
 
 const appData = `C:\Users\alice\AppData\Roaming`
 
@@ -130,7 +130,7 @@ func TestWindowsDataDirOverrideBypassesEverything(t *testing.T) {
 }
 
 // TestWindowsCtlPipePath pins the frozen control endpoint spelling
-// (canonical.md §1) and the reason the SID is hashed into it.
+// (docs/conventions.md#frozen-identifiers) and the reason the SID is hashed into it.
 func TestWindowsCtlPipePath(t *testing.T) {
 	r, _ := winResolver(t, platform.PackageIdentity{}, nil)
 	got, err := r.CtlSocketPath()

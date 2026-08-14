@@ -1,17 +1,17 @@
 //go:build !wails
 
-// Command agenthub-gui is the optional Wails3 desktop GUI (canonical.md §1).
+// Command agenthub-gui is the optional Wails3 desktop GUI (docs/conventions.md#frozen-identifiers).
 //
 // This file is the placeholder produced by the DEFAULT build. The real GUI
 // lives behind the `wails` build tag (gui_main.go) because a webview build
 // needs GTK/WebKit development packages that CI runners do not have; keeping
 // the default `go build ./...` and `golangci-lint run` free of that
 // dependency is what lets the GUI live in the same module as the daemon
-// (docs/canonical.md §7 item 3, ruling A.6 #3).
+// (docs/decisions/0003-wails3-and-the-frontend-stack.md, ruling A.6 #3).
 //
 //	make gui        # build the real thing (frontend + -tags wails)
 //
-// Constraint (canonical.md §2 rule 1, enforced by depguard and proven by
+// Constraint (docs/conventions.md#dependency-directions rule 1, enforced by depguard and proven by
 // internal/depguardtest): this package must never import internal/*. It may
 // only talk to the daemon through the public api package (control-plane
 // DTOs + Go client), exactly like any third-party integration.

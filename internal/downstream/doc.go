@@ -67,7 +67,7 @@
 //     Spec.ScopeName follows the key, so a derivation can hold its own
 //     vault entries — with a documented fallback to the "_global" ones.
 //
-// Transports: all three read-side transports are wired (canonical.md §5b) —
+// Transports: all three read-side transports are wired (docs/conventions.md#mcp-protocol-scope) —
 // stdio (spawned child), streamable-http and legacy HTTP+SSE. The two HTTP
 // kinds add three responsibilities this package owns because the transport
 // facade is standard-library only and must not know about them:

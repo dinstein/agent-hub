@@ -12,11 +12,11 @@ import (
 )
 
 // This file is the seam the daemon's HTTP data plane hangs off
-// (docs/canonical.md §2). It exposes the SAME gateway assembly Run serves over
+// (docs/conventions.md#package-layout). It exposes the SAME gateway assembly Run serves over
 // stdin/stdout,
 // connected over an in-memory pipe pair instead.
 //
-// Why reuse rather than assemble a second data plane: canonical.md §2 freezes
+// Why reuse rather than assemble a second data plane: docs/conventions.md#package-layout freezes
 // "one execute pipeline", and the cheapest way to keep that true is to have
 // no second assembly at all. A message arriving over HTTP is written into the
 // same frame reader an stdio client writes into, so it meets the same

@@ -105,7 +105,7 @@ func TestInProcGateCountParity(t *testing.T) {
 	}
 	if !maps.Equal(stdioCounters, httpCounters) {
 		t.Fatalf("gate counters diverge:\n  stdio = %v\n  http  = %v\n"+
-			"the HTTP face must traverse the SAME chain as stdio (canonical.md §2: one execute pipeline)",
+			"the HTTP face must traverse the SAME chain as stdio (docs/conventions.md#package-layout: one execute pipeline)",
 			stdioCounters, httpCounters)
 	}
 	for _, stage := range []string{

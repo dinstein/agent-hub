@@ -26,7 +26,7 @@ import (
 // gates, no router and no shaping; it resolves a credential to a
 // gateway.Conn — the SAME gateway body `agenthub connect` runs, reached over
 // an in-memory pipe instead of stdin/stdout — and writes the request into it.
-// canonical.md §2 freezes "one execute pipeline"; the way to keep that true
+// docs/conventions.md#package-layout freezes "one execute pipeline"; the way to keep that true
 // while adding a second transport is to add no second assembly, so the HTTP
 // face has no shortcut available to it.
 //

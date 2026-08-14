@@ -11,7 +11,7 @@
 //
 // Build output is deterministic: the same servers/tools/policy always
 // produce the same exposed names in the same List order (golden-tested —
-// determinism is contract, canonical.md §6).
+// determinism is contract, docs/conventions.md#engineering-conventions).
 //
 // Besides downstream servers, a build may include host-served Providers
 // (the "skills" pseudo-server of docs/subsystems/skills.md). They aggregate under the

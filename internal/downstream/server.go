@@ -791,7 +791,7 @@ func (s *Server) dialAndInit(ctx context.Context) (transport.Transport, *mcp.Ini
 	// agreed to was recorded nowhere, and it is not cosmetic — the negotiated
 	// version decides whether requests carry _meta, whether the session is
 	// stateless, and which way resultType is normalized on the way back out
-	// (docs/mcp-2026-07-28.md §7.5). A downstream that quietly settled on an
+	// (docs/status/mcp-2026-07-28.md §7.5). A downstream that quietly settled on an
 	// older generation behaves differently in all three, and finding out meant
 	// turning on frame tracing and reconnecting.
 	//

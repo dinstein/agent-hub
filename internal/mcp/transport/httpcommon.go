@@ -91,7 +91,7 @@ var (
 
 // DialContextFunc is the SSRF screening seam.
 //
-// internal/mcp is standard-library only (canonical.md §2 rule 2), so this
+// internal/mcp is standard-library only (docs/conventions.md#dependency-directions rule 2), so this
 // package cannot import internal/guard/netguard. The dependency is
 // inverted instead: the caller (internal/downstream) injects a dialer —
 // typically (&net.Dialer{Control: netguard.DialControl}).DialContext,
@@ -149,7 +149,7 @@ type HTTPConfig struct {
 	//
 	// It is injected rather than built here for the same reason Screen and
 	// DialContext are: this package may import nothing but the standard
-	// library (canonical.md §2 rule 2), so it cannot reach logx, and a
+	// library (docs/conventions.md#dependency-directions rule 2), so it cannot reach logx, and a
 	// logger of its own could not carry the server binding that makes the
 	// record joinable with the rest of the stream. Records written through
 	// it must NOT set the caller's bound keys (server, client, pid, …):

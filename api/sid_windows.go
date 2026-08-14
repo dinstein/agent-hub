@@ -11,7 +11,7 @@ import (
 // control pipe's name hashes. os/user fills Uid with the SID on Windows, so
 // this needs no syscall and no dependency — the same trick
 // internal/platform.currentUserSID uses, duplicated here because this package
-// may not import it (canonical.md §2 rule 1).
+// may not import it (docs/conventions.md#dependency-directions rule 1).
 func currentUserSID() (string, error) {
 	u, err := user.Current()
 	if err != nil {

@@ -8,5 +8,5 @@
 // build have not fallen behind the tree they describe — the Makefile's own
 // lists, the CI workflow, the documents that enumerate what is wired, and the
 // release scripts. A rule that is written down but silently inert is worse
-// than no rule at all (canonical.md §6).
+// than no rule at all (docs/conventions.md#engineering-conventions).
 package buildrules

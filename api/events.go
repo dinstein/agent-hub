@@ -16,7 +16,7 @@ const headerLastEventID = "Last-Event-ID"
 // Subscribable SSE topics.
 //
 // CONTRACT: mirrors the closed set in internal/ctlapi (api must not import
-// internal/*, canonical.md §2 rule 1). An unknown topic is rejected by the
+// internal/*, docs/conventions.md#dependency-directions rule 1). An unknown topic is rejected by the
 // daemon rather than silently ignored, so these names are matched, not free
 // text.
 const (
@@ -61,7 +61,7 @@ type EventsService struct {
 //
 // Events are notifications, not snapshots: for registry-backed topics the
 // consumer re-reads state and applies it when the read generation >= the
-// applied one (canonical.md §5c) — never "equal to the event Rev".
+// applied one (docs/conventions.md#the-hot-reload-path) — never "equal to the event Rev".
 func (s *EventsService) Subscribe(ctx context.Context, topics ...string) (<-chan Event, error) {
 	body, err := s.connect(ctx, topics, "")
 	if err != nil {

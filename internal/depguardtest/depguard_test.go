@@ -243,7 +243,7 @@ func assertClean(t *testing.T, rule, out string, err error) {
 }
 
 // TestDepguardRulesActuallyFire is the failure-case proof required by
-// canonical.md §6 for the four dependency constraints of canonical.md §2.
+// docs/conventions.md#engineering-conventions for the four dependency constraints of docs/conventions.md#package-layout.
 func TestDepguardRulesActuallyFire(t *testing.T) {
 	root := repoRoot(t)
 	bin := findGolangciLint(t, root)
@@ -256,7 +256,7 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 		t.Run("violation_blocked", func(t *testing.T) {
 			writeProbe(t, filepath.Join(work, "api", "zz_depguard_probe_rule1.go"),
 				"package api\n\n"+
-					"// Probe: api must not import internal/* (canonical.md §2 rule 1).\n"+
+					"// Probe: api must not import internal/* (docs/conventions.md#dependency-directions rule 1).\n"+
 					"import _ \"github.com/dinstein/agent-hub/internal/registry\"\n")
 			out, err := runLint(t, bin, work, "api")
 			assertBlocked(t, "1", out, err)
@@ -272,7 +272,7 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 		t.Run("violation_blocked", func(t *testing.T) {
 			writeProbe(t, filepath.Join(work, "cmd", "agenthub-gui", "zz_depguard_probe_rule1.go"),
 				"package main\n\n"+
-					"// Probe: cmd/agenthub-gui must not import internal/* (canonical.md §2 rule 1).\n"+
+					"// Probe: cmd/agenthub-gui must not import internal/* (docs/conventions.md#dependency-directions rule 1).\n"+
 					"import _ \"github.com/dinstein/agent-hub/internal/registry\"\n")
 			out, err := runLint(t, bin, work, "cmd/agenthub-gui")
 			assertBlocked(t, "1-gui", out, err)
@@ -290,7 +290,7 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 		t.Run("violation_blocked", func(t *testing.T) {
 			writeProbe(t, filepath.Join(work, "internal", "mcp", "zz_depguard_probe_rule2.go"),
 				"package mcp\n\n"+
-					"// Probe: internal/mcp is stdlib-only (canonical.md §2 rule 2, ruling #32).\n"+
+					"// Probe: internal/mcp is stdlib-only (docs/conventions.md#dependency-directions rule 2, ruling #32).\n"+
 					"import _ \"github.com/spf13/cobra\"\n")
 			out, err := runLint(t, bin, work, "internal/mcp")
 			assertBlocked(t, "2", out, err)
@@ -325,7 +325,7 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 		t.Run("violation_blocked", func(t *testing.T) {
 			writeProbe(t, filepath.Join(dir, "zz_depguard_probe_rule3.go"),
 				"// Package pipeline probe: the data plane must not import the\n"+
-					"// control plane (canonical.md §2 rule 3).\n"+
+					"// control plane (docs/conventions.md#dependency-directions rule 3).\n"+
 					"package pipeline\n\n"+
 					"import _ \"github.com/dinstein/agent-hub/internal/ctlapi\"\n")
 			out, err := runLint(t, bin, work, "internal/pipeline")
@@ -347,7 +347,7 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 		t.Run("violation_blocked", func(t *testing.T) {
 			writeProbe(t, filepath.Join(work, "internal", "platform", "zz_depguard_probe_rule4.go"),
 				"package platform\n\n"+
-					"// Probe: internal/platform is a zero-dependency foundation (canonical.md §2 rule 4).\n"+
+					"// Probe: internal/platform is a zero-dependency foundation (docs/conventions.md#dependency-directions rule 4).\n"+
 					"import _ \"github.com/spf13/cobra\"\n")
 			out, err := runLint(t, bin, work, "internal/platform")
 			assertBlocked(t, "4", out, err)
@@ -365,7 +365,7 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 		t.Run("violation_blocked", func(t *testing.T) {
 			writeProbe(t, filepath.Join(work, "internal", "logx", "zz_depguard_probe_rule4.go"),
 				"package logx\n\n"+
-					"// Probe: internal/logx is a zero-dependency foundation (canonical.md §2 rule 4).\n"+
+					"// Probe: internal/logx is a zero-dependency foundation (docs/conventions.md#dependency-directions rule 4).\n"+
 					"import _ \"github.com/spf13/cobra\"\n")
 			out, err := runLint(t, bin, work, "internal/logx")
 			assertBlocked(t, "4-logx", out, err)
@@ -378,12 +378,12 @@ func TestDepguardRulesActuallyFire(t *testing.T) {
 
 	// Also cover internal/guard with the same rule-4 shaped probe: it has
 	// its own depguard rule (guard-zero-dep) that would silently rot if
-	// only platform and logx were exercised (canonical.md §6).
+	// only platform and logx were exercised (docs/conventions.md#engineering-conventions).
 	t.Run("rule4_guard_zero_dep", func(t *testing.T) {
 		t.Run("violation_blocked", func(t *testing.T) {
 			writeProbe(t, filepath.Join(work, "internal", "guard", "zz_depguard_probe_rule4.go"),
 				"package guard\n\n"+
-					"// Probe: internal/guard is a zero-dependency foundation (canonical.md §2 rule 4).\n"+
+					"// Probe: internal/guard is a zero-dependency foundation (docs/conventions.md#dependency-directions rule 4).\n"+
 					"import _ \"github.com/spf13/cobra\"\n")
 			out, err := runLint(t, bin, work, "internal/guard")
 			assertBlocked(t, "4-guard", out, err)

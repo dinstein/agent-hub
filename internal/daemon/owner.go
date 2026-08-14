@@ -33,7 +33,7 @@ import (
 //     it dies, and the read here returns EOF within microseconds. It is exact,
 //     it needs no timer, and it cannot be fooled by a recycled pid. It is not
 //     available everywhere: os/exec cannot pass an extra descriptor to a child
-//     on Windows, so there the daemon has the poll alone (docs/windows.md).
+//     on Windows, so there the daemon has the poll alone (docs/status/windows.md).
 //   - THE POLL asks the OS whether the owner's pid is still a live process,
 //     every OwnerPollInterval. It is the backstop for a lifeline that was
 //     never established, and its failure direction is the important part:

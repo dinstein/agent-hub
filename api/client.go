@@ -22,7 +22,7 @@ const (
 
 	// HeaderRequestID is generated per request (overridable via
 	// WithRequestID), echoed by the daemon on the response, carried in
-	// error bodies and ledger records (canonical.md §4: X-Request-Id
+	// error bodies and ledger records (docs/conventions.md#capability-boundaries: X-Request-Id
 	// end-to-end).
 	HeaderRequestID = "X-Request-Id"
 	// HeaderAPIVersion carries APIVersion for version negotiation.

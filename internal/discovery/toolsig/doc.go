@@ -34,7 +34,7 @@
 //	    byte-ascending. JSON object member order does not survive decoding
 //	    into a Go map, so "required" is the only ordering signal the schema
 //	    actually carries; everything else must be sorted or it is not
-//	    deterministic (canonical.md §6).
+//	    deterministic (docs/conventions.md#engineering-conventions).
 //	  - Nesting is expanded ONE level and then folded: a top-level object
 //	    parameter renders as obj{key,key} (direct key names, sorted, capped at
 //	    MaxObjectKeys) and anything deeper renders as plain obj. An array of

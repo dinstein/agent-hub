@@ -1,5 +1,5 @@
 // Package mcpstub is a minimal in-process MCP 2026-07-28 server stub used by
-// transport integration tests (docs/mcp-2026-07-28.md §4.1).
+// transport integration tests (docs/status/mcp-2026-07-28.md §4.1).
 //
 // It implements the stateless 2026-07-28 surface a conformant client
 // exercises — server/discover, tools/list with resultType and freshness

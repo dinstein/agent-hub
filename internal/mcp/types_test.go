@@ -167,7 +167,7 @@ func TestStripReservedMetaKeys(t *testing.T) {
 		{
 			// W3C trace keys are reserved by the specification but carry
 			// no io.modelcontextprotocol prefix, and are not this hop's to
-			// claim. See docs/mcp-2026-07-28.md §7.13.
+			// claim. See docs/status/mcp-2026-07-28.md §7.13.
 			"trace keys are not in this namespace", `{"traceparent":"00-x-y-01"}`, `{"traceparent":"00-x-y-01"}`,
 		},
 		{"absent", "", ""},

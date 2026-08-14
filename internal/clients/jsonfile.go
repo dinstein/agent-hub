@@ -14,7 +14,7 @@ import (
 
 // MaxConfigSize is the largest client configuration agenthub will read
 // (docs/subsystems/clients.md; the bound itself is inherited from toolport, per the
-// reference-code policy in canonical.md §5). Anything larger is a
+// reference-code policy in docs/conventions.md#reference-code-policy). Anything larger is a
 // runaway file, not configuration; parsing it would burn memory on a path
 // the user cannot even see.
 const MaxConfigSize int64 = 64 << 20 // 64 MiB

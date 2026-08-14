@@ -59,7 +59,7 @@ type ClientCredentials struct {
 
 // ClientRegistrar obtains client credentials for an authorization server.
 //
-// This is the migration seam of canonical.md §5b: dynamic client
+// This is the migration seam of docs/conventions.md#mcp-protocol-scope: dynamic client
 // registration is deprecated upstream (deprecated 2026-07-28, earliest
 // removal 2027-07-28) and its declared successor is Client ID Metadata
 // Documents. Both are implementations of this one interface so switching is
@@ -203,7 +203,7 @@ func (r *dcrRegistrar) wrap(md *AuthServerMetadata, err error) error {
 // uses that URL as its client_id.
 //
 // It is deliberately unimplemented. The seam exists so that when DCR is
-// removed upstream the change is a constructor swap — canonical.md §5b's
+// removed upstream the change is a constructor swap — docs/conventions.md#mcp-protocol-scope's
 // deprecation table lists it as the migration seam for DCR, and
 // docs/status/oauth.md marks this row "seam only". Implementing it requires
 // a hosting story for the document, which agenthub does not have yet.

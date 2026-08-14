@@ -15,7 +15,7 @@ var (
 	// #17") and appendix-qualified ("A.1 #8", "appendix A.6 #2").
 	rulingCite = regexp.MustCompile(`(?i)\b(?:appendix )?(A\.[0-9]+) #([0-9]+)|\brulings? #([0-9]+)`)
 
-	// registryRow matches a row of canonical.md §8's table and captures its
+	// registryRow matches a row of docs/decisions/README.md's table and captures its
 	// first cell, which holds every spelling that row covers.
 	registryRow = regexp.MustCompile("^\\| (`[^|]+`) \\|")
 
@@ -29,7 +29,7 @@ var (
 )
 
 // TestHistoricalRulingIdsResolve fails when a comment cites a ruling number
-// that canonical.md §8 does not register.
+// that docs/decisions/README.md does not register.
 //
 // The ids come from the original design document, which is not in this
 // repository. Sixty-odd comments cite them anyway, and the reason to keep them
@@ -58,13 +58,13 @@ func TestHistoricalRulingIdsResolve(t *testing.T) {
 	root := repoRoot(t)
 	registered := registeredRulingIDs(t, root)
 	if len(registered) < 10 {
-		t.Fatalf("parsed %d ids out of canonical.md §8; the table shape must have changed", len(registered))
+		t.Fatalf("parsed %d ids out of docs/decisions/README.md; the table shape must have changed", len(registered))
 	}
 
 	cited := 0
 	for _, rel := range citableFiles(t, root) {
-		if rel == filepath.Join("docs", "canonical.md") {
-			continue // §8 is the registry, not a citation of itself
+		if rel == filepath.Join("docs", "decisions", "README.md") {
+			continue // the registry is not a citation of itself
 		}
 		if rel == filepath.Join("test", "buildrules", "rulingids_test.go") {
 			continue // the patterns above are not citations
@@ -81,7 +81,7 @@ func TestHistoricalRulingIdsResolve(t *testing.T) {
 				}
 				cited++
 				if !registered[id] {
-					t.Errorf("%s:%d cites ruling %s, which canonical.md §8 does not register.\n"+
+					t.Errorf("%s:%d cites ruling %s, which docs/decisions/README.md does not register.\n"+
 						"Add a row saying what it ruled and which document owns that rule now — "+
 						"an id nobody can look up is worse than no id, because it reads as authority.",
 						rel, i+1, id)
@@ -89,7 +89,7 @@ func TestHistoricalRulingIdsResolve(t *testing.T) {
 			}
 			if m := taskNumber.FindStringSubmatch(line); m != nil {
 				t.Errorf("%s:%d cites the milestone task %s, which is not a ruling and is not citable "+
-					"(canonical.md §8).\nThe plan it names is not in this repository; cite the module doc "+
+					"(docs/decisions/README.md).\nThe plan it names is not in this repository; cite the module doc "+
 					"for the package, or say the thing the task number was standing in for.",
 					rel, i+1, m[1])
 			}
@@ -101,18 +101,18 @@ func TestHistoricalRulingIdsResolve(t *testing.T) {
 	t.Logf("checked %d citations against %d registered ids", cited, len(registered))
 }
 
-// registeredRulingIDs reads the id spellings out of canonical.md §8's table.
+// registeredRulingIDs reads the id spellings out of docs/decisions/README.md's table.
 func registeredRulingIDs(t *testing.T, root string) map[string]bool {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(root, "docs", "canonical.md"))
+	data, err := os.ReadFile(filepath.Join(root, "docs", "decisions", "README.md"))
 	if err != nil {
-		t.Fatalf("reading canonical.md: %v", err)
+		t.Fatalf("reading docs/decisions/README.md: %v", err)
 	}
 	out := map[string]bool{}
 	inSection := false
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.HasPrefix(line, "## ") {
-			inSection = strings.HasPrefix(line, "## 8.")
+			inSection = strings.HasPrefix(line, "## Historical ruling ids")
 			continue
 		}
 		if !inSection {
@@ -126,11 +126,11 @@ func registeredRulingIDs(t *testing.T, root string) map[string]bool {
 			out[rulingKey(id[1], id[2])] = true
 		}
 	}
-	// A.6 #N is §7 #N by the equivalence §8 states, so the six decision
-	// records register their appendix spelling without six table rows. The
-	// count comes from §7 itself rather than a literal 6: if a seventh
-	// decision is ever recorded, its appendix spelling resolves too.
-	for i := 1; i <= len(canonicalSections(t, root)["7"]); i++ {
+	// A.6 #N is decision 000N by the equivalence the registry states, so the
+	// decision files register their appendix spelling without a row each. The
+	// count comes from the directory itself: a new decision's appendix
+	// spelling resolves the moment its file lands.
+	for i := 1; i <= countDecisionFiles(t, root); i++ {
 		out[rulingKey("A.6", strconv.Itoa(i))] = true
 	}
 	return out
@@ -145,3 +145,23 @@ func rulingKey(appendix, number string) string {
 	}
 	return appendix + " #" + number
 }
+
+// countDecisionFiles counts the numbered records in docs/decisions/, which is
+// what makes the A.6 equivalence self-maintaining.
+func countDecisionFiles(t *testing.T, root string) int {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(root, "docs", "decisions"))
+	if err != nil {
+		t.Fatalf("reading docs/decisions: %v", err)
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && decisionFileName.MatchString(e.Name()) {
+			n++
+		}
+	}
+	return n
+}
+
+// decisionFileName matches a numbered decision record.
+var decisionFileName = regexp.MustCompile(`^[0-9]{4}-.*\.md$`)

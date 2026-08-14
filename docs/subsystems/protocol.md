@@ -1,7 +1,7 @@
 # Protocol and transports
 
 > **Answers** how a frame is parsed and written, how a downstream description becomes a live connection, and how every failure is classified.
-> **Not here** what the hub does with a connection → [downstream.md](downstream.md); one revision's conformance → [../mcp-2026-07-28.md](../mcp-2026-07-28.md).
+> **Not here** what the hub does with a connection → [downstream.md](downstream.md); one revision's conformance → [../mcp-2026-07-28.md](../status/mcp-2026-07-28.md).
 > **Kept true by** four fuzz targets (`FuzzParseMessage`, `FuzzSSEScanner`, `FuzzEncodeJSON`, `FuzzDecodeHeaderValue`) and the transport golden files.
 
 `internal/mcp` is the only place in the repo that touches protocol implementation: wire format,
@@ -74,7 +74,7 @@ and results are all `json.RawMessage`. This layer never reshapes downstream JSON
 
 **Cancellation is racy and receivers must tolerate late replies.** An unmatched response is discarded.
 
-**`DEPRECATED-UPSTREAM` markers carry an earliest-removal date** ([canonical.md §5b](../canonical.md#5b-mcp-protocol-scope)):
+**`DEPRECATED-UPSTREAM` markers carry an earliest-removal date** ([conventions.md#mcp-protocol-scope](../conventions.md#mcp-protocol-scope)):
 `roots` (the types and the `roots/list` reverse RPC — the gateway's `RootSource` seam absorbs its
 removal), `ping`, and the `initialize` handshake pair, all 2027-07-28.
 

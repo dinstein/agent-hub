@@ -431,7 +431,7 @@ func routable(rt *router.Router, name string) bool {
 // execTool is the SINGLE execute path of the gateway: route the exposed name,
 // feed pipeline.Execute, deliver the result. Both the direct tools/call and
 // the lazy call_tool meta-tool land here — that identity is what keeps the
-// governance chain unforkable (canonical.md §2: one execute pipeline).
+// governance chain unforkable (docs/conventions.md#package-layout: one execute pipeline).
 //
 // If the request was cancelled (per-request cancel or gateway shutdown) no
 // response is sent — MCP receivers of a cancellation must not expect one.
@@ -521,7 +521,7 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 // RouteOf), the definition fields the gates read, and the closure that
 // performs the call. It exists so the downstream path and the host-served
 // provider path share ONE pipeline.Execute call site — a second one would
-// be a second governance surface (canonical.md §2).
+// be a second governance surface (docs/conventions.md#package-layout).
 type callTarget struct {
 	exposed     string
 	route       router.Route
@@ -678,7 +678,7 @@ func (g *gateway) replyResult(id mcp.ID, res *mcp.CallResult) {
 	// Normalize resultType to the SESSION's protocol generation, not the
 	// downstream's: a 2026 session must always see one, a stateful session
 	// must never see the member a 2026 downstream happened to include
-	// (docs/mcp-2026-07-28.md §7.5).
+	// (docs/status/mcp-2026-07-28.md §7.5).
 	if g.statelessSession() {
 		if res.ResultType == "" {
 			res.ResultType = mcp.ResultTypeComplete

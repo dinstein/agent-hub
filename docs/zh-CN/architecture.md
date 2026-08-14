@@ -149,7 +149,7 @@ flowchart TD
 3. `internal/pipeline` 不得导入 `internal/ctlapi`——数据面不依赖控制面。
 4. `internal/mcp`、`internal/platform`、`internal/logx`、`internal/guard/*` 零业务依赖。
 
-规范措辞在 [canonical.md §2](../canonical.md#hard-dependency-direction-constraints-enforced-at-compile-time-by-depguard)。
+规范措辞在 [conventions.md#package-layout](../conventions.md#package-layout)。
 这里写的是它们**怎么被守住**：`internal/depguardtest` 在每个受约束的包里种一个违规探针——种在检出的一次性
 副本里——然后断言 golangci-lint 报出它。每条规则都必须有一个不能靠跳过自己而通过的失败用例。这也是
 `internal/tier` 独立成叶子包的原因：它待在 `pipeline` 里时，规则 3 的失败用例会变成导入环而不是 lint 错误，
@@ -205,7 +205,7 @@ flowchart LR
 ```
 
 配置事件是通知，不带快照。读者重读文件，按"读到的世代 ≥ 已应用的世代"采纳，绝不按与事件 `Rev` 相等来判断
-（见 [canonical.md §5c](../canonical.md#5c-the-config-hot-reload-path-two-things-not-to-get-wrong)）。
+（见 [conventions.md#the-hot-reload-path](../conventions.md#the-hot-reload-path)）。
 
 ```mermaid
 flowchart LR
@@ -216,7 +216,7 @@ flowchart LR
 ```
 
 保险库的键从第一个版本起就是复合的 `(serverID, scopeName)`——
-[canonical.md §4](../canonical.md#4-known-capability-boundaries) 列出的三件"永远不要事后改造"之一。
+[conventions.md#capability-boundaries](../conventions.md#capability-boundaries) 列出的三件"永远不要事后改造"之一。
 
 ```mermaid
 flowchart LR
@@ -280,7 +280,7 @@ daemon 不在时以退出码 4 拒绝，而不是编一个离线答案，因为�
 |---|---|
 | macOS | 支持，CI 覆盖 |
 | Linux | 支持，CI 覆盖 |
-| Windows | 完整但未验证：可以交叉编译，也通过注入的接缝做了单元测试，但从未在真实 Windows 机器上跑过。还留着哪些口子见 [windows.md](../windows.md) |
+| Windows | 完整但未验证：可以交叉编译，也通过注入的接缝做了单元测试，但从未在真实 Windows 机器上跑过。还留着哪些口子见 [windows.md](../status/windows.md) |
 
 GUI 不在默认构建里。链接 webview 需要 Linux CI runner 上没有的 GTK/WebKit 包，所以所有 Wails 文件都在
 `//go:build wails` 后面，由 `make gui` 单独构建。它不带 tag 的那一半在两条矩阵腿的 `make test` 里都会跑；

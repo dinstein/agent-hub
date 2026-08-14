@@ -194,7 +194,7 @@ func (c ProfileChange) Human(w io.Writer) error {
 func (a *App) newProfileCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "profile",
-		Aliases: []string{"profiles"}, // singular canonical, plural alias (canonical.md §3)
+		Aliases: []string{"profiles"}, // singular canonical, plural alias (docs/conventions.md#command-naming)
 		Short:   "Build named sets of servers and tools to hand to a client",
 		Long: "Building one up:\n" +
 			"  agenthub profile create readonly\n" +

@@ -70,7 +70,7 @@ func decodeToolRows(t *testing.T, out string) []ToolRow {
 
 // The plain listing is the aggregated catalog in exposed-name order. The
 // human table is frozen: determinism is contract, and an operator's table is
-// as much a contract as a wire format (canonical.md §6).
+// as much a contract as a wire format (docs/conventions.md#engineering-conventions).
 func TestToolLsGolden(t *testing.T) {
 	seedCatalog(t)
 

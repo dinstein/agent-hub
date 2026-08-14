@@ -1,8 +1,8 @@
 // Package depguardtest proves that the four dependency-direction
-// constraints frozen in canonical.md §2 are actually enforced by the
+// constraints frozen in docs/conventions.md#package-layout are actually enforced by the
 // depguard configuration in .golangci.yml — not merely written down.
 // "A lint rule that is configured but silently inert is worse than no
-// rule at all" (canonical.md §6).
+// rule at all" (docs/conventions.md#engineering-conventions).
 //
 // The test in this package injects, for each rule, a deliberately
 // violating probe file (named zz_depguard_probe_*.go, git-ignored and

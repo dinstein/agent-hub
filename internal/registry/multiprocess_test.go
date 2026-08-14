@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Cross-process concurrency acceptance test (canonical.md §6, second family):
+// Cross-process concurrency acceptance test (docs/conventions.md#engineering-conventions, second family):
 // the test binary re-execs
 // itself as helper processes (TestMain helper pattern); several helpers call
 // Update concurrently on the same registry directory. Every update inserts a

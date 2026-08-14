@@ -9,7 +9,7 @@
 //
 // # What it exposes
 //
-// Streamable HTTP, and nothing else. canonical.md §5b freezes the transport
+// Streamable HTTP, and nothing else. docs/conventions.md#mcp-protocol-scope freezes the transport
 // asymmetry: agenthub READS legacy HTTP+SSE downstreams but never grows a new
 // SSE exposure face. That is a rule about the 2024-11-05 two-endpoint
 // transport, the one whose `endpoint` event says where to POST — NOT about

@@ -15,7 +15,7 @@ import (
 // This is the ONLY file in the package that imports Wails, and it is behind
 // the `wails` build tag: CI runners have no GTK/WebKit development packages,
 // so the default `go build ./...` must not reach a webview dependency
-// (docs/canonical.md §7 item 3).
+// (docs/decisions/0003-wails3-and-the-frontend-stack.md).
 type HubService struct {
 	*Hub
 }
@@ -58,7 +58,7 @@ func (s *HubService) ServiceShutdown() error {
 // Window control. These are the only bound methods that do not map to a
 // control-plane call, and they are not a GUI privilege: hiding a window is not
 // something a CLI could be missing. They live in this file because they are
-// the one thing that genuinely needs Wails, and canonical.md §7 item 3 keeps
+// the one thing that genuinely needs Wails, and docs/decisions/0003-wails3-and-the-frontend-stack.md keeps
 // that dependency inside tagged assembly.
 //
 // The frontend calls them from the one-time close dialog, which is the only

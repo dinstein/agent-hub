@@ -173,7 +173,7 @@ func TestDescribePreservesCallerOrder(t *testing.T) {
 }
 
 // The rendered describe_tool reply is frozen: agents are prompted against
-// its exact shape (canonical.md §6).
+// its exact shape (docs/conventions.md#engineering-conventions).
 func TestGoldenDescribeReply(t *testing.T) {
 	s := New(Options{Mode: ModeLazy, Tools: describeCorpus()})
 	out, _ := s.HandleDescribe(json.RawMessage(`{"tools":["fs__read_file","web__count","ghost"]}`))

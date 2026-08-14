@@ -271,7 +271,7 @@ func (r SkillUpdateResult) Human(w io.Writer) error {
 func (a *App) newSkillCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "skill",
-		Aliases: []string{"skills"}, // singular canonical, plural alias (canonical.md §3)
+		Aliases: []string{"skills"}, // singular canonical, plural alias (docs/conventions.md#command-naming)
 		Short:   "Manage agent skill packages (library + per-client materialization)",
 		Args:    cobra.ArbitraryArgs,
 		RunE:    groupRunE,

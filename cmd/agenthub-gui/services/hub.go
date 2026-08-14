@@ -1,14 +1,14 @@
 // Package services holds the Go side of the Wails3 GUI: one bound service
 // that the frontend calls, plus the SSE-to-Wails event bridge.
 //
-// Hard constraint (canonical.md §2 rule 1, docs/subsystems/docs/subsystems/controlplane.md, enforced by
+// Hard constraint (docs/conventions.md#dependency-directions rule 1, docs/subsystems/docs/subsystems/controlplane.md, enforced by
 // depguard and proven by internal/depguardtest): this package may import
 // only the public api package. It must never import internal/*, never read
 // or write the data directory, and never speak MCP. Everything the GUI can
 // do therefore has a control-plane endpoint, which means the CLI can do it
 // too — "GUI is optional" is a compile-time property, not a promise.
 //
-// File split (ruling A.6 #3, see docs/canonical.md §7 item 3): the whole
+// File split (ruling A.6 #3, see docs/decisions/0003-wails3-and-the-frontend-stack.md): the whole
 // service body lives here WITHOUT a build tag so that it compiles, vets and
 // is unit-tested on CI runners that have no GTK/WebKit development packages.
 // Only the ~50 lines of Wails wiring sit behind `//go:build wails` in
@@ -81,7 +81,7 @@ func (f EmitterFunc) Emit(name string, data any) { f(name, data) }
 
 // TopicEvent is the payload delivered to the frontend for one daemon event.
 //
-// Events are notifications, not snapshots (canonical.md §5c): Payload may be
+// Events are notifications, not snapshots (docs/conventions.md#the-hot-reload-path): Payload may be
 // absent or partial, and a page that needs authoritative state re-reads it
 // through the corresponding list call. Rev is the registry generation for
 // registry-backed topics and is monotonic — a page applies a re-read when

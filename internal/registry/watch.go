@@ -29,7 +29,7 @@ const (
 //
 // Rev is a HINT only, never a snapshot. Consumers must re-read the registry
 // and adopt what they read iff its generation >= their last applied
-// generation (see Applier; canonical.md §5c #2). Comparing for equality with
+// generation (see Applier; docs/conventions.md#the-hot-reload-path #2). Comparing for equality with
 // Rev strands consumers on stale state when rapid writes coalesce.
 type Change struct {
 	Kind DocKind

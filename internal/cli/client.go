@@ -108,7 +108,7 @@ func ConnectSnippet(executable, clientID string) ConnectPlan {
 func (a *App) newClientCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "client",
-		Aliases: []string{"clients"}, // singular canonical, plural alias (canonical.md §3)
+		Aliases: []string{"clients"}, // singular canonical, plural alias (docs/conventions.md#command-naming)
 		Short:   "Point your AI clients at agenthub and decide what each one sees",
 		Long: "Two separate jobs, easily confused. 'connect' edits the client's own config so\n" +
 			"it talks to agenthub at all — once per client, and it must be restarted\n" +
@@ -120,7 +120,7 @@ func (a *App) newClientCmd() *cobra.Command {
 		RunE: groupRunE,
 	}
 	// Read before write, so `ls` leads (pinned by TestListingsComeFirstInTheirGroup;
-	// canonical.md §3 only freezes `ls` as the spelling).
+	// docs/conventions.md#command-naming only freezes `ls` as the spelling).
 	cmd.AddCommand(
 		a.newClientLsCmd(), a.newClientDetectCmd(), a.newClientInspectCmd(),
 		a.newClientConnectCmd(), a.newClientDisconnectCmd(),

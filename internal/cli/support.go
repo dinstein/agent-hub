@@ -265,7 +265,7 @@ func discoveryOf(snap *registry.Snapshot, profileName string) (mode, source stri
 }
 
 // parseToolSpecs parses the frozen `--tools s:t1,t2` session/scope flag
-// (canonical.md §3) into serverID -> tool names. A repeated server merges.
+// (docs/conventions.md#command-naming) into serverID -> tool names. A repeated server merges.
 // An empty tool list after the colon is block-all, which is why the empty
 // slice is preserved rather than normalized to nil.
 func parseToolSpecs(specs []string) (map[string][]string, error) {

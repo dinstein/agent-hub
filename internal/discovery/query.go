@@ -21,7 +21,7 @@ const (
 )
 
 // Stable machine-readable error codes. Both codes and messages are frozen
-// by golden tests: agents key retry logic off them (canonical.md §6).
+// by golden tests: agents key retry logic off them (docs/conventions.md#engineering-conventions).
 const (
 	CodeQueryEmpty        = "query_empty"
 	CodeQueryTooLong      = "query_too_long"

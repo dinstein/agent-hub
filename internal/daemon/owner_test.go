@@ -37,7 +37,7 @@ func awaitSelfStop(t *testing.T, h *daemonHandle, what string) {
 
 func TestOwnerLifelineCloseStopsTheDaemon(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("os/exec cannot pass a lifeline descriptor on windows; see docs/windows.md")
+		t.Skip("os/exec cannot pass a lifeline descriptor on windows; see docs/status/windows.md")
 	}
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -61,7 +61,7 @@ func TestOwnerLifelineCloseStopsTheDaemon(t *testing.T) {
 
 func TestOwnerProcessDeathStopsTheDaemon(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the windows process probe has never run on a real machine; see docs/windows.md")
+		t.Skip("the windows process probe has never run on a real machine; see docs/status/windows.md")
 	}
 	owner := exec.Command("sh", "-c", "sleep 30")
 	if err := owner.Start(); err != nil {

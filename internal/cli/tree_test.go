@@ -13,7 +13,7 @@ import (
 //
 //   - docs/subsystems/cli.md is the acceptance checklist — every command it lists
 //     must exist, spelled exactly as listed;
-//   - canonical.md §3 freezes the naming rules — resource groups are
+//   - docs/conventions.md#command-naming freezes the naming rules — resource groups are
 //     singular with a plural alias, listings are always `ls`, and EVERY
 //     command supports --json.
 //
@@ -102,7 +102,7 @@ func commandPaths(root *cobra.Command) map[string]*cobra.Command {
 }
 
 // TestCommandTreeCoversDesign asserts every command of docs/subsystems/cli.md (as
-// reconciled by canonical.md §3) exists.
+// reconciled by docs/conventions.md#command-naming) exists.
 func TestCommandTreeCoversDesign(t *testing.T) {
 	want := []string{
 		"agenthub connect",
@@ -152,7 +152,7 @@ func TestCommandTreeCoversDesign(t *testing.T) {
 }
 
 // TestEveryCommandHasJSON walks the tree and asserts --json reaches every
-// runnable command (canonical.md §3: "every command must have --json"). It is a
+// runnable command (docs/conventions.md#command-naming: "every command must have --json"). It is a
 // persistent flag on the root, so this really asserts that no command
 // shadows or detaches it.
 func TestEveryCommandHasJSON(t *testing.T) {
@@ -346,7 +346,7 @@ func TestRootHelpOrderIsTheOnboardingPath(t *testing.T) {
 
 // TestListingsComeFirstInTheirGroup: with sorting off, a group that leads
 // with a mutation teaches the destructive verb before the one that shows you
-// what you would destroy. `ls` first is the house shape (canonical.md §3
+// what you would destroy. `ls` first is the house shape (docs/conventions.md#command-naming
 // already makes `ls` the only spelling of a listing).
 func TestListingsComeFirstInTheirGroup(t *testing.T) {
 	root := newTestRoot(t)

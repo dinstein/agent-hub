@@ -8,7 +8,7 @@ import (
 )
 
 // NOT VERIFIED ON REAL HARDWARE, like the rest of this package's Windows
-// branch. See docs/windows.md.
+// branch. See docs/status/windows.md.
 //
 // Windows has no signal-0 probe, and the obvious substitutes are both wrong:
 // os.FindProcess always succeeds here, and a pid that OpenProcess accepts may

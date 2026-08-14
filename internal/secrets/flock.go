@@ -12,7 +12,7 @@ import (
 // LockFileEx on Windows, one implementation of each behind one name. This is
 // the seam ruling A.5 #23 asks for — nothing outside internal/platform
 // branches on the platform beyond selecting this file over flock_stub.go.
-// See docs/windows.md for what the Windows half is worth (it cross-compiles
+// See docs/status/windows.md for what the Windows half is worth (it cross-compiles
 // and has never run).
 //
 // TryLockFile, not LockFile: acquireVaultLock polls so it can honour the

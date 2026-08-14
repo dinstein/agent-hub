@@ -28,7 +28,7 @@
 //     constant time, checked in the store and again in Fetch, and is never
 //     client-suppliable (the wire args carry only cursor and offset). The
 //     second half is defence in depth this does not have. It is cheap to
-//     add — canonical.md rules the storage medium, not the id shape, and
+//     add — docs/conventions.md rules the storage medium, not the id shape, and
 //     nothing outside this package parses the format — and it is left
 //     undone because the risk it covers is currently nil: MemStore is one
 //     per client process, so no second owner's cursors share a store to

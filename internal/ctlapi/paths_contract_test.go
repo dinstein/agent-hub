@@ -164,7 +164,7 @@ func TestAPIDevDataDirContract(t *testing.T) {
 // internal/platform are compared by nobody. And those halves are the ones most
 // able to disagree — three frozen identifiers (two pipe names and the data
 // directory), a SID hash, and a %APPDATA% fallback, written twice on purpose
-// because api may not import internal/platform (canonical.md §2 rule 1).
+// because api may not import internal/platform (docs/conventions.md#dependency-directions rule 1).
 //
 // So both sides are driven through their injectable seams with goos forced to
 // "windows". The platform resolver is told the process is NOT inside an MSIX

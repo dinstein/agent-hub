@@ -27,7 +27,7 @@ func TestApplierAdoptsGreaterOrEqual(t *testing.T) {
 }
 
 // TestApplierRapidWritesDoNotStrand replays the failure mode the >= criterion
-// exists for (canonical.md §5c #2): the consumer handles an event for Rev 1,
+// exists for (docs/conventions.md#the-hot-reload-path #2): the consumer handles an event for Rev 1,
 // but by the time it re-reads, writes 2 and 3 have landed and their events
 // coalesced away. An ==-Rev criterion would reject the read and wait forever;
 // >= must adopt it immediately.

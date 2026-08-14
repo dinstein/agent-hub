@@ -15,7 +15,7 @@
 // M2 Docker Spawner). The deterministic checks (denylist, dangerous env
 // names) always block on match.
 //
-// Dependency constraint (canonical.md §2 rule 4, depguard-enforced): only
+// Dependency constraint (docs/conventions.md#dependency-directions rule 4, depguard-enforced): only
 // the standard library plus internal/guard.
 package spawnguard
 

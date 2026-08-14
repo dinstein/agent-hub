@@ -44,7 +44,7 @@ import (
 const MaxDescribeTools = 5
 
 // Error codes and text for describe_tool. Frozen: agents key retry logic off
-// codes, and prompts key off wording (canonical.md §6).
+// codes, and prompts key off wording (docs/conventions.md#engineering-conventions).
 const (
 	// CodeTooManyTools reports a describe_tool call over MaxDescribeTools.
 	CodeTooManyTools = "too_many_tools"

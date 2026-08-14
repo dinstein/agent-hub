@@ -1,8 +1,8 @@
 // Package transport provides MCP transports beneath internal/downstream. The
-// path internal/mcp/transport is the canonical one (canonical.md §2); the old
+// path internal/mcp/transport is the canonical one (docs/conventions.md#package-layout); the old
 // internal/downstream/transport name is dead.
 //
-// Three read-side transports live here (canonical.md §5b — the read side
+// Three read-side transports live here (docs/conventions.md#mcp-protocol-scope — the read side
 // does all three, the exposure side offers streamable-http only):
 // stdio, streamable-http (MCP 2025-11-25) and legacy HTTP+SSE. Like its
 // parent package it depends on the standard library only

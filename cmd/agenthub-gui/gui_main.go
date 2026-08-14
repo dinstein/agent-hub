@@ -1,6 +1,6 @@
 //go:build wails
 
-// Command agenthub-gui is the optional Wails3 desktop GUI (canonical.md §1).
+// Command agenthub-gui is the optional Wails3 desktop GUI (docs/conventions.md#frozen-identifiers).
 // This file is the real application; the default build gets the placeholder
 // in main.go instead (see there for why).
 package main

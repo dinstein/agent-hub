@@ -38,7 +38,7 @@ func goldenOpts() Options {
 }
 
 // Frozen wire output of Shape(goldenResult(), Budget{256}). Determinism is
-// contract (canonical.md §6): the split point, the trailer wording and the
+// contract (docs/conventions.md#engineering-conventions): the split point, the trailer wording and the
 // cursor shape are all agent-visible, so a change here is an ABI change and
 // must be made deliberately.
 const goldenPage1 = `[{"type":"text","text":"line of tool output. line of tool output. line of tool output. ` +
@@ -63,7 +63,7 @@ func TestShapeGolden(t *testing.T) {
 	}
 	// structuredContent sits after every content block in the linearized
 	// payload, so a truncated result never carries it: it is deferred whole.
-	// This is the behaviour docs/mcp-2026-07-28.md §7.14 records as a
+	// This is the behaviour docs/status/mcp-2026-07-28.md §7.14 records as a
 	// conformance cost — a page whose tool declared an outputSchema does not
 	// satisfy it — so a change here is a decision, not a fix.
 	if out.StructuredContent != nil {

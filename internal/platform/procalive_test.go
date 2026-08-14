@@ -32,7 +32,7 @@ func TestProcessAliveNonPositivePidIsUnknown(t *testing.T) {
 
 func TestProcessAliveReportsAnExitedChild(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the windows branch has never run on a real machine; see docs/windows.md")
+		t.Skip("the windows branch has never run on a real machine; see docs/status/windows.md")
 	}
 	cmd := exec.Command("sh", "-c", "exit 0")
 	if err := cmd.Start(); err != nil {

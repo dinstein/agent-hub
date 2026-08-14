@@ -18,7 +18,7 @@ import (
 type Handler func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error)
 
 // ErrSamplingUnsupported rejects sampling/createMessage input requests.
-// AgentHub does not proxy LLM calls (docs/mcp-2026-07-28.md §6.2), and the
+// AgentHub does not proxy LLM calls (docs/status/mcp-2026-07-28.md §6.2), and the
 // clientCapabilities it declares never include sampling — a server asking
 // anyway gets this, and the tools/call it was part of fails.
 //

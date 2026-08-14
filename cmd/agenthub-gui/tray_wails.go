@@ -6,7 +6,7 @@ package main
 // routes the clicks back, and owns the close button's behaviour.
 //
 // This is the third file in the tree that touches the Wails alpha, and it is
-// deliberately thin for the reason canonical.md §7 item 3 gives: an alpha API
+// deliberately thin for the reason docs/decisions/0003-wails3-and-the-frontend-stack.md gives: an alpha API
 // that moves should break assembly, never judgement. Nothing here decides what
 // a menu says — it asks trayMenu — and nothing here decides whether the close
 // button hides — it asks closeIntentFor.

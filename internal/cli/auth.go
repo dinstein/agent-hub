@@ -21,7 +21,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// The `auth` group is the CLI face of internal/oauthflow (canonical.md §3:
+// The `auth` group is the CLI face of internal/oauthflow (docs/conventions.md#command-naming:
 // the canonical name is `auth`, never `oauth`).
 //
 // Two invariants this file exists to hold:

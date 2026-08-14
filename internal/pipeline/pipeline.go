@@ -1,4 +1,4 @@
-// Package pipeline is the single execute_call pipeline (canonical.md §2:
+// Package pipeline is the single execute_call pipeline (docs/conventions.md#package-layout:
 // execute path for every tool call; gateway/daemon only assemble).
 //
 // Every tool call — direct or, later, code-mode — flows through Execute and
@@ -26,7 +26,7 @@
 // still counts invocations atomically (the M0 counters are kept — they feed
 // tests and metrics).
 //
-// Dependency constraint (canonical.md §2 rule 3, depguard-enforced): this
+// Dependency constraint (docs/conventions.md#dependency-directions rule 3, depguard-enforced): this
 // package must never import internal/ctlapi — the data plane does not
 // depend on the control plane.
 package pipeline

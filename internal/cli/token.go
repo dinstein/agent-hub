@@ -25,7 +25,7 @@ import (
 // (never print a value) with one deliberate exception: the value has to
 // leave the process once, or it could not be given to an agent at all.
 //
-// Group naming follows canonical.md §3: singular canonical name `token`,
+// Group naming follows docs/conventions.md#command-naming: singular canonical name `token`,
 // plural `tokens` as a cobra alias, list subcommand `ls`.
 
 // Stable machine codes for the token commands' JSON failure envelope.
@@ -122,7 +122,7 @@ func (r TokenRevoked) Human(w io.Writer) error {
 func (a *App) newTokenCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "token",
-		Aliases: []string{"tokens"}, // singular canonical, plural alias (canonical.md §3)
+		Aliases: []string{"tokens"}, // singular canonical, plural alias (docs/conventions.md#command-naming)
 		Short:   "Manage agent tokens for the daemon's HTTP data plane",
 		Long: "Agent tokens are the graded credentials of the HTTP MCP endpoint.\n\n" +
 			"Each token carries an operation tier (read | write | destructive), an\n" +

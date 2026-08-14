@@ -129,7 +129,7 @@ type SessionInfo struct {
 // Rev the registry generation for registry-backed topics. Change events
 // are notifications only — they carry no snapshot; consumers re-read state
 // and apply it when the read generation is >= the applied one
-// (canonical.md §5c).
+// (docs/conventions.md#the-hot-reload-path).
 type Event struct {
 	Topic   string          `json:"topic"`
 	Kind    string          `json:"kind"`

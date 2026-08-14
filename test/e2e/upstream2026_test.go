@@ -10,7 +10,7 @@ import (
 
 // stdio2026_test.go covers agenthub as a CLIENT — negotiating 2026-07-28 with
 // a downstream. This file covers the other face, agenthub as a SERVER, which
-// had no end-to-end coverage at all: docs/mcp-2026-07-28.md §5 describes a
+// had no end-to-end coverage at all: docs/status/mcp-2026-07-28.md §5 describes a
 // whole second protocol generation on the upstream side, and every claim in
 // it was proven only in-process.
 //

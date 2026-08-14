@@ -33,7 +33,7 @@ never reads. Zed is where it bites (`.config/zed` on macOS and Linux, `%APPDATA%
 carries the one platform-specific branch of its own, because an MSIX install reads a virtualized
 `%APPDATA%` and the documented path is one the packaged application never opens.
 
-None of it has run on Windows hardware — [windows.md](../windows.md) names `client connect` writing a
+None of it has run on Windows hardware — [windows.md](../status/windows.md) names `client connect` writing a
 file the client actually reads as an open verification item.
 
 ## Choosing the file

@@ -22,7 +22,7 @@ import (
 // policy, stated once, is the point of this file.
 //
 // syscall rather than golang.org/x/sys/unix: internal/platform is a
-// zero-dependency foundation (canonical.md §2 rule 4, depguard-enforced to
+// zero-dependency foundation (docs/conventions.md#dependency-directions rule 4, depguard-enforced to
 // $gostd only), the same reason filelock_windows.go dials kernel32 by hand.
 
 // LockFile takes a blocking exclusive lock on f, for the callers whose

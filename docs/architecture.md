@@ -163,7 +163,7 @@ Four directions are CI failures rather than review conventions:
 4. `internal/mcp`, `internal/platform`, `internal/logx` and `internal/guard/*` carry zero business
    dependencies.
 
-The normative wording is [canonical.md §2](canonical.md#hard-dependency-direction-constraints-enforced-at-compile-time-by-depguard).
+The normative wording is [conventions.md#package-layout](conventions.md#package-layout).
 What lives here is how they are held: `internal/depguardtest` plants a violating probe in each
 constrained package — inside a disposable copy of the checkout — and asserts golangci-lint reports it.
 Every rule must have a failing case that cannot pass by skipping itself. That is also why
@@ -226,7 +226,7 @@ flowchart LR
 
 Config events are notifications and carry no snapshot. The reader re-reads the file and adopts on
 "generation read ≥ generation applied", never on equality with the event's `Rev`
-([canonical.md §5c](canonical.md#5c-the-config-hot-reload-path-two-things-not-to-get-wrong)).
+([conventions.md#the-hot-reload-path](conventions.md#the-hot-reload-path)).
 
 ```mermaid
 flowchart LR
@@ -237,7 +237,7 @@ flowchart LR
 ```
 
 The vault key is the composite `(serverID, scopeName)` and has been since the first release — one of
-the three things [canonical.md §4](canonical.md#4-known-capability-boundaries) says must never be
+the three things [conventions.md#capability-boundaries](conventions.md#capability-boundaries) says must never be
 retrofitted.
 
 ```mermaid
@@ -307,7 +307,7 @@ with no daemon in the picture.
 |---|---|
 | macOS | Supported, covered by CI |
 | Linux | Supported, covered by CI |
-| Windows | Complete but unverified: it cross-compiles and is unit-tested through injected seams, and nothing has ever run on a real Windows machine. [windows.md](windows.md) tracks what that leaves open |
+| Windows | Complete but unverified: it cross-compiles and is unit-tested through injected seams, and nothing has ever run on a real Windows machine. [windows.md](status/windows.md) tracks what that leaves open |
 
 The GUI is not in the default build. Linking a webview needs GTK/WebKit packages the Linux CI runner
 lacks, so every Wails file sits behind `//go:build wails` and builds with `make gui`. Its untagged half

@@ -185,7 +185,7 @@ func TestCaskQuarantineOverrideCarriesItsReasoning(t *testing.T) {
 }
 
 // TestCaskRefusesAReleaseItCannotDescribe proves the script's guards block
-// rather than merely exist (canonical.md §6).
+// rather than merely exist (docs/conventions.md#engineering-conventions).
 //
 // Each of these produces a perfectly valid cask if the check is missing, and
 // each fails only on someone else's machine: a 404 on install, or — for the

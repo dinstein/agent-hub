@@ -27,7 +27,7 @@ type MetaDoc struct {
 }
 
 // Transport identifiers of a ServerEntry. They are the on-disk spelling of
-// the three read-side transports (canonical.md §5b) and are mirrored by
+// the three read-side transports (docs/conventions.md#mcp-protocol-scope) and are mirrored by
 // mcp/transport.Kind; an empty value means TransportStdio.
 const (
 	TransportStdio = "stdio"

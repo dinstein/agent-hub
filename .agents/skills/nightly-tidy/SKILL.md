@@ -92,7 +92,7 @@ Before moving anything, check it is allowed to move:
 
 | About to move | Check |
 |---|---|
-| A package, command, or identifier name | [docs/canonical.md](../../../docs/canonical.md) §1 — frozen identifiers do not move on a tidy night |
+| A package, command, or identifier name | [docs/conventions.md](../../../docs/conventions.md) §1 — frozen identifiers do not move on a tidy night |
 | An import across a package boundary | AGENTS.md's four hard constraints |
 | The gate chain, the call path, provenance for an exposed name, or a tool selector | AGENTS.md's *easiest things to get wrong* — each of those is frozen, and none of them move on a tidy night |
 
@@ -104,7 +104,7 @@ invariant is that file.
 ## 4. Pass C — docs and code agree again
 
 `make ci` already fails on the mechanical half — dead backticked paths, comments crediting a deleted
-test, unresolvable `canonical.md` citations, prose teaching a retired command, a fuzz target missing
+test, unresolvable `docs/conventions.md` citations, prose teaching a retired command, a fuzz target missing
 from the Makefile or AGENTS.md, an untranslated English
 doc. Do not repeat the machine.
 
@@ -152,6 +152,6 @@ Not because they are perfect, but because a scheduled pass is the wrong place to
 
 - The four hard constraints and their proofs in `internal/depguardtest`
 - The gate chain, its order, and any predicate's failure direction
-- Frozen identifiers ([docs/canonical.md](../../../docs/canonical.md) §1)
+- Frozen identifiers ([docs/conventions.md](../../../docs/conventions.md) §1)
 - `VERSION` and `.github/workflows/` — those belong to the [release skill](../release/SKILL.md)
 - Any file an open worktree has claimed

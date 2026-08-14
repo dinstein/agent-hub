@@ -34,7 +34,7 @@
 // link-local, ULA, deprecated IPv6 site-local, CGNAT, unspecified, multicast,
 // documentation/benchmark ranges, and v4-mapped v6 forms of all of these.
 //
-// Dependency constraint (canonical.md §2 rule 4, depguard-enforced): only
+// Dependency constraint (docs/conventions.md#dependency-directions rule 4, depguard-enforced): only
 // the standard library plus internal/guard.
 package netguard
 

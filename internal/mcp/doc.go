@@ -1,5 +1,5 @@
 // Package mcp is the sole MCP protocol facade of the repository
-// (canonical.md §2 rule 2, ruling #32).
+// (docs/conventions.md#dependency-directions rule 2, ruling #32).
 //
 // It implements, on the standard library only:
 //

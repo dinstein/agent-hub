@@ -83,7 +83,7 @@ func (c SecretChange) Human(w io.Writer) error {
 func (a *App) newSecretCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "secret",
-		Aliases: []string{"secrets"}, // singular canonical, plural alias (canonical.md §3)
+		Aliases: []string{"secrets"}, // singular canonical, plural alias (docs/conventions.md#command-naming)
 		Short:   "Manage downstream credentials (values are never displayed)",
 		Args:    cobra.ArbitraryArgs,
 		RunE:    groupRunE,

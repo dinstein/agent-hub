@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// retiredCommands are command spellings canonical.md §2 has retired, mapped
+// retiredCommands are command spellings docs/conventions.md#package-layout has retired, mapped
 // to what replaced them. They are exactly the spellings a hidden alias keeps
 // WORKING, which is what makes them dangerous in prose: a doc or a help
 // string naming one is not broken, it is quietly teaching the form that is
@@ -60,7 +60,7 @@ var commandDocRoots = []string{"docs", "skills", ".agents", "internal", "cmd", "
 // TestNoDocumentTeachesARetiredCommand keeps the prose, the help strings and
 // the GUI on the command tree that exists.
 //
-// One exemption, and it is narrow: canonical.md's retired-names table exists
+// One exemption, and it is narrow: docs/conventions.md's retired-names table exists
 // to write these down — that is its whole job.
 //
 // There was a second, for the deprecation shims themselves, which had to name
@@ -131,8 +131,8 @@ func isCommandDoc(path string) bool {
 	return false
 }
 
-// isRetiredNamesExempt covers canonical.md, whose retired-names table is the
+// isRetiredNamesExempt covers docs/conventions.md, whose retired-names table is the
 // one place these spellings BELONG.
 func isRetiredNamesExempt(path string) bool {
-	return filepath.Base(path) == "canonical.md"
+	return filepath.Base(path) == "conventions.md"
 }

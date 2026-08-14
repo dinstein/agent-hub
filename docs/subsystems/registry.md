@@ -98,7 +98,7 @@ Three questions, three mechanisms: the generation answers "did anything change",
 answers "did I write this myself", and the Applier answers "should this state I just read be adopted".
 
 **The Applier's criterion is "the generation read ≥ the generation applied", never "equal to the event's
-Rev"** ([canonical.md §5c](../canonical.md#5c-the-config-hot-reload-path-two-things-not-to-get-wrong) #2).
+Rev"** ([conventions.md#the-hot-reload-path](../conventions.md#the-hot-reload-path) #2).
 A push is only a notification and carries no snapshot, so the consumer re-reads the files itself; under
 several writes in quick succession the generation read exceeds the Rev of the event in hand, and an
 equality test rejects it and waits forever for an event that will never come. `MarkApplied` only

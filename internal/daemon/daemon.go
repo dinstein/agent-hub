@@ -563,7 +563,7 @@ func buildLogger(cfg Config, logsDir string) (*slog.Logger, func() error, error)
 // startWatch wires registry watching into the bus: on every external change
 // the store is reloaded (the Change event is a notification, never a
 // snapshot) and, per the Applier criterion (read generation >= applied,
-// canonical.md §5c #2), the change is announced on the bus:
+// docs/conventions.md#the-hot-reload-path #2), the change is announced on the bus:
 //
 //   - ctlapi.TopicRegistry (payload registry.Change) → forwarded to every
 //     gateway link as a `registry` SSE frame;

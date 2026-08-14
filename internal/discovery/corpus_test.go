@@ -75,7 +75,7 @@ func assertGolden(t *testing.T, name string, got []byte) {
 		t.Fatalf("read golden %s: %v (run: go test ./internal/discovery -update)", path, err)
 	}
 	if string(got) != string(want) {
-		t.Fatalf("%s drifted — determinism is contract (canonical.md §6)\n--- got ---\n%s\n--- want ---\n%s",
+		t.Fatalf("%s drifted — determinism is contract (docs/conventions.md#engineering-conventions)\n--- got ---\n%s\n--- want ---\n%s",
 			path, got, want)
 	}
 }

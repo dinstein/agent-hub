@@ -3,7 +3,7 @@ package registry
 import "sync"
 
 // Applier implements the adoption criterion for registry reloads
-// (canonical.md §5c #2).
+// (docs/conventions.md#the-hot-reload-path #2).
 //
 // A Change event is a notification, not a snapshot: on receipt the consumer
 // re-reads the registry itself. The criterion for adopting what it read is

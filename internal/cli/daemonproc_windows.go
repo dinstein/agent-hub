@@ -11,7 +11,7 @@ import (
 // Windows daemon process control.
 //
 // NOT VERIFIED ON REAL HARDWARE, like the rest of this project's Windows
-// branch (docs/windows.md). Every call below is a documented Win32 API used
+// branch (docs/status/windows.md). Every call below is a documented Win32 API used
 // the way Go's own os/exec uses it, and the logic is unit-tested through
 // injected seams, but nothing here has been observed running.
 

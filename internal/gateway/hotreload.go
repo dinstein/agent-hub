@@ -15,7 +15,7 @@ import (
 )
 
 // This file is the gateway's configuration hot-reload plane
-// (docs/subsystems/registry.md, canonical.md §5c). Change notifications arrive
+// (docs/subsystems/registry.md, docs/conventions.md#the-hot-reload-path). Change notifications arrive
 // on TWO channels —
 // the local registry watcher (fsnotify + poll) and the daemon control link
 // (LinkEventRegistry) — and both funnel into onRegistryChange, which

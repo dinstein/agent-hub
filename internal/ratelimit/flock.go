@@ -10,7 +10,7 @@ import (
 
 // The cross-process lock, delegated to internal/platform: flock(2) on
 // darwin/linux, LockFileEx on Windows, one implementation of each behind one
-// name. See docs/windows.md for what the Windows half is worth (it
+// name. See docs/status/windows.md for what the Windows half is worth (it
 // cross-compiles and has never run).
 //
 // LockFile, not TryLockFile: the counter's contract is "wait your turn", and

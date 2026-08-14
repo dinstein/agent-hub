@@ -7,7 +7,7 @@
 // exactly like the host runtime.
 //
 // It drives the docker CLI with os/exec and imports no SDK: internal/mcp is
-// standard-library only (canonical.md §2 rule 2), and shelling out is also
+// standard-library only (docs/conventions.md#dependency-directions rule 2), and shelling out is also
 // what makes DOCKER_HOST, contexts and credential helpers work without
 // re-implementing any of them.
 //

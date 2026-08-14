@@ -1,8 +1,8 @@
 version: "2"
 
-# Four dependency-direction constraints are frozen in canonical.md §2 and are
+# Four dependency-direction constraints are frozen in docs/conventions.md#package-layout and are
 # CI failure conditions. Each rule below has a test proving it actually fires
-# (internal/depguardtest). Do not weaken them without updating canonical.md.
+# (internal/depguardtest). Do not weaken them without updating docs/conventions.md.
 linters:
   default: standard
   enable:
@@ -18,7 +18,7 @@ linters:
             - "**/cmd/agenthub-gui/**"
           deny:
             - pkg: github.com/dinstein/agent-hub/internal
-              desc: cmd/agenthub-gui and api must not import internal/* (canonical.md §2 rule 1)
+              desc: cmd/agenthub-gui and api must not import internal/* (docs/conventions.md#dependency-directions rule 1)
 
         # Rule 2a: internal/mcp is the sole MCP protocol facade and is fully
         # self-implemented on the standard library only (ruling #32).
@@ -36,11 +36,11 @@ linters:
             - "**/*.go"
           deny:
             - pkg: github.com/modelcontextprotocol/go-sdk
-              desc: third-party MCP libraries are forbidden; internal/mcp is the sole facade (canonical.md §2 rule 2)
+              desc: third-party MCP libraries are forbidden; internal/mcp is the sole facade (docs/conventions.md#dependency-directions rule 2)
             - pkg: github.com/mark3labs/mcp-go
-              desc: third-party MCP libraries are forbidden; internal/mcp is the sole facade (canonical.md §2 rule 2)
+              desc: third-party MCP libraries are forbidden; internal/mcp is the sole facade (docs/conventions.md#dependency-directions rule 2)
             - pkg: github.com/metoro-io/mcp-golang
-              desc: third-party MCP libraries are forbidden; internal/mcp is the sole facade (canonical.md §2 rule 2)
+              desc: third-party MCP libraries are forbidden; internal/mcp is the sole facade (docs/conventions.md#dependency-directions rule 2)
 
         # Rule 3: the data plane must not depend on the control plane.
         pipeline-no-ctlapi:
@@ -48,7 +48,7 @@ linters:
             - "**/internal/pipeline/**"
           deny:
             - pkg: github.com/dinstein/agent-hub/internal/ctlapi
-              desc: internal/pipeline must not import internal/ctlapi (canonical.md §2 rule 3)
+              desc: internal/pipeline must not import internal/ctlapi (docs/conventions.md#dependency-directions rule 3)
 
         # Rule 4: zero-business-dependency foundations. platform / logx /
         # guard/* sit below every business package (internal/mcp is covered

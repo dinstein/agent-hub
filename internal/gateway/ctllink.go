@@ -231,7 +231,7 @@ func (l *ctlLink) serveLink(ctx context.Context, sid string) {
 			l.g.log.Info("registry change notified by daemon",
 				"kind", rf.Kind, logx.Rev(rf.Rev))
 			// The frame is a notification, not a snapshot: re-read and adopt
-			// iff generation >= applied (canonical.md §5c #2). The local
+			// iff generation >= applied (docs/conventions.md#the-hot-reload-path #2). The local
 			// watcher would eventually catch the same change; the link is
 			// just the faster channel.
 			l.g.onRegistryChange(registry.DocKind(rf.Kind))

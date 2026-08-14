@@ -17,7 +17,7 @@
 # a Mac rehearse the release the workflow will cut.
 #
 # What no host can do is RUN it. Nothing in this project has ever executed on
-# Windows (docs/windows.md); the zip is built, its layout is asserted, and its
+# Windows (docs/status/windows.md); the zip is built, its layout is asserted, and its
 # behavior is unverified.
 #
 # WEBVIEW2. The GUI needs the Microsoft Edge WebView2 runtime, which ships with

@@ -10,7 +10,7 @@ const ErrCodeBadResponse = "E_BAD_RESPONSE"
 // Daemon error codes a frontend is expected to branch on.
 //
 // CONTRACT: these mirror the constants in internal/ctlapi (which api must
-// not import, canonical.md §2 rule 1). Codes are part of the wire contract:
+// not import, docs/conventions.md#dependency-directions rule 1). Codes are part of the wire contract:
 // they are matched, not displayed — the human text is Message/Hint.
 const (
 	// ErrCodeNotFound: unknown path or unknown resource. A control-plane

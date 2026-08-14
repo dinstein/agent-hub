@@ -35,7 +35,7 @@ go test ./test/buildrules/ -count=1      # the only suite that reads prose
 ```
 
 That is the whole local verdict, before the push **and** after the rebase in step 5. `test/buildrules`
-is what fails when a document cites a `canonical.md` section that no longer exists, a path that has
+is what fails when a document cites a `docs/conventions.md` section that no longer exists, a path that has
 moved, or a fuzz target nothing declares; every other package compiles from Go sources this branch did
 not touch. Rebasing prose onto new code cannot break the code — but it can invalidate a citation
 somebody else moved out from under you, which is the same suite.
@@ -54,7 +54,7 @@ Stop as soon as the question is answered:
 | What am I changing, and what does a call pass through on the way? | [docs/architecture.md](../../../docs/architecture.md) |
 | How does this flow behave at runtime, and which way does it fail? | [docs/flows.md](../../../docs/flows.md) |
 | What must not be touched in the package I am about to open? | [docs/subsystems/](../../../docs/subsystems/) — that package's file |
-| Is this name / dependency / convention allowed to move? | [docs/canonical.md](../../../docs/canonical.md) |
+| Is this name / dependency / convention allowed to move? | [docs/conventions.md](../../../docs/conventions.md) |
 
 **The `modules/` file is not optional reading** — it carries the invariants and the recorded
 "capability exists ≠ wired up" gaps. A change that looks correct against the source and wrong against
@@ -104,7 +104,7 @@ What `make ci` will not ask for:
 | A parser reading untrusted input | `make fuzz FUZZ=<target>` — `make ci` runs only the seed corpora |
 | A **new** fuzz target | All three places (the target, `FUZZ_TARGETS`, AGENTS.md's list); `test/buildrules` fails until they agree |
 | A package's invariants or failure directions | The matching [docs/subsystems/](../../../docs/subsystems/) file, same commit |
-| A package/command name, dependency direction, or frozen identifier | [docs/canonical.md](../../../docs/canonical.md), same commit |
+| A package/command name, dependency direction, or frozen identifier | [docs/conventions.md](../../../docs/conventions.md), same commit |
 | A new `.md` under `docs/` | A `docs/zh-CN/` counterpart, or a `contributorOnlyDocs` entry with the reason |
 | The GUI frontend | `make gui-frontend-ci` — `make gui` runs `npm install`, repairing a lockfile CI's `npm ci` rejects |
 | Anything user-visible | New flags and commands are yours; the version number belongs to the [release skill](../release/SKILL.md) |

@@ -151,5 +151,5 @@ decide from configuration alone and both fail closed.
   the caller reads.
 
 Each of these existed once and was removed rather than left half-wired
-([canonical.md §7](canonical.md#7-decision-records)). A governance surface that does not decide
+([decisions/](decisions)). A governance surface that does not decide
 anything still reads as protection.

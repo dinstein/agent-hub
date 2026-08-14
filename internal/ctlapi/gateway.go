@@ -54,7 +54,7 @@ type GatewayRegistered struct {
 // SSE event names on the gateway link.
 const (
 	// LinkEventRegistry carries a RegistryFrame (notification only, no ack;
-	// the gateway re-reads the registry itself, canonical.md §5c #2).
+	// the gateway re-reads the registry itself, docs/conventions.md#the-hot-reload-path #2).
 	LinkEventRegistry = "registry"
 )
 

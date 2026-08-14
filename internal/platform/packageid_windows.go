@@ -13,10 +13,10 @@ import (
 // NOT VERIFIED ON REAL HARDWARE (M2). This file compiles for GOOS=windows
 // in CI but has never executed: no Windows machine, and — the part that
 // really matters — no MSIX-packaged client to be spawned by. See
-// docs/windows.md.
+// docs/status/windows.md.
 //
 // syscall.NewLazyDLL rather than golang.org/x/sys/windows: internal/platform
-// is a zero-dependency foundation (canonical.md §2 rule 4, depguard-enforced
+// is a zero-dependency foundation (docs/conventions.md#dependency-directions rule 4, depguard-enforced
 // to $gostd only). The one call needed here is small enough that borrowing a
 // module for it would be the more expensive choice.
 

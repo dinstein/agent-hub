@@ -24,7 +24,7 @@ import (
 //
 //   - On Windows it returns command unchanged. Resolution there means PATHEXT
 //     and its ordering, which this would have to reproduce exactly and which
-//     no gate in this repository can verify on a real machine (docs/windows.md).
+//     no gate in this repository can verify on a real machine (docs/status/windows.md).
 //     The truncated-PATH problem it exists for is launchd's and systemd's.
 //   - A command containing a path separator is returned unchanged: exec
 //     resolves those against Cwd and never consults PATH, so there is nothing

@@ -34,7 +34,7 @@ const manifestSums = `1e29760000000000000000000000000000000000000000000000000000
 
 // releaseManifest is the shape scripts/install.sh reads, and the shape this
 // file asserts. Keeping it here rather than in a shipped package is
-// deliberate: nothing in the binary consumes the manifest (canonical.md §7
+// deliberate: nothing in the binary consumes the manifest (docs/decisions/
 // decision 6 — no update checker, no outbound request to a version manifest
 // from internal/*), so a Go type for it would be a consumer that must not
 // exist.

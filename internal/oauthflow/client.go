@@ -294,7 +294,7 @@ func (c *Client) getJSON(ctx context.Context, rawURL string, out any) error {
 	return nil
 }
 
-// mcpProtocolVersion is the MCP revision agenthub speaks (canonical.md 5b).
+// mcpProtocolVersion is the MCP revision agenthub speaks (docs/conventions.md 5b).
 const mcpProtocolVersion = "2025-11-25"
 
 // postForm performs a credential-bearing POST with ZERO redirects.

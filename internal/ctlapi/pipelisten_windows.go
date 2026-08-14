@@ -14,7 +14,7 @@ import (
 )
 
 // NOT VERIFIED ON REAL HARDWARE. This file cross-compiles and has never run;
-// no Windows machine exists in this project's loop. See docs/windows.md.
+// no Windows machine exists in this project's loop. See docs/status/windows.md.
 //
 // The Windows control endpoint. Everything the Unix path spends four steps on
 // is done differently here, and the differences are the reason this is a
@@ -40,7 +40,7 @@ import (
 //     the Unix probe: two daemons starting at the same instant cannot both
 //     conclude the endpoint is free.
 //
-// go-winio is the dependency this needs (canonical.md §7): the standard library
+// go-winio is the dependency this needs (docs/decisions/): the standard library
 // has no named-pipe server, and writing one means overlapped I/O, an accept
 // loop over pre-created instances, and SDDL parsing — roughly a thousand lines
 // whose bugs would be unobservable from this project's platforms.

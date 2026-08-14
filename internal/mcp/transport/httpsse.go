@@ -23,7 +23,7 @@ import (
 // Deprecated upstream on 2025-03-26 and superseded by Streamable HTTP, but
 // kept on the READ side indefinitely and deliberately: a proxy's value is
 // being able to attach to old servers that expose nothing else
-// (canonical.md §5b, ruling #29). It is never offered on the exposure side.
+// (docs/conventions.md#mcp-protocol-scope, ruling #29). It is never offered on the exposure side.
 // 2025-03-26 is the date it was deprecated, NOT a date it may be removed —
 // the two were once in one field here, and the marker exists so a sweep can
 // read the removal date without reading the prose.

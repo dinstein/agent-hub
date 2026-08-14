@@ -7,7 +7,7 @@ import (
 	"os/exec"
 )
 
-// NOT VERIFIED ON REAL HARDWARE. See docs/windows.md.
+// NOT VERIFIED ON REAL HARDWARE. See docs/status/windows.md.
 //
 // There is no lifeline here: os/exec cannot hand a child an extra descriptor
 // on Windows, so a supervised daemon has only the owner-pid poll to notice
@@ -27,5 +27,5 @@ func attachLifeline(*exec.Cmd, *os.File) int { return 0 }
 // stop but no stop at all — a hub left running with the application gone, no
 // window, no tray, and nothing on the machine that will ever end it. An
 // abandoned in-flight call is the smaller loss. When a Job Object lands here
-// (docs/windows.md) this becomes a proper drain.
+// (docs/status/windows.md) this becomes a proper drain.
 func terminate(p *os.Process) error { return p.Kill() }

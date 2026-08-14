@@ -12,8 +12,8 @@
 | Get a feel for a package's constraints before changing it | [subsystems/](subsystems/) |
 | Debug a downstream OAuth server you can't connect to | [status/oauth.md](status/oauth.md) |
 | Touch the GUI frontend | [subsystems/gui.md](subsystems/gui.md) |
-| Check whether a name, dependency, or convention is changeable | [canonical.md](canonical.md) |
-| Find out what works on Windows today | [windows.md](windows.md) |
+| Check whether a name, dependency, or convention is changeable | [conventions.md](conventions.md) |
+| Find out what works on Windows today | [windows.md](status/windows.md) |
 | **Do** one of the standard things — build a feature, run the tidy pass, cut a release | [../.agents/skills/](../.agents/skills/) |
 
 ## Files
@@ -25,9 +25,9 @@
 | [architecture.md](architecture.md) | Architecture overview: the dual-mode process model, core module map, layering and dependency constraints, what a single call passes through, the three data flows, the two planes of scope, the two lines of defense, on-disk layout |
 | [flows.md](flows.md) | Sequence diagrams and failure branches for seven key flows: gateway startup, a lazy call, config writes, config hot reload, OAuth, derived instances, the call ledger lifecycle |
 | [subsystems/](subsystems/) | Per-seam docs, each one file: what the packages in it must not do, and which way each failure falls |
-| [canonical.md](canonical.md) | Frozen identifiers, package layout, the four dependency constraints, command naming rules, engineering conventions, and every decision record |
-| [windows.md](windows.md) | Windows status: what's implemented, **what's unverified**, what's missing, acceptance criteria |
-| [mcp-2026-07-28.md](mcp-2026-07-28.md) | One protocol revision: what the two faces do about it today, and what is deliberately still absent. Cited by section number from the code implementing it |
+| [conventions.md](conventions.md) | Frozen identifiers, package layout, the four dependency constraints, command naming rules, engineering conventions, and every decision record |
+| [windows.md](status/windows.md) | Windows status: what's implemented, **what's unverified**, what's missing, acceptance criteria |
+| [mcp-2026-07-28.md](status/mcp-2026-07-28.md) | One protocol revision: what the two faces do about it today, and what is deliberately still absent. Cited by section number from the code implementing it |
 
 ## Not here: executable workflows
 
@@ -49,7 +49,7 @@ These docs are deliberately split into three layers. Write things into the layer
 |---|---|---|
 | **How the system works** | How processes are laid out, how calls flow, where data goes | `architecture.md` + `flows.md` |
 | **How to change this package** | Key types, invariants, failure directions | `modules/` |
-| **Whether this convention can move** | Frozen identifiers, dependency directions, naming rules, decision rationale | `canonical.md` |
+| **Whether this convention can move** | Frozen identifiers, dependency directions, naming rules, decision rationale | `docs/conventions.md` |
 
 Each fact belongs in exactly one layer. Content duplicated across layers will eventually contradict itself, and readers have no way to tell which copy is current.
 
@@ -60,5 +60,5 @@ Each fact belongs in exactly one layer. Content duplicated across layers will ev
 - **Invariants first.** The most valuable thing to write down isn't "what this package does" but "what must not be touched, and which way failures fall" — fail-open or fail-closed, ordering invariants, cross-process discipline.
 - **Capability exists ≠ wired up.** Where a package is functionally complete but the assembly layer hasn't connected it, say so explicitly at that spot. "Thought it was in effect but it wasn't" is far more dangerous than "known to be missing."
 - **A gap goes in the `modules/` doc of the package that owns it**, not into a list of its own — under "current assembly status", or beside the invariant it bends. The bar for writing one down is "you can point to a specific location in the code"; once it's fixed, the same paragraph becomes the description of reality. A gap kept next to its code is read by whoever touches that code, which is the one thing a central backlog could never manage.
-- If you change an architectural convention (package name, command name, dependency direction, frozen identifier), update `canonical.md` in the same change.
+- If you change an architectural convention (package name, command name, dependency direction, frozen identifier), update `docs/conventions.md` in the same change.
 - **Only the product surface is translated.** The root README, `guide.md` and `architecture.md` have zh-CN counterparts under `docs/zh-CN/`; everything else here is English only. The line is drawn by what a document tracks: these files move whenever the code does, so a mirror is a second file every behaviour change has to remember, and the forgotten copy is indistinguishable from the current one. The exempt set is declared in `contributorOnlyDocs` (`test/buildrules/translations_test.go`), which fails both on an English document with no translation and on a leftover translation of an exempted one.

@@ -79,7 +79,7 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // withMiddleware is the X-Request-Id + version-negotiation + panic-recovery
-// wrapper (canonical.md §4):
+// wrapper (docs/conventions.md#capability-boundaries):
 //
 //   - echo-or-generate the request id and write the response header BEFORE
 //     the handler runs — a panicking handler cannot lose it;

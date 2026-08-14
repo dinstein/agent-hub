@@ -39,7 +39,7 @@ func TestFakeDownstreamRoundTrip(t *testing.T) {
 }
 
 // TestRealNpxFilesystemServer is the acceptance-standard case
-// (docs/canonical.md, "current state"): a
+// (docs/conventions.md, "current state"): a
 // real @modelcontextprotocol/server-filesystem downstream spawned via npx,
 // its list_directory tool called through the gateway, the result naming a
 // known file. Skipped only when npx is unavailable or explicitly disabled.

@@ -14,9 +14,9 @@ import (
 //
 // NOT VERIFIED ON REAL HARDWARE. Everything below cross-compiles, is unit
 // tested through the injectable Resolver hooks on macOS/Linux, and follows
-// the MSIX lesson recorded in docs/windows.md — but no part of it has run on
+// the MSIX lesson recorded in docs/status/windows.md — but no part of it has run on
 // a Windows machine, let alone inside an MSIX container. Treat a surprise
-// here as expected, not as a regression. See docs/windows.md.
+// here as expected, not as a regression. See docs/status/windows.md.
 //
 // The MSIX problem, restated so the code below is readable:
 //
@@ -184,7 +184,7 @@ func identityName(id PackageIdentity) string {
 func (r *Resolver) windowsRunDir() (string, error) { return r.dataSub("run") }
 
 // ctlPipePrefix and devCtlPipePrefix are the two control-pipe names, one per
-// build channel. Both are FROZEN identifiers (canonical.md §1/§2).
+// build channel. Both are FROZEN identifiers (docs/conventions.md#frozen-identifiers/§2).
 //
 // Two spelled-out constants rather than one with the channel spliced in. The
 // pipe name must not move when the data directory is renamed — deriving it
@@ -261,7 +261,7 @@ func CtlPipeSDDL(sid string) string {
 
 // CtlPipeSDDL resolves the current user's SID and renders the control-pipe
 // security descriptor. It is the seam the Windows control-plane listener
-// consumes; see docs/windows.md for why the listener itself is not built
+// consumes; see docs/status/windows.md for why the listener itself is not built
 // yet (it needs a named-pipe implementation, i.e. a new dependency).
 func (r *Resolver) CtlPipeSDDL() (string, error) {
 	sid, err := r.userSID()

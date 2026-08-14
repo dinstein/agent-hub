@@ -14,13 +14,13 @@ const (
 	selfWriteSlots = 64
 
 	// selfWriteTTL is how long a registered fingerprint stays valid. A
-	// watcher that has not observed the write within 10s (canonical.md §5c)
+	// watcher that has not observed the write within 10s (docs/conventions.md#the-hot-reload-path)
 	// no longer suppresses it.
 	selfWriteTTL = 10 * time.Second
 )
 
 // selfWriteSet is the bounded TTL set of payload fingerprints backing
-// self-write suppression (canonical.md §5c #1): the write
+// self-write suppression (docs/conventions.md#the-hot-reload-path #1): the write
 // path registers the fingerprint of each payload BEFORE writing it (and
 // withdraws it if the write fails); the watcher consumes a matching
 // fingerprint and skips the event. Generation answers "did it change";

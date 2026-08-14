@@ -4,7 +4,7 @@
 // domain socket; the server side lives in
 // internal/ctlapi.
 //
-// Constraints (canonical.md §2 rule 1, enforced by depguard and proven by
+// Constraints (docs/conventions.md#dependency-directions rule 1, enforced by depguard and proven by
 // internal/depguardtest):
 //
 //   - This package must never import internal/*. "GUI is optional" is a

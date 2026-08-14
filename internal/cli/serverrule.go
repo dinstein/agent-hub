@@ -12,7 +12,7 @@ import (
 // views report it: a column in `server ls`, a line in `server inspect`.
 //
 // WHERE IT IS READ IS THE WHOLE POINT. The rule is a field on the server entry
-// beside `enabled` (canonical.md §7), and for one release its only reader was
+// beside `enabled` (docs/decisions/), and for one release its only reader was
 // `server tool ls --rules` — a boolean that swapped the row type, so one
 // command answered with two JSON contracts, and the two commands that describe
 // a server carried the field in neither. It is reported wherever the server is

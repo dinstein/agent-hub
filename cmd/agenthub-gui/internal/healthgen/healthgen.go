@@ -9,7 +9,7 @@
 // prove that the generator repeats itself.
 //
 // Constraint: like everything under cmd/agenthub-gui, this package may not
-// import internal/* (canonical.md §2 rule 1). It needs nothing beyond the
+// import internal/* (docs/conventions.md#dependency-directions rule 1). It needs nothing beyond the
 // standard library.
 package healthgen
 
@@ -95,7 +95,7 @@ func Collect(apiDir string) ([]Collected, error) {
 	}
 	// Deterministic order: files sorted by name (os.ReadDir already sorts),
 	// declarations in source order. "Determinism is the contract"
-	// (canonical.md §6).
+	// (docs/conventions.md#engineering-conventions).
 	var names []string
 	for _, e := range entries {
 		n := e.Name()

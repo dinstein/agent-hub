@@ -135,4 +135,4 @@ lazy 模式可以把 `call_tool` 拆成 `call_tool_read` / `call_tool_write` / `
   答什么，调用方就读到什么。
 
 这三样都曾经存在，后来是被删掉而不是留着半接线的（见
-[canonical.md §7](../canonical.md#7-decision-records)）。一个什么都不决定的治理界面，看上去仍然像一层保护。
+[decisions/](../decisions)）。一个什么都不决定的治理界面，看上去仍然像一层保护。

@@ -17,7 +17,7 @@ var headingLine = regexp.MustCompile(`^(#{1,6})\s+\S`)
 // The line is drawn by WHAT A DOCUMENT TRACKS, not by who reads it. Everything
 // listed here moves when the code moves, so a translation of it is a second
 // file that every behaviour change has to remember — and the copy that gets
-// forgotten is indistinguishable from a copy that is current. canonical.md is
+// forgotten is indistinguishable from a copy that is current. docs/conventions.md is
 // the sharpest case: it is where rules that must NOT change live, so a rule
 // updated on one side only does not read as a stale translation, it reads as a
 // rule that was never made. The mirror of everything below came to some 5,800
@@ -30,12 +30,11 @@ var headingLine = regexp.MustCompile(`^(#{1,6})\s+\S`)
 // slowly than the packages beneath it.
 var contributorOnlyDocs = []struct{ Path, Why string }{
 	{"docs/README.md", "the contributor doc index, which itself lists what is English-only"},
-	{"docs/canonical.md", "conventions and decision records; a one-sided edit reads as a ruling"},
+	{"docs/conventions.md", "the conventions themselves; a rule edited on one side only does not read as a stale translation, it reads as a rule that was never made"},
+	{"docs/decisions/", "one settled question per file; a half-translated decision record is one nobody can cite"},
 	{"docs/flows.md", "runtime sequences and failure branches, restated whenever a flow changes"},
-	{"docs/mcp-2026-07-28.md", "one spec's behaviour on both faces and the gaps left open, cited by section number from the code implementing it"},
 	{"docs/subsystems/", "per-seam invariants and the gaps recorded beside them; each moves with its packages"},
 	{"docs/status/", "snapshots of one platform, one protocol revision or one provider surface; each is rewritten whenever that state moves"},
-	{"docs/windows.md", "one platform's implementation status, rewritten on every change to it"},
 }
 
 // translatedRoots are the directories walked for English documents. Each
@@ -116,7 +115,7 @@ func translationPairs(t *testing.T, root string) [][2]string {
 // a way a mistranslation is not: nothing looks wrong, the document simply says
 // less, and only a reader who has both open notices.
 //
-// canonical.md had exactly this while it was still translated. It carried 20
+// docs/conventions.md had exactly this while it was still translated. It carried 20
 // headings against the translation's 19, and the missing one was §3's ruling
 // that `server add` and `server enable` stay separate primitives — an absent
 // rule in that file does not read as untranslated, it reads as a rule that was
@@ -128,7 +127,7 @@ func translationPairs(t *testing.T, root string) [][2]string {
 // course it differs — and neither is anything below heading level.
 //
 // It therefore does NOT catch drift inside a section. The same round that
-// added this test also restored a dropped bullet in canonical.md §3, where the
+// added this test also restored a dropped bullet in docs/conventions.md#command-naming, where the
 // translation had folded a whole bullet into a parenthetical on another one and
 // lost the retired `scope` group's command mapping. Nine bullets against eight,
 // and this check was blind to it. Comparing bullet counts was considered and

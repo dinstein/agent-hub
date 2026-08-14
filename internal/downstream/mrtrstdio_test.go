@@ -19,7 +19,7 @@ import (
 // says regardless of protocol, so what those cases prove is the loop's logic
 // — how many rounds, which shapes fail closed, what the retry carries.
 //
-// What none of them touch is the loop running for real. docs/mcp-2026-07-28.md
+// What none of them touch is the loop running for real. docs/status/mcp-2026-07-28.md
 // §7.7 records that as two of its `none` rows: "MRTR over stdio, in any
 // form", and "downstream.Connect reaching 2026 over stdio". Both are about
 // the same missing thing — an actual child process, negotiated at

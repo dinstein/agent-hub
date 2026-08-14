@@ -21,7 +21,7 @@ func meta2026(caps mcp.ClientCapabilities) *mcp.RequestMeta {
 	}
 }
 
-// TestInitializeClampsStatelessVersion pins canonical.md §5b's exposure-side
+// TestInitializeClampsStatelessVersion pins docs/conventions.md#mcp-protocol-scope's exposure-side
 // rule: initialize can only negotiate the stateful protocol family. (It cited
 // mcp-2026-07-28.md §7.1 before, which is about the notification stream and
 // never carried this rule.) A client declaring

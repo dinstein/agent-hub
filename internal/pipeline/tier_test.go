@@ -219,7 +219,7 @@ func assertPipelineGolden(t *testing.T, name string, got []byte) {
 		t.Fatalf("read golden %s: %v (regenerate with UPDATE_GOLDEN=1)", path, err)
 	}
 	if string(got) != string(want) {
-		t.Fatalf("%s drifted — error wording is contract (canonical.md §6)\n--- got ---\n%s\n--- want ---\n%s",
+		t.Fatalf("%s drifted — error wording is contract (docs/conventions.md#engineering-conventions)\n--- got ---\n%s\n--- want ---\n%s",
 			path, got, want)
 	}
 }

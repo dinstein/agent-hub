@@ -144,7 +144,7 @@ func TestTokenServerFlagThreeState(t *testing.T) {
 	}
 }
 
-// canonical.md §3: singular canonical name, plural alias, `ls` for lists.
+// docs/conventions.md#command-naming: singular canonical name, plural alias, `ls` for lists.
 func TestTokenGroupNaming(t *testing.T) {
 	setDataDir(t)
 	if code, _, _ := runCLI(t, "", "tokens", "ls", "--json"); code != ExitOK {

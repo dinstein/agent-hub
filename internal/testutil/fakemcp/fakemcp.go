@@ -1,5 +1,5 @@
 // Package fakemcp is a programmable fake downstream MCP server for tests
-// (canonical.md §6, "Test infrastructure").
+// (docs/conventions.md#engineering-conventions, "Test infrastructure").
 //
 // Every concurrency and safety invariant of downstream / router / pipeline /
 // gateway is tested against this package, so programmability matters more

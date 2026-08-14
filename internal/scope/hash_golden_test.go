@@ -7,7 +7,7 @@ import (
 
 // goldenScope builds a fixed, fully-populated merge input. Any change to the
 // hash encoding breaks the frozen digest below — determinism is contract
-// (canonical.md §6): cursors, approvals and search caches key off this hash
+// (docs/conventions.md#engineering-conventions): cursors, approvals and search caches key off this hash
 // across processes.
 func goldenScope(t *testing.T) *EffectiveScope {
 	t.Helper()

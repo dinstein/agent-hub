@@ -12,7 +12,7 @@ import (
 )
 
 // The stub is this project's conformance evidence for streamable HTTP
-// (docs/mcp-2026-07-28.md §4.1, §7.7); internal/testutil/fakemcp is the stdio
+// (docs/status/mcp-2026-07-28.md §4.1, §7.7); internal/testutil/fakemcp is the stdio
 // counterpart, and the header rules below have no counterpart there because
 // stdio carries none. So a rule this stub does not enforce is, on its
 // transport, a rule nothing enforces. These

@@ -12,7 +12,7 @@ import (
 
 // NOT VERIFIED ON REAL HARDWARE. Like the rest of this package's Windows
 // branch, everything here cross-compiles and has never executed. See
-// docs/windows.md.
+// docs/status/windows.md.
 //
 // Cross-process file locking for Windows, used by every package that keeps a
 // single-writer file (internal/registry, skills, calllog, ratelimit,
@@ -22,7 +22,7 @@ import (
 //
 // syscall.NewLazyDLL rather than golang.org/x/sys/windows, which has both
 // calls ready made: internal/platform is a zero-dependency foundation
-// (canonical.md §2 rule 4, depguard-enforced to $gostd only), the same reason
+// (docs/conventions.md#dependency-directions rule 4, depguard-enforced to $gostd only), the same reason
 // packageid_windows.go dials kernel32 by hand.
 
 const (

@@ -7,7 +7,7 @@ import { defineConfig } from "vite";
 // No Wails vite plugin: this frontend calls bound methods by name through
 // @wailsio/runtime (see src/bridge.ts) instead of generated bindings, which
 // keeps the build a plain Vite build and the toolchain one step shorter
-// (docs/canonical.md §7 item 3).
+// (docs/decisions/0003-wails3-and-the-frontend-stack.md).
 export default defineConfig({
   base: "./",
   build: {

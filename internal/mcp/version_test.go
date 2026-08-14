@@ -80,7 +80,7 @@ func TestNegotiateHighest(t *testing.T) {
 // SupportedVersions[0] is the highest version this facade supports, which
 // permanently exceeds ProtocolVersion: the constant names the stateful
 // (≤ 2025-11-25) declaration, while 2026-07-28 travels per-request in _meta
-// (see docs/mcp-2026-07-28.md §6.1).
+// (see docs/status/mcp-2026-07-28.md §6.1).
 func TestProtocolVersionConsistency(t *testing.T) {
 	if len(SupportedVersions) == 0 {
 		t.Fatal("SupportedVersions is empty")

@@ -3,7 +3,7 @@ package main
 // The system tray, expressed as a value.
 //
 // WHY THIS FILE CARRIES NO BUILD TAG. The GUI compresses its dependency on
-// the Wails alpha into as few files as possible (docs/canonical.md §7 item 3),
+// the Wails alpha into as few files as possible (docs/decisions/0003-wails3-and-the-frontend-stack.md),
 // and everything a tray does that can be WRONG — which label a state produces,
 // which servers survive the cap, whether the close button quits or hides — is
 // decidable without a menu bar. So the decisions live here as plain values and
@@ -60,7 +60,7 @@ func (i trayIcon) String() string {
 
 // trayState is everything the menu is rendered from. It is a snapshot: the
 // caller re-reads it whenever the daemon says something changed, exactly like
-// a page does (events are notifications, not snapshots — canonical.md §5c).
+// a page does (events are notifications, not snapshots — docs/conventions.md#the-hot-reload-path).
 type trayState struct {
 	// Status is the daemon connection state, as the shell shows it.
 	Status services.Status

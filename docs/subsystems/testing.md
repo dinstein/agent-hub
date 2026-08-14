@@ -1,7 +1,7 @@
 # The test infrastructure
 
 > **Answers** what the fake downstream can be made to do, how the dependency rules are proven, and what the e2e suite drives from outside.
-> **Not here** which command to run → [AGENTS.md](../../AGENTS.md); the rules themselves → [canonical.md](../canonical.md).
+> **Not here** which command to run → [AGENTS.md](../../AGENTS.md); the rules themselves → [conventions.md](../conventions.md).
 > **Kept true by** itself: every claim below is a test, and the ones that could pass vacuously say so.
 
 ## internal/testutil/fakemcp

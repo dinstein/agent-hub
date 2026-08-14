@@ -13,7 +13,7 @@
 //     an immutable snapshot of that projection. A tool that is not in the
 //     Surface can neither be listed, searched, nor recommended.
 //
-//  2. Determinism is contract (canonical.md §6). Exposure sets, ranking
+//  2. Determinism is contract (docs/conventions.md#engineering-conventions). Exposure sets, ranking
 //     order, summary truncation and every user-visible string are frozen by
 //     golden tests. Ties break on the exposed name ascending, never on map
 //     iteration order.

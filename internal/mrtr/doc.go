@@ -1,5 +1,5 @@
 // Package mrtr implements the Multi Round-Trip Request (MRTR) input
-// resolution introduced in MCP 2026-07-28 (docs/mcp-2026-07-28.md §2
+// resolution introduced in MCP 2026-07-28 (docs/status/mcp-2026-07-28.md §2
 // Phase 2).
 //
 // When a downstream server returns an InputRequiredResult, Resolve answers

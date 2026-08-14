@@ -12,7 +12,7 @@ import (
 //
 //	go test ./internal/shaping/toonenc -update
 //
-// and REVIEW the diff: every .toon file is the frozen grammar (canonical.md
+// and REVIEW the diff: every .toon file is the frozen grammar (docs/conventions.md
 // §7 #4), not an artefact. A drift here changes what every agent reads.
 var updateGolden = flag.Bool("update", false, "rewrite testdata golden files")
 
@@ -144,7 +144,7 @@ func assertGolden(t *testing.T, name, got string) {
 		t.Fatalf("read golden %s: %v (run: go test ./internal/shaping/toonenc -update)", path, err)
 	}
 	if body != string(want) {
-		t.Fatalf("%s drifted — determinism is contract (canonical.md §6)\n--- got ---\n%s\n--- want ---\n%s",
+		t.Fatalf("%s drifted — determinism is contract (docs/conventions.md#engineering-conventions)\n--- got ---\n%s\n--- want ---\n%s",
 			path, body, want)
 	}
 }
