@@ -15,7 +15,7 @@ import (
 // records was already being logged as prose, and prose cannot be matched on:
 // a UI timeline, a `--json` consumer or an alert needs values it is allowed
 // to switch on. That promise is only as good as a reader's ability to find
-// out what the values ARE, which is the table in docs/modules/foundation.md.
+// out what the values ARE, which is the table in docs/subsystems/records.md.
 //
 // A kind missing from that table is the failure worth catching, and it is
 // invisible otherwise: the event is still written, the package still
@@ -29,20 +29,20 @@ import (
 func TestEveryEventKindIsDocumented(t *testing.T) {
 	root := repoRoot(t)
 	declared := parseEventKinds(t, filepath.Join(root, "internal", "eventlog", "eventlog.go"))
-	documented := parseDocumentedKinds(t, filepath.Join(root, "docs", "modules", "foundation.md"))
+	documented := parseDocumentedKinds(t, filepath.Join(root, "docs", "subsystems", "records.md"))
 
 	if len(declared) == 0 {
 		t.Fatal("no Kind constants found; this test asserted nothing")
 	}
 	for kind := range declared {
 		if !documented[kind] {
-			t.Errorf("internal/eventlog declares the kind %q, which docs/modules/foundation.md "+
+			t.Errorf("internal/eventlog declares the kind %q, which docs/subsystems/records.md "+
 				"does not list.\nA consumer switching on it has no way to learn it exists.", kind)
 		}
 	}
 	for kind := range documented {
 		if !declared[kind] {
-			t.Errorf("docs/modules/foundation.md lists the event kind %q, which "+
+			t.Errorf("docs/subsystems/records.md lists the event kind %q, which "+
 				"internal/eventlog no longer declares.\nA reader waiting for it cannot tell "+
 				"that from \"it has not happened yet\".", kind)
 		}

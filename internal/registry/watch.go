@@ -9,7 +9,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// Watch defaults (docs/modules/foundation.md): fsnotify + 200ms debounce as the primary
+// Watch defaults (docs/subsystems/registry.md): fsnotify + 200ms debounce as the primary
 // signal, a 2s poll as the safety net (fsnotify is unreliable on SMB/network
 // mounts, and may fail to initialize at all — then polling carries the whole
 // load).

@@ -9,7 +9,7 @@
 | Understand how the system is carved up and how the processes are laid out | [architecture.md](architecture.md) |
 | Learn what each package is responsible for | [architecture.md#the-packages](architecture.md#the-packages) |
 | Work out how a given flow actually behaves at runtime | [flows.md](flows.md) |
-| Get a feel for a package's constraints before changing it | [modules/](modules/) |
+| Get a feel for a package's constraints before changing it | [subsystems/](subsystems/), then [modules/](modules/) for the layers not yet moved |
 | Debug a downstream OAuth server you can't connect to | [modules/oauth.md](modules/oauth.md) |
 | Touch the GUI frontend | [modules/gui.md](modules/gui.md) |
 | Check whether a name, dependency, or convention is changeable | [canonical.md](canonical.md) |
@@ -24,7 +24,8 @@
 | [guide.md](guide.md) | The user-facing guide: the server / profile / client model, the everyday setup path, three-state tool selection, the three discovery modes, how to verify the wiring, which record to open when something broke, and the surprises behind most "it stopped working" reports |
 | [architecture.md](architecture.md) | Architecture overview: the dual-mode process model, core module map, layering and dependency constraints, what a single call passes through, the three data flows, the two planes of scope, the two lines of defense, on-disk layout |
 | [flows.md](flows.md) | Sequence diagrams and failure branches for seven key flows: gateway startup, a lazy call, config writes, config hot reload, OAuth, derived instances, the call ledger lifecycle |
-| [modules/](modules/) | Per-package docs: responsibilities, key types, **invariants and failure directions**. Five documents organized by layer, plus dedicated write-ups for OAuth and the GUI |
+| [subsystems/](subsystems/) | Per-seam docs, each one file: what the packages in it must not do, and which way each failure falls |
+| [modules/](modules/) | The layer documents still to be moved into `subsystems/`. Per-package docs: responsibilities, key types, **invariants and failure directions**. Five documents organized by layer, plus dedicated write-ups for OAuth and the GUI |
 | [canonical.md](canonical.md) | Frozen identifiers, package layout, the four dependency constraints, command naming rules, engineering conventions, and every decision record |
 | [windows.md](windows.md) | Windows status: what's implemented, **what's unverified**, what's missing, acceptance criteria |
 | [mcp-2026-07-28.md](mcp-2026-07-28.md) | One protocol revision: what the two faces do about it today, and what is deliberately still absent. Cited by section number from the code implementing it |

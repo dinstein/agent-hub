@@ -29,7 +29,7 @@ says only "something changed", and consumers re-read state and adopt it by "the 
 generation I already applied", never by "equals the Rev in the event" — which is what makes dropped
 frames tolerable. **The event log is a different thing wearing a similar name**: `GET /v1/events/log` and
 `agenthub events` read a durable record in a closed vocabulary of kinds a consumer may switch on
-([foundation.md](foundation.md) owns it). The stream answers "something changed just now", the log
+([records.md](../subsystems/records.md) owns it). The stream answers "something changed just now", the log
 answers "what happened to this server". Do not merge them.
 
 ---
@@ -1350,7 +1350,7 @@ prompt for it; the suite has no way to answer that dialog and no business creati
 `AGENTHUB_DATA_DIR` at the test's own directory. `XDG_RUNTIME_DIR` is **deliberately inherited rather than
 stripped**: it used to have to be stripped, because on Linux it alone determined the run directory and all
 concurrent e2e daemons shared one `$XDG_RUNTIME_DIR/AgentHub/ctl.sock`, but `AGENTHUB_DATA_DIR` now moves
-the run directory too (see `RunDir` in [foundation.md](foundation.md)), so passing the variable through is
+the run directory too (see `RunDir` in [platform.md](../subsystems/platform.md)), so passing the variable through is
 how that rule gets proven end to end on a CI runner. Stripping it would hide the one environment shape
 where the rule bites.
 

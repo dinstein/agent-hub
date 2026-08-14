@@ -272,7 +272,8 @@ at to decide what may be deleted — and it was the one entry that must not be a
 ## 5c. The config hot-reload path (two things not to get wrong)
 
 GUI/CLI edits a profile → the corresponding gateway updates automatically. The path is in
-[flows.md](flows.md) §4 and the mechanism in [modules/foundation.md](modules/foundation.md); these two
+[flows.md#config-hot-reload](flows.md#config-hot-reload) and the mechanism in
+[subsystems/registry.md](subsystems/registry.md); these two
 rulings are what the mechanism exists to satisfy.
 
 1. **Self-write suppression.** When the daemon writes `profiles.json` itself, fsnotify reports the
@@ -531,7 +532,7 @@ silently reopened, and the numbering is cited from code.
     What did not change: metadata is still always on, evidence is still opt-in behind
     `calls.enabled`, recording still happens before the gate chain, and the capacity, retention and
     free-space bounds are still hard — nothing is written past them. Fail-open is about the CALL,
-    never about the bound. The behaviour lives in `modules/foundation.md` (`internal/calllog`, the
+    never about the bound. The behaviour lives in `subsystems/records.md` (`internal/calllog`, the
     two-tier table) and `flows.md`.
 
 ---
@@ -560,7 +561,7 @@ ruling are one row, and **a number not listed here may not be cited** —
 | `#32` | `internal/mcp` is standard-library only — one first-party protocol facade | §2 rule 2 |
 | `A.2 #9` | The manual paste loop, for providers that cannot reach a loopback redirect | modules/oauth.md |
 | `A.2 #10` | Refresh is serialized: daemon singleflight online, a file lock offline | modules/oauth.md |
-| `A.3 #1` | Cross-process shared state takes a **file lock** or an atomic rename, proven by an N-process acceptance test. Now governs the rate-limit counters, the registry and the credential vault | §6; modules/foundation.md; modules/config.md |
+| `A.3 #1` | Cross-process shared state takes a **file lock** or an atomic rename, proven by an N-process acceptance test. Now governs the rate-limit counters, the registry and the credential vault | §6; subsystems/registry.md; modules/config.md |
 | `A.3 #2` | `kill -9` on the daemon: the stdio data plane is untouched and gateways re-register | §6; flows.md |
 | `A.3 #4` | A daemon restart makes the session overlay vanish on **both** sides. Retired by its own logic: a session now carries no scope of its own at all | modules/config.md |
 | `A.3 #5` | skills materialization is **client-granular**, never per-session | §4 |

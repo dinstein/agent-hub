@@ -43,7 +43,7 @@ const (
 	// RuntimeHost spawns the command directly on this machine. The spawn
 	// guard still applies; it is anti-smuggling, not a sandbox.
 	RuntimeHost = "host"
-	// RuntimeDocker runs the command inside a container (docs/modules/foundation.md).
+	// RuntimeDocker runs the command inside a container (docs/subsystems/registry.md).
 	RuntimeDocker = "docker"
 )
 

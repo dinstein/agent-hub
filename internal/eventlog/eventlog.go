@@ -32,7 +32,7 @@ const (
 // CLOSED is the point. A consumer may switch on these values, colour a
 // timeline by them or alert on them, none of which is safe against a
 // free-text log message. Adding one means editing THREE places — the
-// constant, allKinds below, and the table in docs/modules/foundation.md —
+// constant, allKinds below, and the table in docs/subsystems/records.md —
 // and then WRITING it somewhere. test/buildrules fails until all four are
 // true. The first three catch a kind a consumer cannot learn about: the
 // event still gets written and only the reader meant to recognize it

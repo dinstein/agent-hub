@@ -269,7 +269,7 @@ func TestServerEntryDefaultsToStdio(t *testing.T) {
 	}
 }
 
-// TestServerRuntimeRoundTrip pins the M2 runtime extension (docs/modules/foundation.md
+// TestServerRuntimeRoundTrip pins the M2 runtime extension (docs/subsystems/registry.md
 // ): the docker block persists intact, and — the backward-compatibility
 // half — a host-runtime entry acquires no `runtime`/`docker` members on
 // disk, so a pre-M2 binary keeps reading what an M2 binary writes.

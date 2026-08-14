@@ -231,7 +231,7 @@ because a bare `agenthub` is a server id somebody can add.
 **Events** reads `GET /v1/events/log` — which exists because `cmd/agenthub-gui` may not import
 `internal/*`, so where the CLI reads `events.jsonl` directly and works offline, the GUI goes through
 the daemon like every other page. Rows are coloured from `kind` rather than from any text, legitimate
-only because that vocabulary is CLOSED ([foundation.md](foundation.md)); **a kind this build does not
+only because that vocabulary is CLOSED ([records.md](../subsystems/records.md)); **a kind this build does not
 know renders neutral rather than being hidden**, because a frontend older than its daemon must not
 silently drop records. The SSE `servers` topic is the re-read TRIGGER and never the data.
 

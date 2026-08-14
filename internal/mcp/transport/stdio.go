@@ -38,7 +38,7 @@ type StdioConfig struct {
 	Env []string
 	Cwd string
 
-	// Docker selects the container runtime (docs/modules/foundation.md). nil — the
+	// Docker selects the container runtime (docs/subsystems/protocol.md). nil — the
 	// default, and what every registry entry without a `runtime` field
 	// produces — spawns Command/Args directly on the host. Non-nil turns
 	// Command/Args into the command executed INSIDE the container while

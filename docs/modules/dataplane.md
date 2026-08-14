@@ -73,7 +73,7 @@ CLI's own environment instead of argv.
 **The handshake line spells the peer's name `server_name`, not `server`.** The bound key is the registry
 id, `slog`'s JSON handler does not deduplicate, and a reader taking the last of two identical keys —
 `encoding/json` included — would join on the peer's self-report. Same split as `client` / `client_name`
-(foundation.md); the test asserts on the **serialized** line, because a decode is what hides it.
+(subsystems/platform.md); the test asserts on the **serialized** line, because a decode is what hides it.
 Capabilities are reported as sorted top-level **keys**: `InitializeResult` keeps them raw precisely
 because this facade does not interpret them, and a log line is neither where that starts nor where an
 unbounded server-controlled object belongs.
@@ -185,7 +185,7 @@ Widening rather than replacing keeps the result a strict superset; the capture i
 bounded at 5s and fail-open; an explicit `PATH` in a server's `env` is neither probed nor widened, and the
 docker runtime is skipped. Handing the child a good PATH is only half of it: `exec.Command` resolves
 against the *parent's* PATH, so `transport.SpawnStdio` resolves against `StdioConfig.Env` instead
-([foundation.md](foundation.md)), and either half alone leaves the bug where it was. `Deps.LoginPATH` is a
+([protocol.md](../subsystems/protocol.md)), and either half alone leaves the bug where it was. `Deps.LoginPATH` is a
 seam only because `secureenv.LoginPATH` is a process-wide `sync.Once` no test can ask twice.
 
 **Derived instances: `Spec.ID` never changes.** Derivation specializes only connection parameters
@@ -261,7 +261,7 @@ would file every server's frames under whoever created it, so no plain field is 
 `Events func() *eventlog.Stream` because that stream is genuinely shared but is decided by **governance**,
 which a gateway loads *after* it builds its pool; since `Deps` is captured once at `NewPool`, a plain field
 would be read before the switch exists and every derived instance would be silent forever. The event
-vocabulary belongs to [foundation.md](foundation.md).
+vocabulary belongs to [records.md](../subsystems/records.md).
 
 **The switch is `ServerEntry.Trace`, applied as the log's enabled state**, and a log is created for
 **every** server: `Server.trace` is captured once at `Connect`, so a nil handed out there could never be
@@ -547,7 +547,7 @@ The fix is a vocabulary decision rather than a tidy: `registry_reload_failed` is
 means "keeps serving the PREVIOUS generation", and here there has never been one), so this needs a new
 gateway-scope kind, which is a published `--kind` selector the day it ships. That is four edits plus the
 pair's row in `TestEveryKindIsClassifiedDeliberately` — see
-[foundation.md](foundation.md#the-closed-vocabulary) — and a name nobody should mint in passing.
+[records.md](../subsystems/records.md#the-closed-vocabulary) — and a name nobody should mint in passing.
 
 **Not writing to disk after shutdown is achieved by sealing the resource, not by joining goroutines.**
 `connectAll` starts one goroutine per downstream and nothing joins them, so a connect that won the race

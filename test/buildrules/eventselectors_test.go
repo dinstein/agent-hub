@@ -8,7 +8,7 @@ import (
 )
 
 // TestEveryEventKindIsSelectable is the third of the three checks
-// docs/modules/foundation.md promises, and the one that was missing.
+// docs/subsystems/records.md promises, and the one that was missing.
 //
 // Adding a kind means editing the constant, allKinds, and the published
 // table, and then writing it somewhere. Its neighbours grade the constant

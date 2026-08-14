@@ -34,6 +34,7 @@ var contributorOnlyDocs = []struct{ Path, Why string }{
 	{"docs/flows.md", "runtime sequences and failure branches, restated whenever a flow changes"},
 	{"docs/mcp-2026-07-28.md", "one spec's behaviour on both faces and the gaps left open, cited by section number from the code implementing it"},
 	{"docs/modules/", "per-package invariants and the gaps recorded beside them; each moves with its package"},
+	{"docs/subsystems/", "per-seam invariants and the gaps recorded beside them; each moves with its packages"},
 	{"docs/windows.md", "one platform's implementation status, rewritten on every change to it"},
 }
 

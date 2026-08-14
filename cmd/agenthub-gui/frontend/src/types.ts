@@ -900,7 +900,7 @@ export interface CallPage {
 }
 
 /** One control-plane state change (api.EventRecord). `scope` and `kind` are
- *  CLOSED sets published in docs/modules/foundation.md — safe to switch on,
+ *  CLOSED sets published in docs/subsystems/records.md — safe to switch on,
  *  unlike a log message. An unknown value means this frontend is older than
  *  the daemon, not that the field is free text. */
 export interface EventRecord {

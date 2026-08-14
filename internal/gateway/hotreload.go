@@ -15,7 +15,7 @@ import (
 )
 
 // This file is the gateway's configuration hot-reload plane
-// (docs/modules/foundation.md, canonical.md §5c). Change notifications arrive
+// (docs/subsystems/registry.md, canonical.md §5c). Change notifications arrive
 // on TWO channels —
 // the local registry watcher (fsnotify + poll) and the daemon control link
 // (LinkEventRegistry) — and both funnel into onRegistryChange, which
@@ -79,7 +79,7 @@ func (g *gateway) onRegistryChange(kind registry.DocKind) {
 	if err != nil {
 		// Half-written file or transient lock failure: keep serving the old
 		// config; the next debounce/poll/link event retries (load failure
-		// never advances the applied state — docs/modules/foundation.md).
+		// never advances the applied state — docs/subsystems/registry.md).
 		reloadFailed("registry reload failed; keeping previous config", err)
 		return
 	}

@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-// Mandatory field convention (docs/modules/foundation.md). Every log record
+// Mandatory field convention (docs/subsystems/platform.md). Every log record
 // that concerns a downstream server, a derived instance, a tool call, a
 // client, a session, a registry generation or the writing process must use
 // these exact keys so that log streams stay joinable across the gateway,

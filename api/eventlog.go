@@ -22,7 +22,7 @@ import (
 //
 // The wire shape mirrors internal/eventlog.Record, which api may not import
 // (depguard rule 1). Kind and Scope are closed sets published in
-// docs/modules/foundation.md; a consumer may match on them, and an unknown
+// docs/subsystems/records.md; a consumer may match on them, and an unknown
 // value means this client is older than the daemon rather than that the
 // value is free text.
 type EventRecord struct {
@@ -58,7 +58,7 @@ type EventRecord struct {
 	// counts: tools for `connected` and `tools_changed`, respawns for
 	// `respawned`, consecutive failures for `circuit_open` and the health
 	// flips. The mapping is published beside the kinds in
-	// docs/modules/foundation.md, and a consumer that renders the number
+	// docs/subsystems/records.md, and a consumer that renders the number
 	// without consulting it labels a thirteen-tool connect a thirteenth try.
 	Count int `json:"count,omitempty"`
 	// Rev is a registry generation. It IDENTIFIES a config revision rather

@@ -25,7 +25,7 @@ var errNoSpawnInTest = errors.New("spawn refused by the test")
 //
 // Serialized, never decoded: the duplicate-key bug this file guards against
 // is invisible after a decode, because the decode is what discards the
-// duplicate (foundation.md, the client / client_name entry).
+// duplicate (docs/subsystems/platform.md, the client / client_name entry).
 func findLine(t *testing.T, out, msg string) string {
 	t.Helper()
 	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {

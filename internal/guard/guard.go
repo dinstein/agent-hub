@@ -15,7 +15,7 @@
 // verdict. Nothing in agenthub inspects what a downstream returned.
 //
 // This package only holds what the subpackages share: the decidable
-// rejection sentinel. Per docs/modules/foundation.md ("error-handling conventions"), every typed
+// rejection sentinel. Per canonical.md §6 ("error handling"), every typed
 // guard rejection — *spawnguard.Blocked, *netguard.BlockedError — must
 // satisfy errors.Is(err, guard.ErrBlocked) so callers can classify guard
 // rejections without importing every subpackage.

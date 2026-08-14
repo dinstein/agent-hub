@@ -254,7 +254,7 @@ func TestPrivilegedFalseDoesNotBlindTheScan(t *testing.T) {
 }
 
 // TestCheckSeesPastIsolationSpawnerFlags pins the alignment with the M2
-// Docker isolation spawner (docs/modules/foundation.md): its generated run line puts
+// Docker isolation spawner (docs/subsystems/protocol.md): its generated run line puts
 // --cidfile / --pids-limit / --ulimit style flags BEFORE the -v flags, and
 // a value the scanner does not know to consume would be read as the image
 // operand — stopping the scan before the mounts, i.e. blinding the guard.

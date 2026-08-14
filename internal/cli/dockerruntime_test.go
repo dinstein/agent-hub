@@ -170,7 +170,7 @@ func TestRejectedEntryIsNotPersisted(t *testing.T) {
 	}
 }
 
-// TestGeneratedRunLinePassesTheSpawnGuard is the alignment test docs/modules/foundation.md
+// TestGeneratedRunLinePassesTheSpawnGuard is the alignment test docs/subsystems/protocol.md
 //
 //	asks for: the argv the isolation spawner actually generates, screened
 //

@@ -44,7 +44,7 @@ var attrConstructors = map[string]bool{
 // logx's mandatory keys as a string literal instead of calling the helper.
 //
 // The convention is written down twice — internal/logx/fields.go ("Do not
-// invent synonyms") and docs/modules/foundation.md — and until this test
+// invent synonyms") and docs/subsystems/platform.md — and until this test
 // existed nothing enforced it. A rule that quietly became a suggestion reads
 // exactly like a rule, and the drift it permits is invisible: a hand-spelled
 // key still produces a plausible-looking line, and the reader only finds out

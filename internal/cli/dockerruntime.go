@@ -9,7 +9,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// Docker runtime surface of the CLI (docs/modules/foundation.md, M2).
+// Docker runtime surface of the CLI (docs/subsystems/protocol.md, M2).
 //
 // Everything here happens at CONFIGURATION time — when the operator can
 // still fix what they typed. `server add` renders the exact `docker run`

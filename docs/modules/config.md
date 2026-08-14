@@ -196,7 +196,7 @@ default). `internal/ctlapi/sse.go` consumes both — server list changes through
 topics through the settler.
 
 Not to be confused with `internal/eventlog`, a separate package holding the persisted event **record**
-— see [foundation.md](foundation.md).
+— see [registry.md](../subsystems/registry.md).
 
 ### Invariants and failure directions
 

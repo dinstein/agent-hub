@@ -1,4 +1,4 @@
-// Docker isolation spawner (docs/modules/foundation.md, M2).
+// Docker isolation spawner (docs/subsystems/protocol.md, M2).
 //
 // Positioning: the baseline spawn guard is anti-smuggling, not a sandbox.
 // This file is the resource/namespace isolation half — a stdio transport

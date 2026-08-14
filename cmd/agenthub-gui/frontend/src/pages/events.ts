@@ -8,7 +8,7 @@
 // Read-only, like Sessions and for a stronger reason: these records describe
 // things that already happened, so there is nothing here to change.
 //
-// The vocabulary is CLOSED (docs/modules/foundation.md), which is what makes
+// The vocabulary is CLOSED (docs/subsystems/records.md), which is what makes
 // the tone mapping below legitimate. Colouring rows by a log message would
 // be guessing; colouring them by `kind` is reading a contract. A kind this
 // build does not know still renders — it lands in the neutral tone rather
