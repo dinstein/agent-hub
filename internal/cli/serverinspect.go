@@ -24,7 +24,7 @@ import (
 // `server enable|disable|inspect` complete the server group.
 //
 // enable/disable flip registry.ServerEntry.Enabled, which removes the
-// server from every profile's effective set at once (docs/modules/controlplane.md) — the
+// server from every profile's effective set at once (docs/subsystems/cli.md) — the
 // global switch, above any per-profile narrowing.
 //
 // inspect is offline-capable and reads the SAME cache `server tool ls` reads: the

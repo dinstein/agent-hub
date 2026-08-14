@@ -10,7 +10,7 @@ import (
 )
 
 // GET /v1/clients, POST|DELETE /v1/clients/{id}/connect — AI client
-// adaptation (docs/modules/controlplane.md).
+// adaptation (docs/subsystems/docs/subsystems/controlplane.md).
 //
 // DETECTION ONLY STATS. internal/clients.Detect never opens another
 // application's configuration file, because on macOS reading one triggers a

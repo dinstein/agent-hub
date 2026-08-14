@@ -54,7 +54,7 @@ func TestSecretRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSecretIsNeverEchoed is the docs/modules/controlplane.md rule-5 guard: there is no
+// TestSecretIsNeverEchoed is the docs/subsystems/cli.md rule-5 guard: there is no
 // command, mode or flag that puts a stored value back on a stream. It runs
 // every reading surface and asserts the sentinel never appears.
 func TestSecretIsNeverEchoed(t *testing.T) {

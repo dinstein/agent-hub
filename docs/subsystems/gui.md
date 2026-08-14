@@ -1,11 +1,55 @@
-# GUI Frontend
+# The GUI
 
-The second of two topic-oriented documents organized around an **external constraint** rather than a
-layer (the other is [../status/oauth.md](../status/oauth.md)). It covers the reasoning behind the TypeScript in
-`cmd/agenthub-gui/frontend/`: **why it is shaped the way it is, and which rules must not be casually
-changed**. The Go-side service body and wiring live in
-[controlplane.md](controlplane.md#cmdagenthub-gui); the tech-stack rationale (vanilla TS + Vite,
-`@wailsio/runtime` as the only runtime dependency) is in [../canonical.md](../canonical.md) §7 item 3.
+> **Answers** why the desktop application is shaped the way it is, on both sides of the bridge, and which of its rules must not be casually changed.
+> **Not here** the endpoints it calls → [controlplane.md](controlplane.md); the tech-stack ruling → [canonical.md §7](../canonical.md#7-decision-records) item 3.
+> **Kept true by** the separate `gui` CI job on macOS, `internal/depguardtest`, and the healthgen golden test.
+
+## The Go side
+
+**Compile-time constraint: nothing under `cmd/agenthub-gui` imports the top-level `internal/*`**, and it
+may only reach the daemon through the public `api` package, exactly like any third-party integration. It
+never touches the data directory and never speaks MCP. The corollary is that **everything the GUI can do
+has a control-plane endpoint, and is therefore something the CLI can do too** — "the GUI is optional" as a
+compile-time property rather than a verbal promise.
+
+**Five bound methods have no control-plane call behind them**: tray availability, daemon ownership, window
+preferences, hide, quit. They are not a hole in that rule — a CLI is not missing anything by being unable
+to hide a window — and none reaches configuration. Tray availability is display state on purpose: a webview
+that could set it could hide the window into a status area that is not there, leaving a process with no
+reachable surface.
+
+**Build tag isolation.** The default build gets a placeholder `main.go`; the real application sits behind
+`//go:build wails`, because a webview build needs GTK/WebKit packages CI runners lack. The same cut is made
+inside services — **the whole service body has no build tag**, so it compiles, vets and unit-tests without
+graphics libraries — and a third time for the tray, so the day Wails3 alpha stops building only the tagged
+files break.
+
+**The GUI must be able to open when the daemon is down.** `ServiceStartup` returns nil even when it cannot
+reach the daemon, because returning non-nil aborts application startup and a GUI that refuses to open when
+the daemon died deprives the user of the interface for diagnosing it. Every data call then fails with
+`ErrOffline`, and **offline must fail loudly**: an empty server list and an unreachable daemon must never
+look the same.
+
+**Only `Connect` starts the daemon.** Every other method dials without starting, so a repeatedly crashing
+daemon is not resurrected on every click. **Only transport failures discard the connection**: an `*api.Error`
+means the daemon answered and merely said no.
+
+**The ownership claim is a process handle, never a memory of having started something.** The hub is stopped
+only when the supervised process this application is running is non-nil; a hub that merely answers the
+socket is used and never signalled, because taking it down would end somebody else's session. A bool
+written from "did my dial start one" is a fact about a past call rather than about the hub in front of us:
+it outlived the daemon it described and could not tell "I started this" from "somebody else did,
+concurrently". A transport failure disowns nothing — the connection is gone, the process is not.
+
+**Health is rendered, never derived.** `ServerHealth` filters the list rather than calling a per-server
+endpoint: the list payload and the `servers` SSE payload are the same bytes. The event bridge does not
+retry the inner layer, since the api client brings its own reconnection.
+
+**healthgen reads the `api` package's source with `go/ast` rather than importing it**, so a new Go constant
+shows up automatically and a golden test fails when the checked-in TypeScript goes stale; importing could
+only prove the generator parrots itself. Fail-closed: a group with zero constants, a non-string constant,
+or a file that will not parse are all errors, because silently generating a smaller set produces a frontend
+that renders unknown states as blanks.
 
 ---
 

@@ -17,7 +17,7 @@ import (
 
 // The `secret` group is the CLI face of the four-level vault chain.
 //
-// INVARIANT (docs/modules/controlplane.md rule 5): no command in this file ever prints a
+// INVARIANT (docs/subsystems/cli.md rule 5): no command in this file ever prints a
 // secret VALUE, and there is no --show escape hatch to add later. `ls`
 // renders key names and the backend only; verification of a value is done
 // by `agenthub server test`, which proves it works without putting it in

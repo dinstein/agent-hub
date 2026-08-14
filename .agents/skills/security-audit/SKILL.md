@@ -81,14 +81,14 @@ validating X" is not one, and an empty shard is a correct outcome the next phase
 apart from noise.
 
 **Verify** — each finding, as its shard lands, goes to three agents told to **refute** it, on
-different lenses: does it reproduce, does a gate above already stop it, does `docs/modules/` record
+different lenses: does it reproduce, does a gate above already stop it, does `docs/subsystems/` record
 it as deliberate. Default to refuted when uncertain; survives at 2-of-3. Verifiers are not told which
 engine raised it — engine count is a rank input in the next phase, not a thumb on the scale here.
 
 **Adjudicate** — one agent over the survivors. Dedup by file, line ±5 and claim: the same defect
 arrives under two names from two engines far more often than twice from one. Then rank, engine count
 first — `confirmed` (both engines, independently, same code) above `single-engine` (one engine,
-evidence that stands alone); drop the rest, **citing `docs/modules/`** where a decision was
+evidence that stands alone); drop the rest, **citing `docs/subsystems/`** where a decision was
 deliberate, since an uncited drop reads to the next sweep exactly like an oversight.
 
 It returns the ranked list plus counts: found per engine, refuted, dropped, overlap. Those counts are
@@ -114,7 +114,7 @@ fix when both engines report the same non-bug:
   set, one target per path. A parser of untrusted input with no target is itself a finding:
   `test/buildrules` only proves the three declared lists agree with each other, never that a
   newly-landed path joined them.
-- Read the [docs/modules/](../../../docs/modules/) files covering the shard first — they are cut by
+- Read the [docs/subsystems/](../../../docs/subsystems/) files covering the shard first — they are cut by
   plane, so a trust-boundary shard usually spans more than one, and `security.md` is always among
   them: it holds what earlier sweeps raised, declined, and closed. Several things here look redundant
   and are load bearing; those files are where the reason was written down.
@@ -130,7 +130,7 @@ reported: not what the sweep raises afterwards, and not a fix that turns out to 
 relaxed. A sweep arriving with a branch already open has taken the one decision here that is not
 technical — whether a risk is worth changing the tree for — from the person who lives with both.
 
-Declined and unanswered findings get their `docs/modules/` line, beside the invariant they bend. That
+Declined and unanswered findings get their `docs/subsystems/` line, beside the invariant they bend. That
 is a tree change like any other, so it lands on step 5's branch; if nothing was approved, it *is* the
 branch.
 
@@ -141,7 +141,7 @@ patch. A test that fails confirms it and is the first half of the fix commit; on
 it, gets deleted, and goes back to the user — they approved a fix for something that is not there.
 
 **A finding with neither a failing test nor quoted proof does not get fixed.** It gets a line in the
-owning `docs/modules/` file saying it was raised and could not be reproduced. An unverified fix to a
+owning `docs/subsystems/` file saying it was raised and could not be reproduced. An unverified fix to a
 fail-closed gate changes the failure direction of code nobody could demonstrate was wrong.
 
 ## 5. Fix and land
@@ -157,7 +157,7 @@ therefore the PR body. Confirmed but unapproved is not the same set, and does no
   one bends.
 - **A fix that only works by relaxing an invariant is not a fix.** Record it beside the invariant and
   bring it back: they approved closing a hole, not bending a rule. Its own branch, its own argument.
-- A fix changing a failure direction updates that `docs/modules/` file in the same commit.
+- A fix changing a failure direction updates that `docs/subsystems/` file in the same commit.
 - A parser fix gets `make fuzz FUZZ=<target>` — `make ci` runs only the seed corpora.
 
 ## Stop condition
@@ -169,7 +169,7 @@ for a different answer — two engines disagreeing is signal, the same engine tw
 starts a branch, and that branch lands or is discarded the same day. Waiting for an answer is the
 expected shape; **the bad end is a finding nobody wrote down**, not one nobody fixed.
 
-**Across sweeps:** fixed is in `git log`; declined and unanswered are in `docs/modules/`. A separate
+**Across sweeps:** fixed is in `git log`; declined and unanswered are in `docs/subsystems/`. A separate
 ledger goes stale first. Verify's refutations are recorded nowhere, deliberately — most are noise, and
 writing them down would bury the two lists that matter. The exception is a non-bug that keeps coming
 back: adjudication's counts show it, and its correction goes **into the brief below**, which every

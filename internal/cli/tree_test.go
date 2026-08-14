@@ -11,7 +11,7 @@ import (
 // This file pins the SHAPE of the command tree rather than any single
 // command's behavior:
 //
-//   - docs/modules/controlplane.md is the acceptance checklist — every command it lists
+//   - docs/subsystems/cli.md is the acceptance checklist — every command it lists
 //     must exist, spelled exactly as listed;
 //   - canonical.md §3 freezes the naming rules — resource groups are
 //     singular with a plural alias, listings are always `ls`, and EVERY
@@ -101,7 +101,7 @@ func commandPaths(root *cobra.Command) map[string]*cobra.Command {
 	return out
 }
 
-// TestCommandTreeCoversDesign asserts every command of docs/modules/controlplane.md (as
+// TestCommandTreeCoversDesign asserts every command of docs/subsystems/cli.md (as
 // reconciled by canonical.md §3) exists.
 func TestCommandTreeCoversDesign(t *testing.T) {
 	want := []string{

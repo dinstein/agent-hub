@@ -12,7 +12,7 @@ import (
 // TestRestoreOnSignalPutsTheTerminalBackBeforeTheSignalLands is the
 // regression for the finding the 2026-07-31 sweep confirmed.
 //
-// readNoEcho's own comment and docs/modules/controlplane.md both promised
+// readNoEcho's own comment and docs/subsystems/cli.md both promised
 // that "an interrupted read never leaves the user's shell with echo off",
 // and the restore was a defer. readNoEcho deliberately leaves ISIG enabled
 // so Ctrl-C works at a hidden prompt, and Go's default disposition for

@@ -8,7 +8,7 @@ import (
 
 // ManualInstructions is what `auth login --manual` prints. Rendering lives
 // in the CLI; this type is the data so the human table and the --json/NDJSON
-// stream come from one structure (docs/modules/controlplane.md).
+// stream come from one structure (docs/subsystems/docs/subsystems/controlplane.md).
 type ManualInstructions struct {
 	// AuthorizationURL is opened by the user on ANY device with a browser.
 	AuthorizationURL string

@@ -16,7 +16,7 @@ import (
 
 // The `profile` group is the front end of the profile operations in
 // internal/confops: named capability tiers made of an enabled-server set
-// plus per-server three-state tool selectors (docs/modules/controlplane.md, docs/model.md).
+// plus per-server three-state tool selectors (docs/subsystems/cli.md, docs/model.md).
 //
 // The rules — what a rename does to the clients that reference the profile,
 // what a removal deliberately does NOT do to them — live in confops, so the

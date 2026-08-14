@@ -138,7 +138,7 @@ export function table(
 
 /**
  * Which of the three "there is nothing here" situations this is
- * (docs/modules/gui.md).
+ * (docs/subsystems/gui.md).
  *
  *   loading — we have not been told yet. A skeleton, never a sentence: a
  *             sentence about emptiness written before the answer arrives is
@@ -224,7 +224,7 @@ export type ChipTone = "neutral" | "success" | "warning" | "danger";
 
 /**
  * One overview chip. A chip with a count of ZERO is not rendered — the caller
- * gets null and drops it (docs/modules/gui.md). "0 needs attention" is a
+ * gets null and drops it (docs/subsystems/gui.md). "0 needs attention" is a
  * sentence nobody needs to read, and a row of zeroes buries the one number
  * that is not zero.
  */
@@ -278,7 +278,7 @@ export function chipRow(...chips: (HTMLElement | null)[]): HTMLElement | null {
 
 /**
  * Turns whatever a daemon, a spawned process or an HTTP peer produced into ONE
- * line (docs/modules/gui.md).
+ * line (docs/subsystems/gui.md).
  *
  * The input is routinely a Go error chain, a Node stack trace or a signed URL
  * three hundred characters long; rendered verbatim it pushes every actionable

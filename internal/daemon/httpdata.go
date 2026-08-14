@@ -80,7 +80,7 @@ type httpPlaneDeps struct {
 	// bearer was still attached and the vault still read.
 	//
 	// TestDataPlaneLeavesCredentialsToTheGateway keeps it that way; the long
-	// form is in docs/modules/controlplane.md under internal/httpbridge.
+	// form is in docs/subsystems/docs/subsystems/controlplane.md under internal/httpbridge.
 
 	// Dial overrides downstream transport creation (tests).
 	Dial downstream.DialFunc

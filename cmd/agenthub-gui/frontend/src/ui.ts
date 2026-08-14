@@ -90,7 +90,7 @@ export function button(label: string, cls: string, onClick: () => void): HTMLBut
  * its precondition or never reached the daemon leaves the switch showing what
  * is actually stored rather than what the user hoped. An optimistic flip that
  * has to be walked back is the same failure a removed row avoids by greying
- * out instead of vanishing (docs/modules/gui.md §2): for one moment the
+ * out instead of vanishing (docs/subsystems/gui.md §2): for one moment the
  * interface states something untrue, and that is exactly the moment the user
  * looks away satisfied.
  *
@@ -688,7 +688,7 @@ export function errorDetail(err: unknown): HTMLElement {
 }
 
 // ---------------------------------------------------------------------------
-// Theme (docs/modules/gui.md)
+// Theme (docs/subsystems/gui.md)
 // ---------------------------------------------------------------------------
 
 export type ThemeMode = "light" | "dark" | "system";

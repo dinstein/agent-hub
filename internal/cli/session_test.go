@@ -15,7 +15,7 @@ func pointSocketAtNothing(t *testing.T) {
 	t.Setenv("AGENTHUB_SOCKET", filepath.Join(t.TempDir(), "absent.sock"))
 }
 
-// TestOnlineOnlyCommandsExit4 pins the online/offline matrix of docs/modules/controlplane.md
+// TestOnlineOnlyCommandsExit4 pins the online/offline matrix of docs/subsystems/cli.md
 // : a command whose subject is a daemon RUNTIME object must refuse with
 // E_DAEMON_DOWN rather than invent an offline answer.
 func TestOnlineOnlyCommandsExit4(t *testing.T) {

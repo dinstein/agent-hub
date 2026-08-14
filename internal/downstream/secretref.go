@@ -49,7 +49,7 @@ func (e *UnresolvedSecretError) Unwrap() error { return ErrUnresolvedSecret }
 // the reason UnresolvedSecretError states — the human wording is not an API.
 //
 // The Detail is the error, which for an unresolved secret names the KEY and
-// never the value (docs/modules/controlplane.md rule 5).
+// never the value (docs/subsystems/docs/subsystems/controlplane.md rule 5).
 func connectFailure(err error) eventlog.Record {
 	kind := eventlog.KindConnectFailed
 	var missing *UnresolvedSecretError
@@ -79,7 +79,7 @@ var ErrNoResolver = errors.New("downstream: secret placeholder used but no secre
 //     operator debugs the wrong problem; worse, a header expanded to the
 //     empty string can turn an authenticated endpoint into an anonymous one.
 //   - The error names the KEY, never the value, and no resolved value is
-//     ever logged or embedded in an error (docs/modules/controlplane.md rule 5: secrets are
+//     ever logged or embedded in an error (docs/subsystems/docs/subsystems/controlplane.md rule 5: secrets are
 //     never echoed).
 //
 // Placeholders that do not start with SECRET_ are left verbatim: they belong

@@ -36,7 +36,7 @@ const (
 //
 // RED LINE: no token, no client secret, no refresh token — HasRefreshToken
 // is a boolean, not the token. There is no reveal escape hatch on this API
-// (docs/modules/controlplane.md rule 5).
+// (docs/subsystems/docs/subsystems/controlplane.md rule 5).
 //
 // There is deliberately no persisted "needs auth" flag anywhere: whether a
 // server currently requires authorization is runtime state reported through

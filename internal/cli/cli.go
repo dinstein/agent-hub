@@ -16,7 +16,7 @@
 //     the plural as a cobra alias (server/servers, client/clients).
 //   - Every command supports --json; human and JSON output are rendered
 //     from the same data structure via internal/cli/output.
-//   - Exit codes follow the frozen table in docs/modules/controlplane.md (see errors.go);
+//   - Exit codes follow the frozen table in docs/subsystems/cli.md (see errors.go);
 //     cobra usage errors are funneled to exit 2 by construction.
 package cli
 

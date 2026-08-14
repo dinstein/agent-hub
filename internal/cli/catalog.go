@@ -13,7 +13,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/confops"
 )
 
-// `agenthub catalog` — the curated server directory (docs/modules/controlplane.md).
+// `agenthub catalog` — the curated server directory (docs/subsystems/cli.md).
 //
 // It exists so that adding a well-known server is a choice from a list
 // rather than a remembered `npx -y @modelcontextprotocol/server-…` command
@@ -367,7 +367,7 @@ func catalogParamError(e catalog.Entry, err error) error {
 
 // catalogAddCommand renders the invocation that adds the entry, with one
 // --param per declared parameter. This is the string `catalog show` prints
-// and the one a GUI would display next to its Add button (docs/modules/controlplane.md).
+// and the one a GUI would display next to its Add button (docs/subsystems/cli.md).
 //
 // The parameters are shown as <placeholders>, never as their examples: a
 // line the user can copy and run unchanged, with someone else's path in it,

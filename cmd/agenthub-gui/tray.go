@@ -140,7 +140,7 @@ type serverCounts struct {
 // serverBucket classifies one server the same way the Servers page does, and
 // for the same reason: the Health contract is computed server-side by one pure
 // function, and a second opinion formed from `Enabled` or `State` would be the
-// frontend-invented status docs/modules/controlplane.md forbids. Disabled
+// frontend-invented status docs/subsystems/docs/subsystems/controlplane.md forbids. Disabled
 // reports level=healthy on purpose, so admin state is tested FIRST.
 func serverBucket(s api.Server) string {
 	if s.Health.AdminState == api.AdminStateDisabled {
@@ -447,7 +447,7 @@ func writeTraySignature(b *strings.Builder, items []trayItem) {
 // registration and then shows nothing. Since closeIntentFor turns "no tray"
 // back into "the close button quits", saying false here leaves Linux with
 // exactly the behaviour it had before this feature, which is the honest answer
-// until someone verifies it on a real session (docs/modules/gui.md).
+// until someone verifies it on a real session (docs/subsystems/gui.md).
 func trayAvailableOn(goos string) bool {
 	switch goos {
 	case "darwin", "windows":

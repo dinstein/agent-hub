@@ -129,7 +129,7 @@ func TestDTOGoldenJSON(t *testing.T) {
 	}
 }
 
-// TestFrozenConstants pins the Health string constants (docs/modules/controlplane.md).
+// TestFrozenConstants pins the Health string constants (docs/subsystems/docs/subsystems/controlplane.md).
 // These are ABI: GUI TS constants are generated from them.
 func TestFrozenConstants(t *testing.T) {
 	frozen := map[string]string{

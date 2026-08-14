@@ -188,7 +188,7 @@ export interface ServerTestResult {
 }
 
 // ---------------------------------------------------------------------------
-// The curated catalog (api/catalog.go, docs/modules/controlplane.md)
+// The curated catalog (api/catalog.go, docs/subsystems/docs/subsystems/controlplane.md)
 // ---------------------------------------------------------------------------
 
 /**
@@ -281,7 +281,7 @@ export interface CatalogAdded extends WriteResult {
 }
 
 // ---------------------------------------------------------------------------
-// Pasted client configuration (api/catalog.go, docs/modules/controlplane.md)
+// Pasted client configuration (api/catalog.go, docs/subsystems/docs/subsystems/controlplane.md)
 // ---------------------------------------------------------------------------
 
 /** api catalog.Shape: which wrapper a pasted document was recognized as. */
@@ -1069,7 +1069,7 @@ export const ErrCode = {
   /** ctlapi.CodeUnsupportedFormat: a configuration format agenthub
    *  RECOGNIZES but deliberately does not parse (TOML, YAML). It is not
    *  "your paste is broken" — the hint carries the manual route, and the
-   *  refusal is permanent by design (docs/modules/controlplane.md). */
+   *  refusal is permanent by design (docs/subsystems/docs/subsystems/controlplane.md). */
   UnsupportedFormat: "E_UNSUPPORTED_FORMAT",
   /** A live server self-test reached the downstream and its initial
    *  handshake was rejected with 401/403. Offer the OAuth login action. */

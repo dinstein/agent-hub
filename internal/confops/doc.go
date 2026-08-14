@@ -2,7 +2,7 @@
 // against the configuration registry: adding a server, renaming a profile,
 // binding a client, flipping a governance switch, disabling one tool.
 //
-// Why it exists (docs/modules/controlplane.md): the CLI and the
+// Why it exists (docs/subsystems/docs/subsystems/controlplane.md): the CLI and the
 // control plane are two front ends over the same configuration. If each one
 // spelled out "what it means to rename a profile", they would drift — and
 // the two would then disagree about the same operation, which is the class

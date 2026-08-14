@@ -144,7 +144,7 @@ func TestToolLsSearchGolden(t *testing.T) {
 }
 
 // A server argument narrows to that server; an unknown one is exit 3 with
-// the server-not-found code (the frozen table of docs/modules/controlplane.md).
+// the server-not-found code (the frozen table of docs/subsystems/cli.md).
 func TestToolLsServerArgument(t *testing.T) {
 	seedCatalog(t)
 

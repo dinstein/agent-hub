@@ -9,7 +9,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// Profile CRUD (docs/modules/controlplane.md): membership and the
+// Profile CRUD (docs/subsystems/docs/subsystems/controlplane.md): membership and the
 // three-state tool selectors, plus the global active marker.
 
 // profileWire is one profile as listed.

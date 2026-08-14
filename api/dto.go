@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Health level constants (docs/modules/controlplane.md). Frozen wire values: frontends
+// Health level constants (docs/subsystems/docs/subsystems/controlplane.md). Frozen wire values: frontends
 // render them verbatim and the generated TS constants mirror this list.
 const (
 	// HealthLevelHealthy means the server is fully operational.
@@ -17,7 +17,7 @@ const (
 	HealthLevelUnhealthy = "unhealthy"
 )
 
-// AdminState constants (docs/modules/controlplane.md). A disabled server
+// AdminState constants (docs/subsystems/docs/subsystems/controlplane.md). A disabled server
 // reports Level=healthy on purpose: intentionally off is not broken.
 //
 // There are two, because a server is either in service or switched off.
@@ -31,7 +31,7 @@ const (
 	AdminStateDisabled = "disabled"
 )
 
-// Action constants (docs/modules/controlplane.md): the machine-readable suggested action
+// Action constants (docs/subsystems/docs/subsystems/controlplane.md): the machine-readable suggested action
 // that drives UI buttons, `server ls` hint columns and doctor output.
 const (
 	// ActionLogin suggests running OAuth login for the server: a browser and
@@ -58,7 +58,7 @@ const (
 	ActionNone = ""
 )
 
-// Hello is the daemon's answer to Ping (docs/modules/controlplane.md): version for
+// Hello is the daemon's answer to Ping (docs/subsystems/docs/subsystems/controlplane.md): version for
 // negotiation, pid for liveness checks, and the registry generation counter
 // that replaces mtime polling for change detection.
 type Hello struct {
@@ -76,7 +76,7 @@ type Hello struct {
 }
 
 // Health is the display contract computed server-side by a single pure
-// function (docs/modules/controlplane.md). A frontend presenting this DTO
+// function (docs/subsystems/docs/subsystems/controlplane.md). A frontend presenting this DTO
 // renders it verbatim and never re-derives it from connection flags. A
 // purpose-specific live self-test may replace the whole observation with its
 // typed outcome; it must not remix individual Health fields. The SSE

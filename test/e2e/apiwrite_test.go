@@ -192,7 +192,7 @@ func TestAPIWriteRefusesAStaleGeneration(t *testing.T) {
 	// hundred milliseconds after an outside writer a re-read still answers the
 	// OLD generation and a retry at it earns a second conflict. A frontend that
 	// re-reads must therefore back off and retry rather than treat one repeat as
-	// a failure — recorded in docs/modules/controlplane.md, because it is a
+	// a failure — recorded in docs/subsystems/testing.md, because it is a
 	// property of the route and not of this test.
 	if _, err = c.Servers.SetEnabled(ctx, "alpha", true, conflict.CurrentGeneration); err != nil {
 		t.Fatalf("the retry at the generation the conflict reported still failed: %v", err)

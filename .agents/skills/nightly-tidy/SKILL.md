@@ -15,7 +15,7 @@ several worktrees are usually in flight, so every landed commit is a rebase for 
 quiet night is a correct outcome. Landing nothing is a correct outcome.
 
 It does not hunt for bugs (the [security-audit skill](../security-audit/SKILL.md) does) and it does not change
-behaviour. A behaviour change discovered here becomes a note in the owning `docs/modules/` file and
+behaviour. A behaviour change discovered here becomes a note in the owning `docs/subsystems/` file and
 then a normal feature branch.
 
 ---
@@ -44,7 +44,7 @@ git log --since="2 weeks ago" --name-only --pretty=format: | sort | uniq -c | so
 
 Prefer, in order: **what changed recently** (a simplification is still cheap and the docs are most
 likely left behind); **what carries a recorded gap** (`grep -rn "current assembly status"
-docs/modules/`); then what nothing has touched in months — least likely to conflict, also least
+docs/subsystems/`); then what nothing has touched in months — least likely to conflict, also least
 likely to matter.
 
 ```bash
@@ -55,7 +55,7 @@ The three passes are the subtask list; the draft PR opens on the first commit as
 `tidy-<slice>: <what was collapsed>` — "tidy" alone tells a reader nothing about whether it touches
 theirs.
 
-Read the slice's `docs/modules/` file **before** the code. Its invariants are what tells a
+Read the slice's `docs/subsystems/` file **before** the code. Its invariants are what tells a
 simplification apart from a regression.
 
 ## 2. Pass A — simplify the logic
@@ -97,7 +97,7 @@ Before moving anything, check it is allowed to move:
 | The gate chain, the call path, provenance for an exposed name, or a tool selector | AGENTS.md's *easiest things to get wrong* — each of those is frozen, and none of them move on a tidy night |
 
 If a refactor would be *nicer* but touches any row above, it does not happen here — write it down in
-the `docs/modules/` file and leave. A refactor that does change an invariant or a failure direction
+the `docs/subsystems/` file and leave. A refactor that does change an invariant or a failure direction
 updates that file **in the same commit**: the next reader's only defence against a silently changed
 invariant is that file.
 
@@ -143,7 +143,7 @@ the night — the bar is the only thing separating this loop from churn.
 **Per night:** one slice, one branch, landed or discarded before you finish. A tidy branch left open
 overnight conflicts with real work and nobody remembers what it was for.
 
-**Across nights:** what was found and left alone goes in that package's `docs/modules/` file; what
+**Across nights:** what was found and left alone goes in that package's `docs/subsystems/` file; what
 was fixed is in `git log`. A separate ledger is the thing that goes stale first.
 
 ## Never touch on a tidy night

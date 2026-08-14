@@ -192,7 +192,7 @@ func mcpHTTPTestServerWithTools(t *testing.T, tools []mcp.ToolDef) *httptest.Ser
 
 // TestServerTestHTTPConnectsAndCalls is the CLI half of the http path:
 // add --url, connect, list, and make a REAL call (which is how a credential
-// is verified — never by printing it, docs/modules/controlplane.md rule 5).
+// is verified — never by printing it, docs/subsystems/cli.md rule 5).
 func TestServerTestHTTPConnectsAndCalls(t *testing.T) {
 	setDataDir(t)
 	srv := mcpHTTPTestServer(t)

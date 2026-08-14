@@ -22,7 +22,7 @@ regardless of who asked.
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | How the system is carved up, and what a single call passes through |
 | [docs/flows.md](docs/flows.md) | How a flow runs at runtime, and which way it falls on failure |
-| [docs/modules/](docs/modules/) | Before touching a package — its invariants and failure directions |
+| [docs/subsystems/](docs/subsystems/) | Before touching a package — its invariants and failure directions |
 | [docs/status/oauth.md](docs/status/oauth.md) | An OAuth downstream will not connect, or which provider shapes are supported |
 | [docs/canonical.md](docs/canonical.md) | Whether a name/dependency/convention may change, and why it was decided |
 | [.agents/skills/](.agents/skills/) | You are about to **do** one of the standard workflows, and want its steps in order |
@@ -36,7 +36,7 @@ of parallel finders, adversarial verifiers and one adjudication pass). `.agents/
 single source; `.claude/skills` links to the entire directory so Codex and Claude execute the same
 files.
 
-Confirmed gaps, pinned to a line but not yet fixed, live in the `docs/modules/` file of the package
+Confirmed gaps, pinned to a line but not yet fixed, live in the `docs/subsystems/` file of the package
 that owns them — under "current assembly status", or beside the invariant they bend — and, for one
 platform's overall state, in [docs/windows.md](docs/windows.md). There is no separate backlog file:
 a gap recorded next to the code it is about gets read by whoever touches that code, which is more

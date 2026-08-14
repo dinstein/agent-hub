@@ -7,7 +7,7 @@
 // spellings come from the generated Go api constants
 // (src/generated/health.ts).
 //
-// INFORMATION ARCHITECTURE (docs/modules/gui.md / 2.2)
+// INFORMATION ARCHITECTURE (docs/subsystems/gui.md / 2.2)
 //
 //   - Rows are grouped by CONFIGURATION — Enabled and Disabled — and ordered
 //     by id inside each. Both sections are always on the page, empty or not,
@@ -138,7 +138,7 @@ function suggestion(
  * yet.
  *
  * The classification still comes from the Health contract rather than from
- * `enabled` or the raw connection state (docs/modules/controlplane.md): a
+ * `enabled` or the raw connection state (docs/subsystems/docs/subsystems/controlplane.md): a
  * disabled server reports level=healthy on purpose, and admin_state is the
  * field that says so.
  */
@@ -663,7 +663,7 @@ function entryForm(initial: ServerEntry): EntryForm {
 }
 
 // ---------------------------------------------------------------------------
-// Pasting another client's configuration (docs/modules/gui.md)
+// Pasting another client's configuration (docs/subsystems/gui.md)
 // ---------------------------------------------------------------------------
 //
 // The daemon parses; this half decides what the user is shown before they
@@ -1286,7 +1286,7 @@ export function serversPage(): Page {
     }
   }
 
-  // -- the five status shapes (docs/modules/gui.md) -------------------------
+  // -- the five status shapes (docs/subsystems/gui.md) -------------------------
 
   function dot(tone: string, extra = ""): HTMLElement {
     return el("span", { class: `dot ${tone}${extra ? ` ${extra}` : ""}` });

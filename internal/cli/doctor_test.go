@@ -372,7 +372,7 @@ func TestDoctorDanglingActiveProfile(t *testing.T) {
 // TestDoctorColdCacheIsNotAFailure: a server whose tool cache entry is
 // still missing while the cache itself is fresh is reported as "still
 // installing", not as a broken server — the classic npx/uvx first-run false
-// positive (docs/modules/controlplane.md).
+// positive (docs/subsystems/cli.md).
 func TestDoctorColdCacheIsNotAFailure(t *testing.T) {
 	dir := setDataDir(t)
 	isolateHome(t)

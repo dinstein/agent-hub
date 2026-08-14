@@ -27,7 +27,7 @@ import (
 var noPrecondition = confops.Precondition{}
 
 // exitCodeForOps maps a confops failure class onto the frozen exit-code
-// table (docs/modules/controlplane.md).
+// table (docs/subsystems/cli.md).
 func exitCodeForOps(kind confops.Kind) int {
 	switch kind {
 	case confops.KindUsage:

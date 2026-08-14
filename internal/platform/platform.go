@@ -39,7 +39,7 @@ var ErrUnsupportedPlatform = errors.New("unsupported platform")
 
 // Frozen environment variable names. These are ABI, listed in canonical.md §1
 // alongside the module path and the binary names: renaming the product must
-// never rename them. docs/modules/controlplane.md describes what each one
+// never rename them. docs/subsystems/docs/subsystems/controlplane.md describes what each one
 // does; the ruling that they cannot move is in canonical.md.
 const (
 	// EnvDataDir overrides the whole data directory.

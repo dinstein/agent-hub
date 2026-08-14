@@ -8,7 +8,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// Exit codes, frozen by docs/modules/controlplane.md. The mapping from error values to
+// Exit codes, frozen by docs/subsystems/cli.md. The mapping from error values to
 // these codes lives in ExitCodeFor and nowhere else.
 const (
 	ExitOK         = 0 // success
@@ -206,7 +206,7 @@ func errorDetailFor(err error) output.ErrorDetail {
 // unreadable but has been healed: quarantined + reset to defaults, store
 // still fully usable) from fatal errors. Healed quarantines become warnings
 // on the success envelope instead of failing the command — exit 7 is
-// reserved for "corrupt and could NOT self-heal" (docs/modules/controlplane.md).
+// reserved for "corrupt and could NOT self-heal" (docs/subsystems/cli.md).
 func splitQuarantine(err error) (warnings []string, fatal error) {
 	var fatals []error
 	var walk func(error)

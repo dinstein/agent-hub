@@ -28,7 +28,7 @@ import (
 //
 //  1. No credential is ever rendered. `auth status` reports issuer, expiry,
 //     mode and whether a refresh token exists — never a token, never a
-//     client secret. There is no --show escape hatch (docs/modules/controlplane.md rule 5).
+//     client secret. There is no --show escape hatch (docs/subsystems/cli.md rule 5).
 //  2. Progress is a stream, results are a value. Every intermediate step
 //     goes through Printer.Progress (NDJSON under --json, stderr otherwise)
 //     and the command's single result value is the last thing written.

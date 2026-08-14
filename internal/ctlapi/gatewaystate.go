@@ -11,7 +11,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/event"
 )
 
-// Runtime state source (docs/modules/controlplane.md). WHO observes a downstream server is
+// Runtime state source (docs/subsystems/docs/subsystems/controlplane.md). WHO observes a downstream server is
 // the whole question, and the answer is: the stdio gateway, never the
 // daemon.
 //

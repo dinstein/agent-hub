@@ -524,7 +524,7 @@ func TestConflictRetryUsesTheReportedGeneration(t *testing.T) {
 // an event is what came off the SSE stream. A write answers its own caller
 // and stays out of the event bus — otherwise "I changed it" and "someone
 // else changed it" would arrive on two different paths with two different
-// shapes, which is exactly what docs/modules/controlplane.md rules out.
+// shapes, which is exactly what docs/subsystems/docs/subsystems/controlplane.md rules out.
 func TestWritesEmitNoFrontendEvents(t *testing.T) {
 	r := &recorder{}
 	rec := &ctlRecorder{respond: okMode, data: writeAnswer()}

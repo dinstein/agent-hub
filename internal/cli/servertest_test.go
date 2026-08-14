@@ -150,7 +150,7 @@ func TestServerTestSchemaUnknownTool(t *testing.T) {
 
 // TestServerTestHumanRendersSignaturesAndSchema pins the human half: the
 // two output modes render from the same value, so a field visible in
-// --json must be visible without it (docs/modules/controlplane.md rule 2).
+// --json must be visible without it (docs/subsystems/cli.md rule 2).
 func TestServerTestHumanRendersSignaturesAndSchema(t *testing.T) {
 	id := addFakeServer(t, []mcp.ToolDef{searchToolDef()})
 

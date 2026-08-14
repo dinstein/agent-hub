@@ -197,7 +197,7 @@ func TestPasteRoutesAgreeOnWhatTheyRefuse(t *testing.T) {
 // same function".
 //
 // A key agenthub does not model is a WARNING on the preview and an ERROR on
-// --stdin (docs/modules/controlplane.md). The preview shows the user exactly
+// --stdin (docs/subsystems/cli.md). The preview shows the user exactly
 // what would be stored, so "these keys were ignored" is actionable; a write
 // with no preview can only refuse, or the user never learns that the block
 // they pasted vanished. Both directions are asserted here: a test that only

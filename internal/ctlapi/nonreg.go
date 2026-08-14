@@ -17,7 +17,7 @@ import (
 )
 
 // This file and its nonreg* siblings implement the NON-REGISTRY half of the
-// control plane (docs/modules/controlplane.md): credentials, skills, agent tokens, client
+// control plane (docs/subsystems/docs/subsystems/controlplane.md): credentials, skills, agent tokens, client
 // adaptation, OAuth lifecycle and the live connection self-test. Everything
 // here writes state that does NOT live in the registry document, which is
 // why none of it carries a generation precondition — there is no shared

@@ -1,6 +1,6 @@
 // Catalog page: the answer to "adding a server means typing
 // `npx -y @modelcontextprotocol/server-filesystem` from memory"
-// (docs/modules/gui.md).
+// (docs/subsystems/gui.md).
 //
 // THE ONE JUDGEMENT THIS PAGE MAKES is the split between the entries that
 // can be added with a single click and the ones that cannot. It does NOT
@@ -27,7 +27,7 @@
 // metadata takes a semantic colour — the transport pill and the publisher
 // link are neutral.
 //
-// THE THREE EMPTY STATES ARE THREE (docs/modules/gui.md). "The daemon did
+// THE THREE EMPTY STATES ARE THREE (docs/subsystems/gui.md). "The daemon did
 // not answer" and "nothing matches what you typed" are different sentences
 // with different next steps, and the failure one says out loud that it is
 // not an empty result — a catalog that renders "no entries" after a dropped

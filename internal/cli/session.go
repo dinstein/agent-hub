@@ -24,7 +24,7 @@ import (
 // The `session` group is the runtime view of live connections. Sessions are
 // daemon objects that are never persisted, so EVERY subcommand
 // here requires the daemon: offline it is exit 4 (E_DAEMON_DOWN), never an
-// invented offline answer (docs/modules/controlplane.md online/offline matrix).
+// invented offline answer (docs/subsystems/cli.md online/offline matrix).
 
 // sessionFollowInterval is the `session ls -f` poll period. Polling (not
 // SSE) is deliberate: the list is small, and a poll cannot silently stall

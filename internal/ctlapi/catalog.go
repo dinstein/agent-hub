@@ -9,7 +9,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// The curated catalog on the wire (docs/modules/controlplane.md): GET /v1/catalog[?q=],
+// The curated catalog on the wire (docs/subsystems/docs/subsystems/controlplane.md): GET /v1/catalog[?q=],
 // GET /v1/catalog/{id}, POST /v1/catalog/{id}/add.
 //
 // The directory is EMBEDDED, so unlike the non-registry surface there is no
@@ -29,7 +29,7 @@ import (
 // catalog.Entry is EMBEDDED rather than mirrored, so a field added to the
 // package appears here without a second definition drifting from the first.
 // The two derived fields are computed server-side because they encode a
-// judgement (docs/modules/controlplane.md "skip whatever can be skipped") that every frontend must make identically:
+// judgement (docs/subsystems/docs/subsystems/controlplane.md "skip whatever can be skipped") that every frontend must make identically:
 // a GUI and the CLI disagreeing about whether an entry is one-click would be
 // two different products.
 type catalogEntryWire struct {
@@ -73,7 +73,7 @@ type catalogAddResult struct {
 	// NextSteps are the commands that finish the job (storing a credential,
 	// logging in). They are rendered here rather than in each frontend so
 	// the GUI and the CLI tell the user the same thing — and because
-	// showing the equivalent command IS the GUI's teaching surface (docs/modules/controlplane.md).
+	// showing the equivalent command IS the GUI's teaching surface (docs/subsystems/docs/subsystems/controlplane.md).
 	NextSteps []string `json:"next_steps,omitempty"`
 }
 

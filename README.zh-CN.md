@@ -147,7 +147,7 @@ mkdir -p ~/.claude/skills/agenthub && agenthub manual > ~/.claude/skills/agenthu
 | [docs/zh-CN/guide.md](docs/zh-CN/guide.md) | **怎么用**——server / profile / client、日常路径，以及你真正要做的那几个决定 |
 | [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md) | **要改代码先看这个**——进程模型、模块地图、一次调用穿过什么、两道防线 |
 | [docs/flows.md](docs/flows.md) | 七个运行时流程的时序图与失败分支（英文） |
-| [docs/modules/](docs/modules/) | 逐包的职责、不变量与失败方向（英文） |
+| [docs/subsystems/](docs/subsystems/) | 每个接缝的不变量与失败方向（英文） |
 | [docs/canonical.md](docs/canonical.md) | 冻结标识符、依赖约束、命名规则、全部裁决记录（英文） |
 | [docs/windows.md](docs/windows.md) | Windows 现状：已实现什么、哪些还未验证、验收标准（英文） |
 

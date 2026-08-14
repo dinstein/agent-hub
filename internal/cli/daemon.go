@@ -109,7 +109,7 @@ func (r DaemonStopResult) Human(w io.Writer) error {
 	return err
 }
 
-// newDaemonCmd builds the daemon lifecycle command group (docs/modules/controlplane.md).
+// newDaemonCmd builds the daemon lifecycle command group (docs/subsystems/cli.md).
 func (a *App) newDaemonCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "daemon",
@@ -198,7 +198,7 @@ func (a *App) newDaemonStartCmd() *cobra.Command {
 
 // runDaemonForeground runs daemon.Run in-process until SIGINT/SIGTERM.
 // SIGTERM triggers the graceful path: stop accepting, drain, clean up
-// socket + daemon.json (docs/modules/controlplane.md).
+// socket + daemon.json (docs/subsystems/cli.md).
 func (a *App) runDaemonForeground(ctx context.Context, http httpFlags, of ownerFlags) error {
 	owner, err := of.resolve(true)
 	if err != nil {
@@ -473,7 +473,7 @@ func (a *App) newDaemonStatusCmd() *cobra.Command {
 				if err := a.printer().Emit(DaemonStatus{Running: false, Socket: socket}); err != nil {
 					return err
 				}
-				// Frozen exit-code table (docs/modules/controlplane.md): 4 = daemon offline.
+				// Frozen exit-code table (docs/subsystems/cli.md): 4 = daemon offline.
 				return &silentExitError{code: ExitDaemonDown}
 			}
 			status := DaemonStatus{

@@ -15,7 +15,7 @@ import (
 )
 
 // TestCLIAndConfopsProduceIdenticalDocuments is the guarantee that phase A
-// exists for (docs/modules/controlplane.md): the CLI and any other
+// exists for (docs/subsystems/cli.md): the CLI and any other
 // front end must not be able to drift, because they are the same code.
 //
 // The same script of operations is run twice — once through the real cobra

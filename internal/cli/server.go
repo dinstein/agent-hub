@@ -28,7 +28,7 @@ const sourceManual = "manual"
 //
 // Headers are rendered with their VALUES INTACT only because a registry
 // entry never holds a credential: values are ${SECRET_X} placeholders that
-// name a vault entry (docs/modules/controlplane.md rule 5 — no CLI surface ever echoes a
+// name a vault entry (docs/subsystems/cli.md rule 5 — no CLI surface ever echoes a
 // secret; resolution happens at connect time inside internal/downstream).
 type ServerRow struct {
 	ID        string            `json:"id"`
@@ -227,7 +227,7 @@ type AddedServers struct {
 	Added []ServerRow `json:"added"`
 }
 
-// Human renders one "added:" line per entry (docs/modules/controlplane.md example),
+// Human renders one "added:" line per entry (docs/subsystems/cli.md example),
 // then names the step that puts the server into service. An entry nobody is
 // told to enable is indistinguishable from one that was never added.
 func (a AddedServers) Human(w io.Writer) error {
@@ -739,7 +739,7 @@ type namedEntry struct {
 // a type it cannot read, is an ERROR here rather than a warning, because this
 // path writes with no preview in front of it; `server add` would otherwise
 // report success while the "oauth" block the user pasted is simply absent
-// (docs/modules/controlplane.md).
+// (docs/subsystems/cli.md).
 //
 // This used to be a second reader — a struct with DisallowUnknownFields and a
 // literal "mcpServers" check — and it drifted from the first in every

@@ -48,7 +48,7 @@ const dockerProbeTimeout = 5 * time.Second
 // coldCacheGrace is how long after the tool cache was last touched a
 // missing entry is reported as "still installing" rather than as a broken
 // server. A launcher (npx/uvx) downloading a package on first run is the
-// single most common false positive in this whole report (docs/modules/controlplane.md:
+// single most common false positive in this whole report (docs/subsystems/cli.md:
 // "a cold launcher cache reports 'still installing' instead of
 // falsely flagging a broken server").
 const coldCacheGrace = 10 * time.Minute
@@ -60,7 +60,7 @@ type DoctorCheck struct {
 	Detail string `json:"detail"`
 	// Fix describes the repair --fix performed, or the command the operator
 	// should run when the repair is destructive and doctor refuses to do it
-	// (docs/modules/controlplane.md: destructive repairs are suggested, never executed).
+	// (docs/subsystems/cli.md: destructive repairs are suggested, never executed).
 	Fix string `json:"fix,omitempty"`
 	// Fixed marks a check that --fix actually repaired.
 	Fixed bool `json:"fixed,omitempty"`
@@ -110,7 +110,7 @@ func (r DoctorReport) Human(w io.Writer) error {
 	return err
 }
 
-// newDoctorCmd builds the full diagnostic of docs/modules/controlplane.md.
+// newDoctorCmd builds the full diagnostic of docs/subsystems/cli.md.
 //
 // Doctor is read-only WITHOUT --fix: it never creates directories, files or
 // locks (unlike registry.Open), so running it cannot change what it reports.

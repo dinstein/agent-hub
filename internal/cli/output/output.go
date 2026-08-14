@@ -1,10 +1,10 @@
 // Package output is the single rendering layer for every agenthub command:
 // the human-readable path and the --json path are fed by the same data value,
-// so the two representations can never drift semantically (docs/modules/controlplane.md
+// so the two representations can never drift semantically (docs/subsystems/cli.md
 // rule 2: "every command has --json; human and machine output are rendered
 // from the same data structure").
 //
-// JSON envelope (docs/modules/controlplane.md):
+// JSON envelope (docs/subsystems/cli.md):
 //
 //	{"ok":true,"data":...,"warnings":[...]}
 //	{"ok":false,"error":{"code":...,"message":...,"hint":...}}
@@ -91,7 +91,7 @@ func (p *Printer) Emit(data Data, warnings ...string) error {
 
 // ProgressEvent is one intermediate step of a long-running command. Four
 // stream today — auth login, server test, server enable's probe, and doctor
-// — and docs/modules/controlplane.md carries the same list next to the
+// — and docs/subsystems/cli.md carries the same list next to the
 // parsing rule it decides. Adding a fifth means updating that list and the
 // shipped skill's, because both tell a consumer whether to parse one JSON
 // object or a stream of them.

@@ -7,8 +7,8 @@ import (
 )
 
 // The two ways a server definition reaches the registry without anyone
-// typing `npx -y @modelcontextprotocol/server-…` from memory (docs/modules/controlplane.md,
-// docs/modules/controlplane.md): the curated catalog, and the parser that reads another client's
+// typing `npx -y @modelcontextprotocol/server-…` from memory (docs/subsystems/docs/subsystems/controlplane.md,
+// docs/subsystems/docs/subsystems/controlplane.md): the curated catalog, and the parser that reads another client's
 // configuration out of the clipboard.
 //
 // They sit in their own file rather than in registry.go or hub.go because
@@ -65,7 +65,7 @@ func (h *Hub) AddFromCatalog(
 //
 // A TOML or YAML configuration is refused with E_UNSUPPORTED_FORMAT and a
 // hint carrying the manual route. That refusal is deliberate and permanent
-// (docs/modules/controlplane.md): agenthub does not take a parser dependency for a format it
+// (docs/subsystems/docs/subsystems/controlplane.md): agenthub does not take a parser dependency for a format it
 // would read in exactly one dialog.
 func (h *Hub) ParseClientConfig(ctx context.Context, text string) (api.ParsedClientConfig, error) {
 	return call(ctx, h, func(c *api.Client) (api.ParsedClientConfig, error) {

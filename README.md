@@ -156,7 +156,7 @@ The five above are the argument; this is the matrix.
 | [docs/guide.md](docs/guide.md) | **Using it** — server / profile / client, the everyday path, the decisions you actually have to make |
 | [docs/architecture.md](docs/architecture.md) | **Changing it** — process model, module map, what a call passes through, the two lines of defense |
 | [docs/flows.md](docs/flows.md) | Sequence diagrams and failure branches for seven runtime flows |
-| [docs/modules/](docs/modules/) | Per-package responsibilities, invariants and failure directions |
+| [docs/subsystems/](docs/subsystems/) | Per-seam invariants and failure directions |
 | [docs/canonical.md](docs/canonical.md) | Frozen identifiers, dependency constraints, naming rules, every decision record |
 | [docs/windows.md](docs/windows.md) | Windows status: what is implemented, what is unverified, acceptance criteria |
 

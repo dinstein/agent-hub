@@ -47,7 +47,7 @@ func IsCode(err error, code string) bool {
 }
 
 // ErrorBody is the wire error shape shared by the REST API and the CLI
-// `--json` convention (docs/modules/controlplane.md). MissingSecrets is
+// `--json` convention (docs/subsystems/docs/subsystems/controlplane.md). MissingSecrets is
 // additive safe metadata for E_SECRET_REQUIRED: key names only, never values.
 type ErrorBody struct {
 	Code           string   `json:"code"`

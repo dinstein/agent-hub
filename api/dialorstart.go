@@ -47,7 +47,7 @@ type daemonInfo struct {
 // and poll run/daemon.json + re-dial under a deadline. If the spawned
 // process exits with an error before the daemon becomes ready, the real
 // error (with its stderr tail) is reported instead of a timeout —
-// inherited from the desktop.rs lesson (docs/modules/controlplane.md).
+// inherited from the desktop.rs lesson (docs/subsystems/docs/subsystems/controlplane.md).
 //
 // The start it attempts names no owner, and `daemon start` refuses a hub that
 // belongs to nobody. So this dials for everyone and starts only for a caller

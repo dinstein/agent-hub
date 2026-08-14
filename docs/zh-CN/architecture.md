@@ -1,7 +1,7 @@
 # 架构
 
 > **回答** 系统怎么切成进程和包，以及一次调用会穿过什么。
-> **不在这里** 谁能到什么 → [model.md](model.md)；一条流程逐步怎么走 → [flows.md](../flows.md)；某个包不能碰什么 → [modules/](../modules/)。
+> **不在这里** 谁能到什么 → [model.md](model.md)；一条流程逐步怎么走 → [flows.md](../flows.md)；某个包不能碰什么 → [subsystems/](../subsystems/)。
 > **由什么保证为真** `internal/depguardtest`（依赖方向）与 `internal/pipeline` 的闸计数测试（调用路径）。
 
 客户端以为自己连着一个 MCP server，实际上连着 AgentHub 的网关。网关持有所有下游的配置与凭据，决定这个

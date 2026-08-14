@@ -60,7 +60,7 @@ func TestDocAnchorsResolve(t *testing.T) {
 				// checked; the rest is left to the docs/-prefixed spelling
 				// that code comments use.
 				// A link inside docs/ is relative to the citing file:
-				// `../model.md#x` from docs/modules/ is docs/model.md#x. A
+				// `../model.md#x` from docs/subsystems/ is docs/model.md#x. A
 				// link LABEL is not — `[architecture.md#x](../architecture.md#x)`
 				// spells the same citation twice, once without the prefix — so
 				// a path that does not resolve relatively is retried against

@@ -69,7 +69,7 @@ const (
 )
 
 // ServerAuth is one server's credential state. It carries no value field of
-// any kind, which is how docs/modules/controlplane.md rule 5 is held here:
+// any kind, which is how docs/subsystems/cli.md rule 5 is held here:
 // no formatting mistake can print a token that was never fetched.
 type ServerAuth struct {
 	// Kind is one of the authKind* constants.

@@ -1,7 +1,7 @@
 # Architecture
 
 > **Answers** how the system is carved into processes and packages, and what a call passes through.
-> **Not here** who may reach what → [model.md](model.md); how a flow behaves step by step → [flows.md](flows.md); what a package must not do → [modules/](modules/).
+> **Not here** who may reach what → [model.md](model.md); how a flow behaves step by step → [flows.md](flows.md); what a package must not do → [subsystems/](subsystems/).
 > **Kept true by** `internal/depguardtest` (the dependency directions) and `internal/pipeline`'s gate-count tests (the call path).
 
 A client believes it is talking to one MCP server. It is talking to AgentHub's gateway, which holds

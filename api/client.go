@@ -49,7 +49,7 @@ type Client struct {
 	// Typed resource groups. Everything a frontend may do lives here:
 	// there is no raw-request escape hatch, so "the GUI can do it" always
 	// implies "an endpoint exists and the CLI can reach it too"
-	// (docs/modules/controlplane.md).
+	// (docs/subsystems/docs/subsystems/controlplane.md).
 	Servers  *ServersService
 	Sessions *SessionsService
 	Events   *EventsService
@@ -186,7 +186,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 }
 
 // envelope is the uniform response shape shared with the CLI --json
-// convention (docs/modules/controlplane.md).
+// convention (docs/subsystems/docs/subsystems/controlplane.md).
 type envelope struct {
 	OK       bool            `json:"ok"`
 	Data     json.RawMessage `json:"data"`

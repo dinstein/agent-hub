@@ -11,7 +11,7 @@ import (
 // GET /v1/skills, PATCH /v1/skills/{id}, POST /v1/skills/{id}/install.
 //
 // GET finally serves the route api.SkillsService.List has been calling into
-// a 404 since M1-G (docs/modules/controlplane.md). The payload is api.Skill itself rather than a
+// a 404 since M1-G (docs/subsystems/docs/subsystems/controlplane.md). The payload is api.Skill itself rather than a
 // restatement of it, so the shape the client decodes and the shape the
 // daemon encodes cannot drift.
 //

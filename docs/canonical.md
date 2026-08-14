@@ -6,7 +6,7 @@ that has been seriously decided. Changing this file means changing an architectu
 
 It carries nothing you can read off the tree. For how the system works see
 [architecture.md](architecture.md); for flow timing [flows.md](flows.md); for per-package invariants
-and debt already pinned to a line, [modules/](modules/).
+and debt already pinned to a line, [subsystems/](subsystems/).
 
 **The section numbers are an interface.** Code comments cite them by number — `§2 rule 3`, `§5c #2`,
 `§7 #4` — in well over a hundred places. Add sections and rewrite their contents, but do not
@@ -44,7 +44,7 @@ installation. `AGENTHUB_DATA_DIR` still overrides both.
 ## 2. Package layout
 
 Which package holds what: [architecture.md#the-packages](architecture.md#the-packages) and
-[modules/](modules/). What follows is only what you *cannot* read off `ls internal/`.
+[subsystems/](subsystems/). What follows is only what you *cannot* read off `ls internal/`.
 
 ### There is exactly one of each
 
@@ -139,7 +139,7 @@ needing precise control, while JSON-RPC encoding itself is not much work. The fa
   command, no subcommands, no plural. Not under `skill`, because every invariant that group has is
   built for text the operator imported from elsewhere while this document is the binary describing
   itself, and because the group is withheld on the release page that most needs to answer "what is
-  this" (docs/modules/controlplane.md); not the root `--skill` flag it shipped as in 0.42.0, because
+  this" (docs/subsystems/cli.md); not the root `--skill` flag it shipped as in 0.42.0, because
   a flag that prints a document and exits is a verb, and being one made the root `RunE` hand-write a
   precedence check against unknown subcommands
 
@@ -391,7 +391,7 @@ silently reopened, and the numbering is cited from code.
    `cmd/agenthub-gui/tray_wails.go` are behind `//go:build wails`, while the bodies they assemble
    carry no tag and so compile, vet and unit-test in CI. The frontend also skips
    `wails3 generate bindings` in favour of `Call.ByName` plus `Events.On`.
-   See [modules/gui.md](modules/gui.md).
+   See [subsystems/gui.md](subsystems/gui.md).
 4. ~~TOON grammar scope and the golden case set~~ → **Decided.** Both "determinism is the contract"
    grammars are frozen, with golden corpora in `internal/shaping/toonenc` and
    `internal/discovery/toolsig`:

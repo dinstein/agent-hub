@@ -1,7 +1,7 @@
 # Flows
 
 > **Answers** how seven runtime flows behave, and which way each one falls when it breaks.
-> **Not here** the static decomposition → [architecture.md](architecture.md); a package's own invariants → [modules/](modules/).
+> **Not here** the static decomposition → [architecture.md](architecture.md); a package's own invariants → [subsystems/](subsystems/).
 > **Kept true by** the e2e suite: each flow below has at least one test that drives it end to end.
 
 The diagram is the happy path. The prose after it is only the failure branches and the choices that

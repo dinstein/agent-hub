@@ -10,7 +10,7 @@ import (
 )
 
 // TestExitCodeFor is the table-driven pin of the frozen exit-code table
-// (docs/modules/controlplane.md): every code 0-7 has at least one producing error value.
+// (docs/subsystems/cli.md): every code 0-7 has at least one producing error value.
 func TestExitCodeFor(t *testing.T) {
 	lockErr := &registry.LockTimeoutError{Path: "/tmp/reg/.lock", Timeout: time.Second}
 	unreadable := &registry.UnreadableError{

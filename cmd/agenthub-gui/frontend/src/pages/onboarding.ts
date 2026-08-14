@@ -1,5 +1,5 @@
 // Onboarding: the four steps between "installed" and "a call actually
-// arrived" (docs/modules/gui.md).
+// arrived" (docs/subsystems/gui.md).
 //
 // THE ONE CLAIM THIS PAGE MAKES. The last step does not say "you are set up"
 // because the user clicked through four screens. It runs a real health probe

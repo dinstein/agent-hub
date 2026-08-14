@@ -30,7 +30,7 @@ function rawText(e: CallError): string {
  * through errorHeadline first — a daemon that forwards a downstream stack
  * trace should not be able to push the rest of the page off screen — and the
  * untouched text stays one disclosure away with a Copy button
- * (docs/modules/gui.md).
+ * (docs/subsystems/gui.md).
  */
 export function failureBox(err: unknown): HTMLElement {
   const e: CallError = asCallError(err);
@@ -53,7 +53,7 @@ export function failureBox(err: unknown): HTMLElement {
 }
 
 /**
- * The FAILED empty state (docs/modules/gui.md): what a listing renders when
+ * The FAILED empty state (docs/subsystems/gui.md): what a listing renders when
  * the request did not come back.
  *
  * It says out loud that this is not an empty result, because the alternative
@@ -93,7 +93,7 @@ export const CONFLICT_MESSAGE =
  *  This is also the application's "toast" surface, and the reason there is no
  *  separate one: every failure that lands here goes through failureBox, so it
  *  arrives with a distilled headline, the full text and a Copy button already
- *  attached (docs/modules/gui.md). A second, thinner notification path would
+ *  attached (docs/subsystems/gui.md). A second, thinner notification path would
  *  be the one place a raw error could still escape uncopyable. */
 export interface NoticeSlot {
   node: HTMLElement;

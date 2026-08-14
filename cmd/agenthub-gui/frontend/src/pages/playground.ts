@@ -1,5 +1,5 @@
 // Playground: pick a server, see what it actually offers, call one tool for
-// real (docs/modules/gui.md).
+// real (docs/subsystems/gui.md).
 //
 // WHY THIS PAGE EXISTS. It is not a toy. When a tool does not work inside
 // Cursor or Claude Code, the operator has exactly two hypotheses — the client

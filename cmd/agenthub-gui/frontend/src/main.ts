@@ -4,7 +4,7 @@
 // The counters live here rather than on the pages they refer to because they
 // are the BACKSTOP: they must be right while the user is looking at some
 // other page, and no page-local dismissal may switch them off
-// (docs/modules/gui.md).
+// (docs/subsystems/gui.md).
 
 import "./style.css";
 import { EVT, hub, on } from "./bridge";

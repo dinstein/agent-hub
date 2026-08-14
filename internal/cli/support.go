@@ -41,7 +41,7 @@ func (a *App) activeProfile() (string, error) {
 	return confops.ActiveProfile(store)
 }
 
-// requireDaemon is the exit-4 gate of docs/modules/controlplane.md's online/offline matrix:
+// requireDaemon is the exit-4 gate of docs/subsystems/cli.md's online/offline matrix:
 // commands whose subject is a daemon RUNTIME object (sessions, the event
 // stream, a live audit tail) must refuse with E_DAEMON_DOWN rather than
 // invent an offline answer.

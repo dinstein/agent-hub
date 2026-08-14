@@ -18,7 +18,7 @@ import (
 // subagent definitions). Its shape is deliberately isomorphic to the server
 // group — add / ls / inspect / rm / enable / disable plus an integrity
 // fingerprint — so "manage an agent asset" is one learnable pattern rather
-// than an MCP special case (docs/modules/controlplane.md point 7).
+// than an MCP special case (docs/subsystems/cli.md point 7).
 //
 // Two layers, always distinguished in the output: the LIBRARY (agenthub's
 // canonical copy, content-addressed and pinned) and the INSTALLS (the bytes

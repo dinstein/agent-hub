@@ -8,7 +8,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// The client binding (docs/modules/controlplane.md §5): which profile a
+// The client binding (docs/subsystems/docs/subsystems/controlplane.md §5): which profile a
 // client follows. Narrowing itself lives on the profile.
 //
 // This is the ONLY place a client's surface is decided, and it decides it

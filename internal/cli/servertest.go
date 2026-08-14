@@ -19,11 +19,11 @@ import (
 )
 
 // `server test` is the "does this definition actually work" command
-// (docs/modules/controlplane.md: verifying that a credential is correct is
+// (docs/subsystems/cli.md: verifying that a credential is correct is
 // done by making a REAL call, never by printing the secret back).
 //
 // It connects DIRECTLY from the CLI process rather than through the daemon.
-// The daemon-mediated form is what docs/modules/controlplane.md lists as online-only, but
+// The daemon-mediated form is what docs/subsystems/cli.md lists as online-only, but
 // a direct dial is what makes this command usable for the case it exists
 // for — debugging a server that does not work yet, on a machine where the
 // daemon may itself be the thing that is broken. The connection is

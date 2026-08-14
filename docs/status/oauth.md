@@ -109,7 +109,7 @@ flag is the small half of closing this; CIMD is the large one.
 **Two callers drive this flow, and there is only one implementation of it.** `agenthub auth login`
 runs it in the foreground; the control plane runs it as a session for graphical frontends
 (`internal/oauthlogin`, and
-[../modules/controlplane.md](../modules/controlplane.md#the-one-long-running-exchange-an-interactive-login)). The single
+[../subsystems/controlplane.md](../subsystems/controlplane.md#the-one-long-running-exchange-an-interactive-login)). The single
 behavioural difference is `LoginRequest.Open`: the CLI opens a browser there, the session **records
 the URL and returns success** so the caller can open it — the daemon may be headless and may not be
 the machine the user is at.
@@ -389,7 +389,7 @@ maintained lists of sentinels disagree exactly about the one a later commit adds
 **What these three mean for what a status command may SAY.** An expired access token with a refresh
 token behind it is, on this machine, a repair no human is needed for — and usually one that has already
 happened by the time anyone looks. So `server ls` reports `action: "refresh"` rather than `"login"`
-there, and `ComputeHealth`'s token rung does the same from `HasRefreshToken` (`controlplane.md`). The
+there, and `ComputeHealth`'s token rung does the same from `HasRefreshToken` (`../subsystems/controlplane.md`). The
 distinction is about whether a browser is required and nothing else: neither command claims the
 credential still WORKS, which stays a live 401's answer.
 
@@ -406,7 +406,7 @@ right — it clears the mark and asks once, and a second refusal is recorded lik
 **"Gateway" here does not mean "stdio gateway".** The daemon's HTTP data plane assembles one gateway
 per credential inside its own process (`internal/daemon/httpdata.go`), and those reach both gateway
 rows by the same route an `agenthub connect` process does: `Config.Auth` is left nil, so `newGateway`
-builds the chain (`controlplane.md`, `internal/httpbridge` → "Who assembles it"). A daemon serving that
+builds the chain (`../subsystems/controlplane.md`, internal/httpbridge). A daemon serving that
 plane therefore hosts the refresher **and** N gateway coordinators at once, over one vault.
 
 That is safe, and it is safe for the reason the offline path was chosen to begin with — which survives
