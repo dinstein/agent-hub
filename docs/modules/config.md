@@ -14,7 +14,7 @@ the invariants below turns fail-closed into fail-open.
 
 The merge model itself — which fields intersect, why `clients.json` is not a layer, why the session
 root left the cache key — belongs to
-[architecture.md §7](../architecture.md#7-scope-visibility-and-connection-are-two-separate-planes).
+[model.md](../model.md).
 
 ---
 

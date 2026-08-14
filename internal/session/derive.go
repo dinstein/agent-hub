@@ -11,7 +11,7 @@ import (
 // plane. The connection-plane half — what a key means, how instances are
 // pooled and reclaimed — lives in internal/downstream (derive.go, pool.go).
 //
-// The split follows the plane separation of docs/architecture.md §7 invariant 2: a
+// The split follows the plane separation of docs/model.md invariant 2: a
 // session decides WHICH instance executes its calls; it never decides what
 // it can see. Nothing here touches scope, and DeriveKey is not part of any
 // scope hash — narrowing a session must not respawn a process, and choosing

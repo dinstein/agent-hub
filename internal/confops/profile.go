@@ -99,7 +99,7 @@ func CreateProfile(
 //
 // The repointing is the whole reason this is an operation rather than a
 // delete-then-create: leaving the references behind would fail-close every
-// one of those clients to an empty scope (docs/architecture.md §7), which is a
+// one of those clients to an empty scope (docs/model.md), which is a
 // silent, total loss of tool access. The active-profile marker is repointed
 // with them, in the same transaction — it lives in the same document set.
 func RenameProfile(
@@ -178,7 +178,7 @@ func repointProfileRefs(tx *registry.Tx, oldName, newName string) []string {
 // RemoveProfile deletes a profile.
 //
 // Referencing clients are deliberately NOT rewritten: a dangling reference
-// resolves to an EMPTY scope, never a widened one (docs/architecture.md §7). They are
+// resolves to an EMPTY scope, never a widened one (docs/model.md). They are
 // reported — in Dangling and as warnings — because "your client just lost
 // every tool" is not something an operator may learn by accident.
 func RemoveProfile(
@@ -406,7 +406,7 @@ func profileNotFound(name string) *Error {
 // ActiveProfileFileName is the PRE-MIGRATION home of the active profile
 // name: <state>/active-profile.json.
 //
-// docs/architecture.md §7 puts `activeProfile` in the GLOBAL governance layer, and it
+// docs/model.md puts `activeProfile` in the GLOBAL governance layer, and it
 // now lives there (registry.GovernanceDoc.ActiveProfile). The state file was
 // a stand-in while the schema lacked the field — but scope resolution is
 // pure and reads no files, so a marker kept outside the registry could be

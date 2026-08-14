@@ -11,7 +11,7 @@ import (
 // internal/catalog, which is the curated server directory): every currently
 // known server mapped to its ORIGINAL (raw) tool names. Exposed names never
 // appear here — scope intersections are keyed by original names only
-// (docs/architecture.md §7, invariant 1).
+// (docs/model.md, invariant 1).
 //
 // Invariant: Servers values are sorted and deduplicated when built through
 // NewCatalog / CatalogOf. A Catalog is an immutable snapshot; callers must

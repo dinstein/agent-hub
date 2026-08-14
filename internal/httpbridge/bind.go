@@ -8,7 +8,7 @@ import (
 )
 
 // ErrBindUnauthorized is returned when a listener would accept connections
-// nobody is authorized to make (docs/architecture.md §2, toolport
+// nobody is authorized to make (docs/architecture.md#the-processes, toolport
 // http_bind_is_authorized).
 var ErrBindUnauthorized = errors.New("httpbridge: refusing to bind an unauthenticated MCP endpoint")
 
@@ -65,7 +65,7 @@ type BindConfig struct {
 
 // AuthorizeBind decides whether the MCP endpoint may be bound at all.
 //
-// The rule (fail-closed, docs/architecture.md §2): a listener with no admin token, no
+// The rule (fail-closed, docs/architecture.md#the-processes): a listener with no admin token, no
 // active agent token and no registered client would accept every local
 // process as an authorized agent, so it is REFUSED. --insecure-loopback is
 // the single documented escape, and it is deliberately narrower than the

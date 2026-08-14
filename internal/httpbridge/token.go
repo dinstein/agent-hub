@@ -12,7 +12,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/tier"
 )
 
-// Token shape (docs/architecture.md §9). Frozen: the prefix is what dispatches an
+// Token shape (docs/architecture.md#what-a-call-passes-through). Frozen: the prefix is what dispatches an
 // incoming bearer between the admin token and the agent-token store, and the
 // display prefix is what `agenthub token ls` prints.
 const (
@@ -53,7 +53,7 @@ type Token struct {
 	Servers []string `json:"servers"`
 	// Profile pins this token to one profile permanently. The assembling
 	// process feeds it to the resolver as an Extra layer, so it joins the
-	// three-layer intersection of docs/architecture.md §7 rather than
+	// three-layer intersection of docs/model.md rather than
 	// standing beside it: an Extra layer is an ordinary layer, and every
 	// layer can only narrow. "" = no pin.
 	Profile   string    `json:"profile,omitempty"`
@@ -136,7 +136,7 @@ func looksLikeAgentToken(bearer string) bool {
 
 // hashToken computes hex(HMAC-SHA256(key, plaintext)).
 //
-// HMAC rather than a bare SHA-256 is the point (docs/architecture.md §9 "defend against
+// HMAC rather than a bare SHA-256 is the point (docs/architecture.md#what-a-call-passes-through "defend against
 // offline credential stuffing"): the digest is unforgeable without the key file, so an attacker who
 // exfiltrates tokens.json alone cannot test candidate tokens offline. The
 // key lives in <data>/.token_key at 0600, next to but separate from the

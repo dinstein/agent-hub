@@ -198,7 +198,7 @@ func TestHotReloadServerAddRemove(t *testing.T) {
 // TestHotReloadProfileNarrowRestore: narrowing the bound profile shrinks
 // tools/list (list_changed pushed, calls to the hidden server blocked with
 // E_SCOPE_DENIED) WITHOUT touching any downstream connection; restoring
-// the profile widens back — again with zero reconnects (docs/architecture.md §7
+// the profile widens back — again with zero reconnects (docs/model.md
 // invariant 2: visibility is a query-time projection).
 func TestHotReloadProfileNarrowRestore(t *testing.T) {
 	t.Parallel()

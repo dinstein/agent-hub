@@ -9,11 +9,16 @@ import (
 )
 
 // numberedDocs are the documents besides canonical.md whose sections are
-// addressed by number from elsewhere in the tree. Both are flat: `## N.` and
-// nothing below it is numbered, which is what lets a `§N.M` citation be
+// still addressed by number from elsewhere in the tree. They are flat: `## N.`
+// and nothing below it is numbered, which is what lets a `§N.M` citation be
 // rejected outright. docs/mcp-2026-07-28.md is deliberately absent — it does
 // have `### 1.1` subsections, so it needs a different rule than this one.
-var numberedDocs = []string{"architecture.md", "flows.md"}
+//
+// The list shrinks as documents convert to anchors, which are checked by
+// TestDocAnchorsResolve next door. architecture.md left it that way: its
+// sections are named rather than numbered now, and the citations that used to
+// spell `§7` name the heading they mean.
+var numberedDocs = []string{"flows.md"}
 
 // TestNumberedDocCitationsResolve extends to architecture.md and flows.md the
 // check TestCanonicalCitationsResolve has always applied to canonical.md.
@@ -83,7 +88,7 @@ func TestNumberedDocCitationsResolve(t *testing.T) {
 			}
 		}
 	}
-	if total < 40 {
+	if total < 4 {
 		t.Fatalf("found only %d citations across %v; the pattern stopped matching the tree's "+
 			"spellings, and a scan that reaches nothing agrees with everything", total, numberedDocs)
 	}

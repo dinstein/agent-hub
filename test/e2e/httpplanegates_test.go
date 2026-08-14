@@ -13,7 +13,7 @@ import (
 
 // The HTTP face is the one place in the product where a credential exists, so
 // it is also the only place where the second line of defence — the agent
-// token's operation tier — can fire at all (docs/architecture.md §9; the tier
+// token's operation tier — can fire at all (docs/architecture.md#what-a-call-passes-through; the tier
 // gate returns nil outright for the empty tier a stdio session carries).
 //
 // This file is the fail-closed half of httpplane_test.go: the bind that must

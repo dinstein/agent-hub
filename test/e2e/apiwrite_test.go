@@ -15,7 +15,7 @@ import (
 // daemon or no daemon; holding no long-lived view it sends no precondition.
 // The GUI writes through the DAEMON — api → ctlapi → the same internal/confops
 // — and because its window may hold a minutes-old read, that route alone
-// carries the optimistic-concurrency precondition (docs/architecture.md §10).
+// carries the optimistic-concurrency precondition (docs/architecture.md#on-disk).
 //
 // Everything about the second route was tested in pieces and never assembled.
 // `api`'s own tests dial a `newTestDaemon(t, http.Handler)` — a fake that

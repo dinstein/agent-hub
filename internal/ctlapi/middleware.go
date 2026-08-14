@@ -42,7 +42,7 @@ func newRequestID() string {
 }
 
 // actor validates the X-Agenthub-Actor header against the three allowed
-// forms of docs/architecture.md §2: "cli", "gui", "gateway:<sid>". Anything else
+// forms of docs/architecture.md#the-processes: "cli", "gui", "gateway:<sid>". Anything else
 // (including absence) is recorded as "cli" — the default caller class —
 // rather than letting arbitrary strings into the daemon's logs.
 func actor(r *http.Request) string {

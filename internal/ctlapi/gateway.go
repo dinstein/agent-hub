@@ -15,7 +15,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/session"
 )
 
-// Gateway-face wire contract (docs/architecture.md §2). A stdio gateway registers over
+// Gateway-face wire contract (docs/architecture.md#the-processes). A stdio gateway registers over
 // the control socket, then keeps one long-lived SSE link:
 //
 //	POST /v1/gateway/register             GatewayHelloWire -> GatewayRegistered
@@ -267,7 +267,7 @@ func (s *Server) handleGatewayRegister(w http.ResponseWriter, r *http.Request) {
 // handleGatewayLink implements GET /v1/gateway/{sid}/link: the long-lived
 // SSE stream carrying registry change notifications.
 //
-// Lifecycle invariant (docs/architecture.md §2): the stdio session lives exactly as
+// Lifecycle invariant (docs/architecture.md#the-processes): the stdio session lives exactly as
 // long as its link. When this handler returns for any reason — connection
 // drop, daemon shutdown, link closed elsewhere — the session is closed; the
 // gateway re-registers and receives a NEW identity, because a session id

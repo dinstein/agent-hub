@@ -43,7 +43,7 @@ installation. `AGENTHUB_DATA_DIR` still overrides both.
 
 ## 2. Package layout
 
-Which package holds what: [architecture.md §3](architecture.md#3-core-module-map) and
+Which package holds what: [architecture.md#the-packages](architecture.md#the-packages) and
 [modules/](modules/). What follows is only what you *cannot* read off `ls internal/`.
 
 ### There is exactly one of each
@@ -554,7 +554,7 @@ ruling are one row, and **a number not listed here may not be cited** —
 | Cited as | What it ruled | Where the rule lives now |
 |---|---|---|
 | `#7`, `A.1 #7` | Two id shapes on purpose: the human `client:seq` for the CLI, a random token for the protocol — CLI ids are for typing, protocol ids are for not guessing | modules/config.md |
-| `#18` | Lazy mode's `call_tool` may split into read/write/destructive **intent variants**, and compatibility mode stays byte-identical to the pre-variant surface | architecture.md §8; modules/dataplane.md |
+| `#18` | Lazy mode's `call_tool` may split into read/write/destructive **intent variants**, and compatibility mode stays byte-identical to the pre-variant surface | docs/model.md#how-the-surface-is-presented; modules/dataplane.md |
 | `#27` | **Determinism is the contract**: goldens pin the wire shape; fix the code, never the golden | §6 |
 | `#29` | Legacy HTTP+SSE is a **read-side** transport only, never offered on the exposure side | §5b |
 | `#32` | `internal/mcp` is standard-library only — one first-party protocol facade | §2 rule 2 |

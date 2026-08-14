@@ -147,7 +147,7 @@ type Config struct {
 	// default, 120s).
 	ConnectTimeout time.Duration
 	// LinkRetry is the daemon control-link re-register interval
-	// (0 = 30s, docs/architecture.md §2). Tests shrink it.
+	// (0 = 30s, docs/architecture.md#the-processes). Tests shrink it.
 	LinkRetry time.Duration
 	// RedialBase is the first rung of the re-dial ladder (redial.go); the
 	// consult tick and the ceiling derive from it. 0 = 5s. Tests shrink it.
@@ -321,7 +321,7 @@ type gateway struct {
 	reloadMu sync.Mutex
 	// ctl is the best-effort daemon control link (nil when the control
 	// socket path cannot even be resolved). The data plane never depends
-	// on it (docs/architecture.md §2).
+	// on it (docs/architecture.md#the-processes).
 	ctl *ctlLink
 	// linkDone is closed when the ctl goroutine has fully exited; shutdown
 	// waits on it so a late link log line can never race the caller's
@@ -527,7 +527,7 @@ func newGateway(cfg Config) (*gateway, error) {
 	}
 
 	// The pipeline reads the SAME effective-scope pointer the tools/list
-	// projection uses (docs/architecture.md §7: one visibility source, two readers).
+	// projection uses (docs/model.md: one visibility source, two readers).
 	g.pipe = pipeline.New(pipeline.Options{
 		Scope: scopeFn,
 		// Shaping runs inside the pipeline, not around it: every execute path

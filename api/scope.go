@@ -6,7 +6,7 @@ import (
 	"net/url"
 )
 
-// Profile binding kinds (docs/architecture.md §7). They replace the `"profile": ""`
+// Profile binding kinds (docs/model.md). They replace the `"profile": ""`
 // magic value some proxies use: "no profile" is spelled followActive, never
 // an empty name — an empty name is a typo, and a typo must not resolve.
 const (

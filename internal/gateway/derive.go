@@ -20,7 +20,7 @@ import (
 //     provenance of a call; a derived instance shares its base server's id,
 //     so exposed names, scope keys and audit records are identical.
 //   - VISIBILITY plane: untouched. Deriving never adds, hides or renames a
-//     tool (docs/architecture.md §7 invariant 2).
+//     tool (docs/model.md invariant 2).
 //
 // The only thing that changes is WHICH process executes an allowed call,
 // decided per call in execTool by the key below.

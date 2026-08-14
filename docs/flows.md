@@ -3,7 +3,7 @@
 Seven runtime flows, one sequence diagram each. The prose after a diagram covers only the **failure
 branches** and **why it is shaped this way** — the happy path is legible from the diagram. For the
 static decomposition see [architecture.md](architecture.md); for the three data flows,
-[architecture.md §6](architecture.md#6-three-data-flows).
+[architecture.md#where-the-data-lives](architecture.md#where-the-data-lives).
 
 | # | Flow | In one line |
 |---|---|---|

@@ -22,7 +22,7 @@ import (
 // raise a macOS privacy prompt), and no daemon is required — so the answer
 // stays available on exactly the machine that is broken.
 //
-// The scope chain narrows, never widens (docs/architecture.md §7), so what is
+// The scope chain narrows, never widens (docs/model.md), so what is
 // computed here is an upper bound on what a session may see: a session scope
 // can still take tools away below it. It is presented as what the CONFIGURED
 // bindings allow, never as a claim about a live session.
@@ -117,7 +117,7 @@ func profileIncludesServer(p registry.Profile, id string) bool {
 
 // profileReaches resolves one binding to a yes/no for this server, in the
 // same fail-closed direction the scope chain takes: a named profile that does
-// not exist sees NOTHING (docs/architecture.md §7), and only the absence of
+// not exist sees NOTHING (docs/model.md), and only the absence of
 // an active profile — a state that narrows nothing at all — reads as "yes"
 // without a profile behind it.
 func profileReaches(

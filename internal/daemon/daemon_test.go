@@ -435,7 +435,7 @@ func TestDaemonKillDataPlaneSurvives(t *testing.T) {
 		t.Fatalf("daemon stop: %v", err)
 	}
 
-	// Data plane: completely unaffected (docs/architecture.md §2 — the gateway's
+	// Data plane: completely unaffected (docs/architecture.md#the-processes — the gateway's
 	// stdio session must not even hiccup).
 	mc.callEcho("fake__echo", `{"n":2}`)
 

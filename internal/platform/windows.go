@@ -14,7 +14,7 @@ import (
 //
 // NOT VERIFIED ON REAL HARDWARE. Everything below cross-compiles, is unit
 // tested through the injectable Resolver hooks on macOS/Linux, and follows
-// the MSIX lesson recorded in docs/architecture.md §10 — but no part of it has run on
+// the MSIX lesson recorded in docs/windows.md — but no part of it has run on
 // a Windows machine, let alone inside an MSIX container. Treat a surprise
 // here as expected, not as a regression. See docs/windows.md.
 //
@@ -251,7 +251,7 @@ func sha8(s string) string {
 // default: the control plane hands out every downstream credential and
 // approves tool calls, so "an administrator can also connect" is not a
 // property worth having. Local single user is the whole threat model
-// (docs/architecture.md §2).
+// (docs/architecture.md#the-processes).
 //
 // D:P               discretionary ACL, protected (no inherited ACEs)
 // (A;;GA;;;<SID>)   allow, generic all, to that SID exactly

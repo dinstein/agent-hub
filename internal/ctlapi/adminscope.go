@@ -49,7 +49,7 @@ type scopeBindingWire struct {
 	// Profile sets the profile reference.
 	Profile *profileBindingWire `json:"profile,omitempty"`
 
-	// Retired: narrowing moved to the profile (docs/architecture.md §7).
+	// Retired: narrowing moved to the profile (docs/model.md).
 	Servers   *[]string                    `json:"servers,omitempty"`
 	Tools     map[string]toolSelectionWire `json:"tools,omitempty"`
 	Discovery *string                      `json:"discovery,omitempty"`

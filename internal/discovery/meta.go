@@ -226,7 +226,7 @@ func ParseCallTool(raw json.RawMessage) (CallToolArgs, error) {
 
 // ResolveCall parses call_tool arguments and resolves the target against
 // the VISIBLE set — the same set tools/list and search_tools use, so a
-// call can never reach a tool the session was never shown (docs/architecture.md §7,
+// call can never reach a tool the session was never shown (docs/model.md,
 // third enforcement point; the pipeline's scope gate then re-checks the
 // route on the execution path).
 //

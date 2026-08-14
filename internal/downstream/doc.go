@@ -1,6 +1,6 @@
 // Package downstream owns the connection lifecycle of one downstream MCP
 // server: spawn/dial, handshake, the serialized call queue, the circuit
-// breaker, retry semantics, and tool-list caching (docs/architecture.md §2,
+// breaker, retry semantics, and tool-list caching (docs/architecture.md#the-processes,
 // docs/modules/dataplane.md).
 //
 // Concurrency model (docs/modules/dataplane.md): every server has exactly

@@ -30,7 +30,7 @@ import (
 //     something else clears it. That is what "any non-search action resets"
 //     means: the guard tracks a loop, and the loop ends when it ends.
 //
-// SearchGuard is per session (docs/architecture.md §7): a scope change invalidates the
+// SearchGuard is per session (docs/model.md): a scope change invalidates the
 // context in which "same top result" meant anything, hence Reset.
 type SearchGuard struct {
 	mu     sync.Mutex

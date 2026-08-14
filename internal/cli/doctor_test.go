@@ -340,7 +340,7 @@ func TestDoctorDisabledServerIsNotProbed(t *testing.T) {
 	}
 }
 
-// TestDoctorDanglingActiveProfile pins docs/architecture.md §7: a
+// TestDoctorDanglingActiveProfile pins docs/model.md: a
 // dangling profile reference fail-closes to an EMPTY scope, and doctor must
 // say so out loud instead of leaving it silent.
 func TestDoctorDanglingActiveProfile(t *testing.T) {

@@ -7,7 +7,7 @@
 | Know what a client is allowed to reach, and who decided it | [model.md](model.md) |
 | **Use** agenthub: how to wire servers, profiles and clients up | [guide.md](guide.md) |
 | Understand how the system is carved up and how the processes are laid out | [architecture.md](architecture.md) |
-| Learn what each package is responsible for | [architecture.md §3 Core module map](architecture.md#3-core-module-map) |
+| Learn what each package is responsible for | [architecture.md#the-packages](architecture.md#the-packages) |
 | Work out how a given flow actually behaves at runtime | [flows.md](flows.md) |
 | Get a feel for a package's constraints before changing it | [modules/](modules/) |
 | Debug a downstream OAuth server you can't connect to | [modules/oauth.md](modules/oauth.md) |

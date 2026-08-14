@@ -21,7 +21,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// defaultLinkRetry is the reconnect/re-register interval (docs/architecture.md §2:
+// defaultLinkRetry is the reconnect/re-register interval (docs/architecture.md#the-processes:
 // "retry registration every 30s while the daemon is absent").
 const defaultLinkRetry = 30 * time.Second
 
@@ -31,7 +31,7 @@ const defaultLinkRetry = 30 * time.Second
 const linkDialTimeout = 5 * time.Second
 
 // ctlLink is the gateway side of the gateway↔daemon control connection —
-// strictly best-effort (docs/architecture.md §2): the stdio data plane has ZERO
+// strictly best-effort (docs/architecture.md#the-processes): the stdio data plane has ZERO
 // dependency on it. Every failure here is logged and retried; none may ever
 // reach the upstream protocol channel.
 //
@@ -256,7 +256,7 @@ func (l *ctlLink) clear(reason string) {
 	if hadSession {
 		// Fall back to the static three-layer scope (and, on the widowed-
 		// overlay path, WIDEN back from the discarded overlay — a session
-		// grant dies with its session by design, docs/architecture.md §2).
+		// grant dies with its session by design, docs/architecture.md#the-processes).
 		l.g.onSessionChanged()
 	}
 }
@@ -265,7 +265,7 @@ func (l *ctlLink) clear(reason string) {
 //
 // Standalone is a SUPPORTED MODE, not a degradation. The control link is
 // optional by design — nothing in the data plane depends on it
-// (docs/architecture.md §2) — and a gateway whose user never started a daemon
+// (docs/architecture.md#the-processes) — and a gateway whose user never started a daemon
 // serves every call exactly as one that did. Reporting it at Info put a line
 // in the default log of an ordinary installation announcing that something
 // looked wrong, and a level people read is not where a supported

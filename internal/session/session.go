@@ -1,5 +1,5 @@
 // Package session implements session identity and lifecycle
-// (docs/architecture.md §7): the daemon-side session registry whose stdio
+// (docs/model.md): the daemon-side session registry whose stdio
 // gateways are remote members and whose HTTP sessions are local.
 //
 // Identity ruling (A.1 #7): short IDs "client:seq" for humans, a random
@@ -134,7 +134,7 @@ func (s *Session) Roots() []string {
 }
 
 // SetRoots replaces the session's roots (roots/list_changed). The root is a
-// mutable ATTRIBUTE, never part of the ID (docs/architecture.md §7).
+// mutable ATTRIBUTE, never part of the ID (docs/model.md).
 func (s *Session) SetRoots(roots []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

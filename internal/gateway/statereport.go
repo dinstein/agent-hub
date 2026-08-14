@@ -28,7 +28,7 @@ const reportTimeout = 5 * time.Second
 // The gateway is the only process that holds these connections, so it is the
 // only one that can answer. Nothing in the data plane depends on the report
 // landing: with no daemon (or no link yet) this is a no-op, exactly like
-// every other thing on the control link (docs/architecture.md §2).
+// every other thing on the control link (docs/architecture.md#the-processes).
 //
 // Callers run on their own goroutines (connect, refresh, hot reload, link
 // registration), so the push is synchronous — one bounded round trip on a

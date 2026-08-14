@@ -41,7 +41,7 @@ const (
 // ingress and the credential layer — and cannot grow a second copy of the
 // gate chain. Implementations receive the authenticated Caller and MUST
 // carry Caller.Tier into pipeline.CallRequest.CallerTier; that is where the
-// second defence line of docs/architecture.md §9 is actually enforced.
+// second defence line of docs/architecture.md#what-a-call-passes-through is actually enforced.
 type Dispatcher interface {
 	// Dispatch answers one request. Returning a nil response is a protocol
 	// violation and is reported as an internal error.

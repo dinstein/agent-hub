@@ -24,7 +24,7 @@ import (
 //
 // Dangling profile references resolve FAIL-CLOSED to an empty scope
 // (a block-all profile layer) and are reported as a Diagnostic — never
-// silently (docs/architecture.md §7).
+// silently (docs/model.md).
 func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diagnostic) {
 	var layers []ScopeLayer
 	var diags []Diagnostic
@@ -54,7 +54,7 @@ func FromRegistry(snap *registry.Snapshot, key SessionKey) ([]ScopeLayer, []Diag
 	}
 
 	// Profile selection chain: client binding > default followActive
-	// (docs/architecture.md §7).
+	// (docs/model.md).
 	binding := registry.ProfileBinding{Kind: registry.BindingFollowActive}
 	bindingOrigin := "governance.json#activeProfile"
 	if ce != nil {

@@ -18,9 +18,9 @@ import (
 // changing the image, the mounts or the network and getting the previous
 // isolation until the next restart."
 //
-// A VISIBILITY change must NOT. docs/architecture.md §7 invariant 2: the
-// router is never rebuilt for a scope change, because visibility is a
-// query-time projection. Bouncing a downstream because one client's tool list
+// A VISIBILITY change must NOT. The router is never rebuilt for a scope
+// change, because visibility is a query-time projection
+// (docs/model.md#visibility-and-connection-are-two-planes). Bouncing a downstream because one client's tool list
 // was narrowed would restart a process every other client is using.
 //
 // Neither had an end-to-end case, and the suite could not have told them

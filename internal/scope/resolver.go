@@ -9,7 +9,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/router"
 )
 
-// EventKind classifies scope-cache invalidation events (docs/architecture.md §7).
+// EventKind classifies scope-cache invalidation events (docs/model.md).
 // Event-driven, never polled.
 type EventKind uint8
 
@@ -30,9 +30,9 @@ const (
 	EvCatalogChanged
 )
 
-// Event is one invalidation notice. docs/architecture.md §7 sketches Event as a bare
-// enum; the per-session events need a target, so the enum is EventKind and
-// Event carries the optional session (empty ⇒ ignored for the global kinds).
+// Event is one invalidation notice. The per-session events need a target, so
+// the kind is its own type and Event carries the optional session (empty ⇒
+// ignored for the global kinds).
 type Event struct {
 	Kind    EventKind
 	Session SessionID // required for EvRootChanged
@@ -59,7 +59,7 @@ type Sources struct {
 	// through which a credential narrows a session it does not own a
 	// registry entry for (the daemon's HTTP data plane folds an agent
 	// token's server allowlist and profile pin in here). They join the
-	// three-layer resolution chain of docs/architecture.md §7; they do not
+	// three-layer resolution chain of docs/model.md; they do not
 	// stand outside it.
 	//
 	// Failure direction: these are ordinary layers, so Merge treats them

@@ -329,7 +329,7 @@ const listTTLMs int64 = 60_000
 // session's discovery mode (full / grouped / lazy, docs/flows.md).
 //
 // The router is never rebuilt for a scope or mode change: visibility is a
-// query-time projection (docs/architecture.md §7 invariant 2), and the mode only
+// query-time projection (docs/model.md invariant 2), and the mode only
 // decides how many of the visible names are printed.
 func (g *gateway) handleToolsList(req *mcp.Request) {
 	res := mcp.ListToolsResult{Tools: g.currentSurface().List()}
@@ -403,7 +403,7 @@ func (g *gateway) handleToolsCall(ctx context.Context, req *mcp.Request) {
 		if rt, _, _ := g.catalog(); routable(rt, p.Name) {
 			// Routable but not on the surface: the name exists in the catalog
 			// and the SCOPE is what hides it. The scope gate is the
-			// enforcement point (docs/architecture.md §9) and owns that rejection with
+			// enforcement point (docs/architecture.md#what-a-call-passes-through) and owns that rejection with
 			// its stable code, so the call still enters the pipeline — where
 			// it is denied, never executed.
 			g.execTool(ctx, req, p.Name, p.Arguments)

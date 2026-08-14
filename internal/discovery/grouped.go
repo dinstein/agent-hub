@@ -118,7 +118,7 @@ const groupHint = "call one of these with call_tool{tool, arguments}"
 //
 // Only VISIBLE tools are listed — the aggregate entry is a projection of
 // the same scope-filtered set as tools/list and search_tools, never a
-// second path into the catalog (docs/architecture.md §7).
+// second path into the catalog (docs/model.md).
 func (s *Surface) HandleGroup(name string) *mcp.CallResult {
 	id, ok := s.groupOwner[name]
 	if !ok {
@@ -134,7 +134,7 @@ func (s *Surface) HandleGroup(name string) *mcp.CallResult {
 			Description: describe(t),
 			Schema:      schemaOf(t),
 			// Grouped mode keeps the SINGLE call door even when intent
-			// variants are on: docs/architecture.md §9 splits lazy mode's call_tool,
+			// variants are on: docs/model.md#how-the-surface-is-presented splits lazy mode's call_tool,
 			// and grouped mode's whole point is that the agent already sees
 			// every callable name — there is no allowlist pressure to
 			// relieve, and a second door shape would be a second contract.

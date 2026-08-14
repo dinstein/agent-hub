@@ -4,9 +4,9 @@
 //
 // Merge is a pure function: same inputs always produce the same output and
 // inputs are never mutated — the stdio gateway and the daemon call the same
-// implementation (docs/architecture.md §2). Security fields merge monotonically
+// implementation (docs/architecture.md#the-processes). Security fields merge monotonically
 // tighter (intersection / union / boolean OR); experience fields are
-// most-specific-wins (docs/architecture.md §7).
+// most-specific-wins (docs/model.md).
 package scope
 
 import (
@@ -42,7 +42,7 @@ func (k LayerKind) String() string {
 // alias to the registry definition (single source of truth for the on-disk
 // semantics): selector absent = no intervention; Allow == nil = full server
 // tool set; Allow == [] = block-all; Allow = [...] = narrow to subset.
-// Keys are always ORIGINAL tool names, never exposed names (docs/architecture.md §7
+// Keys are always ORIGINAL tool names, never exposed names (docs/model.md
 // invariant 1).
 type ToolSelector = registry.ToolSelector
 
@@ -60,7 +60,7 @@ const (
 	DiscoveryFull    DiscoveryMode = "full"
 )
 
-// ScopeLayer is one layer's contribution to the merge (docs/architecture.md §7).
+// ScopeLayer is one layer's contribution to the merge (docs/model.md).
 type ScopeLayer struct {
 	Kind   LayerKind
 	Origin string // audit provenance, e.g. "clients.json#claude-code" / "session:claude-code:3"
@@ -90,7 +90,7 @@ type ToolView struct {
 
 // Diagnostic is a non-fatal resolution warning (e.g. a dangling profile
 // reference that was fail-closed to an empty scope). Diagnostics are part of
-// the EffectiveScope value — never silent (docs/architecture.md §7).
+// the EffectiveScope value — never silent (docs/model.md).
 type Diagnostic struct {
 	Layer   LayerKind
 	Origin  string
@@ -115,7 +115,7 @@ type EffectiveScope struct {
 // (The session package owns minting; scope only keys by it.)
 type SessionID string
 
-// SessionKey identifies one resolution target (docs/architecture.md §7).
+// SessionKey identifies one resolution target (docs/model.md).
 type SessionKey struct {
 	ClientID  string
 	SessionID SessionID

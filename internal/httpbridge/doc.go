@@ -1,7 +1,7 @@
 // Package httpbridge is the daemon's DATA-plane exposure face: MCP
 // Streamable HTTP for upstream clients, the ingress hard limits that guard
 // it, and the agent-token credential layer that grades what a caller may do
-// (docs/architecture.md §2 and §9, docs/modules/controlplane.md).
+// (docs/architecture.md#the-processes and §9, docs/modules/controlplane.md).
 //
 // It is deliberately NOT the control plane. Management traffic goes over the
 // UDS control socket (internal/ctlapi) where OS peer credentials are the
@@ -28,7 +28,7 @@
 //
 // # Fail-closed bindings
 //
-// Binding the listener is itself an authorization decision (docs/architecture.md §2,
+// Binding the listener is itself an authorization decision (docs/architecture.md#the-processes,
 // inherited from toolport http_bind_is_authorized): with no admin token, no
 // active agent token and no registered client there is nobody who could
 // legitimately connect, so the bind is REFUSED. --insecure-loopback is the
@@ -48,7 +48,7 @@
 //
 // The tier travels into internal/pipeline as CallRequest.CallerTier, where
 // the token tier gate compares it against the tool's annotation-derived
-// tier. That is the SECOND of the two defence lines of docs/architecture.md §9
+// tier. That is the SECOND of the two defence lines of docs/architecture.md#what-a-call-passes-through
 // (scope → token tier); this package mints the input, it
 // does not re-implement the decision.
 //

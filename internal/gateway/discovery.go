@@ -33,7 +33,7 @@ import (
 //     nothing, which is the closed direction and is deliberate.
 
 // budgetWildcard is the EffectiveScope.Budgets key that applies to every
-// server; a per-server entry wins over it (docs/architecture.md §7).
+// server; a per-server entry wins over it (docs/model.md).
 const budgetWildcard = "*"
 
 // currentSurface returns the exposure snapshot for the current (catalog,

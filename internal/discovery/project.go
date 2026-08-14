@@ -75,7 +75,7 @@ type Hit struct {
 }
 
 // callWithFor names the meta-tool an agent must use to invoke t
-// (docs/architecture.md §9, ruling #18).
+// (docs/model.md#how-the-surface-is-presented, ruling #18).
 //
 // Compatibility mode (variants=false): always call_tool.
 //

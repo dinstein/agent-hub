@@ -1,4 +1,4 @@
-// Package tier is the operation-tier vocabulary of docs/architecture.md §9
+// Package tier is the operation-tier vocabulary of docs/architecture.md#what-a-call-passes-through
 // (read | write | destructive) — the one ladder the whole repository
 // counts on.
 //
@@ -25,7 +25,7 @@ import (
 	"encoding/json"
 )
 
-// Operation tiers (docs/architecture.md §9). One ladder, repo-wide: agent-token
+// Operation tiers (docs/architecture.md#what-a-call-passes-through). One ladder, repo-wide: agent-token
 // credentials carry a Tier, downstream tools are classified into the
 // same three values by ToolTier, and internal/discovery names its intent
 // variants after them. A second enumeration would be a second answer.
@@ -76,7 +76,7 @@ func Covers(caller, tool Tier) bool {
 }
 
 // ToolTier classifies a downstream tool into the operation ladder from its
-// verbatim annotations JSON (docs/architecture.md §9 "tier is derived from downstream annotations"):
+// verbatim annotations JSON (docs/architecture.md#what-a-call-passes-through "tier is derived from downstream annotations"):
 //
 //	annotations field absent / null / unparsable → destructive
 //	readOnlyHint == true                         → read
@@ -92,7 +92,7 @@ func Covers(caller, tool Tier) bool {
 //     destructive"): an unannotated tool must never be reachable with a
 //     read-only credential.
 //   - An annotations object that simply stays silent about destructiveHint
-//     is a server that DID describe itself; docs/architecture.md §9 reads that silence
+//     is a server that DID describe itself; docs/architecture.md#what-a-call-passes-through reads that silence
 //     as write, and that is what the tier ladder does.
 //
 // `{}` therefore answers write, not destructive, even though destructive is

@@ -2,7 +2,7 @@ package confops
 
 import "github.com/dinstein/agent-hub/internal/registry"
 
-// ToolSelectMode is the three-state tool selector of docs/architecture.md §7, keyed
+// ToolSelectMode is the three-state tool selector of docs/model.md, keyed
 // by ORIGINAL tool names (never exposed/renamed names — otherwise a rename
 // would walk out from under its own narrowing rule).
 type ToolSelectMode int

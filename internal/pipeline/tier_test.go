@@ -15,7 +15,7 @@ import (
 // ToolTier is the derivation the token tier gate, the intent variants and
 // every allowlist UI downstream agree on, so each branch is pinned — in
 // particular the two that look alike and are not: NO annotations object
-// (destructive, fail-closed) versus an EMPTY one (write, docs/architecture.md §9).
+// (destructive, fail-closed) versus an EMPTY one (write, docs/architecture.md#what-a-call-passes-through).
 func TestToolTierDerivation(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -109,7 +109,7 @@ func TestTokenTierDenialNeverCallsDownstream(t *testing.T) {
 	}
 }
 
-// TestDefenceLinesAreDistinguishable is the docs/architecture.md §9 stack:
+// TestDefenceLinesAreDistinguishable is the docs/architecture.md#what-a-call-passes-through stack:
 // scope and token tier each block, in that order, and each rejection carries
 // its own gate and code so a caller can tell them apart.
 func TestDefenceLinesAreDistinguishable(t *testing.T) {

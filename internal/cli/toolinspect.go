@@ -383,7 +383,7 @@ func selectorVerdict(present bool, allow []string, raw string) (bool, string) {
 }
 
 // profileAllowsTool resolves one binding down to a yes/no for this tool,
-// fail-closed on a dangling reference (docs/architecture.md §7).
+// fail-closed on a dangling reference (docs/model.md).
 func profileAllowsTool(
 	profiles map[string]registry.Doc[registry.Profile],
 	b ClientBindingView, active, server, raw string,

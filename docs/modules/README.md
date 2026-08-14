@@ -7,7 +7,7 @@ Two more documents are organized by **external constraint** rather than by layer
 [oauth.md](oauth.md) and [gui.md](gui.md).
 
 For a quick lookup of which package belongs to which layer, see
-[../architecture.md §3 Core module map](../architecture.md#3-core-module-map).
+[architecture.md#the-packages](../architecture.md#the-packages).
 
 The most valuable part of each package writeup is "invariants and failure directions" — it answers
 "what must not be touched, and which way does this fall over when it breaks". Most of these
@@ -34,9 +34,8 @@ from going.
 **A capability existing ≠ it being wired up.** Some packages are feature-complete and well tested,
 but the assembly layer hasn't connected them yet. Those cases are called out explicitly under
 "current assembly status" in the relevant package section rather than glossed over. There is no
-central summary of them any more, and
-[../architecture.md §12](../architecture.md#12-assembly-status-implemented-but-not-yet-wired-up)
-says why: a list kept away from the code it describes is the one that goes stale unnoticed.
+central summary of them, for the reason [../README.md](../README.md) gives: a list kept away from the
+code it describes is the one that goes stale unnoticed.
 
 **A gap already pinned down to a specific line belongs HERE**, in the section for the package that
 owns it — say plainly that it is owed rather than describing it as done. It is read by whoever

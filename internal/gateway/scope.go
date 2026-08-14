@@ -8,7 +8,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/scope"
 )
 
-// This file is the gateway's visibility plane (docs/architecture.md §7): the
+// This file is the gateway's visibility plane (docs/model.md): the
 // EffectiveScope is a QUERY-TIME projection over the connection plane. The
 // two planes are deliberately separate — invariant 2: narrowing the scope
 // (profile edit, session overlay) never touches a downstream connection;
@@ -93,7 +93,7 @@ func (g *gateway) logScopeShape(reason string, es *scope.EffectiveScope) {
 	g.log.Info("effective scope resolved", "reason", reason, logx.Rev(es.Generation),
 		"servers", len(es.Servers), "tools", tools, "discovery", string(es.Discovery))
 	// Diagnostics are part of the value and documented as never silent
-	// (docs/architecture.md §7), but nothing in the gateway had ever read
+	// (docs/model.md), but nothing in the gateway had ever read
 	// them — `agenthub session` was the only consumer. A dangling profile
 	// reference fails CLOSED to an empty scope, so the failure mode they
 	// describe is a client that can suddenly see nothing, reported by the one
@@ -166,10 +166,10 @@ func catalogFromRouter(rt *router.Router) router.Catalog {
 // under the effective scope, using pipeline.ScopeAllows — the identical
 // predicate the pipeline's scope gate enforces on the execute path. The
 // router itself is NOT rebuilt and no downstream connection is touched
-// (docs/architecture.md §7 invariant 2 — visibility is a query-time projection).
+// (docs/model.md invariant 2 — visibility is a query-time projection).
 
 // refreshScopeAndNotify recomputes the effective scope and pushes
-// tools/list_changed iff the CONTENT hash moved (docs/architecture.md §7: only a
+// tools/list_changed iff the CONTENT hash moved (docs/model.md: only a
 // content change warrants a push — no rebuild amplification).
 func (g *gateway) refreshScopeAndNotify() {
 	es := g.currentScope() // resolve OUTSIDE g.mu (resolver takes its own locks)
@@ -189,7 +189,7 @@ func (g *gateway) refreshScopeAndNotify() {
 	// surface the client sees is a different one. The cached surface needs no
 	// explicit invalidation (its key carries the scope hash), but the search
 	// guard does: its streak describes a tool surface that no longer exists
-	// (docs/architecture.md §7).
+	// (docs/model.md).
 	g.guard.Reset()
 	if initialized {
 		g.notifyToolsChanged()

@@ -546,7 +546,7 @@ func (s *Server) serve(req callReq) {
 //     retried on the fresh connection. If the old connection was already
 //     terminally failed the request never reached the server; the residual
 //     double-execution window (process died mid-call) is the accepted
-//     tradeoff of probe semantics (docs/architecture.md §2).
+//     tradeoff of probe semantics (docs/architecture.md#the-processes).
 //   - ANY call (not just the probe) is likewise rebuilt once when the
 //     failure is a pre-send dead connection (transport.ErrDeadConnection):
 //     a long-lived SSE stream that died between calls would otherwise make

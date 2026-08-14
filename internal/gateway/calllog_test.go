@@ -175,7 +175,7 @@ func TestDeniedToolCallIsLoggedWithItsGateAndCode(t *testing.T) {
 	waitForTools(t, c, "s1__echo")
 
 	// s2 is routable but invisible: the call still enters the pipeline and is
-	// refused by the scope gate (docs/architecture.md §9 — the gate is the
+	// refused by the scope gate (docs/architecture.md#what-a-call-passes-through — the gate is the
 	// enforcement point).
 	callBlockedWithCode(t, c, "s2__echo", "E_SCOPE_DENIED")
 

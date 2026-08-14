@@ -48,7 +48,7 @@ func okCall(trace *[]string) pipeline.CallFunc {
 	}
 }
 
-// TestFrozenGateChainOrder pins the production chain to the docs/architecture.md §9
+// TestFrozenGateChainOrder pins the production chain to the docs/architecture.md#what-a-call-passes-through
 // order: scope → token tier.
 func TestFrozenGateChainOrder(t *testing.T) {
 	t.Parallel()

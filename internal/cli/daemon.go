@@ -237,7 +237,7 @@ func (a *App) runDaemonForeground(ctx context.Context, http httpFlags, of ownerF
 
 // startDaemonBackground forks `<self> daemon start --foreground` into its
 // own session and polls run/daemon.json + ping until ready (the readiness
-// handshake of docs/architecture.md §10: no port-probe TOCTOU). Idempotent: a live
+// handshake of docs/architecture.md#on-disk: no port-probe TOCTOU). Idempotent: a live
 // daemon yields AlreadyRunning instead of an error.
 func (a *App) startDaemonBackground(ctx context.Context, http httpFlags, of ownerFlags) (DaemonStatus, error) {
 	// Refused here as well as in the child: a start that is going to be

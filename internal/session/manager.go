@@ -38,7 +38,7 @@ const (
 	ReasonExpired CloseReason = "expired"
 )
 
-// Defaults for Options zero values (docs/architecture.md §7).
+// Defaults for Options zero values (docs/model.md).
 const (
 	DefaultHTTPTTL      = 24 * time.Hour
 	DefaultReapInterval = 5 * time.Minute
@@ -51,7 +51,7 @@ var (
 )
 
 // SessionManager is the daemon-side session registry contract
-// (docs/architecture.md §7). Deviations from the sketch there, both
+// (docs/model.md). Deviations from the sketch there, both
 // deliberate:
 //   - Touch is exposed for the HTTP bridge (LastSeen refresh).
 type SessionManager interface {
@@ -164,7 +164,7 @@ func (m *MemoryManager) OpenHTTP(ctx context.Context, hello SessionHello) (*Sess
 
 // mint builds a session with a fresh "client:seq" ID. Seq is per-client
 // monotonic for the daemon's lifetime and never reused, so a re-registered
-// gateway always gets a NEW identity (docs/architecture.md §7): a reference
+// gateway always gets a NEW identity (docs/model.md): a reference
 // held to the old session must break rather than silently rebind to the new
 // one, which is what reusing a seq would make it do.
 func (m *MemoryManager) mint(clientID string, origin Origin, roots []string, caps ClientCaps) *Session {
@@ -248,7 +248,7 @@ func (m *MemoryManager) close(id SessionID, reason CloseReason) {
 	m.publish(event.Event{Topic: TopicClosed, Key: string(id), Payload: Closed{Info: info, Reason: reason}})
 }
 
-// Run drives the background reaper until ctx is done (docs/architecture.md §7: fixes
+// Run drives the background reaper until ctx is done (docs/model.md: fixes
 // toolport's mint/require-time-only retain). Safe to call once per manager.
 func (m *MemoryManager) Run(ctx context.Context) {
 	t := time.NewTicker(m.reapInterval)

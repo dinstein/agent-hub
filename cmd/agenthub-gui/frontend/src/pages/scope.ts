@@ -1,7 +1,7 @@
 // Scope page: which profile one client is on.
 //
 // That is the WHOLE client layer, and the page is small because the model is
-// (docs/architecture.md §7). A client selects a profile; it never narrows on
+// (docs/model.md). A client selects a profile; it never narrows on
 // top of one. Narrowing has exactly one home — the profile — so a client that
 // needs a different surface is bound to a different profile.
 //

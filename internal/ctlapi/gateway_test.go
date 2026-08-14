@@ -121,7 +121,7 @@ func TestGatewayLinkDropClosesSession(t *testing.T) {
 	})
 
 	// Re-registration mints a NEW identity: references to the dead session
-	// must break, never silently rebind (docs/architecture.md §7).
+	// must break, never silently rebind (docs/model.md).
 	fg2 := registerFakeGateway(t, env.sock, "cursor")
 	defer fg2.closeLink()
 	if fg2.sid != "cursor:2" {

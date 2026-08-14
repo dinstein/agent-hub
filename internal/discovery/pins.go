@@ -17,7 +17,7 @@ import (
 type PinSet interface {
 	// IsPinned reports whether the ORIGINAL (server, raw tool) pair is
 	// pinned. Keys are original names, never exposed names — the same rule
-	// as every other scope-facing selector (docs/architecture.md §7 invariant 1).
+	// as every other scope-facing selector (docs/model.md invariant 1).
 	IsPinned(serverID, rawTool string) bool
 }
 

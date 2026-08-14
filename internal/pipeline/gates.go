@@ -10,7 +10,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/scope"
 )
 
-// Frozen stage names (docs/architecture.md §9 chain order). They key Counters
+// Frozen stage names (docs/architecture.md#what-a-call-passes-through chain order). They key Counters
 // snapshots; do not rename.
 //
 // StageDefendAndShape keeps its name although the stage now only shapes: the
@@ -23,7 +23,7 @@ const (
 )
 
 // Stable rejection codes so a caller can tell the two gates apart
-// (docs/architecture.md §9: "rejection reasons are individually
+// (docs/architecture.md#what-a-call-passes-through: "rejection reasons are individually
 // distinguishable"). They are ABI once emitted; do not rename.
 //
 // There are exactly two, because there are exactly two gates. Codes for
@@ -60,7 +60,7 @@ func Blockedf(gate, code, format string, a ...any) *BlockedError {
 
 // ScopeAllows reports whether the routed (server, raw tool) pair is visible
 // under es. It is shared by the scope gate and the gateway's tools/list
-// projection so listing and calling can never disagree (docs/architecture.md §7).
+// projection so listing and calling can never disagree (docs/model.md).
 //
 // Failure direction: a nil es, an invisible server and an invisible tool
 // all report false (fail-closed). Callers that mean "no scope authority at
@@ -79,12 +79,12 @@ func ScopeAllows(es *scope.EffectiveScope, serverID, rawTool string) bool {
 }
 
 // scopeGate is the visibility gate: is the routed (server, tool) visible to
-// this session under the effective scope? (docs/architecture.md §9, first gate.)
+// this session under the effective scope? (docs/architecture.md#what-a-call-passes-through, first gate.)
 type scopeGate struct {
 	n atomic.Uint64
 	// scopeOf returns the caller's effective scope; the SAME pointer the
 	// assembling gateway serves tools/list from (cache-shared,
-	// docs/architecture.md §7). nil func / nil scope = no scope authority (see
+	// docs/model.md). nil func / nil scope = no scope authority (see
 	// Options.Scope):
 	// allow — that mode has no registry, hence nothing to enforce.
 	scopeOf func() *scope.EffectiveScope
@@ -114,7 +114,7 @@ func (g *scopeGate) Check(_ context.Context, req *CallRequest) error {
 	return nil
 }
 
-// tokenTierGate is the operation-tier gate (docs/architecture.md §9, second defence
+// tokenTierGate is the operation-tier gate (docs/architecture.md#what-a-call-passes-through, second defence
 // line): does the caller's credential tier (CallRequest.CallerTier —
 // read | write | destructive, carried by an agent token) cover the tool's
 // annotation-derived tier (ToolTier)?

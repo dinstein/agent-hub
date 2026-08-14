@@ -32,7 +32,7 @@ import (
 //
 // The bind itself is a third authorization decision, and it belongs to
 // httpbridge.AuthorizeBind: an endpoint nobody holds a credential for is
-// refused (docs/architecture.md §2).
+// refused (docs/architecture.md#the-processes).
 
 // httpEndpoint is a running MCP data plane.
 type httpEndpoint struct {

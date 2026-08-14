@@ -5,7 +5,7 @@ downstream connections) lives elsewhere; the packages here expose the daemon's s
 actions as a stable local API, wrap it in two peer frontends (CLI and GUI), and hold the compile-time
 constraint that "the GUI may be entirely absent".
 
-Per-package responsibilities are in [architecture.md §3](../architecture.md#3-core-module-map); what
+Per-package responsibilities are in [architecture.md#the-packages](../architecture.md#the-packages); what
 matters for the shape below is that `internal/confops` is **the only implementation of semantic writes**
 and both frontends call it, `internal/catalog` produces **proposals** and never writes to disk, and
 `internal/httpbridge` shares a process with the control plane but not its authentication model.

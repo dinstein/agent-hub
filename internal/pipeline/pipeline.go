@@ -3,7 +3,7 @@
 //
 // Every tool call — direct or, later, code-mode — flows through Execute and
 // nowhere else, so the governance gates cannot fork. The gate chain order is
-// frozen by docs/architecture.md §9:
+// frozen by docs/architecture.md#what-a-call-passes-through:
 //
 //	scope gate → token tier gate
 //
@@ -59,7 +59,7 @@ type CallRequest struct {
 	Args json.RawMessage
 	// Annotations is the routed tool's annotations object, verbatim from
 	// the downstream tools/list. ABSENCE IS LOAD-BEARING: a tool without
-	// annotations counts as destructive (fail-closed, docs/architecture.md §9).
+	// annotations counts as destructive (fail-closed, docs/architecture.md#what-a-call-passes-through).
 	Annotations json.RawMessage
 	// CallerTier is the caller's credential tier ("" = no tier authority,
 	// see CallerTier). The token tier gate compares it against
@@ -72,7 +72,7 @@ type CallRequest struct {
 // Gate is one pre-call governance check. Gates run in chain order; the
 // first error short-circuits the pipeline (the call never reaches the
 // downstream server) and is propagated to the caller — rejections are
-// *BlockedError so their reasons stay distinguishable (docs/architecture.md §9).
+// *BlockedError so their reasons stay distinguishable (docs/architecture.md#what-a-call-passes-through).
 type Gate interface {
 	// Name identifies the gate in Counters snapshots and audit records.
 	Name() string
@@ -122,7 +122,7 @@ type Pipeline struct {
 type Options struct {
 	// Scope returns the caller's current effective scope. The scope gate
 	// reads the SAME pointer the assembling gateway uses for its tools/list
-	// projection (docs/architecture.md §7). nil func
+	// projection (docs/model.md). nil func
 	// or nil result = no scope authority: the scope gate allows (matching
 	// M0 and the registry-unavailable cache-serving mode of docs/flows.md;
 	// with no registry there is also no governance config to enforce).
@@ -135,7 +135,7 @@ type Options struct {
 }
 
 // New returns the production pipeline with the frozen gate chain
-// (docs/architecture.md §9 order) and the defend_and_shape hook, wired to opts.
+// (docs/architecture.md#what-a-call-passes-through order) and the defend_and_shape hook, wired to opts.
 func New(opts Options) *Pipeline {
 	return &Pipeline{
 		gates: []Gate{
@@ -154,7 +154,7 @@ func NewWithGates(gates []Gate, shaper Shaper) *Pipeline {
 }
 
 // GateNames returns the chain order. The production order is pinned by test
-// against docs/architecture.md §9.
+// against docs/architecture.md#what-a-call-passes-through.
 func (p *Pipeline) GateNames() []string {
 	names := make([]string, len(p.gates))
 	for i, g := range p.gates {

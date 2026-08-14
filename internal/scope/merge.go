@@ -77,11 +77,11 @@ func Converge(layers []ScopeLayer, cat router.Catalog) ([]Step, error) {
 }
 
 // Merge folds the given layers over the tool catalog into an EffectiveScope
-// (docs/architecture.md §7). It is a PURE function: deterministic, no side
+// (docs/model.md). It is a PURE function: deterministic, no side
 // effects, inputs are never mutated and never aliased by the output.
 //
 // Merge rules — the complete set, not an excerpt of one kept elsewhere.
-// docs/architecture.md §7 states them in prose and says why each field falls
+// docs/model.md states them in prose and says why each field falls
 // the way it does; docs/modules/config.md's internal/scope section carries
 // the invariants around them. There is no table and no fuller list to go
 // looking for; this is it.
@@ -219,7 +219,7 @@ func MergeWithDiagnostics(layers []ScopeLayer, cat router.Catalog, diags []Diagn
 
 // Changed reports whether two scopes differ in CONTENT (Hash), ignoring
 // Generation. Only a content change warrants pushing tools/list_changed to
-// the session (docs/architecture.md §7 — avoid rebuild amplification). A nil-to-
+// the session (docs/model.md — avoid rebuild amplification). A nil-to-
 // non-nil transition counts as changed.
 func Changed(prev, next *EffectiveScope) bool {
 	if prev == nil || next == nil {

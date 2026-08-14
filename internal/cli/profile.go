@@ -16,7 +16,7 @@ import (
 
 // The `profile` group is the front end of the profile operations in
 // internal/confops: named capability tiers made of an enabled-server set
-// plus per-server three-state tool selectors (docs/modules/controlplane.md, docs/architecture.md §7).
+// plus per-server three-state tool selectors (docs/modules/controlplane.md, docs/model.md).
 //
 // The rules — what a rename does to the clients that reference the profile,
 // what a removal deliberately does NOT do to them — live in confops, so the
@@ -160,7 +160,7 @@ type ProfileChange struct {
 	Profile *ProfileRow `json:"profile,omitempty"`
 	// Repointed lists client entries whose profile reference was rewritten
 	// by a rename (leaving them dangling would fail-close them to an empty
-	// scope, docs/architecture.md §7).
+	// scope, docs/model.md).
 	Repointed []string `json:"repointed,omitempty"`
 }
 

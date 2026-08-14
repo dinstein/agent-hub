@@ -169,7 +169,7 @@ type ServerEntry struct {
 	// It is a CONNECTION-plane field only: a derived instance exposes the
 	// same tools under the same names and is subject to the same scope —
 	// deriving changes which process a call runs on, never what a session
-	// can see (docs/architecture.md §7 invariant 2).
+	// can see (docs/model.md invariant 2).
 	Derive string `json:"derive,omitempty"`
 	// Runtime selects WHERE a stdio child runs: RuntimeHost (default, and
 	// what every entry written before M2 means) or RuntimeDocker. It is
@@ -299,7 +299,7 @@ type ServersDoc struct {
 	Servers map[string]Doc[ServerEntry] `json:"servers"`
 }
 
-// ToolSelector narrows the tool set of one server (docs/architecture.md §7; owned by
+// ToolSelector narrows the tool set of one server (docs/model.md; owned by
 // registry, consumed by internal/scope). Three-state semantics, keyed by
 // ORIGINAL tool names (never exposed/renamed names):
 //
@@ -323,7 +323,7 @@ type ToolSelector struct {
 }
 
 // ProfileBindingKind enumerates the explicit profile-reference semantics that
-// replace toolport's `"profile": ""` empty-string magic (docs/architecture.md §7).
+// replace toolport's `"profile": ""` empty-string magic (docs/model.md).
 type ProfileBindingKind string
 
 const (
@@ -406,7 +406,7 @@ type RateLimitRule struct {
 }
 
 // ClientEntry binds one AI client to a profile, and does nothing else
-// (docs/architecture.md §7).
+// (docs/model.md).
 //
 // It used to carry its own servers / tools / discovery / approval /
 // resultBudget narrowing on top of the profile. That made "which profile is
@@ -499,7 +499,7 @@ type ResolvedCallsPolicy struct {
 type GovernanceDoc struct {
 	Discovery string `json:"discovery,omitempty"` // global default discovery mode
 	// ActiveProfile is the globally active profile name, the fallback every
-	// client that does not name one follows (docs/architecture.md §7). "" = none, so
+	// client that does not name one follows (docs/model.md). "" = none, so
 	// followActive applies no profile narrowing at all.
 	//
 	// It lives here rather than in a state file because scope resolution is
@@ -511,7 +511,7 @@ type GovernanceDoc struct {
 	ActiveProfile string                 `json:"activeProfile,omitempty"`
 	ResultBudget  map[string]Doc[Budget] `json:"resultBudget,omitempty"` // serverID or "*": global default budget
 	// IntentVariants switches lazy mode's single call_tool into the three
-	// intent variants call_tool_read / _write / _destructive (docs/architecture.md §9,
+	// intent variants call_tool_read / _write / _destructive (docs/architecture.md#what-a-call-passes-through,
 	// ruling #18). It is the ONE governance switch whose default is ON, so
 	// it is a *bool rather than a plain bool: absent means "the default"
 	// (true), false is an explicit opt-out into the compatibility shape for
@@ -523,7 +523,7 @@ type GovernanceDoc struct {
 	// set it is editing governance.json by hand — and the stdio gateway
 	// never carries the resolved value into discovery.Options, so setting
 	// it changes nothing today. `internal/discovery` implements and tests
-	// the behaviour; only the assembly is missing (docs/architecture.md §8
+	// the behaviour; only the assembly is missing (docs/model.md#how-the-surface-is-presented
 	// and the unwired-faces appendix in docs/modules/dataplane.md).
 	IntentVariants *bool `json:"intentVariants,omitempty"`
 	// RateLimits is the cooperative call quota rule set (internal/ratelimit).

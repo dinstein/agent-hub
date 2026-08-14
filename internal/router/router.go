@@ -85,7 +85,7 @@ type entry struct {
 }
 
 // Router is an immutable snapshot of the aggregated catalog. Rebuild and
-// atomically swap the pointer on change (docs/architecture.md §2: snapshot reads, no
+// atomically swap the pointer on change (docs/architecture.md#the-processes: snapshot reads, no
 // locks); a Router itself is safe for concurrent use.
 type Router struct {
 	byExposed map[string]entry

@@ -74,7 +74,7 @@ func TestLazyCallToolCannotReachPastTheProfile(t *testing.T) {
 		"arguments": map[string]any{"marker": "should-not-run"},
 	}, 30*time.Second))
 
-	// And the anti-probing rule (docs/architecture.md §8: "every tool id that
+	// And the anti-probing rule (docs/model.md#how-the-surface-is-presented: "every tool id that
 	// can't be shown — nonexistent, out of scope, or outside its server's
 	// allow list — returns the same copy, or describe_tool becomes an
 	// enumeration oracle"). A hidden REAL tool and a name that exists

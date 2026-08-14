@@ -5,7 +5,7 @@
 //
 // Three invariants hold across the whole package:
 //
-//  1. ONE scope, three enforcement points (docs/architecture.md §7). tools/list, the
+//  1. ONE scope, three enforcement points (docs/model.md). tools/list, the
 //     search candidate filter and the call_tool route guard all read the
 //     SAME *scope.EffectiveScope. This package never re-derives visibility:
 //     Visible projects a router catalog through pipeline.ScopeAllows — the
@@ -99,7 +99,7 @@ type Tool struct {
 	Def      mcp.ToolDef
 }
 
-// Key is the search-index cache key of docs/architecture.md §7: the catalog
+// Key is the search-index cache key: the catalog
 // generation plus the content hash of the effective scope. Scope changes
 // change the hash, so a stale index can never be reused — no explicit
 // invalidation is needed, and two sessions that resolve to the same content
@@ -134,7 +134,7 @@ func CacheKeyFor(catalogGeneration uint64, es *scope.EffectiveScope, variants bo
 
 // Visible projects an aggregated router catalog through the session's
 // effective scope, returning the tools that tools/list, search_tools and
-// call_tool must all agree on (docs/architecture.md §7, "three enforcement points").
+// call_tool must all agree on (docs/model.md, "three enforcement points").
 //
 // Failure direction: an unroutable listing and an invisible route are both
 // dropped. A nil scope means "no scope authority at all" (the registry-less
@@ -182,7 +182,7 @@ type Options struct {
 	// Generation is the catalog generation behind Tools, for CacheKey.
 	Generation uint64
 	// IntentVariants splits the lazy-mode call_tool into the three intent
-	// variants (variants.go, docs/architecture.md §9). The assembling process decides:
+	// variants (variants.go, docs/model.md#how-the-surface-is-presented). The assembling process decides:
 	// registry governance carries the switch (GovernanceDoc.IntentVariants,
 	// default ON per ruling #18), and each assembly reads it. The zero value
 	// here is the compatibility shape — a caller that says nothing keeps the
@@ -193,11 +193,11 @@ type Options struct {
 // Surface is an immutable snapshot of one session's tool exposure: what
 // tools/list answers, how an incoming name is classified, and what
 // search_tools can rank. Safe for concurrent use; rebuild and swap on any
-// catalog or scope change (docs/architecture.md §2).
+// catalog or scope change (docs/architecture.md#the-processes).
 //
 // SearchGuard is deliberately NOT part of a Surface: guard state is
 // per-session and must survive rebuilds, while it must be reset when the
-// scope changes (docs/architecture.md §7). The caller owns that lifecycle.
+// scope changes (docs/model.md). The caller owns that lifecycle.
 type Surface struct {
 	mode Mode
 	key  Key
@@ -286,7 +286,7 @@ func (s *Surface) assignGroupNames() {
 func (s *Surface) Mode() Mode { return s.mode }
 
 // CacheKey reports the (generation, scope hash) key this surface was built
-// under — the search-index cache key of docs/architecture.md §7.
+// under — the key an index is cached against.
 func (s *Surface) CacheKey() Key { return s.key }
 
 // Tools returns the visible tool set, sorted by exposed name. The slice is

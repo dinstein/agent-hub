@@ -30,7 +30,7 @@ func (a *App) stateDir() (string, error) { return a.resolver.StateDir() }
 
 // activeProfile reads the globally active profile name from the registry.
 // An unreadable marker reads as "no active profile" — the same fail-closed
-// direction dangling profile references take (docs/architecture.md §7): the failure
+// direction dangling profile references take (docs/model.md): the failure
 // mode of a corrupt marker must be "no narrowing source", never "some
 // arbitrary profile".
 func (a *App) activeProfile() (string, error) {

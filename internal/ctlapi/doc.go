@@ -1,14 +1,14 @@
 // Package ctlapi is the control-plane server: REST + SSE over a Unix
 // domain socket, or a named pipe on Windows.
 //
-// Surface (docs/architecture.md §2, docs/modules/controlplane.md):
+// Surface (docs/architecture.md#the-processes, docs/modules/controlplane.md):
 //
 //	GET  /v1/ping                     Hello (version, pid, registry generation)
 //	GET  /v1/servers                  configured servers + runtime state + Health
 //	GET  /v1/sessions                 live sessions
 //	POST /v1/sessions/{id}/kill       force-disconnect one live session (handlers.go)
 //	GET  /v1/events                   SSE event stream (topic filter, coalescing, Last-Event-ID)
-//	POST /v1/gateway/register         stdio gateway registration (docs/architecture.md §2; gateway.go)
+//	POST /v1/gateway/register         stdio gateway registration (docs/architecture.md#the-processes; gateway.go)
 //	GET  /v1/gateway/{sid}/link       per-gateway SSE link: registry change notifications
 //	POST /v1/gateway/{sid}/servers    gateway runtime state report (gatewaystate.go)
 //
@@ -41,7 +41,7 @@
 // lost compare-and-swap with 409 + CodeStalePrecondition carrying the
 // current generation (docs/flows.md §4).
 //
-// Authentication (docs/architecture.md §2): two layers, both mandatory. The socket
+// Authentication (docs/architecture.md#the-processes): two layers, both mandatory. The socket
 // directory is 0700 and the socket 0600 (first gate: file permissions), and
 // every accepted connection is verified with SO_PEERCRED (Linux) /
 // LOCAL_PEERCRED (macOS) to belong to the same uid as this process (second

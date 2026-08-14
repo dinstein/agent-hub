@@ -45,7 +45,7 @@ type ClientBindingView struct {
 	// Dangling is set when Binding names a profile that does not exist: the
 	// resolver fail-closes it to an EMPTY scope, and this must be said out
 	// loud rather than shown as a silent empty set
-	// (docs/architecture.md §7).
+	// (docs/model.md).
 	Dangling bool `json:"dangling,omitempty"`
 }
 

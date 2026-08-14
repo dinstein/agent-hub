@@ -17,7 +17,7 @@ import (
 //	A.3 #2 "gateway degradation / re-registration path" — after a daemon kill -9 AND a restart, the
 //	       gateway re-registers and receives a BRAND NEW session identity.
 //
-// The gateway re-registers on a 30s ladder (docs/architecture.md §2), so this test is
+// The gateway re-registers on a 30s ladder (docs/architecture.md#the-processes), so this test is
 // slow by construction and skips itself in -short mode.
 
 const (

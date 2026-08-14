@@ -35,7 +35,7 @@ Two disciplines run through the whole collaboration:
    bypass — which is why `ratelimit` is not a third gate.
 
 The call path itself, and the two rules that hold it together (frozen gate order, one execution path),
-are drawn in [../architecture.md §5](../architecture.md#5-what-a-tool-call-passes-through); runtime
+are drawn in [architecture.md#what-a-call-passes-through](../architecture.md#what-a-call-passes-through); runtime
 sequences and their failure branches are in [flows.md](../flows.md).
 
 ---
@@ -505,7 +505,7 @@ carry a gate rejection, and `Code` (`E_SCOPE_DENIED`, `E_TOKEN_TIER_DENIED`) is 
 leave a truncation banner pointing at bytes nobody receives. There used to be more in this hook — an
 injection scan and a leak scan ran ahead of the budget, with load-bearing relative ordering — and the
 ordering rules went with them. The stage key is still `StageDefendAndShape` = `defend_and_shape`;
-architecture.md §5 records why renaming it would break the gate-count parity assertions silently.
+docs/architecture.md#what-a-call-passes-through records why renaming it would break the gate-count parity assertions silently.
 
 **Dependency constraint**: this package may not import `internal/ctlapi` (canonical.md §2 rule 3, enforced
 by depguard) — the data plane does not depend on the control plane.
@@ -574,7 +574,7 @@ counts describe the **cold** catalog, so a first-ever run legitimately reports z
 shape arrives with the first catalog swap; that sequence is pinned by test rather than smoothed over.
 
 **A scope's `Diags` reach the log, at Warn.** They are documented as never silent
-([architecture.md §7](../architecture.md)), yet nothing in the gateway had ever read them — `agenthub
+([model.md](../model.md)), yet nothing in the gateway had ever read them — `agenthub
 session` was the sole consumer. A dangling profile reference fails **closed** to an empty scope, so a
 diagnostic describes a client that can suddenly see nothing: the loudest symptom the scope chain
 produces, previously with the quietest explanation.
@@ -674,7 +674,7 @@ its counterpart is a teardown that did not finish.
 
 **Arguments never enter ordinary logs.** They are the part of a call carrying the user's data, and a log
 that records them cannot be attached to a bug report. The separately configured access ledger (described
-in architecture.md §5) stores them only in encrypted payload packs; what belongs here is its one
+in docs/architecture.md#what-a-call-passes-through) stores them only in encrypted payload packs; what belongs here is its one
 gateway-side invariant: **hot reload may replace the store, but an in-flight span retains its original
 store and key**, so one lifecycle never straddles keys.
 

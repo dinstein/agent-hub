@@ -6,7 +6,7 @@ import (
 	"net/url"
 )
 
-// Tool selector modes (docs/architecture.md §7). The three states are keyed by
+// Tool selector modes (docs/model.md). The three states are keyed by
 // ORIGINAL tool names — never exposed/renamed names, otherwise a rename
 // would walk out from under its own narrowing rule.
 //

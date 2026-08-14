@@ -90,6 +90,9 @@ flowchart LR
 
 **会话 overlay 永不持久化。** 一次能活过重启的运行期放宽是安全事故，所以 `session scope` 的修改写不进配置。
 
+任何持久化的东西都不读会话的 MCP root。解析器的缓存键是 `(clientID, registry generation)`，root 只到达
+`internal/downstream` 一个包，由它为需要的 server 派生按 root 区分的实例。
+
 ## 暴露面怎么呈现
 
 `discovery` 决定客户端看到多少个工具名，不决定它能调用哪些。没出现在初始列表里的工具，只要在作用域内
@@ -121,7 +124,8 @@ lazy 模式可以把 `call_tool` 拆成 `call_tool_read` / `call_tool_write` / `
 | 速率限制 | 是不是一个失控的循环在烧预算？ | `internal/ratelimit` |
 | netguard / spawnguard | 这个目的地、这个进程是不是无论谁问都拒绝？ | `internal/guard/*` |
 
-两道闸都只依据配置做判断，都向关闭方向失败，拒绝原因各自可区分：`E_SCOPE_DENIED`、`E_TOKEN_TIER_DENIED`。
+等级闸位于作用域闸之后，同属一条固定的闸链（见 [architecture.md](architecture.md) 的"一次调用穿过什么"）。
+两道闸都只依据配置做判断，都向关闭方向失败。
 
 ## 这个模型没有的东西
 

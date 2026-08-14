@@ -248,7 +248,7 @@ type Pin struct {
 }
 
 // SkillSelector is the three-state skill narrowing selector, mirroring the
-// tool selector semantics of docs/architecture.md §7 so the skill scope chain behaves
+// tool selector semantics of docs/model.md so the skill scope chain behaves
 // exactly like the server/tool one:
 //
 //	nil *SkillSelector -> no intervention (every enabled skill)

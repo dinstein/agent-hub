@@ -21,7 +21,7 @@ import (
 //     name the server the operator configured. Only DeriveKey distinguishes
 //     the instances, and it is a CONNECTION-plane key: which process a call
 //     is executed on. Deriving never adds, removes or renames a tool
-//     (docs/architecture.md §7 invariant 2: connection plane and visibility plane are
+//     (docs/model.md invariant 2: connection plane and visibility plane are
 //     separate).
 //
 //  2. The derive key IS the vault scope name (Spec.ScopeName). The
@@ -128,7 +128,7 @@ func SessionDeriveKey(sessionID string) DeriveKey {
 // building: separators unified, runs collapsed, trailing separator dropped,
 // Windows paths lowercased. It NEVER touches the disk and never resolves
 // symlinks — the path is a claim by a client about its own machine, and on
-// this machine it may not even exist (docs/architecture.md §7, the same rule
+// this machine it may not even exist (docs/model.md, the same rule
 // scope.NormalizePath follows).
 func normalizeRoot(p string) string {
 	s := strings.TrimSpace(p)

@@ -4,7 +4,7 @@
 // + the gateway-reported runtime state aggregator, plus the run/daemon.json
 // readiness handshake.
 //
-// Lifecycle (docs/architecture.md §2):
+// Lifecycle (docs/architecture.md#the-processes):
 //
 //  1. resolve paths, open logging and the registry;
 //  2. bind the control socket (ctlapi.Listen — fails with ErrAlreadyRunning
@@ -67,7 +67,7 @@ const DefaultShutdownGrace = 5 * time.Second
 
 // Info mirrors run/daemon.json: the actual endpoint the daemon serves on,
 // its pid and version. CLI/GUI/gateways read it to connect
-// (docs/architecture.md §10; api.DialOrStart holds the reader-side copy of
+// (docs/architecture.md#on-disk; api.DialOrStart holds the reader-side copy of
 // this shape).
 type Info struct {
 	Endpoint string `json:"endpoint"`
@@ -353,7 +353,7 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	// Readiness handshake: written atomically only after the successful
-	// bind above (docs/architecture.md §10 — replaces probe-then-spawn TOCTOU).
+	// bind above (docs/architecture.md#on-disk — replaces probe-then-spawn TOCTOU).
 	info := Info{Endpoint: socket, Pid: os.Getpid(), Version: cfg.Version, Owner: cfg.Owner.PID}
 	infoPath := filepath.Join(runDir, InfoFileName)
 	if err := writeInfoFile(infoPath, info); err != nil {

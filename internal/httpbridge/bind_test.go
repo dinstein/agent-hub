@@ -7,7 +7,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/httpbridge"
 )
 
-// Binding the endpoint is itself an authorization decision (docs/architecture.md §2).
+// Binding the endpoint is itself an authorization decision (docs/architecture.md#the-processes).
 // The matrix below is the whole rule, including the two cases that are easy
 // to get wrong: a registered client authorizes ONLY loopback, and
 // --insecure-loopback never authorizes a non-loopback bind.

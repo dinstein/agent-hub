@@ -32,7 +32,7 @@ const (
 // bridge between this package and the governance chain: Tier feeds
 // pipeline.CallRequest.CallerTier, while Servers and Profile reach the
 // resolver as an Extra layer and narrow inside the three-layer intersection
-// of docs/architecture.md §7.
+// of docs/model.md.
 type Caller struct {
 	Kind CallerKind
 	// Token is the agent token's NAME (never its value); empty for admin

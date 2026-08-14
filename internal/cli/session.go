@@ -84,7 +84,7 @@ type SessionDetail struct {
 	ScopeHash string `json:"scope_hash"`
 	// Diagnostics carry non-fatal resolution warnings — above all a
 	// dangling profile reference, which fail-closes to an empty scope and
-	// which agenthub reports out loud instead of silently (docs/architecture.md §7).
+	// which agenthub reports out loud instead of silently (docs/model.md).
 	Diagnostics []string `json:"diagnostics,omitempty"`
 	// Note explains what the layer view does NOT include.
 	Note string `json:"note,omitempty"`

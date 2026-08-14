@@ -229,7 +229,7 @@ func TestIsPipePath(t *testing.T) {
 
 // TestCtlPipeSDDL pins the security descriptor: the owner and nobody else.
 // No Administrators ACE is intentional — the control plane hands out every
-// downstream credential (docs/architecture.md §2).
+// downstream credential (docs/architecture.md#the-processes).
 func TestCtlPipeSDDL(t *testing.T) {
 	const sid = "S-1-5-21-1111-2222-3333-1001"
 	got := platform.CtlPipeSDDL(sid)

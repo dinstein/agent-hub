@@ -3,7 +3,7 @@ package scope
 import "strings"
 
 // NormalizePath canonicalizes a client-reported root path as a PURE string
-// operation (docs/architecture.md §7, inherited toolport lesson):
+// operation (docs/model.md, inherited toolport lesson):
 //
 //   - backslashes become '/'
 //   - duplicate slashes collapse (a single leading "//" is preserved when a

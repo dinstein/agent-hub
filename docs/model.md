@@ -99,6 +99,10 @@ makes per-session granularity cheap.
 **Session overlays are never persisted.** A runtime loosening that survives a restart is a security
 incident, so `session scope` cannot write its edits into configuration.
 
+Nothing persisted reads the session's MCP root. The resolver's cache key is
+`(clientID, registry generation)`, and the root reaches `internal/downstream` alone, which derives a
+per-root instance of a server that asks for one.
+
 ## How the surface is presented
 
 `discovery` decides how many tool names the client is shown, not which tools it may call. A tool
@@ -134,8 +138,9 @@ Three mechanisms sit outside the scope model and answer different questions:
 | Rate limits | Is one runaway loop burning the budget? | `internal/ratelimit` |
 | netguard / spawnguard | Is this destination or this process refused outright, whoever asked? | `internal/guard/*` |
 
-Both gates decide from configuration alone, both fail closed, and their rejections stay
-distinguishable: `E_SCOPE_DENIED`, `E_TOKEN_TIER_DENIED`.
+The tier gate sits behind the scope gate in one frozen chain
+([architecture.md#what-a-call-passes-through](architecture.md#what-a-call-passes-through)). Both
+decide from configuration alone and both fail closed.
 
 ## What the model does not have
 

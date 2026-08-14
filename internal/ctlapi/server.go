@@ -48,7 +48,7 @@ const notFoundMessage = "not found"
 
 // HeaderActor is the request header carrying the control-plane actor
 // identity: "cli", "gui" or "gateway:<sid>"
-// (docs/architecture.md §2). Absent or unrecognized values fall back to "cli".
+// (docs/architecture.md#the-processes). Absent or unrecognized values fall back to "cli".
 const HeaderActor = "X-Agenthub-Actor"
 
 // ServerRuntime is the runtime state one server contributes on top of its

@@ -8,7 +8,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/tier"
 )
 
-// Intent variants (docs/architecture.md §9, ruling #18).
+// Intent variants (docs/model.md#how-the-surface-is-presented, ruling #18).
 //
 // In lazy mode the single call_tool meta-tool splits into three independent
 // meta-tools, one per operation tier. The split buys exactly one thing, and
