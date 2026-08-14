@@ -4,7 +4,8 @@
 
 | What you want to do | Read this |
 |---|---|
-| **Use** agenthub: what a server / profile / client is, how to wire them up, how discovery modes differ | [guide.md](guide.md) |
+| Know what a client is allowed to reach, and who decided it | [model.md](model.md) |
+| **Use** agenthub: how to wire servers, profiles and clients up | [guide.md](guide.md) |
 | Understand how the system is carved up and how the processes are laid out | [architecture.md](architecture.md) |
 | Learn what each package is responsible for | [architecture.md §3 Core module map](architecture.md#3-core-module-map) |
 | Work out how a given flow actually behaves at runtime | [flows.md](flows.md) |
@@ -19,6 +20,7 @@
 
 | File | Contents |
 |---|---|
+| [model.md](model.md) | The access model in one place: the three nouns, how the layers intersect, the three-state selector, scope resolution, the two planes, the three discovery modes, and what the model deliberately does not have |
 | [guide.md](guide.md) | The user-facing guide: the server / profile / client model, the everyday setup path, three-state tool selection, the three discovery modes, how to verify the wiring, which record to open when something broke, and the surprises behind most "it stopped working" reports |
 | [architecture.md](architecture.md) | Architecture overview: the dual-mode process model, core module map, layering and dependency constraints, what a single call passes through, the three data flows, the two planes of scope, the two lines of defense, on-disk layout |
 | [flows.md](flows.md) | Sequence diagrams and failure branches for seven key flows: gateway startup, a lazy call, config writes, config hot reload, OAuth, derived instances, the call ledger lifecycle |
