@@ -168,7 +168,7 @@ type TokenResponse struct {
 	RefreshToken string
 	Scope        string
 	// ExpiresIn is the advertised lifetime in seconds. Zero means the
-	// provider sent none, which per docs/modules/oauth.md means "never expires",
+	// provider sent none, which per docs/status/oauth.md means "never expires",
 	// NOT "already expired".
 	ExpiresIn int64
 	// IDToken is captured but unused; agenthub authenticates to resource
@@ -181,7 +181,7 @@ type TokenResponse struct {
 //
 // Failure direction: it NEVER fails. An undecodable value becomes 0, and
 // every consumer here reads 0 as "the provider told us nothing" — which for
-// expires_in means "never expires" (docs/modules/oauth.md). The alternative,
+// expires_in means "never expires" (docs/status/oauth.md). The alternative,
 // failing the decode, would throw away a perfectly usable access token
 // because of a field we only need for scheduling.
 type lenientNumber int64
@@ -393,7 +393,7 @@ func terminalGrant(e *TokenError) (error, bool) {
 
 // ExpiresAt converts an advertised lifetime into an absolute deadline.
 // A zero/absent ExpiresIn yields the zero Time, which State encodes as 0 =
-// never expires (docs/modules/oauth.md).
+// never expires (docs/status/oauth.md).
 func (t *TokenResponse) ExpiresAt(now time.Time) time.Time {
 	if t == nil || t.ExpiresIn <= 0 {
 		return time.Time{}

@@ -434,7 +434,7 @@ func TestRefreshLockPathIsSanitized(t *testing.T) {
 
 func TestShouldRefreshOnStatus(t *testing.T) {
 	// 403 counts: several providers answer it for an expired token, and
-	// call-time-only 401/403 servers exist too (docs/modules/oauth.md).
+	// call-time-only 401/403 servers exist too (docs/status/oauth.md).
 	for _, code := range []int{401, 403} {
 		if !ShouldRefreshOnStatus(code) {
 			t.Fatalf("%d must trigger a passive refresh", code)
@@ -447,7 +447,7 @@ func TestShouldRefreshOnStatus(t *testing.T) {
 	}
 }
 
-// TestSlowBackoffLadder pins the OAuth-specific ladder of docs/modules/oauth.md:
+// TestSlowBackoffLadder pins the OAuth-specific ladder of docs/status/oauth.md:
 // connection-time OAuth failures wait for a HUMAN, so the ordinary
 // few-seconds exponential backoff is wrong.
 func TestSlowBackoffLadder(t *testing.T) {
@@ -464,7 +464,7 @@ func TestSlowBackoffLadder(t *testing.T) {
 		t.Fatalf("negative attempt = %s", got)
 	}
 	if RefreshGrace != 60*time.Second || RefreshRetryBackoff != 15*time.Second {
-		t.Fatalf("docs/modules/oauth.md fixes 60s grace / 15s retry, got %s / %s", RefreshGrace, RefreshRetryBackoff)
+		t.Fatalf("docs/status/oauth.md fixes 60s grace / 15s retry, got %s / %s", RefreshGrace, RefreshRetryBackoff)
 	}
 }
 

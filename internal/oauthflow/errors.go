@@ -60,7 +60,7 @@ var (
 	// ErrNoToken reports that OAuth state exists (e.g. DCR credentials
 	// only) but no access token does. Distinct from ErrNoState and from an
 	// empty token on purpose: the reconnect path must stop, not retry with
-	// "" (docs/modules/oauth.md).
+	// "" (docs/status/oauth.md).
 	ErrNoToken = errors.New("oauthflow: no access token stored")
 
 	// ErrNoRefreshToken reports a refresh attempt on state that carries no
@@ -92,7 +92,7 @@ var (
 )
 
 // ErrorType is the coarse classification carried by FlowError. It is the
-// `error_type` field of docs/modules/oauth.md's structured flow error and is what
+// `error_type` field of docs/status/oauth.md's structured flow error and is what
 // the CLI/ctlapi switch on to pick an operator-facing remedy.
 type ErrorType string
 
@@ -147,7 +147,7 @@ const (
 	RegistrationFailed       RegistrationStatus = "failed"
 )
 
-// FlowError is the structured OAuth flow error of docs/modules/oauth.md. It travels
+// FlowError is the structured OAuth flow error of docs/status/oauth.md. It travels
 // unchanged through logs, ctlapi and the CLI so a provider-specific failure
 // ("Figma: DCR 403 and empty client_id rejected") produces a precise
 // configuration suggestion instead of a bare 401.

@@ -204,7 +204,7 @@ func TestRefresherRenewsExpiringToken(t *testing.T) {
 
 // TestRefresherLeavesHealthyAndNeverExpiringTokensAlone pins the two
 // non-refresh cases: a token that is not near expiry, and a token with no
-// expiry at all (docs/modules/oauth.md: "no expires_in" means never expires, and
+// expiry at all (docs/status/oauth.md: "no expires_in" means never expires, and
 // refreshing it on a timer would be a permanent refresh storm).
 func TestRefresherLeavesHealthyAndNeverExpiringTokensAlone(t *testing.T) {
 	as := newFakeAS(t)

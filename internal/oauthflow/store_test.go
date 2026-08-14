@@ -41,7 +41,7 @@ func TestStoreRoundTrip(t *testing.T) {
 }
 
 // TestVaultKeysAreTheTwoDesignatedEntries pins the storage layout of
-// docs/modules/oauth.md: exactly two entries per server, under the composite key
+// docs/status/oauth.md: exactly two entries per server, under the composite key
 // (serverID, "_global").
 func TestVaultKeysAreTheTwoDesignatedEntries(t *testing.T) {
 	v := newFakeVault()
@@ -62,7 +62,7 @@ func TestVaultKeysAreTheTwoDesignatedEntries(t *testing.T) {
 }
 
 // TestSaveWritesStateBeforeAccessToken is THE ordering invariant of
-// docs/modules/oauth.md.
+// docs/status/oauth.md.
 func TestSaveWritesStateBeforeAccessToken(t *testing.T) {
 	v := newFakeVault()
 	s := NewStore(v)
@@ -149,7 +149,7 @@ func TestStateWriteFailureChangesNothing(t *testing.T) {
 	}
 }
 
-// TestLoadReportsNoTokenForDCROnlyRecord is docs/modules/oauth.md's third expiry
+// TestLoadReportsNoTokenForDCROnlyRecord is docs/status/oauth.md's third expiry
 // rule: a record with client credentials but no access token must report
 // ErrNoToken, not an empty token, or the reconnect path loops forever.
 func TestLoadReportsNoTokenForDCROnlyRecord(t *testing.T) {
@@ -204,7 +204,7 @@ func TestSaveRefusesEmptyInputs(t *testing.T) {
 	}
 }
 
-// TestExpirySemantics covers the three rules of docs/modules/oauth.md.
+// TestExpirySemantics covers the three rules of docs/status/oauth.md.
 func TestExpirySemantics(t *testing.T) {
 	now := time.Unix(10_000, 0)
 

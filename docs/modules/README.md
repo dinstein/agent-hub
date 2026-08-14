@@ -1,11 +1,11 @@
 # Module documentation
 
-Two documents, one per layer — the foundation layer has moved to
+One document, one per layer — the foundation layer has moved to
 [../subsystems/](../subsystems/) and the rest follow. Each opens with how that layer collaborates as a whole, then walks
 through the packages one by one:
 **one-line responsibility → key types and entry points → invariants and failure directions**.
 Two more documents are organized by **external constraint** rather than by layer:
-[oauth.md](oauth.md) and [gui.md](gui.md).
+[gui.md](gui.md).
 
 For a quick lookup of which package belongs to which layer, see
 [architecture.md#the-packages](../architecture.md#the-packages).
@@ -17,9 +17,7 @@ incident.
 
 | File | Packages covered |
 |---|---|
-| [security.md](security.md) | `guard` (`spawnguard`/`netguard`), `oauthflow` |
 | [controlplane.md](controlplane.md) | `api`, `ctlapi`, `confops`, `catalog`, `daemon`, `httpbridge`, `cli` (+ `output`), the two `cmd/` binaries, `testutil/fakemcp`, `depguardtest`, `test/*` |
-| [oauth.md](oauth.md) | Topic: how well `oauthflow` conforms to the MCP authorization spec, which provider deployment shapes are supported, known gaps; `oauthlogin` (the same flow, as a pollable session) |
 | [gui.md](gui.md) | Topic: the GUI frontend's information architecture, state presentation, write operations, and what it deliberately does not do |
 
 ## How these documents are written

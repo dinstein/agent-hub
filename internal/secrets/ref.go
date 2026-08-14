@@ -10,7 +10,7 @@ import (
 // so that per-scope identities never require a storage migration.
 const DefaultScope = "_global"
 
-// Well-known vault entry keys for remote servers (docs/modules/oauth.md: two vault
+// Well-known vault entry keys for remote servers (docs/status/oauth.md: two vault
 // entries per remote server). This milestone ships only the Store plumbing;
 // oauthflow (M1) is the writer and owns the ordering invariant "state is
 // written before the access token".

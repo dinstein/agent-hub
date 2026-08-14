@@ -12,7 +12,7 @@ import (
 // This file is the CLI's credential wiring: one vault chain, one OAuth
 // store, one refresh coordinator per invocation.
 //
-// Refresh serialization (ruling A.2 #10, docs/modules/oauth.md): the CLI takes the
+// Refresh serialization (ruling A.2 #10, docs/status/oauth.md): the CLI takes the
 // OFFLINE path — the <server>.refresh.lock sibling file lock plus the
 // post-lock re-read of expires_at — even when a daemon is running.
 //

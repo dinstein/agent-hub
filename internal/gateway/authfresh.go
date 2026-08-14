@@ -13,7 +13,7 @@ import (
 )
 
 // This file is the GATEWAY's proactive refresh: the half of
-// docs/modules/oauth.md that used to exist only in the daemon.
+// docs/status/oauth.md that used to exist only in the daemon.
 //
 // "Gateway", not "stdio gateway". The daemon's data plane assembles gateways
 // of its own (internal/daemon/httpdata.go), and they reach this file by the
@@ -202,7 +202,7 @@ func (p *proactiveSource) scheduleFrom(st *oauthflow.State, now time.Time) {
 	p.seenEpoch = cur
 	if !scheduled {
 		// No expiry advertised means "never expires", not "expired"
-		// (docs/modules/oauth.md). The 401/403 path owns this server.
+		// (docs/status/oauth.md). The 401/403 path owns this server.
 		p.notAfter = time.Time{}
 		return
 	}

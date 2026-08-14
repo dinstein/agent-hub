@@ -1,7 +1,7 @@
 # GUI Frontend
 
 The second of two topic-oriented documents organized around an **external constraint** rather than a
-layer (the other is [oauth.md](oauth.md)). It covers the reasoning behind the TypeScript in
+layer (the other is [../status/oauth.md](../status/oauth.md)). It covers the reasoning behind the TypeScript in
 `cmd/agenthub-gui/frontend/`: **why it is shaped the way it is, and which rules must not be casually
 changed**. The Go-side service body and wiring live in
 [controlplane.md](controlplane.md#cmdagenthub-gui); the tech-stack rationale (vanilla TS + Vite,

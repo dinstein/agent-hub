@@ -17,7 +17,7 @@ func newTestFlow(t *testing.T, as *fakeAS) (*Flow, *fakeVault) {
 	return f, v
 }
 
-// TestLoginLoopbackEndToEnd runs the whole docs/modules/oauth.md(a) sequence
+// TestLoginLoopbackEndToEnd runs the whole docs/status/oauth.md(a) sequence
 // against a real random loopback port: discovery → DCR → bind → browser →
 // callback → PKCE exchange → vault.
 func TestLoginLoopbackEndToEnd(t *testing.T) {
@@ -95,7 +95,7 @@ func TestLoginLoopbackRegistersTheBoundPort(t *testing.T) {
 	}
 }
 
-// TestLoginManualEndToEnd runs docs/modules/oauth.md(b): the URL is printed, the
+// TestLoginManualEndToEnd runs docs/status/oauth.md(b): the URL is printed, the
 // user pastes the callback back, state is validated locally.
 func TestLoginManualEndToEnd(t *testing.T) {
 	as := newFakeAS(t)
@@ -155,7 +155,7 @@ func TestLoginManualRejectsForeignCallback(t *testing.T) {
 	}
 }
 
-// TestLoginDeviceEndToEnd runs docs/modules/oauth.md(c) including a slow_down.
+// TestLoginDeviceEndToEnd runs docs/status/oauth.md(c) including a slow_down.
 func TestLoginDeviceEndToEnd(t *testing.T) {
 	as := newFakeAS(t)
 	as.deviceEndpoint = true
@@ -203,7 +203,7 @@ func TestLoginDeviceEndToEnd(t *testing.T) {
 	}
 }
 
-// TestSelectMode pins the docs/modules/oauth.md selection rule.
+// TestSelectMode pins the docs/status/oauth.md selection rule.
 func TestSelectMode(t *testing.T) {
 	plain := &AuthServerMetadata{}
 	device := &AuthServerMetadata{DeviceAuthorizationEndpoint: "https://as/device"}
@@ -230,7 +230,7 @@ func TestSelectMode(t *testing.T) {
 }
 
 // TestLoginAutoDowngradesToManualWhenBrowserFails: a host with no DISPLAY
-// only finds out at open time (docs/modules/oauth.md).
+// only finds out at open time (docs/status/oauth.md).
 func TestLoginAutoDowngradesToManualWhenBrowserFails(t *testing.T) {
 	as := newFakeAS(t)
 	f, _ := newTestFlow(t, as)

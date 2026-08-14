@@ -23,7 +23,7 @@ regardless of who asked.
 | [docs/architecture.md](docs/architecture.md) | How the system is carved up, and what a single call passes through |
 | [docs/flows.md](docs/flows.md) | How a flow runs at runtime, and which way it falls on failure |
 | [docs/modules/](docs/modules/) | Before touching a package — its invariants and failure directions |
-| [docs/modules/oauth.md](docs/modules/oauth.md) | An OAuth downstream will not connect, or which provider shapes are supported |
+| [docs/status/oauth.md](docs/status/oauth.md) | An OAuth downstream will not connect, or which provider shapes are supported |
 | [docs/canonical.md](docs/canonical.md) | Whether a name/dependency/convention may change, and why it was decided |
 | [.agents/skills/](.agents/skills/) | You are about to **do** one of the standard workflows, and want its steps in order |
 

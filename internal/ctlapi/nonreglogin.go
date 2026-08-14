@@ -66,7 +66,7 @@ type AuthLoginWire struct {
 	Deadline int64 `json:"deadline,omitempty"`
 	// Issuer, Scope, TokenExpiresAt and HasRefreshToken are set on success.
 	// TokenExpiresAt 0 means the provider advertised no expiry — "never
-	// expires", not "expired" (docs/modules/oauth.md).
+	// expires", not "expired" (docs/status/oauth.md).
 	Issuer          string `json:"issuer,omitempty"`
 	Scope           string `json:"scope,omitempty"`
 	TokenExpiresAt  int64  `json:"token_expires_at,omitempty"`
@@ -120,7 +120,7 @@ func loginWire(s oauthlogin.Session) AuthLoginWire {
 // user gave up" from "the consent screen was never completed" — whose stock
 // suggestion is "use --manual on a host without a browser". On this path that
 // is wrong twice: nobody cancelled because they lacked a browser, and manual
-// mode is unreachable here anyway (docs/modules/oauth.md — Paste is nil, so
+// mode is unreachable here anyway (docs/status/oauth.md — Paste is nil, so
 // SelectMode can never choose it). The specific fact outranks the generic one.
 func loginHint(err error) string {
 	switch {

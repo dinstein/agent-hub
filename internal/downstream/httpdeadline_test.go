@@ -53,7 +53,7 @@ func (d *deadlineSource) NotAfter() time.Time {
 // TestHTTPCredentialDeadlineRenewsWithoutARejection is the rule the other
 // three cache rules cannot cover: a credential that ages out inside a live
 // connection, on a server that answers an expired token with 200 rather than
-// 401 (they exist — docs/modules/oauth.md). Nothing rejects, nothing else
+// 401 (they exist — docs/status/oauth.md). Nothing rejects, nothing else
 // writes the vault, and the token must still be replaced.
 //
 // The control in the middle is what makes it a test of the deadline rather

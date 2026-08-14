@@ -140,7 +140,7 @@ type TokenSource interface {
 	// Token returns the current access token. ok=false means "this server
 	// has no stored credential"; the connection is then attempted
 	// anonymously (several servers allow initialize and tools/list without
-	// auth and only 401 on tools/call — docs/modules/oauth.md).
+	// auth and only 401 on tools/call — docs/status/oauth.md).
 	Token(ctx context.Context) (tok string, ok bool, err error)
 	// Refresh renews the credential after a downstream answered 401/403 and
 	// returns the new access token. Implementations MUST serialize

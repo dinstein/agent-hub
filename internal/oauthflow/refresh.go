@@ -52,7 +52,7 @@ const (
 	refreshLockPoll = 10 * time.Millisecond
 )
 
-// SlowBackoffLadder is the OAuth-specific retry ladder of docs/modules/oauth.md.
+// SlowBackoffLadder is the OAuth-specific retry ladder of docs/status/oauth.md.
 //
 // Connection-time OAuth failures do NOT use the ordinary exponential
 // backoff: that one retries every few seconds, and every retry either pops
@@ -85,7 +85,7 @@ func SlowBackoff(attempt int) time.Duration {
 const FastRetries = 3
 
 // RetryBackoff is the wait after n consecutive proactive-refresh failures
-// (n counted from 1): the flat retry of docs/modules/oauth.md for the first
+// (n counted from 1): the flat retry of docs/status/oauth.md for the first
 // FastRetries, then the OAuth slow ladder.
 //
 // It lives here, next to the ladder, because BOTH proactive refreshers use
@@ -103,7 +103,7 @@ func RetryBackoff(n int) time.Duration {
 // downstream call should trigger a passive refresh.
 //
 // 403 is included alongside 401 deliberately: several providers answer 403
-// to an expired token, and docs/modules/oauth.md records the inverse case too —
+// to an expired token, and docs/status/oauth.md records the inverse case too —
 // servers that accept the connection and tools/list anonymously and only
 // 401 on tools/call. Treating 403 as "permission denied, do not refresh"
 // leaves those servers permanently broken with a Ready badge.

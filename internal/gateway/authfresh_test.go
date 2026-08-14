@@ -147,7 +147,7 @@ func TestProactiveSourceLatchesAServerWithNoOAuthState(t *testing.T) {
 }
 
 // TestProactiveSourceReportsNoDeadlineWithoutAnExpiry: "no expires_in" means
-// "never expires", not "expired" (docs/modules/oauth.md). Such a server stays
+// "never expires", not "expired" (docs/status/oauth.md). Such a server stays
 // on the passive 401/403 path, and a deadline would drag it off it.
 func TestProactiveSourceReportsNoDeadlineWithoutAnExpiry(t *testing.T) {
 	t.Parallel()

@@ -286,7 +286,7 @@ func TestAuthLogoutFailure(t *testing.T) {
 
 func TestSecondsUntil(t *testing.T) {
 	now := time.Unix(1000, 0)
-	// 0 means "never expires" (docs/modules/oauth.md), not "expired".
+	// 0 means "never expires" (docs/status/oauth.md), not "expired".
 	if got := secondsUntil(0, now); got != 0 {
 		t.Errorf("never-expires = %d", got)
 	}

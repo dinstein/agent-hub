@@ -559,8 +559,8 @@ ruling are one row, and **a number not listed here may not be cited** —
 | `#27` | **Determinism is the contract**: goldens pin the wire shape; fix the code, never the golden | §6 |
 | `#29` | Legacy HTTP+SSE is a **read-side** transport only, never offered on the exposure side | §5b |
 | `#32` | `internal/mcp` is standard-library only — one first-party protocol facade | §2 rule 2 |
-| `A.2 #9` | The manual paste loop, for providers that cannot reach a loopback redirect | modules/oauth.md |
-| `A.2 #10` | Refresh is serialized: daemon singleflight online, a file lock offline | modules/oauth.md |
+| `A.2 #9` | The manual paste loop, for providers that cannot reach a loopback redirect | status/oauth.md |
+| `A.2 #10` | Refresh is serialized: daemon singleflight online, a file lock offline | status/oauth.md |
 | `A.3 #1` | Cross-process shared state takes a **file lock** or an atomic rename, proven by an N-process acceptance test. Now governs the rate-limit counters, the registry and the credential vault | §6; subsystems/registry.md; subsystems/credentials.md |
 | `A.3 #2` | `kill -9` on the daemon: the stdio data plane is untouched and gateways re-register | §6; flows.md |
 | `A.3 #4` | A daemon restart makes the session overlay vanish on **both** sides. Retired by its own logic: a session now carries no scope of its own at all | subsystems/scope.md |

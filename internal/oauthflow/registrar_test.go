@@ -77,7 +77,7 @@ func TestDCRWithoutRegistrationEndpoint(t *testing.T) {
 	}
 }
 
-// TestDCRProviderRefusal reproduces the Figma-shaped failure of docs/modules/oauth.md
+// TestDCRProviderRefusal reproduces the Figma-shaped failure of docs/status/oauth.md
 // : a 403 on DCR must produce a precise suggestion, never a blank
 // client_id that fails later with an unrelated message.
 func TestDCRProviderRefusal(t *testing.T) {

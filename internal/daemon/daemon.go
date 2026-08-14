@@ -369,7 +369,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	watcher := startWatch(bgCtx, store, cfg.Watch, bus, log, events)
 
-	// OAuth proactive refresh (docs/modules/oauth.md): the daemon is the component
+	// OAuth proactive refresh (docs/status/oauth.md): the daemon is the component
 	// that is always up, so it is the one that renews tokens before they
 	// expire. Gateways keep the 401/403 passive path as the safety net for
 	// the windows when no daemon is running.

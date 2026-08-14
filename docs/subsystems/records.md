@@ -1,7 +1,7 @@
 # The three records
 
 > **Answers** what the hub writes down about itself, which stream answers which question, and which way each one fails.
-> **Not here** the CLI that reads them → [cli.md](cli.md); the ledger's place in a call → [flows.md#the-call-ledger](../flows.md#the-call-ledger).
+> **Not here** the ledger's place in a call → [flows.md#the-call-ledger](../flows.md#the-call-ledger).
 > **Kept true by** `test/buildrules` (the event vocabulary is checked against the code in both directions) and `internal/jsonl`'s multi-process append test.
 
 Three streams answer three different questions, and reaching for the wrong one is what makes an

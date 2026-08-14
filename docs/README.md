@@ -10,7 +10,7 @@
 | Learn what each package is responsible for | [architecture.md#the-packages](architecture.md#the-packages) |
 | Work out how a given flow actually behaves at runtime | [flows.md](flows.md) |
 | Get a feel for a package's constraints before changing it | [subsystems/](subsystems/), then [modules/](modules/) for the layers not yet moved |
-| Debug a downstream OAuth server you can't connect to | [modules/oauth.md](modules/oauth.md) |
+| Debug a downstream OAuth server you can't connect to | [status/oauth.md](status/oauth.md) |
 | Touch the GUI frontend | [modules/gui.md](modules/gui.md) |
 | Check whether a name, dependency, or convention is changeable | [canonical.md](canonical.md) |
 | Find out what works on Windows today | [windows.md](windows.md) |

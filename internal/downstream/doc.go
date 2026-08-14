@@ -79,7 +79,7 @@
 //     placeholder is an error, never literal text on the wire;
 //   - the bearer credential — read from the (serverID, "_global",
 //     "__http_auth__") vault entry and, on a 401/403, refreshed ONCE and the
-//     request replayed ONCE (docs/modules/oauth.md). That is the only place a
+//     request replayed ONCE (docs/status/oauth.md). That is the only place a
 //     non-idempotent call is ever repeated, and it is sound because an
 //     authorization rejection happens before the server dispatches the call.
 package downstream

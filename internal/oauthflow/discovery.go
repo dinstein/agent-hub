@@ -51,7 +51,7 @@ type AuthServerMetadata struct {
 }
 
 // SupportsDeviceFlow reports whether the AS advertises RFC 8628. `auth
-// login` uses this for automatic mode selection (docs/modules/oauth.md).
+// login` uses this for automatic mode selection (docs/status/oauth.md).
 func (m *AuthServerMetadata) SupportsDeviceFlow() bool {
 	return m != nil && strings.TrimSpace(m.DeviceAuthorizationEndpoint) != ""
 }
@@ -559,7 +559,7 @@ func (d *Discoverer) fetchMetadata(ctx context.Context, issuer *url.URL) (*AuthS
 // later comparison mean anything.
 //
 // Comparison is NORMALISED, not exact, and that is a decision this file
-// inherits rather than makes: docs/modules/oauth.md argued it out before the
+// inherits rather than makes: docs/status/oauth.md argued it out before the
 // check existed. RFC 8414 says "identical", but a declared issuer differing
 // only by a trailing slash or by host case is ordinary real-world sloppiness,
 // and exact equality turns each instance into a provider that stops working.
@@ -688,7 +688,7 @@ func resourceNamesContacted(advertised string, ru *url.URL) bool {
 // ResourceMetadataURLFromResponse pulls the RFC 9728 `resource_metadata`
 // pointer out of a 401 response's WWW-Authenticate header. This is how an
 // MCP resource server tells an unauthenticated client where to start the
-// discovery chain (docs/modules/oauth.md).
+// discovery chain (docs/status/oauth.md).
 //
 // The value is attacker-influenceable — it arrives on an unauthenticated
 // response — so it is a HINT, not an instruction: it is screened by

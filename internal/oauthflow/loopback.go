@@ -15,7 +15,7 @@ import (
 
 // LoopbackTimeout is the total wall-clock budget for one loopback
 // authorization: bind → browser → consent → callback. 180s is the value
-// docs/modules/oauth.md fixes; past it the listener is torn down so a stale one can
+// docs/status/oauth.md fixes; past it the listener is torn down so a stale one can
 // never intercept a later flow.
 const LoopbackTimeout = 180 * time.Second
 
@@ -60,7 +60,7 @@ const DefaultCallbackPath = "/callback"
 // and re-registers", and no caller does. Store.ClearClientRegistration is the
 // operation it names and has no caller either, so a login whose stored port is
 // taken fails the same way on every retry. Recorded under "Credential
-// lifecycle" in docs/modules/oauth.md rather than repaired in passing, because
+// lifecycle" in docs/status/oauth.md rather than repaired in passing, because
 // the repair is a behaviour change to what `auth login` does.
 //
 // (The BSD/macOS "clear O_NONBLOCK on the accepted socket" caveat from the

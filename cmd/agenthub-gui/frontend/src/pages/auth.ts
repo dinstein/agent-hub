@@ -10,7 +10,7 @@
 //
 // Two readings this page is careful about:
 //   - expires_at == 0 means the provider advertised NO expiry at all, which
-//     is "never expires", not "expired" (docs/modules/oauth.md);
+//     is "never expires", not "expired" (docs/status/oauth.md);
 //   - logout removes the credential FROM THIS MACHINE. agenthub cannot revoke
 //     it at the provider, so the UI must not claim it did.
 

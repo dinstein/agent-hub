@@ -1,12 +1,11 @@
-# OAuth / authorization interoperability
+# OAuth conformance, and which providers work
 
-`internal/oauthflow` is agenthub's implementation of an **OAuth client** authenticating against
-downstream MCP servers. This document answers two questions: **which specs we wrote against**, and
-**which real-world deployment shapes work and which don't**.
+> **Answers** which specs this client was written against, which real deployment shapes work, and what is missing.
+> **Not here** how the client is built → [../subsystems/oauth.md](../subsystems/oauth.md).
+> **Kept true by** nothing automatic — this is a snapshot, re-read it when a provider misbehaves.
 
-The package's internal structure (invariants, failure directions, the division of labor between the
-two `http.Client`s) is covered in the oauthflow section of [security.md](security.md) and is not
-repeated here.
+Every row below is a provider behaviour that exists in the wild, not a hypothetical permutation. When a
+downstream OAuth server will not connect, read this file first.
 
 ## Spec baseline
 
@@ -110,7 +109,7 @@ flag is the small half of closing this; CIMD is the large one.
 **Two callers drive this flow, and there is only one implementation of it.** `agenthub auth login`
 runs it in the foreground; the control plane runs it as a session for graphical frontends
 (`internal/oauthlogin`, and
-[controlplane.md](controlplane.md#the-one-long-running-exchange-an-interactive-login)). The single
+[../modules/controlplane.md](../modules/controlplane.md#the-one-long-running-exchange-an-interactive-login)). The single
 behavioural difference is `LoginRequest.Open`: the CLI opens a browser there, the session **records
 the URL and returns success** so the caller can open it — the daemon may be headless and may not be
 the machine the user is at.

@@ -44,7 +44,7 @@ type AuthLoginResult struct {
 	Scope     string `json:"scope,omitempty"`
 	ExpiresAt int64  `json:"expiresAt"`
 	// ExpiresIn is seconds from now; 0 with ExpiresAt == 0 means the
-	// provider issued no expiry at all ("never expires", docs/modules/oauth.md).
+	// provider issued no expiry at all ("never expires", docs/status/oauth.md).
 	ExpiresIn  int64 `json:"expiresIn"`
 	HasRefresh bool  `json:"hasRefreshToken"`
 	// Enabled reports whether this login also put a disabled server into
@@ -293,7 +293,7 @@ func (a *App) newAuthLoginCmd() *cobra.Command {
 			}
 			// Open stays nil when this host cannot show a browser: that is
 			// exactly the signal SelectMode reads to downgrade to manual
-			// (docs/modules/oauth.md). An explicit --loopback still gets an opener
+			// (docs/status/oauth.md). An explicit --loopback still gets an opener
 			// so the failure is reported instead of silently rerouted.
 			if !noBrowser && (canOpenBrowser() || mode == oauthflow.ModeLoopback) {
 				req.Open = func(url string) error {
@@ -616,7 +616,7 @@ func authError(err error) error {
 }
 
 // secondsUntil returns the seconds left until a Unix expiry, clamped at 0.
-// An expiry of 0 means "never expires" (docs/modules/oauth.md) and yields 0 too —
+// An expiry of 0 means "never expires" (docs/status/oauth.md) and yields 0 too —
 // the caller distinguishes the two by ExpiresAt.
 func secondsUntil(expiresAt int64, now time.Time) int64 {
 	if expiresAt == 0 {

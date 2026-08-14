@@ -9,7 +9,7 @@ package secrets
 // HTTPAuthRef is the access-token entry of one server at the default scope.
 // OAuth-minted and hand-pasted tokens share this slot on purpose: the
 // downstream connector reads ONE key regardless of how the credential was
-// obtained (docs/modules/oauth.md).
+// obtained (docs/status/oauth.md).
 func HTTPAuthRef(serverID string) Ref {
 	return Ref{ServerID: serverID, Scope: DefaultScope, Key: KeyHTTPAuth}
 }

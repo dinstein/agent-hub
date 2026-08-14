@@ -2,7 +2,7 @@
 // the discovery chain, dynamic client registration, PKCE, the three
 // interactive modes (loopback / manual / device), token exchange,
 // persistence into the secrets vault and refresh coordination
-// (docs/modules/oauth.md and 7.7).
+// (docs/status/oauth.md and 7.7).
 //
 // # Shape of a login
 //
@@ -50,7 +50,7 @@
 //     writer already advanced expires_at. A one-time refresh token spent
 //     twice concurrently locks the user out.
 //
-// # Expiry semantics (docs/modules/oauth.md)
+// # Expiry semantics (docs/status/oauth.md)
 //
 //   - ExpiresAt == 0 means "never expires", not "already expired": several
 //     providers (Atlassian et al.) issue tokens without expires_in.

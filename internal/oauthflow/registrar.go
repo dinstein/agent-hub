@@ -205,7 +205,7 @@ func (r *dcrRegistrar) wrap(md *AuthServerMetadata, err error) error {
 // It is deliberately unimplemented. The seam exists so that when DCR is
 // removed upstream the change is a constructor swap — canonical.md §5b's
 // deprecation table lists it as the migration seam for DCR, and
-// docs/modules/oauth.md marks this row "seam only". Implementing it requires
+// docs/status/oauth.md marks this row "seam only". Implementing it requires
 // a hosting story for the document, which agenthub does not have yet.
 type clientIDMetadataRegistrar struct {
 	// DocumentURL is the https URL that would serve the client metadata

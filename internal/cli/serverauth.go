@@ -93,7 +93,7 @@ type ServerAuth struct {
 	Scope           string `json:"scope,omitempty"`
 	ClientRegistrar string `json:"clientRegistrar,omitempty"`
 	// ExpiresAt is Unix seconds; 0 means the provider advertised no expiry,
-	// which is "never expires", NOT "expired" (docs/modules/oauth.md).
+	// which is "never expires", NOT "expired" (docs/status/oauth.md).
 	ExpiresAt int64 `json:"expiresAt,omitempty"`
 	ExpiresIn int64 `json:"expiresIn,omitempty"`
 	// HasRefreshToken decides whether an expiry is repairable without a

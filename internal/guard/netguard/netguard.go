@@ -1,5 +1,5 @@
 // Package netguard provides the SSRF host/IP predicates and the dial-time
-// control hook (docs/modules/security.md, internal/guard/netguard).
+// control hook (docs/subsystems/guard.md, internal/guard/netguard).
 //
 // The core insight is that "is this host private?" is TWO questions with
 // opposite failure directions, so there are two exported predicates:

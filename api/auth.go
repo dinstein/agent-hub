@@ -49,7 +49,7 @@ type AuthStatus struct {
 	Issuer string `json:"issuer,omitempty"`
 	Scope  string `json:"scope,omitempty"`
 	// ExpiresAt is Unix seconds; 0 means the provider advertised no expiry
-	// at all, which is "never expires" — NOT "expired" (docs/modules/oauth.md).
+	// at all, which is "never expires" — NOT "expired" (docs/status/oauth.md).
 	ExpiresAt int64 `json:"expires_at"`
 	// ExpiresIn is seconds from now, negative once expired.
 	ExpiresIn int64 `json:"expires_in"`
@@ -132,7 +132,7 @@ type AuthLogin struct {
 	// stored and are set only once Phase is AuthLoginComplete.
 	//
 	// TokenExpiresAt is Unix seconds, and 0 means the provider advertised no
-	// expiry at all — "never expires", NOT "expired" (docs/modules/oauth.md).
+	// expiry at all — "never expires", NOT "expired" (docs/status/oauth.md).
 	Issuer          string `json:"issuer,omitempty"`
 	Scope           string `json:"scope,omitempty"`
 	TokenExpiresAt  int64  `json:"token_expires_at,omitempty"`

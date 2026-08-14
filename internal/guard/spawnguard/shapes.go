@@ -423,7 +423,7 @@ var containerBoolFlags = map[string]bool{
 // rule — which is about tool selectors, where the question is "what may this
 // client reach" and an unknown answer must be no. Here the layer's own stated
 // failure direction is the opposite: "deterministic checks always block; shape
-// checks fail open" (docs/modules/security.md), because spawnguard is
+// checks fail open" (docs/subsystems/guard.md), because spawnguard is
 // anti-smuggling over a command line the OPERATOR wrote, not a sandbox. An
 // allow list of device nodes could never be complete — /dev/dri, /dev/kvm,
 // /dev/fuse, /dev/net/tun, /dev/snd, /dev/ttyUSB0 are all ordinary things a

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Mode is the interactive authorization mode (docs/modules/oauth.md).
+// Mode is the interactive authorization mode (docs/status/oauth.md).
 type Mode string
 
 const (
@@ -25,7 +25,7 @@ const (
 	ModeDevice Mode = "device"
 )
 
-// SelectMode implements the mode-selection rule of docs/modules/oauth.md:
+// SelectMode implements the mode-selection rule of docs/status/oauth.md:
 //
 //	explicit flag                             → that mode
 //	otherwise, AS advertises device flow      → device

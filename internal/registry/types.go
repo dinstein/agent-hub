@@ -106,7 +106,7 @@ type DockerRuntime struct {
 // Health contract. Persisting it would create a second source of truth that
 // goes stale the moment a token expires or a provider changes its mind, and
 // a stale "needsAuth": false is exactly the failure that shows a Ready badge
-// on a server whose every call 401s (docs/modules/oauth.md).
+// on a server whose every call 401s (docs/status/oauth.md).
 type OAuthHint struct {
 	// Issuer pins the authorization server, skipping RFC 9728 discovery.
 	Issuer string `json:"issuer,omitempty"`

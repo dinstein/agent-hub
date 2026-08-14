@@ -14,7 +14,7 @@ import (
 )
 
 // authRoundTripper attaches the downstream's bearer credential to every
-// request and performs the passive refresh of docs/modules/oauth.md, docs/flows.md#oauth-login-and-refresh:
+// request and performs the passive refresh of docs/status/oauth.md, docs/flows.md#oauth-login-and-refresh:
 //
 //	401 or 403 ─► refresh ONCE ─► replay the request ONCE ─► give up
 //
@@ -99,7 +99,7 @@ type credentialEpoch interface{ Epoch() uint64 }
 // running — the standalone gateway's case, since there is no daemon there to
 // rotate the vault and announce it. Worse, a server that answers an expired
 // token with 200 and an error *result* rather than 401 (they exist; see
-// docs/modules/oauth.md) never produces the rejection the second rule waits
+// docs/status/oauth.md) never produces the rejection the second rule waits
 // for, so without a deadline such a connection stays broken until the client
 // restarts.
 //

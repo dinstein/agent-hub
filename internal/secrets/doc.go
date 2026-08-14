@@ -59,7 +59,7 @@
 // on the token-refresh path, and its worst case is one missed notification
 // that the next write recovers.
 //
-// oauthflow's per-server <server>.refresh.lock (docs/modules/oauth.md) is a
+// oauthflow's per-server <server>.refresh.lock (docs/status/oauth.md) is a
 // different lock for a different job: it serializes REFRESHES of one server,
 // upstream of the write that lands here.
 //

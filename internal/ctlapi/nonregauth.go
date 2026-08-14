@@ -34,7 +34,7 @@ type AuthStatusWire struct {
 	Issuer string `json:"issuer,omitempty"`
 	Scope  string `json:"scope,omitempty"`
 	// ExpiresAt is Unix seconds; 0 means the provider advertised no expiry
-	// (docs/modules/oauth.md: that is "never expires", NOT "expired").
+	// (docs/status/oauth.md: that is "never expires", NOT "expired").
 	ExpiresAt int64 `json:"expires_at"`
 	ExpiresIn int64 `json:"expires_in"`
 	// HasRefreshToken decides whether an expiry is recoverable without a

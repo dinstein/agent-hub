@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestParseManualCallbackMatrix is the paste-parsing matrix of docs/modules/oauth.md
+// TestParseManualCallbackMatrix is the paste-parsing matrix of docs/status/oauth.md
 // (b). The load-bearing rows are the state-mismatch ones: state is what
 // stops a user from pasting a callback belonging to a different session
 // (their own earlier attempt, or one somebody sent them).

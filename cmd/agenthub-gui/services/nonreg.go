@@ -248,7 +248,7 @@ func (h *Hub) DisconnectClient(ctx context.Context, client string) (api.ClientDi
 // No token, no client secret, no refresh token: HasRefreshToken is a boolean.
 // There is no reveal escape hatch on this API, and an ExpiresAt of 0 means
 // the provider advertised no expiry — "never expires", NOT "expired"
-// (docs/modules/oauth.md).
+// (docs/status/oauth.md).
 func (h *Hub) AuthStatus(ctx context.Context, server string) ([]api.AuthStatus, error) {
 	return call(ctx, h, func(c *api.Client) ([]api.AuthStatus, error) {
 		return c.Auth.Status(ctx, server)

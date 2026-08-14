@@ -132,7 +132,7 @@ func TestAuthLoginManualRoundTrip(t *testing.T) {
 		t.Fatalf("server add exit = %d\n%s", code, out)
 	}
 
-	// A bare code is accepted (docs/modules/oauth.md: users often strip the URL);
+	// A bare code is accepted (docs/status/oauth.md: users often strip the URL);
 	// PKCE still binds the exchange to this process.
 	code, out, stderr := runCLI(t, "auth-code-xyz\n",
 		"auth", "login", "remote", "--manual", "--allow-local", "--json")

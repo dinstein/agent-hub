@@ -267,7 +267,7 @@ authorization server saying this grant will never work again. It is recorded in 
 inside the same lock, and every renewer then answers from the vault without a request; only
 `auth login` clears it. Only that exact response shape counts, because the direction is asymmetric — a
 transient failure misread as terminal parks a working server until a human appears, while the reverse
-merely retries. [modules/oauth.md](modules/oauth.md) has the provider shapes.
+merely retries. [status/oauth.md](status/oauth.md) has the provider shapes.
 
 ## Derived downstream instances
 

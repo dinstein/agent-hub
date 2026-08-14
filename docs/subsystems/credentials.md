@@ -1,7 +1,7 @@
 # The credential vault
 
 > **Answers** where a downstream's credential is read from, in what order, and what happens when a level is broken.
-> **Not here** how an OAuth grant is obtained → [oauth.md](../modules/oauth.md); how a credential is injected → [downstream.md](downstream.md).
+> **Not here** how an OAuth grant is obtained → [oauth.md](../status/oauth.md); how a credential is injected → [downstream.md](downstream.md).
 > **Kept true by** `internal/secrets/multiproc_test.go` (the N-process acceptance test), `TestBackendIgnoresEnvironmentLevels`, and a golden test on the storage-key prefix.
 
 `internal/secrets` is a four-level chain over environment variables, an XChaCha20-Poly1305 encrypted

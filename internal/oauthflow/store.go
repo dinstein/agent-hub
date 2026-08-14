@@ -35,7 +35,7 @@ type State struct {
 	// two cannot be updated independently. Splitting registration into a
 	// third vault key would close that window and is additive — it does not
 	// touch the state-before-token ordering invariant below. Recorded under
-	// "Credential lifecycle" in docs/modules/oauth.md, which describes the
+	// "Credential lifecycle" in docs/status/oauth.md, which describes the
 	// two-entry model as it stands, not the split.
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret,omitempty"`
@@ -58,11 +58,11 @@ type State struct {
 	// RefreshRequest.Scope empty, which is what makes the AS reuse the
 	// original grant. This said "echoed back on refresh when the provider
 	// requires it", which no code does and which reads as an invitation to
-	// add it; docs/modules/oauth.md records omitting it as the ruling.
+	// add it; docs/status/oauth.md records omitting it as the ruling.
 	Scope string `json:"scope,omitempty"`
 	// RedirectURI and CallbackPort are persisted because many providers
 	// require an EXACT redirect_uri match; a dynamically chosen loopback
-	// port must therefore survive a restart (docs/modules/oauth.md).
+	// port must therefore survive a restart (docs/status/oauth.md).
 	RedirectURI  string `json:"redirect_uri,omitempty"`
 	CallbackPort int    `json:"callback_port,omitempty"`
 	// GrantRevokedAt is when the authorization server REFUSED this record's
@@ -83,7 +83,7 @@ type State struct {
 	// class of string FlowError.Error already interpolates.
 	GrantRevokedReason string `json:"grant_revoked_reason,omitempty"`
 	// IssuedAt / ExpiresAt are Unix seconds. ExpiresAt == 0 means NEVER
-	// EXPIRES (docs/modules/oauth.md) — several providers issue no expires_in and
+	// EXPIRES (docs/status/oauth.md) — several providers issue no expires_in and
 	// treating that as "expired" produces a permanent refresh storm.
 	IssuedAt  int64 `json:"issued_at"`
 	ExpiresAt int64 `json:"expires_at"`
@@ -92,7 +92,7 @@ type State struct {
 }
 
 // minLifetimeForGrace is the threshold below which the refresh grace is NOT
-// subtracted (docs/modules/oauth.md). Subtracting 60s from a 60s token makes every
+// subtracted (docs/status/oauth.md). Subtracting 60s from a 60s token makes every
 // token expired at birth and the gateway never stops refreshing.
 const minLifetimeForGrace = 5 * time.Minute
 
@@ -100,7 +100,7 @@ const minLifetimeForGrace = 5 * time.Minute
 const RefreshGrace = 60 * time.Second
 
 // RefreshRetryBackoff is the wait after a failed proactive refresh
-// (docs/modules/oauth.md).
+// (docs/status/oauth.md).
 const RefreshRetryBackoff = 15 * time.Second
 
 // NeverExpires reports the "no expires_in" case.
@@ -157,7 +157,7 @@ func (s *State) Expired(now time.Time) bool {
 // Store persists OAuth credentials into the secrets vault under the
 // composite key (serverID, secrets.DefaultScope).
 //
-// Two entries per remote server (docs/modules/oauth.md):
+// Two entries per remote server (docs/status/oauth.md):
 //
 //	__oauth_state__  State as JSON — includes the refresh token
 //	__http_auth__    the access token, verbatim
@@ -221,7 +221,7 @@ func (s *Store) LoadAccessToken(ctx context.Context, serverID string) (string, e
 
 // Load reads both entries.
 //
-// Failure direction (docs/modules/oauth.md): when the state exists but the access
+// Failure direction (docs/status/oauth.md): when the state exists but the access
 // token does not — the shape a DCR-credentials-only record has — the error
 // is ErrNoToken, never (state, "", nil). A caller handed an empty token
 // would attach an empty Authorization header, get a 401, "refresh", and
@@ -377,7 +377,7 @@ func (s *Store) Clear(ctx context.Context, serverID string) error {
 //
 // NOTHING CALLS IT. That is the whole of the recovery half of the fixed-port
 // rule, and it has no caller in this repository — see the gap recorded under
-// "Credential lifecycle" in docs/modules/oauth.md for what happens instead.
+// "Credential lifecycle" in docs/status/oauth.md for what happens instead.
 // This comment used to cite that file for a rule stated in the present tense,
 // and the file has not carried the rule for some time; it is kept as the seam
 // the fix needs rather than deleted as dead surface.
@@ -401,7 +401,7 @@ func (s *Store) ClearClientRegistration(ctx context.Context, serverID string) er
 // told about: the stored state is re-read and compared with `refused` first,
 // and a mismatch abandons the mark. The comparison is the point, not
 // pedantry — this is a read-modify-write against a key `auth login` also
-// writes in whole (the shared-entry gap in docs/modules/oauth.md), so a login
+// writes in whole (the shared-entry gap in docs/status/oauth.md), so a login
 // completing between the read and the write would otherwise be overwritten by
 // a stale record carrying "revoked", and the user would watch a login they
 // just performed report itself dead.

@@ -17,7 +17,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/secrets"
 )
 
-// This file is the daemon's OAuth refresh coordination (docs/modules/oauth.md /
+// This file is the daemon's OAuth refresh coordination (docs/status/oauth.md /
 // 6.4): tokens are renewed 60s BEFORE they expire, exactly once per server
 // at a time, and a failed renewal backs off instead of hammering the
 // authorization server.
