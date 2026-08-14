@@ -153,7 +153,7 @@ $(LOGDIR):
 
 ##@ Checks
 
-.PHONY: build test lint fmt tidy generate
+.PHONY: build test lint fmt tidy generate docs-gen docs-check
 # Compile check only — it produces no artifacts, because `go build` with
 # several packages discards the executables. `make ci` wants exactly that.
 build: ## Compile every package, writing nothing
@@ -167,6 +167,15 @@ lint: ## golangci-lint run
 
 fmt: ## Format with golangci-lint's formatters
 	$(GOLANGCI_LINT) fmt
+
+# The enumerations in docs/ that are derivable from the tree. docs-check is a
+# prerequisite of `ci` rather than a separate habit: a table nobody regenerated
+# is exactly as stale as one nobody checked, and only one of the two says so.
+docs-gen: ## Regenerate the generated blocks in docs/
+	$(GO) run ./scripts/docsgen
+
+docs-check: ## Fail when a generated block in docs/ is out of date
+	$(GO) run ./scripts/docsgen -check
 
 tidy: ## go mod tidy
 	$(GO) mod tidy
@@ -238,7 +247,7 @@ e2e-ci: ## The same suite with CI's Linux environment simulated
 	XDG_RUNTIME_DIR=$(E2E_XDG) $(GO) test ./test/e2e/ -count=1
 
 .PHONY: ci ci-full ci-landing ci-depguard-proof fuzz
-ci: build test lint ## Build + test + lint: the pure check, no GUI, no artifacts
+ci: build test lint docs-check ## Build + test + lint + generated docs: the pure check, no GUI, no artifacts
 
 # What the `ci` WORKFLOW runs, which is strictly more than `make ci`.
 #

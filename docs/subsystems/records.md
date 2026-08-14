@@ -2,7 +2,7 @@
 
 > **Answers** what the hub writes down about itself, which stream answers which question, and which way each one fails.
 > **Not here** the ledger's place in a call → [flows.md#the-call-ledger](../flows.md#the-call-ledger).
-> **Kept true by** `test/buildrules` (the event vocabulary is checked against the code in both directions) and `internal/jsonl`'s multi-process append test.
+> **Kept true by** `make docs-check` (the event table is generated from `internal/eventlog`) and `internal/jsonl`'s multi-process append test.
 
 Three streams answer three different questions, and reaching for the wrong one is what makes an
 incident take an hour.
@@ -111,13 +111,13 @@ happened at all.
 
 ### The closed vocabulary
 
-Adding a kind means editing three places — the constant, `allKinds`, and the table below — and then
-**writing it somewhere**. `test/buildrules` fails until all four are true, and each direction hides a
-different way of being wrong. A kind missing from the table is still written and the consumer meant to
-recognise it silently does not. A kind nothing emits is still offered as a `--kind` selector and
-answers "no events", which is the same answer as "this has not happened" — the one confusion a closed
-set exists to prevent. A kind missing from `allKinds` fails hardest: it is declared, documented and
-written, so records carrying it accumulate while `KnownKind` answers false at every scope.
+Adding a kind means editing two places — the constant and `allKinds` — and then **writing it
+somewhere**. The table below is generated from those two by `make docs-gen`, so it cannot disagree with
+them, and `test/buildrules` fails on a kind nothing emits. A kind nothing emits is still offered as a `--kind` selector and answers "no
+events", which is the same answer as "this has not happened" — the one confusion a closed set exists to
+prevent. A kind missing from `allKinds` fails hardest: it is declared and written, so records carrying it
+accumulate while `KnownKind` answers false at every scope, and the generated table below never mentions
+it.
 
 Kinds are checked as a **(scope, kind) pair**, never a bare kind: a gateway and the daemon both
 `started`, and that spelling is meaningless at server scope. Giving an existing kind a second scope is
@@ -125,16 +125,17 @@ a shorter edit list — `allKinds`, a row here, the emit site, and `eventlog`'s 
 `TestEveryKindIsClassifiedDeliberately` — and `test/buildrules` cannot help, because the spelling was
 already declared, documented and written by the scope that had it first.
 
-<!-- event-kinds -->
+<!-- BEGIN generated: event-kinds -->
 
 | Scope | Kinds | Class |
 |---|---|---|
-| `server` | `connected`, `tools_changed`, `oauth_login_started`, `oauth_login_waiting`, `oauth_login_completed` | routine |
-| `server` | `connect_failed`, `disconnected`, `respawned`, `respawn_failed`, `circuit_open`, `circuit_half_open`, `circuit_closed`, `health_down`, `health_up`, `oauth_refresh_failed`, `oauth_grant_revoked`, `secrets_missing`, `oauth_login_failed` | disruption |
-| `gateway` | `started`, `stopped`, `client_attached`, `session_opened`, `session_closed` | routine |
+| `server` | `connected`, `oauth_login_completed`, `oauth_login_started`, `oauth_login_waiting`, `tools_changed` | routine |
+| `server` | `circuit_closed`, `circuit_half_open`, `circuit_open`, `connect_failed`, `disconnected`, `health_down`, `health_up`, `oauth_grant_revoked`, `oauth_login_failed`, `oauth_refresh_failed`, `respawn_failed`, `respawned`, `secrets_missing` | disruption |
+| `gateway` | `client_attached`, `session_closed`, `session_opened`, `started`, `stopped` | routine |
 | `gateway` | `registry_reload_failed` | disruption |
-| `daemon` | `started`, `stopping`, `listener_bound`, `config_reloaded` | routine |
+| `daemon` | `config_reloaded`, `listener_bound`, `started`, `stopping` | routine |
 | `daemon` | `registry_reload_failed` | disruption |
+<!-- END generated -->
 
 ### Class, and why it is not the log level
 

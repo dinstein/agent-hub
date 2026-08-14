@@ -84,7 +84,8 @@ configured but not in effect is worse than no rule.
 ```bash
 make             # the target list, one line each
 make fmt         # apply gofmt + goimports (they are CI failures, see above)
-make ci          # build + test + lint
+make docs-gen    # regenerate the generated blocks in docs/ (make ci checks them)
+make ci          # build + test + lint + generated docs
 make ci-full     # everything the CI workflow runs, plus the CI-shaped e2e run
 make ci-landing  # ci-full with the caches dropped (after the rebase, before landing)
 make gui         # build the GUI separately (excluded from build/lint by default)

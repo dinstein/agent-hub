@@ -33,7 +33,7 @@ docs/
   status/            snapshots: Windows, one protocol revision, OAuth providers
 ```
 
-## Five kinds of content, and what keeps each one true
+## Six kinds of content, and what keeps each one true
 
 Each fact belongs to exactly one of these. Content duplicated across two of them will eventually
 contradict itself, and readers have no way to tell which copy is current.
@@ -43,6 +43,7 @@ contradict itself, and readers have no way to tell which copy is current.
 | **Concepts** — the access model, the vocabulary | `model.md` | rarely moves; a change here is an architectural change |
 | **Decisions** — what was settled, and why | `decisions/` | append-only. A superseded decision keeps its file and says so |
 | **Behaviour** — how it works, seam by seam | `architecture.md`, `flows.md`, `subsystems/` | review, plus the tests each file names in its own header |
+| **Generated** — enumerations derivable from the tree | blocks marked `<!-- BEGIN generated: … -->` | `make docs-check`, which `make ci` runs. Never hand-edit one |
 | **Rules** — what may not change | `conventions.md` | `internal/depguardtest`, `internal/cli/tree_test.go`, `test/buildrules` |
 | **Snapshots** — the state of one platform or one spec | `status/` | nothing automatic; re-read them when that state moves |
 
