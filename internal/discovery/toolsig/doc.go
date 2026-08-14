@@ -1,5 +1,5 @@
 // Package toolsig renders a downstream tool's JSON Schema as a ONE-LINE
-// compact signature — the first layer of the token-saving stack in docs/modules/dataplane.md
+// compact signature — the first layer of the token-saving stack in docs/subsystems/exposure.md
 //
 //	 ("compact signature").
 //
@@ -20,7 +20,7 @@
 //		           | "enum{" value {"|" value} "}"
 //
 //	  - "?" marks an OPTIONAL parameter (one not listed in the schema's
-//	    "required"). docs/modules/dataplane.md sketched the inverse marker ("*" on the
+//	    "required"). docs/subsystems/exposure.md sketched the inverse marker ("*" on the
 //	    required ones); "?" was ruled instead because optional parameters are
 //	    the minority in practice, so the marker is rarer and the line shorter.
 //	    The lossy marker "~" is kept exactly as 7.2 defined it.
@@ -66,7 +66,7 @@
 // Signatures are pure functions of (name, inputSchema, outputSchema,
 // MaxBytes), so Cache memoizes them on a SHA-256 fingerprint of exactly
 // those inputs. Shared() is the process-wide instance the catalog index
-// warms; per docs/modules/dataplane.md a second instance is legal but silently wastes
+// warms; per docs/subsystems/exposure.md a second instance is legal but silently wastes
 // that warm-up, so packages should reach for Shared() unless a test needs
 // isolation.
 package toolsig

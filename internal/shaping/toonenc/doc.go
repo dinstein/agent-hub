@@ -1,5 +1,5 @@
 // Package toonenc implements TOON (Token-Oriented Object Notation), the
-// compact display encoding of docs/modules/dataplane.md "TOON encoding".
+// compact display encoding of docs/subsystems/shaping.md "TOON encoding".
 //
 // # Ruling (canonical.md §7 #4): TOON is a ONE-WAY PROJECTION
 //

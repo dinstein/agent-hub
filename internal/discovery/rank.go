@@ -85,7 +85,7 @@ func (ts tokenSet) hasPrefix(tok string) bool {
 // at MaxDescriptionTokens tokens: a hostile server must not be able to make
 // every search expensive.
 //
-// It also WARMS the compact-signature cache (docs/modules/dataplane.md, "warm during catalog indexing"):
+// It also WARMS the compact-signature cache (docs/subsystems/exposure.md, "warm during catalog indexing"):
 // rendering happens here, at surface-build time, so the first search of a
 // session pays a map lookup instead of N schema walks. The cache is
 // fingerprint-keyed, so a rebuild after a scope change re-warms nothing that

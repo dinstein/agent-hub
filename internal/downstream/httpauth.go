@@ -440,7 +440,7 @@ func drain(resp *http.Response) {
 type vaultTokenSource struct {
 	serverID string
 	// scopeName is the vault scope component: "_global" for the base
-	// instance, the derive key for a derived one (docs/modules/dataplane.md).
+	// instance, the derive key for a derived one (docs/subsystems/downstream.md).
 	scopeName string
 	resolve   secrets.Resolver
 	renew     RefreshFunc

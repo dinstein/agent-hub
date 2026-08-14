@@ -82,7 +82,7 @@ func (r *specRecorder) derivedSpecs() []downstream.Spec {
 	return out
 }
 
-// TestDerivedInstancePerRoot is the end-to-end shape of docs/modules/dataplane.md in
+// TestDerivedInstancePerRoot is the end-to-end shape of docs/subsystems/execution.md in
 // the gateway: the client's root selects a per-root instance, dialed with
 // the expanded cwd, while the CATALOG is untouched — one server id, one
 // exposed name, one route.
@@ -207,7 +207,7 @@ func TestDerivedInstanceCapFallsBackToBase(t *testing.T) {
 
 // TestDerivedInstanceIdleReclaim: once the call is done the lease is
 // released, and the instance is reclaimed after the idle TTL — the delayed
-// close of docs/modules/dataplane.md.
+// close of docs/subsystems/execution.md.
 func TestDerivedInstanceIdleReclaim(t *testing.T) {
 	t.Parallel()
 	resolver := testResolver(t.TempDir())

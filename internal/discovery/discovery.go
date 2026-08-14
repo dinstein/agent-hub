@@ -1,7 +1,7 @@
 // Package discovery implements the three tool-exposure modes of
 // docs/flows.md — full, grouped and lazy — plus the lexical ranker, the
 // SearchGuard state machine, the search-trace record and the pinned-tool
-// seam (docs/modules/dataplane.md, internal/discovery).
+// seam (docs/subsystems/exposure.md, internal/discovery).
 //
 // Three invariants hold across the whole package:
 //

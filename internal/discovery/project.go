@@ -61,7 +61,7 @@ type Hit struct {
 	// the agent's only instruction about which door to use — the variant
 	// check rejects any other one (Surface.ResolveCallVariant).
 	CallWith string `json:"call_with"`
-	// Sig is the compact one-line signature (docs/modules/dataplane.md). It is present
+	// Sig is the compact one-line signature (docs/subsystems/exposure.md). It is present
 	// on EVERY hit and is what replaced the rank-1 schema.
 	Sig string `json:"sig"`
 	// Lossy reports that Sig could not state the schema in full, so

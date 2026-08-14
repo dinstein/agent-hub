@@ -37,7 +37,7 @@ type Options struct {
 	Now time.Time
 	// TTL bounds the cursor's life; zero means DefaultTTL.
 	TTL time.Duration
-	// Format selects the delivered encoding (docs/modules/dataplane.md). The zero value
+	// Format selects the delivered encoding (docs/subsystems/shaping.md). The zero value
 	// is DefaultFormat (json), so a caller that predates M1.5 keeps its
 	// exact previous behaviour.
 	Format Format

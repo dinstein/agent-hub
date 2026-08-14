@@ -161,7 +161,7 @@ type ServerEntry struct {
 	// Empty and ProvenanceRemote both mean "screen the destination"; only
 	// ProvenanceLocal unblocks a LITERAL loopback endpoint.
 	Provenance string `json:"provenance,omitempty"`
-	// Derive is the derived-instance policy of docs/modules/dataplane.md:
+	// Derive is the derived-instance policy of docs/subsystems/execution.md:
 	// "none" (default, and what an entry written before this field existed
 	// means) shares one connection across every session; "root" gives each
 	// project root its own instance; "session" gives each session one.
@@ -524,7 +524,7 @@ type GovernanceDoc struct {
 	// never carries the resolved value into discovery.Options, so setting
 	// it changes nothing today. `internal/discovery` implements and tests
 	// the behaviour; only the assembly is missing (docs/model.md#how-the-surface-is-presented
-	// and the unwired-faces appendix in docs/modules/dataplane.md).
+	// and the unwired-faces appendix in docs/subsystems/execution.md).
 	IntentVariants *bool `json:"intentVariants,omitempty"`
 	// RateLimits is the cooperative call quota rule set (internal/ratelimit).
 	// Absent = no quotas at all; the package is opt-in like every other M2

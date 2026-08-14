@@ -46,7 +46,7 @@ func (d Decision) SavedBytes() int {
 	return 0
 }
 
-// Consider is the adaptive entry point of docs/modules/dataplane.md: re-encode a JSON
+// Consider is the adaptive entry point of docs/subsystems/shaping.md: re-encode a JSON
 // text as TOON, but only hand it back if it actually wins.
 //
 // The never-larger guarantee is constructive, not aspirational: the returned

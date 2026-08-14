@@ -6,7 +6,7 @@ import (
 )
 
 // This file is the SESSION half of derived downstream instances
-// (docs/modules/dataplane.md): which derivation key a given session
+// (docs/subsystems/downstream.md): which derivation key a given session
 // contributes on the connection
 // plane. The connection-plane half — what a key means, how instances are
 // pooled and reclaimed — lives in internal/downstream (derive.go, pool.go).

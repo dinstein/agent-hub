@@ -10,7 +10,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/mcp"
 )
 
-// describe_tool: step two of the two-step discovery of docs/modules/dataplane.md.
+// describe_tool: step two of the two-step discovery of docs/subsystems/exposure.md.
 //
 // search_tools hands back compact signatures. When a signature is not enough
 // — a folded nested object, an enum whose tail was elided, a schema the
@@ -36,7 +36,7 @@ import (
 // fetch_result follows for cursors and ResolveCall for names, and it is why
 // the remediation text is a single frozen sentence.
 
-// MaxDescribeTools bounds one describe_tool call (docs/modules/dataplane.md: "≤5").
+// MaxDescribeTools bounds one describe_tool call (docs/subsystems/exposure.md: "≤5").
 // The point of the cap is that describe is the EXPENSIVE step: an agent that
 // asks for twenty schemas has skipped the search that would have narrowed
 // them. Over the cap is an error, not a silent clamp — a clamp would leave
@@ -64,7 +64,7 @@ const describeHint = "build the arguments from the schema, then invoke the tool 
 // DescribeArgs is the decoded describe_tool payload.
 //
 // Two spellings are accepted because two designs asked for different ones:
-// docs/modules/dataplane.md specifies a batch ("tool_ids:[≤5]") and the M1.5 brief
+// docs/subsystems/exposure.md specifies a batch ("tool_ids:[≤5]") and the M1.5 brief
 // specifies the singular convenience form. Both are declared fields, so
 // strict decoding still rejects a typo; supplying both, or neither, is an
 // error rather than a precedence rule nobody would remember.

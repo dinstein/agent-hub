@@ -115,7 +115,7 @@ type Spec struct {
 	// resolves: the composite key (ServerID, ScopeName). Empty means
 	// secrets.DefaultScope ("_global"). Derive sets it to the derive key so
 	// a per-root/per-session identity is storable without a migration
-	// (docs/modules/dataplane.md early warning).
+	// (docs/subsystems/downstream.md early warning).
 	ScopeName string
 }
 

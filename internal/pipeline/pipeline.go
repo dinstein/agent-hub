@@ -16,7 +16,7 @@
 // to justify the shared entry as a scan a malicious server could otherwise
 // dodge by answering with a JSON-RPC error. There is no scan: the injection
 // and leak stages went with the rest of the runtime governance surface, which
-// shape.go and docs/modules/dataplane.md both say — and which ShapeFunc below
+// shape.go and docs/subsystems/execution.md both say — and which ShapeFunc below
 // already said while this sentence still named them.
 //
 // M1.5 state: every gate is real. The token tier gate enforces

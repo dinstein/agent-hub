@@ -13,7 +13,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/logx"
 )
 
-// Pool owns the DERIVED instances of downstream servers (docs/modules/dataplane.md):
+// Pool owns the DERIVED instances of downstream servers (docs/subsystems/downstream.md):
 // the registry keyed by (serverID, DeriveKey) whose base entry — the empty
 // key — is not stored here at all but supplied by the caller.
 //
@@ -70,7 +70,7 @@ var (
 	ErrNoBaseInstance = errors.New("downstream: no base instance available")
 )
 
-// Pool defaults (docs/modules/dataplane.md: 30 min idle reclaim on the session reaper's
+// Pool defaults (docs/subsystems/downstream.md: 30 min idle reclaim on the session reaper's
 // cadence). MaxPerServer is a fan-out guard, not a tuning knob: four live
 // variants of one server is already an unusual amount of state.
 const (
@@ -196,7 +196,7 @@ func (l *Lease) Release() {
 //
 // key == "" returns base unchanged: no bookkeeping, no lifecycle, no cost —
 // which is why a server without a derive policy pays nothing for this
-// package existing (docs/modules/dataplane.md: "a scope with no patch naturally shares the base instance").
+// package existing (docs/subsystems/downstream.md: "a scope with no patch naturally shares the base instance").
 //
 // base may be nil when the caller has no base connection (a daemon that
 // only ever dials derived instances); the cap fallback then fails with
@@ -466,7 +466,7 @@ func (p *Pool) runSweeper(interval time.Duration) {
 // It has no non-test caller today. `server ls`, the GUI and doctor are where
 // it was meant to surface and none of them reach it, so this type describes a
 // capability that exists at the pool layer and is not switched on in the
-// assembled product — the same distinction docs/modules/dataplane.md's
+// assembled product — the same distinction docs/subsystems/downstream.md's
 // assembly-status appendix draws for shaping's FileStore and discovery's
 // intent variants, and the reason that list is written down rather than
 // assumed. Say so here rather than naming consumers as though they were

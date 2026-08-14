@@ -270,7 +270,7 @@ func TestEndpointMovedIsTerminalAndHinted(t *testing.T) {
 		t.Fatalf("err = %v, want errors.Is(..., downstream.ErrEndpointMoved)", cerr)
 	}
 	// The whole hint, not a fragment of it. Both moved.go and
-	// docs/modules/dataplane.md call this copy a contract "asserted by tests",
+	// docs/subsystems/downstream.md call this copy a contract "asserted by tests",
 	// and until now the assertion was strings.Contains(…, "agenthub server
 	// add") — which a rewrite of every other word would still pass, so the
 	// contract was documented in two places and enforced in none. Spelled out

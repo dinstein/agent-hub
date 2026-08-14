@@ -8,7 +8,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/shaping/toonenc"
 )
 
-// Format selects the wire encoding of a delivered result (docs/modules/dataplane.md,
+// Format selects the wire encoding of a delivered result (docs/subsystems/shaping.md,
 // "TOON encoding"). It is the typed form a governance switch would be read
 // into, and ParseFormat is the mapping — but no such key exists yet:
 // `result_format` is the name reserved for it, not a field of GovernanceDoc,
@@ -70,7 +70,7 @@ var toonOptions = toonenc.Options{
 //   - The contract marker (toonenc.HeaderLine) is emitted at most once per
 //     result, on the first block that is actually re-encoded. It tells the
 //     agent that arguments still travel as JSON — the "byte-level marker contract"
-//     of docs/modules/dataplane.md.
+//     of docs/subsystems/shaping.md.
 //   - Per block, toonenc.Consider gives the never-larger guarantee: a block
 //     that does not win keeps its original bytes. A result can therefore
 //     only shrink.

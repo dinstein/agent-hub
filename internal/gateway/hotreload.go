@@ -220,7 +220,7 @@ func (g *gateway) syncServers(snap *registry.Snapshot) {
 		// Derived instances of a redefined or removed server are stale by the
 		// same argument their base connection is: they were dialed from the
 		// old spec. Closing them here means the next call re-derives from the
-		// applied one (docs/modules/dataplane.md lifecycle).
+		// applied one (docs/subsystems/execution.md lifecycle).
 		if g.pool != nil {
 			g.pool.CloseServer(c.srv.ID())
 		}

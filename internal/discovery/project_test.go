@@ -12,7 +12,7 @@ import (
 // The budget projection is the reason lazy mode saves tokens: every rank
 // gets a compact signature, rank 1 additionally the full description, every
 // other rank a bounded summary. No rank carries a schema — that is what
-// describe_tool is for (docs/modules/dataplane.md).
+// describe_tool is for (docs/subsystems/exposure.md).
 func TestBudgetProjection(t *testing.T) {
 	long := strings.TrimSpace(strings.Repeat("alpha beta gamma delta ", 40)) // ~920 bytes
 	tools := []Tool{

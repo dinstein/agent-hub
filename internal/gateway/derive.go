@@ -10,7 +10,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/scope"
 )
 
-// This file wires derived downstream instances (docs/modules/dataplane.md) into the
+// This file wires derived downstream instances (docs/subsystems/execution.md) into the
 // stdio gateway. The three planes stay exactly where they were:
 //
 //   - CONNECTION plane: the base connection of every enabled server is

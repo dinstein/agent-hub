@@ -327,7 +327,7 @@ satisfying `errors.Is(err, guard.ErrBlocked)`.
 — so the address this predicate screens is not the one reached. It is a self-inflicted precondition
 (the operator sets the daemon's environment; no client or downstream can), which is why it is owed a
 decision rather than an emergency patch. The gap and the shape of the decision live in
-[protocol.md](../subsystems/protocol.md) and [dataplane.md](dataplane.md); this note exists so an audit that
+[protocol.md](../subsystems/protocol.md) and [downstream.md](../subsystems/downstream.md); this note exists so an audit that
 starts from the SSRF boundary here does not conclude the screen is unconditional.
 
 ### Invariants and failure directions

@@ -12,7 +12,7 @@ import (
 	"unicode"
 )
 
-// HeaderLine is the in-band contract marker of docs/modules/dataplane.md: it tells the
+// HeaderLine is the in-band contract marker of docs/subsystems/shaping.md: it tells the
 // agent that what follows is a display encoding and that arguments still
 // travel as JSON. Frozen bytes — agent-side prompting keys off it, so a
 // wording change is an ABI change.

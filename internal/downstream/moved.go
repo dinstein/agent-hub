@@ -22,7 +22,7 @@ import (
 var ErrEndpointMoved = transport.ErrEndpointMoved
 
 // movedHint is the frozen remediation text appended to a 410 failure. It is
-// user-facing and asserted by test (error copy is contract, docs/modules/dataplane.md
+// user-facing and asserted by test (error copy is contract, docs/subsystems/downstream.md
 // "determinism is contract").
 const movedHint = "update the configured URL: agenthub server add <id> --url <new-url> (or edit servers.json)"
 

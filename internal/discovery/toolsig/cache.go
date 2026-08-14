@@ -16,7 +16,7 @@ const DefaultCacheSize = 4096
 // Cache memoizes signatures on a fingerprint of the inputs Of actually reads.
 // Rendering is cheap but it happens once per tool per surface rebuild, and a
 // surface is rebuilt on every scope or catalog change — the cache is what
-// keeps that O(tools) work off the request path (docs/modules/dataplane.md:
+// keeps that O(tools) work off the request path (docs/subsystems/exposure.md:
 // "memoize by tool fingerprint, warm during catalog indexing").
 //
 // Safe for concurrent use.
@@ -46,7 +46,7 @@ var (
 	sharedCase *Cache
 )
 
-// Shared returns the process-wide cache. docs/modules/dataplane.md calls for a single
+// Shared returns the process-wide cache. docs/subsystems/exposure.md calls for a single
 // instance: the catalog index warms it, and a second instance would silently
 // throw that warm-up away (correct results, wasted work). Callers should use
 // Shared unless a test needs isolation.

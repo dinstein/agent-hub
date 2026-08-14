@@ -151,7 +151,7 @@ func TestSpecDerivedWithoutRootKeepsPlaceholder(t *testing.T) {
 }
 
 // TestDerivedSecretsUseCompositeVaultKey is the M1 pull-forward paying off
-// (docs/modules/dataplane.md early warning): a derived instance resolves (serverID,
+// (docs/subsystems/downstream.md early warning): a derived instance resolves (serverID,
 // deriveKey, KEY) first and falls back to (serverID, "_global", KEY) when
 // its own scope stores nothing.
 //

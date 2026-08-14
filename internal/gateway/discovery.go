@@ -12,7 +12,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/shaping"
 )
 
-// This file is the gateway's DISCOVERY plane (docs/flows.md#a-call-in-lazy-mode, docs/modules/dataplane.md): which
+// This file is the gateway's DISCOVERY plane (docs/flows.md#a-call-in-lazy-mode, docs/subsystems/execution.md): which
 // names the upstream client is shown, what an incoming name means, and how
 // a result is bounded before it is delivered.
 //

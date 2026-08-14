@@ -7,7 +7,7 @@ import (
 )
 
 // This file is the CONNECTION-PLANE half of derived downstream instances
-// (docs/modules/dataplane.md). A derived instance is the same registry server dialed
+// (docs/subsystems/downstream.md). A derived instance is the same registry server dialed
 // with session-specialized connection parameters (cwd / ${ROOT} / env);
 // everything else about it — exposed tool names, routing, visibility — is
 // unchanged.
@@ -178,7 +178,7 @@ const rootPlaceholder = "${ROOT}"
 // DeriveContext carries the per-derivation inputs. Root feeds ${ROOT}
 // expansion; Env is the explicit per-derivation override applied on top of
 // the base environment (the `--derive-server github --env GITHUB_ORG=acme`
-// CLI seam of docs/modules/dataplane.md).
+// CLI seam of docs/subsystems/downstream.md).
 type DeriveContext struct {
 	Root string
 	Env  map[string]string
@@ -192,7 +192,7 @@ type DeriveContext struct {
 // What is specialized: Args, Env VALUES and Cwd (${ROOT} expansion, then
 // the explicit Env overlay). What is deliberately NOT: URL and Headers. A
 // header patch needs no new connection — the per-call RoundTripper injects
-// it (docs/modules/dataplane.md "headers-only fast path") — and spending a process on one
+// it (docs/subsystems/downstream.md "headers-only fast path") — and spending a process on one
 // would be the expensive answer to a cheap question.
 //
 // Secret placeholders are left VERBATIM here (as everywhere outside dial

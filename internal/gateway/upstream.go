@@ -491,7 +491,7 @@ func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string
 		exposed:     exposed,
 		route:       route,
 		annotations: def.Annotations,
-		// Derived instances (docs/modules/dataplane.md): which PROCESS runs
+		// Derived instances (docs/subsystems/execution.md): which PROCESS runs
 		// this call is a connection-plane decision made per call. It is made
 		// INSIDE the call closure, so it happens after both gates and after
 		// rate-limit admission — acquiring can spawn a child or open an

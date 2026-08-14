@@ -7,7 +7,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/downstream"
 )
 
-// TestSessionDeriveKey covers the session half of docs/modules/dataplane.md: which
+// TestSessionDeriveKey covers the session half of docs/subsystems/downstream.md: which
 // derivation key a session contributes per mode, including the two "use the
 // base instance" answers that must not become invented keys.
 func TestSessionDeriveKey(t *testing.T) {

@@ -1,9 +1,9 @@
 // Package downstream owns the connection lifecycle of one downstream MCP
 // server: spawn/dial, handshake, the serialized call queue, the circuit
 // breaker, retry semantics, and tool-list caching (docs/architecture.md#the-processes,
-// docs/modules/dataplane.md).
+// docs/subsystems/downstream.md).
 //
-// Concurrency model (docs/modules/dataplane.md): every server has exactly
+// Concurrency model (docs/subsystems/downstream.md): every server has exactly
 // one owner goroutine consuming a calls channel of capacity 1 —
 // serialization by communication, not by mutex. Callers block in Call; the
 // owner performs the transport round trip, so a sleeping retry or a slow
@@ -53,7 +53,7 @@
 //     initialization failure embeds the child's last 20 stderr LINES so a
 //     handshake crash is not reported as a bare deadline.
 //
-// Derived instances (docs/modules/dataplane.md, derive.go / pool.go):
+// Derived instances (docs/subsystems/downstream.md, derive.go / pool.go):
 //
 //   - One server may run as SEVERAL instances, keyed by (serverID,
 //     DeriveKey), when its registry entry asks for per-root or per-session

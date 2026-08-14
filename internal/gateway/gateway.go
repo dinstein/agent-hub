@@ -128,7 +128,7 @@ type Config struct {
 	// same tokens as authorized — the gateway held the vault but never
 	// opened it.
 	// scopeName is secrets.DefaultScope for a base connection and the derive
-	// key for a derived instance (docs/modules/dataplane.md); allowLoopback
+	// key for a derived instance (docs/subsystems/execution.md); allowLoopback
 	// is the spec's provenance decision, which travels here because the
 	// refresher behind this seam renews by server id and holds no Spec.
 	Auth authFactory
@@ -152,7 +152,7 @@ type Config struct {
 	// RedialBase is the first rung of the re-dial ladder (redial.go); the
 	// consult tick and the ceiling derive from it. 0 = 5s. Tests shrink it.
 	RedialBase time.Duration
-	// DerivedPool tunes the derived-instance pool (docs/modules/dataplane.md). Deps,
+	// DerivedPool tunes the derived-instance pool (docs/subsystems/execution.md). Deps,
 	// Connect, Log and Now are overwritten by the gateway; the caps and
 	// timers are honoured. Tests use it to drive reclaim deterministically.
 	DerivedPool downstream.PoolOptions
@@ -271,7 +271,7 @@ type gateway struct {
 	rlStore *ratelimit.Store
 	limiter atomic.Pointer[ratelimit.Limiter]
 
-	// pool owns the DERIVED downstream instances (docs/modules/dataplane.md). The base
+	// pool owns the DERIVED downstream instances (docs/subsystems/execution.md). The base
 	// connections stay in g.servers: derivation is an addition to the
 	// connection plane, never a replacement for it.
 	pool *downstream.Pool

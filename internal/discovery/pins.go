@@ -6,7 +6,7 @@ import (
 )
 
 // PinSet reports which tools are PINNED: exposed directly in lazy mode, so
-// the agent can call them without a search round-trip (docs/modules/dataplane.md, the
+// the agent can call them without a search round-trip (docs/subsystems/exposure.md, the
 // "pinned" leg of the token-saving stack).
 //
 // Pinning is an EXPERIENCE decision, never a security one. It cannot widen

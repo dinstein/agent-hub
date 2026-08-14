@@ -16,7 +16,7 @@ import (
 // resolves the vault entry (spec.ID, spec.ScopeName, <KEY>) — the same
 // <KEY> the environment level of the chain reads from
 // AGENTHUB_SECRET_<KEY>. The scope component is "_global" for the base
-// instance and the derive key for a derived one (docs/modules/dataplane.md).
+// instance and the derive key for a derived one (docs/subsystems/downstream.md).
 const secretPrefix = "SECRET_"
 
 // ErrUnresolvedSecret reports a ${SECRET_X} placeholder with no value in
@@ -212,7 +212,7 @@ func SecretKeysIn(s string) []string {
 // The fallback is what makes derived instances usable at all: an operator
 // stores GITHUB_TOKEN once, and every root-derived instance inherits it;
 // storing a value under a specific scope then OVERRIDES it for exactly that
-// derivation (the per-scope identity of docs/modules/dataplane.md). The order is
+// derivation (the per-scope identity of docs/subsystems/downstream.md). The order is
 // specific-wins, and a vault ERROR at either level aborts — a broken
 // keychain must never silently degrade a scoped credential into the shared
 // one.

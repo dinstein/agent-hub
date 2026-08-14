@@ -32,7 +32,7 @@ const stderrLineCap = 400
 // handed the window's contents and not its capacity, so "the window was full"
 // is not a question it can ask. Fixing it means plumbing the cap through, a
 // behaviour change to the error text and therefore not a tidy-night edit;
-// docs/modules/dataplane.md carries the item.
+// docs/subsystems/downstream.md carries the item.
 func stderrTail(tr transport.Transport, n int) []string {
 	if tr == nil {
 		return nil

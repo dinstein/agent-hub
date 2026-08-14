@@ -26,7 +26,7 @@ const (
 	// MetaSearchTools is the lexical search entry point.
 	MetaSearchTools = "search_tools"
 	// MetaDescribeTool is the second step of the describe-in-two-steps
-	// layer (docs/modules/dataplane.md): search hands back compact signatures, this
+	// layer (docs/subsystems/exposure.md): search hands back compact signatures, this
 	// hands back the full schema for the few tools the agent settled on.
 	MetaDescribeTool = "describe_tool"
 	// MetaCallTool invokes a tool found through search. It is also the
