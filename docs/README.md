@@ -1,64 +1,88 @@
 # docs/
 
+> **Answers** which file answers your question, and where a new fact belongs.
+> **Not here** the steps of a workflow you are about to run → [../.agents/skills/](../.agents/skills/).
+> **Kept true by** `test/buildrules`, which resolves every reference into this tree.
+
 ## Where to start
 
-| What you want to do | Read this |
+| What you want | Read |
 |---|---|
-| Know what a client is allowed to reach, and who decided it | [model.md](model.md) |
-| **Use** agenthub: how to wire servers, profiles and clients up | [guide.md](guide.md) |
-| Understand how the system is carved up and how the processes are laid out | [architecture.md](architecture.md) |
-| Learn what each package is responsible for | [architecture.md#the-packages](architecture.md#the-packages) |
-| Work out how a given flow actually behaves at runtime | [flows.md](flows.md) |
-| Get a feel for a package's constraints before changing it | [subsystems/](subsystems/) |
-| Debug a downstream OAuth server you can't connect to | [status/oauth.md](status/oauth.md) |
-| Touch the GUI frontend | [subsystems/gui.md](subsystems/gui.md) |
-| Check whether a name, dependency, or convention is changeable | [conventions.md](conventions.md) |
-| Find out what works on Windows today | [windows.md](status/windows.md) |
-| **Do** one of the standard things — build a feature, run the tidy pass, cut a release | [../.agents/skills/](../.agents/skills/) |
+| To **use** agenthub: wire servers, profiles and clients up | [guide.md](guide.md) |
+| What a client is allowed to reach, and who decided it | [model.md](model.md) |
+| How the system is carved into processes and packages | [architecture.md](architecture.md) |
+| How a flow behaves at runtime, and which way it falls | [flows.md](flows.md) |
+| What a package must not do, before you change it | [subsystems/](subsystems/) |
+| Whether a name, a dependency direction or a convention may move | [conventions.md](conventions.md) |
+| Why a settled question was settled that way | [decisions/](decisions/) |
+| What works on Windows, or which OAuth providers connect | [status/](status/) |
+| To **do** one of the standard workflows | [../.agents/skills/](../.agents/skills/) |
 
-## Files
+## The tree
 
-| File | Contents |
-|---|---|
-| [model.md](model.md) | The access model in one place: the three nouns, how the layers intersect, the three-state selector, scope resolution, the two planes, the three discovery modes, and what the model deliberately does not have |
-| [guide.md](guide.md) | The user-facing guide: the server / profile / client model, the everyday setup path, three-state tool selection, the three discovery modes, how to verify the wiring, which record to open when something broke, and the surprises behind most "it stopped working" reports |
-| [architecture.md](architecture.md) | Architecture overview: the dual-mode process model, core module map, layering and dependency constraints, what a single call passes through, the three data flows, the two planes of scope, the two lines of defense, on-disk layout |
-| [flows.md](flows.md) | Sequence diagrams and failure branches for seven key flows: gateway startup, a lazy call, config writes, config hot reload, OAuth, derived instances, the call ledger lifecycle |
-| [subsystems/](subsystems/) | Per-seam docs, each one file: what the packages in it must not do, and which way each failure falls |
-| [conventions.md](conventions.md) | Frozen identifiers, package layout, the four dependency constraints, command naming rules, engineering conventions, and every decision record |
-| [windows.md](status/windows.md) | Windows status: what's implemented, **what's unverified**, what's missing, acceptance criteria |
-| [mcp-2026-07-28.md](status/mcp-2026-07-28.md) | One protocol revision: what the two faces do about it today, and what is deliberately still absent. Cited by section number from the code implementing it |
+```
+docs/
+  README.md          this map, and the rules for writing here
+  model.md           what a client may reach, and who decided it     [zh-CN]
+  guide.md           using agenthub                                  [zh-CN]
+  architecture.md    processes, packages, what a call passes through [zh-CN]
+  flows.md           seven runtime sequences and their failure branches
+  conventions.md     frozen names, dependency directions, engineering rules
+  decisions/         one settled question per file, plus the ruling-id registry
+  subsystems/        one file per seam: invariants and failure directions
+  status/            snapshots: Windows, one protocol revision, OAuth providers
+```
+
+## Five kinds of content, and what keeps each one true
+
+Each fact belongs to exactly one of these. Content duplicated across two of them will eventually
+contradict itself, and readers have no way to tell which copy is current.
+
+| Kind | Where | Kept true by |
+|---|---|---|
+| **Concepts** — the access model, the vocabulary | `model.md` | rarely moves; a change here is an architectural change |
+| **Decisions** — what was settled, and why | `decisions/` | append-only. A superseded decision keeps its file and says so |
+| **Behaviour** — how it works, seam by seam | `architecture.md`, `flows.md`, `subsystems/` | review, plus the tests each file names in its own header |
+| **Rules** — what may not change | `conventions.md` | `internal/depguardtest`, `internal/cli/tree_test.go`, `test/buildrules` |
+| **Snapshots** — the state of one platform or one spec | `status/` | nothing automatic; re-read them when that state moves |
+
+## Rules for writing here
+
+- **Every document opens with three lines**: what it **answers**, what it does **not** (with a pointer),
+  and what **keeps it true**. The third line is the useful one — a section you cannot attach to a test, a
+  generator or a named review habit is a section that will rot, and writing that down is how you notice.
+- **Read the source first.** The value of these documents is that they match the code; writing from
+  memory or from an old design draft devalues them immediately.
+- **A sentence earns its place by carrying a reason, not by restating the code.** No file listings, no
+  exported signatures, no narration of straightforward control flow — `ls`, `go doc` and the code are
+  faster and never go stale. Write the *why*: rejected alternatives, traps that were actually hit, which
+  way a predicate fails.
+- **Invariants first.** The most valuable thing to write down is not "what this package does" but "what
+  must not be touched, and which way failures fall".
+- **Capability exists ≠ wired up.** Where a package is complete but nothing calls it, say so at that
+  spot. "Thought it was in effect but it wasn't" is far more dangerous than "known to be missing".
+- **A gap goes in the `subsystems/` file of the package that owns it**, beside the invariant it bends,
+  not into a list of its own. The bar for writing one down is that you can point to a specific place in
+  the code; once it is fixed, the same paragraph becomes the description of reality.
+- **Cite a section by its anchor, never by a number.** A number is a position, so inserting a section
+  silently moves every later citation onto its neighbour. `TestDocReferencesResolve` checks the anchors;
+  nothing can check a number's meaning.
+- **Diagrams carry structure, prose carries reasons.** A mermaid diagram for a topology, a sequence or a
+  ladder; a table for an enumeration; a paragraph for why the shape is what it is. Do not narrate a
+  diagram in prose underneath it.
+- **Only the product surface is translated.** `README.md`, `guide.md`, `model.md` and `architecture.md`
+  have zh-CN counterparts; everything else is English only. The line is drawn by what a document tracks:
+  the rest moves whenever the code does, so a mirror is a second file every behaviour change has to
+  remember, and the forgotten copy is indistinguishable from the current one. The exempt set is declared
+  in `contributorOnlyDocs` (`test/buildrules/translations_test.go`), which fails both on an English
+  document with no translation and on a leftover translation of an exempted one.
 
 ## Not here: executable workflows
 
-Anything you *perform* lives in [../.agents/skills/](../.agents/skills/), not in this directory. The
-split is by what a file answers, and the two rot differently: a doc explains how the system works and
-goes quietly wrong when the code changes; a skill workflow is a numbered sequence executed at the
-machine, and goes loudly wrong — a step fails — when a command or a gate changes. Kept together, a
-reader after the steps skims explanation, and a reader after the reason finds an ordered list that
-never gives one.
+Anything you *perform* lives in [../.agents/skills/](../.agents/skills/). The split is by what a file
+answers, and the two rot differently: a document explains how the system works and goes quietly wrong
+when the code changes; a skill is a numbered sequence executed at the machine, and goes loudly wrong — a
+step fails — when a command or a gate changes.
 
-A skill may cite a document here for the reason behind a step, and should. The reason stays here;
-the step stays there.
-
-## Three layers — don't read them interchangeably
-
-These docs are deliberately split into three layers. Write things into the layer they belong to, and read the layer that answers your question:
-
-| Layer | Answers | Where |
-|---|---|---|
-| **How the system works** | How processes are laid out, how calls flow, where data goes | `architecture.md` + `flows.md` |
-| **How to change this package** | Key types, invariants, failure directions | `modules/` |
-| **Whether this convention can move** | Frozen identifiers, dependency directions, naming rules, decision rationale | `docs/conventions.md` |
-
-Each fact belongs in exactly one layer. Content duplicated across layers will eventually contradict itself, and readers have no way to tell which copy is current.
-
-## Rules for writing these docs
-
-- **Read the source first.** The value of these docs is that they match the code; writing from memory or from an old design draft devalues them immediately.
-- **A sentence earns its place by carrying a reason, not by restating the code.** Don't write file listings, exported signatures, or step-by-step narration of straightforward control flow — `ls`, `go doc`, and the code itself are faster and never go stale. Write down the *why*: rejected alternatives, traps that were actually hit, which way a predicate fails.
-- **Invariants first.** The most valuable thing to write down isn't "what this package does" but "what must not be touched, and which way failures fall" — fail-open or fail-closed, ordering invariants, cross-process discipline.
-- **Capability exists ≠ wired up.** Where a package is functionally complete but the assembly layer hasn't connected it, say so explicitly at that spot. "Thought it was in effect but it wasn't" is far more dangerous than "known to be missing."
-- **A gap goes in the `modules/` doc of the package that owns it**, not into a list of its own — under "current assembly status", or beside the invariant it bends. The bar for writing one down is "you can point to a specific location in the code"; once it's fixed, the same paragraph becomes the description of reality. A gap kept next to its code is read by whoever touches that code, which is the one thing a central backlog could never manage.
-- If you change an architectural convention (package name, command name, dependency direction, frozen identifier), update `docs/conventions.md` in the same change.
-- **Only the product surface is translated.** The root README, `guide.md` and `architecture.md` have zh-CN counterparts under `docs/zh-CN/`; everything else here is English only. The line is drawn by what a document tracks: these files move whenever the code does, so a mirror is a second file every behaviour change has to remember, and the forgotten copy is indistinguishable from the current one. The exempt set is declared in `contributorOnlyDocs` (`test/buildrules/translations_test.go`), which fails both on an English document with no translation and on a leftover translation of an exempted one.
+A skill may cite a document here for the reason behind a step, and should. The reason stays here; the
+step stays there.

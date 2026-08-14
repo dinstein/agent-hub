@@ -24,7 +24,9 @@ regardless of who asked.
 | [docs/flows.md](docs/flows.md) | How a flow runs at runtime, and which way it falls on failure |
 | [docs/subsystems/](docs/subsystems/) | Before touching a package — its invariants and failure directions |
 | [docs/status/oauth.md](docs/status/oauth.md) | An OAuth downstream will not connect, or which provider shapes are supported |
-| [docs/conventions.md](docs/conventions.md) | Whether a name/dependency/convention may change, and why it was decided |
+| [docs/model.md](docs/model.md) | What a client is allowed to reach, and who decided it |
+| [docs/conventions.md](docs/conventions.md) | Whether a name, a dependency direction or a convention may change |
+| [docs/decisions/](docs/decisions/) | Why a settled question was settled that way |
 | [.agents/skills/](.agents/skills/) | You are about to **do** one of the standard workflows, and want its steps in order |
 
 `docs/` explains how the system works; skills are what you execute. Four repository workflows exist
