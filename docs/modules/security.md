@@ -426,7 +426,7 @@ that replacing the deprecated mechanism is a constructor swap rather than a rewr
   primitive, not a routing detail. Logged `Location` values keep only scheme+host+path
   (`redactLocation`). By contrast the `discovery` client allows up to 3 hops, **re-screening every hop
   through `checkURL`** — metadata documents are public, and providers really do move them.
-- **Persistence write order: state first, then the access token** ([flows.md §5](../flows.md#5-headless-oauth-and-refresh)
+- **Persistence write order: state first, then the access token** ([flows.md#oauth-login-and-refresh](../flows.md#oauth-login-and-refresh)
   draws the two crash windows). `Store.Save` never parallelizes the two writes and never proceeds past
   a failed first write; `Clear` mirrors the order, deleting the token first. A corrupt `__oauth_state__`
   is a loud error rather than "no state": silently treating it as absent would trigger a fresh
@@ -466,7 +466,7 @@ that replacing the deprecated mechanism is a constructor swap rather than a rewr
   is readable by anyone who can read the vault, and what actually protects the code exchange is PKCE.
 - **The order in loopback mode cannot be rearranged**: bind → build (register) → **Serve** → open
   browser → wait, with a fresh random port every attempt
-  ([flows.md §5](../flows.md#5-headless-oauth-and-refresh) says why). What is local to this package:
+  ([flows.md#oauth-login-and-refresh](../flows.md#oauth-login-and-refresh) says why). What is local to this package:
   only providers requiring an exactly pre-registered redirect_uri use `State.CallbackPort` +
   `ListenOnPort` to reuse a port, and when that port is taken the caller should discard the DCR
   credentials and re-register rather than silently switching ports. `Wait` always shuts down the

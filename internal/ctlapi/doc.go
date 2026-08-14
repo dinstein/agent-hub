@@ -39,7 +39,7 @@
 //
 // Every write there takes an optional expected_generation and answers a
 // lost compare-and-swap with 409 + CodeStalePrecondition carrying the
-// current generation (docs/flows.md §4).
+// current generation (docs/flows.md#config-writes).
 //
 // Authentication (docs/architecture.md#the-processes): two layers, both mandatory. The socket
 // directory is 0700 and the socket 0600 (first gate: file permissions), and

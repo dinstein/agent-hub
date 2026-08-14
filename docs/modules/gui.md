@@ -490,7 +490,7 @@ confirm only above 3; and **global actions are disabled while a filter is active
 otherwise touch rows you cannot see.
 
 **409 conflicts don't overwrite.** Write endpoints carry a `Precondition`, and a conflict returns 409
-plus the current generation (see [../flows.md §3](../flows.md#3-config-writes-five-writers-and-an-optimistic-lock)).
+plus the current generation (see [flows.md#config-writes](../flows.md#config-writes)).
 The frontend re-fetches and reports `CONFLICT_MESSAGE` rather than writing back the view the user had
 minutes ago.
 

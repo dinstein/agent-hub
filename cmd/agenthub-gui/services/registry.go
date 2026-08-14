@@ -12,7 +12,7 @@ import (
 // Every write here takes an expectedGeneration and every write ANSWERS with
 // the generation the registry now stands at (api.WriteResult.Generation),
 // which is the whole shape of the optimistic-concurrency contract
-// (docs/flows.md §4):
+// (docs/flows.md#config-writes):
 //
 //	read  -> Generation G
 //	write -> expectedGeneration G, answers Generation G'

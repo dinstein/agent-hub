@@ -23,7 +23,7 @@
 //  3. returns a Result carrying the post-commit generation, the healed
 //     quarantine reports as warnings, and whether anything actually changed.
 //
-// Concurrency (docs/flows.md §4): the registry has five
+// Concurrency (docs/flows.md#config-writes): the registry has five
 // writers (N gateways, the daemon, the CLI, the GUI, third parties). Last
 // writer wins is not acceptable for a long-lived GUI window whose view may
 // be minutes old, so every operation takes a Precondition. A non-zero

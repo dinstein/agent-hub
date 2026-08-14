@@ -39,7 +39,7 @@ import (
 // CodeStalePrecondition rejects a write whose expected_generation no longer
 // matches the registry: someone else wrote in between. The error body
 // carries the CURRENT generation so the client can re-read and retry against
-// a known version instead of guessing (docs/flows.md §4).
+// a known version instead of guessing (docs/flows.md#config-writes).
 //
 // It is the same string internal/confops freezes; adminErrorCodeContract
 // asserts the two agree.
