@@ -45,7 +45,7 @@ sequenceDiagram
         D-->>G: SessionID
         Note over G,D: long-lived connection: registry change notifications
     else daemon absent
-        G->>G: stand alone; scope comes from the registry files, reconnect with backoff
+        G->>G: stand alone — scope comes from the registry files, reconnect with backoff
     end
 ```
 
@@ -79,7 +79,7 @@ sequenceDiagram
     DI-->>A: compact signatures + call_with hint
     opt detail needed
         A->>G: describe_tool{tool}
-        G-->>A: full definition; every invisible id gets the same not_found
+        G-->>A: full definition — every invisible id gets the same not_found
     end
     A->>G: call_tool{tool, arguments}
     G->>G: router.RouteOf
@@ -192,7 +192,7 @@ sequenceDiagram
     G->>G: generation read ≥ generation applied? otherwise discard
     alt Kind = servers
         G->>G: spec diff: reconnect only what changed
-        G->>DS: add and remove connections; untouched ones stay up
+        G->>DS: add and remove connections — untouched ones stay up
     else Kind ∈ {profiles, governance, clients}
         G->>G: invalidate the scope cache only
     end
@@ -231,7 +231,7 @@ sequenceDiagram
     alt loopback (a browser is available here)
         C->>C: bind 127.0.0.1:0, and start the server before opening the browser
         U->>AS: log in and consent
-        AS-->>C: 302 callback; state is verified before the code is accepted
+        AS-->>C: 302 callback — state is verified before the code is accepted
     else --manual (remote or headless)
         C-->>U: print the authorization URL
         U->>AS: authorize on any device
@@ -244,7 +244,7 @@ sequenceDiagram
             C->>AS: poll for the token
         end
     end
-    C->>AS: token exchange (PKCE + resource; credentials POSTed, no redirects)
+    C->>AS: token exchange (PKCE + resource, credentials POSTed, no redirects)
     C->>V: write __oauth_state__ first, including the rotated refresh_token
     C->>V: then write __http_auth__, the access token
 ```

@@ -220,8 +220,8 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    DSX["下游"] --> A4["calls/&lt;day&gt;/frames-*.jsonl<br/>一个进程一个文件，默认关闭"]
-    GW["网关 / daemon"] --> A5["logs/gateway-&lt;client&gt;.log · logs/daemon.log"]
+    DSX["下游"] --> A4["calls/[day]/frames-*.jsonl<br/>一个进程一个文件，默认关闭"]
+    GW["网关 / daemon"] --> A5["logs/gateway-[client].log · logs/daemon.log"]
     GW --> A7["logs/events.jsonl<br/>封闭词表，默认开启"]
     GW --> A6["calls/YYYY-MM-DD/<br/>元数据始终有 · frames 按 server · 载荷加密"]
 ```

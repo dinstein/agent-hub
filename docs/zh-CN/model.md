@@ -10,9 +10,9 @@
 
 ```mermaid
 flowchart TD
-    S["<b>servers</b> — 所有已启用的 server，各自再减去它的工具白名单<br/><i>上限：存在的全部</i>"]
-    P["<b>profile</b> — 从中取的一个具名子集"]
-    C["<b>client</b> — 恰好绑定一个 profile"]
+    S["servers —— 所有已启用的 server，各自再减去它的工具白名单<br/>上限：存在的全部"]
+    P["profile —— 从中取的一个具名子集"]
+    C["client —— 恰好绑定一个 profile"]
     S --> P --> C
 ```
 
@@ -51,10 +51,10 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    G["<b>Global</b><br/>servers.json + governance.json"] --> M
-    P["<b>Profile</b><br/>profiles.json"] --> M
-    SS["<b>Session</b><br/>agent token 的 server 清单与 profile 钉选；<br/>运行期 overlay"] --> M
-    M{{"<b>scope.Merge</b><br/>纯函数，不做 I/O"}} --> E["<b>EffectiveScope</b><br/>可见 server → 可见工具<br/>+ discovery 模式、预算、Hash"]
+    G["Global<br/>servers.json + governance.json"] --> M
+    P["Profile<br/>profiles.json"] --> M
+    SS["Session<br/>agent token 的 server 清单与 profile 钉选，<br/>运行期 overlay"] --> M
+    M{{"scope.Merge<br/>纯函数，不做 I/O"}} --> E["EffectiveScope<br/>可见 server → 可见工具<br/>+ discovery 模式、预算、Hash"]
     CL["clients.json"] -. "决定哪个 profile 生效" .-> P
 ```
 

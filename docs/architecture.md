@@ -242,8 +242,8 @@ retrofitted.
 
 ```mermaid
 flowchart LR
-    DSX["downstream"] --> A4["calls/&lt;day&gt;/frames-*.jsonl<br/>one file per process, off by default"]
-    GW["gateway / daemon"] --> A5["logs/gateway-&lt;client&gt;.log · logs/daemon.log"]
+    DSX["downstream"] --> A4["calls/[day]/frames-*.jsonl<br/>one file per process, off by default"]
+    GW["gateway / daemon"] --> A5["logs/gateway-[client].log · logs/daemon.log"]
     GW --> A7["logs/events.jsonl<br/>closed vocabulary, on by default"]
     GW --> A6["calls/YYYY-MM-DD/<br/>metadata always · frames per server · payloads encrypted"]
 ```

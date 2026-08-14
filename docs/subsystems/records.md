@@ -10,7 +10,7 @@ incident take an hour.
 ```mermaid
 flowchart LR
     Q1["what HAPPENED to it"] --> E["logs/events.jsonl<br/>closed vocabulary, on by default"]
-    Q2["what the processes SAID"] --> L["logs/daemon.log<br/>logs/gateway-&lt;client&gt;.log"]
+    Q2["what the processes SAID"] --> L["logs/daemon.log<br/>logs/gateway-[client].log"]
     Q3["what a client CALLED"] --> C["calls/YYYY-MM-DD/<br/>metadata always, bodies with a key"]
     E --> J["internal/eventlog"]
     L --> P["internal/proclog (reader)"]

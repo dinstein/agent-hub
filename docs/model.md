@@ -11,9 +11,9 @@ while a call is in flight, and nothing inspects what a call carries.
 
 ```mermaid
 flowchart TD
-    S["<b>servers</b> — every enabled server, minus each one's tool allow list<br/><i>the maximum: everything that exists</i>"]
-    P["<b>profile</b> — a named subset of those servers and their tools"]
-    C["<b>client</b> — bound to exactly one profile"]
+    S["servers — every enabled server, minus each one's tool allow list<br/>the maximum: everything that exists"]
+    P["profile — a named subset of those servers and their tools"]
+    C["client — bound to exactly one profile"]
     S --> P --> C
 ```
 
@@ -56,10 +56,10 @@ allow-all.
 
 ```mermaid
 flowchart LR
-    G["<b>Global</b><br/>servers.json + governance.json"] --> M
-    P["<b>Profile</b><br/>profiles.json"] --> M
-    SS["<b>Session</b><br/>an agent token's server list and profile pin;<br/>a runtime overlay"] --> M
-    M{{"<b>scope.Merge</b><br/>pure, no I/O"}} --> E["<b>EffectiveScope</b><br/>visible servers → visible tools<br/>+ discovery mode, budgets, Hash"]
+    G["Global<br/>servers.json + governance.json"] --> M
+    P["Profile<br/>profiles.json"] --> M
+    SS["Session<br/>an agent token's server list and profile pin,<br/>a runtime overlay"] --> M
+    M{{"scope.Merge<br/>pure, no I/O"}} --> E["EffectiveScope<br/>visible servers → visible tools<br/>+ discovery mode, budgets, Hash"]
     CL["clients.json"] -. "picks which profile applies" .-> P
 ```
 
