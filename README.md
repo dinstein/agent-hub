@@ -154,10 +154,12 @@ The five above are the argument; this is the matrix.
 | File | Contents |
 |---|---|
 | [docs/guide.md](docs/guide.md) | **Using it** — server / profile / client, the everyday path, the decisions you actually have to make |
-| [docs/architecture.md](docs/architecture.md) | **Changing it** — process model, module map, what a call passes through, the two lines of defense |
+| [docs/architecture.md](docs/architecture.md) | **Changing it** — process model, package map, what a call passes through |
 | [docs/flows.md](docs/flows.md) | Sequence diagrams and failure branches for seven runtime flows |
 | [docs/subsystems/](docs/subsystems/) | Per-seam invariants and failure directions |
-| [docs/conventions.md](docs/conventions.md) | Frozen identifiers, dependency constraints, naming rules, every decision record |
+| [docs/model.md](docs/model.md) | What a client is allowed to reach, and who decided it |
+| [docs/conventions.md](docs/conventions.md) | Frozen identifiers, dependency constraints, naming rules |
+| [docs/decisions/](docs/decisions/) | One settled question per file, and what would reopen it |
 | [docs/status/windows.md](docs/status/windows.md) | Windows status: what is implemented, what is unverified, acceptance criteria |
 
 ## Platforms

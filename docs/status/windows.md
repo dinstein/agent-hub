@@ -1,5 +1,9 @@
 # Windows status
 
+> **Answers** what works on Windows today, what is only compiled, and what is missing.
+> **Not here** how the platform seam is built → [../subsystems/platform.md](../subsystems/platform.md).
+> **Kept true by** nothing automatic — this is a snapshot, and only a real machine can move it.
+
 > **Windows support has not been verified in a real environment.**
 > Every code path described here cross-compiles (CI runs `GOOS=windows go build ./...` and
 > `GOOS=windows go vet`) and has unit tests that execute on macOS/Linux through injection hooks, but

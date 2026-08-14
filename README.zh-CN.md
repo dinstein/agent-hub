@@ -148,7 +148,9 @@ mkdir -p ~/.claude/skills/agenthub && agenthub manual > ~/.claude/skills/agenthu
 | [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md) | **要改代码先看这个**——进程模型、模块地图、一次调用穿过什么、两道防线 |
 | [docs/flows.md](docs/flows.md) | 七个运行时流程的时序图与失败分支（英文） |
 | [docs/subsystems/](docs/subsystems/) | 每个接缝的不变量与失败方向（英文） |
-| [docs/conventions.md](docs/conventions.md) | 冻结标识符、依赖约束、命名规则、全部裁决记录（英文） |
+| [docs/zh-CN/model.md](docs/zh-CN/model.md) | 一个客户端能够到什么，以及这是谁决定的 |
+| [docs/conventions.md](docs/conventions.md) | 冻结标识符、依赖约束、命名规则（英文） |
+| [docs/decisions/](docs/decisions/) | 一个已定的问题一个文件，以及什么会重新打开它（英文） |
 | [docs/status/windows.md](docs/status/windows.md) | Windows 现状：已实现什么、哪些还未验证、验收标准（英文） |
 
 ## 平台
@@ -169,7 +171,7 @@ AgentHub **不收集任何数据**——没有遥测、没有崩溃上报、没�
 
 出站连接只有你的配置点了名的那些：`servers.json` 里的下游 server、这些 server 的 OAuth 授权服务器
 （仅在你执行 `agenthub auth login` 后），以及你显式给出的 endpoint。调用账本**只写本地磁盘**，
-版本更新交给你的包管理器——裁决记录见 [docs/conventions.md](docs/conventions.md) §7 第 6 项。
+版本更新交给你的包管理器——裁决记录见 [docs/decisions/0006-no-telemetry-and-no-update-checker.md](docs/decisions/0006-no-telemetry-and-no-update-checker.md)（英文）。
 
 ## 开发
 
@@ -182,7 +184,7 @@ make gui     # GUI 单独构建 —— 它不在默认构建里
 ```
 
 贡献规则——worktree 分支流程、commit 约定，以及 CI 强制的四条依赖方向约束——都在
-[AGENTS.md](AGENTS.md)（英文），其背后的裁决记录在 [docs/conventions.md](docs/conventions.md)。
+[AGENTS.md](AGENTS.md)（英文），其背后的裁决记录在 [docs/decisions/](docs/decisions/)（英文）。
 
 ## License
 
