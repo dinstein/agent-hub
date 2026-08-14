@@ -160,7 +160,7 @@ var knownSkillFields = []string{
 // about bytes on disk, that one is about trust. They are stored in separate
 // fields and neither transition implies the other.
 //
-// docs/modules/config.md listed six states; this package ships five. "blocked" and
+// docs/subsystems/skills.md listed six states; this package ships five. "blocked" and
 // "removed" are folded in: a target we may not write is StateConflict
 // (blocked is one of its causes) and a removed install has no receipt at
 // all, so it needs no state value.

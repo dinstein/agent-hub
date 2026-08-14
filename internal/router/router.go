@@ -14,7 +14,7 @@
 // determinism is contract, canonical.md §6).
 //
 // Besides downstream servers, a build may include host-served Providers
-// (the "skills" pseudo-server of docs/modules/config.md). They aggregate under the
+// (the "skills" pseudo-server of docs/subsystems/skills.md). They aggregate under the
 // same rules and are distinguished only by LookupProvider, so scope
 // projection, RouteOf provenance and the execute pipeline treat them as
 // ordinary servers.
@@ -39,7 +39,7 @@ import (
 )
 
 // Provider is a tool source the HOST serves itself, with no downstream
-// connection behind it: the "skills" pseudo-server of docs/modules/config.md.
+// connection behind it: the "skills" pseudo-server of docs/subsystems/skills.md.
 //
 // It aggregates exactly like a real server — same exposed-name rules, same
 // collision suffixes, same RouteOf provenance, same Catalog projection —
@@ -107,7 +107,7 @@ func Build(servers []*downstream.Server) (*Router, error) {
 	return BuildWith(servers, nil)
 }
 
-// BuildWith is Build plus host-served providers (docs/modules/config.md). Providers
+// BuildWith is Build plus host-served providers (docs/subsystems/skills.md). Providers
 // are appended AFTER the servers so a provider id colliding with a server
 // id is reported as the duplicate it is — the configured server wins,
 // deterministically, instead of the aggregation order deciding.
@@ -240,7 +240,7 @@ func (r *Router) Lookup(exposed string) (*downstream.Server, Route, bool) {
 }
 
 // LookupProvider resolves an exposed name to the host-served provider
-// behind it (docs/modules/config.md). ok is false for every downstream and every
+// behind it (docs/subsystems/skills.md). ok is false for every downstream and every
 // cache-only entry, so a caller cannot accidentally treat a real server's
 // tool as host-served.
 func (r *Router) LookupProvider(exposed string) (Provider, Route, bool) {

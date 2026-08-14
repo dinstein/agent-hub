@@ -734,7 +734,7 @@ func (a *App) newSkillVerifyCmd() *cobra.Command {
 // a deliberate answer. Two sentinels are in that state — ErrInvalidID (a
 // rejected --id is an argument, so exit 2) and ErrUnverifiable (the other arm
 // of the same fail-closed check as ErrTampered, so exit 6). Both are written
-// up with their reproduction in docs/modules/config.md, under the skills
+// up with their reproduction in docs/subsystems/skills.md, under the skills
 // integrity section; the exit table is frozen, so moving them is a decision
 // rather than a fix.
 func classifySkillsError(err error, id string) error {

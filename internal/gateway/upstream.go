@@ -438,7 +438,7 @@ func routable(rt *router.Router, name string) bool {
 func (g *gateway) execTool(ctx context.Context, req *mcp.Request, exposed string, args json.RawMessage) {
 	rt, ready, pending := g.catalog()
 
-	// Host-served providers (the skills face, docs/modules/config.md) resolve BEFORE
+	// Host-served providers (the skills face, docs/subsystems/skills.md) resolve BEFORE
 	// the readiness gate: they have no downstream to wait for, so making
 	// them busy while unrelated servers connect would be a lie. Everything
 	// after this point — gates, shaping, audit — is the same code path.

@@ -40,7 +40,7 @@ type Meta struct {
 // ParseSkillMD parses a SKILL.md.
 //
 // A file without frontmatter is valid: the whole file becomes Body and the
-// caller falls back to the directory name (docs/modules/config.md). An UNTERMINATED
+// caller falls back to the directory name (docs/subsystems/skills.md). An UNTERMINATED
 // frontmatter block is an error — a file that opens a fence and never closes
 // it is either truncated or hand-mangled, and guessing where the metadata
 // ends is how a whole document ends up in a description field.

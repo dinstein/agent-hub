@@ -13,7 +13,7 @@ import (
 )
 
 // MaxConfigSize is the largest client configuration agenthub will read
-// (docs/modules/config.md; the bound itself is inherited from toolport, per the
+// (docs/subsystems/clients.md; the bound itself is inherited from toolport, per the
 // reference-code policy in canonical.md §5). Anything larger is a
 // runaway file, not configuration; parsing it would burn memory on a path
 // the user cannot even see.

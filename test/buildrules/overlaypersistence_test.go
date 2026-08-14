@@ -28,7 +28,7 @@ var overlayOwningPackages = []string{"internal/scope", "internal/session"}
 // TestOverlayPackagesCarryNoSerializer keeps the structural half of "overlays
 // are never persisted to disk".
 //
-// docs/modules/config.md states the invariant absolutely, under internal/session's
+// docs/subsystems/scope.md states the invariant absolutely, under internal/session's
 // invariants: "Nowhere in this package serializes an overlay. Losing them on
 // daemon restart is the design intent — a 'resurrected runtime loosening' is a
 // security incident, not an availability improvement." AGENTS.md says the same
@@ -86,7 +86,7 @@ func TestOverlayPackagesCarryNoSerializer(t *testing.T) {
 				t.Errorf("%s imports %s, but this package holds a *scope.Overlay.\n"+
 					"An overlay is a runtime relaxation of a security scope: one that survives a "+
 					"restart is a narrowing the operator revoked, silently back in force "+
-					"(docs/modules/config.md, internal/session invariants).\n"+
+					"(docs/subsystems/scope.md, internal/session invariants).\n"+
 					"If the encoder is genuinely needed, move the type that needs serializing out "+
 					"of this package rather than making the overlay reachable from a marshaller.",
 					rel, m)

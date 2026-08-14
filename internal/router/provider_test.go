@@ -37,7 +37,7 @@ func provider(id string, names ...string) *fakeProvider {
 
 // TestProviderAggregatesLikeAServer: a provider is namespaced, ordered and
 // routable exactly like a downstream. That identity is what puts it under
-// the same scope projection and the same gate chain (docs/modules/config.md).
+// the same scope projection and the same gate chain (docs/subsystems/skills.md).
 func TestProviderAggregatesLikeAServer(t *testing.T) {
 	t.Parallel()
 	srv := startServer(t, "github", markedTool("create_issue", "gh"))

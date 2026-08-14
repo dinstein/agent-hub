@@ -76,7 +76,7 @@ func TestProviderExposesEnabledSkillsOnly(t *testing.T) {
 
 // TestProviderCallReturnsSkillDocument: the call returns SKILL.md plus the
 // manifest of files that are NOT delivered over this path (the honest
-// tiering of docs/modules/config.md).
+// tiering of docs/subsystems/skills.md).
 func TestProviderCallReturnsSkillDocument(t *testing.T) {
 	ctx := context.Background()
 	m, _ := testManager(t)

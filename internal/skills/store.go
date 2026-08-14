@@ -29,7 +29,7 @@ const (
 
 	// MarkerFileName proves an installed directory is ours. Its presence is
 	// the ONLY thing that lets Apply/Remove touch a directory
-	// (docs/modules/config.md: OwnedFile's frozen prefix, in directory form).
+	// (docs/subsystems/skills.md: OwnedFile's frozen prefix, in directory form).
 	MarkerFileName = ".agenthub-managed.json"
 )
 
@@ -44,7 +44,7 @@ const (
 	readRetries = 4
 
 	// keptVersions is how many content-addressed library versions per skill
-	// survive a prune (docs/modules/config.md: "gc keeps the 3 most recent versions"). Old versions
+	// survive a prune (docs/subsystems/skills.md: "gc keeps the 3 most recent versions"). Old versions
 	// are what a rollback and a drift diff read from.
 	keptVersions = 3
 )
@@ -445,7 +445,7 @@ func syncDir(dir string) error {
 }
 
 // backupFile copies path into the backup directory before agenthub edits a
-// file it does not own (docs/modules/config.md: central backup dir, clients.rs'
+// file it does not own (docs/subsystems/skills.md: central backup dir, clients.rs'
 // discipline). A missing source is not an error — there is nothing to lose.
 func (m *Manager) backupFile(clientID, path string) (string, error) {
 	data, err := os.ReadFile(path)

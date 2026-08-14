@@ -25,7 +25,7 @@ func TestOwnedDirRoundTrip(t *testing.T) {
 		t.Fatalf("installed at %s, want %s", rec.Path, dir)
 	}
 	if rec.Granularity != GranularityClient {
-		t.Errorf("granularity = %q, want %q (docs/modules/config.md)", rec.Granularity, GranularityClient)
+		t.Errorf("granularity = %q, want %q (docs/subsystems/skills.md)", rec.Granularity, GranularityClient)
 	}
 	if got := mustRead(t, filepath.Join(dir, SkillFileName)); !strings.Contains(got, "pdftotext") {
 		t.Errorf("SKILL.md not materialized: %q", got)

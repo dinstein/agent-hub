@@ -139,7 +139,7 @@ func (m *Manager) scanTree(src string) (*scanned, error) {
 // ContentScanner. A hit refuses the import outright rather than importing and
 // flagging, because an imported skill is one `sync` away from being
 // materialized into a client's directory, and SKILL.md is a first-class
-// prompt-injection carrier (docs/modules/config.md).
+// prompt-injection carrier (docs/subsystems/skills.md).
 //
 // NOTHING SETS THAT SCANNER TODAY. The injection scanner it was shaped for
 // went with the removed governance surface, so the nil check below is the

@@ -174,7 +174,7 @@ func DiscoveryFor(snap *registry.Snapshot, profileName string) (DiscoveryMode, L
 // Servers and Tools but NOT its Discovery. So the two routes to "this session
 // follows profile P" — a clients.json binding and an agent token's pin —
 // agree on every security field and disagree on the presentation mode, which
-// docs/modules/config.md otherwise describes as taken from the most specific
+// docs/subsystems/scope.md otherwise describes as taken from the most specific
 // layer with no carve-out. Whether a token should inherit a profile's
 // discovery mode is a product question and changing it changes what an HTTP
 // agent is served, so it is recorded rather than settled here; config.md's

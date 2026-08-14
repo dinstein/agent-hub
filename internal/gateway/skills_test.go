@@ -44,7 +44,7 @@ func seedSkill(t *testing.T, resolver *platform.Resolver, id, body string) strin
 }
 
 // TestSkillsOverMCPOffByDefault: the governance switch defaults OFF, so a
-// populated library adds nothing to the surface (docs/modules/config.md — a new
+// populated library adds nothing to the surface (docs/subsystems/skills.md — a new
 // supply channel of untrusted text is opted into, never inherited).
 func TestSkillsOverMCPOffByDefault(t *testing.T) {
 	t.Parallel()
@@ -121,7 +121,7 @@ func TestSkillsOverMCPExposesAndServes(t *testing.T) {
 
 // TestSkillsFaceIsAScopeSubject: the pseudo-server obeys the ordinary
 // three-layer scope chain. A profile that lists its servers explicitly and
-// omits "skills" hides the whole face — that IS the docs/modules/config.md
+// omits "skills" hides the whole face — that IS the docs/subsystems/skills.md
 // skillScope chain, expressed in the chain that already exists.
 func TestSkillsFaceIsAScopeSubject(t *testing.T) {
 	t.Parallel()

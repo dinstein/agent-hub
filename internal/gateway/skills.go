@@ -10,7 +10,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/skills"
 )
 
-// This file wires skills-over-MCP (docs/modules/config.md) into the gateway.
+// This file wires skills-over-MCP (docs/subsystems/skills.md) into the gateway.
 //
 // The design decision worth stating once: the skills face is a
 // router.Provider, NOT a second surface. Its tools are aggregated by the
@@ -24,7 +24,7 @@ import (
 //   - "skills" is an ordinary SCOPE SUBJECT. A profile or client layer that
 //     lists its servers explicitly hides the whole face (the layer is an
 //     intersection); one that stays silent leaves it visible. That is the
-//     docs/modules/config.md skillScope chain expressed in the chain that already
+//     docs/subsystems/skills.md skillScope chain expressed in the chain that already
 //     exists, instead of a parallel one.
 //   - NOTHING scans the skill text on the way out. This once read "the
 //     injection scanner runs over skill text ... this path does not get to opt

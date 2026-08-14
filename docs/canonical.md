@@ -554,16 +554,16 @@ ruling are one row, and **a number not listed here may not be cited** —
 
 | Cited as | What it ruled | Where the rule lives now |
 |---|---|---|
-| `#7`, `A.1 #7` | Two id shapes on purpose: the human `client:seq` for the CLI, a random token for the protocol — CLI ids are for typing, protocol ids are for not guessing | modules/config.md |
+| `#7`, `A.1 #7` | Two id shapes on purpose: the human `client:seq` for the CLI, a random token for the protocol — CLI ids are for typing, protocol ids are for not guessing | subsystems/scope.md |
 | `#18` | Lazy mode's `call_tool` may split into read/write/destructive **intent variants**, and compatibility mode stays byte-identical to the pre-variant surface | docs/model.md#how-the-surface-is-presented; modules/dataplane.md |
 | `#27` | **Determinism is the contract**: goldens pin the wire shape; fix the code, never the golden | §6 |
 | `#29` | Legacy HTTP+SSE is a **read-side** transport only, never offered on the exposure side | §5b |
 | `#32` | `internal/mcp` is standard-library only — one first-party protocol facade | §2 rule 2 |
 | `A.2 #9` | The manual paste loop, for providers that cannot reach a loopback redirect | modules/oauth.md |
 | `A.2 #10` | Refresh is serialized: daemon singleflight online, a file lock offline | modules/oauth.md |
-| `A.3 #1` | Cross-process shared state takes a **file lock** or an atomic rename, proven by an N-process acceptance test. Now governs the rate-limit counters, the registry and the credential vault | §6; subsystems/registry.md; modules/config.md |
+| `A.3 #1` | Cross-process shared state takes a **file lock** or an atomic rename, proven by an N-process acceptance test. Now governs the rate-limit counters, the registry and the credential vault | §6; subsystems/registry.md; subsystems/credentials.md |
 | `A.3 #2` | `kill -9` on the daemon: the stdio data plane is untouched and gateways re-register | §6; flows.md |
-| `A.3 #4` | A daemon restart makes the session overlay vanish on **both** sides. Retired by its own logic: a session now carries no scope of its own at all | modules/config.md |
+| `A.3 #4` | A daemon restart makes the session overlay vanish on **both** sides. Retired by its own logic: a session now carries no scope of its own at all | subsystems/scope.md |
 | `A.3 #5` | skills materialization is **client-granular**, never per-session | §4 |
 | `A.5 #23` | Windows is confined to a seam inside `internal/platform`; nothing outside it branches on the platform | §4; windows.md |
 | `A.5 #26` | The **composite vault key** `(serverID, scopeName)` from day one | §4 ("never retrofitted", item 1) |

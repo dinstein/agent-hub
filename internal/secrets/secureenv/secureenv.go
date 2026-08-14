@@ -14,7 +14,7 @@
 // allowlist below and the proxy redaction beside it describe what Filter
 // WOULD admit, not what a downstream currently gets; read them as a design
 // that is built and waiting, not as a filter in force.
-// docs/modules/config.md records the gap.
+// docs/subsystems/credentials.md records the gap.
 package secureenv
 
 import (

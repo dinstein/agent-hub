@@ -1,6 +1,6 @@
 // Package skills implements the skills subsystem: a two-layer model of a
 // library of skill packages and their materialized installations into AI
-// client directories (docs/modules/config.md).
+// client directories (docs/subsystems/skills.md).
 //
 // # Two layers
 //
@@ -17,7 +17,7 @@
 //     out of date, so every one of them must be verifiable and repairable —
 //     never trusted blind.
 //
-// # Honest tiering (docs/modules/config.md)
+// # Honest tiering (docs/subsystems/skills.md)
 //
 // FILE MATERIALIZATION REACHES CLIENT GRANULARITY, NOT SESSION GRANULARITY.
 // Once bytes are on disk every session of that client sees them; agenthub

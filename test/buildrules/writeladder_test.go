@@ -38,10 +38,9 @@ var (
 // writer does not end on a parent-directory fsync, unless it is listed above.
 //
 // The ladder is written down in two places — subsystems/registry.md and
-// modules/config.md both
-// spell out "temp file in the same directory → chmod 0600 → write → fsync →
-// rename → fsync the parent directory" — and implemented
-// twelve times, on purpose: registry, skills and their peers are forbidden
+// subsystems/credentials.md both spell out "temp file in the same directory →
+// chmod 0600 → write → fsync → rename → fsync the parent directory" — and
+// implemented twelve times, on purpose: registry, skills and their peers are forbidden
 // from importing one another's document model to share a syscall wrapper, so
 // each carries its own copy. Deliberate duplication is a reasonable answer to
 // that constraint. Deliberate duplication with nothing checking the copies

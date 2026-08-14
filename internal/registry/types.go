@@ -554,7 +554,7 @@ type GovernanceDoc struct {
 	// restrict further, never unlock what a broad rule forbids.
 	RateLimits []Doc[RateLimitRule] `json:"rateLimits,omitempty"`
 	// SkillsOverMCP exposes the enabled skill library as read-only MCP tools
-	// under the "skills" pseudo-server (docs/modules/config.md). Default OFF: it adds
+	// under the "skills" pseudo-server (docs/subsystems/skills.md). Default OFF: it adds
 	// a new supply channel for untrusted text into the model's context, so it
 	// is opted INTO, never inherited by an upgrade. Once on, the pseudo-server
 	// is an ordinary scope subject — a profile or client layer that lists its

@@ -1,6 +1,6 @@
 # Module documentation
 
-Four documents, one per layer — the foundation layer has moved to
+Three documents, one per layer — the foundation layer has moved to
 [../subsystems/](../subsystems/) and the rest follow. Each opens with how that layer collaborates as a whole, then walks
 through the packages one by one:
 **one-line responsibility → key types and entry points → invariants and failure directions**.
@@ -17,7 +17,6 @@ incident.
 
 | File | Packages covered |
 |---|---|
-| [config.md](config.md) | `scope`, `session`, `event`, `secrets` (+ `secureenv`), `clients`, `skills` |
 | [dataplane.md](dataplane.md) | `downstream`, `mrtr`, `router`, `pipeline`, `gateway`, `discovery` (+ `toolsig`), `shaping` (+ `toonenc`), `ratelimit` |
 | [security.md](security.md) | `guard` (`spawnguard`/`netguard`), `oauthflow` |
 | [controlplane.md](controlplane.md) | `api`, `ctlapi`, `confops`, `catalog`, `daemon`, `httpbridge`, `cli` (+ `output`), the two `cmd/` binaries, `testutil/fakemcp`, `depguardtest`, `test/*` |

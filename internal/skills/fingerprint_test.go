@@ -54,7 +54,7 @@ func TestFingerprintOrderIndependent(t *testing.T) {
 }
 
 // TestFingerprintCoversMetadata: a description swap with identical files is
-// a real change (the prompt-injection vector of docs/modules/config.md) and must
+// a real change (the prompt-injection vector of docs/subsystems/skills.md) and must
 // move the fingerprint even though ContentHash stays put.
 func TestFingerprintCoversMetadata(t *testing.T) {
 	a := snap()

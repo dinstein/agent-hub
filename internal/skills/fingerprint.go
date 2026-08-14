@@ -30,7 +30,7 @@ const HashSchemaVersion = "v1"
 // package; Name/Description/Kind are included because they are what a
 // client's model actually reads when deciding to invoke the skill — a
 // description swap with identical files IS a meaningful change (and is the
-// classic prompt-injection vector, docs/modules/config.md).
+// classic prompt-injection vector, docs/subsystems/skills.md).
 //
 // Deliberately absent: Version and timestamps. A version bump with
 // identical content is not a content change, and including timestamps would

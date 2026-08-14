@@ -16,7 +16,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/mcp"
 )
 
-// This file is the skills-over-MCP supply face (docs/modules/config.md, the 5.3
+// This file is the skills-over-MCP supply face (docs/subsystems/skills.md, the 5.3
 // placeholder): the enabled library exposed to an upstream agent as
 // READ-ONLY MCP tools, one per skill, returning that skill's SKILL.md.
 //
@@ -28,7 +28,7 @@ import (
 // Three properties are load-bearing and are why this type is a thin
 // projection rather than its own subsystem:
 //
-//  1. TOOL SHAPE, NOT RESOURCE SHAPE — for now. docs/modules/config.md prefers MCP
+//  1. TOOL SHAPE, NOT RESOURCE SHAPE — for now. docs/subsystems/skills.md prefers MCP
 //     resources; the gateway exposes no resources face yet (its upstream
 //     surface is tools-only, gateway doc), and inventing one here would put
 //     a protocol surface in a subsystem package. Tools are the honest
@@ -225,7 +225,7 @@ func describe(sk Skill) string {
 }
 
 // Content is one skill's document as served over MCP: the SKILL.md body
-// verbatim plus the bundled-file manifest (docs/modules/config.md read_skill).
+// verbatim plus the bundled-file manifest (docs/subsystems/skills.md read_skill).
 type Content struct {
 	SkillID string
 	Text    string

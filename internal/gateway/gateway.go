@@ -275,7 +275,7 @@ type gateway struct {
 	// connections stay in g.servers: derivation is an addition to the
 	// connection plane, never a replacement for it.
 	pool *downstream.Pool
-	// skills is the skills-over-MCP supply face (docs/modules/config.md), nil when
+	// skills is the skills-over-MCP supply face (docs/subsystems/skills.md), nil when
 	// governance leaves the switch off. It is a router.Provider: its tools
 	// aggregate, route, scope and execute exactly like a downstream's.
 	skills *skills.Provider

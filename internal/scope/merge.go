@@ -82,7 +82,7 @@ func Converge(layers []ScopeLayer, cat router.Catalog) ([]Step, error) {
 //
 // Merge rules — the complete set, not an excerpt of one kept elsewhere.
 // docs/model.md states them in prose and says why each field falls
-// the way it does; docs/modules/config.md's internal/scope section carries
+// the way it does; docs/subsystems/scope.md's internal/scope section carries
 // the invariants around them. There is no table and no fuller list to go
 // looking for; this is it.
 //

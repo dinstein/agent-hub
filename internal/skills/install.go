@@ -185,7 +185,7 @@ func (m *Manager) probeUnmanaged(sk *Skill, t TargetDef, container, path string)
 	}
 }
 
-// blockedBy reports a shadowing file in the container (docs/modules/config.md:
+// blockedBy reports a shadowing file in the container (docs/subsystems/skills.md:
 // the AGENTS.override.md lesson — a file the client prefers makes our write
 // invisible, and an invisible write with a healthy receipt is a lie).
 func blockedBy(t TargetDef, container string) (ApplyState, string, bool) {

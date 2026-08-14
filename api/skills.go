@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// ApplyState values for one skill installation (docs/modules/config.md). A frontend
+// ApplyState values for one skill installation (docs/subsystems/skills.md). A frontend
 // renders them verbatim; it never re-derives state from paths or hashes.
 const (
 	// ApplyStateApplied: the installed copy matches the library skill.

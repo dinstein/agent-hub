@@ -20,7 +20,7 @@ const (
 	// bytes on disk match the index).
 	LibraryOK LibraryState = "ok"
 	// LibraryTampered: the copy no longer matches its pin. Fail-closed —
-	// install and update refuse to propagate it (docs/modules/config.md).
+	// install and update refuse to propagate it (docs/subsystems/skills.md).
 	LibraryTampered LibraryState = "tampered"
 	// LibraryUnpinned: no baseline exists (a pre-pin entry). Not an error,
 	// but not a guarantee either.
@@ -47,7 +47,7 @@ type SkillView struct {
 	PinnedFingerprint string        `json:"pinnedFingerprint,omitempty"`
 	Installs          []InstallView `json:"installs"`
 	// Granularity is always GranularityClient — file materialization
-	// cannot reach per-session precision (package doc, docs/modules/config.md).
+	// cannot reach per-session precision (package doc, docs/subsystems/skills.md).
 	Granularity string `json:"granularity"`
 }
 
@@ -522,7 +522,7 @@ type SyncResult struct {
 	Changed bool `json:"changed"`
 	// Granularity is always GranularityClient. Sync CANNOT give a session
 	// its own skill set — the bytes are shared by every session of this
-	// client (docs/modules/config.md, A.3 #5).
+	// client (docs/subsystems/skills.md, A.3 #5).
 	Granularity string `json:"granularity"`
 }
 
@@ -821,7 +821,7 @@ type VerifyRequest struct {
 }
 
 // SkillVerification is one library entry's full three-way comparison:
-// upstream provenance, library copy, materialized copies (docs/modules/config.md).
+// upstream provenance, library copy, materialized copies (docs/subsystems/skills.md).
 type SkillVerification struct {
 	SkillID string       `json:"skillId"`
 	Library LibraryState `json:"library"`
@@ -957,7 +957,7 @@ func (m *Manager) verifyLibrary(st *state, sk Skill) (LibraryState, string, stri
 }
 
 // pruneVersions keeps the current content-addressed version plus the most
-// recent keptVersions-1 older ones (docs/modules/config.md). Old versions are what
+// recent keptVersions-1 older ones (docs/subsystems/skills.md). Old versions are what
 // a rollback and a drift diff read from, so pruning to exactly one would
 // save space by deleting the evidence.
 func (m *Manager) pruneVersions(id, keep string) error {

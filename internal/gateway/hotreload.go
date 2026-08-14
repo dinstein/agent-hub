@@ -111,7 +111,7 @@ func (g *gateway) onRegistryChange(kind registry.DocKind) {
 		// a rule set that no longer parses keeps the previous one (the
 		// runtime half of the failure direction documented there).
 		g.syncRateLimits()
-		// The skills face is governance-gated (docs/modules/config.md). A flip of the
+		// The skills face is governance-gated (docs/subsystems/skills.md). A flip of the
 		// switch changes the CATALOG, so it must rebuild — a scope refresh
 		// alone would leave the face listed (or missing) until the next
 		// downstream event.

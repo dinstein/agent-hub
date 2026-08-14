@@ -24,7 +24,7 @@ const (
 // skills from, and how agenthub is allowed to write there.
 //
 // This is the skills counterpart of internal/clients' Format table — same
-// library, different table (docs/modules/config.md). Adding a client is a row,
+// library, different table (docs/subsystems/skills.md). Adding a client is a row,
 // never a new code path.
 type TargetDef struct {
 	// ClientID matches the client identifier used everywhere else
@@ -52,7 +52,7 @@ type TargetDef struct {
 	// sentinel-block targets.
 	SentinelFile string
 	// CharCap bounds the WHOLE rendered file, not just our block (the
-	// Windsurf 6000-character lesson, docs/modules/config.md: clients truncate the
+	// Windsurf 6000-character lesson, docs/subsystems/skills.md: clients truncate the
 	// file, so a per-block budget measures the wrong thing). Zero means
 	// uncapped. Exceeding it is a Conflict: silently writing a file the
 	// client will truncate produces a skill that is present and broken,
