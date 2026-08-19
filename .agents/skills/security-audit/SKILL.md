@@ -115,9 +115,10 @@ fix when both engines report the same non-bug:
   `test/buildrules` only proves the three declared lists agree with each other, never that a
   newly-landed path joined them.
 - Read the [docs/subsystems/](../../../docs/subsystems/) files covering the shard first — they are cut by
-  plane, so a trust-boundary shard usually spans more than one, and `security.md` is always among
-  them: it holds what earlier sweeps raised, declined, and closed. Several things here look redundant
-  and are load bearing; those files are where the reason was written down.
+  plane, so a trust-boundary shard usually spans more than one. What earlier sweeps raised, declined
+  and closed is recorded **beside the invariant it is about**, in the file that owns it, not gathered
+  anywhere central — `downstream.md`'s contested cap fallback is the shape to expect. Several things
+  here look redundant and are load bearing; those files are where the reason was written down.
 
 ## 3. Report and stop
 
