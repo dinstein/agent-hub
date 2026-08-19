@@ -49,7 +49,7 @@ var (
 //
 // WHAT IT DOES NOT CHECK. Whether the row still describes the ruling correctly,
 // or whether the document it points at still holds the rule. Both are review
-// questions — the same limit TestCanonicalCitationsResolve documents, for the
+// questions — the same limit TestDocReferencesResolve documents, for the
 // same reason.
 //
 // It deliberately does NOT fail on a registered row that nobody cites. Rows

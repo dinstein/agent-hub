@@ -11,11 +11,12 @@ import (
 // docs/subsystems/records.md promises, and the one that was missing.
 //
 // Adding a kind means editing the constant, allKinds, and the published
-// table, and then writing it somewhere. Its neighbours grade the constant
-// against the table (TestEveryEventKindIsDocumented) and against the emit
-// sites (TestEveryEventKindHasAWriter). Both parse `KindX Kind = "wire"`
-// declaration lines; neither reads allKinds, so the one edit nothing graded
-// was the set that decides what a selector may name.
+// table, and then writing it somewhere. The table needs no check of its own —
+// `make docs-gen` renders it FROM the constant — and the neighbour grades the
+// constant against the emit sites (TestEveryEventKindHasAWriter). Both that
+// test and the generator parse `KindX Kind = "wire"` declaration lines;
+// neither reads allKinds, so the one edit nothing graded was the set that
+// decides what a selector may name.
 //
 // The gap fails in the direction the vocabulary exists to prevent, and worse
 // than the case next door. A kind absent from allKinds is still declared,

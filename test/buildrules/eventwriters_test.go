@@ -10,8 +10,9 @@ import (
 
 // TestEveryEventKindHasAWriter is the check the vocabulary was missing.
 //
-// TestEveryEventKindIsDocumented next door proves the constant, the closed
-// set and the published table agree. All three can agree perfectly about a
+// The constant, the closed set and the published table cannot disagree: the
+// table is generated from the first two by `make docs-gen`, which `make ci`
+// re-checks. All three can agree perfectly about a
 // kind NOTHING EVER WRITES, and seven of them did: `secrets_missing`,
 // `scope_changed`, `ctl_socket_lost` and four others were declared,
 // documented and guarded while no code path emitted one.
