@@ -370,13 +370,15 @@ func UpdateServer(ctx context.Context, st *registry.Store, spec ServerSpec, pre 
 // "Everything" is the point. An earlier version deleted the entry alone and
 // left the rest, on the reasoning that a dangling reference resolves to
 // nothing and is therefore fail-closed. That is true of the REFERENCES and
-// false of the STATE: because the vault, the pins and the approval records
-// are all keyed by server id, re-adding that id later silently revived
-// credentials, integrity baselines and remember-forever grants earned by a
-// different server. A stale reference is inert; a stale grant is a live
-// entitlement. References are now rewritten too — not because they were
-// dangerous, but because leaving them made "removed" mean two different
-// things depending on where you looked.
+// false of the STATE: the stores of the day — the vault, the integrity pins,
+// the approval records — were each keyed by server id, so re-adding that id
+// later silently revived credentials and grants earned by a different server.
+// A stale reference is inert; a stale grant is a live entitlement. Most of
+// those stores went with the governance surface and only the tool cache is
+// left (see StateForgetter), but the rule outlived them, which is why that
+// interface is still plural. References are now rewritten too — not because
+// they were dangerous, but because leaving them made "removed" mean two
+// different things depending on where you looked.
 //
 // Rewriting references is safe in one direction only, and every rewrite is
 // checked against it: Profile.Servers is a three-state ALLOW list (nil = all,
@@ -386,9 +388,15 @@ func UpdateServer(ctx context.Context, st *registry.Store, spec ServerSpec, pre 
 // carries exclusion semantics today; if one is ever added it must NOT be
 // rewritten here.
 //
-// Deliberately kept: the audit, security and per-server trace logs. A log
-// that forgot deleted servers would be worthless as evidence, and the removal
-// itself is recorded in it.
+// Deliberately kept: the event log and the call ledger, the two records that
+// outlive a server. One that forgot deleted servers would be worthless as
+// evidence of what the server did while it was here.
+//
+// Neither records the REMOVAL. There is no governance-write trail in this
+// tree — no audit or security log, and the event vocabulary is closed over
+// connection lifecycle — so nothing writes down who deleted this server or
+// when. Said plainly because the comment here once claimed the opposite, and
+// a claimed control reads exactly like a real one.
 //
 // Failure direction: the registry transaction is committed FIRST, then the
 // out-of-registry cleanups run and report failures as WARNINGS, never as
