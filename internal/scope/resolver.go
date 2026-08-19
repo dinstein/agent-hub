@@ -107,9 +107,10 @@ func NewCachedResolver(src Sources) *CachedResolver {
 }
 
 // Resolve returns the session's effective scope, computing and caching it
-// when the (generation, root) tuple has moved. Concurrent
-// resolves of the same key may compute twice; both results are identical
-// values (Merge is pure) so last-store-wins is harmless.
+// when the (clientID, generation) tuple has moved — the root is deliberately
+// not part of it, for the reason CachedResolver's own comment gives.
+// Concurrent resolves of the same key may compute twice; both results are
+// identical values (Merge is pure) so last-store-wins is harmless.
 func (r *CachedResolver) Resolve(ctx context.Context, key SessionKey) (*EffectiveScope, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

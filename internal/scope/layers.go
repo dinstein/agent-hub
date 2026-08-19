@@ -177,8 +177,7 @@ func DiscoveryFor(snap *registry.Snapshot, profileName string) (DiscoveryMode, L
 // docs/subsystems/scope.md otherwise describes as taken from the most specific
 // layer with no carve-out. Whether a token should inherit a profile's
 // discovery mode is a product question and changing it changes what an HTTP
-// agent is served, so it is recorded rather than settled here; config.md's
-// internal/scope section carries the item.
+// agent is served, so it is recorded rather than settled here.
 func PinnedProfileLayer(snap *registry.Snapshot, name string) (ScopeLayer, bool) {
 	origin := "profiles.json#" + name
 	if snap != nil {

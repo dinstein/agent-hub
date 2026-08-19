@@ -4,9 +4,10 @@
 //
 // Merge is a pure function: same inputs always produce the same output and
 // inputs are never mutated — the stdio gateway and the daemon call the same
-// implementation (docs/architecture.md#the-processes). Security fields merge monotonically
-// tighter (intersection / union / boolean OR); experience fields are
-// most-specific-wins (docs/model.md).
+// implementation (docs/architecture.md#the-processes). Security fields merge
+// monotonically tighter, and INTERSECTION is the only operation that does it:
+// server visibility and a tool Allow both intersect, so no layer can widen.
+// Experience fields are most-specific-wins (docs/model.md).
 package scope
 
 import (
