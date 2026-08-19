@@ -61,18 +61,14 @@ func TestDocReferencesResolve(t *testing.T) {
 					continue
 				}
 				doc, anchor := group(line, m, 1), group(line, m, 2)
-				// Inside docs/, a bare `guide.md#x` is relative to the citing
-				// file; `../model.md#x` is spelled with a prefix the pattern
-				// does not capture, so only same-directory links are resolved
-				// here. Anything under docs/ that names its own directory is
-				// checked; the rest is left to the docs/-prefixed spelling
-				// that code comments use.
-				// A link inside docs/ is relative to the citing file:
-				// `../model.md#x` from docs/subsystems/ is docs/model.md#x. A
-				// link LABEL is not — `[architecture.md#x](../architecture.md#x)`
-				// spells the same citation twice, once without the prefix — so
-				// a path that does not resolve relatively is retried against
-				// docs/ before it is reported.
+				// Inside docs/ a citation is spelled two ways, and both
+				// have to resolve. A link is relative to the citing file —
+				// `../model.md#x` from docs/subsystems/ is docs/model.md#x —
+				// so that spelling is tried first. Prose in the same files
+				// also writes the absolute `docs/conventions.md#x`, whose
+				// docs/ prefix the pattern does not capture; relative to
+				// docs/status/ that would be status/conventions.md, so it
+				// resolves only on the retry against docs/ itself.
 				candidates := []string{filepath.ToSlash(filepath.Clean(doc))}
 				if inDocs {
 					fromHere := filepath.ToSlash(strings.TrimPrefix(
