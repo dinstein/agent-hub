@@ -300,7 +300,7 @@ The sink is settable for the same reason. Failure direction is **fail-open**: no
 a failed write all degrade to less tracing and never to a failed call. The switch itself goes the other
 way, off unless the registry says so, because a frame's body needs the evidence key.
 
-## Current wiring status
+## Current assembly status
 
 `internal/gateway` wires `Log`, `Dial`, `ConnectTimeout`, `Secrets`, `AuthFor`, `FramesFor`, `Events` and
 `ClientID`, and `specsFromSnapshot` translates through `SpecFromEntry`, which accepts every transport.

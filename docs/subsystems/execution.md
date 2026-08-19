@@ -296,7 +296,7 @@ writing them, because it runs under the lock the whole re-dial plane serializes 
 whether it woke anything, and the **false** case is why it reports at all: an announcement for a server
 with no recorded failure wakes nothing, and unexplained that reads as a lost announcement.
 
-### Current wiring status
+### Current assembly status
 
 In `pipeline.Options` the gateway sets only `Scope` and `ResultShaper` — that is the whole surface. Rate
 limiting is wired, but not through `pipeline.Options`: quotas are an admission wrapper around

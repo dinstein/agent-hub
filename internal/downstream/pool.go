@@ -466,10 +466,11 @@ func (p *Pool) runSweeper(interval time.Duration) {
 // It has no non-test caller today. `server ls`, the GUI and doctor are where
 // it was meant to surface and none of them reach it, so this type describes a
 // capability that exists at the pool layer and is not switched on in the
-// assembled product — the same distinction docs/subsystems/downstream.md's
-// assembly-status appendix draws for shaping's FileStore and discovery's
-// intent variants, and the reason that list is written down rather than
-// assumed. Say so here rather than naming consumers as though they were
+// assembled product — the same distinction each subsystem file's "current
+// assembly status" draws for its own package: shaping's FileStore in
+// docs/subsystems/shaping.md, discovery's intent variants in
+// docs/subsystems/execution.md. There is no central list to consult, which is
+// the reason each one is written down where the code is rather than assumed. Say so here rather than naming consumers as though they were
 // wired: a comment that overstates what is switched on is how the pool's
 // ordering guarantee came to be described as CLI contract with no CLI on the
 // other end of it.
