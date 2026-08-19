@@ -681,6 +681,11 @@ func checkContainerFlag(key, val string) error {
 
 // bindSource extracts the host source of a -v/--volume spec. Anonymous
 // volumes ("/data") and named volumes ("cache:/data") are not host binds.
+//
+// Failure direction: allow, matching this layer's shape checks. A spec it
+// cannot read as a host bind — no colon, an empty source, or a source that
+// is not rooted at /, . or ~ — returns false, and its caller then runs no
+// sensitivity check on it at all.
 func bindSource(spec string) (string, bool) {
 	src, _, ok := strings.Cut(spec, ":")
 	if !ok || src == "" {
@@ -696,6 +701,13 @@ func bindSource(spec string) (string, bool) {
 // the root itself, system configuration roots, the container runtime socket,
 // or anything under /proc and /sys. Subdirectories of e.g. /etc are allowed —
 // the guard targets whole-tree exposure, not every conceivable secret.
+//
+// Failure direction: allow, matching this layer's shape checks. The list it
+// matches against is the whole rule, so a path it does not recognise returns
+// false and the bind is permitted. That is the right direction here because
+// this layer is anti-smuggling and not a sandbox (docs/subsystems/guard.md):
+// it grades the shape of a command the operator already configured, and the
+// isolation argument rests on runtime: docker, which fails closed.
 func sensitiveHostPath(p string) bool {
 	c := path.Clean(p)
 	switch c {
