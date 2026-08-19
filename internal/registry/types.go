@@ -524,7 +524,7 @@ type GovernanceDoc struct {
 	// never carries the resolved value into discovery.Options, so setting
 	// it changes nothing today. `internal/discovery` implements and tests
 	// the behaviour; only the assembly is missing (docs/model.md#how-the-surface-is-presented
-	// and the current assembly status in docs/subsystems/execution.md).
+	// and docs/subsystems/execution.md#current-assembly-status).
 	IntentVariants *bool `json:"intentVariants,omitempty"`
 	// RateLimits is the cooperative call quota rule set (internal/ratelimit).
 	// Absent = no quotas at all; the package is opt-in like every other M2

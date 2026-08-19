@@ -14,7 +14,7 @@ import (
 // `result_format` is the name reserved for it, not a field of GovernanceDoc,
 // and nothing calls ParseFormat. Every delivery therefore runs Reformat with
 // the zero Format and gets its input back. Recorded here as well as in
-// docs/subsystems/shaping.md's current assembly status, because the gap is one
+// docs/subsystems/shaping.md#current-assembly-status, because the gap is one
 // line above the function that would close it.
 //
 // The default is and stays JSON. TOON is a display projection with no

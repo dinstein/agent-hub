@@ -43,9 +43,9 @@ git log --since="2 weeks ago" --name-only --pretty=format: | sort | uniq -c | so
 ```
 
 Prefer, in order: **what changed recently** (a simplification is still cheap and the docs are most
-likely left behind); **what carries a recorded gap** (`grep -rn "current assembly status"
-docs/subsystems/`); then what nothing has touched in months — least likely to conflict, also least
-likely to matter.
+likely left behind); **what carries a recorded gap** (`grep -rn "Current assembly status"
+docs/subsystems/` — one heading, spelled the same in every file, so this finds all of them); then what
+nothing has touched in months — least likely to conflict, also least likely to matter.
 
 ```bash
 git worktree add ../agent-hub-tidy-<slice> -b tidy-<slice> origin/main

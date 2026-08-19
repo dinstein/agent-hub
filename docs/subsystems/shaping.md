@@ -110,7 +110,9 @@ return the input verbatim. Mangling a tool result to save tokens is far worse th
 **This package reports only byte counts.** It has no notion of tokens; the ledger that once converted
 bytes to tokens was removed, and nothing replaced it.
 
-## Current assembly status: two unwired switches
+## Current assembly status
+
+Two switches exist with nothing to set them.
 
 - **`fetch_result`'s `limit` parameter is accepted and has no effect.** The field is in the frozen schema
   and `handleFetchResult` explicitly does not honour it — page size comes from the shaping budget of page

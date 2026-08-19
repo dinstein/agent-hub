@@ -95,9 +95,9 @@ It must stay idempotent — it is applied repeatedly to output it has already no
 `FromRegistry` pure. Unset returns `""`; an unresolvable name goes through the same dangling-reference
 path as a named binding.
 
-### Current assembly status: a pinned profile contributes no `Discovery`
+### Current assembly status
 
-There are two routes to "this session follows profile P" — a `clients.json` binding, which reaches
+**A pinned profile contributes no `Discovery`.** There are two routes to "this session follows profile P" — a `clients.json` binding, which reaches
 `profileLayer`, and an agent token's `Profile` pin, which reaches `PinnedProfileLayer`. Only the first
 copies the profile's `Discovery` onto the layer, so an HTTP credential pinned to a profile whose mode is
 `lazy` is served in the global mode instead, while a client bound to that same profile is not. Every
