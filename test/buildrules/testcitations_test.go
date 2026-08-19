@@ -1,6 +1,7 @@
 package buildrules
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -10,11 +11,27 @@ var (
 	// testDecl matches a top-level test, fuzz or benchmark declaration.
 	testDecl = regexp.MustCompile(`(?m)^func ((?:Test|Fuzz|Benchmark)[A-Za-z0-9_]*)\s*\(`)
 	// liveTestCitation matches a comment naming a test AS THE THING THAT
-	// CURRENTLY GUARANTEES SOMETHING: a name followed immediately by a verb
-	// in the present tense. See the discrimination note on the test below —
-	// this shape, and not a bare mention, is what makes the check clean.
+	// CURRENTLY GUARANTEES SOMETHING: a name followed by a verb in the
+	// present tense. See the discrimination note on the test below — this
+	// shape, and not a bare mention, is what makes the check clean.
+	//
+	// The verb may sit up to three words after the name, because prose puts
+	// them there: "TestEveryEventKindIsDocumented next door proves ..." cited
+	// a test that code generation had replaced, and an adjacency rule read it
+	// as prose. The gap is bounded and lazy so a match cannot wander into the
+	// next sentence, and PAST tense stays excluded — "the test was called
+	// TestX and asserted ..." is a historical record this must keep letting
+	// through, and two of them are load-bearing prose in this package.
+	//
+	// Writing that example is why this file now skips itself below: a
+	// sentence describing the shape IS the shape. The gap is bounded and lazy so the
+	// match cannot wander into the next sentence, and PAST tense stays
+	// excluded — "the test was called TestX and asserted ..." is a historical
+	// record this must keep letting through, and two of them are load-bearing
+	// prose in this very package.
 	liveTestCitation = regexp.MustCompile(
-		`\b((?:Test|Fuzz|Benchmark)[A-Z][A-Za-z0-9_]*) (?:pins|asserts|proves|covers|checks|fails|walks|drives)\b`)
+		`\b((?:Test|Fuzz|Benchmark)[A-Z][A-Za-z0-9_]*)(?:\s+\S+){0,3}?\s+` +
+			`(?:pins|asserts|proves|covers|checks|fails|walks|drives|documents)\b`)
 )
 
 // TestCitedTestsExist fails when a comment credits a guarantee to a test that
@@ -68,6 +85,9 @@ func TestCitedTestsExist(t *testing.T) {
 	}
 
 	for rel, src := range sources {
+		if strings.HasSuffix(rel, filepath.Join("test", "buildrules", "testcitations_test.go")) {
+			continue // the examples above are descriptions of citations, not citations
+		}
 		for _, block := range commentBlocks(src) {
 			for _, m := range liveTestCitation.FindAllStringSubmatch(block.text, -1) {
 				if declared[m[1]] {
