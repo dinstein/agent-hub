@@ -285,6 +285,9 @@ func (g *gateway) specByIDLocked(id string) (downstream.Spec, bool) {
 // under the old definition — for the container block that would mean an
 // operator changing the image, the mounts or the network and getting the
 // previous isolation until the next restart.
+//
+// specequal_fields_test.go holds that rule to the struct, field by field,
+// and carries the reason for each field the comparison skips on purpose.
 func specEqual(a, b downstream.Spec) bool {
 	if a.ID != b.ID || a.Kind != b.Kind || a.Command != b.Command ||
 		a.Cwd != b.Cwd || a.URL != b.URL || a.Derive != b.Derive ||

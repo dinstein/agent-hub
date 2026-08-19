@@ -228,9 +228,9 @@ markers once carried a date already past in the field a sweep looks at to decide
 
 ## The hot-reload path
 
-Two things not to get wrong. The path is
+Three things not to get wrong. The path is
 [flows.md#config-hot-reload](flows.md#config-hot-reload) and the mechanism is
-[subsystems/registry.md](subsystems/registry.md); these two rulings are what the mechanism exists to
+[subsystems/registry.md](subsystems/registry.md); these rulings are what the mechanism exists to
 satisfy.
 
 1. **Self-write suppression.** When a process writes `profiles.json` itself, fsnotify reports the event
@@ -240,6 +240,10 @@ satisfy.
    event's `Rev`". The change notification carries no snapshot, so the reader re-reads the file itself; an
    equality test leaves rapid successive writes stuck on an old version, waiting for an event that will
    never come again.
+3. **A reload may only keep a connection whose definition did not move**, which makes `specEqual` and
+   `dockerEqual` complete-or-nothing: a field they do not compare is a field whose edit leaves the old
+   connection running under the old definition. `internal/gateway`'s `specequal_fields_test.go` checks
+   both against their structs field by field, and records why each skipped field cannot reach them.
 
 ## Collaboration conventions
 
