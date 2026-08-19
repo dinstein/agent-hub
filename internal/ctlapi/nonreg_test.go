@@ -19,7 +19,7 @@ import (
 
 // Shared scaffolding for the non-registry endpoint tests (nonreg*.go).
 // Every fake here is deliberately dumb: these tests assert the HTTP contract
-// — statuses, wire shapes, audit lines and, above all, that no credential
+// — statuses, wire shapes, ledger lines and, above all, that no credential
 // value comes back out — not the behaviour of the collaborators, which have
 // their own suites.
 
