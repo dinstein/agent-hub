@@ -11,7 +11,7 @@
 ```mermaid
 flowchart TD
     S["servers —— 所有已启用的 server，各自再减去它的工具白名单<br/>上限：存在的全部"]
-    P["profile —— 从中取的一个具名子集"]
+    P["profile —— 从这些 server 及其工具中取的一个具名子集"]
     C["client —— 恰好绑定一个 profile"]
     S --> P --> C
 ```
