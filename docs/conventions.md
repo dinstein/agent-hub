@@ -9,7 +9,9 @@ architectural convention. It carries nothing you can read off the tree.
 
 **Sections are cited by anchor, not by number.** A heading's slug travels with it when the file is
 reordered, and renaming one breaks the citation loudly — `TestDocReferencesResolve` resolves every
-`docs/*.md#anchor` in the tree.
+`docs/*.md#anchor` in the tree, and refuses a `§N` aimed at a document that does not number its
+headings. The three that still number are `guide.md`, `status/*` and `subsystems/gui.md`; there the
+numbers are an interface other files cite, and renumbering silently redirects them.
 
 ## Frozen identifiers
 

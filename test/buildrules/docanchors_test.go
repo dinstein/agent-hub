@@ -124,6 +124,18 @@ func TestDocReferencesResolve(t *testing.T) {
 				checked++
 				switch {
 				case found:
+					// "Sections are cited by anchor, not by number"
+					// (docs/conventions.md). A §N survives only in the
+					// documents that still number their headings; aimed at
+					// one that stopped, it points at nothing and nothing
+					// said so. Six of these outlived the split that retired
+					// canonical.md.
+					if sectionSign.MatchString(line[m[1]:]) && !numbered(t, root, resolved) {
+						t.Errorf("%s:%d cites a § section of docs/%s, which does not number its "+
+							"headings.\nCite it by anchor — docs/conventions.md retired the numbered "+
+							"spelling because a number is a section's position, not its name.",
+							rel, i+1, resolved)
+					}
 				case resolved == "":
 					t.Errorf("%s:%d cites %s, and no such document exists (tried %v).\n"+
 						"A document that moved takes its citations with it.", rel, i+1, doc, candidates)
@@ -141,6 +153,23 @@ func TestDocReferencesResolve(t *testing.T) {
 	}
 	t.Logf("checked %d anchor citations across %d documents", checked, len(anchors))
 }
+
+// sectionSign matches a § immediately after a citation: the retired
+// `docs/foo.md §3` spelling. An RFC's or the MCP specification's own § is
+// not preceded by a path under docs/, so it never reaches this.
+var sectionSign = regexp.MustCompile(`^\s*§`)
+
+// numbered reports whether a document under docs/ numbers its headings.
+func numbered(t *testing.T, root, rel string) bool {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, "docs", rel))
+	if err != nil {
+		t.Fatalf("reading docs/%s: %v", rel, err)
+	}
+	return numberedHeading.MatchString(string(data))
+}
+
+var numberedHeading = regexp.MustCompile(`(?m)^#+ [0-9]+\.`)
 
 // nestedDocsPrefix matches a docs/ path with a second docs/ inside it —
 // `docs/subsystems/docs/subsystems/controlplane.md`. The character class
