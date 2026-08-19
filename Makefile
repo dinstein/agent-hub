@@ -193,7 +193,7 @@ generate: ## Regenerate the api → TypeScript health constants
 # change that. What it does is make the claim the documentation has always made
 # — "Windows cross-compiles and CI gates on it" — true. It was not: no
 # GOOS=windows anything ran anywhere, in the Makefile or in either workflow,
-# while README.md, docs/architecture.md and docs/windows.md all said it did.
+# while README.md, docs/architecture.md and docs/status/windows.md all said it did.
 #
 # vet, not just build. Build alone misses most of what a Windows port gets
 # wrong: the Windows halves of internal/platform, api and internal/ctlapi are
