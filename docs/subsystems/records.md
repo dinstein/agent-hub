@@ -77,7 +77,14 @@ the six gateways that lost their connections two seconds later is one story told
   classify.
 - **An unparseable line is dropped, not counted** — unlike the frame reader, which counts them. A line
   that does not parse has no timestamp, so there is no position in a merged stream where showing it
-  would be truthful.
+  would be truthful. That reasoning is applied to the JSON parse only, and it reaches further than the
+  code does: a line that IS a JSON object but carries no usable `time` parses, sets `TSOK=false`, and
+  any query without a time bound admits it — where it sorts at the zero time, which is the FRONT of
+  the merged stream rather than no position at all. A time bound refuses it, so the fail-closed half
+  holds, and nothing `logx` writes lacks a timestamp: this is reachable only through the foreign or
+  corrupt file `MaxLine` already contemplates. Left alone because dropping it is a behaviour change
+  with its own argument to make — a line whose level and message are readable may be worth showing at
+  a position everyone knows is wrong.
 - **The gateway file name has one speller.** `internal/gateway` is the writer and its `LogPath`
   delegates here; a reader that sanitised a client id differently would report "no records" for a
   client that has been logging all day.
