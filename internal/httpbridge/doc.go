@@ -1,7 +1,7 @@
 // Package httpbridge is the daemon's DATA-plane exposure face: MCP
 // Streamable HTTP for upstream clients, the ingress hard limits that guard
 // it, and the agent-token credential layer that grades what a caller may do
-// (docs/architecture.md#the-processes and §9, docs/subsystems/docs/subsystems/controlplane.md).
+// (docs/architecture.md#the-processes, docs/subsystems/controlplane.md).
 //
 // It is deliberately NOT the control plane. Management traffic goes over the
 // UDS control socket (internal/ctlapi) where OS peer credentials are the

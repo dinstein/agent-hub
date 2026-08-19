@@ -184,7 +184,7 @@ func identityName(id PackageIdentity) string {
 func (r *Resolver) windowsRunDir() (string, error) { return r.dataSub("run") }
 
 // ctlPipePrefix and devCtlPipePrefix are the two control-pipe names, one per
-// build channel. Both are FROZEN identifiers (docs/conventions.md#frozen-identifiers/§2).
+// build channel. Both are FROZEN identifiers (docs/conventions.md#frozen-identifiers).
 //
 // Two spelled-out constants rather than one with the channel spliced in. The
 // pipe name must not move when the data directory is renamed — deriving it

@@ -7,7 +7,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/catalog"
 )
 
-// POST /v1/parse/client-config (docs/subsystems/docs/subsystems/controlplane.md): turn pasted client-configuration
+// POST /v1/parse/client-config (docs/subsystems/controlplane.md): turn pasted client-configuration
 // text into a preview of server entries.
 //
 // IT WRITES NOTHING. No registry, no client file, no secret — the answer is

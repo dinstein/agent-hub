@@ -10,7 +10,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// The paste path (docs/subsystems/docs/subsystems/controlplane.md): a user has a README fragment or another
+// The paste path (docs/subsystems/controlplane.md): a user has a README fragment or another
 // client's configuration in the clipboard, and the alternative to
 // understanding it is retyping it as flags.
 //
@@ -95,7 +95,7 @@ type ParseResult struct {
 //
 // Failure direction: no dependency is added to make it parseable. A parser
 // for a format agenthub only ever reads once, in one dialog, is not worth a
-// permanent supply-chain edge (docs/subsystems/docs/subsystems/controlplane.md).
+// permanent supply-chain edge (docs/subsystems/controlplane.md).
 type UnsupportedError struct {
 	Format string
 	Hint   string

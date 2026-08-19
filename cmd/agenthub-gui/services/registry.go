@@ -30,7 +30,7 @@ import (
 // intent, retry — never a blind retry with the same body.
 //
 // Event coverage, honestly stated (see the package report and
-// docs/subsystems/docs/subsystems/controlplane.md): only the `servers` document has an SSE
+// docs/subsystems/controlplane.md): only the `servers` document has an SSE
 // topic. A write to any OTHER document bumps the generation but pushes
 // nothing, so the generation in the write answer is how those pages learn
 // where they stand. That is a self-update from the answer, not a poll.
@@ -94,7 +94,7 @@ func (h *Hub) SetServerEnabled(
 
 // TestServer connects to a configured server and reports what it finds.
 //
-// This is how a credential is verified (docs/subsystems/docs/subsystems/controlplane.md rule 5): by making a
+// This is how a credential is verified (docs/subsystems/controlplane.md rule 5): by making a
 // REAL call. Nothing on this path can print a secret back — api's result
 // type has no field one could be assigned to. It is a read, not a write, so
 // it carries no precondition.

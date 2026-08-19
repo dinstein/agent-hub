@@ -36,7 +36,7 @@ const (
 
 // SecretRef identifies one stored secret and says where it lives.
 //
-// RED LINE (docs/subsystems/docs/subsystems/controlplane.md rule 5): there is no value field, and there never
+// RED LINE (docs/subsystems/controlplane.md rule 5): there is no value field, and there never
 // will be. Not "we do not populate it" — the type cannot carry one, so no
 // listing, no log line and no frontend cache can ever contain a credential.
 // A value is verified by making a REAL call (Servers.Test), never by reading

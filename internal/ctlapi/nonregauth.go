@@ -15,7 +15,7 @@ import (
 //
 // Login itself is NOT here. It is interactive by nature (a device code to
 // read and poll, or an authorization URL to open and a callback to paste)
-// and docs/subsystems/docs/subsystems/controlplane.md scopes the GUI to the two non-interactive modes, which need a
+// and docs/subsystems/controlplane.md scopes the GUI to the two non-interactive modes, which need a
 // streaming exchange rather than one request/response. Status, refresh and
 // logout are the parts that are pure state transitions, and they are what
 // this file serves.

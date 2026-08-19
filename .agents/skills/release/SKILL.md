@@ -33,7 +33,7 @@ lower one.
 |---|---|
 | Docs, comments, tests, internal refactors; help text corrections | patch — `0.13.0` → `0.13.1` |
 | A new command or flag, a new capability, a changed default | minor — `0.13.1` → `0.14.0` |
-| A removed command or flag, or a moved frozen identifier ([docs/conventions.md](../../../docs/conventions.md) §1) | major |
+| A removed command or flag, or a moved frozen identifier ([docs/conventions.md#frozen-identifiers](../../../docs/conventions.md#frozen-identifiers)) | major |
 
 A pre-release carries a `-` (`0.14.0-rc1`) and the workflow marks the Release accordingly.
 

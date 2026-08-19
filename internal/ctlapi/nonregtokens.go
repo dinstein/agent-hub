@@ -11,7 +11,7 @@ import (
 )
 
 // GET|POST /v1/tokens, DELETE /v1/tokens/{name} — agent tokens for the
-// daemon's HTTP data plane (docs/subsystems/docs/subsystems/controlplane.md).
+// daemon's HTTP data plane (docs/subsystems/controlplane.md).
 //
 // THE INVARIANT: the plaintext appears exactly once, in the response that
 // minted it. Nothing can reproduce it afterwards — the store keeps only an

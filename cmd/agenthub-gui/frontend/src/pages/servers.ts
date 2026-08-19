@@ -138,7 +138,7 @@ function suggestion(
  * yet.
  *
  * The classification still comes from the Health contract rather than from
- * `enabled` or the raw connection state (docs/subsystems/docs/subsystems/controlplane.md): a
+ * `enabled` or the raw connection state (docs/subsystems/controlplane.md): a
  * disabled server reports level=healthy on purpose, and admin_state is the
  * field that says so.
  */

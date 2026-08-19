@@ -51,7 +51,7 @@ func TestClientsList(t *testing.T) {
 	}
 }
 
-// TestClientsDetectOnlyStats is the TCC assertion (docs/subsystems/docs/subsystems/controlplane.md, internal/clients
+// TestClientsDetectOnlyStats is the TCC assertion (docs/subsystems/controlplane.md, internal/clients
 // package doc): detection must classify a client's configuration file from
 // its metadata alone. It runs against the REAL adapter table with a real file
 // on disk whose content is a sentinel — and asserts the sentinel is not in

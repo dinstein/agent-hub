@@ -8,7 +8,7 @@ import (
 
 // The curated catalog and the paste parser: the two ways a server gets into
 // the registry without anyone typing an `npx -y @…` command line from memory
-// (docs/subsystems/docs/subsystems/controlplane.md).
+// (docs/subsystems/controlplane.md).
 //
 // CONTRACT: these types mirror internal/catalog (api cannot import
 // internal/*). Both surfaces are READ-ONLY except CatalogService.Add, which

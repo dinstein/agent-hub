@@ -142,7 +142,7 @@ func (e Entry) RequiredKeys() []string {
 
 // NeedsConfig reports whether adding this entry needs input from the user.
 //
-// The judgement (docs/subsystems/docs/subsystems/controlplane.md, "skip whatever can be skipped"): an entry with no required
+// The judgement (docs/subsystems/controlplane.md, "skip whatever can be skipped"): an entry with no required
 // credential, no declared parameter and no leftover placeholder anywhere in
 // its definition is a ONE-CLICK add; everything else opens a form. An
 // optional credential does not count — the server works without it, and

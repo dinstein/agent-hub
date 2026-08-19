@@ -1,7 +1,7 @@
 // Package ctlapi is the control-plane server: REST + SSE over a Unix
 // domain socket, or a named pipe on Windows.
 //
-// Surface (docs/architecture.md#the-processes, docs/subsystems/docs/subsystems/controlplane.md):
+// Surface (docs/architecture.md#the-processes, docs/subsystems/controlplane.md):
 //
 //	GET  /v1/ping                     Hello (version, pid, registry generation)
 //	GET  /v1/servers                  configured servers + runtime state + Health
@@ -12,7 +12,7 @@
 //	GET  /v1/gateway/{sid}/link       per-gateway SSE link: registry change notifications
 //	POST /v1/gateway/{sid}/servers    gateway runtime state report (gatewaystate.go)
 //
-// Configuration surface (docs/subsystems/docs/subsystems/controlplane.md), in admin*.go —
+// Configuration surface (docs/subsystems/controlplane.md), in admin*.go —
 // the control plane's front end over internal/confops, which owns every
 // rule so the CLI and the GUI cannot disagree about one operation:
 //
@@ -58,7 +58,7 @@
 // header is set before the handler runs so even a panic cannot lose it) and
 // error bodies carry it too (docs/conventions.md#capability-boundaries). It correlates a request
 // across the daemon's own logs; there is no audit stream for it to key
-// into — see docs/subsystems/docs/subsystems/controlplane.md.
+// into — see docs/subsystems/controlplane.md.
 //
 // Constraints:
 //

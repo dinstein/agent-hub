@@ -36,7 +36,7 @@ func parseConfig(t *testing.T, sock, text string) adminResp {
 	return doAdmin(t, sock, http.MethodPost, "/v1/parse/client-config", map[string]any{"text": text})
 }
 
-// The shapes docs/subsystems/docs/subsystems/controlplane.md names, end to end over the socket.
+// The shapes docs/subsystems/controlplane.md names, end to end over the socket.
 func TestParseClientConfigShapesOverTheWire(t *testing.T) {
 	env, _, _ := adminServer(t, nil)
 

@@ -182,8 +182,8 @@ request ever targets an AgentHub-owned domain.
 The only outbound connections are the ones your configuration names: the downstream servers in
 `servers.json`, those servers' OAuth authorization servers (only after `agenthub auth login`), and
 endpoints you gave explicitly. The call ledger is **written to local disk only**, and version updates
-are left to your package manager — the decision record is [docs/conventions.md](docs/conventions.md) §7,
-item 6.
+are left to your package manager — the decision record is
+[docs/decisions/0006-no-telemetry-and-no-update-checker.md](docs/decisions/0006-no-telemetry-and-no-update-checker.md).
 
 ## Development
 

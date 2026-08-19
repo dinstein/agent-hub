@@ -1,7 +1,7 @@
 // Package services holds the Go side of the Wails3 GUI: one bound service
 // that the frontend calls, plus the SSE-to-Wails event bridge.
 //
-// Hard constraint (docs/conventions.md#dependency-directions rule 1, docs/subsystems/docs/subsystems/controlplane.md, enforced by
+// Hard constraint (docs/conventions.md#dependency-directions rule 1, docs/subsystems/controlplane.md, enforced by
 // depguard and proven by internal/depguardtest): this package may import
 // only the public api package. It must never import internal/*, never read
 // or write the data directory, and never speak MCP. Everything the GUI can
@@ -667,7 +667,7 @@ func (h *Hub) pump(ctx context.Context, c *api.Client) {
 // They are deliberately thin. No bound method validates its arguments: the
 // authoritative check lives in internal/confops, which is the ONE
 // implementation the CLI and the control plane share
-// (docs/subsystems/docs/subsystems/controlplane.md). A pre-check here would be a second
+// (docs/subsystems/controlplane.md). A pre-check here would be a second
 // validator that can — and eventually would — disagree with it, and the GUI
 // must not be able to accept or refuse anything the CLI cannot.
 // ---------------------------------------------------------------------------
@@ -693,7 +693,7 @@ func call[T any](ctx context.Context, h *Hub, fn func(*api.Client) (T, error)) (
 }
 
 // ListServers returns the configured servers with the server-computed Health
-// display contract (docs/subsystems/docs/subsystems/controlplane.md). The frontend renders Health verbatim and
+// display contract (docs/subsystems/controlplane.md). The frontend renders Health verbatim and
 // never re-derives status from other fields.
 //
 // This is the RUNTIME view. The stored definition an edit form needs is

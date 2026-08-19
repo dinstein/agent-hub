@@ -14,7 +14,7 @@ import (
 )
 
 // GET /v1/secrets, PUT|DELETE /v1/secrets/{server}/{key} — the credential
-// surface (docs/subsystems/docs/subsystems/controlplane.md).
+// surface (docs/subsystems/controlplane.md).
 //
 // THE INVARIANT, restated because it is the whole reason this file is
 // separate: a stored value never leaves the daemon through this API. The
@@ -25,7 +25,7 @@ import (
 // a clipboard and a screenshot.
 //
 // Verifying that a credential is correct is POST /v1/servers/{id}/test —
-// prove it works by using it, never by printing it back (docs/subsystems/docs/subsystems/controlplane.md #5).
+// prove it works by using it, never by printing it back (docs/subsystems/controlplane.md #5).
 
 // keyringRegistryFileName mirrors internal/secrets' unexported keyring key
 // registry. It is READ ONLY, and only to label a row's backend: enumerating

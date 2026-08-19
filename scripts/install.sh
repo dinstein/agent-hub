@@ -40,7 +40,8 @@
 #
 # WHAT IT DOES NOT DO. It does not edit your shell configuration, it never
 # calls sudo for you, and the installed binary never phones home: there is no
-# update check anywhere in agenthub (canonical.md §7 decision 6), which is
+# update check anywhere in agenthub
+# (docs/decisions/0006-no-telemetry-and-no-update-checker.md), which is
 # exactly why updating is this script's job and re-running it is the way.
 
 set -eu

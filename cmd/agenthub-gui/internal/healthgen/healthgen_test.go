@@ -45,7 +45,7 @@ func collect(t *testing.T) map[string]string {
 // values the generator parses out of the api SOURCE must equal the values
 // the compiler sees. It also pins the SET of constants — a new HealthLevel*
 // / AdminState* / Action* constant fails here until it is listed, so it can
-// never reach the wire without the frontend learning about it (docs/subsystems/docs/subsystems/controlplane.md
+// never reach the wire without the frontend learning about it (docs/subsystems/controlplane.md
 // : no drift between the three ends).
 func TestCollectedConstantsMatchGoPackage(t *testing.T) {
 	want := map[string]string{

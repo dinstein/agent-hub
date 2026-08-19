@@ -9,7 +9,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// The five shapes docs/subsystems/docs/subsystems/controlplane.md names, plus the naked forms people actually
+// The five shapes docs/subsystems/controlplane.md names, plus the naked forms people actually
 // paste. Each case asserts the whole preview, because "it parsed" is not the
 // contract — "it parsed into exactly this definition" is.
 func TestParseClientConfigShapes(t *testing.T) {

@@ -1,5 +1,5 @@
 # stub_server.py — placeholder for the MCP 2026-07-28 Python cross-language
-# validation server (docs/mcp-2026-07-28.md §4.3).
+# validation server (docs/status/mcp-2026-07-28.md §4.3).
 #
 # Not implemented, and nothing runs this file. If it is ever built, it would
 # use the mcp Python SDK beta (v2.0.0b1+) to serve a minimal 2026-07-28

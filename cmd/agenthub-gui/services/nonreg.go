@@ -33,7 +33,7 @@ const secretRedacted = "the credential vault refused the write " +
 // ListSecrets returns stored credential REFERENCES — server, scope, key and
 // backend. A non-empty server narrows the listing.
 //
-// RED LINE (docs/subsystems/docs/subsystems/controlplane.md rule 5): there is no value, and not because this
+// RED LINE (docs/subsystems/controlplane.md rule 5): there is no value, and not because this
 // method declines to fill one in — api.SecretRef has no field one could
 // occupy. Nothing downstream of here (page state, a rendered list, a
 // screenshot) can contain a credential, because it never arrived. A value is

@@ -256,7 +256,9 @@ ci: build test lint docs-check ## Build + test + lint + generated docs: the pure
 #   1. The depguard proof (internal/depguardtest) SKIPS itself when
 #      golangci-lint is absent, and `make test` reports that skip as success.
 #      CI greps the verbose output for "--- SKIP" and fails, because a skipped
-#      proof is no proof (canonical.md §6). Reproduced below.
+#      proof is no proof
+#      (docs/conventions.md#every-depguard-constraint-must-have-a-failing-case).
+#      Reproduced below.
 #   2. The whole `gui` job. `make ci` never touches it on purpose — "the GUI is
 #      optional" is a compile-time property and must not become a prerequisite
 #      of the default build — so it is opt-in here rather than folded into ci.
@@ -389,7 +391,7 @@ bin-release: ## Build the CLI as a release ships it → bin/agenthub-release
 # The GUI is deliberately NOT part of `make build`: linking a webview needs
 # GTK/WebKit development packages that a Linux CI runner does not have. Its Go
 # code sits behind the `wails` build tag, so `go build ./...` and
-# `golangci-lint run` never reach it (docs/canonical.md §7 item 3).
+# `golangci-lint run` never reach it (docs/decisions/0003-wails3-and-the-frontend-stack.md).
 #
 # gui-frontend-ci, gui-go and gui-vet are what the separate `gui` CI job runs
 # (.github/workflows/ci.yml). They stay out of `make ci` so the GUI can never

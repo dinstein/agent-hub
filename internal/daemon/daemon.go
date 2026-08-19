@@ -1,4 +1,4 @@
-// Package daemon assembles the coordination daemon (docs/subsystems/docs/subsystems/controlplane.md:
+// Package daemon assembles the coordination daemon (docs/subsystems/controlplane.md:
 // assembly only, no business logic of its own): event bus +
 // session manager + control-plane server (internal/ctlapi) + registry watch
 // + the gateway-reported runtime state aggregator, plus the run/daemon.json

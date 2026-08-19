@@ -75,8 +75,8 @@ type Sources struct {
 }
 
 // CachedResolver caches one EffectiveScope per session, validated by the
-// tuple (clientID, registryGeneration) — docs/architecture.md
-// §7. Cache values are immutable *EffectiveScope, safe to share.
+// tuple (clientID, registryGeneration) — docs/subsystems/scope.md#internalscope.
+// Cache values are immutable *EffectiveScope, safe to share.
 //
 // The session's root is deliberately NOT part of the key. It was, while the
 // per-project layer keyed on it; with that layer retired no persisted layer

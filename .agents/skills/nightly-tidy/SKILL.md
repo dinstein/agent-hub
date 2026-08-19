@@ -92,7 +92,7 @@ Before moving anything, check it is allowed to move:
 
 | About to move | Check |
 |---|---|
-| A package, command, or identifier name | [docs/conventions.md](../../../docs/conventions.md) §1 — frozen identifiers do not move on a tidy night |
+| A package, command, or identifier name | [docs/conventions.md#frozen-identifiers](../../../docs/conventions.md#frozen-identifiers) — they do not move on a tidy night |
 | An import across a package boundary | AGENTS.md's four hard constraints |
 | The gate chain, the call path, provenance for an exposed name, or a tool selector | AGENTS.md's *easiest things to get wrong* — each of those is frozen, and none of them move on a tidy night |
 
@@ -117,7 +117,7 @@ What a human has to read for:
 - **"Capability exists ≠ wired up" gone stale in either direction.** A fixed gap that still reads as
   a gap costs a redundant investigation; an unfixed one that no longer reads as a gap is how "I
   thought that was in effect" happens.
-- **A `modules/` file describing a shape the package no longer has** — types renamed, a
+- **A `docs/subsystems/` file describing a shape the package no longer has** — types renamed, a
   responsibility moved, a failure direction inverted.
 - **Within-section translation drift.** `docs/zh-CN/` is checked for its heading skeleton and nothing
   below it, so a dropped bullet survives. Compare side by side for the sections the slice touched.
@@ -152,6 +152,6 @@ Not because they are perfect, but because a scheduled pass is the wrong place to
 
 - The four hard constraints and their proofs in `internal/depguardtest`
 - The gate chain, its order, and any predicate's failure direction
-- Frozen identifiers ([docs/conventions.md](../../../docs/conventions.md) §1)
+- Frozen identifiers ([docs/conventions.md#frozen-identifiers](../../../docs/conventions.md#frozen-identifiers))
 - `VERSION` and `.github/workflows/` — those belong to the [release skill](../release/SKILL.md)
 - Any file an open worktree has claimed

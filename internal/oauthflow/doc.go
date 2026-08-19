@@ -10,7 +10,7 @@
 //	(RFC 8414/9728)   (RFC 7591)     (loopback|manual|device)  (PKCE)   (vault)
 //
 // Every step of that pipeline is an independently usable value so the CLI
-// can stream NDJSON progress events between them (docs/subsystems/docs/subsystems/controlplane.md) and the
+// can stream NDJSON progress events between them (docs/subsystems/controlplane.md) and the
 // daemon can re-enter at "token exchange" for a refresh.
 //
 // # Invariants this package exists to hold

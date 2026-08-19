@@ -68,7 +68,7 @@ func (c *Caller) AllowsServer(serverID string) bool {
 // Identity is the owner fingerprint of a caller: the value an established
 // session is pinned to, and the key the HTTP data plane uses to deduplicate
 // per-credential gateways. Both consumers compare the WHOLE fingerprint, not
-// just the token name (docs/subsystems/docs/subsystems/controlplane.md, "Session binding is
+// just the token name (docs/subsystems/controlplane.md, "Session binding is
 // fail-closed and validates the whole identity") — a
 // token whose tier or allowlist was narrowed since must not keep riding the
 // old session or gateway at its old authority.

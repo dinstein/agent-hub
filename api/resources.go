@@ -9,7 +9,7 @@ import (
 type ServersService struct{ c *Client }
 
 // List returns all configured servers with their live state and Health
-// display contract (docs/subsystems/docs/subsystems/controlplane.md). The same payload is pushed on the
+// display contract (docs/subsystems/controlplane.md). The same payload is pushed on the
 // `servers` SSE topic — either source is authoritative.
 func (s *ServersService) List(ctx context.Context) ([]Server, error) {
 	var out []Server

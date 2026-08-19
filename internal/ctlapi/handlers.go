@@ -20,7 +20,7 @@ const maxBodyBytes = 1 << 20
 // serverList synthesizes the api.Server list from the registry snapshot and
 // the runtime state source. It is shared by GET /v1/servers and the lazily
 // built `servers` SSE payload, so push and pull are byte-identical
-// (docs/subsystems/docs/subsystems/controlplane.md).
+// (docs/subsystems/controlplane.md).
 func (s *Server) serverList() []api.Server {
 	snap := s.opts.Registry.Snapshot()
 	out := make([]api.Server, 0, len(snap.Servers.V.Servers))

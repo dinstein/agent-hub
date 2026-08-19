@@ -12,7 +12,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/guard/netguard"
 )
 
-// Ingress hard bounds (docs/subsystems/docs/subsystems/controlplane.md; the numbers are inherited
+// Ingress hard bounds (docs/subsystems/controlplane.md; the numbers are inherited
 // verbatim from toolport's ingress limits, per docs/conventions.md#reference-code-policy). They are hard because they bound work an UNAUTHENTICATED
 // caller can cause: header and body reads happen before, or alongside,
 // credential checking.
@@ -77,7 +77,7 @@ const (
 // Frozen rejection bodies. "not found" in particular is ONE sentence for
 // every miss — unknown session, expired session, foreign session, unknown
 // path — so the endpoint cannot be probed for which sessions exist
-// (docs/subsystems/docs/subsystems/controlplane.md, "The 404 text is unified and frozen byte for
+// (docs/subsystems/controlplane.md, "The 404 text is unified and frozen byte for
 // byte"; the same anti-enumeration rule docs/decisions/0004-toon-and-signature-grammars.md freezes for
 // describe_tool and fetch_result).
 var (

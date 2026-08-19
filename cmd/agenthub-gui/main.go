@@ -17,7 +17,7 @@
 // DTOs + Go client), exactly like any third-party integration.
 package main
 
-// The Health display constants (docs/subsystems/docs/subsystems/controlplane.md) are generated out of the api
+// The Health display constants (docs/subsystems/controlplane.md) are generated out of the api
 // package into the frontend so that Go, TypeScript and the wire cannot
 // drift. Regenerate with `go generate ./cmd/agenthub-gui/...`; the golden
 // test in internal/healthgen fails while the checked-in file is stale.

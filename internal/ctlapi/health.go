@@ -47,7 +47,7 @@ const (
 // server's administrative and runtime condition. It is assembled by the
 // /v1/servers handler from the registry entry plus the injected
 // ServerStateSource; keeping it a plain struct keeps ComputeHealth a pure
-// function (docs/subsystems/docs/subsystems/controlplane.md: computed once server-side, frontends only render).
+// function (docs/subsystems/controlplane.md: computed once server-side, frontends only render).
 type HealthInput struct {
 	// AdminState is one of the api.AdminState* constants. "" is treated as
 	// enabled (a registry entry with no admin intervention).
@@ -79,7 +79,7 @@ type HealthInput struct {
 	HasRefreshToken bool
 }
 
-// ComputeHealth is the pure function of docs/subsystems/docs/subsystems/controlplane.md: it maps one
+// ComputeHealth is the pure function of docs/subsystems/controlplane.md: it maps one
 // HealthInput to the display contract every frontend renders verbatim.
 //
 // Priority ladder, first match wins: admin state → missing secret → OAuth
@@ -88,7 +88,7 @@ type HealthInput struct {
 //
 //  1. AdminState disabled: Level=healthy ON PURPOSE — turned off
 //     intentionally is not broken
-//     (docs/subsystems/docs/subsystems/controlplane.md).
+//     (docs/subsystems/controlplane.md).
 //  2. Missing secrets: unhealthy, action set_secret.
 //  3. OAuth config error: unhealthy, action login.
 //  4. Connection: handshake auth refusal → unhealthy (login);

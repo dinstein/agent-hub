@@ -14,7 +14,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// The configuration surface (docs/subsystems/docs/subsystems/controlplane.md) is the control
+// The configuration surface (docs/subsystems/controlplane.md) is the control
 // plane's half of the "one semantic layer, two front ends" split: the CLI
 // calls internal/confops in-process, the GUI calls it through these
 // endpoints. NOTHING here validates a value, decides a side effect or writes
@@ -22,7 +22,7 @@ import (
 // drift. This file owns transport concerns only: decoding, the optimistic-
 // concurrency guard, the error-to-status mapping and the change
 // notification. No audit record is written here or anywhere else in the
-// package; see docs/subsystems/docs/subsystems/controlplane.md.
+// package; see docs/subsystems/controlplane.md.
 //
 // Uniform 404 (anti-probing, same rule as the rest of the package): an
 // unknown route, an unknown method AND an unknown resource id all answer the
@@ -212,7 +212,7 @@ func writeStale(w http.ResponseWriter, current uint64, reqID string) {
 // write, and without this call a GUI edit would be the one change nobody is
 // told about. The frames are byte-identical to the watcher's, so "someone
 // else changed it" and "I changed it" look the same downstream — which is
-// exactly what docs/subsystems/docs/subsystems/controlplane.md asks for.
+// exactly what docs/subsystems/controlplane.md asks for.
 func (s *Server) publishRegistryChange(kind registry.DocKind, rev uint64) {
 	if s.opts.Bus == nil {
 		return

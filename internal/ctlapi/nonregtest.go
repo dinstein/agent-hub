@@ -17,11 +17,11 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// POST /v1/servers/{id}/test — the live connection self-test (docs/subsystems/docs/subsystems/controlplane.md).
+// POST /v1/servers/{id}/test — the live connection self-test (docs/subsystems/controlplane.md).
 //
 // This is the endpoint that answers "is this credential correct" WITHOUT
 // printing it: it makes a real connection and, optionally, a real call
-// (docs/subsystems/docs/subsystems/controlplane.md rule 5). Everything about a downstream server is verified
+// (docs/subsystems/controlplane.md rule 5). Everything about a downstream server is verified
 // by using it, never by rendering what we stored.
 //
 // The connection is short-lived and closed before the result is rendered.

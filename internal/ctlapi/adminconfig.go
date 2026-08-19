@@ -12,7 +12,7 @@ import (
 )
 
 // The governance switches — the GLOBAL layer of the scope chain
-// (docs/subsystems/docs/subsystems/controlplane.md). The key table is confops.GovernanceKeys:
+// (docs/subsystems/controlplane.md). The key table is confops.GovernanceKeys:
 // listing and setting read the SAME table, because a key whose listing and
 // whose setter disagree is a governance switch nobody can trust.
 //
@@ -27,7 +27,7 @@ import (
 // wrote such a record, and that question is not answerable. Building
 // the trail is its own change with its own argument; describing one that
 // does not exist is how a reviewer concludes a control is in place when it
-// is not (docs/subsystems/docs/subsystems/controlplane.md records the gap).
+// is not (docs/subsystems/controlplane.md records the gap).
 
 // configEntryWire is one governance key with its current value.
 type configEntryWire struct {

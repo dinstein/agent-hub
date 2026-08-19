@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// retiredNames are the old package names docs/conventions.md §"Retired old names"
+// retiredNames are the old package names docs/conventions.md#retired-names
 // deliberately writes down BECAUSE they no longer exist: the table's whole
 // job is to tell a reader who met them in early material what replaced them.
 // They are the one legitimate reason for a docs path not to resolve, so they

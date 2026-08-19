@@ -266,7 +266,7 @@ type ServerTestCall struct {
 
 // ServerTestResult is the "does this definition actually work" answer.
 //
-// This is how a credential is verified (docs/subsystems/docs/subsystems/controlplane.md rule 5): by making a
+// This is how a credential is verified (docs/subsystems/controlplane.md rule 5): by making a
 // REAL call, never by printing the secret back. The type therefore has no
 // field a credential could be put in.
 type ServerTestResult struct {

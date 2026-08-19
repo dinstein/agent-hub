@@ -56,7 +56,7 @@ Stop as soon as the question is answered:
 | What must not be touched in the package I am about to open? | [docs/subsystems/](../../../docs/subsystems/) — that package's file |
 | Is this name / dependency / convention allowed to move? | [docs/conventions.md](../../../docs/conventions.md) |
 
-**The `modules/` file is not optional reading** — it carries the invariants and the recorded
+**That `docs/subsystems/` file is not optional reading** — it carries the invariants and the recorded
 "capability exists ≠ wired up" gaps. A change that looks correct against the source and wrong against
 that file is wrong.
 

@@ -8,7 +8,7 @@ import (
 	"github.com/dinstein/agent-hub/internal/registry"
 )
 
-// Server CRUD (docs/subsystems/docs/subsystems/controlplane.md).
+// Server CRUD (docs/subsystems/controlplane.md).
 //
 // GET /v1/servers keeps its historical shape — the runtime list with
 // embedded Health, byte-identical to the `servers` SSE payload. Editing

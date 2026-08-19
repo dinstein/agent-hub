@@ -35,7 +35,7 @@ import (
 // the preview WARNS (it shows the user exactly what would be stored, so
 // "these keys were ignored" is actionable) and the write path REFUSES (a
 // write with no preview would otherwise report success while the pasted
-// "oauth" block is simply absent). See docs/subsystems/docs/subsystems/controlplane.md.
+// "oauth" block is simply absent). See docs/subsystems/controlplane.md.
 //
 // TestPasteRoutesAgreeOnWholeSnippets (internal/cli) drives whole documents
 // through both routes and compares the resulting entries, so a private copy

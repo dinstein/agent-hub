@@ -36,6 +36,6 @@
 // the internal/ctlapi side pins both implementations together.
 //
 // The Health string constants in this package are frozen wire values
-// (docs/subsystems/docs/subsystems/controlplane.md): every frontend renders them verbatim and the TS
+// (docs/subsystems/controlplane.md): every frontend renders them verbatim and the TS
 // constants for the GUI are generated from this package.
 package api

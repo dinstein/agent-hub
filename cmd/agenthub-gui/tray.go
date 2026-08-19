@@ -140,7 +140,7 @@ type serverCounts struct {
 // serverBucket classifies one server the same way the Servers page does, and
 // for the same reason: the Health contract is computed server-side by one pure
 // function, and a second opinion formed from `Enabled` or `State` would be the
-// frontend-invented status docs/subsystems/docs/subsystems/controlplane.md forbids. Disabled
+// frontend-invented status docs/subsystems/controlplane.md forbids. Disabled
 // reports level=healthy on purpose, so admin state is tested FIRST.
 func serverBucket(s api.Server) string {
 	if s.Health.AdminState == api.AdminStateDisabled {
