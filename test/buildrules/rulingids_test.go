@@ -34,13 +34,14 @@ var (
 // The ids come from the original design document, which is not in this
 // repository. Sixty-odd comments cite them anyway, and the reason to keep them
 // is real: a ruling number does not move when a section is renumbered, so it is
-// a better anchor than "§7 item 3" — but only while something can resolve it.
-// §8 is that something, and this check is what keeps the table and the tree from
-// drifting apart in the direction that matters: a citation nobody can look up.
+// a better anchor than a numbered section — but only while something can
+// resolve it. docs/decisions/README.md's "Historical ruling ids" table is that
+// something, and this check is what keeps the table and the tree from drifting
+// apart in the direction that matters: a citation nobody can look up.
 //
 // WHAT THIS CHECKS. Every cited id is registered, in the spelling it was cited
-// in — `#6` and `A.1 #6` are one ruling, and §8 lists both in the same row
-// precisely so either spelling resolves. It also fails on a milestone task
+// in — `#6` and `A.1 #6` are one ruling, and the table lists both in the same
+// row precisely so either spelling resolves. It also fails on a milestone task
 // number (`M0-7`, `M1-3`), which is not a ruling at all: it names a unit of work
 // in a plan that is equally absent, so it dates the sentence around it while
 // adding nothing a reader can act on. Eleven of those were removed the round
@@ -73,11 +74,26 @@ func TestHistoricalRulingIdsResolve(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reading %s: %v", rel, err)
 		}
-		for i, line := range strings.Split(string(data), "\n") {
-			for _, m := range rulingCite.FindAllStringSubmatch(line, -1) {
-				id := rulingKey(m[1], m[2])
-				if m[3] != "" { // bare "ruling #17"
-					id = rulingKey("", m[3])
+		lines := strings.Split(string(data), "\n")
+		for i, line := range lines {
+			// An id is two tokens with a space between them, so a comment
+			// rewrapped by gofmt can put "A.2" at the end of one line and
+			// "#10" at the start of the next. Both spellings of that
+			// citation are real and registered, and neither was being
+			// checked. Scan the line joined to the next one's text, and
+			// keep only matches that START on this line, which is what
+			// stops a whole-line citation being counted twice.
+			probe := line
+			if i+1 < len(lines) {
+				probe += " " + commentText(lines[i+1])
+			}
+			for _, m := range rulingCite.FindAllStringSubmatchIndex(probe, -1) {
+				if m[0] >= len(line) {
+					continue // starts on the next line; counted there
+				}
+				id := rulingKey(probeGroup(probe, m, 1), probeGroup(probe, m, 2))
+				if g := probeGroup(probe, m, 3); g != "" { // bare "ruling #17"
+					id = rulingKey("", g)
 				}
 				cited++
 				if !registered[id] {
@@ -138,6 +154,25 @@ func registeredRulingIDs(t *testing.T, root string) map[string]bool {
 
 // rulingKey normalizes the two spellings to one lookup key: "#8" when the
 // appendix is absent, "A.1 #8" when it is not.
+// commentText strips a continuation line down to its prose, so a citation
+// that wrapped can be rejoined: leading space, a // or * comment marker, and
+// the space after it.
+func commentText(line string) string {
+	s := strings.TrimSpace(line)
+	s = strings.TrimPrefix(s, "//")
+	s = strings.TrimPrefix(s, "*")
+	return strings.TrimSpace(s)
+}
+
+// probeGroup returns submatch n of an index-based match, or "" when it did
+// not participate.
+func probeGroup(s string, m []int, n int) string {
+	if m[2*n] < 0 {
+		return ""
+	}
+	return s[m[2*n]:m[2*n+1]]
+}
+
 func rulingKey(appendix, number string) string {
 	appendix = strings.ToUpper(strings.TrimSpace(appendix))
 	if appendix == "" {
