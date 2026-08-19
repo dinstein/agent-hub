@@ -2,12 +2,19 @@
 // (read | write | destructive) — the one ladder the whole repository
 // counts on.
 //
-// It lives in its own leaf package because seven packages import it and none
+// It lives in its own leaf package because six packages import it and none
 // of them owns it: internal/pipeline gates calls by it, internal/httpbridge
 // stores it on agent tokens, internal/ctlapi mints those tokens,
-// internal/gateway and internal/daemon carry it through an assembly,
-// internal/cli parses it from user input, and internal/discovery names its
-// intent variants after these three values.
+// internal/gateway carries it through an assembly, internal/cli parses it
+// from user input, and internal/discovery names its intent variants after
+// these three values.
+//
+// internal/daemon carries a tier too and is deliberately NOT on that list:
+// the value reaches gateway.Config.CallerTier as httpbridge.Caller.Tier, so
+// the daemon never names the type and its production code does not import
+// this package. Only its tests do. The list is the import pressure that put
+// this vocabulary in a leaf, and a package that routes the value without
+// depending on it is not part of that pressure.
 //
 // When the vocabulary lived in the pipeline, the
 // control plane had to import the data plane's execution package to say the
