@@ -147,6 +147,25 @@ construction with every session on that root, so tearing one down here would cut
 connection; those are left to the pool's idle TTL. Worst case an instance lives 30 minutes too long,
 not a call arriving one instance too late.
 
+### Current assembly status: the HTTP half is not wired
+
+**Everything above about HTTP sessions describes code nothing calls.** `Register` mints the stdio
+gateway sessions the control plane lists and closes, and that half is live. `OpenHTTP` has no caller
+outside tests, so no session with `OriginHTTP` is ever created — and with it, `SessionHello`, the
+128-bit token, `TokenHex`, `MatchToken` and `FindByToken` are all reachable only from tests. The
+reaper `daemon.go` starts is real and runs every five minutes; it skips stdio sessions by origin, so
+in production it scans a table that can never hold anything it would reap.
+
+**The live HTTP session table is `internal/httpbridge`'s**, which mints its own ids and keeps its own
+bounds: `DefaultSessionTTL` is **30 minutes** there, not the 24 hours named above, and the capacity cap
+and ownership checks are its own too ([controlplane.md](controlplane.md)). Two implementations of one
+noun, one of them wired. Read the invariants above as a description of this package rather than of
+what an `Mcp-Session-Id` does today.
+
+Left alone because the choice between them is a design decision with an argument to make — the
+constant-time comparison and the no-entropy-no-existence rule here are the stricter pair, and moving
+the HTTP face onto them is a behaviour change, not a tidy.
+
 ## internal/event
 
 The daemon's in-process bus, plus two mergers over one implementation: `NewCoalescer` anchors its window

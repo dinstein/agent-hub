@@ -146,6 +146,18 @@ func (m *MemoryManager) Register(ctx context.Context, hello GatewayHello, link C
 }
 
 // OpenHTTP implements SessionManager.
+//
+// NOT WIRED. It has no caller outside tests, so no OriginHTTP session is ever
+// created and the whole protocol-token half of this package — SessionHello,
+// TokenHex, MatchToken, FindByToken, and the TTL reap that skips stdio by
+// origin — is reachable only from them. The live Mcp-Session-Id table is
+// internal/httpbridge's, with its own id minting and a 30-minute TTL rather
+// than the 24 hours here (docs/subsystems/scope.md#current-assembly-status-the-http-half-is-not-wired).
+//
+// Kept rather than deleted: this pair is the stricter one — constant-time
+// comparison, and a session that does not exist at all if the entropy read
+// fails — so which implementation survives is a decision worth making
+// deliberately rather than by deletion on a tidy pass.
 func (m *MemoryManager) OpenHTTP(ctx context.Context, hello SessionHello) (*Session, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
