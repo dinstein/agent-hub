@@ -273,3 +273,117 @@ func headingLevels(path string) ([]int, error) {
 	}
 	return out, nil
 }
+
+// listItem and tableRow are the two structures whose COUNT carries meaning in
+// these documents: a bullet is one rule and a table row is one entry, so a
+// translation with fewer of either has dropped something a reader on that side
+// will never learn is missing.
+var (
+	listItem = regexp.MustCompile(`^\s*(?:[-*+]|[0-9]+\.)\s+\S`)
+	tableRow = regexp.MustCompile(`^\s*\|`)
+)
+
+// TestTranslationsKeepEachSectionsStructure compares the two sides SECTION BY
+// SECTION, not just heading by heading.
+//
+// The skeleton test above proves the headings agree and stops there, which is
+// exactly the gap the nightly-tidy skill names: "docs/zh-CN/ is checked for its
+// heading skeleton and nothing below it, so a dropped bullet survives". A
+// dropped bullet is a dropped RULE, and it is invisible from either side alone
+// — the translated page reads as complete, because a missing sentence leaves no
+// hole.
+//
+// Counts, not content: nothing here can tell whether a bullet says the same
+// thing, and prose length is not comparable across languages. What it can say
+// is that both sides carry the same number of rules in the same section, which
+// is the property a hand-edited mirror actually loses.
+//
+// A translator who deliberately merges two bullets into one has to say so by
+// merging both sides. That is the intended cost: the alternative is a check
+// that agrees with any edit, which is the state this replaces.
+func TestTranslationsKeepEachSectionsStructure(t *testing.T) {
+	root := repoRoot(t)
+	pairs := translationPairs(t, root)
+	if len(pairs) < 2 {
+		t.Fatalf("found %d translation pairs; the walk or the root is wrong", len(pairs))
+	}
+	compared := 0
+	for _, p := range pairs {
+		enH, enB, err := sectionBodies(filepath.Join(root, p[0]))
+		if err != nil {
+			t.Fatalf("reading %s: %v", p[0], err)
+		}
+		zhH, zhB, err := sectionBodies(filepath.Join(root, p[1]))
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue // the skeleton test above reports a missing translation
+			}
+			t.Fatalf("reading %s: %v", p[1], err)
+		}
+		if len(enH) != len(zhH) {
+			continue // likewise: a section exists on only one side
+		}
+		for i := range enB {
+			compared++
+			enL, enR := countStructures(enB[i])
+			zhL, zhR := countStructures(zhB[i])
+			switch {
+			case enL != zhL:
+				t.Errorf("%s and %s disagree under %q: %d list items vs %d.\n"+
+					"A bullet is a rule; the side with fewer has dropped one, and a translated page "+
+					"missing a sentence reads exactly like a complete one.",
+					p[0], p[1], enH[i], enL, zhL)
+			case enR != zhR:
+				t.Errorf("%s and %s disagree under %q: %d table rows vs %d.\n"+
+					"A row is an entry; one side is describing a smaller table than the other.",
+					p[0], p[1], enH[i], enR, zhR)
+			}
+		}
+	}
+	if compared == 0 {
+		t.Fatal("compared no sections; the split is wrong and the rule would pass over nothing")
+	}
+	t.Logf("compared %d sections across %d translation pairs", compared, len(pairs))
+}
+
+// sectionBodies splits a document into headings and the lines beneath each.
+// The text before the first heading is one section named "(preamble)", so a
+// rule stated up front is compared too.
+func sectionBodies(path string) ([]string, [][]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	heads := []string{"(preamble)"}
+	bodies := [][]string{{}}
+	fenced := false
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "```") {
+			fenced = !fenced
+			continue
+		}
+		if !fenced && headingLine.MatchString(line) {
+			heads = append(heads, strings.TrimSpace(strings.TrimLeft(line, "# ")))
+			bodies = append(bodies, []string{})
+			continue
+		}
+		if fenced {
+			continue // a shell transcript's flags are not the document's bullets
+		}
+		bodies[len(bodies)-1] = append(bodies[len(bodies)-1], line)
+	}
+	return heads, bodies, nil
+}
+
+// countStructures returns a section's list items and table rows.
+func countStructures(body []string) (items, rows int) {
+	for _, line := range body {
+		switch {
+		case listItem.MatchString(line):
+			items++
+		case tableRow.MatchString(line):
+			rows++
+		}
+	}
+	return items, rows
+}
