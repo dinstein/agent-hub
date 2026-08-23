@@ -359,12 +359,35 @@ func fitRunes(s string, avail int) (nRunes, nBytes int) {
 	return nRunes, len(s)
 }
 
+// invalidByteLen is what encoding/json spends on ONE invalid UTF-8 byte,
+// measured off the encoder rather than assumed. It is the one cost in
+// escapedRuneLen that has moved under a toolchain: Go 1.26 wrote the escape
+// \ufffd (6 bytes), Go 1.27 writes the replacement character itself (3).
+// A number written down here instead makes fitRunes disagree with the
+// encoder on every result carrying a malformed byte -- downstream text this
+// gateway forwards and does not control.
+//
+// The disagreement is safe in its direction, since over-counting only makes
+// a page smaller than its budget. What is not safe is a documented
+// invariant quietly becoming an approximation, which is the whole reason
+// this arithmetic is exact rather than estimated;
+// TestEscapedRuneLenMatchesStdlib is the assertion that it stayed so.
+// Falling back to 6 on an error keeps the previous behaviour rather than a
+// zero-width rune; Marshal of a string has no failing case today.
+var invalidByteLen = func() int {
+	b, err := json.Marshal("\xff")
+	if err != nil {
+		return 6
+	}
+	return len(b) - 2 // minus the enclosing quotes
+}()
+
 // escapedRuneLen is the number of bytes encoding/json spends on one rune
 // inside a string literal, with HTML escaping on (the encoder's default).
 // Kept in lockstep with the stdlib by TestEscapedRuneLenMatchesStdlib.
 func escapedRuneLen(r rune, size int) int {
 	if r == utf8.RuneError && size == 1 {
-		return 6 // invalid UTF-8 byte is replaced by �
+		return invalidByteLen // an invalid UTF-8 byte becomes U+FFFD
 	}
 	switch r {
 	case '"', '\\', '\b', '\f', '\n', '\r', '\t':

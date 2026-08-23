@@ -46,6 +46,12 @@ bytes defers the whole block, because a two-character page plus a trailer costs 
 including the HTML escaping on by default, with invariant tests aligning it to the standard library, so
 emitted block sizes are predictable rather than estimated. All slicing lands on rune boundaries.
 
+One of those costs is **measured, not transcribed**: `invalidByteLen` asks the encoder at init what it
+spends on a single invalid UTF-8 byte, because that is the one answer that has changed under a supported
+toolchain — Go 1.26 wrote `\ufffd` and Go 1.27 writes the replacement character itself, 6 bytes against 3.
+Transcribing it made the exactness above hold on one Go and not the next, on downstream text the gateway
+forwards and does not control. The rest stay transcribed, and the invariant test is what says so.
+
 **`Fetch`'s boundary behaviour.** A negative offset clamps to 0; an offset at or past the end serves an
 **empty page** — a success, not a miss, because offering a recovery hint when there is nothing left would
 be a lie. `page` has an "always deliver at least one rune" backstop against a livelock that never
