@@ -174,3 +174,29 @@ string, an escape outside TOML's set. `ok=false` is the contract — callers rep
 this scanner cannot read is ever converted into "the entry is not there". Scanned entries are re-rendered
 as the JSON shape the package already speaks and go back through `summarise`/`ownedBy`, so ownership has
 one implementation for every format.
+
+## The preview is not the placement
+
+`ConnectSnippet` is the seam that keeps `--dry-run` and the writer agreed, and it holds for what it
+builds: the **entry**, command and args. The **key path around it** is not part of that seam.
+`ConnectPlan.Human` prints a fixed `{"mcpServers":{"agenthub":…}}` envelope for every row, while the
+writer places the entry at the row's own `section`. Seven of the twelve rows do use a top-level
+`mcpServers` and the preview is exact for them; five do not:
+
+| Row | Where the entry actually goes | What the preview shows |
+|---|---|---|
+| `vscode` | `mcp.servers` (user) / `servers` (project) | `mcpServers` |
+| `zed` | `context_servers` | `mcpServers` |
+| `codex` | a TOML `[mcp_servers.agenthub]` table | a JSON object |
+| `continue` | a YAML `mcpServers` **list** of `{name, command, args}` | a JSON **map** |
+| `open-webui` | nowhere — no local file exists | a JSON object |
+
+The writes themselves are correct: connecting vscode lands in `mcp.servers` and zed in
+`context_servers`, and the last three refuse `Connect` and print their own `manual` snippet, which is
+right in each format. It is only the previewed envelope that is generic — and `clientTarget`'s
+not-supported hint sends people to `--dry-run` as the way to "preview the snippet for any client",
+which is exactly the reader who would paste a JSON object into `config.toml`.
+
+Fixing it means giving the renderer the row's `section` and, for the three non-JSON rows, the `manual`
+snippet the refusal path already builds. That changes what a command prints, which is a feature branch
+and not a tidy pass.

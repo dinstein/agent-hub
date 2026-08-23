@@ -88,8 +88,14 @@ func (r DisconnectResult) Human(w io.Writer) error {
 
 // ConnectSnippet builds the gateway entry `client connect` will write into
 // clientID's configuration. This function is the single seam between the
-// --dry-run preview and the config writer: both go through it, so the
-// preview and the actual write can never drift.
+// --dry-run preview and the config writer for the ENTRY — command and args —
+// so those two can never drift.
+//
+// Where that entry is placed is NOT part of the seam, and does drift:
+// ConnectPlan.Human wraps it in a fixed `{"mcpServers":{"agenthub":…}}`
+// envelope while the writer places it at the row's own section — `mcp.servers`
+// for vscode, `context_servers` for zed — and three rows have no JSON document
+// to place it in at all. See clients.md, "The preview is not the placement".
 //
 // The entry carries the client identity and nothing else. A profile is bound
 // in clients.json, never here: a binding written into the client's own config
