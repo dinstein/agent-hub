@@ -78,7 +78,11 @@ func (t ServerToggle) Human(w io.Writer) error {
 		_, err := fmt.Fprintf(w, "  needs authorization: run 'agenthub auth login %s'\n", t.ID)
 		return err
 	default:
-		_, err := fmt.Fprintf(w, "  not reachable right now: %s\n", oneLine(t.Probe.Detail, descriptionColumnBytes))
+		// Collapsed but NOT bounded: this line is the whole reason the probe
+		// runs, it is not a table cell, and descriptionColumnBytes is a
+		// description column's budget. A server whose command is a long path
+		// spent all 72 bytes on the path and printed no reason at all.
+		_, err := fmt.Fprintf(w, "  not reachable right now: %s\n", oneLine(t.Probe.Detail, 0))
 		return err
 	}
 }

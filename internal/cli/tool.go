@@ -595,6 +595,11 @@ func rowForTool(t discovery.Tool) ToolRow {
 // bytes on a rune boundary, marking a cut with a single-rune ellipsis. It
 // keeps a hostile (or merely verbose) multi-line description from wrecking
 // the table without changing what --json reports.
+//
+// max <= 0 collapses without truncating, for the lines that are not a table
+// cell and have the terminal to themselves. The collapse is still wanted
+// there — a multi-line detail would break the line either way — but a column
+// bound is not: it is what cost a probe failure its diagnosis.
 func oneLine(s string, max int) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -611,7 +616,7 @@ func oneLine(s string, max int) string {
 		b.WriteRune(r)
 	}
 	out := b.String()
-	if len(out) <= max {
+	if max <= 0 || len(out) <= max {
 		return out
 	}
 	const ellipsis = "…" // 3 bytes, counted INSIDE the bound
