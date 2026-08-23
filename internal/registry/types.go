@@ -392,10 +392,17 @@ type RateLimitRule struct {
 	Server string `json:"server,omitempty"`
 	Tool   string `json:"tool,omitempty"`
 	Limit  int    `json:"limit"`
-	// Window is a Go duration STRING ("30s", "1m", "1h"). A bare number is
-	// refused at load: 60 is ambiguous between seconds, millis and nanos,
-	// and the ambiguity would be discovered as a 1000x wrong quota in
-	// production.
+	// Window is a Go duration STRING ("30s", "1m", "1h"): 60 is ambiguous
+	// between seconds, millis and nanos, and the ambiguity would be
+	// discovered as a 1000x wrong quota in production.
+	//
+	// A bare number is not "refused at load" — it never reaches a rule
+	// check. The whole document fails to decode, so registry.Open
+	// quarantines governance.json and resets it, taking every other
+	// governance field with it while the gateway serves on. An invalid
+	// VALUE (scope, an unparseable duration string) is the case that
+	// reaches initRateLimits and fails closed there. Both are recorded in
+	// docs/subsystems/execution.md.
 	Window string `json:"window"`
 	// Scope counts the limit per matching (client, server, tool) triple
 	// ("key", the default) or once for the whole rule ("rule" — the way to

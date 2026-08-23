@@ -355,6 +355,27 @@ boundary. `retryAfter` rounds up to milliseconds and is never 0 — retrying in 
 **`Duration` accepts strings only.** A bare `60` is ambiguous between seconds, milliseconds and
 nanoseconds, and that ambiguity gets discovered in production as a quota off by 1000x.
 
+**Hand-editing `governance.json` is the only way to configure a quota, and the two ways to get it wrong
+go in opposite directions.** No `config` key, no command anywhere in the tree, no control-plane route
+and no GUI control writes `rateLimits`; the shape is a rule list no flag could express, and it appears
+in no document a user reads. So the sharp edges below are met by hand, on the only route there is:
+
+- A **value** error — `scope: "bogus"`, an unparseable `window` string — decodes into the document,
+  reaches `initRateLimits`, and takes the fail-closed direction stated above: the gateway refuses to
+  start, naming the rule (`ratelimit: rule 0 (*/echo1/*): unknown scope "bogus" (want "key" or
+  "rule")`). This is the case the failure direction is written for, and it is a good failure.
+- A **type** error — `"window": 60`, the exact mistake `Duration` accepts strings only is about — never
+  reaches that check. The document will not decode at all, so `registry.Open` quarantines it and resets
+  the working copy: `governance.json` becomes `{}`, and `discovery`, `calls.*`, `http.*` and
+  `events.enabled` go back to their defaults along with the quota. The gateway then **serves on**. The
+  original is kept as `governance.json.unreadable-<ts>` and `doctor` reports `registry:quarantined` as
+  a warning, so nothing is destroyed — but the operator's next `config ls` shows defaults with nothing
+  on the line saying which settings just went away.
+
+Quarantine is deliberate and is what keeps a corrupt document from taking the coordination plane down
+(see the registry's own contract). What is worth knowing here is that a typo in ONE rate-limit rule
+resets EVERY governance field, and that it is the more likely of the two mistakes to make.
+
 **The failure direction splits in two by timing.**
 
 *Fail-closed at assembly.* When rules are configured, `New` rejects three cases: an invalid rule set; a
