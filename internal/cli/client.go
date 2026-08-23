@@ -252,7 +252,7 @@ func (a *App) clientTarget(
 ) (clients.Format, string, error) {
 	format, ok := clients.New(clients.Options{NoDelegate: manual}).Lookup(clientID)
 	if !ok {
-		e := NotFoundf(CodeClientUnsupported, "client %q is not supported for direct configuration writing in M0", clientID)
+		e := NotFoundf(CodeClientUnsupported, "client %q is not supported for direct configuration writing", clientID)
 		e.Hint = fmt.Sprintf("supported: %s (use 'client connect --dry-run' to preview the snippet for any client)",
 			strings.Join(clients.IDs(), ", "))
 		return nil, "", e

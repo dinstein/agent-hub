@@ -301,8 +301,14 @@ func (d *doctorRun) checkDirectories() doctorDirs {
 	var dirs doctorDirs
 	data, err := d.app.resolver.DataDir()
 	if err != nil {
+		// Not "this platform is unsupported": the commonest way here is a
+		// home directory that would not resolve, on macOS or Linux, and the
+		// override repairs that case as much as it repairs a platform with no
+		// default at all. The three platforms named are the ones DataDir
+		// resolves a default for; err.Error() above says which case this is.
 		d.add("data-dir", StatusFail, err.Error()).Fix =
-			"agenthub supports macOS and Linux in M1; set " + platform.EnvDataDir + " explicitly"
+			"set " + platform.EnvDataDir + " to a writable directory; agenthub resolves a default " +
+				"on macOS, Linux and Windows only"
 		return dirs
 	}
 	dirs.data = data
