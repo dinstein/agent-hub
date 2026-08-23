@@ -118,6 +118,10 @@ in any mode.
 `lazy` is the default because nobody revisits this setting when the fourth server is added, and `full`
 spends context in proportion to how much the gateway is used.
 
+**Nothing pins a tool yet.** No registry field and no command names one, and the gateway passes
+`discovery.Options.Pins` from a field nothing assigns, so `lazy` today returns the five meta-tools and
+nothing beside them ([subsystems/execution.md](subsystems/execution.md)).
+
 Search results carry a compact signature, not a full schema; the agent calls `describe_tool` for
 detail. Every tool id that cannot be shown — nonexistent, out of scope, or held back by an allow list
 — returns the same copy, so `describe_tool` cannot be used to enumerate what exists.

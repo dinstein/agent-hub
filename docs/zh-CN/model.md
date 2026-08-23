@@ -106,6 +106,10 @@ flowchart LR
 
 `lazy` 之所以是默认：加到第四个 server 时没人会回头改这个设置，而 `full` 花掉的上下文与你用网关的程度成正比。
 
+**现在还钉不住任何工具。** 没有任何注册表字段、也没有任何命令能点名一个被钉住的工具，网关传给
+`discovery.Options.Pins` 的那个字段没有人赋值，所以 `lazy` 今天返回的就是五个元工具，别的什么都没有
+（[subsystems/execution.md](../subsystems/execution.md)，英文）。
+
 搜索结果带的是紧凑签名而不是完整 schema，细节由 agent 再调 `describe_tool` 取。任何不能展示的工具 id
 ——不存在、不在作用域、或被白名单挡下——返回同一段文案，否则 `describe_tool` 就成了枚举存在性的探针。
 

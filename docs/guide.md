@@ -121,6 +121,9 @@ agenthub config set discovery full            # the global default
 | `lazy` | the meta-tools (`status`, `search_tools`, `describe_tool`, `call_tool`, `fetch_result`) plus any pinned tools | large surfaces. **The default when nothing sets a mode** |
 | `-` | clears the profile's override | fall back to the global default |
 
+Nothing pins a tool yet — no field and no command names one — so `lazy` today returns those five names
+and nothing else.
+
 The reason to care is context, not security. Forty servers in `full` mode means a tool list the client
 re-reads on every turn; `lazy` turns that into five names plus a search. Visibility is unchanged either
 way. `profile ls` prints the mode each profile will actually be served in, so one that sets none shows

@@ -112,6 +112,8 @@ agenthub config set discovery full            # 全局默认
 | `lazy` | 元工具（`status`、`search_tools`、`describe_tool`、`call_tool`、`fetch_result`）加上被钉住的工具 | 大暴露面。**没有任何一层设置模式时的默认值** |
 | `-` | 清掉这个 profile 的覆盖 | 回落到全局默认 |
 
+现在还钉不住任何工具——没有字段、也没有命令能点名一个——所以 `lazy` 今天返回的就是那五个名字，别的没有。
+
 值得在意的原因是上下文，不是安全。四十个 server 在 `full` 模式下意味着客户端每一轮都要重读一份工具清单；
 `lazy` 把它变成五个名字加一次搜索。两种模式下可见性完全一样。`profile ls` 打印的是每个 profile 实际会被
 服务的模式，所以没设模式的那个显示 `lazy (inherited)`，而不是一个还要你自己去解析的横杠。
