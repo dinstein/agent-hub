@@ -424,7 +424,10 @@ func (a *ServerAuth) line() string {
 		parts = append(parts, "issuer "+a.Issuer)
 	}
 	if a.Detail != "" {
-		parts = append(parts, oneLine(a.Detail, descriptionColumnBytes))
+		// `server inspect` gives one server the whole width, as this
+		// function's doc says; the detail is a diagnosis, not a description
+		// column.
+		parts = append(parts, oneLine(a.Detail, 0))
 	}
 	return strings.Join(parts, ", ")
 }

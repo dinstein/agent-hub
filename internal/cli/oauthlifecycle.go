@@ -51,9 +51,15 @@ func renewCommandFor(id string, hasRefreshToken bool) string {
 //
 // It was composed independently in serverauth.go and auth.go, byte for byte
 // the same sentence twice.
+//
+// The detail is collapsed but NOT bounded, matching the AuthStateRevoked case
+// below: this is a footer sentence rather than a table cell, and the vault's
+// reason for refusing to answer is the whole of what the line has to say. A
+// description column's budget is spent before a path-carrying error reaches
+// its verb.
 func unreadableCredentialHint(id, detail string) string {
 	return fmt.Sprintf("%s: the stored credential could not be read: %s",
-		id, oneLine(detail, descriptionColumnBytes))
+		id, oneLine(detail, 0))
 }
 
 func oauthHintFor(id, state string, hasRefreshToken bool, expiresIn int64, detail string) string {
