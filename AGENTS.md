@@ -223,6 +223,38 @@ Rebase only branches that are yours alone: once pushed, a branch is history othe
 Go 1.26+, golangci-lint v2, make, node v22 / npm 10, the `gh` CLI (authenticated — the branch flow
 opens and updates PRs through it), and the wails3 CLI (only needed for GUI builds).
 
+**The two version floors above are floors, not a matrix, and the pair CI runs is `go1.26.x` +
+`golangci-lint v2.12.2`** (`.github/workflows/ci.yml`; `internal/depguardtest` names the same lint
+version in its skip message). Newer is not automatically compatible, and each way it fails is silent
+in a different place:
+
+- **golangci-lint v2.12.2 cannot analyse a Go 1.27 toolchain at all.** It is built with go1.26 and
+  panics with `file requires newer Go version go1.27` inside package loading, which
+  `internal/depguardtest` reports as "lint failed but not via depguard" — a depguard message for a
+  problem that has nothing to do with depguard.
+- **A newer golangci-lint reports findings CI does not have.** v2.13.1 raises `SA4023` on
+  `internal/platform/windows.go`, correctly: `currentUserSID` always returns an error on the
+  non-Windows build, so that `if err != nil` is always true there. `make ci` is then red locally and
+  green on both runners.
+- **`make fmt` under Go 1.27 writes formatting CI rejects.** 1.27's gofmt aligns a map literal whose
+  longest key stands alone where 1.26's does not, so the documented "run `make fmt` after touching an
+  import block" step introduces a `gofmt` lint failure. It is not visible locally, because the same
+  new gofmt then calls the file formatted.
+
+Reproducing the runners on a machine that has moved ahead needs both halves pinned, and nothing in
+the repository has to change to do it:
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+  | sh -s -- -b "$(pwd)/bin" v2.12.2          # bin/ is gitignored, and depguardtest probes it
+export GOTOOLCHAIN=go1.26.0
+export AGENTHUB_GOLANGCI_LINT="$(pwd)/bin/golangci-lint"
+make ci GOLANGCI_LINT="$(pwd)/bin/golangci-lint"
+```
+
+Pinning only the linter is worse than pinning neither: v2.12.2 under a 1.27 toolchain is the panic
+above, so `GOTOOLCHAIN` is not the optional half.
+
 The `codex` CLI is optional, and only the
 [security-audit skill](.agents/skills/security-audit/SKILL.md) looks for it: present, it reviews the
 same shards as a second independent engine; absent, that sweep runs single-engine and says so. Not a
