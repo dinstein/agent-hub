@@ -137,7 +137,7 @@ mkdir -p ~/.claude/skills/agenthub && agenthub manual > ~/.claude/skills/agenthu
 | 发现 | `full` / `grouped` / `lazy`；五件套 meta-tool，紧凑签名文法，二段式 describe。意图变体已实现，但今天谁也到不了：没有任何一层去设置那个开关（[详情](docs/zh-CN/model.md)） |
 | 安全 | spawn guard（反走私）、`DialContext` 内筛查的 SSRF 双向谓词、分级为 read/write/destructive 的 agent token、协作式调用配额 |
 | 结果整形 | 分页、预算、`fetch_result` 缓存。TOON 投影编码已实现（never-larger 与数字保真两条构造性保证），但今天谁也到不了：没有任何 governance 键会选它（[详情](docs/subsystems/shaping.md)，英文） |
-| 客户端 | 12 种客户端的配置适配（Format 驱动）、skills 库/安装两层管理、skills-over-MCP 供给 |
+| 客户端 | 12 种客户端的配置适配（Format 驱动）、skills 库/安装两层管理。skills-over-MCP 供给本身能用，但没有任何东西能打开它：`skillsOverMcp` 没有 `config` 键，只能手改 `governance.json`（[详情](docs/subsystems/skills.md)，英文） |
 | 运维 | `doctor` 体检、`calls` 背后加密且有硬边界的调用账本、把各进程归并成一条流的 `logs`、闭集词汇的 `events`、逐 server 报文抓取、全链路 X-Request-Id |
 
 ## 文档

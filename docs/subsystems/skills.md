@@ -212,6 +212,17 @@ a nonexistent one. `Annotations()` is payload, not decoration: the tier ladder t
 annotations as destructive, so a read-only tool without annotations would be refused to a read-only
 credential.
 
+**The switch it is opted into with does not exist.** `GovernanceDoc.SkillsOverMCP` is read at
+`gateway/skills.go` and works once set — the field's own doc says the face is "opted INTO, never
+inherited by an upgrade". Nothing writes it. `agenthub config set skillsOverMcp` is refused, and the
+key is absent from the `known keys` list that refusal prints; no control-plane route, no GUI control
+and no `confops` handler touches it; the only writers in the tree are this package's tests. Every other
+`GovernanceDoc` field has a route in: a `config` key for `discovery`, `calls.*`, `http.*`,
+`events.enabled` and `resultBudget.<server>`, `profile use` for `activeProfile`, a migration for the
+retired `audit`, and for `rateLimits` a hand-edited list whose structure no flag could express. An
+operator's only way to this one is editing `governance.json` directly, and nothing says so. Adding the
+key is a new user-visible flag, which is a feature branch and not a tidy pass.
+
 ## Capability boundaries
 
 `ApplyState` landed at five values rather than one per failure: any target we are not allowed to write

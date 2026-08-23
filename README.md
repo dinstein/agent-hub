@@ -146,7 +146,7 @@ The five above are the argument; this is the matrix.
 | Discovery | `full` / `grouped` / `lazy`; five meta-tools, compact signature grammar, two-stage describe. Intent variants are implemented and reachable by nothing — no layer sets the switch ([details](docs/model.md)) |
 | Security | Spawn guard (anti-smuggling), bidirectional SSRF predicates screened inside `DialContext`, agent tokens graded read/write/destructive, cooperative call quotas |
 | Result shaping | Pagination, budgets, `fetch_result` caching. TOON projection encoding is implemented — never-larger and numeric fidelity, both constructive — and reachable by nothing: no governance key selects it ([details](docs/subsystems/shaping.md)) |
-| Clients | Config adaptation for 12 client types (format-driven), two-layer skills management, skills-over-MCP provisioning |
+| Clients | Config adaptation for 12 client types (format-driven), two-layer skills management. Skills-over-MCP provisioning works, but nothing switches it on: `skillsOverMcp` has no `config` key and is edited in `governance.json` by hand ([details](docs/subsystems/skills.md)) |
 | Operations | `doctor` health check, encrypted bounded call ledger behind `calls`, `logs` merging every process into one stream, `events` in a closed vocabulary, per-server wire trace, X-Request-Id end to end |
 
 ## Documentation
