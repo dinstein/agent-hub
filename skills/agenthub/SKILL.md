@@ -34,6 +34,8 @@ Pass `--json` globally. Envelope: `{"ok":true,"data":…}` or `{"ok":false,"erro
 | 6 | refused by governance — **report and stop; not a bug to route around** |
 | 7 | lock held or state corrupt — retry once, never delete state |
 
+**Five commands answer with a verdict, and `ok` is not it.** `doctor`, `skill verify`, `secret migrate`, `calls verify` and `daemon status` render their report and keep `{"ok":true,…}` — the report was produced — putting the outcome in the exit code alone. So `ok` says the command answered, never that the answer is good news, and for these five the row above describes what the command FOUND rather than what went wrong with it: `daemon status` exits 4 to tell you the daemon is down, which is its answer and not a missing prerequisite, and `calls verify` exits 7 for a ledger that did not verify, which is a stable verdict — do not retry it.
+
 ## 1. Add a server
 
 **`server add` only writes the definition — the entry lands DISABLED.** `server enable <id>` puts it into service and runs a probe. `catalog add` and `auth login` enable automatically.

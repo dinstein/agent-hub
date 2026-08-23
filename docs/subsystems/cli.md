@@ -26,6 +26,20 @@ typed errors and never prints.
 
 The mapping lives in exactly one place, `ExitCodeFor`.
 
+**A non-zero exit has two paths, and only one of them carries an error envelope.** The `Triggered by`
+column above names the typed constructors — the errors `ExitCodeFor` classifies. `silentExitError` is
+the other path: five commands render their outcome through the output layer and then return a bare
+code, so `--json` still answers `{"ok":true,…}` while the exit code carries the verdict. `doctor`,
+`skill verify` and `secret migrate` exit 1; `calls verify` exits 7; `daemon status` exits 4. For those
+five the code is the only place the verdict lives, and `ok` answers whether the command produced its
+report rather than whether the report is good news — a distinction `skill.go` states at its own call
+site and `skills/agenthub/SKILL.md` now states for all five.
+
+Two of the five read oddly against the table read literally, and deliberately so: `daemon status`
+exits 4 to *report* that the daemon is down, which is its answer and not a command that needed one,
+and `calls verify` exits 7 for a ledger that did not verify, which is a stable verdict rather than the
+retryable contention the row describes.
+
 **"A cobra parse error = exit 2" is guaranteed by construction**: `SetFlagErrorFunc` funnels flag errors
 into `Usagef`, typed argument validators replace cobra's, and every group uses `cobra.ArbitraryArgs` plus
 `groupRunE` so an unmatched subcommand becomes a typed usage error rather than cobra's untyped "unknown
