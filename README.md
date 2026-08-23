@@ -143,9 +143,9 @@ The five above are the argument; this is the matrix.
 |---|---|
 | Protocol | MCP `2026-07-28` (stateless per-request `_meta`, `server/discover`, MRTR, `subscriptions/listen`) plus `2025-11-25` / `2025-06-18` / `2025-03-26`, negotiated on both faces. Tools only — resources, prompts and extension capabilities are not forwarded ([details](docs/status/mcp-2026-07-28.md)) |
 | Gateway | stdio (one process per client) + streamable-http (shared daemon pool); downstream over stdio / streamable-http / legacy HTTP+SSE |
-| Discovery | `full` / `grouped` / `lazy`; five meta-tools plus intent variants, compact signature grammar, two-stage describe |
+| Discovery | `full` / `grouped` / `lazy`; five meta-tools, compact signature grammar, two-stage describe. Intent variants are implemented and reachable by nothing — no layer sets the switch ([details](docs/model.md)) |
 | Security | Spawn guard (anti-smuggling), bidirectional SSRF predicates screened inside `DialContext`, agent tokens graded read/write/destructive, cooperative call quotas |
-| Result shaping | Pagination, budgets, `fetch_result` caching, TOON projection encoding (never-larger and numeric fidelity, both constructive) |
+| Result shaping | Pagination, budgets, `fetch_result` caching. TOON projection encoding is implemented — never-larger and numeric fidelity, both constructive — and reachable by nothing: no governance key selects it ([details](docs/subsystems/shaping.md)) |
 | Clients | Config adaptation for 12 client types (format-driven), two-layer skills management, skills-over-MCP provisioning |
 | Operations | `doctor` health check, encrypted bounded call ledger behind `calls`, `logs` merging every process into one stream, `events` in a closed vocabulary, per-server wire trace, X-Request-Id end to end |
 
