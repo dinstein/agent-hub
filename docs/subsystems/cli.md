@@ -226,3 +226,13 @@ the cursor would advance a whole second and the next scan would discard every re
 printed. Two followers lost records that way before this rule. `ScanFramesSince` is deliberately inclusive
 of its bound — that bound is what lets it skip whole day partitions — so the tie is dropped in the reader,
 where nanoseconds are in scope.
+
+**`daemon logs` does not share the record readers' flag vocabulary.** `logs`, `events`, `calls tail` and
+`server logs` each take a `--since` that accepts a duration, an RFC3339 time or `all`, and a `--limit`
+whose `0` means all — the set `skills/agenthub/SKILL.md` teaches as shared across "the four record
+readers". `daemon logs` takes a plain `time.Duration` and has no `--limit` at all, so `--since all`
+answers `invalid duration "all"` and an RFC3339 stamp answers `unknown unit "-"`, which is Go's duration
+parser talking to somebody who typed a timestamp. It is the older single-process view of `daemon.log` and
+predates the merged reader, and the skill does describe it separately — but a reader who learned the
+vocabulary on `logs` meets the difference as a parse error rather than as a documented narrowing.
+Widening the flag changes what a command accepts, which is a feature branch and not a tidy pass.
