@@ -43,6 +43,19 @@ func renewCommandFor(id string, hasRefreshToken bool) string {
 //
 // It names commands and the server id and nothing else: no caller passes it a
 // credential value, and there is none in the lifecycle to pass.
+// unreadableCredentialHint is the repair sentence for a credential that
+// could not be READ at all, which is not a lifecycle state and so is not one
+// of oauthHintFor's cases — but it is rendered by the same two commands, and
+// for the same reason it lives beside it: `server ls` and `auth status` read
+// one vault and must not describe one failure two ways.
+//
+// It was composed independently in serverauth.go and auth.go, byte for byte
+// the same sentence twice.
+func unreadableCredentialHint(id, detail string) string {
+	return fmt.Sprintf("%s: the stored credential could not be read: %s",
+		id, oneLine(detail, descriptionColumnBytes))
+}
+
 func oauthHintFor(id, state string, hasRefreshToken bool, expiresIn int64, detail string) string {
 	switch state {
 	case api.AuthStateNone:

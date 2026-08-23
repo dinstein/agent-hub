@@ -413,8 +413,7 @@ func authStatusOf(ctx context.Context, deps *oauthDeps, id string, now time.Time
 		if !errors.Is(err, oauthflow.ErrNoState) {
 			row.State = api.AuthStateError
 			row.Detail = err.Error()
-			row.Hint = fmt.Sprintf("%s: the stored credential could not be read: %s",
-				id, oneLine(row.Detail, descriptionColumnBytes))
+			row.Hint = unreadableCredentialHint(id, row.Detail)
 		}
 		return row
 	}

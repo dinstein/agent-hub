@@ -382,8 +382,7 @@ func (a *ServerAuth) hint(id string) string {
 		return ""
 	}
 	if a.State == api.AuthStateError {
-		return fmt.Sprintf("%s: the stored credential could not be read: %s",
-			id, oneLine(a.Detail, descriptionColumnBytes))
+		return unreadableCredentialHint(id, a.Detail)
 	}
 	switch {
 	case a.Kind == authKindSecret && a.State == authStateMissing:
