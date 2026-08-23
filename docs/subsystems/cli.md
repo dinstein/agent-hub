@@ -250,3 +250,18 @@ parser talking to somebody who typed a timestamp. It is the older single-process
 predates the merged reader, and the skill does describe it separately — but a reader who learned the
 vocabulary on `logs` meets the difference as a parse error rather than as a documented narrowing.
 Widening the flag changes what a command accepts, which is a feature branch and not a tidy pass.
+
+**The four record readers do not agree on which zone a stamp is printed in.** Three treatments, not one
+rule: `.UTC()` in `events.go` and `serverlogs.go`, `.Local()` on `calls_read.go`'s human row, and no
+conversion at all in `logs.go`, which formats whatever offset the record was parsed with. So `events`
+and `server logs` print `Z` in both faces, `logs` prints the local offset in both, and `calls tail`
+prints `Z` in `--json` and the local offset in its table.
+
+The pair that straddles it is the pair the ledger's own join is documented for: a call's ledger row and
+its wire frames share a call id and print different calendar days for the same instant, eight hours
+apart on this machine. One envelope straddles it alone — `calls tail --json` echoes its `since` bound
+with a local offset beside events stamped `Z`.
+
+Nothing here is ambiguous: every stamp carries its offset, and `--since` takes an RFC3339 instant in
+any zone. It is a correlation cost, not a correctness one, and settling it changes what four commands
+print — a feature branch, not a tidy pass.
