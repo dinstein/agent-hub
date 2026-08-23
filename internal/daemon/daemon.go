@@ -704,15 +704,14 @@ func ReadInfo(runDir string) (Info, error) {
 
 // openEvents opens the control-plane event stream when governance wants it.
 //
-// Fail-open in every direction: the switch unset means ON, an unreadable
-// registry means ON (a stream is the thing you want when the config itself
-// is in doubt), and a file that will not open means nil — which is silent by
-// contract, so no caller distinguishes it from "switched off".
+// Fail-open in both directions it has: the switch unset means ON, and a file
+// that will not open means nil — which is silent by contract, so no caller
+// distinguishes it from "switched off". There is no third direction for a
+// registry that could not be read: this daemon IS the coordination plane, so
+// Run has already returned by the time anything calls this.
 func openEvents(logsDir string, log *slog.Logger, store *registry.Store) *eventlog.Stream {
-	if store != nil {
-		if snap := store.Snapshot(); !snap.Governance.V.EventsEnabled() {
-			return nil
-		}
+	if !store.Snapshot().Governance.V.EventsEnabled() {
+		return nil
 	}
 	st, err := eventlog.Open(filepath.Join(logsDir, eventlog.FileName), eventlog.Options{})
 	if err != nil {

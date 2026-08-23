@@ -168,7 +168,10 @@ func (r *refresher) noteFailure(id string, now time.Time, observedAt int64, park
 	return n, d
 }
 
-// failCount reports a server's consecutive failure count (tests, logs).
+// failCount reports a server's consecutive failure count. Tests only:
+// the "attempt" field of the refresh-failure line comes from noteFailure's
+// return, which is the count at the instant of the failure rather than
+// whatever it has become by the time a line is formatted.
 func (r *refresher) failCount(id string) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
