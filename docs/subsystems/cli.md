@@ -265,3 +265,20 @@ with a local offset beside events stamped `Z`.
 Nothing here is ambiguous: every stamp carries its offset, and `--since` takes an RFC3339 instant in
 any zone. It is a correlation cost, not a correctness one, and settling it changes what four commands
 print — a feature branch, not a tidy pass.
+
+**A data directory long enough to overflow `sun_path` is diagnosable only by the tests.** The control
+socket is `<data>/run/ctl.sock`, and macOS bounds a unix socket path at 104 bytes. Past that,
+`daemon start` reports what the kernel said and nothing more — `daemon: ctlapi: listen: listen unix
+<path>: bind: invalid argument` — which names neither the limit nor the length. `doctor` then makes it
+a loop: `ctl-socket` reads `absent (daemon not running)` and its suggested fix is the command that just
+failed, with the whole run counted `0 fail`.
+
+The default paths are comfortably short; this is reachable through `AGENTHUB_DATA_DIR`, which is also
+the override the docs hand people for putting the hub somewhere else. **The test suite already knows**:
+`ctlapi/listener_test.go` carries `shortSocketPath` "for the sun_path limit (t.TempDir can exceed it on
+macOS because it embeds test names)", and `daemon_test.go` and `cli/daemon_test.go` each work around
+the same thing. Three test files route around a constraint no production path mentions.
+
+Measuring the resolved path before binding, and saying so, is a new precondition on a command's
+failure path — a feature branch, not a tidy pass. It is written down here because the failure it
+produces today reads as a kernel error nobody can act on.
