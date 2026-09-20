@@ -213,12 +213,30 @@ boundaries. The streamable-http out-of-call stream merely ends and reconnects ne
 404 Not Found  → ErrSessionExpired, ClassUnavailable, clears the session id
 429 Too Many   → ClassRetry + a Retry-After hint (delta-seconds or HTTP-date; unparseable = use the caller's backoff)
 5xx            → ClassUnavailable: the request did reach the server, so non-idempotent calls must not be replayed
+400, session   → ErrSessionExpired, ClassUnavailable, clears the session id (reclassifySessionLoss)
 other 4xx      → ClassFatal: our request was rejected on its own merits
 ```
 
 **410 is terminal for the transport.** Once `noteTerminalStatus` sets `moved`, every later call fails
 immediately, the stream loop exits, and `Close` does not even send the DELETE. The meaning is "a human
 has to change the URL in the configuration".
+
+**A 400 about a session is the one 4xx that is not about our request.** `reclassifySessionLoss` lifts
+two shapes out of `ClassFatal`, which neither trips the breaker nor respawns — and a session this
+transport cannot replace is a connection that never comes back. The request carried **no** session id
+while one had been taken from us: the specification's own 404-then-400 sequence, a server asking for a
+session. Or the request **carried** one and the server refused it with 400 rather than the prescribed
+404: that is the Python MCP SDK's session manager, whose `400 Bad Request: No valid session ID
+provided` is what every client holds after that server restarts or expires an idle session. Nothing
+reaches the 404 branch there, so this leg clears the id itself — without it the stale id is resent for
+the life of the process, and the downstream stays dead until an operator restarts the gateway.
+
+**The body decides, not the prose.** A 400 carrying a JSON-RPC error code is a live session rejecting
+one request on its merits (−32020 header mismatch, say), and throwing the id away over it would turn a
+correctable request into a reconnect; matching the response text instead would bind this transport to
+one server's wording. Recovery is then the 404 path's, unchanged: `ClassUnavailable` counts toward the
+breaker and the half-open probe respawns, so the cost of an expired session is three failed calls and
+a cooldown rather than the first call.
 
 **Every destination a server names fails closed on cross-origin.** A server can name one two ways: the
 legacy endpoint event and a 3xx redirect. The caller's headers, `Authorization` among them, ride every

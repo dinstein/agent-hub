@@ -334,7 +334,8 @@ func TestStreamableHTTPStatusClassification(t *testing.T) {
 		wantClass  Class
 		wantRetry  time.Duration
 		wantErrIs  error
-		wantCalls2 int // requests the server sees after a second Call
+		wantCalls2 int  // requests the server sees after a second Call
+		held       bool // seed a session id, so the request carries one
 	}{
 		{
 			name:       "429 with Retry-After is the only retryable server answer",
@@ -369,8 +370,13 @@ func TestStreamableHTTPStatusClassification(t *testing.T) {
 			wantClass:  ClassUnavailable,
 			wantErrIs:  ErrSessionExpired,
 			wantCalls2: 2,
+			held:       true,
 		},
 		{
+			// With no session in play the status means what it says. A 400
+			// answering a request that DID name a session is the other
+			// thing entirely, and TestSessionLossAfter400StaysRecoverable
+			// owns both halves of that.
 			name:       "400 is fatal: our request was bad, the server is fine",
 			status:     http.StatusBadRequest,
 			wantClass:  ClassFatal,
@@ -389,10 +395,11 @@ func TestStreamableHTTPStatusClassification(t *testing.T) {
 				_, _ = w.Write([]byte(`{"error":"nope"}`))
 			})
 			tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
-			// Seed a session id so the 404 case has one to invalidate.
-			tr.mu.Lock()
-			tr.sessionID = "seeded"
-			tr.mu.Unlock()
+			if tt.held {
+				tr.mu.Lock()
+				tr.sessionID = "seeded"
+				tr.mu.Unlock()
+			}
 
 			_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
 			te := transportError(t, err)
@@ -1191,6 +1198,91 @@ func TestSessionLossAfter400StaysRecoverable(t *testing.T) {
 		_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
 		if te := transportError(t, err); te.Class != ClassFatal {
 			t.Fatalf("class = %s, want fatal for a 400 that is not about a session", te.Class)
+		}
+	})
+
+	t.Run("the server answers a stale id with 400 instead of 404", func(t *testing.T) {
+		// The shape the Python MCP SDK's StreamableHTTPSessionManager
+		// deploys: a POST naming a session id it does not hold is refused
+		// with 400 "No valid session ID provided", never the 404 the
+		// specification prescribes. The 404 leg above therefore never runs,
+		// so nothing clears the id and every later request repeats it.
+		fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			req := readRequestRPC(t, r)
+			if req.Method == mcp.MethodInitialize {
+				w.Header().Set(headerSessionID, "sid-1")
+				writeJSONRPC(t, w, mcp.NewResponse(req.ID, initResult(t, mcp.ProtocolVersion)))
+				return
+			}
+			http.Error(w, "Bad Request: No valid session ID provided", http.StatusBadRequest)
+		})
+		tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+		if _, err := tr.Call(testCtx(t), mcp.MethodInitialize, mcp.InitializeParams{}); err != nil {
+			t.Fatalf("initialize: %v", err)
+		}
+		_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+		te := transportError(t, err)
+		if te.Class != ClassUnavailable {
+			t.Fatalf("class = %s, want unavailable — ClassFatal neither trips the breaker "+
+				"nor respawns, so the stale id is resent for the life of the process", te.Class)
+		}
+		if !errors.Is(err, ErrSessionExpired) {
+			t.Fatalf("err = %v, want it to name the lost session", err)
+		}
+		// The id is dead: keeping it would make every later request repeat
+		// the same rejection, and a session-less retry is the one shape the
+		// 404 leg already proves recoverable.
+		tr.mu.Lock()
+		sid := tr.sessionID
+		tr.mu.Unlock()
+		if sid != "" {
+			t.Fatalf("session id = %q, want it cleared", sid)
+		}
+	})
+
+	t.Run("a 400 carrying a JSON-RPC error keeps a held session", func(t *testing.T) {
+		// -32020 (header/body version mismatch) is a 2026-07-28 server
+		// rejecting this request on its merits while the session stays
+		// perfectly alive. Throwing the id away over it would turn one
+		// correctable request into a reconnect.
+		fs := newFakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			req := readRequestRPC(t, r)
+			if req.Method == mcp.MethodInitialize {
+				w.Header().Set(headerSessionID, "sid-1")
+				writeJSONRPC(t, w, mcp.NewResponse(req.ID, initResult(t, mcp.ProtocolVersion)))
+				return
+			}
+			body, err := json.Marshal(mcp.NewErrorResponse(req.ID,
+				&mcp.Error{Code: mcp.CodeHeaderMismatch, Message: "header mismatch"}))
+			if err != nil {
+				t.Errorf("marshal: %v", err)
+				return
+			}
+			w.Header().Set(headerContentType, mediaJSON)
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write(body)
+		})
+		tr := dialStreamable(t, HTTPConfig{URL: fs.URL + "/mcp"})
+		if _, err := tr.Call(testCtx(t), mcp.MethodInitialize, mcp.InitializeParams{}); err != nil {
+			t.Fatalf("initialize: %v", err)
+		}
+		_, err := tr.Call(testCtx(t), mcp.MethodToolsList, nil)
+		if te := transportError(t, err); te.Class != ClassFatal {
+			t.Fatalf("class = %s, want fatal for a 400 the server explained", te.Class)
+		}
+		tr.mu.Lock()
+		sid := tr.sessionID
+		tr.mu.Unlock()
+		if sid != "sid-1" {
+			t.Fatalf("session id = %q, want it kept", sid)
 		}
 	})
 }

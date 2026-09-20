@@ -303,37 +303,6 @@ func (t *streamableHTTP) post(ctx context.Context, body []byte, method, name, de
 	return resp, nil
 }
 
-// reclassifySessionLoss rescues the one error that would otherwise strand a
-// transport whose session the server has already dropped.
-//
-// The sequence is the specification's own, and every step of it is right: the
-// server drops a session, answers 404, this transport clears its id
-// (noteTerminalStatus), and the NEXT legacy request therefore goes out with
-// no Mcp-Session-Id at all. What comes back for that one is a server telling
-// us we need a session — and a conformant ≤ 2025-11-25 server says so with
-// 400 Bad Request, which the status table classifies ClassFatal: "our request
-// was rejected on its merits". True in general, and exactly wrong here.
-// ClassFatal neither trips the breaker nor triggers a respawn, so the
-// connection sits with no session and nothing that will ever mint one, while
-// the very thing it needs — a fresh initialize — is what a respawn does.
-//
-// Recovery works today only because agenthub's own exposure face answers 404
-// where the specification says 400, and 404 is ClassUnavailable. That is the
-// server-side defect this commit's sibling fixes, and fixing it without this
-// would turn hub-to-hub session expiry from slow self-heal into a dead
-// connection.
-//
-// The predicate is narrow on purpose, and each clause carries its weight:
-//
-//   - we sent NO session header, so this cannot be the server rejecting an
-//     id it does not like (that answer is 404 and already recoverable);
-//   - we HELD one and lost it, so a server that never issued a session and
-//     simply dislikes this request keeps its honest ClassFatal;
-//   - the status is 400, the one a conformant server uses for it.
-//
-// FAIL-CLOSED direction: when in doubt the error keeps its original class.
-// Being wrong here costs a respawn that was not needed; leaving the case out
-// costs a connection that never comes back.
 // lostSession reports whether a session id this transport HELD was
 // invalidated by the peer. It is the same fact reclassifySessionLoss reads,
 // and streamLoop needs it for a different purpose: to say which of the two
@@ -344,9 +313,81 @@ func (t *streamableHTTP) lostSession() bool {
 	return t.sessionLost
 }
 
+// dropSession invalidates sid, the id a rejected request carried. It clears
+// only while that id is still the one in force: a response captured
+// concurrently may already have installed a newer one, and killing that would
+// trade a recoverable failure for a fresh dead session.
+//
+// The return value is the decision, not a courtesy — false means "this
+// rejection is about an id we no longer hold", and the caller must leave the
+// error's class alone.
+func (t *streamableHTTP) dropSession(sid string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.sessionID != sid {
+		return false
+	}
+	// sessionLost is sticky and separate from the id being empty: a
+	// transport that never had a session looks identical otherwise.
+	t.sessionID = ""
+	t.sessionLost = true
+	return true
+}
+
+// reclassifySessionLoss rescues the errors that would otherwise strand a
+// transport whose session the server has already dropped. Both arrive as 400
+// Bad Request, which the status table classifies ClassFatal: "our request was
+// rejected on its merits". True in general, and exactly wrong here.
+// ClassFatal neither trips the breaker nor triggers a respawn, so the
+// connection sits with no usable session and nothing that will ever mint one,
+// while the very thing it needs — a fresh initialize — is what a respawn does.
+//
+// There are two shapes, and which one a server produces is not ours to pick.
+//
+// **The request carried no session id.** That is the specification's own
+// sequence and every step of it is right: the server drops a session, answers
+// 404, this transport clears its id (noteTerminalStatus), and the NEXT legacy
+// request therefore goes out bare. What comes back is a server telling us we
+// need a session, and a conformant ≤ 2025-11-25 server says so with 400.
+//
+// **The request carried one and the server refused it.** The specification's
+// answer for that is 404 — but the Python MCP SDK's session manager, the most
+// widely deployed streamable-http server there is, answers 400 "No valid
+// session ID provided" for an id absent from its table, which is what a
+// server restart or an idle expiry leaves every client holding. Nothing then
+// reaches the 404 branch: the id is never cleared, every later request
+// repeats it, and the connection is dead for the life of the process. That is
+// not a slow self-heal, it is no heal at all, and it is why this leg drops the
+// id itself rather than waiting for a status that will not come.
+//
+// FAIL-CLOSED direction: when in doubt the error keeps its original class.
+// Each clause of the predicate carries its weight —
+//
+//   - the status is 400, the one both shapes use;
+//   - for the bare shape, we HELD a session and lost it, so a server that
+//     never issued one and simply dislikes this request keeps its honest
+//     ClassFatal;
+//   - for the refused shape, the body carries NO JSON-RPC error. A 400 the
+//     server explained (−32020 header mismatch, say) is a live session
+//     rejecting one request on its merits, and throwing the id away over it
+//     would turn a correctable request into a reconnect. This is the same
+//     rule noteTerminalStatus applies to a 404.
+//
+// Being wrong in the permissive direction costs a respawn that was not
+// needed; leaving either case out costs a connection that never comes back.
 func (t *streamableHTTP) reclassifySessionLoss(req *http.Request, code int, terr *Error) *Error {
-	if code != http.StatusBadRequest || req.Header.Get(headerSessionID) != "" {
+	if code != http.StatusBadRequest {
 		return terr
+	}
+	if sid := req.Header.Get(headerSessionID); sid != "" {
+		if terr.RPCCode != 0 || !t.dropSession(sid) {
+			return terr
+		}
+		return &Error{
+			Class: ClassUnavailable, StatusCode: code, RPCCode: terr.RPCCode,
+			Err: fmt.Errorf("%w: the server refused the session id it issued: %w",
+				ErrSessionExpired, terr.Err),
+		}
 	}
 	if !t.lostSession() {
 		return terr
@@ -635,8 +676,9 @@ func (t *streamableHTTP) startBackgroundStream(open func() (*http.Response, bool
 // predicate replaced, and so contradicted the code twenty lines below it.
 //
 // KNOWN GAP — this loop has no session-recovery path. If the peer expires
-// the session, the reopen carries a stale id (404) or, once a POST has
-// cleared it, none at all (400), and both are permanent refusals. The stream
+// the session, the reopen carries a stale id (404, or 400 from a server that
+// answers that way) or, once a POST has cleared it, none at all (400), and
+// all of those are permanent refusals. The stream
 // then stays down for the life of the transport although the server does
 // offer it. Nothing polls it back up: the gateway sets no PingInterval,
 // deliberately. Recovery waits for the next real tools/call, whose own
