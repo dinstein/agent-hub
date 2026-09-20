@@ -136,10 +136,10 @@ cat <<EOF
 # hand: the next release overwrites it, and a hand-edited sha256 that no longer
 # matches its URL fails at install time on someone else's machine.
 #
-# QUARANTINE. The postflight below clears com.apple.quarantine from the bundle
-# Homebrew just staged. This app is ad-hoc signed and NOT notarized, so with
-# the flag left in place macOS refuses to launch it and the user is sent to
-# System Settings to override Gatekeeper by hand — an install that has not
+# QUARANTINE. The postflight step below clears com.apple.quarantine from the
+# bundle Homebrew just staged. This app is ad-hoc signed and NOT notarized, so
+# with the flag left in place macOS refuses to launch it and the user is sent
+# to System Settings to override Gatekeeper by hand — an install that has not
 # installed.
 #
 # What that gives up, and what stands in for it: Gatekeeper answers "did these
@@ -149,7 +149,7 @@ cat <<EOF
 # than an absent one, but it IS weaker than notarization, and it is why this
 # cask can live in this tap and nowhere else.
 #
-# When Developer ID signing and notarization land, the postflight block is
+# When Developer ID signing and notarization land, the postflight step is
 # deleted and nothing else in this file changes.
 cask "agenthub-gui" do
   version "${version},${build}"
@@ -189,10 +189,16 @@ cask "agenthub-gui" do
 
   app "AgentHub.app"
 
-  postflight do
+  # postflight_steps, not postflight: Homebrew deprecated the arbitrary-Ruby
+  # block, and a deprecation warning printed on every \`brew\` command that so
+  # much as loads this tap is noise a user learns to scroll past. The steps
+  # form is declarative — Homebrew reads what will run before running it, and
+  # sandboxes it — which is why "{{appdir}}" is a token it expands rather than
+  # Ruby interpolation this file performs.
+  postflight_steps do
     # -c rather than -d com.apple.quarantine: -d fails on a file that does not
     # carry the attribute, and a recursive pass over a bundle meets plenty.
-    system_command "/usr/bin/xattr", args: ["-c", "-r", "#{appdir}/AgentHub.app"]
+    run "/usr/bin/xattr", args: ["-c", "-r", "{{appdir}}/AgentHub.app"]
   end
 
   # The app is not the only process it starts. A daemon launched from inside
