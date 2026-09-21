@@ -180,12 +180,17 @@ cask "agenthub-gui" do
     end
   end
 
-  # A bare symbol is "this release or newer" — the upper bound has its own
-  # stanza (maximum_macos), and \`brew style\` rewrites ">= :big_sur" to this.
-  depends_on macos: :big_sur # = the bundle's LSMinimumSystemVersion 11.0
   # The CLI. Installing the GUI installs it; \$PATH's agenthub then has exactly
   # one owner, which the app bundle's private copy deliberately is not.
+  # It precedes the macOS stanza because \`brew style\` orders them that way.
   depends_on formula: "${tap}/agenthub"
+  # Bare, with no floor. This asked for :big_sur — the bundle's
+  # LSMinimumSystemVersion — until \`brew style\` pointed out that Homebrew's own
+  # oldest known release IS Big Sur, so the floor excluded nothing and can
+  # never start to: the list only loses old releases. What the stanza still
+  # buys is "macOS, not Linux", which the app stanza alone does not say, and
+  # the bundle keeps refusing to launch below 11.0 on its own.
+  depends_on :macos
 
   app "AgentHub.app"
 
