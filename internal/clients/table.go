@@ -225,6 +225,16 @@ var specs = []clientSpec{
 		},
 	},
 	{
+		// The international build of the same app. Its product config names
+		// a different data folder, and the MCP file sits at the root of
+		// whichever folder that is — so the two builds never share one.
+		id:   "workbuddy-ai",
+		name: "WorkBuddy AI",
+		locs: []locSpec{
+			{placement: User, home: sameOnAll(".workbuddy-ai", "mcp.json"), section: mcpServers},
+		},
+	},
+	{
 		id:      "codex",
 		name:    "OpenAI Codex CLI",
 		nonJSON: ShapeTOML,
