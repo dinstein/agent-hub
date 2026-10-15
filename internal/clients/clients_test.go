@@ -93,7 +93,7 @@ func TestTableCoversTheEcosystem(t *testing.T) {
 	e := newEnv(t, "darwin")
 	want := []string{
 		"claude-code", "claude-desktop", "cursor", "windsurf", "vscode",
-		"cline", "roo-code", "zed", "gemini-cli", "continue", "codex", "open-webui",
+		"cline", "roo-code", "zed", "gemini-cli", "workbuddy", "continue", "codex", "open-webui",
 	}
 	ids := e.tbl.IDs()
 	got := map[string]bool{}
@@ -557,6 +557,7 @@ func TestWindowsUserPathsAreTheOnesClientsRead(t *testing.T) {
 		{"roo-code", filepath.Join(code, "globalStorage", "rooveterinaryinc.roo-cline", "settings", "mcp_settings.json")},
 		{"zed", filepath.Join(roaming, "Zed", "settings.json")},
 		{"gemini-cli", filepath.Join(e.home, ".gemini", "settings.json")},
+		{"workbuddy", filepath.Join(e.home, ".workbuddy", "mcp.json")},
 		{"codex", filepath.Join(e.home, ".codex", "config.toml")},
 		{"continue", filepath.Join(e.home, ".continue", "config.yaml")},
 	} {

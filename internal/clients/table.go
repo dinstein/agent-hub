@@ -216,6 +216,15 @@ var specs = []clientSpec{
 		},
 	},
 	{
+		id:   "workbuddy",
+		name: "WorkBuddy",
+		locs: []locSpec{
+			// User-level only: WorkBuddy reads and writes this one file from
+			// its own MCP settings page, and names no project-level file.
+			{placement: User, home: sameOnAll(".workbuddy", "mcp.json"), section: mcpServers},
+		},
+	},
+	{
 		id:      "codex",
 		name:    "OpenAI Codex CLI",
 		nonJSON: ShapeTOML,

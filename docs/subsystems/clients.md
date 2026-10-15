@@ -14,7 +14,7 @@ Behaviour is driven by the **shape** of the config, not by a branch per product.
 
 | Shape | Meaning | Rows | Clients |
 |---|---|---|---|
-| `ShapeServerMap` | a JSON file with `{"mcpServers": {…}}` at the top level | 7 | claude-code, claude-desktop, cursor, windsurf, cline, roo-code, gemini-cli |
+| `ShapeServerMap` | a JSON file with `{"mcpServers": {…}}` at the top level | 8 | claude-code, claude-desktop, cursor, windsurf, cline, roo-code, gemini-cli, workbuddy |
 | `ShapeNested` | the same map, buried under a key path inside a larger document | 2 | vscode (`mcp.servers`), zed (`context_servers`) |
 | `ShapeTOML` | a TOML document — **detect only, never rewrite** | 1 | codex |
 | `ShapeYAML` | a YAML document — **detect only, never rewrite** | 1 | continue |
@@ -180,7 +180,7 @@ one implementation for every format.
 `ConnectSnippet` is the seam that keeps `--dry-run` and the writer agreed, and it holds for what it
 builds: the **entry**, command and args. The **key path around it** is not part of that seam.
 `ConnectPlan.Human` prints a fixed `{"mcpServers":{"agenthub":…}}` envelope for every row, while the
-writer places the entry at the row's own `section`. Seven of the twelve rows do use a top-level
+writer places the entry at the row's own `section`. Eight of the thirteen rows do use a top-level
 `mcpServers` and the preview is exact for them; five do not:
 
 | Row | Where the entry actually goes | What the preview shows |

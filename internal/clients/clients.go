@@ -8,7 +8,7 @@
 //
 //   - ShapeServerMap  — a JSON file whose {"mcpServers": {...}} object maps
 //     server name to entry (claude-code, claude-desktop, cursor, windsurf,
-//     cline, roo-code, gemini-cli).
+//     cline, roo-code, gemini-cli, workbuddy).
 //   - ShapeNested     — the same name→entry map, reached through a key path
 //     inside a larger JSON document (vscode: "mcp"."servers"; zed:
 //     "context_servers"; vscode workspace: "servers").
