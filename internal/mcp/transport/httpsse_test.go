@@ -140,6 +140,114 @@ func TestHTTPSSEEndpointHandshake(t *testing.T) {
 	}
 }
 
+func TestHTTPSSEHandshakeUsesLegacyWhenDiscoverOffersBothVersions(t *testing.T) {
+	ls := newLegacyServer(t, "/messages")
+	tr := dialLegacy(t, ls, nil)
+	methods := make(chan string, 3)
+	done := make(chan struct{})
+	defer close(done)
+
+	go func() {
+		for {
+			select {
+			case msg := <-ls.posts:
+				switch v := msg.(type) {
+				case *mcp.Request:
+					methods <- v.Method
+					var result json.RawMessage
+					switch v.Method {
+					case mcp.MethodDiscover:
+						result, _ = json.Marshal(mcp.DiscoverResult{
+							SupportedVersions: []string{mcp.Version2026, mcp.Version2025},
+						})
+					case mcp.MethodInitialize:
+						result, _ = json.Marshal(mcp.InitializeResult{
+							ProtocolVersion: mcp.Version2025,
+							Capabilities:    json.RawMessage(`{}`),
+							ServerInfo:      mcp.Implementation{Name: "legacy", Version: "1"},
+						})
+					}
+					ls.events <- mcp.NewResponse(v.ID, result)
+				case *mcp.Notification:
+					methods <- v.Method
+					return
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	res, err := Handshake(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Version != mcp.Version2025 {
+		t.Fatalf("negotiated %q, want %q", res.Version, mcp.Version2025)
+	}
+	for _, want := range []string{mcp.MethodDiscover, mcp.MethodInitialize, mcp.NotificationInitialized} {
+		select {
+		case got := <-methods:
+			if got != want {
+				t.Fatalf("method = %q, want %q", got, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("method %q was not sent", want)
+		}
+	}
+}
+
+// 验证仅支持新版协议的 SSE 服务仍能通过消息 POST 接收逐请求元数据。
+func TestHTTPSSEHandshakeSupportsModernOnlyServer(t *testing.T) {
+	ls := newLegacyServer(t, "/messages")
+	tr := dialLegacy(t, ls, nil)
+	seen := make(chan string, 2)
+	go func() {
+		for range 2 {
+			msg := ls.nextPost(t)
+			req, ok := msg.(*mcp.Request)
+			if !ok {
+				t.Errorf("posted %T, want request", msg)
+				return
+			}
+			seen <- req.Method
+			var result json.RawMessage
+			switch req.Method {
+			case mcp.MethodDiscover:
+				result, _ = json.Marshal(mcp.DiscoverResult{
+					SupportedVersions: []string{mcp.Version2026},
+				})
+			case mcp.MethodToolsList:
+				var params struct {
+					Meta *mcp.RequestMeta `json:"_meta"`
+				}
+				if err := json.Unmarshal(req.Params, &params); err != nil || params.Meta == nil || params.Meta.ProtocolVersion != mcp.Version2026 {
+					t.Errorf("tools/list _meta = %+v, decode error = %v", params.Meta, err)
+				}
+				result = json.RawMessage(`{"tools":[]}`)
+			default:
+				t.Errorf("unexpected method %q", req.Method)
+				return
+			}
+			ls.events <- mcp.NewResponse(req.ID, result)
+		}
+	}()
+
+	res, err := Handshake(testCtx(t), tr, mcp.Implementation{Name: "agenthub", Version: "test"})
+	if err != nil || res.Version != mcp.Version2026 {
+		t.Fatalf("handshake = %+v, error = %v", res, err)
+	}
+	if _, err := tr.Call(testCtx(t), mcp.MethodToolsList, mcp.ListToolsParams{}); err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	if got := <-seen; got != mcp.MethodDiscover {
+		t.Fatalf("first method = %q, want discover", got)
+	}
+	if got := <-seen; got != mcp.MethodToolsList {
+		t.Fatalf("second method = %q, want tools/list", got)
+	}
+}
+
 // TestHTTPSSEEndpointCrossOrigin is the fail-closed case: the endpoint
 // event is server-controlled and the caller's Authorization rides on every
 // POST, so an off-origin address must be refused, not followed.

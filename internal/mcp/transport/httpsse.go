@@ -17,6 +17,8 @@ import (
 // 2025-03-26: a long-lived GET carries every server→client message as SSE,
 // and client→server messages are POSTed to an address the server hands out
 // in its first event.
+// 某些服务在旧 SSE 通道上仅宣告 2026-07-28；协商后向消息 POST 注入逐请求 _meta，
+// 保留服务原有的 GET 流和 endpoint 事件，作为服务特定的混合协议兼容路径。
 //
 // DEPRECATED-UPSTREAM(http+sse, earliest-removal: none)
 //
@@ -44,8 +46,10 @@ type httpSSE struct {
 
 	nextID atomic.Int64
 
-	mu       sync.Mutex
-	postURL  *url.URL
+	mu      sync.Mutex
+	postURL *url.URL
+	// 协商到新版后，所有 SSE 消息请求共用这份只读元数据。
+	reqMeta  *mcp.RequestMeta
 	pending  map[string]chan *mcp.Response
 	peer     PeerHandler
 	onChange func(ChangeMask)
@@ -269,6 +273,9 @@ func (t *httpSSE) Call(ctx context.Context, method string, params any) (json.Raw
 	if err != nil {
 		return nil, &Error{Class: ClassFatal, Err: err}
 	}
+	if raw, err = injectMeta(raw, t.currentMeta()); err != nil {
+		return nil, &Error{Class: ClassFatal, Err: err}
+	}
 	if fe := t.failedErr(); fe != nil {
 		return nil, presend(fe)
 	}
@@ -323,6 +330,9 @@ func (t *httpSSE) Notify(ctx context.Context, method string, params any) error {
 	if err != nil {
 		return &Error{Class: ClassFatal, Err: err}
 	}
+	if raw, err = injectMeta(raw, t.currentMeta()); err != nil {
+		return &Error{Class: ClassFatal, Err: err}
+	}
 	if fe := t.failedErr(); fe != nil {
 		return fe
 	}
@@ -337,6 +347,20 @@ func (t *httpSSE) Notify(ctx context.Context, method string, params any) error {
 		return terr
 	}
 	return nil
+}
+
+// 协商完成后，SSE 消息 POST 复用新版逐请求元数据；旧版连接保持 nil。
+func (t *httpSSE) setNegotiated(_ string, meta *mcp.RequestMeta) {
+	t.mu.Lock()
+	t.reqMeta = meta
+	t.mu.Unlock()
+}
+
+// 发送消息前读取协商结果，让普通调用、通知和取消共用同一协议元数据。
+func (t *httpSSE) currentMeta() *mcp.RequestMeta {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.reqMeta
 }
 
 // postMessage sends one message to the server-supplied POST address.
@@ -479,6 +503,9 @@ func (t *httpSSE) sendCancelled(id mcp.ID, cause error) {
 	}
 	raw, err := json.Marshal(mcp.CancelledParams{RequestID: id, Reason: reason})
 	if err != nil {
+		return
+	}
+	if raw, err = injectMeta(raw, t.currentMeta()); err != nil {
 		return
 	}
 	body, err := encodeMessage(mcp.NewNotification(mcp.NotificationCancelled, raw), t.maxFrame)

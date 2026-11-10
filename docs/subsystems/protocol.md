@@ -89,8 +89,12 @@ variant of stdio and containerization is expressed by the registry's `runtime` f
 ### The handshake
 
 `Handshake` tries `server/discover` first. A 2026-07-28 server answers it and `NegotiateHighest` picks
-the version; anything that negotiates ≤ 2025-11-25 falls through to `initialize`, because those
-versions need the stateful handshake however the version was learned.
+the version on transports that can carry per-request `_meta`. Legacy HTTP+SSE uses an advertised
+≤ 2025-11-25 version when one exists, then runs `initialize`; a server advertising only 2026-07-28
+receives `_meta` on subsequent SSE message POSTs. This is a compatibility path for a server that
+combines a legacy transport with a modern protocol, not a new standardized transport. Other
+legacy-version outcomes also run `initialize`, because those versions need the stateful handshake
+however the version was learned.
 
 **`discoverFallback` is deliberately narrow**: only a JSON-RPC error reply, or a `ClassFatal` HTTP 4xx
 (a 2025-11-25 streamable-http server rejects an unknown pre-session POST with 400 rather than a
@@ -110,10 +114,12 @@ code says nothing about the generation.
 for an unimplemented method, so it stopped meaning "your session is gone". A JSON-RPC code in the body
 means `ErrMethodNotFound` and `ClassFatal`; its absence keeps `ErrSessionExpired`.
 
-**A transport that cannot carry the per-request `_meta` is refused, not degraded.** Once 2026-07-28 is
-negotiated, `Handshake` requires `negotiatedSetter`; without it a strict server would reject bare
-requests with −32602, so it fails `ClassFatal` instead. `injectMeta` splices `_meta` at the top level
-only, so every existing value round-trips byte-identically.
+**A transport that cannot carry the per-request `_meta` is refused.** Legacy HTTP+SSE runs
+`initialize` when `server/discover` advertises both protocol generations. For a 2026-only response,
+its JSON-RPC message POSTs can carry `_meta` in request params while responses continue over the
+existing SSE GET stream. `injectMeta` splices `_meta` at the top level only, so every existing value
+round-trips byte-identically. This hybrid depends on the server continuing to accept the legacy SSE
+binding; a standard 2026-only Streamable HTTP server still needs the `http` transport.
 
 **A failed handshake is always `ClassFatal`.** Retrying the same handshake cannot succeed, so it must
 not consume circuit-breaker budget.

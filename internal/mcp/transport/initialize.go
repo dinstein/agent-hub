@@ -113,6 +113,8 @@ type HandshakeResult struct {
 // legacy Initialize handshake instead. A discover result that negotiates
 // ≤ 2025-11-25 also runs Initialize afterward: those versions require the
 // stateful handshake regardless of how the version was learned.
+// SSE 发现新旧版本并存时选择旧版 initialize；仅有新版时在消息 POST 中附带 _meta。
+// 其他传输按协商结果运行；旧版本始终需要有状态的 initialize 握手。
 //
 // Handshake failures are ClassFatal, same as Initialize: retrying the same
 // handshake cannot succeed, so they must not trip the circuit breaker.
@@ -131,14 +133,23 @@ func Handshake(ctx context.Context, t Transport, clientInfo mcp.Implementation) 
 	if v != mcp.Version2026 {
 		return handshakeLegacy(ctx, t, clientInfo)
 	}
+	if _, isSSE := t.(*httpSSE); isSSE {
+		// 同时提供旧版时优先走原生 SSE 握手，避免依赖新版与旧传输的混合支持。
+		for _, offered := range dres.SupportedVersions {
+			if offered == mcp.Version2026 {
+				continue
+			}
+			if _, err := mcp.NegotiateVersion(offered); err == nil {
+				return handshakeLegacy(ctx, t, clientInfo)
+			}
+		}
+	}
 	s, ok := t.(negotiatedSetter)
 	if !ok {
-		// The transport cannot inject the per-request _meta the stateless
-		// protocol requires; sending bare requests would be rejected with
-		// -32602 by a strict server. Refuse rather than degrade (the
-		// "isolation claimed must be delivered or refused" direction).
+		// 无法携带逐请求元数据的传输继续拒绝新版握手。
 		return nil, &Error{Class: ClassFatal, Err: fmt.Errorf(
-			"transport %T cannot carry the per-request _meta MCP %s requires", t, v)}
+			"transport %T cannot carry the per-request _meta MCP %s requires (server offered %v); configure a streamable HTTP endpoint",
+			t, v, dres.SupportedVersions)}
 	}
 	s.setNegotiated(v, BuildRequestMeta(v, clientCapabilities2026(), clientInfo))
 	return &HandshakeResult{
