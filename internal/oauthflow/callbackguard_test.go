@@ -43,7 +43,7 @@ func TestIssIsCheckedBeforeAnErrorIsSurfaced(t *testing.T) {
 	if iss != "https://attacker.example" {
 		t.Fatalf("iss = %q; the parser must hand the caller what it cannot check itself", iss)
 	}
-	err := issThenCallback(md, iss, false, cbErr)
+	err := issThenCallback(md, iss, false, cbErr, "")
 	if !errors.Is(err, ErrIssuerMismatch) {
 		t.Fatalf("err = %v, want ErrIssuerMismatch to replace the AS's error", err)
 	}
@@ -63,7 +63,7 @@ func TestIssCheckLeavesNonResponseFailuresAlone(t *testing.T) {
 		AuthorizationResponseIssParameterSupported: true,
 	}
 	want := errors.New("no browser on this host")
-	if got := issThenCallback(md, "", true, want); !errors.Is(got, want) {
+	if got := issThenCallback(md, "", true, want, ""); !errors.Is(got, want) {
 		t.Fatalf("got %v, want the original failure untouched", got)
 	}
 }
@@ -77,7 +77,7 @@ func TestAnErrorResponseWithAGoodIssStillSurfaces(t *testing.T) {
 	}
 	_, iss, cbErr := ParseManualCallback(
 		"http://127.0.0.1:9/callback?error=access_denied&state=s&iss=https%3A%2F%2Fhonest.example", "s")
-	err := issThenCallback(md, iss, true, cbErr)
+	err := issThenCallback(md, iss, true, cbErr, "")
 	if !errors.Is(err, ErrAuthorizationDenied) {
 		t.Fatalf("err = %v, want the denial to reach the caller", err)
 	}

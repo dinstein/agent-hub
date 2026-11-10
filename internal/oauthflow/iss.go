@@ -3,15 +3,31 @@ package oauthflow
 import (
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 )
 
+// validateResponseIssuer 校验单次登录的上游 issuer 配置，避免含糊或非 HTTPS 的信任声明。
+func validateResponseIssuer(issuer string) error {
+	if issuer == "" {
+		return nil
+	}
+	u, err := url.Parse(issuer)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil ||
+		u.RawQuery != "" || u.Fragment != "" || strings.TrimSpace(issuer) != issuer {
+		return newFlowError(ErrorTypeAuthorization,
+			fmt.Errorf("oauthflow: response issuer must be an absolute HTTPS issuer URL"))
+	}
+	return nil
+}
+
 // validateIss enforces RFC 9207 (the iss authorization-response parameter)
-// before an authorization code is redeemed. iss is compared to the
-// discovered issuer by simple string equality, exactly as §2.4 prescribes.
+// before an authorization code is redeemed. 默认按 §2.4 精确比较发现的 issuer。
+// 代理 AS 将上游响应原样转发时，调用方可针对单次登录显式指定 responseIssuer。
 //
 // Failure direction (fail closed, both ways that matter):
 //
-//   - A PRESENT iss that differs from the discovered issuer always fails:
+//   - 已提供的 iss 与预期 issuer 不同时一律失败：
 //     that is the mix-up attack shape, and the code must not be redeemed.
 //   - A MISSING iss fails when requireAdvertised is set and the AS metadata
 //     advertises authorization_response_iss_parameter_supported — the
@@ -24,27 +40,41 @@ import (
 // input may have been hand-trimmed to a bare code, which loses the
 // parameter without implying an attack (PKCE and state still guard that
 // path).
-func validateIss(md *AuthServerMetadata, iss string, requireAdvertised bool) error {
+func validateIss(md *AuthServerMetadata, iss string, requireAdvertised bool, responseIssuer string) error {
 	if md == nil {
 		return nil // nothing discovered to compare against
 	}
+	expected := md.Issuer
+	if responseIssuer != "" {
+		expected = responseIssuer
+	}
 	switch {
 	case iss == "":
-		if requireAdvertised && md.AuthorizationResponseIssParameterSupported {
+		if responseIssuer != "" || (requireAdvertised && md.AuthorizationResponseIssParameterSupported) {
+			message := fmt.Sprintf("%s advertises authorization_response_iss_parameter_supported but the response carries no iss", md.Issuer)
+			suggestion := "the authorization response did not come from the discovered authorization server; re-run the login and check for a proxy or captive portal in the path"
+			if responseIssuer != "" {
+				message = fmt.Sprintf("expected authorization response issuer %q but the response carries no iss", expected)
+				suggestion = "the authorization response did not identify its issuer; re-run the login and check the provider's redirect behavior"
+			}
 			e := newFlowError(ErrorTypeAuthorization, fmt.Errorf(
-				"%w: %s advertises authorization_response_iss_parameter_supported but the response carries no iss",
-				ErrIssuerMismatch, md.Issuer))
+				"%w: %s", ErrIssuerMismatch, message))
 			e.Issuer = md.Issuer
-			e.Suggestion = "the authorization response did not come from the discovered authorization server; re-run the login and check for a proxy or captive portal in the path"
+			e.Suggestion = suggestion
 			return e
 		}
 		return nil
-	case iss != md.Issuer:
+	case iss != expected:
+		message := fmt.Sprintf("authorization response names issuer %q, discovery produced %q", iss, md.Issuer)
+		suggestion := "the code was issued by a different authorization server than the one discovered; nothing was redeemed"
+		if responseIssuer != "" {
+			message = fmt.Sprintf("authorization response names issuer %q, expected %q", iss, expected)
+			suggestion = "the code was issued by a different authorization server than expected; nothing was redeemed"
+		}
 		e := newFlowError(ErrorTypeAuthorization, fmt.Errorf(
-			"%w: authorization response names issuer %q, discovery produced %q",
-			ErrIssuerMismatch, iss, md.Issuer))
+			"%w: %s", ErrIssuerMismatch, message))
 		e.Issuer = md.Issuer
-		e.Suggestion = "the code was issued by a different authorization server than the one discovered; nothing was redeemed"
+		e.Suggestion = suggestion
 		return e
 	default:
 		return nil
@@ -68,12 +98,12 @@ func validateIss(md *AuthServerMetadata, iss string, requireAdvertised bool) err
 // never sent would replace the real cause with a fabricated issuer
 // mismatch. That is not a hypothetical: it is what the first version of
 // this function did, and three tests said so.
-func issThenCallback(md *AuthServerMetadata, iss string, requireAdvertised bool, callbackErr error) error {
+func issThenCallback(md *AuthServerMetadata, iss string, requireAdvertised bool, callbackErr error, responseIssuer string) error {
 	var te *TokenError
 	if !errors.As(callbackErr, &te) {
 		return callbackErr
 	}
-	if err := validateIss(md, iss, requireAdvertised); err != nil {
+	if err := validateIss(md, iss, requireAdvertised, responseIssuer); err != nil {
 		return err
 	}
 	return callbackErr

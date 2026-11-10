@@ -23,7 +23,7 @@ substantially relative to `2025-06-18`, and the gap table below is aligned to it
 | RFC 8707 Resource Indicators | `resource` parameter, sent on both authorize and token | ✅ `canonicalResource` |
 | RFC 7636 PKCE | S256 mandatory | ✅ S256 only, `plain` is rejected outright |
 | RFC 7591 DCR | `NewDCRRegistrar` | ✅ But upstream has downgraded it to MAY; `application_type` pinned to `"native"` (required by MCP 2026-07-28) |
-| RFC 9207 `iss` response parameter | `validateIss`, before every code redemption | ✅ Fail closed: a mismatch always refuses; a MISSING `iss` refuses on the loopback path when the AS advertises support (manual paste is lenient — a hand-trimmed bare code loses the parameter) |
+| RFC 9207 `iss` response parameter | `validateIss`, before every code redemption | ✅ Fail closed by default: a mismatch always refuses; a MISSING `iss` refuses on the loopback path when the AS advertises support (manual paste is lenient — a hand-trimmed bare code loses the parameter). An explicit one-login `--response-issuer` pin accepts only that upstream issuer and requires `iss` even for manual paste. |
 | RFC 8628 Device Flow | `StartDevice` / `DevicePoller` | ✅ Not required by MCP; we support it anyway |
 | RFC 6750 §3 `scope` challenge | The `scope` parameter in a 401 | ✅ Priority level 1 |
 | draft-ietf-oauth-client-id-metadata-document-00 (CIMD) | `NewClientIDMetadataRegistrar` | ⚠️ Seam only, `Register` returns `ErrNotImplemented` |
@@ -467,6 +467,14 @@ deliberately **discards** a refresh error and returns the downstream's original 
 recorded nowhere at all.
 
 ## Security boundaries (don't loosen these in passing)
+
+- `auth login --response-issuer <HTTPS issuer>` is a per-invocation trust decision
+  for an authorization proxy that returns its upstream provider's callback
+  unchanged. It compares the callback `iss` exactly to the pinned value and
+  rejects a missing `iss`; the metadata issuer, token endpoint, state check,
+  PKCE and refresh target remain unchanged. This is not persisted in the
+  server registry. Configure it only after verifying that the proxy's token
+  endpoint is intended to redeem codes from that upstream provider.
 
 - The `--authorization-endpoint` pin is **fail-closed**: if a pin is set but the URL is invalid or
   blocked by the SSRF screen, the login aborts rather than falling back to the discovered value.
