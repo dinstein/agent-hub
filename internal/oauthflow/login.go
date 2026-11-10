@@ -66,6 +66,10 @@ type LoginRequest struct {
 	// their URL send us back down the route that is already known to fail
 	// would make the field unreachable for every http/sse server.
 	Issuer string
+	// ResponseIssuer 是本次登录显式信任的上游授权响应 issuer。
+	// 仅用于代理 AS 直接将上游回调送回客户端的场景；留空时必须匹配已发现的 Issuer。
+	// 它不改变 metadata、token endpoint 或后续 refresh 的目标。
+	ResponseIssuer string
 	// ResourceURL is the MCP server URL being authorized against.
 	ResourceURL string
 	// ResourceMetadataURL is the pointer harvested from a 401's
@@ -169,6 +173,9 @@ func (f *Flow) Login(ctx context.Context, req LoginRequest) (*LoginResult, error
 	if strings.TrimSpace(req.ServerID) == "" {
 		return nil, newFlowError(ErrorTypeUnknown, fmt.Errorf("oauthflow: login needs a server id"))
 	}
+	if err := validateResponseIssuer(req.ResponseIssuer); err != nil {
+		return nil, withServer(err, req.ServerID)
+	}
 	disc, err := f.discover(ctx, req)
 	if err != nil {
 		return nil, withServer(err, req.ServerID)
@@ -204,6 +211,10 @@ func (f *Flow) Login(ctx context.Context, req LoginRequest) (*LoginResult, error
 	}
 
 	mode := SelectMode(req.Mode, md, req.Open != nil)
+	if mode == ModeDevice && req.ResponseIssuer != "" {
+		return nil, withServer(newFlowError(ErrorTypeAuthorization,
+			fmt.Errorf("oauthflow: response issuer override requires a callback flow")), req.ServerID)
+	}
 	switch mode {
 	case ModeDevice:
 		return f.loginDevice(ctx, req, disc, prev)
@@ -370,9 +381,9 @@ func (f *Flow) loginLoopback(ctx context.Context, req LoginRequest, disc *Discov
 	// A FAILED callback is validated too, before its error is surfaced —
 	// see issThenCallback.
 	if err != nil {
-		return nil, withServer(issThenCallback(disc.Metadata, issOf(res), true, err), req.ServerID)
+		return nil, withServer(issThenCallback(disc.Metadata, issOf(res), true, err, req.ResponseIssuer), req.ServerID)
 	}
-	if err := validateIss(disc.Metadata, res.Iss, true); err != nil {
+	if err := validateIss(disc.Metadata, res.Iss, true, req.ResponseIssuer); err != nil {
 		return nil, withServer(err, req.ServerID)
 	}
 	tok, err := f.Client.Exchange(ctx, ExchangeRequest{
@@ -445,9 +456,9 @@ func (f *Flow) loginManual(ctx context.Context, req LoginRequest, disc *Discover
 	// FAILED paste is validated too, before its error is surfaced.
 	code, iss, err := ParseManualCallback(pasted, state)
 	if err != nil {
-		return nil, withServer(issThenCallback(disc.Metadata, iss, false, err), req.ServerID)
+		return nil, withServer(issThenCallback(disc.Metadata, iss, false, err, req.ResponseIssuer), req.ServerID)
 	}
-	if err := validateIss(disc.Metadata, iss, false); err != nil {
+	if err := validateIss(disc.Metadata, iss, false, req.ResponseIssuer); err != nil {
 		return nil, withServer(err, req.ServerID)
 	}
 	tok, err := f.Client.Exchange(ctx, ExchangeRequest{

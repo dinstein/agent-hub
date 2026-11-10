@@ -193,16 +193,17 @@ func (a *App) newAuthCmd() *cobra.Command {
 
 func (a *App) newAuthLoginCmd() *cobra.Command {
 	var (
-		manual      bool
-		device      bool
-		loopback    bool
-		noBrowser   bool
-		scopes      []string
-		issuer      string
-		authzEndpt  string
-		redirectURI string
-		allowLocal  bool
-		timeout     time.Duration
+		manual         bool
+		device         bool
+		loopback       bool
+		noBrowser      bool
+		scopes         []string
+		issuer         string
+		responseIssuer string
+		authzEndpt     string
+		redirectURI    string
+		allowLocal     bool
+		timeout        time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:   "login <server>",
@@ -260,6 +261,7 @@ func (a *App) newAuthLoginCmd() *cobra.Command {
 			req := oauthflow.LoginRequest{
 				ServerID:              serverID,
 				Issuer:                issuer,
+				ResponseIssuer:        responseIssuer,
 				ResourceURL:           resourceURL,
 				ResourceMetadataURL:   resourceMeta,
 				Scopes:                scopes,
@@ -349,6 +351,8 @@ func (a *App) newAuthLoginCmd() *cobra.Command {
 		"the exact sign-in address to use, e.g. https://idp.example.com/oauth/authorize/tenant1 "+
 			"(only for providers that do not publish it correctly; better to get them to fix it)")
 	cmd.Flags().StringVar(&issuer, "issuer", "", "address of the login service, when agenthub cannot work it out from the server")
+	cmd.Flags().StringVar(&responseIssuer, "response-issuer", "",
+		"explicitly trust this HTTPS issuer in the authorization callback for this login only")
 	cmd.Flags().StringVar(&redirectURI, "redirect-uri", "",
 		"the exact return address to use, e.g. http://localhost:8040/oauth2/callback "+
 			"(for providers that only accept an address registered with them in advance)")

@@ -248,6 +248,29 @@ func TestAuthLoginManualRejectsMismatchedState(t *testing.T) {
 	}
 }
 
+// TestAuthLoginResponseIssuerRequiresCallbackIss 确认 CLI 将显式上游 issuer
+// 传入登录流程，且此模式不能通过粘贴裸授权码绕过 issuer 校验。
+func TestAuthLoginResponseIssuerRequiresCallbackIss(t *testing.T) {
+	setDataDir(t)
+	t.Setenv("AGENTHUB_SECRET_KEY", "test-passphrase-for-cli-auth")
+	mcpSrv, as := newProtectedMCPServer(t)
+	if code, out, _ := runCLI(t, "", "server", "add", "remote",
+		"--url", mcpSrv.URL+"/mcp", "--local", "--json"); code != ExitOK {
+		t.Fatalf("server add exit = %d\n%s", code, out)
+	}
+	code, out, _ := runCLI(t, "auth-code-xyz\n", "auth", "login", "remote",
+		"--manual", "--allow-local", "--response-issuer", "https://accounts.google.com", "--json")
+	if code != ExitAuth {
+		t.Fatalf("exit = %d, want %d\n%s", code, ExitAuth, out)
+	}
+	if !strings.Contains(out, "response carries no iss") {
+		t.Fatalf("missing issuer was not reported: %s", out)
+	}
+	if as.tokenHits.Load() != 0 {
+		t.Fatal("token endpoint was called without a verified response issuer")
+	}
+}
+
 // assertAuthCommandsAgree compares what `auth status` and `server ls` say
 // about one server. Everything both of them carry must match, because both
 // read one vault through one lifecycle function; the fields only one of them
